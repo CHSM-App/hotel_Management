@@ -8,4 +8,8 @@ export default defineConfig({
   server: {
     host: true,
   },
+  build: {
+    outDir: '../backend/src/public',  // build SPA into the backend web root (served by express.static)
+    emptyOutDir: true,
+  },
 })
