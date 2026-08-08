@@ -1,0 +1,248 @@
+.field {
+  margin-bottom: 18px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 44px;
+}
+
+.field input:focus-visible,
+.field select:focus-visible {
+  border-color: var(--focus);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.field-row--triple {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+@media (max-width: 480px) {
+  .field-row,
+  .field-row--triple {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-section {
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.form-section:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+
+.form-section__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 18px;
+  margin-bottom: 14px;
+}
+
+.form-section__title:first-child {
+  margin-top: 0;
+}
+
+.form-section--collapsible > summary {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-section--collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.form-section--collapsible > summary::marker {
+  content: '';
+}
+
+.form-section--collapsible > summary::after {
+  content: '+';
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.form-section--collapsible[open] > summary::after {
+  content: '\2212';
+}
+
+.form-section--collapsible[open] > summary {
+  margin-bottom: 14px;
+}
+
+.form-section__badge {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.form-banner {
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+
+.form-banner--error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.form-banner--info {
+  background: #eef4f2;
+  color: var(--brand-ink);
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 12px 18px;
+  min-height: 44px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: var(--paper);
+}
+
+.btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.checkbox-inline input {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  accent-color: var(--brand);
+}
+
+.checkbox-inline label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.checkbox-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.checkbox-chip input {
+  width: 16px;
+  height: 16px;
+  /* .field input sets min-height: 44px for tap targets, and these chips live
+     inside a .field. Without resetting it the checkbox inflates to 44px and
+     the chip becomes a tall box with the label pushed underneath. */
+  min-height: 0;
+  flex-shrink: 0;
+  accent-color: var(--brand);
+}
+
+.checkbox-chip:has(input:checked) {
+  border-color: var(--brand);
+  background: #eef4f2;
+}
+
+/* These chips are <label>s, and they live inside a .field — where
+   `.field label { display: block; margin-bottom: 6px }` outranks the plain
+   .checkbox-chip class and silently killed the flex layout, leaving the
+   checkbox jammed against its text. Matched with equal weight to restore it. */
+.field label.checkbox-chip {
+  display: flex;
+  margin-bottom: 0;
+}
+
+.toggle-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.toggle-group button {
+  border: none;
+  background: var(--surface);
+  color: var(--text);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle-group button + button {
+  border-left: 1px solid var(--border);
+}
+
+.toggle-group button[aria-pressed='true'] {
+  background: var(--brand);
+  color: #ffffff;
+}

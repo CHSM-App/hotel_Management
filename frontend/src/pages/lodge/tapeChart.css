@@ -1,0 +1,171 @@
+.tape-legend {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.tape-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tape-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.tape-legend__swatch--vacant {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.tape-legend__swatch--booked {
+  background: var(--accent);
+}
+
+.tape-legend__swatch--checked-in {
+  background: var(--brand);
+}
+
+.tape-chart-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.tape-grid {
+  display: grid;
+  grid-template-columns: 140px repeat(10, minmax(64px, 1fr));
+  grid-auto-rows: 48px;
+  min-width: max-content;
+}
+
+.tape-grid__corner,
+.tape-grid__date-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--paper);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tape-grid__corner {
+  left: 0;
+  z-index: 4;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tape-grid__date-head strong {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tape-grid__date-head--today strong,
+.tape-grid__date-head--today span {
+  color: var(--brand-ink);
+}
+
+.tape-grid__room-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--paper);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tape-grid__room-label span {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.tape-grid__cell {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  padding: 0;
+}
+
+.tape-grid__cell:hover {
+  background: var(--paper);
+}
+
+.tape-grid__bar {
+  margin: 5px 2px;
+  border: none;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tape-grid__bar--booked {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.tape-grid__bar--checked-in {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+/* The chart keeps its shape on a phone and scrolls sideways inside
+   .tape-chart-scroll (the room column and date header stay pinned) — a
+   calendar grid can't reflow into a single column without ceasing to be a
+   calendar. Columns just get tighter so more days are visible per swipe. */
+@media (max-width: 640px) {
+  .tape-legend {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+  }
+
+  .tape-grid {
+    grid-template-columns: 92px repeat(10, minmax(52px, 1fr));
+    grid-auto-rows: 44px;
+  }
+
+  .tape-grid__room-label {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .tape-grid__room-label span {
+    font-size: 10px;
+  }
+
+  .tape-grid__bar {
+    font-size: 11px;
+    padding: 0 6px;
+  }
+}

@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1E3A5F;
+  --color-secondary: #9C2B2B;
+  --color-background: #F7F5F0;
+  --color-surface: #FFFFFF;
+  --color-success: #16A34A;
+  --color-warning: #EAB308;
+  --color-danger: #C1121F;
+
+  /* CTA gradient stops — e.g. bg-gradient-to-r from-cta-from to-cta-to */
+  --color-cta-from: #B3261E;
+  --color-cta-to: #7A1F1F;
+
+  /* Semantic radii — cards, room tiles, menu items get the generous end (16px) */
+  --radius-tile: 0.75rem; /* 12px */
+  --radius-card: 1rem;    /* 16px */
+
+  /* Layered shadows for depth */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px -4px rgba(16, 24, 40, 0.08), 0 20px 40px -8px rgba(16, 24, 40, 0.10);
+  --shadow-elevated: 0 2px 4px rgba(16, 24, 40, 0.08), 0 12px 32px -6px rgba(16, 24, 40, 0.12), 0 28px 56px -12px rgba(16, 24, 40, 0.16);
+}
+
+@layer components {
+  /* Solid modal surface — PIN entry, payment popups, every form modal */
+  .glass-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-elevated);
+    border-radius: var(--radius-card);
+  }
+
+  /* Dimmed scrim behind a modal */
+  .glass-backdrop {
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  /* Gradient CTA button — e.g. "Convert to Booking" */
+  .btn-cta {
+    background-image: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
+    color: #fff;
+    border-radius: var(--radius-tile);
+    box-shadow: var(--shadow-card);
+    transition: filter 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .btn-cta:hover {
+    filter: brightness(1.06);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .btn-cta:active {
+    transform: translateY(1px);
+    filter: brightness(0.98);
+  }
+}
+
+:root {
+  --ink: #16212e;
+  --text: #46525c;
+  --text-muted: #5b6670;
+  --paper: #f7f5f0;
+  --surface: #ffffff;
+  --border: #dbe1e6;
+  --brand: #1e3a5f;
+  --brand-ink: #142744;
+  --accent: #9c2b2b;
+  --accent-ink: #7a1f1f;
+  --danger: #c1121f;
+  --danger-bg: #fbeae9;
+  --focus: #1e3a5f;
+
+  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --serif: 'Fraunces', Georgia, serif;
+
+  color-scheme: light;
+  font: 16px/1.5 var(--sans);
+  color: var(--text);
+  background: var(--paper);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+}
+
+a {
+  color: var(--brand);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input,
+select {
+  font: inherit;
+}

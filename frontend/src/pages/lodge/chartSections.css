@@ -1,0 +1,278 @@
+.price-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.chart-section {
+  padding: 22px 24px;
+}
+
+.chart-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.chart-section__header h3 {
+  font-size: 16px;
+}
+
+.chart-section__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chart-list {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 16px;
+}
+
+.chart-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.chart-row:last-child {
+  border-bottom: none;
+}
+
+.chart-row__name {
+  color: var(--ink);
+  font-weight: 500;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.chart-row__dates {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.chart-row__value {
+  color: var(--brand-ink);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-row__badge {
+  margin-left: 8px;
+  font-size: 10px;
+}
+
+.chart-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 4px;
+}
+
+.chart-row__link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.chart-row__link-btn--danger {
+  color: var(--danger);
+}
+
+.chart-row__link-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.chart-row__confirm-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.inline-add-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.inline-add-form__row--seasons {
+  grid-template-columns: 1.4fr 1fr 1fr 0.8fr auto;
+}
+
+.inline-add-form__row input,
+.inline-add-form__row select {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 42px;
+}
+
+.inline-add-form__row button {
+  white-space: nowrap;
+  padding: 0 16px;
+  min-height: 42px;
+}
+
+@media (max-width: 700px) {
+  .inline-add-form__row,
+  .inline-add-form__row--seasons {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sim-result {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.sim-result__line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: var(--text);
+  padding: 6px 0;
+}
+
+.sim-result__total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  padding-top: 10px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.chart-delete-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.chart-delete-modal {
+  width: 100%;
+  max-width: 420px;
+  padding: 26px;
+}
+
+.chart-delete-modal h3 {
+  margin-bottom: 6px;
+}
+
+.chart-delete-modal__hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.chart-delete-modal__options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chart-delete-modal__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.chart-delete-modal__option strong {
+  font-size: 14px;
+}
+
+.chart-delete-modal__option span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chart-delete-modal__option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.chart-delete-modal__option--danger {
+  border-color: var(--danger);
+}
+
+.chart-delete-modal__option--danger strong {
+  color: var(--danger);
+}
+
+.chart-delete-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+@media (max-width: 640px) {
+  .chart-section {
+    padding: 18px 16px;
+  }
+
+  /* Label above value instead of pinned to opposite edges — at phone width
+     a long guest name and its value were colliding in the middle. */
+  .chart-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .chart-row__name {
+    flex-wrap: wrap;
+  }
+
+  .chart-delete-modal__backdrop {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .chart-delete-modal {
+    max-width: none;
+    max-height: calc(100svh - 20px);
+    overflow-y: auto;
+    padding: 20px 16px;
+  }
+
+  .chart-delete-modal__actions button {
+    width: 100%;
+  }
+
+  .sim-result__total {
+    font-size: 15px;
+  }
+}

@@ -1,0 +1,511 @@
+.dash-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dash-body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.dash-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  min-height: calc(100svh - 73px);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  position: sticky;
+  top: 0;
+}
+
+.dash-sidebar__group {
+  margin-bottom: 22px;
+}
+
+.dash-sidebar__group:last-child {
+  margin-bottom: 0;
+}
+
+.dash-sidebar__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0 12px;
+  margin-bottom: 10px;
+}
+
+.dash-sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-sidebar__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.dash-sidebar__item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.dash-sidebar__item:hover {
+  background: var(--paper);
+}
+
+.dash-sidebar__item[aria-current='page'] {
+  background: #eef4f2;
+  border-left-color: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+
+.dash-sidebar__item[aria-current='page'] svg {
+  color: var(--brand-ink);
+}
+
+.dash-sidebar__soon {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.dash-body > .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 800px) {
+  .dash-body {
+    flex-direction: column;
+    /* The base rule sets align-items: flex-start for the two-column desktop
+       layout. Once this stacks, that would let .dash-main shrink-wrap to its
+       widest child — the tape chart — and push the whole page sideways
+       instead of letting the chart scroll inside its own container. */
+    align-items: stretch;
+  }
+
+  .dash-body > .dash-main {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dash-sidebar {
+    width: 100%;
+    min-height: 0;
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 6px;
+  }
+
+  /* Dissolve each group wrapper on mobile so its list joins one flat,
+     horizontally scrollable row instead of stacking a header per group. */
+  .dash-sidebar__group {
+    display: contents;
+  }
+
+  .dash-sidebar__label {
+    display: none;
+  }
+
+  .dash-sidebar__list {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .dash-sidebar__item {
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 8px 8px 0 0;
+  }
+
+  .dash-sidebar__item[aria-current='page'] {
+    border-left-color: transparent;
+    border-bottom-color: var(--brand);
+  }
+
+  .dash-sidebar__soon {
+    margin-left: 4px;
+  }
+}
+
+.overview-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  margin-bottom: 32px;
+  align-items: start;
+}
+
+.overview-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+}
+
+.overview-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+}
+
+.overview-hero__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.overview-hero__identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.overview-hero__monogram {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  color: #ffffff;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overview-hero__identity h2 {
+  margin-bottom: 4px;
+}
+
+.overview-hero__slug {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.overview-hero__slug code {
+  color: var(--brand-ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.overview-hero__copy-link {
+  flex-shrink: 0;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.overview-hero__copy-link:hover {
+  background: var(--border);
+}
+
+.overview-hero__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge--accent {
+  background: #fbf1e0;
+  color: var(--accent-ink);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.info-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.info-tile__icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.info-tile__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.info-tile__value {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.profile-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.profile-card__avatar {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+  color: #ffffff;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-card h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.profile-card__role {
+  margin-bottom: 18px;
+}
+
+.profile-card__details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.profile-card__detail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.profile-card__detail svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 800px) {
+  .overview-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.reset-banner {
+  background: #fbf3e3;
+  border: 1px solid #e9cf94;
+  color: #7a5417;
+  border-radius: 10px;
+  padding: 14px 18px;
+  font-size: 14px;
+  margin-bottom: 28px;
+}
+
+.getting-started {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+
+.getting-started__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.getting-started__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.getting-started__step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.getting-started__step:first-child {
+  border-top: none;
+}
+
+.getting-started__number {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.getting-started__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.getting-started__body strong {
+  display: block;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+.getting-started__body p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.getting-started__go {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--brand-ink);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.getting-started__go:hover {
+  background: var(--paper);
+  border-color: var(--brand);
+}
+
+@media (max-width: 640px) {
+  .overview-hero,
+  .profile-card,
+  .getting-started {
+    padding: 18px 16px;
+  }
+
+  .overview-hero__identity {
+    gap: 12px;
+  }
+
+  .overview-hero__identity h2 {
+    font-size: 18px;
+  }
+
+  /* The public URL is long and word-break: break-all shreds it into a
+     narrow column when it has to share a row with its label and the Copy
+     button. Give it the full width instead. */
+  .overview-hero__slug {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .overview-hero__slug code {
+    flex-basis: 100%;
+    font-size: 12px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .getting-started__step {
+    flex-wrap: wrap;
+  }
+
+  /* Let the step text use the full row and drop "Go" below it — sharing the
+     row squeezed descriptions down to three or four words per line. */
+  .getting-started__body {
+    flex-basis: calc(100% - 42px);
+  }
+
+  .getting-started__go {
+    margin-left: 42px;
+  }
+}

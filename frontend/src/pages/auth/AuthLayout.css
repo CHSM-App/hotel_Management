@@ -1,0 +1,354 @@
+.auth-shell {
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+
+@media (max-width: 900px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Used by Login.jsx to drop the marketing brand panel and just center the
+   sign-in card — the admin/registration pages still get the two-column
+   layout with the brand panel. Everything below is scoped under this class
+   so those other auth pages keep their current look. */
+.auth-shell--simple {
+  grid-template-columns: 1fr;
+  position: relative;
+  isolation: isolate;
+  /* The scene is pinned to the bottom: its horizon, lodge and palms live in
+     the lower half, so on a short/wide window the sky crops away rather than
+     the subject. The navy underneath matches the SVG's darkest sky stop, so
+     there's no flash of bare paper before the image paints. */
+  background:
+    url('/lodge-bg.svg') center bottom / cover no-repeat,
+    var(--brand-ink);
+}
+
+/* Scrim: darkens the scene toward the centre so the white card reads
+   cleanly against it, while the corners stay bright enough to still show
+   the sunset. Sits between the background and the card via z-index. */
+.auth-shell--simple::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 62% 58% at 50% 46%, rgba(6, 13, 21, 0.62), transparent 72%),
+    linear-gradient(to bottom, rgba(6, 13, 21, 0.42), rgba(6, 13, 21, 0.12) 42%, rgba(6, 13, 21, 0.5));
+}
+
+.auth-shell--simple .auth-panel {
+  flex-direction: column;
+  gap: 18px;
+  background: transparent;
+  position: relative;
+}
+
+.auth-shell--simple .auth-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-card);
+  /* Deeper than --shadow-elevated: over a photographic scene the card needs
+     to read as lifted off the image, not pasted onto it. */
+  box-shadow:
+    0 2px 6px rgba(4, 10, 18, 0.2),
+    0 18px 40px -12px rgba(4, 10, 18, 0.45),
+    0 40px 80px -20px rgba(4, 10, 18, 0.5);
+  padding: 40px 36px;
+  text-align: center;
+}
+
+/* Warm hairline along the top edge, picked from the sunset behind it. */
+.auth-shell--simple .auth-card::before {
+  content: '';
+  display: block;
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: linear-gradient(90deg, var(--brand), #c9714f 55%, #e8a765);
+}
+
+.auth-shell--simple .auth-card .field,
+.auth-shell--simple .auth-card .form-banner {
+  text-align: left;
+}
+
+.auth-card__badge {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  color: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.auth-card__badge svg {
+  width: 22px;
+  height: 22px;
+}
+
+.auth-shell--simple .auth-card h2 {
+  font-family: var(--sans);
+  margin-bottom: 6px;
+}
+
+.auth-shell--simple .auth-card__hint {
+  margin-bottom: 28px;
+}
+
+/* The artwork is 1.6:1. Once the viewport is appreciably narrower than that,
+   `cover` zooms it so far that the visible slice is empty mid-sea — the lodge,
+   palms and sun all crop away and it reads as a plain dark background. Keyed
+   off aspect ratio rather than width, because a portrait tablet has the same
+   problem as a phone despite being wide. Below the threshold, show the scene
+   whole across the bottom and lift the card above it. The flat colour behind
+   matches the SVG's topmost sky stop exactly, so there's no seam. */
+@media (max-width: 640px), (max-aspect-ratio: 5 / 4) {
+  .auth-shell--simple {
+    background:
+      url('/lodge-bg.svg') center bottom / 100% auto no-repeat,
+      #0d1c30;
+  }
+
+  /* Lighter at the foot so the artwork underneath keeps its colour. */
+  .auth-shell--simple::before {
+    background:
+      radial-gradient(ellipse 78% 34% at 50% 30%, rgba(6, 13, 21, 0.62), transparent 74%),
+      linear-gradient(to bottom, rgba(6, 13, 21, 0.5), rgba(6, 13, 21, 0.1) 55%, rgba(6, 13, 21, 0));
+  }
+
+  .auth-shell--simple .auth-panel {
+    justify-content: flex-start;
+    padding: 7vh 16px 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-shell--simple .auth-card {
+    padding: 32px 22px;
+  }
+}
+
+/* Light, with a soft shadow — it sits directly on the scene, not on a card. */
+.auth-panel__foot {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(4, 10, 18, 0.6);
+}
+
+.auth-brand {
+  background: var(--brand);
+  color: #eef4f2;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px 56px;
+}
+
+@media (max-width: 900px) {
+  .auth-brand {
+    padding: 32px 24px;
+  }
+}
+
+.auth-brand__mark {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+}
+
+.auth-brand__body {
+  max-width: 30em;
+}
+
+.auth-brand__body h1 {
+  color: #ffffff;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+  margin-bottom: 16px;
+}
+
+.auth-brand__body p {
+  color: #cfe1dd;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.auth-brand__foot {
+  color: #9fc0bb;
+  font-size: 13px;
+}
+
+.auth-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  background: var(--paper);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-card__eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.auth-card h2 {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+
+.auth-card__hint {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 28px;
+}
+
+.field {
+  margin-bottom: 18px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 44px;
+}
+
+.field input:focus-visible,
+.field select:focus-visible {
+  border-color: var(--focus);
+}
+
+.field__error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 480px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.checkbox-field input {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  margin-top: 1px;
+  accent-color: var(--brand);
+}
+
+.checkbox-field label {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.checkbox-field__note {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 12px 16px;
+  min-height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.btn-primary:hover {
+  background: var(--brand-ink);
+}
+
+.btn-primary:disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.form-banner {
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+
+.form-banner--error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.form-banner--info {
+  background: #eef4f2;
+  color: var(--brand-ink);
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 28px 0 14px;
+}
+
+.section-label:first-of-type {
+  margin-top: 0;
+}

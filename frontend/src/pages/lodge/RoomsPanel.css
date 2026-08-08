@@ -1,0 +1,459 @@
+.rooms-panel__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.rooms-panel__count {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rooms-panel__note {
+  background: #fdf6e8;
+  border: 1px solid #f0dfab;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.room-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.room-card:hover {
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-2px);
+}
+
+.room-card__cover {
+  position: relative;
+  height: 160px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+}
+
+.room-card__cover-btn {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+}
+
+.room-card__cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.room-card__cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.room-card__status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.room-card__photo-count {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.room-card__body {
+  flex: 1;
+  padding: 16px 18px 6px;
+}
+
+.room-form__photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.room-form__photo {
+  position: relative;
+  width: 84px;
+}
+
+.room-form__photo img {
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.room-form__photo-remove {
+  width: 100%;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.room-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.room-card__number {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.room-card__category {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.room-card__rate {
+  flex-shrink: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  white-space: nowrap;
+}
+
+.room-card__rate-unit {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.room-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.room-card__chip {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.room-card__chip--occupancy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+
+.rooms-panel__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.rooms-panel__modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+}
+
+.rooms-panel__modal h3 {
+  margin-bottom: 18px;
+}
+
+.rooms-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.room-card__description {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.room-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.room-card__edit-btn,
+.room-card__delete-btn {
+  flex: 1 1 auto;
+  min-width: 70px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 10px;
+  color: var(--ink);
+}
+
+.room-card__delete-btn {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.rooms-panel__delete-modal {
+  width: 100%;
+  max-width: 420px;
+  padding: 26px;
+}
+
+.rooms-panel__delete-modal h3 {
+  margin-bottom: 6px;
+}
+
+.rooms-panel__delete-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.rooms-panel__delete-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rooms-panel__delete-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.rooms-panel__delete-option strong {
+  font-size: 14px;
+}
+
+.rooms-panel__delete-option span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rooms-panel__delete-option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rooms-panel__delete-option--danger {
+  border-color: var(--danger);
+}
+
+.rooms-panel__delete-option--danger strong {
+  color: var(--danger);
+}
+
+.room-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 20, 0.88);
+  padding: 40px;
+}
+
+.room-lightbox__image {
+  width: min(90vw, 1100px);
+  height: 85vh;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: var(--shadow-elevated);
+  cursor: default;
+}
+
+.room-lightbox__close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.room-lightbox__close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.room-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.room-lightbox__nav:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.room-lightbox__nav--prev {
+  left: 18px;
+}
+
+.room-lightbox__nav--next {
+  right: 18px;
+}
+
+.room-lightbox__counter {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+@media (max-width: 640px) {
+  .rooms-panel__backdrop {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .rooms-panel__modal,
+  .rooms-panel__delete-modal {
+    max-width: none;
+    max-height: calc(100svh - 20px);
+    padding: 20px 16px;
+  }
+
+  .rooms-panel__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .rooms-panel__actions button {
+    width: 100%;
+  }
+
+  .rooms-panel__toolbar > .btn-accent {
+    width: 100%;
+  }
+
+  /* One room per row — the card's photo, rate and chips all need the width,
+     and a 2-up grid on a phone shrinks the cover image to a thumbnail. */
+  .room-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .room-lightbox {
+    padding: 16px;
+  }
+
+  .room-lightbox__nav {
+    width: 40px;
+    height: 40px;
+    font-size: 24px;
+  }
+}

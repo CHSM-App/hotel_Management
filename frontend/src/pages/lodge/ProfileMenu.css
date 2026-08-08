@@ -1,0 +1,145 @@
+.profile-menu {
+  position: relative;
+}
+
+.profile-menu__trigger {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms ease;
+}
+
+.profile-menu__trigger:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.profile-menu__dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-elevated);
+  padding: 16px;
+  z-index: 50;
+  color: var(--text);
+}
+
+.profile-menu__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-menu__avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+  color: #ffffff;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-menu__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.profile-menu__contact {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-menu__divider {
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+.profile-menu__action {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.profile-menu__action:hover {
+  background: var(--paper);
+}
+
+.profile-menu__action--danger {
+  color: var(--danger);
+}
+
+.profile-menu__password-form .field {
+  margin-bottom: 12px;
+}
+
+.profile-menu__password-form .field label {
+  font-size: 12px;
+}
+
+.profile-menu__password-form .field input {
+  padding: 8px 10px;
+  min-height: 38px;
+  font-size: 13px;
+}
+
+.profile-menu__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.profile-menu__form-actions .btn-secondary,
+.profile-menu__form-actions .btn-accent {
+  padding: 8px 14px;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.profile-menu__banner {
+  font-size: 12px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 640px) {
+  /* The dropdown is anchored to the avatar at the right edge of the topbar,
+     so on a narrow screen it has to be capped to the viewport (minus the
+     topbar's own padding) or it would push the page sideways. */
+  .profile-menu__dropdown {
+    width: calc(100vw - 32px);
+    max-width: 300px;
+  }
+}

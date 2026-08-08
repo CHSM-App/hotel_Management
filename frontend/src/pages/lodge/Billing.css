@@ -1,0 +1,181 @@
+.billing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.billing-panel__subtabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.billing-panel__subtabs-item {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 4px;
+  margin-right: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.billing-panel__subtabs-item:hover {
+  color: var(--text);
+}
+
+.billing-panel__subtabs-item[aria-current='page'] {
+  color: var(--brand-ink);
+  border-bottom-color: var(--brand);
+}
+
+.billing-panel__subtabs-count {
+  background: var(--brand);
+  color: #2a1c05;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  line-height: 1.5;
+}
+
+.billing-panel__queue-row,
+.billing-panel__invoice-row {
+  gap: 12px;
+}
+
+.billing-panel__invoice-row {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.billing-panel__invoice-row:last-child {
+  border-bottom: none;
+}
+
+.billing-panel__queue-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.billing-panel__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.billing-panel__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.billing-panel__modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+}
+
+.billing-panel__modal h3 {
+  margin-bottom: 18px;
+}
+
+.billing-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.billing-panel__detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.billing-panel__danger-link {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 12px 6px;
+}
+
+.billing-panel__danger-link:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .billing-panel__backdrop {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .billing-panel__modal {
+    max-width: none;
+    max-height: calc(100svh - 20px);
+    padding: 20px 16px;
+  }
+
+  .billing-panel__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .billing-panel__actions button {
+    width: 100%;
+  }
+
+  /* Tabs scroll sideways rather than wrapping onto a second line, so the
+     bill list below keeps its position on screen. */
+  .billing-panel__subtabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .billing-panel__subtabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .billing-panel__subtabs-item {
+    margin-right: 16px;
+    white-space: nowrap;
+  }
+
+  /* .chart-row already stacks at this width (chartSections.css); these just
+     keep the price + action pair aligned once it drops to its own line. */
+  .billing-panel__queue-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .billing-panel__detail-header {
+    align-items: flex-start;
+  }
+}
+
+/* Printing is scoped to .bill-doc itself — see BillDocument.css. */

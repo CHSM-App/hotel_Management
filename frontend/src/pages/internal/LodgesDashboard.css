@@ -1,0 +1,212 @@
+.dash-shell {
+  min-height: 100svh;
+  background: var(--paper);
+}
+
+.dash-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 40px;
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.dash-topbar__mark {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dash-topbar__eyebrow {
+  font-size: 12px;
+  color: #cfe1dd;
+  margin-top: 2px;
+}
+
+.dash-topbar__signout {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 9px 16px;
+  min-height: 40px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.dash-topbar__signout:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dash-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px;
+}
+
+.dash-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.dash-header h1 {
+  font-size: 28px;
+}
+
+.dash-header__count {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 18px;
+  min-height: 44px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 150ms ease;
+}
+
+.btn-accent:hover {
+  background: var(--accent-ink);
+}
+
+.dash-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dash-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.dash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.dash-table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.dash-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.dash-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dash-lodge-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dash-lodge-slug {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dash-owner-phone {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.badge--on {
+  background: #eef4f2;
+  color: var(--brand-ink);
+}
+
+.badge--off {
+  background: #f1efe9;
+  color: var(--text-muted);
+}
+
+.badge--inactive {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.dash-table-scroll {
+  overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .dash-topbar {
+    padding: 14px 16px;
+  }
+
+  .dash-main {
+    padding: 20px 16px 40px;
+  }
+
+  .dash-topbar__mark {
+    font-size: 16px;
+  }
+
+  .dash-header {
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+
+  .dash-header h1 {
+    font-size: 22px;
+  }
+
+  /* Tables stay tabular and scroll sideways inside .dash-table-scroll rather
+     than reflowing into cards — a register is read by comparing rows, and
+     stacked cards lose that. Tightened padding so more columns fit before
+     the scroll is needed. */
+  .dash-table {
+    font-size: 13px;
+  }
+
+  .dash-table th {
+    padding: 10px 12px;
+  }
+
+  .dash-table td {
+    padding: 12px;
+  }
+
+  .dash-state {
+    padding: 32px 16px;
+  }
+}

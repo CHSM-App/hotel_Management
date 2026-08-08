@@ -1,0 +1,236 @@
+.bill-doc {
+  background: #fff;
+  color: #24303b;
+  border: 1px solid #d8dee3;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(20, 39, 68, 0.08);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.bill-doc__header {
+  text-align: center;
+  padding: 22px 24px 16px;
+  border-top: 4px solid var(--brand);
+  border-bottom: 1px solid #e4e9ed;
+}
+
+.bill-doc__lodge-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 25px;
+  color: var(--brand-ink);
+  letter-spacing: 0.01em;
+}
+
+.bill-doc__lodge-address {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.bill-doc__lodge-contact {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  font-weight: 500;
+}
+
+.bill-doc__title {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin: 16px 0 14px;
+}
+
+.bill-doc__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 16px;
+  background: #f7f9fb;
+  border: 1px solid #e4e9ed;
+  border-radius: 8px;
+  margin: 0 24px 18px;
+}
+
+.bill-doc__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.bill-doc__row strong {
+  font-weight: 600;
+  color: #17212b;
+}
+
+.bill-doc__label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bill-doc__table {
+  width: calc(100% - 48px);
+  margin: 0 24px;
+  border-collapse: collapse;
+}
+
+.bill-doc__table thead th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0 2px 8px;
+  border-bottom: 1.5px solid var(--brand-ink);
+}
+
+.bill-doc__table td {
+  padding: 7px 2px;
+  border-bottom: 1px solid #eceff2;
+}
+
+.bill-doc__amt {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.bill-doc__total-row td {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--brand-ink);
+  background: #f7f9fb;
+  border-top: 1.5px solid var(--brand-ink);
+  border-bottom: 1.5px solid var(--brand-ink);
+}
+
+.bill-doc__words {
+  margin: 14px 24px 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.bill-doc__declaration {
+  margin: 12px 24px 0;
+  padding-top: 12px;
+  border-top: 1px dashed #dbe1e6;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.bill-doc__sign {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 44px 24px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.bill-doc__sign > div {
+  padding-top: 8px;
+  border-top: 1px solid #c7cfd6;
+}
+
+.bill-doc__thanks {
+  text-align: center;
+  margin: 20px 24px 0;
+  padding: 14px 0 22px;
+  border-top: 1px solid #e4e9ed;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--brand-ink);
+}
+
+/* On-screen only — the bill is rendered inside the billing modal as well as
+   printed. Print/PDF output is unaffected by this block (see @media print
+   below), so a phone-sized preview can't change what the guest receives. */
+@media (max-width: 640px) {
+  .bill-doc {
+    font-size: 12px;
+  }
+
+  .bill-doc__header {
+    padding: 18px 14px 14px;
+  }
+
+  .bill-doc__lodge-name {
+    font-size: 20px;
+  }
+
+  .bill-doc__meta {
+    margin: 0 14px 16px;
+    padding: 12px;
+  }
+
+  /* Label above value — "From <date> at <time>" and its label were
+     colliding mid-row at this width. */
+  .bill-doc__row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .bill-doc__table {
+    width: calc(100% - 28px);
+    margin: 0 14px;
+  }
+
+  .bill-doc__words,
+  .bill-doc__declaration,
+  .bill-doc__thanks {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+
+  .bill-doc__sign {
+    margin: 32px 14px 0;
+    gap: 12px;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .bill-doc,
+  .bill-doc * {
+    visibility: visible;
+  }
+
+  .bill-doc {
+    position: absolute;
+    inset: 0;
+    margin: 0 auto;
+    box-shadow: none;
+    border-color: #bbb;
+    max-width: 480px;
+    /* A bill is one receipt, not a flowing document — keep it off a second
+       page even if a browser's default print scaling would otherwise let a
+       line or two spill over. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

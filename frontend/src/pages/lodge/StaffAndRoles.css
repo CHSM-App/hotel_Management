@@ -1,0 +1,194 @@
+.staff-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.staff-roles__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.staff-roles__count {
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+.staff-roles__sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.staff-roles__row-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.staff-roles__role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.staff-roles__role {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.staff-roles__role-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.staff-roles__role-name .badge {
+  font-size: 10px;
+}
+
+.staff-roles__role-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+.staff-roles__perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  align-content: flex-start;
+}
+
+.staff-roles__perm {
+  background: #eef4f2;
+  border: 1px solid var(--border);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.staff-roles__role-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.staff-roles__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.staff-roles__modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+}
+
+.staff-roles__modal h3 {
+  margin-bottom: 18px;
+}
+
+.staff-roles__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* Permission picker: each option carries its own explanation, so this is a
+   stacked list rather than the compact chip grid used for booking extras. */
+.staff-roles__perm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field label.staff-roles__perm-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 0;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.staff-roles__perm-option:has(input:checked) {
+  border-color: var(--brand);
+  background: #eef4f2;
+}
+
+.staff-roles__perm-option input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-top: 1px;
+  flex-shrink: 0;
+  accent-color: var(--brand);
+}
+
+.staff-roles__perm-option strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+@media (max-width: 640px) {
+  .staff-roles__toolbar > .btn-accent {
+    width: 100%;
+  }
+
+  .staff-roles__role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-roles__backdrop {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .staff-roles__modal {
+    max-width: none;
+    max-height: calc(100svh - 20px);
+    padding: 20px 16px;
+  }
+
+  .staff-roles__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .staff-roles__actions button {
+    width: 100%;
+  }
+}
