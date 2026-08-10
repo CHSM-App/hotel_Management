@@ -41,6 +41,10 @@ pnpm-debug.log*
 dist/
 build/
 
+# Frontend build output — CI builds the SPA into the backend web root and pushes
+# it to the backend branch; it must never be committed to main.
+backend/src/public/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

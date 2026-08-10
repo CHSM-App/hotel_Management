@@ -1,4 +1,10 @@
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// In production the backend serves this SPA, so VITE_API_URL is set to '' (empty)
+// and requests go same-origin (/auth, /rooms, …). Only fall back to the local dev
+// server when the var is entirely unset — an explicit '' must stay empty.
+export const API_BASE =
+  import.meta.env.VITE_API_URL !== undefined
+    ? import.meta.env.VITE_API_URL
+    : 'http://localhost:5000';
 
 export class ApiError extends Error {
   constructor(message, status) {

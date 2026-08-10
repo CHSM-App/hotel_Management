@@ -1,0 +1,64 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend deps
+        run: npm install
+        working-directory: frontend
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          # Backend serves the SPA, so the API is same-origin — empty base means
+          # requests go to /auth, /rooms, … on the same host.
+          VITE_API_URL: ''
+
+      - name: Verify build output
+        run: |
+          # Vite writes the SPA into backend/src/public (see frontend/vite.config.js).
+          # Fail loudly if the build produced nothing, so we never deploy an empty site.
+          test -f backend/src/public/index.html \
+            || { echo "::error::backend/src/public/index.html missing — frontend build failed"; exit 1; }
+
+      - name: Deploy backend branch
+        run: |
+          cd backend
+
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Init a fresh repo in backend/ (now contains the built frontend in src/public).
+          # A fresh init + force push keeps the backend branch as a clean deploy
+          # snapshot with no accumulated history. Default branch name is `deploy`
+          # only locally; we push HEAD to the remote `backend` branch below.
+          git init
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+          # Stage everything in backend/ except what backend/.gitignore excludes
+          # (node_modules, .env, uploads). The built SPA in src/public IS committed.
+          git add -A
+          git commit -m "deploy: ${{ github.sha }}"
+
+          # Force push to backend branch — the server (cPanel/Passenger) deploys this.
+          git push origin HEAD:backend --force
