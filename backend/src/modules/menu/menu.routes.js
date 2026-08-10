@@ -1,0 +1,48 @@
+const { Router } = require('express');
+const { authenticate, requirePermission } = require('../../middleware/authenticate');
+const {
+  getMenuHandler,
+  createCategoryHandler,
+  updateCategoryHandler,
+  updateCategoryStatusHandler,
+  deleteCategoryHandler,
+  createItemHandler,
+  updateItemHandler,
+  updateItemAvailabilityHandler,
+  updateItemStatusHandler,
+  deleteItemHandler,
+  getFoodSettingsHandler,
+  updateFoodSettingsHandler,
+} = require('./menu.controller');
+
+const router = Router();
+
+// Reading the menu is also what the kitchen screen does to render its
+// availability switches, so it takes either permission.
+router.get('/', authenticate, requirePermission('food.manage', 'orders.manage'), getMenuHandler);
+
+router.get('/settings', authenticate, requirePermission('food.manage'), getFoodSettingsHandler);
+router.patch('/settings', authenticate, requirePermission('food.manage'), updateFoodSettingsHandler);
+
+router.post('/categories', authenticate, requirePermission('food.manage'), createCategoryHandler);
+router.patch('/categories/:id', authenticate, requirePermission('food.manage'), updateCategoryHandler);
+router.patch('/categories/:id/status', authenticate, requirePermission('food.manage'), updateCategoryStatusHandler);
+router.delete('/categories/:id', authenticate, requirePermission('food.manage'), deleteCategoryHandler);
+
+router.post('/items', authenticate, requirePermission('food.manage'), createItemHandler);
+router.patch('/items/:id', authenticate, requirePermission('food.manage'), updateItemHandler);
+
+// The one menu write the kitchen can make. An item that runs out mid-service
+// has to come off the guest's menu immediately, and the owner isn't always
+// signed in — so this takes orders.manage as well as food.manage.
+router.patch(
+  '/items/:id/availability',
+  authenticate,
+  requirePermission('food.manage', 'orders.manage'),
+  updateItemAvailabilityHandler
+);
+
+router.patch('/items/:id/status', authenticate, requirePermission('food.manage'), updateItemStatusHandler);
+router.delete('/items/:id', authenticate, requirePermission('food.manage'), deleteItemHandler);
+
+module.exports = router;

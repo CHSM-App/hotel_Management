@@ -109,6 +109,29 @@
   font-feature-settings: 'tnum';
 }
 
+/* Heading for a supply block (Food), so the dishes underneath read as belonging
+   to it rather than as loose rows next to the room charges. */
+.bill-doc__section {
+  font-weight: 700;
+  color: var(--brand-ink);
+  padding-top: 10px !important;
+  border-bottom: none !important;
+}
+
+/* Dish rows sit indented under that heading, with the maths that produced the
+   amount set small beside the name — "Fish thali  3 × ₹300". */
+.bill-doc__item {
+  padding-left: 12px !important;
+}
+
+.bill-doc__item-qty {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .bill-doc__total-row td {
   font-weight: 700;
   font-size: 13.5px;

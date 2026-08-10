@@ -1,0 +1,191 @@
+/* Numbered step headings. The type question has to visibly come first and feel
+   like a decision, not one field among twenty — everything after it changes
+   depending on the answer. */
+.step-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 26px 0 12px;
+}
+
+.step-head:first-of-type {
+  margin-top: 6px;
+}
+
+.step-head__num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* The shared .section-label carries its own top margin for use on its own;
+   inside a step head the flex row already provides the spacing. */
+.section-label--flush {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.step-head__hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+/* Property type picker — radio cards rather than a row of checkboxes. Whoever
+   onboards a customer is thinking "this is a restaurant", not "has_rooms = 0",
+   and the four raw bits made illegal combinations (no rooms, no food) look
+   just as reachable as sensible ones. */
+.type-picker {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.type-card {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 14px;
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.type-card:hover {
+  border-color: var(--brand);
+}
+
+.type-card--on {
+  border-color: var(--brand);
+  background: #eef4f2;
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.type-card input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  flex-shrink: 0;
+  accent-color: var(--brand);
+}
+
+.type-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.type-card__label {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.type-card__tagline {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.type-card__desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* The "what they're getting" panel. Rendered from the same FEATURES list the
+   dashboard builds its sidebar from, so it can't promise a section the product
+   won't show. */
+.includes {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 14px;
+  margin-bottom: 18px;
+}
+
+.includes__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.includes__count {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.includes__group + .includes__group {
+  margin-top: 12px;
+}
+
+.includes__group-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 5px;
+}
+
+.includes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.includes__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 0 5px 16px;
+  position: relative;
+  font-size: 12.5px;
+}
+
+.includes__list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+.includes__list strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.includes__list span {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.includes__excluded {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}

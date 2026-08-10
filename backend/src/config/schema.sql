@@ -480,3 +480,338 @@ BEGIN
     ALTER TABLE dbo.roles ALTER COLUMN role_key NVARCHAR(40) NOT NULL;
     ALTER TABLE dbo.roles ADD CONSTRAINT uq_roles_lodge_key UNIQUE (lodge_id, role_key);
 END
+
+-- ---------------------------------------------------------------------------
+-- Food ordering
+-- ---------------------------------------------------------------------------
+
+-- What this property actually is. The product started as a rooms-only PMS, so
+-- has_rooms defaults to 1 and every existing lodge keeps working untouched.
+-- These are four independent bits rather than one property_type enum because
+-- the combinations are real: a restaurant with no rooms (0,1,0,1), a lodge
+-- that doesn't serve food (1,0,0,0), a lodge serving meals to rooms only
+-- (1,1,1,0), and one doing both room and table service (1,1,1,1). An enum
+-- would need a new value for each pairing.
+IF COL_LENGTH('dbo.lodges', 'has_rooms') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD has_rooms BIT NOT NULL CONSTRAINT df_lodges_has_rooms DEFAULT 1');
+
+IF COL_LENGTH('dbo.lodges', 'serves_food') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD serves_food BIT NOT NULL CONSTRAINT df_lodges_serves_food DEFAULT 0');
+
+-- Room service means the in-room QR flow; table service means the dining-table
+-- QR flow. Both hang off serves_food — neither is reachable without it.
+IF COL_LENGTH('dbo.lodges', 'food_room_service') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD food_room_service BIT NOT NULL CONSTRAINT df_lodges_food_room_service DEFAULT 0');
+
+IF COL_LENGTH('dbo.lodges', 'food_table_service') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD food_table_service BIT NOT NULL CONSTRAINT df_lodges_food_table_service DEFAULT 0');
+
+-- The PIN a guest types to order from their room's QR. Issued at check-in and
+-- cleared at check-out, so a QR stuck to the wall is only live while somebody
+-- is actually staying in that room — the QR itself carries no secret.
+IF COL_LENGTH('dbo.bookings', 'food_pin') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD food_pin NVARCHAR(6) NULL');
+
+IF OBJECT_ID('dbo.menu_categories', 'U') IS NULL
+CREATE TABLE dbo.menu_categories (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name        NVARCHAR(100) NOT NULL,
+    sort_order  INT NOT NULL DEFAULT 0,
+    is_active   BIT NOT NULL DEFAULT 1,
+    created_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_menu_categories_lodge_name UNIQUE (lodge_id, name)
+);
+
+-- is_available is the kitchen's "we're out of this today" toggle and is
+-- deliberately separate from is_active, which is the owner retiring an item.
+-- Reachable from the kitchen screen per the ordering rules — an item that
+-- runs out at 8pm can't wait for the owner to log in.
+--
+-- No modifiers in v1: half and full plates are two rows, not one row with
+-- options. That keeps an order line a flat (item, qty, price) and avoids a
+-- price-resolution step between the menu and the kitchen ticket.
+IF OBJECT_ID('dbo.menu_items', 'U') IS NULL
+CREATE TABLE dbo.menu_items (
+    id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id      BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    category_id   BIGINT NOT NULL REFERENCES dbo.menu_categories(id),
+    name          NVARCHAR(150) NOT NULL,
+    description   NVARCHAR(300) NULL,
+    price         DECIMAL(10,2) NOT NULL
+        CONSTRAINT ck_menu_items_price CHECK (price >= 0),
+    food_type     NVARCHAR(10) NOT NULL DEFAULT 'VEG'
+        CONSTRAINT ck_menu_items_food_type CHECK (food_type IN ('VEG', 'NON_VEG', 'EGG')),
+    is_available  BIT NOT NULL DEFAULT 1,
+    sort_order    INT NOT NULL DEFAULT 0,
+    is_active     BIT NOT NULL DEFAULT 1,
+    created_at    DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_menu_items_category_name UNIQUE (category_id, name)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_menu_items_lodge' AND object_id = OBJECT_ID('dbo.menu_items'))
+CREATE INDEX ix_menu_items_lodge ON dbo.menu_items(lodge_id, category_id);
+
+-- A dining table, for properties doing table service. qr_token is what the
+-- table's QR encodes: a random opaque string rather than the table label, so
+-- the URLs can't be walked by incrementing a number. BIN2 because it's
+-- compared as a URL segment and case has to matter.
+IF OBJECT_ID('dbo.dining_tables', 'U') IS NULL
+CREATE TABLE dbo.dining_tables (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    label       NVARCHAR(40) NOT NULL,
+    seats       INT NULL
+        CONSTRAINT ck_dining_tables_seats CHECK (seats IS NULL OR seats > 0),
+    qr_token    NVARCHAR(32) COLLATE Latin1_General_BIN2 NOT NULL UNIQUE,
+    is_active   BIT NOT NULL DEFAULT 1,
+    created_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_dining_tables_lodge_label UNIQUE (lodge_id, label)
+);
+
+-- Order numbers restart at 1 each day and are read aloud across a kitchen
+-- ("order 14 is ready"), so they have to be short and per-day, not a global
+-- identity. Allocated with an atomic MERGE in orders.service.js — never
+-- SELECT MAX()+1, same rule as invoice_series.
+IF OBJECT_ID('dbo.food_order_counters', 'U') IS NULL
+CREATE TABLE dbo.food_order_counters (
+    lodge_id     BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    order_date   DATE NOT NULL,
+    next_number  INT NOT NULL DEFAULT 1,
+    CONSTRAINT pk_food_order_counters PRIMARY KEY (lodge_id, order_date)
+);
+
+-- One order, from a room QR, a table QR, or typed in at the counter.
+--
+-- PENDING exists only for table orders: a table QR has no booking behind it,
+-- so anyone who has ever scanned it could place an order from anywhere. Rather
+-- than gate that with a login the guest doesn't have, a table order waits for
+-- the kitchen to accept it before it becomes a ticket. Room orders clear the
+-- booking PIN before they're written at all, so they start at QUEUED and the
+-- kitchen sees them immediately.
+--
+-- booking_id is captured at placement so a later check-out can't orphan the
+-- charge — folio posting (next pass) needs to know which stay owes for it.
+IF OBJECT_ID('dbo.food_orders', 'U') IS NULL
+CREATE TABLE dbo.food_orders (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    order_date     DATE NOT NULL,
+    order_number   INT NOT NULL,
+    source         NVARCHAR(10) NOT NULL
+        CONSTRAINT ck_food_orders_source CHECK (source IN ('ROOM', 'TABLE', 'COUNTER')),
+    room_id        BIGINT NULL REFERENCES dbo.rooms(id),
+    booking_id     BIGINT NULL REFERENCES dbo.bookings(id),
+    table_id       BIGINT NULL REFERENCES dbo.dining_tables(id),
+    guest_name     NVARCHAR(200) NULL,
+    guest_phone    NVARCHAR(20) NULL,
+    note           NVARCHAR(300) NULL,
+    status         NVARCHAR(12) NOT NULL DEFAULT 'PENDING'
+        CONSTRAINT ck_food_orders_status CHECK (status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED')),
+    subtotal       DECIMAL(10,2) NOT NULL DEFAULT 0,
+    placed_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    accepted_at    DATETIMEOFFSET NULL,
+    ready_at       DATETIMEOFFSET NULL,
+    delivered_at   DATETIMEOFFSET NULL,
+    cancelled_at   DATETIMEOFFSET NULL,
+    cancel_reason  NVARCHAR(200) NULL,
+    created_by     BIGINT NULL REFERENCES dbo.users(id),
+    CONSTRAINT uq_food_orders_number UNIQUE (lodge_id, order_date, order_number),
+    -- A room order without a room, or a table order without a table, is a bug
+    -- that would reach the kitchen as an unservable ticket. Caught here.
+    CONSTRAINT ck_food_orders_target CHECK (
+        (source = 'ROOM'  AND room_id IS NOT NULL AND table_id IS NULL) OR
+        (source = 'TABLE' AND table_id IS NOT NULL AND room_id IS NULL) OR
+        (source = 'COUNTER' AND room_id IS NULL AND table_id IS NULL)
+    )
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_queue' AND object_id = OBJECT_ID('dbo.food_orders'))
+CREATE INDEX ix_food_orders_queue ON dbo.food_orders(lodge_id, status, placed_at);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_date' AND object_id = OBJECT_ID('dbo.food_orders'))
+CREATE INDEX ix_food_orders_date ON dbo.food_orders(lodge_id, order_date);
+
+-- Name and price are snapshotted onto the line, not read back through
+-- menu_item_id — the same "snapshot, never recompute" rule the nightly
+-- breakdown follows. Re-pricing the menu at 6pm must not silently restate
+-- what a guest was shown at noon. menu_item_id stays only as a soft link for
+-- reporting, and goes NULL if the item is later deleted.
+IF OBJECT_ID('dbo.food_order_items', 'U') IS NULL
+CREATE TABLE dbo.food_order_items (
+    id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    order_id      BIGINT NOT NULL REFERENCES dbo.food_orders(id),
+    menu_item_id  BIGINT NULL REFERENCES dbo.menu_items(id),
+    item_name     NVARCHAR(150) NOT NULL,
+    unit_price    DECIMAL(10,2) NOT NULL,
+    quantity      INT NOT NULL
+        CONSTRAINT ck_food_order_items_quantity CHECK (quantity > 0),
+    line_total    DECIMAL(10,2) NOT NULL
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_order_items_order' AND object_id = OBJECT_ID('dbo.food_order_items'))
+CREATE INDEX ix_food_order_items_order ON dbo.food_order_items(order_id);
+
+-- food.manage (build the menu, tables and QR codes) and orders.manage (work
+-- the live queue) are separate because they're separate jobs: the kitchen
+-- needs the queue and the availability toggle, and nothing else. Applied to
+-- the built-in rows only where they're still at their shipped defaults, so a
+-- lodge that has already customised a built-in keeps its own set.
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
+           AND permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage"]')
+UPDATE dbo.roles
+SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'OWNER';
+
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'RECEPTION'
+           AND permissions = '["bookings.manage","billing.manage","guests.view"]')
+UPDATE dbo.roles
+SET permissions = '["bookings.manage","billing.manage","guests.view","orders.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'RECEPTION';
+
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'KITCHEN' AND permissions = '[]')
+UPDATE dbo.roles
+SET permissions = '["orders.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'KITCHEN';
+
+-- users.email shipped as `NVARCHAR(255) NULL UNIQUE`, which does not mean what
+-- it looks like on SQL Server: a UNIQUE *constraint* treats NULLs as equal, so
+-- it permits exactly one row with no email in the entire table. Email is
+-- optional for lodge staff (reception logs in by phone), so the second such
+-- account ever created failed with a duplicate-key error.
+--
+-- The fix is a filtered unique index, the same pattern uq_invoices_booking_active
+-- uses: emails stay unique among rows that have one, and any number of rows may
+-- have none. The original constraint is auto-named, so it's looked up rather
+-- than dropped by name.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_email' AND object_id = OBJECT_ID('dbo.users'))
+BEGIN
+    DECLARE @emailConstraint SYSNAME = (
+        SELECT TOP 1 kc.name
+        FROM sys.key_constraints kc
+        JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+        JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE kc.parent_object_id = OBJECT_ID('dbo.users') AND kc.type = 'UQ' AND c.name = 'email'
+    );
+    IF @emailConstraint IS NOT NULL
+        EXEC('ALTER TABLE dbo.users DROP CONSTRAINT ' + @emailConstraint);
+
+    EXEC('CREATE UNIQUE INDEX uq_users_email ON dbo.users(email) WHERE email IS NOT NULL');
+END
+
+-- ---------------------------------------------------------------------------
+-- Single-link ordering: PIN brute-force defence
+-- ---------------------------------------------------------------------------
+
+-- In-room ordering moved from one QR per room to a single link for the whole
+-- property, so the room is no longer proved by where the guest is standing —
+-- the PIN is the only thing between a stranger and a charge on someone else's
+-- folio. A 4-digit PIN is 10,000 values, which is trivial to sweep without a
+-- lockout. With this table it takes ~20 days of sustained attack on one room.
+--
+-- Keyed on the room number *as typed*, not on rooms.id, and deliberately so: a
+-- room number that doesn't exist has to accumulate failures and lock exactly
+-- like a real one. Keying on an id would mean fake rooms can't be recorded, so
+-- a 429 (real room) would read differently from a 401 (unknown room) and hand
+-- an attacker a room-enumeration oracle — the very thing the uniform failure
+-- response in public.service.js exists to close.
+IF OBJECT_ID('dbo.food_pin_lockouts', 'U') IS NULL
+CREATE TABLE dbo.food_pin_lockouts (
+    lodge_id         BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    room_label       NVARCHAR(20) NOT NULL,
+    failed_count     INT NOT NULL DEFAULT 0,
+    first_failed_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    last_failed_at   DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    locked_until     DATETIMEOFFSET NULL,
+    CONSTRAINT pk_food_pin_lockouts PRIMARY KEY (lodge_id, room_label)
+);
+
+-- How a guest's own phone follows their order to the pass. Replaces looking a
+-- status up by (room number, order number), which was itself a "is room 12
+-- ordering food right now?" oracle on an unauthenticated endpoint. Random and
+-- opaque, so holding one tells you nothing about any other order.
+IF COL_LENGTH('dbo.food_orders', 'public_token') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD public_token NVARCHAR(32) NULL');
+
+-- EXEC, not a bare CREATE INDEX: schema.sql runs as one batch, so a statement
+-- naming public_token directly is parsed before the ALTER above has added it
+-- and fails with "Invalid column name". Deferring compilation is the same
+-- trick the nightly_breakdown migration uses higher up this file.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_public_token' AND object_id = OBJECT_ID('dbo.food_orders'))
+    EXEC('CREATE UNIQUE INDEX ix_food_orders_public_token ON dbo.food_orders(public_token) WHERE public_token IS NOT NULL');
+
+-- ---------------------------------------------------------------------------
+-- Billing for food
+-- ---------------------------------------------------------------------------
+
+-- Tax rates now cover two supplies, not one. Accommodation (SAC 996311) is
+-- banded by nightly rate; food (SAC 996331) is a flat rate decided by whether
+-- the property is "specified premises" — 18% with ITC if it is, 5% without if
+-- it isn't — so a FOOD row is selected by that flag rather than by amount.
+--
+-- applies_to_specified: 1 = only when the lodge is specified premises,
+-- 0 = only when it isn't, NULL = regardless (how every ACCOMMODATION row sits).
+IF COL_LENGTH('dbo.gst_slabs', 'supply_type') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.gst_slabs ADD supply_type NVARCHAR(20) NOT NULL CONSTRAINT df_gst_slabs_supply DEFAULT ''ACCOMMODATION''');
+    EXEC('ALTER TABLE dbo.gst_slabs ADD CONSTRAINT ck_gst_slabs_supply CHECK (supply_type IN (''ACCOMMODATION'', ''FOOD''))');
+END
+
+IF COL_LENGTH('dbo.gst_slabs', 'applies_to_specified') IS NULL
+    EXEC('ALTER TABLE dbo.gst_slabs ADD applies_to_specified BIT NULL');
+
+IF COL_LENGTH('dbo.gst_slabs', 'sac_code') IS NULL
+    EXEC('ALTER TABLE dbo.gst_slabs ADD sac_code NVARCHAR(10) NULL');
+
+-- Accommodation slabs. These were seeded when gst_slabs was first created, but
+-- an empty table silently taxes every bill at 0% rather than failing loudly, so
+-- they're re-seeded here if they've gone missing.
+-- The IF and the INSERT both sit inside EXEC: this batch adds supply_type a few
+-- statements above, and anything naming it outside a deferred sub-batch is
+-- parsed before the column exists ("Invalid column name"). Same reason the
+-- nightly_breakdown and public_token migrations use EXEC.
+EXEC('IF NOT EXISTS (SELECT 1 FROM dbo.gst_slabs WHERE supply_type = ''ACCOMMODATION'')
+        INSERT INTO dbo.gst_slabs (supply_type, max_amount, rate_percent, applies_to_specified, sac_code) VALUES
+            (''ACCOMMODATION'', 1000, 0, NULL, ''996311''),
+            (''ACCOMMODATION'', 7500, 5, NULL, ''996311''),
+            (''ACCOMMODATION'', NULL, 18, NULL, ''996311'')');
+
+-- Food rates. max_amount is NULL on both: the rate does not depend on the value
+-- of the meal, only on the premises.
+EXEC('IF NOT EXISTS (SELECT 1 FROM dbo.gst_slabs WHERE supply_type = ''FOOD'')
+        INSERT INTO dbo.gst_slabs (supply_type, max_amount, rate_percent, applies_to_specified, sac_code) VALUES
+            (''FOOD'', NULL, 5, 0, ''996331''),
+            (''FOOD'', NULL, 18, 1, ''996331'')');
+
+-- A restaurant bill has no stay behind it, so booking_id has to be optional.
+-- The filtered unique index on booking_id already ignores NULLs, so several
+-- food-only invoices can coexist without colliding.
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.invoices') AND name = 'booking_id' AND is_nullable = 0
+)
+    ALTER TABLE dbo.invoices ALTER COLUMN booking_id BIGINT NULL;
+
+-- Food is a separate supply on its own SAC and its own rate, so it cannot be
+-- folded into room_subtotal — GSTR-1 needs the two reported apart. A bill can
+-- carry either or both: a stay with room service has both, a closed table has
+-- only the food side.
+IF COL_LENGTH('dbo.invoices', 'food_subtotal') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.invoices ADD food_subtotal DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_food_subtotal DEFAULT 0');
+    EXEC('ALTER TABLE dbo.invoices ADD food_cgst_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_food_cgst DEFAULT 0');
+    EXEC('ALTER TABLE dbo.invoices ADD food_sgst_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_food_sgst DEFAULT 0');
+END
+
+-- What a food-only bill was raised against, for the header of a restaurant
+-- document ("Table 4") and so the same table can be closed again later.
+IF COL_LENGTH('dbo.invoices', 'table_id') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD table_id BIGINT NULL REFERENCES dbo.dining_tables(id)');
+
+-- Marks an order as billed. This is what stops a second "close table" sweeping
+-- the same orders onto a second document, and what a void puts back.
+IF COL_LENGTH('dbo.food_orders', 'invoice_id') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD invoice_id BIGINT NULL REFERENCES dbo.invoices(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_invoice' AND object_id = OBJECT_ID('dbo.food_orders'))
+    EXEC('CREATE INDEX ix_food_orders_invoice ON dbo.food_orders(invoice_id) WHERE invoice_id IS NOT NULL');

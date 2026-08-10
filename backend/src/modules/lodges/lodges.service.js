@@ -36,14 +36,20 @@ async function createLodgeWithOwner(input) {
       .input('isGstRegistered', sql.Bit, input.isGstRegistered)
       .input('gstin', sql.NVarChar, input.gstin || null)
       .input('isSpecifiedPremises', sql.Bit, input.isSpecifiedPremises)
+      .input('hasRooms', sql.Bit, input.hasRooms)
+      .input('servesFood', sql.Bit, input.servesFood)
+      .input('foodRoomService', sql.Bit, input.foodRoomService)
+      .input('foodTableService', sql.Bit, input.foodTableService)
       .query(`
         INSERT INTO dbo.lodges
           (name, slug, phone, whatsapp_number, address, city, state, checkin_mode,
-           is_gst_registered, gstin, is_specified_premises)
+           is_gst_registered, gstin, is_specified_premises,
+           has_rooms, serves_food, food_room_service, food_table_service)
         OUTPUT inserted.id
         VALUES
           (@name, @slug, @phone, @whatsappNumber, @address, @city, @state, @checkinMode,
-           @isGstRegistered, @gstin, @isSpecifiedPremises)
+           @isGstRegistered, @gstin, @isSpecifiedPremises,
+           @hasRooms, @servesFood, @foodRoomService, @foodTableService)
       `);
 
     const lodgeId = lodgeResult.recordset[0].id;
@@ -77,6 +83,7 @@ async function listLodges() {
     SELECT
       l.id, l.name, l.slug, l.city, l.state, l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
+      l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service,
       u.name AS owner_name, u.phone AS owner_phone
     FROM dbo.lodges l
     LEFT JOIN dbo.users u ON u.lodge_id = l.id AND u.role = 'OWNER'

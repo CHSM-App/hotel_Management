@@ -67,7 +67,9 @@ These are not gaps. They are the constraints the architecture rests on, and givi
 - **No online booking and no payment gateway.** The public page generates WhatsApp enquiries; the lodge confirms and enters the booking. This removes inventory holds, refunds, reconciliation and PCI scope from the entire product.
 - **No OTA listings.** No channel manager, no availability sync, no rate parity.
 - **No guest app or guest login.** There is nothing to log in to.
-- **No restaurant table service** for people not staying, and no kitchen stock control.
+- **No kitchen stock control.** Items are marked available or out by hand from the kitchen screen; nothing is decremented.
+
+*(Table service for walk-in diners was on this list until the food ordering module landed — see [Food ordering and roles](#food-ordering-and-roles). A property can now be a restaurant with no rooms at all.)*
 
 ### How the pieces fit
 
@@ -435,17 +437,133 @@ Never `SELECT MAX(no)+1`. Never allocate on screen-open or preview. Bills of sup
 
 ## Food ordering and roles
 
+### What a property is
+
+Food ordering made "a lodge" too narrow a description, so `dbo.lodges` carries four
+capability bits instead of a property-type enum:
+
+| | `has_rooms` | `serves_food` | `food_room_service` | `food_table_service` |
+|---|---|---|---|---|
+| Restaurant, no rooms | 0 | 1 | 0 | 1 |
+| Lodge, no food | 1 | 0 | 0 | 0 |
+| Lodge, meals to rooms | 1 | 1 | 1 | 0 |
+| Lodge, rooms and tables | 1 | 1 | 1 | 1 |
+
+Bits rather than an enum because the combinations are all real and an enum grows a
+new value for each pairing. `has_rooms` is set at onboarding and treated as fixed —
+turning it off on a live lodge would strand its bookings behind a hidden section.
+The dashboard filters every section by capability *and* permission, so a restaurant
+owner holding every permission still has no tape chart.
+
 ### Ordering
 
-- One QR per room, room number printed in plain text underneath.
-- Scanning opens the menu. **Ordering requires the booking PIN**, issued at check-in, expiring at check-out. A room with nobody checked in shows the menu plus a contact-reception message.
-- Orders above a configurable amount need reception approval.
-- Charge posts **on delivery**, not on placement. Cancelled orders never reach the folio.
-- Reception can enter orders manually and correct or remove a wrongly charged one, with a reason.
-- Kitchen screen: order number, room number, items, note, elapsed time. Four states. **Audible alert on new orders** — without it the feature fails silently.
-- Item availability toggle must be reachable from the kitchen screen, not just admin.
+- **One QR for the whole property**, plus one per dining table. The property code
+  never changes, so adding or renumbering rooms never means reprinting anything.
+- **A room order requires the room number and the booking PIN** — four digits,
+  random, issued at check-in and cleared at check-out. The guest types both at
+  checkout; the QR itself carries no secret at all.
+- **A table order has no PIN** — there's no booking behind a table. It lands as
+  `PENDING` and waits for the kitchen to accept it. That's the guard: a prank order
+  from outside the restaurant costs one tap to reject, not a wasted dish.
+- Reception can type an order in at the counter, against a room, a table or neither.
+  Staff-entered orders skip `PENDING` — a person already took them.
+- Prices are read from the database at placement and snapshotted onto the order
+  line. What the client sends about price is ignored, and re-pricing the menu at 6pm
+  can't restate an order taken at noon.
+- Kitchen screen: order number, room or table, items, note, elapsed time.
+  **Audible alert on new orders** — without it the feature fails silently.
+- Item availability toggle is reachable from the kitchen screen, not just admin.
 
-No modifiers in v1 (half and full are separate items). No walk-in table service. No stock control. No payment at order time.
+States: `PENDING` → `QUEUED` → `PREPARING` → `READY` → `DELIVERED`, with `CANCELLED`
+reachable from any live state and nothing leaving `DELIVERED` or `CANCELLED`. The
+transition table is enforced server-side — two screens will tap the same order, and
+the second tap has to fail cleanly rather than drag a delivered order backwards.
+
+Order numbers restart at 1 each IST day, allocated per lodge with an atomic `MERGE`
+on `food_order_counters` — never `SELECT MAX()+1`, same rule as `invoice_series`.
+
+No modifiers (half and full are separate items). No stock control. No payment at
+order time.
+
+### Why the PIN needs a lockout
+
+With one shared link the PIN is the only thing between a stranger and a charge on
+someone else's folio — physical position no longer proves anything. Three rules
+hold it up, and none of them is optional:
+
+1. **Uniform failure.** An unknown room, a room nobody is checked into, and a wrong
+   PIN return byte-identical 401s. Anything distinguishable lets a link-holder
+   enumerate room numbers and read off which are occupied.
+2. **Per-room lockout** (`dbo.food_pin_lockouts`). Five failures in fifteen minutes
+   locks that room for fifteen. Keyed on the room number *as typed*, so a
+   nonexistent room locks identically — otherwise `429` vs `401` restores the
+   enumeration oracle rule 1 just closed. Reception clears it from the booking.
+3. **Per-IP limit on failures only** (`middleware/rateLimit.js`). Fifty rejected
+   attempts per IP per fifteen minutes, to cap sweeping many rooms from one
+   machine. Two things about it are deliberate: it counts **only 401s**, because
+   guest Wi-Fi is behind NAT and charging for successful orders would let a busy
+   restaurant lock itself out; and the number is loose, because everyone in the
+   building shares that budget, so a tight limit would hand any guest a way to
+   block ordering for the whole property by failing on purpose. Behind a proxy
+   this needs `TRUST_PROXY` set or every request looks like one client.
+
+Rule 2 is what actually makes brute force impractical — it holds per room no
+matter where the attempts originate. Rule 3 is defence in depth. Note that both
+answer `429`: when debugging, read the message, because a tripped IP throttle
+will otherwise look exactly like a room lockout.
+
+Together these put ~20 days of sustained attack between an attacker and one room's
+4-digit PIN, which is why the PIN can stay short enough to read across a counter.
+
+**The PIN is delivered by reception reading it off the booking screen.** That is
+the only channel — there is no slip and no message — so the booking detail showing
+it is load-bearing, not decoration. Sending it over WhatsApp later would lower
+exposure without changing any of the above.
+
+Using the guest's phone number instead of a PIN was considered and rejected: it
+isn't secret, never rotates, and would turn an unauthenticated endpoint into a
+"which room is this person staying in?" lookup.
+
+### Billing, per property type
+
+One screen, three shapes — `Billing.jsx` picks its tabs from the lodge's
+capability flags:
+
+| | Bills |
+|---|---|
+| Lodge | Checked-out stays |
+| Lodge with meals | Stays, with that guest's room-service food on the same document |
+| Restaurant | Open tables |
+
+**Food posts on delivery, not on placement.** Only `DELIVERED` orders with a null
+`invoice_id` are billable, so a cancelled or still-cooking order can never reach a
+folio. Issuing stamps `food_orders.invoice_id`; voiding clears it, which is what
+lets a corrected bill pick the same food back up. A void that left orders stamped
+would silently destroy the charge.
+
+**Room service rides on the stay.** Food ordered to a room carries the booking id
+from placement, so it lands on that guest's checkout bill and never appears as an
+open table. `listOpenFoodTabs` filters `booking_id IS NULL` for exactly this reason.
+
+**A table is billed by closing it**, sweeping every delivered unbilled order on it
+into one document — diners order two or three times and pay once. Both the sweep
+and the stamp happen inside one transaction so two staff closing the same table
+can't produce two bills for the same food.
+
+Accommodation and food stay **separate supplies all the way to the paper**:
+different SACs (996311 / 996331), different rates, their own tax lines, stored in
+their own columns. Only the grand total merges them, and rounding to whole rupees
+happens once, on that total. Merging earlier would break GSTR-1 reconciliation.
+
+A GST-registered restaurant always issues a tax invoice — food is always taxable,
+so there's no nil band to fall through to a bill of supply the way a cheap room
+night has.
+
+Food-only bills share the lodge's invoice series rather than running their own:
+GST wants one continuous sequence per registration, not one per revenue stream.
+
+**Still not built:** payments beyond the single "collected at issue" amount, and
+splitting one table across several bills.
 
 ### Roles
 
@@ -459,6 +577,23 @@ RECEPTION  bookings, guests, billing, payments, orders, day summary
            NOT pricing setup, revenue reports, user management
 KITCHEN    order queue only
 ```
+
+As shipped, the built-in roles carry these permission sets:
+
+```
+OWNER      rooms.manage bookings.manage billing.manage guests.view
+           reports.view staff.manage food.manage orders.manage
+RECEPTION  bookings.manage billing.manage guests.view orders.manage
+KITCHEN    orders.manage
+```
+
+`food.manage` (build the menu, tables and QR codes) and `orders.manage` (work the
+live queue) are separate because they're separate jobs — the kitchen needs the queue
+and the availability toggle and nothing else. The one menu write `orders.manage`
+allows is marking an item out of stock, which can't wait for the owner to sign in.
+
+The schema only upgrades a built-in role that's still at its shipped default, so a
+lodge that has already customised Reception keeps its own set.
 
 `can('booking.create')` is written at every call site from day one and returns `true` until `RBAC_ENFORCED=true` at M7. Permissions to enforce first: discount above X%, void invoice, edit closed day, view revenue, change pricing, manage users, view ID images.
 
@@ -544,8 +679,31 @@ POST   /bookings/:id/occupants | vehicles | rooms
 POST   /invoices                        { bookingId, type }
 POST   /invoices/:id/void
 POST   /payments
-GET    /orders/queue                    kitchen
-POST   /orders/:id/status
+GET    /menu                            sections + items (food.manage | orders.manage)
+GET    /menu/settings
+PATCH  /menu/settings                   { servesFood, foodRoomService, foodTableService }
+POST   /menu/categories | /menu/items
+PATCH  /menu/items/:id/availability     the kitchen's out-of-stock toggle
+GET    /tables
+POST   /tables | /tables/bulk           { prefix, rangeStart, rangeEnd }
+POST   /tables/:id/regenerate-qr        invalidates every printed copy
+GET    /orders/queue                    kitchen — everything still in play
+GET    /orders?date=&status=            one IST day
+POST   /orders                          reception typing one in
+PATCH  /orders/:id/status               { status, cancelReason }
+
+DELETE /orders/pin-lockouts/:roomNumber  reception unlocks a room
+
+GET    /billing/queue                    checked-out stays awaiting a bill
+GET    /billing/food-tabs                tables holding delivered, unbilled food
+GET    /billing/food-tabs/:id/preview    :id is a table id, or "counter"
+POST   /billing/food-tabs/:id/invoice    closes the table into one document
+
+GET    /public/lodges/:slug/menu               the single ordering page
+POST   /public/lodges/:slug/orders             { roomNumber, pin, items[], note }
+GET    /public/tables/:token                   menu, resolved from the QR
+POST   /public/tables/:token/orders            { items[], note }
+GET    /public/orders/:token                   status, scoped to one order
 GET    /reports/occupancy | gstr1 | guest-register
 GET    /public/v1/lodges/:slug          unauthenticated, whitelisted
 POST   /public/v1/enquiries
@@ -565,7 +723,7 @@ POST   /public/v1/enquiries
 | M4 | Bookings, exclusion constraint, tape chart, occupants, ID, vehicles, check-in/out |
 | M5 | `packages/tax`, invoice series, three document types, payments |
 | M6 | Reports, GSTR-1, guest register, Form C, audit log, night audit |
-| M7 | Menu, QR, PINs, kitchen queue, folio posting — **RBAC switched on** |
+| M7 | Menu, QR, PINs, kitchen queue, folio posting — **RBAC switched on** — *menu, tables, QR, PINs and the kitchen queue are in; folio posting and food GST are the remaining piece* |
 | M8 | Public enquiry page, reference codes, enquiry inbox, funnel |
 
 **M3 before M4, always.** A booking created before the pricing engine exists has no frozen rate snapshot and becomes a migration.
@@ -592,7 +750,9 @@ POST   /public/v1/enquiries
 16. Treating AC as a fixed room attribute.
 17. Entering the usual selling price as the category base instead of the cheapest variant.
 18. Kitchen screen with no audible alert.
-19. A QR that identifies a room with no PIN guard.
+19. A QR that identifies a room with no PIN guard — or its inverse, now that
+    ordering is one shared link: a PIN guard with no rate limiting. Four digits
+    without a lockout is a few seconds of scripted guessing.
 20. Reusing a deactivated room number — old bills would attach to the new room.
 21. Forgetting to enable read-committed snapshot isolation. The tape chart will block writers.
 22. Inserting `room_nights` for a multi-room booking in inconsistent room order — the one deadlock path.

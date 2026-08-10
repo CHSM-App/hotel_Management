@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPatch, apiPatchForm, apiPostForm, apiGetBlob, ApiError } from '../../lib/api';
+import { apiGet, apiPatch, apiPatchForm, apiPostForm, apiGetBlob, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import './forms.css';
@@ -358,6 +358,7 @@ export default function Bookings({ onCheckedOut }) {
   const [checkInForm, setCheckInForm] = useState(initialCheckInForm);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [clearingLockout, setClearingLockout] = useState(false);
 
   // A booking stays editable for its whole life, right up until its bill is
   // issued — a guest might extend their stay, switch rooms, add someone to
@@ -580,6 +581,23 @@ export default function Bookings({ onCheckedOut }) {
       .catch((err) => setDetailError(err instanceof ApiError ? err.message : 'Could not load this booking.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBookingId]);
+
+  // A guest who mistypes their PIN five times locks their own room out of
+  // ordering for fifteen minutes, then rings the desk about it. Reception
+  // clears it from here rather than waiting out the timer.
+  const handleClearFoodLockout = async () => {
+    if (!bookingDetail) return;
+    setClearingLockout(true);
+    try {
+      await apiDelete(`/orders/pin-lockouts/${encodeURIComponent(bookingDetail.roomNumber)}`, { token });
+      const data = await apiGet(`/bookings/${selectedBookingId}`, { token });
+      setBookingDetail(data.booking);
+    } catch (err) {
+      setDetailError(err instanceof ApiError ? err.message : 'Could not unlock food ordering.');
+    } finally {
+      setClearingLockout(false);
+    }
+  };
 
   const handleCheckIn = async (e) => {
     e.preventDefault();
@@ -1266,6 +1284,36 @@ export default function Bookings({ onCheckedOut }) {
                             View
                           </button>
                         )}
+                      </span>
+                    </div>
+                  )}
+                  {bookingDetail.status === 'CHECKED_IN' && bookingDetail.foodPin && (
+                    <div className="chart-row">
+                      <span className="chart-row__name">Food PIN</span>
+                      <span className="chart-row__value">
+                        <div className="bookings-panel__pin">
+                          <span className="bookings-panel__pin-value">{bookingDetail.foodPin}</span>
+                          {bookingDetail.foodOrderingLockedUntil ? (
+                            <span className="badge badge--off">Locked</span>
+                          ) : null}
+                        </div>
+                        <div className="bookings-panel__pin-hint">
+                          {bookingDetail.foodOrderingLockedUntil ? (
+                            <>
+                              Too many wrong PINs — ordering is blocked for this room.
+                              <button
+                                type="button"
+                                className="bookings-panel__link-btn"
+                                onClick={handleClearFoodLockout}
+                                disabled={clearingLockout}
+                              >
+                                {clearingLockout ? 'Clearing…' : 'Unlock now'}
+                              </button>
+                            </>
+                          ) : (
+                            'Read this out to the guest — they need it to order food from the QR code.'
+                          )}
+                        </div>
                       </span>
                     </div>
                   )}

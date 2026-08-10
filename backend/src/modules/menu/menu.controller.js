@@ -1,0 +1,153 @@
+const {
+  createMenuCategorySchema,
+  updateMenuCategorySchema,
+  createMenuItemSchema,
+  updateMenuItemSchema,
+  availabilitySchema,
+  statusSchema,
+  foodSettingsSchema,
+} = require('./menu.schema');
+const menuService = require('./menu.service');
+const { ApiError } = require('../../middleware/errorHandler');
+
+function parse(schema, body) {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(parsed.error.issues[0].message, 400);
+  }
+  return parsed.data;
+}
+
+async function getMenuHandler(req, res, next) {
+  try {
+    const sections = await menuService.getMenu(req.user.lodgeId);
+    res.json({ sections });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createCategoryHandler(req, res, next) {
+  try {
+    const result = await menuService.createCategory(req.user.lodgeId, parse(createMenuCategorySchema, req.body));
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCategoryHandler(req, res, next) {
+  try {
+    const result = await menuService.updateCategory(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parse(updateMenuCategorySchema, req.body)
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCategoryStatusHandler(req, res, next) {
+  try {
+    const { isActive } = parse(statusSchema, req.body);
+    const result = await menuService.setCategoryActive(req.user.lodgeId, Number(req.params.id), isActive);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteCategoryHandler(req, res, next) {
+  try {
+    await menuService.deleteCategory(req.user.lodgeId, Number(req.params.id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createItemHandler(req, res, next) {
+  try {
+    const result = await menuService.createItem(req.user.lodgeId, parse(createMenuItemSchema, req.body));
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateItemHandler(req, res, next) {
+  try {
+    const result = await menuService.updateItem(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parse(updateMenuItemSchema, req.body)
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateItemAvailabilityHandler(req, res, next) {
+  try {
+    const { isAvailable } = parse(availabilitySchema, req.body);
+    const result = await menuService.setItemAvailable(req.user.lodgeId, Number(req.params.id), isAvailable);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateItemStatusHandler(req, res, next) {
+  try {
+    const { isActive } = parse(statusSchema, req.body);
+    const result = await menuService.setItemActive(req.user.lodgeId, Number(req.params.id), isActive);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteItemHandler(req, res, next) {
+  try {
+    await menuService.deleteItem(req.user.lodgeId, Number(req.params.id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getFoodSettingsHandler(req, res, next) {
+  try {
+    const settings = await menuService.getFoodSettings(req.user.lodgeId);
+    res.json({ settings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateFoodSettingsHandler(req, res, next) {
+  try {
+    const settings = await menuService.updateFoodSettings(req.user.lodgeId, parse(foodSettingsSchema, req.body));
+    res.json({ settings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  getMenuHandler,
+  createCategoryHandler,
+  updateCategoryHandler,
+  updateCategoryStatusHandler,
+  deleteCategoryHandler,
+  createItemHandler,
+  updateItemHandler,
+  updateItemAvailabilityHandler,
+  updateItemStatusHandler,
+  deleteItemHandler,
+  getFoodSettingsHandler,
+  updateFoodSettingsHandler,
+};

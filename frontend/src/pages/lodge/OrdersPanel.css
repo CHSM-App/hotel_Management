@@ -1,0 +1,271 @@
+.orders-panel__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.orders-panel__sound-on {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.orders-group {
+  margin-bottom: 26px;
+}
+
+.orders-group__title {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.orders-group__title--pending {
+  color: var(--accent);
+}
+
+.orders-group__hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.orders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.order-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius-tile);
+  padding: 14px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+}
+
+/* The stripe is the only thing a cook reads from across a kitchen, so state is
+   carried by colour and position rather than by the status word alone. */
+.order-card--pending {
+  border-left-color: var(--accent);
+}
+
+.order-card--queued {
+  border-left-color: var(--color-warning);
+}
+
+.order-card--preparing {
+  border-left-color: var(--brand);
+}
+
+.order-card--ready {
+  border-left-color: var(--color-success);
+}
+
+.order-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.order-card__number {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.order-card__target {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.order-card__elapsed {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.order-card__items {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  flex: 1;
+}
+
+.order-card__items li {
+  display: flex;
+  gap: 8px;
+  font-size: 14.5px;
+  color: var(--ink);
+  padding: 3px 0;
+}
+
+.order-card__qty {
+  font-weight: 700;
+  color: var(--brand);
+  min-width: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-card__item-name {
+  min-width: 0;
+}
+
+.order-card__note {
+  font-size: 13px;
+  color: var(--accent-ink);
+  background: #fdf3f1;
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+
+.order-card__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-bottom: 10px;
+}
+
+.order-card__total {
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.order-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Sized for a thumb on a wall-mounted tablet with wet or floury hands, not for
+   a mouse — hence the 44px floor and the generous padding. */
+.order-btn {
+  flex: 1;
+  min-width: 96px;
+  min-height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.order-btn:hover {
+  background: var(--brand-ink);
+}
+
+.order-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.order-btn--cancel {
+  flex: 0 0 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.order-btn--cancel:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.counter-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.counter-line:last-child {
+  border-bottom: none;
+}
+
+.counter-line__name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.counter-line__price {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.counter-line__qty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.counter-line__qty button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.counter-line__qty span {
+  min-width: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.counter-total {
+  margin-right: auto;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.food-settings__group {
+  padding-left: 30px;
+  border-left: 2px solid var(--border);
+  margin-left: 8px;
+}
+
+.food-settings__why {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.food-settings__saved {
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-success);
+}

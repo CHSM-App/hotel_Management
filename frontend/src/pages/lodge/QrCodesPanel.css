@@ -1,0 +1,152 @@
+.qr-panel__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.qr-panel__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 62ch;
+}
+
+.qr-group {
+  margin-bottom: 28px;
+}
+
+.qr-group__title {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.qr-group__hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+/* The property code is the one guests actually use, so it gets a card of its
+   own rather than being one tile in a wall of identical squares. */
+.qr-grid--single {
+  grid-template-columns: minmax(0, 320px);
+}
+
+.qr-card--large {
+  padding: 22px 18px;
+}
+
+.qr-card--large .qr-card__img {
+  width: 240px;
+  height: 240px;
+}
+
+.qr-card--large .qr-card__title {
+  font-size: 20px;
+}
+
+.qr-panel__pin-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--paper);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 14px 0 0;
+  max-width: 62ch;
+}
+
+.qr-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  padding: 16px 12px;
+  text-align: center;
+  break-inside: avoid;
+}
+
+.qr-card__img {
+  width: 150px;
+  height: 150px;
+  display: block;
+  margin: 0 auto 10px;
+}
+
+.qr-card__img--loading {
+  background: var(--paper);
+  border-radius: 6px;
+}
+
+.qr-card__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.qr-card__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Printed small on purpose: it's the fallback for a camera that won't scan,
+   not something anyone is meant to type by choice. */
+.qr-card__url {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+/* Printing is the point of this screen, so the print rules are part of the
+   feature rather than an afterthought: drop the dashboard chrome, keep the
+   cards, and stop a card being split across two pages. */
+@media print {
+  .dash-topbar,
+  .dash-sidebar,
+  .dash-header,
+  .subtabs,
+  .qr-panel__toolbar,
+  .qr-panel__pin-note,
+  .qr-group__hint,
+  .reset-banner {
+    display: none !important;
+  }
+
+  .dash-body,
+  .dash-main {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .qr-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .qr-card {
+    border: 1px dashed #999999;
+    box-shadow: none;
+  }
+
+  .qr-group {
+    break-inside: auto;
+  }
+
+  .qr-group__title {
+    break-after: avoid;
+  }
+}

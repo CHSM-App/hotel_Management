@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
+import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
 import ReportsPanel from './ReportsPanel';
 import StaffAndRoles from './StaffAndRoles';
+import FoodSetup from './FoodSetup';
+import OrdersPanel from './OrdersPanel';
 import ProfileMenu from './ProfileMenu';
 import '../internal/LodgesDashboard.css';
 import './OwnerDashboard.css';
@@ -136,98 +139,55 @@ function InfoTile({ icon, label, value }) {
 
 // A short, ordered walkthrough for a lodge that's just getting set up —
 // each step's roles mirror the FEATURES entry it links to, so a RECEPTION
-// or KITCHEN login never lands on a section it can't open.
+// or KITCHEN login never lands on a section it can't open. `capability` does
+// the same job for the property itself: a restaurant is never told to add
+// rooms, and a lodge that doesn't serve food is never told to build a menu.
 const GETTING_STARTED_STEPS = [
   {
     key: 'rooms',
     title: 'Set up your price chart',
     description: 'Add room categories, seasonal rates and extras like AC or an extra bed.',
     permission: 'rooms.manage',
+    capability: 'hasRooms',
   },
   {
     key: 'rooms',
     title: 'Add your rooms',
     description: 'Create each room number under a category — every room needs one to be bookable.',
     permission: 'rooms.manage',
+    capability: 'hasRooms',
   },
   {
     key: 'bookings',
     title: 'Take your first booking',
     description: 'Walk-in guests check in right away; pre-reservations hold a room for later.',
     permission: 'bookings.manage',
+    capability: 'hasRooms',
   },
   {
     key: 'billing',
     title: 'Check out and bill the stay',
     description: 'Once a guest checks out, issue a tax invoice, bill of supply or cash receipt.',
     permission: 'billing.manage',
-  },
-];
-
-// group drives the sidebar's section headers; soon marks sections that are
-// still placeholders so the sidebar itself signals that, rather than a
-// guest clicking in and only then discovering "Coming soon".
-const FEATURES = [
-  {
-    key: 'bookings',
-    title: 'Bookings & tape chart',
-    description: 'The room chart, check-in and check-out.',
-    permission: 'bookings.manage',
-    icon: 'calendar',
-    group: 'Front desk',
+    capability: 'hasRooms',
   },
   {
-    key: 'billing',
-    title: 'Billing & GST',
-    description: 'Tax invoices, bills of supply, cash receipts and payments.',
-    permission: 'billing.manage',
-    icon: 'receipt',
-    group: 'Front desk',
-  },
-  {
-    key: 'guests',
-    title: 'Guests & ID register',
-    description: 'Occupants, ID records and vehicle numbers.',
-    permission: 'guests.view',
-    icon: 'users',
-    group: 'Front desk',
-  },
-  {
-    key: 'food',
-    title: 'Food orders',
-    description: 'The kitchen queue and in-room ordering.',
+    key: 'menu',
+    title: 'Build your menu',
+    description: 'Add sections and dishes, then print the QR codes for your rooms and tables.',
     permission: 'food.manage',
-    icon: 'coffee',
-    group: 'Front desk',
-    soon: true,
-  },
-  {
-    key: 'rooms',
-    title: 'Rooms & rates',
-    description: 'Categories, booking extras and the price chart that computes every rate.',
-    permission: 'rooms.manage',
-    icon: 'bed',
-    group: 'Setup',
-  },
-  {
-    key: 'staff',
-    title: 'Staff & roles',
-    description: 'Staff logins, and what each role can reach.',
-    permission: 'staff.manage',
-    icon: 'userCheck',
-    group: 'Setup',
-  },
-  {
-    key: 'reports',
-    title: 'Reports',
-    description: 'Occupancy and a GST filing summary.',
-    permission: 'reports.view',
-    icon: 'barChart',
-    group: 'Insights',
+    capability: 'servesFood',
   },
 ];
 
-const SIDEBAR_GROUP_ORDER = ['Front desk', 'Setup', 'Insights'];
+// FEATURES and SIDEBAR_GROUP_ORDER come from lib/propertyProfile — the same
+// list the onboarding form reads to tell a new customer what their account will
+// contain. One copy is what stops the promise made at signup and the product
+// actually delivered from drifting apart.
+//
+// Each entry is gated twice: by a permission the signed-in user holds, and by a
+// capability the property has. Both are checked — an owner holds every
+// permission, but a restaurant still has no tape chart.
 
 export default function OwnerDashboard() {
   const navigate = useNavigate();
@@ -260,9 +220,12 @@ export default function OwnerDashboard() {
     navigate('/login');
   };
 
+  // A property with no rooms has no room brochure to link to, so its public
+  // link is the menu instead — that's the only thing a guest can do with it.
+  const publicPath = me?.lodge.hasRooms ? `/lodge/${me?.lodge.slug}` : `/order/${me?.lodge.slug}`;
+
   const handleCopyPublicLink = () => {
-    const url = `${window.location.origin}/lodge/${me.lodge.slug}`;
-    navigator.clipboard.writeText(url).then(() => {
+    navigator.clipboard.writeText(`${window.location.origin}${publicPath}`).then(() => {
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
     });
@@ -270,11 +233,15 @@ export default function OwnerDashboard() {
 
   // Driven by what /me says this login can actually reach, not by its role
   // name — that's what lets a lodge-defined role, or a customised built-in,
-  // show the right menu without the frontend knowing the role exists.
+  // show the right menu without the frontend knowing the role exists. The
+  // capability check on top of it is about the property, not the person.
   const permissions = me?.user.permissions || [];
-  const visibleFeatures = FEATURES.filter((f) => permissions.includes(f.permission));
+  const hasCapability = (item) => !item.capability || Boolean(me?.lodge[item.capability]);
+  const visibleFeatures = FEATURES.filter((f) => permissions.includes(f.permission) && hasCapability(f));
   const activeFeature = visibleFeatures.find((f) => f.key === activeSection);
-  const visibleSteps = GETTING_STARTED_STEPS.filter((s) => permissions.includes(s.permission));
+  const visibleSteps = GETTING_STARTED_STEPS.filter(
+    (s) => permissions.includes(s.permission) && hasCapability(s)
+  );
   const sidebarGroups = SIDEBAR_GROUP_ORDER.map((group) => ({
     group,
     features: visibleFeatures.filter((f) => f.group === group),
@@ -375,7 +342,7 @@ export default function OwnerDashboard() {
                           <div>
                             <h2>{me.lodge.name}</h2>
                             <span className="overview-hero__slug">
-                              Public link: <code>{`${window.location.origin}/lodge/${me.lodge.slug}`}</code>
+                              Public link: <code>{`${window.location.origin}${publicPath}`}</code>
                               <button
                                 type="button"
                                 className="overview-hero__copy-link"
@@ -484,7 +451,7 @@ export default function OwnerDashboard() {
                 <Bookings onCheckedOut={() => setActiveSection('billing')} />
               )}
 
-              {activeFeature && activeFeature.key === 'billing' && <Billing />}
+              {activeFeature && activeFeature.key === 'billing' && <Billing lodge={me.lodge} />}
 
               {activeFeature && activeFeature.key === 'guests' && <GuestRegister />}
 
@@ -492,16 +459,28 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 
-              {activeFeature && !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff'].includes(activeFeature.key) && (
-                <div className="dash-card">
-                  <div className="dash-state">
-                    <span className="badge badge--off">Coming soon</span>
-                    <p style={{ marginTop: 12 }}>
-                      Vengurla Tech is still building this section. Check back soon.
-                    </p>
-                  </div>
-                </div>
+              {activeFeature && activeFeature.key === 'food' && <OrdersPanel lodge={me.lodge} />}
+
+              {activeFeature && activeFeature.key === 'menu' && (
+                <FoodSetup
+                  lodge={me.lodge}
+                  onLodgeChange={(settings) => setMe((m) => ({ ...m, lodge: { ...m.lodge, ...settings } }))}
+                />
               )}
+
+              {activeFeature &&
+                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu'].includes(
+                  activeFeature.key
+                ) && (
+                  <div className="dash-card">
+                    <div className="dash-state">
+                      <span className="badge badge--off">Coming soon</span>
+                      <p style={{ marginTop: 12 }}>
+                        Vengurla Tech is still building this section. Check back soon.
+                      </p>
+                    </div>
+                  </div>
+                )}
             </>
           )}
         </div>

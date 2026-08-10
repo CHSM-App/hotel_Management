@@ -1,9 +1,19 @@
+const crypto = require('crypto');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const pricingService = require('../pricing/pricing.service');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+// The PIN a guest types to order food from their room's QR. Four digits is
+// what fits on a check-in slip and gets typed correctly on a phone; it isn't a
+// password, and it doesn't need to be — it's only accepted for the one room it
+// was issued for, and only while that stay is checked in. randomInt is used
+// rather than Math.random so a guest can't predict the next room's PIN.
+function newFoodPin() {
+  return String(crypto.randomInt(1000, 10000));
 }
 
 function toIsoDate(d) {
@@ -314,6 +324,11 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
       hasIdProofDocument: !!g.id_proof_document,
     })),
     vehicleNumbers: vehicles.map((v) => v.vehicle_number),
+    // Reception reads this out to the guest at check-in — it is the only way a
+    // guest ever learns their PIN, so the booking screen has to show it. NULL
+    // once they check out, which is what closes in-room ordering (see checkOut).
+    foodPin: row.food_pin ?? null,
+    foodOrderingLockedUntil: extra.foodOrderingLockedUntil ?? null,
     // A booking stays editable (extras, for now) right up until its bill is
     // issued — that's the point a guest's stay turns into a fixed, printed
     // number. Voiding an invoice drops this back to false, reopening editing.
@@ -406,11 +421,26 @@ async function getBooking(lodgeId, bookingId) {
     .input('bookingId', sql.BigInt, bookingId)
     .query("SELECT TOP 1 id FROM dbo.invoices WHERE booking_id = @bookingId AND status = 'ISSUED'");
 
+  // Whether this room has locked itself out of food ordering by failing the
+  // PIN too many times. Reception is who the guest complains to, so it belongs
+  // on the booking they're already looking at. Keyed on the room number
+  // because that's what the guest typed — see dbo.food_pin_lockouts.
+  const lockoutResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('roomLabel', sql.NVarChar, row.room_number)
+    .query(`
+      SELECT locked_until FROM dbo.food_pin_lockouts
+      WHERE lodge_id = @lodgeId AND room_label = @roomLabel
+        AND locked_until IS NOT NULL AND locked_until > SYSDATETIMEOFFSET()
+    `);
+
   const availableSwitchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
 
   return mapBooking(row, chargesResult.recordset, guestsResult.recordset, vehiclesResult.recordset, {
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
     availableSwitchableCharges,
+    foodOrderingLockedUntil: lockoutResult.recordset[0]?.locked_until ?? null,
   });
 }
 
@@ -584,9 +614,11 @@ async function checkIn(lodgeId, bookingId, input) {
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
+      .input('foodPin', sql.NVarChar, newFoodPin())
       .query(`
         UPDATE dbo.bookings
         SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(),
+            food_pin = @foodPin,
             advance_amount = CASE
               WHEN @advanceAmount IS NULL THEN advance_amount
               ELSE ISNULL(advance_amount, 0) + @advanceAmount
@@ -620,7 +652,11 @@ async function checkOut(lodgeId, bookingId) {
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       UPDATE dbo.bookings
-      SET status = 'CHECKED_OUT', actual_check_out_at = SYSDATETIMEOFFSET()
+      SET status = 'CHECKED_OUT', actual_check_out_at = SYSDATETIMEOFFSET(),
+          -- Clearing the PIN is what closes in-room ordering. The QR on the
+          -- wall stays valid for the *room*; it just stops accepting orders
+          -- until the next guest checks in and gets their own PIN.
+          food_pin = NULL
       OUTPUT inserted.id
       WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CHECKED_IN'
     `);

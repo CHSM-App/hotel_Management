@@ -36,6 +36,16 @@ const PERMISSIONS = [
     label: 'Staff & roles',
     description: 'Add staff logins and change what each role can reach.',
   },
+  {
+    key: 'food.manage',
+    label: 'Menu & QR codes',
+    description: 'Build the food menu, set up dining tables and print the ordering QR codes.',
+  },
+  {
+    key: 'orders.manage',
+    label: 'Food orders',
+    description: 'Work the live order queue, take orders at the counter and mark items unavailable.',
+  },
 ];
 
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

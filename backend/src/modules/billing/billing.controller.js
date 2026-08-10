@@ -38,6 +38,50 @@ async function issueInvoiceHandler(req, res, next) {
   }
 }
 
+// The restaurant side of the queue: tables holding delivered food that nobody
+// has paid for yet.
+async function listOpenFoodTabsHandler(req, res, next) {
+  try {
+    const tabs = await billingService.listOpenFoodTabs(req.user.lodgeId);
+    res.json({ tabs });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// "counter" is the tab for orders taken at the till with no table — a real
+// grouping, so it gets a route rather than being unbillable.
+function tableIdParam(raw) {
+  return raw === 'counter' ? null : Number(raw);
+}
+
+async function previewFoodBillHandler(req, res, next) {
+  try {
+    const preview = await billingService.previewFoodBill(req.user.lodgeId, tableIdParam(req.params.tableId));
+    res.json(preview);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function issueFoodInvoiceHandler(req, res, next) {
+  try {
+    const parsed = issueInvoiceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const invoice = await billingService.issueFoodInvoice(
+      req.user.lodgeId,
+      req.user.sub,
+      tableIdParam(req.params.tableId),
+      parsed.data
+    );
+    res.status(201).json({ invoice });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listInvoicesHandler(req, res, next) {
   try {
     const invoices = await billingService.listInvoices(req.user.lodgeId);
@@ -71,6 +115,9 @@ async function voidInvoiceHandler(req, res, next) {
 
 module.exports = {
   listBillableBookingsHandler,
+  listOpenFoodTabsHandler,
+  previewFoodBillHandler,
+  issueFoodInvoiceHandler,
   previewBillHandler,
   issueInvoiceHandler,
   listInvoicesHandler,

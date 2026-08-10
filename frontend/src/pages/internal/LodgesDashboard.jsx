@@ -2,12 +2,26 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
+import { propertyTypeOf } from '../../lib/propertyProfile';
 import './LodgesDashboard.css';
 
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour',
   NIGHT_BASED: 'Night-based',
 };
+
+// The API returns snake_case rows straight from the database here, so the flags
+// are mapped before propertyTypeOf (which speaks the camelCase shape /me uses).
+// A lodge whose owner has since switched food off no longer matches a preset —
+// it falls back to a plain description rather than a misleading label.
+function describeType(lodge) {
+  const type = propertyTypeOf({
+    hasRooms: lodge.has_rooms,
+    servesFood: lodge.serves_food,
+  });
+  if (type) return type.label;
+  return lodge.has_rooms ? 'Lodge' : 'No rooms, no food';
+}
 
 function formatDate(value) {
   return new Date(value).toLocaleDateString('en-IN', {
@@ -86,6 +100,7 @@ export default function LodgesDashboard() {
                 <thead>
                   <tr>
                     <th>Lodge</th>
+                    <th>Type</th>
                     <th>Owner</th>
                     <th>Location</th>
                     <th>Check-in</th>
@@ -102,11 +117,14 @@ export default function LodgesDashboard() {
                         <div className="dash-lodge-slug">{lodge.slug}</div>
                       </td>
                       <td>
+                        <span className="badge badge--accent">{describeType(lodge)}</span>
+                      </td>
+                      <td>
                         {lodge.owner_name || '—'}
                         {lodge.owner_phone && <div className="dash-owner-phone">{lodge.owner_phone}</div>}
                       </td>
                       <td>{[lodge.city, lodge.state].filter(Boolean).join(', ') || '—'}</td>
-                      <td>{CHECKIN_LABEL[lodge.checkin_mode] || lodge.checkin_mode}</td>
+                      <td>{lodge.has_rooms ? CHECKIN_LABEL[lodge.checkin_mode] || lodge.checkin_mode : '—'}</td>
                       <td>
                         <span className={`badge ${lodge.is_gst_registered ? 'badge--on' : 'badge--off'}`}>
                           {lodge.is_gst_registered ? 'Registered' : 'Non-GST'}

@@ -18,28 +18,49 @@ function formatDateLong(dateStr) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
-const TABS = [
-  { key: 'ready', label: 'Ready to bill' },
-  { key: 'bills', label: 'Bills' },
-];
-
-export default function Billing() {
+export default function Billing({ lodge }) {
   const session = getSession();
   const token = session?.token;
 
-  const [tab, setTab] = useState('ready');
+  // What this property can bill decides which tabs exist. A lodge bills stays,
+  // a restaurant bills closed tables, and a lodge with meals does both — the
+  // food a room-service guest ate rides on their stay bill rather than
+  // appearing as a separate tab.
+  const billsStays = lodge?.hasRooms !== false;
+  const billsTables = Boolean(lodge?.servesFood);
+
+  const tabs = [
+    ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
+    ...(billsTables ? [{ key: 'tables', label: 'Tables to bill' }] : []),
+    { key: 'bills', label: 'Bills' },
+  ];
+
+  const [tab, setTab] = useState(billsStays ? 'ready' : billsTables ? 'tables' : 'bills');
   const [queue, setQueue] = useState(null);
   const [queueError, setQueueError] = useState('');
+  const [foodTabs, setFoodTabs] = useState(null);
+  const [foodTabsError, setFoodTabsError] = useState('');
   const [invoices, setInvoices] = useState(null);
   const [invoicesError, setInvoicesError] = useState('');
 
   const loadQueue = () => {
+    if (!billsStays) return;
     apiGet('/billing/queue', { token })
       .then((data) => {
         setQueue(data.bookings);
         setQueueError('');
       })
       .catch((err) => setQueueError(err instanceof ApiError ? err.message : 'Could not load bookings ready to bill.'));
+  };
+
+  const loadFoodTabs = () => {
+    if (!billsTables) return;
+    apiGet('/billing/food-tabs', { token })
+      .then((data) => {
+        setFoodTabs(data.tabs);
+        setFoodTabsError('');
+      })
+      .catch((err) => setFoodTabsError(err instanceof ApiError ? err.message : 'Could not load open tables.'));
   };
 
   const loadInvoices = () => {
@@ -53,17 +74,22 @@ export default function Billing() {
 
   useEffect(() => {
     loadQueue();
+    loadFoodTabs();
     loadInvoices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshAll = () => {
     loadQueue();
+    loadFoodTabs();
     loadInvoices();
   };
 
-  // Bill modal
-  const [billingBookingId, setBillingBookingId] = useState(null);
+  // Bill modal. One modal serves both kinds — the amounts, the GST toggle and
+  // the payment capture are identical; only the endpoints and the header
+  // differ, so `billTarget` carries which is being billed.
+  //   { kind: 'STAY', bookingId }  |  { kind: 'FOOD', tableId, label }
+  const [billTarget, setBillTarget] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
   const [billingSide, setBillingSide] = useState('GST');
@@ -72,8 +98,8 @@ export default function Billing() {
   const [issueError, setIssueError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const openBilling = (bookingId) => {
-    setBillingBookingId(bookingId);
+  const openBilling = (target) => {
+    setBillTarget(target);
     setPreview(null);
     setPreviewError('');
     setCollectedAmount('');
@@ -83,22 +109,33 @@ export default function Billing() {
 
   const closeBilling = () => {
     if (submitting) return;
-    setBillingBookingId(null);
+    setBillTarget(null);
   };
 
+  // "counter" rather than an id — the till tab has no table row behind it.
+  const foodTabPath = (tableId) => (tableId == null ? 'counter' : tableId);
+
+  const previewPath = billTarget
+    ? billTarget.kind === 'STAY'
+      ? `/billing/bookings/${billTarget.bookingId}/preview`
+      : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
+    : null;
+
   useEffect(() => {
-    if (!billingBookingId) return;
-    apiGet(`/billing/bookings/${billingBookingId}/preview`, { token })
+    if (!previewPath) return;
+    apiGet(previewPath, { token })
       .then((data) => {
         setPreview(data);
         setBillingSide(data.isGstRegistered ? 'GST' : 'NON_GST');
       })
       .catch((err) => setPreviewError(err instanceof ApiError ? err.message : 'Could not load the bill preview.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [billingBookingId]);
+  }, [previewPath]);
 
   const activeAmounts = preview ? (billingSide === 'GST' ? preview.gst : preview.nonGst) : null;
-  const balanceDue = activeAmounts ? round2(activeAmounts.totalAmount - preview.advancePaid) : 0;
+  // A table bill has no advance — nobody pays a deposit to sit down.
+  const advancePaid = preview?.advancePaid ?? 0;
+  const balanceDue = activeAmounts ? round2(activeAmounts.totalAmount - advancePaid) : 0;
 
   function round2(n) {
     return Math.round(n * 100) / 100;
@@ -114,17 +151,22 @@ export default function Billing() {
       return;
     }
 
+    const path =
+      billTarget.kind === 'STAY'
+        ? `/billing/bookings/${billTarget.bookingId}/invoice`
+        : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/invoice`;
+
     setSubmitting(true);
     try {
       await apiPost(
-        `/billing/bookings/${billingBookingId}/invoice`,
+        path,
         {
           billingSide,
           ...(hasAmount ? { collectedAmount: Number(collectedAmount), paymentMethod } : {}),
         },
         { token }
       );
-      setBillingBookingId(null);
+      setBillTarget(null);
       refreshAll();
     } catch (err) {
       setIssueError(err instanceof ApiError ? err.message : 'Could not issue this bill.');
@@ -236,7 +278,7 @@ export default function Billing() {
   return (
     <div className="billing-panel">
       <div className="billing-panel__subtabs">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -248,9 +290,55 @@ export default function Billing() {
             {t.key === 'ready' && queue && queue.length > 0 && (
               <span className="billing-panel__subtabs-count">{queue.length}</span>
             )}
+            {t.key === 'tables' && foodTabs && foodTabs.length > 0 && (
+              <span className="billing-panel__subtabs-count">{foodTabs.length}</span>
+            )}
           </button>
         ))}
       </div>
+
+      {tab === 'tables' && (
+        <div className="chart-section">
+          <div className="chart-section__header">
+            <h3>Tables to bill</h3>
+            <span className="chart-section__hint">
+              Delivered food nobody has paid for. Billing a table sweeps everything it has ordered
+              into one document.
+            </span>
+          </div>
+
+          {foodTabsError && <div className="form-banner form-banner--error">{foodTabsError}</div>}
+          {!foodTabsError && !foodTabs && <div className="dash-state">Loading…</div>}
+          {!foodTabsError && foodTabs && foodTabs.length === 0 && (
+            <div className="dash-state">No open tables — everything served has been billed.</div>
+          )}
+          {!foodTabsError && foodTabs && foodTabs.length > 0 && (
+            <div className="chart-list">
+              {foodTabs.map((t) => (
+                <div className="chart-row billing-panel__queue-row" key={t.tableId ?? 'counter'}>
+                  <span className="chart-row__name">
+                    {t.tableLabel}
+                    <span className="chart-row__dates">
+                      {t.orderCount} order{t.orderCount === 1 ? '' : 's'} · since{' '}
+                      {new Date(t.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </span>
+                  <span className="billing-panel__queue-actions">
+                    <span className="chart-row__value">{formatPrice(t.subtotal)}</span>
+                    <button
+                      type="button"
+                      className="btn-accent"
+                      onClick={() => openBilling({ kind: 'FOOD', tableId: t.tableId, label: t.tableLabel })}
+                    >
+                      Bill
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {tab === 'ready' && (
         <div className="chart-section">
@@ -276,7 +364,7 @@ export default function Billing() {
                   </span>
                   <span className="billing-panel__queue-actions">
                     <span className="chart-row__value">{formatPrice(b.totalPrice)}</span>
-                    <button type="button" className="btn-accent" onClick={() => openBilling(b.id)}>
+                    <button type="button" className="btn-accent" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
                       Bill
                     </button>
                   </span>
@@ -311,7 +399,11 @@ export default function Billing() {
                   <span className="chart-row__name">
                     {inv.invoiceNumber}
                     <span className="chart-row__dates">
-                      {inv.guestName} · {inv.roomNumber} · {DOCUMENT_LABEL[inv.documentType]}
+                      {/* A food bill has no guest and no room to name, so it
+                          identifies itself by the table it closed. */}
+                      {inv.kind === 'FOOD'
+                        ? `${inv.tableLabel || 'Counter'} · ${DOCUMENT_LABEL[inv.documentType]}`
+                        : `${inv.guestName} · ${inv.roomNumber} · ${DOCUMENT_LABEL[inv.documentType]}`}
                     </span>
                   </span>
                   <span className="billing-panel__queue-actions">
@@ -325,7 +417,7 @@ export default function Billing() {
         </div>
       )}
 
-      {billingBookingId && (
+      {billTarget && (
         <div className="glass-backdrop billing-panel__backdrop" onClick={closeBilling}>
           <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
             <h3>Issue bill</h3>
@@ -342,22 +434,54 @@ export default function Billing() {
                   </div>
                 )}
 
-                <div className="form-section">
-                  <div className="form-section__title">Stay</div>
-                  <div className="chart-list">
-                    <div className="chart-row">
-                      <span className="chart-row__name">Guest</span>
-                      <span className="chart-row__value">{preview.guestName}</span>
-                    </div>
-                    <div className="chart-row">
-                      <span className="chart-row__name">Room</span>
-                      <span className="chart-row__value">
-                        {preview.roomNumber} · {preview.categoryName} · {preview.nights} night
-                        {preview.nights === 1 ? '' : 's'}
-                      </span>
+                {billTarget.kind === 'STAY' && (
+                  <div className="form-section">
+                    <div className="form-section__title">Stay</div>
+                    <div className="chart-list">
+                      <div className="chart-row">
+                        <span className="chart-row__name">Guest</span>
+                        <span className="chart-row__value">{preview.guestName}</span>
+                      </div>
+                      <div className="chart-row">
+                        <span className="chart-row__name">Room</span>
+                        <span className="chart-row__value">
+                          {preview.roomNumber} · {preview.categoryName} · {preview.nights} night
+                          {preview.nights === 1 ? '' : 's'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* What's being swept onto this bill, itemised — staff read
+                    this back against what actually went to the table before
+                    committing to a document they can only void. The order
+                    numbers are noted alongside so a query can be traced back to
+                    a specific ticket. */}
+                {preview.foodItems?.length > 0 && (
+                  <div className="form-section">
+                    <div className="form-section__title">
+                      {billTarget.kind === 'FOOD' ? billTarget.label : 'Food ordered during the stay'}
+                    </div>
+                    <div className="chart-list">
+                      {preview.foodItems.map((item, index) => (
+                        <div className="chart-row" key={`${item.name}-${item.unitPrice}-${index}`}>
+                          <span className="chart-row__name">
+                            {item.name}
+                            <span className="chart-row__dates">
+                              {item.quantity} × {formatPrice(item.unitPrice)}
+                            </span>
+                          </span>
+                          <span className="chart-row__value">{formatPrice(item.lineTotal)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="billing-panel__hint">
+                      From order{(preview.orders ?? preview.foodOrders).length === 1 ? '' : 's'}{' '}
+                      {(preview.orders ?? preview.foodOrders).map((o) => `#${o.orderNumber}`).join(', ')}
+                    </p>
+                  </div>
+                )}
 
                 <div className="form-section">
                   <div className="form-section__title">Billing side</div>
@@ -380,26 +504,55 @@ export default function Billing() {
                     </div>
                   ) : (
                     <p className="billing-panel__hint">
-                      This lodge isn&apos;t GST registered — every bill is a cash receipt.
+                      This property isn&apos;t GST registered — every bill is a cash receipt.
                     </p>
                   )}
 
                   {activeAmounts && (
                     <div className="sim-result">
-                      <div className="sim-result__line">
-                        <span>Room charges</span>
-                        <span>{formatPrice(activeAmounts.subtotal)}</span>
-                      </div>
-                      {(activeAmounts.cgstAmount > 0 || activeAmounts.sgstAmount > 0) && (
+                      {/* Room and food are shown as separate taxed blocks
+                          because they are separate supplies on different SACs
+                          at different rates — merging them would hide the very
+                          split GSTR-1 reports on. */}
+                      {activeAmounts.subtotal > 0 && (
                         <>
                           <div className="sim-result__line">
-                            <span>CGST ({activeAmounts.cgstRatePercent}%)</span>
-                            <span>{formatPrice(activeAmounts.cgstAmount)}</span>
+                            <span>Room charges</span>
+                            <span>{formatPrice(activeAmounts.subtotal)}</span>
                           </div>
+                          {(activeAmounts.cgstAmount > 0 || activeAmounts.sgstAmount > 0) && (
+                            <>
+                              <div className="sim-result__line">
+                                <span>CGST ({activeAmounts.cgstRatePercent}%)</span>
+                                <span>{formatPrice(activeAmounts.cgstAmount)}</span>
+                              </div>
+                              <div className="sim-result__line">
+                                <span>SGST ({activeAmounts.sgstRatePercent}%)</span>
+                                <span>{formatPrice(activeAmounts.sgstAmount)}</span>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      )}
+
+                      {activeAmounts.foodSubtotal > 0 && (
+                        <>
                           <div className="sim-result__line">
-                            <span>SGST ({activeAmounts.sgstRatePercent}%)</span>
-                            <span>{formatPrice(activeAmounts.sgstAmount)}</span>
+                            <span>Food</span>
+                            <span>{formatPrice(activeAmounts.foodSubtotal)}</span>
                           </div>
+                          {(activeAmounts.foodCgstAmount > 0 || activeAmounts.foodSgstAmount > 0) && (
+                            <>
+                              <div className="sim-result__line">
+                                <span>CGST ({activeAmounts.foodCgstRatePercent}%)</span>
+                                <span>{formatPrice(activeAmounts.foodCgstAmount)}</span>
+                              </div>
+                              <div className="sim-result__line">
+                                <span>SGST ({activeAmounts.foodSgstRatePercent}%)</span>
+                                <span>{formatPrice(activeAmounts.foodSgstAmount)}</span>
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                       {activeAmounts.roundOff !== 0 && (
@@ -412,10 +565,10 @@ export default function Billing() {
                         <span>{DOCUMENT_LABEL[activeAmounts.documentType]}</span>
                         <span>{formatPrice(activeAmounts.totalAmount)}</span>
                       </div>
-                      {preview.advancePaid > 0 && (
+                      {advancePaid > 0 && (
                         <div className="sim-result__line">
                           <span>Advance already paid</span>
-                          <span>-{formatPrice(preview.advancePaid)}</span>
+                          <span>-{formatPrice(advancePaid)}</span>
                         </div>
                       )}
                       <div className="sim-result__total">

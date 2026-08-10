@@ -14,7 +14,8 @@ async function getMe(userId) {
         u.id, u.name, u.email, u.phone, u.role, u.must_reset_password,
         l.id AS lodge_id, l.name AS lodge_name, l.slug, l.phone AS lodge_phone,
         l.whatsapp_number, l.address, l.city, l.state, l.checkin_mode,
-        l.is_gst_registered, l.gstin, l.is_specified_premises
+        l.is_gst_registered, l.gstin, l.is_specified_premises,
+        l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service
       FROM dbo.users u
       JOIN dbo.lodges l ON l.id = u.lodge_id
       WHERE u.id = @userId
@@ -53,6 +54,13 @@ async function getMe(userId) {
       isGstRegistered: row.is_gst_registered,
       gstin: row.gstin,
       isSpecifiedPremises: row.is_specified_premises,
+      // What this property actually is. The dashboard builds its menu from
+      // these together with the caller's permissions — a restaurant has the
+      // rooms sections hidden even for an owner who can reach everything.
+      hasRooms: !!row.has_rooms,
+      servesFood: !!row.serves_food,
+      foodRoomService: !!row.food_room_service,
+      foodTableService: !!row.food_table_service,
     },
   };
 }
