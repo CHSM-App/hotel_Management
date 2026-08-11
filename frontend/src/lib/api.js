@@ -88,6 +88,22 @@ export async function apiPatch(path, body, { token } = {}) {
   return handleResponse(res);
 }
 
+// PUT where the request replaces a whole collection rather than editing parts
+// of one row — a dish's portions are saved as the complete set they should end
+// up as, not as a diff.
+export async function apiPut(path, body, { token } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  return handleResponse(res);
+}
+
 export async function apiPatchForm(path, formData, { token } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'PATCH',

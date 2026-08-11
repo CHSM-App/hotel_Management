@@ -121,8 +121,21 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
             <>
               <tr>
                 <td>Room charges{invoice.billingSide === 'GST' ? ' (SAC 996311)' : ''}</td>
-                <td className="bill-doc__amt">{formatPrice(invoice.roomSubtotal)}</td>
+                <td className="bill-doc__amt">
+                  {formatPrice(
+                    invoice.lateCheckoutCharge > 0 ? invoice.nightsSubtotal : invoice.roomSubtotal
+                  )}
+                </td>
               </tr>
+              {/* Its own line, on the same SAC and inside the same tax lines
+                  below — a guest disputing the total needs to see the overstay
+                  named, not folded into the room and left to be argued about. */}
+              {invoice.lateCheckoutCharge > 0 && (
+                <tr>
+                  <td>Late checkout</td>
+                  <td className="bill-doc__amt">{formatPrice(invoice.lateCheckoutCharge)}</td>
+                </tr>
+              )}
               {invoice.cgstAmount > 0 && (
                 <tr>
                   <td>CGST ({invoice.cgstRatePercent}%)</td>

@@ -815,3 +815,163 @@ IF COL_LENGTH('dbo.food_orders', 'invoice_id') IS NULL
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_invoice' AND object_id = OBJECT_ID('dbo.food_orders'))
     EXEC('CREATE INDEX ix_food_orders_invoice ON dbo.food_orders(invoice_id) WHERE invoice_id IS NOT NULL');
+
+-- ---------------------------------------------------------------------------
+-- Portions (half plate / full plate)
+-- ---------------------------------------------------------------------------
+-- This replaces the v1 rule recorded above dbo.menu_items, that half and full
+-- plates are two separate rows. They were, and a lodge with 40 curries ended up
+-- with 80 dishes whose names all ended in "(Half)". What follows keeps the part
+-- of that rule that mattered — an order line is still one row carrying one
+-- price, resolved from one database row, with no arithmetic between the menu
+-- and the kitchen ticket. Only *which* row the price comes from has changed.
+--
+-- Sizes are typed onto the dish. There is deliberately no shared "Half / Full"
+-- definition to pick from first: a kitchen offers a half plate of some curries
+-- and not others, at prices that have nothing to do with each other, so a
+-- shared list would only have saved typing two short words while adding a step
+-- before every dish could be priced.
+IF OBJECT_ID('dbo.menu_item_portions', 'U') IS NULL
+CREATE TABLE dbo.menu_item_portions (
+    id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id      BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    item_id       BIGINT NOT NULL REFERENCES dbo.menu_items(id),
+    label         NVARCHAR(60) NOT NULL,
+    price         DECIMAL(10,2) NOT NULL
+        CONSTRAINT ck_menu_item_portions_price CHECK (price >= 0),
+    is_available  BIT NOT NULL DEFAULT 1,
+    sort_order    INT NOT NULL DEFAULT 0,
+    created_at    DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_menu_item_portions UNIQUE (item_id, label)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_menu_item_portions_item' AND object_id = OBJECT_ID('dbo.menu_item_portions'))
+CREATE INDEX ix_menu_item_portions_item ON dbo.menu_item_portions(item_id);
+
+-- Snapshotted onto the order line beside the name, under the same rule as
+-- item_name and unit_price: renaming a size tomorrow must not restate what a
+-- guest was charged today. item_name is written as "Masala Dosa (Half plate)"
+-- so the kitchen ticket, the bill and the reports all read correctly without
+-- knowing this column exists; portion_label is the same fact kept separately
+-- for anything that wants to group by size.
+IF COL_LENGTH('dbo.food_order_items', 'portion_label') IS NULL
+    EXEC('ALTER TABLE dbo.food_order_items ADD portion_label NVARCHAR(60) NULL');
+
+IF COL_LENGTH('dbo.food_order_items', 'menu_item_portion_id') IS NULL
+    EXEC('ALTER TABLE dbo.food_order_items ADD menu_item_portion_id BIGINT NULL REFERENCES dbo.menu_item_portions(id)');
+
+-- A cook ticks each dish off as it leaves the pan, and the order can only be
+-- called ready once every line is ticked. Kept on the row rather than in the
+-- screen's own state because the queue is polled and a busy kitchen works one
+-- order from two tablets: a tick held in React would be wiped by the next
+-- poll and would never reach the second screen at all.
+IF COL_LENGTH('dbo.food_order_items', 'ready_at') IS NULL
+    EXEC('ALTER TABLE dbo.food_order_items ADD ready_at DATETIMEOFFSET NULL');
+
+-- ---------------------------------------------------------------------------
+-- Retiring the first cut of portions
+-- ---------------------------------------------------------------------------
+-- Portions first shipped routed through reusable "portion sets": a lodge
+-- defined "Half / Full" once and each dish pointed at it. It was one step more
+-- than the job needed. This unwinds that shape wherever it was applied.
+--
+-- Prices are carried across, not dropped. The label each price was recorded
+-- against lives in portion_set_options, so it is copied onto the price row
+-- before those tables go — a dish already priced at half and full keeps both.
+IF COL_LENGTH('dbo.menu_item_portions', 'set_option_id') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.menu_item_portions', 'label') IS NULL
+        EXEC('ALTER TABLE dbo.menu_item_portions ADD label NVARCHAR(60) NULL');
+
+    IF COL_LENGTH('dbo.menu_item_portions', 'sort_order') IS NULL
+        EXEC('ALTER TABLE dbo.menu_item_portions ADD sort_order INT NOT NULL CONSTRAINT df_menu_item_portions_sort DEFAULT 0');
+
+    EXEC('
+        UPDATE p SET p.label = o.label, p.sort_order = o.sort_order
+        FROM dbo.menu_item_portions p
+        JOIN dbo.portion_set_options o ON o.id = p.set_option_id
+        WHERE p.label IS NULL
+    ');
+
+    -- A price row whose set option had already been deleted has no label to
+    -- carry across and nothing left to mean.
+    EXEC('DELETE FROM dbo.menu_item_portions WHERE label IS NULL');
+    EXEC('ALTER TABLE dbo.menu_item_portions ALTER COLUMN label NVARCHAR(60) NOT NULL');
+
+    -- The old uniqueness was (item_id, set_option_id) and has to go before the
+    -- column it names can be dropped.
+    IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'uq_menu_item_portions' AND parent_object_id = OBJECT_ID('dbo.menu_item_portions'))
+        EXEC('ALTER TABLE dbo.menu_item_portions DROP CONSTRAINT uq_menu_item_portions');
+
+    DECLARE @portionFk NVARCHAR(200);
+    SELECT @portionFk = name FROM sys.foreign_keys
+    WHERE parent_object_id = OBJECT_ID('dbo.menu_item_portions')
+      AND referenced_object_id = OBJECT_ID('dbo.portion_set_options');
+    IF @portionFk IS NOT NULL
+        EXEC('ALTER TABLE dbo.menu_item_portions DROP CONSTRAINT ' + @portionFk);
+
+    EXEC('ALTER TABLE dbo.menu_item_portions DROP COLUMN set_option_id');
+    EXEC('ALTER TABLE dbo.menu_item_portions ADD CONSTRAINT uq_menu_item_portions UNIQUE (item_id, label)');
+END
+
+IF COL_LENGTH('dbo.menu_items', 'portion_set_id') IS NOT NULL
+BEGIN
+    DECLARE @itemFk NVARCHAR(200);
+    SELECT @itemFk = name FROM sys.foreign_keys
+    WHERE parent_object_id = OBJECT_ID('dbo.menu_items')
+      AND referenced_object_id = OBJECT_ID('dbo.portion_sets');
+    IF @itemFk IS NOT NULL
+        EXEC('ALTER TABLE dbo.menu_items DROP CONSTRAINT ' + @itemFk);
+
+    EXEC('ALTER TABLE dbo.menu_items DROP COLUMN portion_set_id');
+END
+
+IF OBJECT_ID('dbo.portion_set_options', 'U') IS NOT NULL DROP TABLE dbo.portion_set_options;
+IF OBJECT_ID('dbo.portion_sets', 'U') IS NOT NULL DROP TABLE dbo.portion_sets;
+
+-- ---------------------------------------------------------------------------
+-- Late checkout
+-- ---------------------------------------------------------------------------
+-- lodges.checkin_mode has been recorded since registration but never computed
+-- with. These columns are what finally make it load-bearing: a NIGHT_BASED
+-- property checks out at check_out_time on the departure date, and a HOUR_24
+-- one checks out 24 hours per night after the guest actually walked in. Once
+-- there is a deadline there can be a charge for missing it.
+--
+-- The policy is three numbers over a grace period, which is how a lodge
+-- actually prices this out loud: nothing for the first hour, half a night if
+-- they are out by the afternoon, a whole night if they are not. Percentages
+-- rather than rupees so a suite and a single room scale on their own tariff.
+IF COL_LENGTH('dbo.lodges', 'check_out_time') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD check_out_time TIME(0) NOT NULL CONSTRAINT df_lodges_check_out_time DEFAULT ''11:00:00''');
+
+IF COL_LENGTH('dbo.lodges', 'late_grace_minutes') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD late_grace_minutes INT NOT NULL CONSTRAINT df_lodges_late_grace DEFAULT 60');
+
+IF COL_LENGTH('dbo.lodges', 'late_half_day_percent') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD late_half_day_percent DECIMAL(5,2) NOT NULL CONSTRAINT df_lodges_late_half DEFAULT 50');
+
+IF COL_LENGTH('dbo.lodges', 'late_full_day_after_minutes') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD late_full_day_after_minutes INT NOT NULL CONSTRAINT df_lodges_late_full_after DEFAULT 360');
+
+IF COL_LENGTH('dbo.lodges', 'late_full_day_percent') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD late_full_day_percent DECIMAL(5,2) NOT NULL CONSTRAINT df_lodges_late_full DEFAULT 100');
+
+-- What reception actually decided, not what the policy suggested — the whole
+-- point of the prompt is that a receptionist can waive it for a guest whose
+-- taxi was late. Zero is a real answer and means "waived", which is why this
+-- is NOT NULL DEFAULT 0 rather than nullable.
+IF COL_LENGTH('dbo.bookings', 'late_checkout_charge') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD late_checkout_charge DECIMAL(10,2) NOT NULL CONSTRAINT df_bookings_late_charge DEFAULT 0');
+
+-- How far past the deadline they actually were, frozen at checkout. Kept
+-- because the charge alone doesn't say whether ₹0 was a waiver or an on-time
+-- departure, and that is the first question anyone asks of a disputed bill.
+IF COL_LENGTH('dbo.bookings', 'late_checkout_minutes') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD late_checkout_minutes INT NULL');
+
+-- Snapshotted onto the invoice under the same rule as every other amount on
+-- it: an issued bill is immutable, so it cannot be reprinted by reading the
+-- booking back and hoping nobody edited it since.
+IF COL_LENGTH('dbo.invoices', 'late_checkout_charge') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD late_checkout_charge DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_late_charge DEFAULT 0');

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const pricingService = require('../pricing/pricing.service');
+const lateCheckout = require('./lateCheckout');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
@@ -644,15 +645,114 @@ async function checkIn(lodgeId, bookingId, input) {
   return getBooking(lodgeId, bookingId);
 }
 
-async function checkOut(lodgeId, bookingId) {
+// What reception is shown before they check anyone out: when the stay was due
+// to end, how far past that it is right now, and what the property's own policy
+// says that is worth. The suggestion is advisory — the desk decides.
+async function getLateCheckout(lodgeId, bookingId, at = new Date()) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
+      SELECT b.check_in_date, b.check_out_date, b.actual_check_in_at, b.status,
+             b.total_price, b.nightly_breakdown, b.late_checkout_charge,
+             l.checkin_mode, l.check_out_time, l.late_grace_minutes,
+             l.late_half_day_percent, l.late_full_day_after_minutes, l.late_full_day_percent
+      FROM dbo.bookings b
+      JOIN dbo.lodges l ON l.id = b.lodge_id
+      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId
+    `);
+  const row = result.recordset[0];
+  if (!row) {
+    throw new ApiError('Booking not found.', 404);
+  }
+
+  const checkInDate = toIsoDate(row.check_in_date);
+  const checkOutDate = toIsoDate(row.check_out_date);
+
+  const policy = {
+    lateGraceMinutes: row.late_grace_minutes,
+    lateHalfDayPercent: Number(row.late_half_day_percent),
+    lateFullDayAfterMinutes: row.late_full_day_after_minutes,
+    lateFullDayPercent: Number(row.late_full_day_percent),
+  };
+
+  const deadline = lateCheckout.checkoutDeadline({
+    checkinMode: row.checkin_mode,
+    // TIME comes back as a Date on the 1970 epoch, so the clock is read off it
+    // rather than the value being used as a moment in its own right.
+    checkOutTime: toClockTime(row.check_out_time),
+    checkInDate,
+    checkOutDate,
+    actualCheckInAt: row.actual_check_in_at,
+  });
+
+  const minutesLate = lateCheckout.overdueMinutes(deadline, at);
+  const lastNightRate = lastNightlyRate(row);
+  const suggestion = lateCheckout.suggestLateCharge(policy, minutesLate, lastNightRate);
+
+  return {
+    bookingId: Number(bookingId),
+    status: row.status,
+    checkinMode: row.checkin_mode,
+    deadline: deadline.toISOString(),
+    minutesLate,
+    lateLabel: lateCheckout.lateLabel(minutesLate),
+    isLate: minutesLate > 0,
+    // Past the grace period is what makes it chargeable, which is not the same
+    // as being late — twenty minutes over is late and free.
+    isChargeable: suggestion.amount > 0,
+    lastNightRate,
+    suggestedCharge: suggestion.amount,
+    band: suggestion.band,
+    percent: suggestion.percent,
+    policy,
+    appliedCharge: Number(row.late_checkout_charge),
+  };
+}
+
+// The rate the room was going at on its final night. Reads the frozen
+// per-night snapshot where there is one, and falls back to an even split of
+// total_price for bookings made before that column existed — the same fallback
+// the billing service uses, for the same reason.
+function lastNightlyRate(row) {
+  if (row.nightly_breakdown) {
+    const nights = JSON.parse(row.nightly_breakdown);
+    if (nights.length > 0) return round2(Number(nights[nights.length - 1].total));
+  }
+  const nights = lateCheckout.nightsBetween(toIsoDate(row.check_in_date), toIsoDate(row.check_out_date));
+  return round2(Number(row.total_price) / nights);
+}
+
+function toClockTime(value) {
+  if (value == null) return '11:00:00';
+  if (typeof value === 'string') return value.slice(0, 8);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}`;
+}
+
+// lateCharge is whatever reception decided, including 0 for "waived" — it is
+// never recomputed from the policy here. The policy only ever produced a
+// suggestion, and overriding it is the entire point of asking.
+async function checkOut(lodgeId, bookingId, { lateCharge = 0 } = {}) {
+  const pool = await getPool();
+
+  // Read before write so the minutes are recorded against the same moment the
+  // charge was agreed for, rather than a later one.
+  const late = await getLateCheckout(lodgeId, bookingId);
+
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('lateCharge', sql.Decimal(10, 2), round2(Number(lateCharge) || 0))
+    .input('lateMinutes', sql.Int, late.minutesLate)
+    .query(`
       UPDATE dbo.bookings
       SET status = 'CHECKED_OUT', actual_check_out_at = SYSDATETIMEOFFSET(),
+          late_checkout_charge = @lateCharge,
+          late_checkout_minutes = @lateMinutes,
           -- Clearing the PIN is what closes in-room ordering. The QR on the
           -- wall stays valid for the *room*; it just stops accepting orders
           -- until the next guest checks in and gets their own PIN.
@@ -840,6 +940,7 @@ module.exports = {
   getGuestIdProofFilename,
   createBooking,
   checkIn,
+  getLateCheckout,
   checkOut,
   updateBooking,
   cancelBooking,

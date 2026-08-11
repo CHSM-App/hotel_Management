@@ -1,7 +1,233 @@
-.menu-panel__toolbar-actions {
+/* ---------------------------------------------------------------- top bar */
+
+.menu-bar {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.menu-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-bar__row--stats {
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
 }
+
+.menu-bar__actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.menu-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Drawn rather than imported: a magnifier is two shapes, and an icon font or
+   an SVG request for it would be more bytes than the whole search control. */
+.menu-search__icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin-top: -6px;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.menu-search__icon::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  width: 5px;
+  height: 1.5px;
+  background: var(--text-muted);
+  transform: rotate(45deg);
+}
+
+.menu-search input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 10px 12px 10px 34px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  min-height: 42px;
+}
+
+.menu-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.menu-search input:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+}
+
+.menu-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.menu-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.menu-stat strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The out-of-stock count doubles as the filter for it — the number a kitchen
+   glances at and the way to act on it are the same control. */
+.menu-stat--btn {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.menu-stat--btn:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.menu-stat--btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.menu-stat--btn.is-on {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.menu-stat--btn.is-on strong {
+  color: var(--danger);
+}
+
+.menu-bar__searching {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.menu-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.menu-linkbtn:hover {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------ section picker */
+
+/* Deliberately the widest, plainest control on the screen: it is the first
+   decision on this panel, and everything below it is the answer. */
+.menu-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+
+.menu-picker__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.menu-picker__field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The native arrow differs on every platform and sits at a different inset on
+   each; this replaces it with one chevron so the control looks the same on a
+   reception desktop and the owner's phone. */
+.menu-picker__field::after {
+  content: '';
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -6px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.menu-picker__field select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--paper);
+  padding: 11px 38px 11px 14px;
+  font-family: var(--serif);
+  font-size: 16px;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 46px;
+}
+
+.menu-picker__field select:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+}
+
+/* ------------------------------------------------------------------ section */
 
 .menu-section {
   background: var(--surface);
@@ -18,28 +244,52 @@
 
 .menu-section__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px;
+  gap: 16px;
+  padding: 16px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--paper);
   flex-wrap: wrap;
 }
 
+.menu-section__heading {
+  min-width: 0;
+}
+
 .menu-section__title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  margin: 0;
   font-family: var(--serif);
-  font-size: 17px;
+  font-size: 19px;
+  font-weight: 600;
   color: var(--ink);
+}
+
+.menu-section__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-section__tally {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .menu-section__actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .menu-section__actions button,
@@ -49,6 +299,7 @@
   color: var(--text);
   border-radius: 7px;
   padding: 6px 11px;
+  font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -72,6 +323,48 @@
   font-size: 14px;
 }
 
+/* --------------------------------------------------- veg / egg / non-veg group */
+
+/* Not sticky: .menu-section clips to its rounded corners with overflow:hidden,
+   which makes it the scrollport for anything inside and leaves a sticky header
+   pinned to a box that never scrolls. The mark repeated on every row is what
+   carries the type a screen down into a twenty-dish main course instead. */
+.menu-group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  background: #f1f4f6;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+/* Every group is ruled off from the one above it, except the first — the
+   section header it sits under already draws that line. Matched by adjacency
+   rather than :first-of-type, which would pick .menu-section__head: that's the
+   first div among these siblings, so the first .menu-group never is. */
+.menu-section__head + .menu-group .menu-group__head {
+  border-top: none;
+}
+
+.menu-group__count {
+  margin-left: auto;
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------- items */
+
 .menu-items {
   list-style: none;
   margin: 0;
@@ -81,13 +374,17 @@
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   padding: 12px 18px;
   border-bottom: 1px solid var(--border);
 }
 
 .menu-item:last-child {
   border-bottom: none;
+}
+
+.menu-item:hover {
+  background: #fafbfc;
 }
 
 .menu-item--out {
@@ -118,6 +415,7 @@
   font-size: 13px;
   color: var(--text-muted);
   margin-top: 2px;
+  line-height: 1.45;
 }
 
 .menu-item__price {
@@ -125,12 +423,15 @@
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  min-width: 62px;
+  text-align: right;
 }
 
 .menu-item__actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 /* The square-in-a-square veg/non-veg mark used on every Indian menu and
@@ -169,18 +470,78 @@
   background: var(--color-warning);
 }
 
+/* -------------------------------------------------------------------- modal */
+
+/* .glass-backdrop carries only the scrim colour — every panel in the app pairs
+   it with its own positioned overlay, and this is the menu's. */
+.menu-panel__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+/* Header and footer stay put while only the fields scroll, so Cancel and Add
+   are always on screen — a long form that pushes its own buttons past the
+   bottom of a laptop is the usual way a dish gets half-entered and abandoned. */
 .menu-panel__modal {
-  width: min(520px, 100%);
+  width: 100%;
+  max-width: 560px;
   max-height: 90vh;
-  overflow-y: auto;
-  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.menu-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .menu-panel__modal h3 {
   font-family: var(--serif);
   font-size: 20px;
+  font-weight: 600;
   color: var(--ink);
-  margin: 0 0 18px;
+  margin: 0;
+}
+
+.menu-modal__sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.menu-modal__close {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 8px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.menu-modal__close:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.menu-modal__body {
+  padding: 20px 24px 24px;
+  overflow-y: auto;
 }
 
 .menu-panel__modal-actions {
@@ -188,6 +549,246 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 8px;
+}
+
+/* ------------------------------------------------------------ form details */
+
+.field__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.field__optional {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.field__error {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.field__hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.field__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field__foot .field__error,
+.field__foot .field__hint {
+  margin-top: 6px;
+}
+
+.field__counter {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input[aria-invalid='true'],
+.field select[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+/* Segmented rather than a dropdown: three options, all worth seeing at once,
+   and each one carries the mark it will show on the menu. Built on real radio
+   inputs — hidden, but still what the browser groups, what arrow keys move
+   between, and what a screen reader announces. */
+.menu-type {
+  display: flex;
+  gap: 8px;
+}
+
+.menu-type__option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 10px 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+/* Kept in the layout and only made invisible: display:none or visibility:hidden
+   would take it out of the tab order and off the accessibility tree, which is
+   the whole reason for using a radio here. */
+.menu-type__option input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.menu-type__option:hover {
+  border-color: var(--brand);
+}
+
+.menu-type__option.is-on {
+  background: #eef4f2;
+  border-color: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.menu-type__option:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.menu-money {
+  position: relative;
+}
+
+.menu-money__symbol {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.menu-money input {
+  padding-left: 28px;
+}
+
+/* --------------------------------------------------------------- portions */
+
+.menu-portions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.menu-portions__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-portions__name {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 42px;
+}
+
+.menu-portions__row .menu-money {
+  width: 118px;
+  flex-shrink: 0;
+}
+
+.menu-portions__remove {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.menu-portions__row .menu-money input {
+  width: 100%;
+  padding: 10px 12px 10px 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 42px;
+}
+
+/* On the menu row, sizes stack over each other instead of running along one
+   line — a dish with three of them would otherwise push the action buttons
+   off a narrow screen. */
+.menu-item__portions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.menu-item__portion {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.menu-item__portion-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------- preview */
+
+.menu-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+  padding: 10px 12px 12px;
+  margin-bottom: 18px;
+}
+
+.menu-preview__label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* Borrows .menu-item so the preview is the real row, then drops the parts
+   that only make sense inside a list. */
+.menu-preview__row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.menu-preview__row:hover {
+  background: var(--surface);
 }
 
 .menu-panel__hint {
@@ -200,6 +801,34 @@
 }
 
 @media (max-width: 640px) {
+  .menu-bar__row {
+    flex-wrap: wrap;
+  }
+
+  .menu-search {
+    flex-basis: 100%;
+  }
+
+  .menu-bar__actions {
+    flex: 1;
+  }
+
+  .menu-bar__actions button {
+    flex: 1;
+  }
+
+  .menu-bar__searching {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .menu-picker {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
   .menu-item {
     flex-wrap: wrap;
   }

@@ -1,6 +1,12 @@
 const path = require('path');
 const fs = require('fs');
-const { DATE_RE, createBookingSchema, checkInSchema, updateBookingSchema } = require('./bookings.schema');
+const {
+  DATE_RE,
+  createBookingSchema,
+  checkInSchema,
+  updateBookingSchema,
+  checkOutSchema,
+} = require('./bookings.schema');
 const bookingsService = require('./bookings.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
@@ -237,9 +243,24 @@ async function updateBookingHandler(req, res, next) {
   }
 }
 
+// Read before the desk commits to anything: how overdue the stay is and what
+// the property's policy suggests that is worth.
+async function getLateCheckoutHandler(req, res, next) {
+  try {
+    const lateCheckout = await bookingsService.getLateCheckout(req.user.lodgeId, Number(req.params.id));
+    res.json({ lateCheckout });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function checkOutHandler(req, res, next) {
   try {
-    const booking = await bookingsService.checkOut(req.user.lodgeId, Number(req.params.id));
+    const parsed = checkOutSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const booking = await bookingsService.checkOut(req.user.lodgeId, Number(req.params.id), parsed.data);
     res.json({ booking });
   } catch (err) {
     next(err);
@@ -267,6 +288,7 @@ module.exports = {
   createBookingHandler,
   checkInHandler,
   updateBookingHandler,
+  getLateCheckoutHandler,
   checkOutHandler,
   cancelBookingHandler,
 };

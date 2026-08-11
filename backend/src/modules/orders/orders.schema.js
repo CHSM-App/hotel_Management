@@ -6,6 +6,10 @@ const orderItemsSchema = z
   .array(
     z.object({
       itemId: z.coerce.number().int().positive('Invalid menu item.'),
+      // Only meaningful for a dish that offers portions, and only checked
+      // against that dish — resolveOrderLines refuses a portion belonging to
+      // anything else, and refuses a missing one when the dish needs it.
+      portionId: z.coerce.number().int().positive().optional().nullable(),
       quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1.').max(99, 'Quantity is too large.'),
     })
   )
@@ -33,4 +37,18 @@ const updateStatusSchema = z.object({
   cancelReason: z.string().trim().max(200).optional().default(''),
 });
 
-module.exports = { ORDER_STATUSES, orderItemsSchema, counterOrderSchema, updateStatusSchema };
+// Ticking one dish off the ticket. A boolean rather than a bare "mark ready"
+// call because a cook mis-taps on a wall tablet and needs to take it back.
+const updateItemReadySchema = z.object({
+  // Not coerced: z.coerce.boolean() reads the string "false" as true, which
+  // would turn an untick into a tick.
+  ready: z.boolean({ error: 'Say whether the item is ready.' }),
+});
+
+module.exports = {
+  ORDER_STATUSES,
+  orderItemsSchema,
+  counterOrderSchema,
+  updateStatusSchema,
+  updateItemReadySchema,
+};

@@ -155,300 +155,340 @@ export default function LodgeRegistration() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-brand">
-        <div className="auth-brand__mark">Lodge Management System</div>
-        <div className="auth-brand__body">
+    <div className="reg-shell">
+      <header className="reg-topbar">
+        <div>
+          <div className="reg-topbar__mark">Lodge Management System</div>
+          <div className="reg-topbar__eyebrow">
+            Vengurla Tech admin{session?.name ? ` · ${session.name}` : ''}
+          </div>
+        </div>
+        <Link className="reg-back" to="/vt-internal/dashboard">
+          ← All properties
+        </Link>
+      </header>
+
+      <div className="reg-main">
+        <div className="reg-head">
+          <span className="reg-head__chip">Staff only</span>
           <h1>Register a new {type.noun}</h1>
           <p>
-            Internal only. Pick what kind of property it is first — that decides which sections the
-            owner gets. Then create the tenant, set its GST defaults, and hand over the first login,
-            which the owner changes on their first sign-in.
+            Pick what kind of property it is first — that decides which sections the owner gets.
+            Then create the tenant, set its GST defaults, and hand over the first login, which the
+            owner changes on their first sign-in.
           </p>
         </div>
-        <div className="auth-brand__foot">Vengurla Tech — staff access</div>
-      </div>
 
-      <div className="auth-panel">
-        <form className="auth-card" onSubmit={handleSubmit} noValidate style={{ maxWidth: 460 }}>
-          <Link to="/vt-internal/dashboard" style={{ fontSize: 13, color: 'var(--text-muted)', display: 'inline-block', marginBottom: 16 }}>
-            ← All properties
-          </Link>
-          <div className="auth-card__eyebrow">Staff only</div>
-          <h2>New {type.noun}</h2>
-          <p className="auth-card__hint">Not linked anywhere in the product. Bookmark this page.</p>
-
-          {error && <div className="form-banner form-banner--error">{error}</div>}
-          {success && (
-            <div className="form-banner form-banner--info">
-              {successNoun} created. Share the phone/email and temporary password with the owner
-              directly.{' '}
-              <Link to="/vt-internal/dashboard" style={{ color: 'var(--brand-ink)', fontWeight: 600 }}>
-                View all properties →
-              </Link>
-            </div>
-          )}
-
-          {/* Step 1, before anything else is asked. It decides which sections
-              the account gets and what the rest of this form calls things, so
-              answering it first is what makes the remaining questions read
-              sensibly — a restaurateur is never asked for their "lodge name". */}
-          <div className="step-head">
-            <span className="step-head__num">1</span>
-            <div>
-              <div className="section-label section-label--flush">What are you registering?</div>
-              <p className="step-head__hint">
-                Whether it has rooms is fixed after go-live — turning that off later would strand
-                their bookings behind a hidden section.
-              </p>
-            </div>
-          </div>
-
-          <div className="type-picker">
-            {PROPERTY_TYPES.map((type) => (
-              <label
-                key={type.key}
-                className={`type-card ${form.propertyType === type.key ? 'type-card--on' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name="propertyType"
-                  value={type.key}
-                  checked={form.propertyType === type.key}
-                  onChange={() => setForm((f) => ({ ...f, propertyType: type.key }))}
-                />
-                <span className="type-card__body">
-                  <span className="type-card__label">{type.label}</span>
-                  <span className="type-card__tagline">{type.tagline}</span>
-                  <span className="type-card__desc">{type.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-
-          {form.propertyType === 'LODGE_WITH_FOOD' && (
-            <div className="field">
-              <label htmlFor="foodServiceStyle">How do guests order food?</label>
-              <select
-                id="foodServiceStyle"
-                value={form.foodServiceStyle}
-                onChange={update('foodServiceStyle')}
-              >
-                {FOOD_SERVICE_STYLES.map((style) => (
-                  <option key={style.key} value={style.key}>
-                    {style.label} — {style.description}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Built from the same FEATURES list the dashboard renders its sidebar
-              from, so this is literally what the owner will see after signing
-              in — not a hand-maintained marketing list that can go stale. */}
-          <div className="includes">
-            <div className="includes__head">
-              This {type.noun} will get
-              <span className="includes__count">{includedFeatures.length} sections</span>
-            </div>
-            {includedGroups.map(({ group, features }) => (
-              <div className="includes__group" key={group}>
-                <div className="includes__group-name">{group}</div>
-                <ul className="includes__list">
-                  {features.map((f) => (
-                    <li key={f.key}>
-                      <strong>{f.title}</strong>
-                      <span>{f.description}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-            {excludedFeatures.length > 0 && (
-              <div className="includes__excluded">
-                <span className="includes__group-name">Hidden for this {type.noun}</span>
-                {excludedFeatures.map((f) => f.title).join(' · ')}
+        <form className="reg-grid" onSubmit={handleSubmit} noValidate>
+          <div className="reg-col">
+            {error && <div className="form-banner form-banner--error">{error}</div>}
+            {success && (
+              <div className="form-banner form-banner--info">
+                {successNoun} created. Share the phone/email and temporary password with the owner
+                directly.{' '}
+                <Link to="/vt-internal/dashboard" style={{ color: '#1d5b3a', fontWeight: 600 }}>
+                  View all properties →
+                </Link>
               </div>
             )}
-          </div>
 
-          <div className="step-head">
-            <span className="step-head__num">2</span>
-            <div>
-              <div className="section-label section-label--flush">{type.Noun} details</div>
-            </div>
-          </div>
+            {/* Step 1, before anything else is asked. It decides which sections
+                the account gets and what the rest of this form calls things, so
+                answering it first is what makes the remaining questions read
+                sensibly — a restaurateur is never asked for their "lodge name". */}
+            <section className="reg-card">
+              <div className="reg-card__head">
+                <span className="reg-step">1</span>
+                <div>
+                  <h2 className="reg-card__title">What are you registering?</h2>
+                  <p className="reg-card__hint">
+                    Everything below adapts to this answer, including what the account is allowed
+                    to bill.
+                  </p>
+                </div>
+              </div>
 
-          <div className="field">
-            <label htmlFor="lodgeName">{type.Noun} name</label>
-            <input
-              id="lodgeName"
-              value={form.lodgeName}
-              onChange={handleNameChange}
-              placeholder={type.examples.name}
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="slug">Public link slug</label>
-            <input
-              id="slug"
-              value={form.slug}
-              onChange={(e) => {
-                setSlugTouched(true);
-                update('slug')(e);
-              }}
-              placeholder={type.examples.slug}
-            />
-          </div>
-
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="phone">{type.Noun} phone</label>
-              <input id="phone" value={form.phone} onChange={update('phone')} placeholder="02362 123456" />
-            </div>
-            <div className="field">
-              <label htmlFor="whatsappNumber">WhatsApp number</label>
-              <input id="whatsappNumber" value={form.whatsappNumber} onChange={update('whatsappNumber')} placeholder="9876543210" />
-            </div>
-          </div>
-
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="city">City / village</label>
-              <input id="city" value={form.city} onChange={update('city')} placeholder="Vengurla" />
-            </div>
-            <div className="field">
-              <label htmlFor="state">State</label>
-              <input id="state" value={form.state} onChange={update('state')} placeholder="Maharashtra" />
-            </div>
-          </div>
-
-          <div className="field">
-            <label htmlFor="address">Address</label>
-            <input id="address" value={form.address} onChange={update('address')} placeholder="Beach road, near jetty" />
-          </div>
-
-          {capabilities.hasRooms && (
-            <div className="field">
-              <label htmlFor="checkinMode">Check-in cycle</label>
-              <select id="checkinMode" value={form.checkinMode} onChange={update('checkinMode')}>
-                {CHECKIN_MODES.map((mode) => (
-                  <option key={mode.value} value={mode.value}>
-                    {mode.label}
-                  </option>
+              <div className="reg-types">
+                {PROPERTY_TYPES.map((option) => (
+                  <label
+                    key={option.key}
+                    className={`reg-type ${form.propertyType === option.key ? 'reg-type--on' : ''}`}
+                  >
+                    <input
+                      className="reg-type__input"
+                      type="radio"
+                      name="propertyType"
+                      value={option.key}
+                      checked={form.propertyType === option.key}
+                      onChange={() => setForm((f) => ({ ...f, propertyType: option.key }))}
+                    />
+                    <span className="reg-type__check" aria-hidden="true" />
+                    <span className="reg-type__body">
+                      <span className="reg-type__label">{option.label}</span>
+                      <span className="reg-type__tagline">{option.tagline}</span>
+                      <span className="reg-type__desc">{option.description}</span>
+                    </span>
+                  </label>
                 ))}
-              </select>
-            </div>
-          )}
+              </div>
 
-          <div className="step-head">
-            <span className="step-head__num">3</span>
-            <div>
-              <div className="section-label section-label--flush">Billing</div>
-            </div>
-          </div>
-
-          <div className="checkbox-field">
-            <input
-              id="isGstRegistered"
-              type="checkbox"
-              checked={form.isGstRegistered}
-              onChange={update('isGstRegistered')}
-            />
-            <div>
-              <label htmlFor="isGstRegistered">GST registered</label>
-              <span className="checkbox-field__note">
-                Fixed after go-live. Decides whether tax invoices and bills of supply exist at all.
-              </span>
-            </div>
-          </div>
-
-          {form.isGstRegistered && (
-            <div className="field">
-              <label htmlFor="gstin">GSTIN</label>
-              <input id="gstin" value={form.gstin} onChange={update('gstin')} placeholder="27ABCDE1234F1Z5" />
-            </div>
-          )}
-
-          {/* Needs rooms AND food to be a real question.
-              "Specified premises" is a GST status defined by accommodation: a
-              property qualifies because its rooms went above ₹7,500/night in
-              the preceding financial year, or because the owner filed a
-              declaration opting in. A restaurant with no rooms therefore
-              cannot hold it (its food is 5% without ITC regardless), and a
-              lodge with no kitchen has no food supply for it to rate. */}
-          {capabilities.hasRooms && capabilities.servesFood && (
-            <div className="checkbox-field">
-              <input
-                id="isSpecifiedPremises"
-                type="checkbox"
-                checked={form.isSpecifiedPremises}
-                onChange={update('isSpecifiedPremises')}
-              />
-              <div>
-                <label htmlFor="isSpecifiedPremises">Specified premises</label>
-                <span className="checkbox-field__note">
-                  Tick only if rooms went above ₹7,500 a night last financial year, or the owner has
-                  filed a declaration opting in. It taxes their food at 18% with ITC instead of 5%
-                  without — confirm with their CA before ticking.
+              <div className="reg-note">
+                <span className="reg-note__icon" aria-hidden="true">
+                  ⚠
+                </span>
+                <span>
+                  Whether it has rooms is fixed after go-live — turning that off later would strand
+                  their bookings behind a hidden section.
                 </span>
               </div>
-            </div>
-          )}
 
-          <div className="step-head">
-            <span className="step-head__num">4</span>
-            <div>
-              <div className="section-label section-label--flush">Owner &amp; first login</div>
-            </div>
+              {form.propertyType === 'LODGE_WITH_FOOD' && (
+                <div className="field">
+                  <label htmlFor="foodServiceStyle">How do guests order food?</label>
+                  <select
+                    id="foodServiceStyle"
+                    value={form.foodServiceStyle}
+                    onChange={update('foodServiceStyle')}
+                  >
+                    {FOOD_SERVICE_STYLES.map((style) => (
+                      <option key={style.key} value={style.key}>
+                        {style.label} — {style.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </section>
+
+            <section className="reg-card">
+              <div className="reg-card__head">
+                <span className="reg-step">2</span>
+                <div>
+                  <h2 className="reg-card__title">{type.Noun} details</h2>
+                  <p className="reg-card__hint">
+                    The name and slug appear on their public page and on every bill.
+                  </p>
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="lodgeName">{type.Noun} name</label>
+                <input
+                  id="lodgeName"
+                  value={form.lodgeName}
+                  onChange={handleNameChange}
+                  placeholder={type.examples.name}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="slug">Public link slug</label>
+                <input
+                  id="slug"
+                  value={form.slug}
+                  onChange={(e) => {
+                    setSlugTouched(true);
+                    update('slug')(e);
+                  }}
+                  placeholder={type.examples.slug}
+                />
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="phone">{type.Noun} phone</label>
+                  <input id="phone" value={form.phone} onChange={update('phone')} placeholder="02362 123456" />
+                </div>
+                <div className="field">
+                  <label htmlFor="whatsappNumber">WhatsApp number</label>
+                  <input id="whatsappNumber" value={form.whatsappNumber} onChange={update('whatsappNumber')} placeholder="9876543210" />
+                </div>
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="city">City / village</label>
+                  <input id="city" value={form.city} onChange={update('city')} placeholder="Vengurla" />
+                </div>
+                <div className="field">
+                  <label htmlFor="state">State</label>
+                  <input id="state" value={form.state} onChange={update('state')} placeholder="Maharashtra" />
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="address">Address</label>
+                <input id="address" value={form.address} onChange={update('address')} placeholder="Beach road, near jetty" />
+              </div>
+
+              {capabilities.hasRooms && (
+                <div className="field">
+                  <label htmlFor="checkinMode">Check-in cycle</label>
+                  <select id="checkinMode" value={form.checkinMode} onChange={update('checkinMode')}>
+                    {CHECKIN_MODES.map((mode) => (
+                      <option key={mode.value} value={mode.value}>
+                        {mode.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </section>
+
+            <section className="reg-card">
+              <div className="reg-card__head">
+                <span className="reg-step">3</span>
+                <div>
+                  <h2 className="reg-card__title">Billing</h2>
+                  <p className="reg-card__hint">
+                    These set the tax defaults every document this account issues is built from.
+                  </p>
+                </div>
+              </div>
+
+              <div className="checkbox-field">
+                <input
+                  id="isGstRegistered"
+                  type="checkbox"
+                  checked={form.isGstRegistered}
+                  onChange={update('isGstRegistered')}
+                />
+                <div>
+                  <label htmlFor="isGstRegistered">GST registered</label>
+                  <span className="checkbox-field__note">
+                    Fixed after go-live. Decides whether tax invoices and bills of supply exist at all.
+                  </span>
+                </div>
+              </div>
+
+              {form.isGstRegistered && (
+                <div className="field">
+                  <label htmlFor="gstin">GSTIN</label>
+                  <input id="gstin" value={form.gstin} onChange={update('gstin')} placeholder="27ABCDE1234F1Z5" />
+                </div>
+              )}
+
+              {/* Needs rooms AND food to be a real question.
+                  "Specified premises" is a GST status defined by accommodation: a
+                  property qualifies because its rooms went above ₹7,500/night in
+                  the preceding financial year, or because the owner filed a
+                  declaration opting in. A restaurant with no rooms therefore
+                  cannot hold it (its food is 5% without ITC regardless), and a
+                  lodge with no kitchen has no food supply for it to rate. */}
+              {capabilities.hasRooms && capabilities.servesFood && (
+                <div className="checkbox-field">
+                  <input
+                    id="isSpecifiedPremises"
+                    type="checkbox"
+                    checked={form.isSpecifiedPremises}
+                    onChange={update('isSpecifiedPremises')}
+                  />
+                  <div>
+                    <label htmlFor="isSpecifiedPremises">Specified premises</label>
+                    <span className="checkbox-field__note">
+                      Tick only if rooms went above ₹7,500 a night last financial year, or the owner has
+                      filed a declaration opting in. It taxes their food at 18% with ITC instead of 5%
+                      without — confirm with their CA before ticking.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="reg-card">
+              <div className="reg-card__head">
+                <span className="reg-step">4</span>
+                <div>
+                  <h2 className="reg-card__title">Owner &amp; first login</h2>
+                  <p className="reg-card__hint">
+                    The owner signs in with their phone or email and this password, then changes it.
+                  </p>
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="ownerName">Owner name</label>
+                <input id="ownerName" value={form.ownerName} onChange={update('ownerName')} placeholder="Suresh Naik" />
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="ownerPhone">Owner phone</label>
+                  <input id="ownerPhone" value={form.ownerPhone} onChange={update('ownerPhone')} placeholder="9876543210" />
+                </div>
+                <div className="field">
+                  <label htmlFor="ownerEmail">Owner email (optional)</label>
+                  <input id="ownerEmail" type="email" value={form.ownerEmail} onChange={update('ownerEmail')} placeholder="owner@lodge.com" />
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="tempPassword">Temporary password</label>
+                <div className="reg-password">
+                  <input
+                    id="tempPassword"
+                    value={form.tempPassword}
+                    onChange={update('tempPassword')}
+                    placeholder="Generate or set one"
+                  />
+                  <button className="reg-generate" type="button" onClick={generatePassword}>
+                    Generate
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
 
-          <div className="field">
-            <label htmlFor="ownerName">Owner name</label>
-            <input id="ownerName" value={form.ownerName} onChange={update('ownerName')} placeholder="Suresh Naik" />
-          </div>
+          <aside className="reg-aside">
+            {/* Built from the same FEATURES list the dashboard renders its sidebar
+                from, so this is literally what the owner will see after signing
+                in — not a hand-maintained marketing list that can go stale. */}
+            <div className="reg-summary">
+              <div className="reg-summary__identity">
+                <div
+                  className={`reg-summary__name ${form.lodgeName.trim() ? '' : 'reg-summary__name--empty'}`}
+                >
+                  {form.lodgeName.trim() || `Untitled ${type.noun}`}
+                </div>
+                <div className="reg-summary__link">/{form.slug.trim() || type.examples.slug}</div>
+              </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="ownerPhone">Owner phone</label>
-              <input id="ownerPhone" value={form.ownerPhone} onChange={update('ownerPhone')} placeholder="9876543210" />
-            </div>
-            <div className="field">
-              <label htmlFor="ownerEmail">Owner email (optional)</label>
-              <input id="ownerEmail" type="email" value={form.ownerEmail} onChange={update('ownerEmail')} placeholder="owner@lodge.com" />
-            </div>
-          </div>
+              <div className="reg-summary__head">
+                <span className="reg-summary__eyebrow">This {type.noun} will get</span>
+                <span className="reg-summary__count">{includedFeatures.length} sections</span>
+              </div>
 
-          <div className="field">
-            <label htmlFor="tempPassword">Temporary password</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                id="tempPassword"
-                value={form.tempPassword}
-                onChange={update('tempPassword')}
-                placeholder="Generate or set one"
-              />
-              <button
-                type="button"
-                onClick={generatePassword}
-                style={{
-                  whiteSpace: 'nowrap',
-                  padding: '0 14px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface)',
-                  cursor: 'pointer',
-                }}
-              >
-                Generate
+              {includedGroups.map(({ group, features }) => (
+                <div className="reg-summary__group" key={group}>
+                  <div className="reg-summary__group-name">{group}</div>
+                  <ul className="reg-summary__list">
+                    {features.map((f) => (
+                      <li key={f.key}>
+                        <strong>{f.title}</strong>
+                        <span>{f.description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+
+              {excludedFeatures.length > 0 && (
+                <div className="reg-summary__excluded">
+                  <div className="reg-summary__group-name">Hidden for this {type.noun}</div>
+                  {excludedFeatures.map((f) => f.title).join(' · ')}
+                </div>
+              )}
+            </div>
+
+            <div className="reg-submit">
+              <button className="reg-cta" type="submit" disabled={submitting}>
+                {submitting ? `Creating ${type.noun}…` : `Create ${type.noun} and first login`}
               </button>
+              <p className="reg-submit__note">
+                Hand the temporary password over directly — it is never emailed.
+              </p>
             </div>
-          </div>
-
-          <button className="btn-primary" type="submit" disabled={submitting}>
-            {submitting ? 'Creating lodge…' : 'Create lodge and first login'}
-          </button>
+          </aside>
         </form>
       </div>
     </div>

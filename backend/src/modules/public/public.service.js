@@ -117,12 +117,30 @@ async function getPublicMenu(lodgeId) {
       name: section.name,
       items: section.items
         .filter((item) => item.isAvailable)
+        // A dish offering sizes is only orderable through one of them, so a
+        // dish whose every size has run out drops out of the menu exactly like
+        // an unavailable dish does — there is nothing left to order. hadSizes
+        // is remembered before the filter, or a dish that just lost its last
+        // size would look like an ordinary single-price one.
+        .map((item) => ({
+          ...item,
+          hadSizes: item.portions.length > 0,
+          portions: item.portions.filter((portion) => portion.isAvailable),
+        }))
+        .filter((item) => !item.hadSizes || item.portions.length > 0)
         .map((item) => ({
           id: item.id,
           name: item.name,
           description: item.description,
+          // Ignored by the client when portions are present; each portion
+          // carries the price that is actually charged.
           price: item.price,
           foodType: item.foodType,
+          portions: item.portions.map((portion) => ({
+            id: portion.id,
+            label: portion.label,
+            price: portion.price,
+          })),
         })),
     }))
     .filter((section) => section.items.length > 0);

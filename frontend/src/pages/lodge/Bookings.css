@@ -444,3 +444,51 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ------------------------------------------------------- late checkout */
+
+.late-modal {
+  max-width: 460px;
+}
+
+.late-modal__lead {
+  margin: 0 0 14px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* The arithmetic behind the suggestion, shown rather than hidden — the
+   receptionist has to say this out loud to the guest. */
+.late-modal__basis {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.late-modal__suggested {
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.late-modal__help {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.late-modal__actions {
+  margin-top: 18px;
+  flex-wrap: wrap;
+}

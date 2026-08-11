@@ -7,6 +7,17 @@ import './forms.css';
 import './chartSections.css';
 import './Billing.css';
 
+// How overdue the guest was, in words. Duplicated from the server's own
+// lateLabel rather than shipped down with the preview, because it is four
+// lines and the bill needs it for a number it already has.
+function lateLabel(minutes) {
+  if (minutes <= 0) return 'on time';
+  if (minutes < 60) return `${minutes} min late`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins === 0 ? `${hours}h late` : `${hours}h ${mins}m late`;
+}
+
 const DOCUMENT_LABEL = {
   TAX_INVOICE: 'Tax invoice',
   BILL_OF_SUPPLY: 'Bill of supply',
@@ -449,6 +460,24 @@ export default function Billing({ lodge }) {
                           {preview.nights === 1 ? '' : 's'}
                         </span>
                       </div>
+                      {/* Only when there is one. Reception agreed this at the
+                          desk during checkout; it is surfaced here so it can be
+                          spotted before a document that can only be voided. */}
+                      {preview.lateCheckoutCharge > 0 && (
+                        <div className="chart-row">
+                          <span className="chart-row__name">
+                            Late checkout
+                            {preview.lateCheckoutMinutes != null && (
+                              <span className="chart-row__dates">
+                                {lateLabel(preview.lateCheckoutMinutes)}
+                              </span>
+                            )}
+                          </span>
+                          <span className="chart-row__value">
+                            {formatPrice(preview.lateCheckoutCharge)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

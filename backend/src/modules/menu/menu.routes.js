@@ -11,6 +11,7 @@ const {
   updateItemAvailabilityHandler,
   updateItemStatusHandler,
   deleteItemHandler,
+  updateItemPortionsHandler,
   getFoodSettingsHandler,
   updateFoodSettingsHandler,
 } = require('./menu.controller');
@@ -44,5 +45,9 @@ router.patch(
 
 router.patch('/items/:id/status', authenticate, requirePermission('food.manage'), updateItemStatusHandler);
 router.delete('/items/:id', authenticate, requirePermission('food.manage'), deleteItemHandler);
+
+// Sizes are menu structure, so they stay on food.manage — the kitchen's one
+// write is still the availability toggle and nothing else.
+router.put('/items/:id/portions', authenticate, requirePermission('food.manage'), updateItemPortionsHandler);
 
 module.exports = router;

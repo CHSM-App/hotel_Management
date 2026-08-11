@@ -44,18 +44,23 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-brand">
-        <div className="auth-brand__mark">Lodge Management System</div>
-        <div className="auth-brand__body">
-          <h1>Vengurla Tech admin</h1>
-          <p>Internal sign-in. Not for lodge owners or staff — use the regular sign-in page for that.</p>
-        </div>
-        <div className="auth-brand__foot">Vengurla Tech — staff access</div>
-      </div>
-
+    <div className="auth-shell auth-shell--simple">
       <div className="auth-panel">
         <form className="auth-card" onSubmit={handleSubmit} noValidate>
+          <div className="auth-card__badge auth-card__badge--staff" aria-hidden="true">
+            {/* Shield over a keyhole — internal access to every property, rather
+                than the roofline-and-key of a single lodge's own sign-in. */}
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M12 3.2 4.8 6.1v5.4c0 4.3 2.9 7.6 7.2 9.3 4.3-1.7 7.2-5 7.2-9.3V6.1L12 3.2Z"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="11.2" r="1.9" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M12 13.1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
           <div className="auth-card__eyebrow">Staff only</div>
           <h2>Admin sign-in</h2>
           <p className="auth-card__hint">Not linked anywhere in the product. Bookmark this page.</p>
@@ -90,6 +95,10 @@ export default function AdminLogin() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <p className="auth-panel__foot">
+          Lodge owners and staff sign in at the regular sign-in page.
+        </p>
       </div>
     </div>
   );

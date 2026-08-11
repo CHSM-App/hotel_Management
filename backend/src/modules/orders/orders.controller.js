@@ -1,4 +1,4 @@
-const { counterOrderSchema, updateStatusSchema } = require('./orders.schema');
+const { counterOrderSchema, updateStatusSchema, updateItemReadySchema } = require('./orders.schema');
 const ordersService = require('./orders.service');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -127,6 +127,24 @@ async function updateStatusHandler(req, res, next) {
   }
 }
 
+// The kitchen ticking a single dish off a ticket. Returns the whole order so
+// the screen re-renders from the server's answer rather than guessing at what
+// the tick did to the rest of the ticket.
+async function updateItemReadyHandler(req, res, next) {
+  try {
+    const input = parse(updateItemReadySchema, req.body);
+    const order = await ordersService.setItemReady(
+      req.user.lodgeId,
+      Number(req.params.id),
+      Number(req.params.itemId),
+      input.ready
+    );
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // A guest who fumbles the PIN five times locks their own room out of ordering
 // for fifteen minutes. They'll phone the desk about it, so reception needs to
 // be able to clear it without waiting for the timer.
@@ -146,5 +164,6 @@ module.exports = {
   getOrderHandler,
   createCounterOrderHandler,
   updateStatusHandler,
+  updateItemReadyHandler,
   clearPinLockoutHandler,
 };

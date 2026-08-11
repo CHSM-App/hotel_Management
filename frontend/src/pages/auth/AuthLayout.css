@@ -97,6 +97,25 @@
   height: 22px;
 }
 
+/* Staff sign-in wears the accent, not the brand, so an internal page is never
+   mistaken for the lodge one at a glance. */
+.auth-card__badge--staff {
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+}
+
+/* Centred pill on the simple shell — the two-column staff pages keep the
+   plain uppercase eyebrow above the heading. */
+.auth-shell--simple .auth-card__eyebrow {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #f7ecec;
+  color: var(--accent-ink);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
 .auth-shell--simple .auth-card h2 {
   font-family: var(--sans);
   margin-bottom: 6px;

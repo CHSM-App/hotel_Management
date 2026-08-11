@@ -13,6 +13,7 @@ const {
   createBookingHandler,
   checkInHandler,
   updateBookingHandler,
+  getLateCheckoutHandler,
   checkOutHandler,
   cancelBookingHandler,
 } = require('./bookings.controller');
@@ -30,6 +31,7 @@ router.get('/price-quote', authenticate, staff, priceQuoteHandler);
 router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);
 router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
+router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
 router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
 router.post('/', authenticate, staff, idProofUpload, createBookingHandler);

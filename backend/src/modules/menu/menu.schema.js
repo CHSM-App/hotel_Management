@@ -16,6 +16,21 @@ const createMenuItemSchema = z.object({
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
 });
 
+// A dish's sizes in the order they should appear. An empty list is the way
+// back to a single-price dish, so it is valid on purpose — see setItemPortions.
+const itemPortionsSchema = z.object({
+  portions: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1, 'Every size needs a name, like “Half plate”.').max(60),
+        price: z.coerce.number().min(0, 'Price can’t be negative.'),
+        isAvailable: z.boolean().optional().default(true),
+      })
+    )
+    .max(10, 'That’s a lot of sizes for one dish.')
+    .default([]),
+});
+
 const availabilitySchema = z.object({
   isAvailable: z.boolean({ error: 'isAvailable must be true or false.' }),
 });
@@ -37,6 +52,7 @@ module.exports = {
   updateMenuCategorySchema: createMenuCategorySchema,
   createMenuItemSchema,
   updateMenuItemSchema: createMenuItemSchema,
+  itemPortionsSchema,
   availabilitySchema,
   statusSchema,
   foodSettingsSchema,

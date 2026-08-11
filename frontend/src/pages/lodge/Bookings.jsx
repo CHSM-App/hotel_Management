@@ -360,6 +360,12 @@ export default function Bookings({ onCheckedOut }) {
   const [actionError, setActionError] = useState('');
   const [clearingLockout, setClearingLockout] = useState(false);
 
+  // Non-null only while the late-checkout decision is on screen. The amount is
+  // held as a string so the field can be cleared to empty while typing without
+  // snapping back to 0 under the receptionist's cursor.
+  const [lateCheckout, setLateCheckout] = useState(null);
+  const [lateChargeInput, setLateChargeInput] = useState('');
+
   // A booking stays editable for its whole life, right up until its bill is
   // issued — a guest might extend their stay, switch rooms, add someone to
   // the party, or the front desk just mistyped a phone number. Room and
@@ -666,11 +672,33 @@ export default function Bookings({ onCheckedOut }) {
     }
   };
 
-  const handleCheckOut = async () => {
+  // Checking out is two steps whenever the guest has run past their deadline:
+  // ask the server how late they are and what the policy says that is worth,
+  // then let reception decide. A guest who is on time never sees the detour.
+  const openCheckOut = async () => {
     setActionError('');
     setActionSubmitting(true);
     try {
-      await apiPatch(`/bookings/${selectedBookingId}/check-out`, {}, { token });
+      const data = await apiGet(`/bookings/${selectedBookingId}/late-checkout`, { token });
+      if (!data.lateCheckout.isChargeable) {
+        await commitCheckOut(0);
+        return;
+      }
+      setLateCheckout(data.lateCheckout);
+      setLateChargeInput(String(data.lateCheckout.suggestedCharge));
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Could not check out this guest.');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  const commitCheckOut = async (lateCharge) => {
+    setActionError('');
+    setActionSubmitting(true);
+    try {
+      await apiPatch(`/bookings/${selectedBookingId}/check-out`, { lateCharge }, { token });
+      setLateCheckout(null);
       setSelectedBookingId(null);
       loadTapeChart();
       onCheckedOut?.();
@@ -1739,7 +1767,7 @@ export default function Bookings({ onCheckedOut }) {
                     <button
                       type="button"
                       className="btn-accent"
-                      onClick={handleCheckOut}
+                      onClick={openCheckOut}
                       disabled={actionSubmitting}
                     >
                       {actionSubmitting ? 'Checking out…' : 'Check out'}
@@ -1768,6 +1796,112 @@ export default function Bookings({ onCheckedOut }) {
           </div>
         </div>
       )}
+
+      {lateCheckout && (
+        <LateCheckoutDialog
+          lateCheckout={lateCheckout}
+          amount={lateChargeInput}
+          onAmount={setLateChargeInput}
+          submitting={actionSubmitting}
+          error={actionError}
+          onCancel={() => setLateCheckout(null)}
+          onConfirm={commitCheckOut}
+        />
+      )}
+    </div>
+  );
+}
+
+const BAND_LABEL = {
+  HALF_DAY: 'part-day rate',
+  FULL_DAY: 'full-night rate',
+};
+
+// The one moment in this app where the software asks a person for a number
+// instead of working it out. The policy's suggestion is pre-filled and the
+// arithmetic behind it is spelled out, because the receptionist has to justify
+// the figure to a guest standing in front of them — and has to be able to
+// waive it in one tap when the guest's taxi was the thing that was late.
+function LateCheckoutDialog({ lateCheckout, amount, onAmount, submitting, error, onCancel, onConfirm }) {
+  const parsed = Number(amount);
+  const valid = amount !== '' && Number.isFinite(parsed) && parsed >= 0;
+  const dueAt = new Date(lateCheckout.deadline);
+
+  return (
+    <div className="glass-backdrop bookings-panel__backdrop" onClick={() => !submitting && onCancel()}>
+      <div
+        className="glass-panel bookings-panel__modal late-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lateCheckoutTitle"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="lateCheckoutTitle">Late checkout</h3>
+
+        <p className="late-modal__lead">
+          This stay was due out at{' '}
+          <strong>
+            {dueAt.toLocaleString([], {
+              day: 'numeric',
+              month: 'short',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </strong>{' '}
+          — the guest is <strong>{lateCheckout.lateLabel}</strong>.
+        </p>
+
+        <div className="late-modal__basis">
+          <span>
+            {BAND_LABEL[lateCheckout.band] || 'policy rate'} · {lateCheckout.percent}% of{' '}
+            {formatPrice(lateCheckout.lastNightRate)}
+          </span>
+          <span className="late-modal__suggested">
+            suggests {formatPrice(lateCheckout.suggestedCharge)}
+          </span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="lateCharge">Charge the guest</label>
+          <input
+            id="lateCharge"
+            type="number"
+            min="0"
+            step="1"
+            inputMode="decimal"
+            value={amount}
+            disabled={submitting}
+            onChange={(e) => onAmount(e.target.value)}
+          />
+          <p className="late-modal__help">
+            Goes on the bill as its own line, taxed with the room. Set it to 0 to waive it.
+          </p>
+        </div>
+
+        {error && <div className="form-banner form-banner--error">{error}</div>}
+
+        <div className="bookings-panel__actions late-modal__actions">
+          <button type="button" className="btn-secondary" onClick={onCancel} disabled={submitting}>
+            Back
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => onConfirm(0)}
+            disabled={submitting}
+          >
+            Waive &amp; check out
+          </button>
+          <button
+            type="button"
+            className="btn-accent"
+            onClick={() => onConfirm(parsed)}
+            disabled={submitting || !valid}
+          >
+            {submitting ? 'Checking out…' : `Charge ${valid ? formatPrice(parsed) : ''} & check out`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

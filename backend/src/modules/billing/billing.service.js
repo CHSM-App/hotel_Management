@@ -123,6 +123,29 @@ function computeGstBreakdown(amounts, slabs) {
   return { cgstAmount: round2(cgstAmount), sgstAmount: round2(sgstAmount), anyTaxable };
 }
 
+// A late checkout charge is part of the accommodation supply, not a penalty
+// standing beside it — so it rides on the same SAC as the room and is taxed,
+// not added on tax-free after the fact.
+//
+// The rate is the one the room's *final* night fell in, rather than the band
+// the charge itself would land in on its own. GST bands accommodation on the
+// nightly tariff, and ₹800 of late checkout on a ₹4,000 room is still a ₹4,000
+// room being occupied; billing it at the ₹800 band would understate the tax.
+function lateChargeSide(booking, amounts, slabs, isGstSide) {
+  const amount = round2(Number(booking.late_checkout_charge) || 0);
+  if (amount <= 0) {
+    return { amount: 0, cgstAmount: 0, sgstAmount: 0, taxable: false, ratePercent: 0 };
+  }
+  const ratePercent = isGstSide ? ratePercentFor(amounts[amounts.length - 1] ?? 0, slabs) : 0;
+  return {
+    amount,
+    cgstAmount: round2((amount * (ratePercent / 100)) / 2),
+    sgstAmount: round2((amount * (ratePercent / 100)) / 2),
+    taxable: ratePercent > 0,
+    ratePercent,
+  };
+}
+
 async function loadBookingForBilling(lodgeId, bookingId) {
   const pool = await getPool();
   const result = await pool
@@ -247,9 +270,14 @@ async function previewBill(lodgeId, bookingId) {
 
   const active = await findActiveInvoice(pool.request(), bookingId);
   const amounts = nightlyAmounts(booking);
-  const subtotal = round2(amounts.reduce((sum, n) => sum + n, 0));
+  const nightsSubtotal = round2(amounts.reduce((sum, n) => sum + n, 0));
   const slabs = await getGstSlabs(pool);
   const { cgstAmount, sgstAmount, anyTaxable } = computeGstBreakdown(amounts, slabs);
+
+  // Whatever reception agreed at the desk, shown as its own line but carried
+  // inside the accommodation subtotal so the SAC and the tax stay correct.
+  const late = lateChargeSide(booking, amounts, slabs, true);
+  const subtotal = round2(nightsSubtotal + late.amount);
 
   // Anything the guest ate and was served during the stay, not yet billed.
   const foodOrders = await loadUnbilledOrders(pool.request(), lodgeId, { bookingId });
@@ -261,8 +289,14 @@ async function previewBill(lodgeId, bookingId) {
         // A stay under the nil threshold is a bill of supply — unless food was
         // served, which is taxable at 5% or 18% regardless of the room rate and
         // therefore makes the whole document a tax invoice.
-        documentType: anyTaxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY',
-        ...buildBreakdown(subtotal, cgstAmount, sgstAmount, true, food),
+        documentType: anyTaxable || late.taxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY',
+        ...buildBreakdown(
+          subtotal,
+          round2(cgstAmount + late.cgstAmount),
+          round2(sgstAmount + late.sgstAmount),
+          true,
+          food
+        ),
       }
     : null;
   const nonGst = {
@@ -276,6 +310,11 @@ async function previewBill(lodgeId, bookingId) {
     roomNumber: booking.room_number,
     categoryName: booking.category_name,
     nights: amounts.length,
+    // Split out of the accommodation subtotal so the bill can show what the
+    // nights cost and what the overstay cost as two separate lines.
+    nightsSubtotal,
+    lateCheckoutCharge: late.amount,
+    lateCheckoutMinutes: booking.late_checkout_minutes ?? null,
     advancePaid: booking.advance_amount != null ? Number(booking.advance_amount) : 0,
     isGstRegistered: !!booking.is_gst_registered,
     gstin: booking.gstin,
@@ -369,8 +408,14 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
   const billingSide = booking.is_gst_registered ? input.billingSide || 'GST' : 'NON_GST';
 
   const amounts = nightlyAmounts(booking);
-  const subtotal = round2(amounts.reduce((sum, n) => sum + n, 0));
+  const nightsSubtotal = round2(amounts.reduce((sum, n) => sum + n, 0));
   const slabs = await getGstSlabs(pool);
+
+  // Read off the booking, which is where reception's decision was recorded at
+  // checkout — never recomputed from the policy here, or a lodge that edited
+  // its late-fee percentages would silently restate bills issued last month.
+  const late = lateChargeSide(booking, amounts, slabs, billingSide === 'GST');
+  const subtotal = round2(nightsSubtotal + late.amount);
 
   const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
 
@@ -392,8 +437,14 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
     let breakdown;
     if (billingSide === 'GST') {
       const { cgstAmount, sgstAmount, anyTaxable } = computeGstBreakdown(amounts, slabs);
-      documentType = anyTaxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY';
-      breakdown = buildBreakdown(subtotal, cgstAmount, sgstAmount, true, food);
+      documentType = anyTaxable || late.taxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY';
+      breakdown = buildBreakdown(
+        subtotal,
+        round2(cgstAmount + late.cgstAmount),
+        round2(sgstAmount + late.sgstAmount),
+        true,
+        food
+      );
     } else {
       documentType = 'CASH_RECEIPT';
       breakdown = buildBreakdown(subtotal, 0, 0, false, food ? { ...food, cgstAmount: 0, sgstAmount: 0 } : null);
@@ -441,18 +492,19 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       .input('foodSubtotal', sql.Decimal(10, 2), breakdown.foodSubtotal)
       .input('foodCgstAmount', sql.Decimal(10, 2), breakdown.foodCgstAmount)
       .input('foodSgstAmount', sql.Decimal(10, 2), breakdown.foodSgstAmount)
+      .input('lateCheckoutCharge', sql.Decimal(10, 2), late.amount)
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.invoices
           (lodge_id, booking_id, document_type, billing_side, invoice_number, room_subtotal,
            cgst_amount, sgst_amount, food_subtotal, food_cgst_amount, food_sgst_amount,
-           round_off, total_amount, advance_paid, balance_collected,
+           late_checkout_charge, round_off, total_amount, advance_paid, balance_collected,
            balance_payment_method, created_by)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @bookingId, @documentType, @billingSide, @invoiceNumber, @roomSubtotal,
            @cgstAmount, @sgstAmount, @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
-           @roundOff, @totalAmount, @advancePaid, @balanceCollected,
+           @lateCheckoutCharge, @roundOff, @totalAmount, @advancePaid, @balanceCollected,
            @balancePaymentMethod, @createdBy)
       `);
 
@@ -511,6 +563,11 @@ function mapInvoice(row) {
     billingSide: row.billing_side,
     invoiceNumber: row.invoice_number,
     roomSubtotal,
+    // Carried inside roomSubtotal for tax purposes, but reported separately so
+    // the printed bill can show the nights and the overstay as two lines.
+    lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
+    nightsSubtotal: round2(roomSubtotal - Number(row.late_checkout_charge ?? 0)),
+    lateCheckoutMinutes: row.late_checkout_minutes ?? null,
     cgstAmount: Number(row.cgst_amount),
     sgstAmount: Number(row.sgst_amount),
     cgstRatePercent: ratePercentFromAmount(Number(row.cgst_amount), roomSubtotal),
@@ -547,7 +604,7 @@ async function getInvoice(lodgeId, invoiceId) {
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
       SELECT i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
-             b.actual_check_in_at, b.actual_check_out_at,
+             b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
@@ -576,7 +633,7 @@ async function listInvoices(lodgeId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT TOP 200 i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
-             b.actual_check_in_at, b.actual_check_out_at,
+             b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state

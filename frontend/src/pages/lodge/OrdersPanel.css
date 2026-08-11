@@ -7,10 +7,51 @@
   flex-wrap: wrap;
 }
 
+.orders-panel__tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .orders-panel__sound-on {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-success);
+}
+
+/* A segmented control rather than underlined tabs: there are two views and
+   they are peers, and this reads as a switch at a glance on a tablet. */
+.orders-tabs {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.orders-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.orders-tab:hover {
+  color: var(--ink);
+}
+
+.orders-tab--on {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1);
 }
 
 .orders-group {
@@ -34,116 +75,289 @@
   margin: 0 0 14px;
 }
 
+/* 280 rather than 260: the number and the status pill share a line now, and
+   below that width "Needs accepting" starts pushing the number around. */
 .orders-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px;
+  /* Left to stretch on purpose: with .order-card__items taking the slack, the
+     totals and the buttons line up straight across a row of cards. */
 }
 
+/* State is carried by the whole card, because the card is what a cook reads
+   from across a kitchen — a 4px stripe isn't legible at that distance. Each
+   status supplies three tokens and the rules below all draw from them:
+   a tint pale enough to leave --ink text at full contrast, an edge a shade
+   deeper so cards still separate against the page, and a dark ink for the
+   status word itself. Nothing here paints text on a saturated fill. */
 .order-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--border);
+  --card-tint: var(--surface);
+  --card-edge: var(--border);
+  --card-ink: var(--text-muted);
+  /* One gutter for every band of the card, so the number, the dishes, the
+     total and the buttons all hang off the same left edge. */
+  --card-pad: 14px;
+  --card-rule: rgba(22, 33, 46, 0.09);
+
+  background: var(--card-tint);
+  border: 1px solid var(--card-edge);
   border-radius: var(--radius-tile);
-  padding: 14px;
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
+  /* The bands rule edge to edge; this keeps them inside the corner radius. */
+  overflow: hidden;
 }
 
-/* The stripe is the only thing a cook reads from across a kitchen, so state is
-   carried by colour and position rather than by the status word alone. */
 .order-card--pending {
-  border-left-color: var(--accent);
+  --card-tint: #fdf2f0;
+  --card-edge: #ecccc6;
+  --card-ink: #8f2620;
 }
 
 .order-card--queued {
-  border-left-color: var(--color-warning);
+  --card-tint: #fdf8e7;
+  --card-edge: #e8d9a4;
+  --card-ink: #85670f;
 }
 
 .order-card--preparing {
-  border-left-color: var(--brand);
+  --card-tint: #eef3fa;
+  --card-edge: #c8d6e8;
+  --card-ink: #1e3a5f;
 }
 
 .order-card--ready {
-  border-left-color: var(--color-success);
+  --card-tint: #ebf8ef;
+  --card-edge: #b5dec5;
+  --card-ink: #107a3d;
+}
+
+/* Off the kitchen screen and into the day's list, where they are a record
+   rather than a job — so they read as settled, not as another colour to
+   scan past. */
+.order-card--delivered,
+.order-card--cancelled {
+  --card-tint: #f5f7f8;
+  --card-edge: #dfe4e8;
+  --card-ink: var(--text-muted);
 }
 
 .order-card__head {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px var(--card-pad) 0;
 }
 
 .order-card__number {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
+/* The status, promoted out of the footer to sit beside the number. It reads
+   as a state rather than as another line of prose, and it is the one place
+   the card's hue appears at ink strength. */
+.order-card__badge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--card-ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--card-edge);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+/* Where it's going and how long it has been waiting — supporting detail, so
+   it sits under the number at metadata weight rather than competing with it. */
+.order-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px var(--card-pad) 11px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 .order-card__target {
-  font-size: 14px;
   font-weight: 600;
   color: var(--text);
 }
 
+.order-card__sep {
+  color: var(--card-edge);
+}
+
 .order-card__elapsed {
-  margin-left: auto;
-  font-size: 12.5px;
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .order-card__items {
   list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
+  margin: 0;
+  padding: 2px var(--card-pad);
   flex: 1;
+  border-top: 1px solid var(--card-rule);
 }
 
-.order-card__items li {
+/* Hairlines between dishes, not around them: the list reads as a checklist to
+   work down, and each row keeps its own line when a long name wraps. */
+.order-card__items li + li {
+  border-top: 1px solid rgba(22, 33, 46, 0.06);
+}
+
+.order-card__item {
   display: flex;
-  gap: 8px;
-  font-size: 14.5px;
-  color: var(--ink);
-  padding: 3px 0;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  min-height: 34px;
 }
 
+/* Only the tickable form is a label, and only it is a hit target — the dish
+   name is part of that target because this is tapped with a thumb across a
+   kitchen, not clicked with a mouse. */
+label.order-card__item {
+  cursor: pointer;
+  /* Pulled back out again so the highlight has room to breathe sideways
+     without the text shifting relative to the rows above it. */
+  padding: 7px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+}
+
+label.order-card__item:hover {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+label.order-card__item:has(.order-card__tick:disabled) {
+  cursor: default;
+}
+
+.order-card__tick {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--color-success);
+  cursor: inherit;
+}
+
+.order-card__tick:disabled {
+  opacity: 0.4;
+}
+
+/* The strike runs through the dish name only. Striking the quantity chip and
+   the badge as well turns the row into a smear of lines at a glance, when the
+   one fact worth carrying is "this dish is done". */
+.order-card__item--ready .order-card__item-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  color: var(--text-muted);
+}
+
+.order-card__item--ready .order-card__qty {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+/* A deeper green than --color-success: at 10.5px on a tinted card the brighter
+   brand green is legible but thin, and this badge is read at a glance. */
+.order-card__item-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0f6d37;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 109, 55, 0.35);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.order-card__tick-hint {
+  margin: 9px var(--card-pad) -2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* A chip rather than loose text: quantities are the number a cook counts out
+   of the pan, and a fixed-width chip keeps them in a column down the ticket
+   however long the dish names run. */
 .order-card__qty {
+  flex-shrink: 0;
+  min-width: 30px;
+  text-align: center;
+  padding: 2px 5px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--brand);
-  min-width: 26px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
   font-variant-numeric: tabular-nums;
 }
 
 .order-card__item-name {
+  flex: 1;
   min-width: 0;
+  font-size: 14.5px;
+  line-height: 1.35;
+  color: var(--ink);
 }
 
+/* Was a pink tint, which vanished into the pending card once the card itself
+   was tinted. Lifted off the card instead: the guest's words are the one thing
+   on the ticket that isn't the kitchen's own, so they get their own surface
+   and a bar to hang off. */
+/* Was a pink tint, which vanished into the pending card once the card itself
+   was tinted. Lifted off the card instead: the guest's words are the one thing
+   on the ticket that isn't the kitchen's own, so they get their own surface
+   and a bar to hang off. */
 .order-card__note {
-  font-size: 13px;
-  color: var(--accent-ink);
-  background: #fdf3f1;
-  border-radius: 6px;
+  margin: 9px var(--card-pad) 0;
   padding: 7px 9px;
-  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--accent-ink);
+  background: rgba(255, 255, 255, 0.75);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px 6px 6px 4px;
 }
 
 .order-card__foot {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
+  gap: 10px;
+  margin: 11px var(--card-pad) 0;
+  padding-top: 9px;
   font-size: 12.5px;
   color: var(--text-muted);
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-  margin-bottom: 10px;
+  /* Tinted rather than the flat --border, which reads as a scratch across a
+     coloured card. */
+  border-top: 1px solid var(--card-rule);
+}
+
+.order-card__count {
+  font-weight: 600;
 }
 
 .order-card__total {
-  font-weight: 700;
+  font-size: 15.5px;
+  font-weight: 800;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
@@ -152,20 +366,25 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 11px var(--card-pad) var(--card-pad);
 }
 
 /* Sized for a thumb on a wall-mounted tablet with wet or floury hands, not for
-   a mouse — hence the 44px floor and the generous padding. */
+   a mouse — hence the 44px floor and the generous padding. The padding is set
+   rather than left to the browser: its default is about 6px a side, which the
+   primary button only got away with because min-width hid it. */
 .order-btn {
   flex: 1;
   min-width: 96px;
   min-height: 44px;
+  padding: 10px 18px;
   border: none;
   border-radius: 8px;
   background: var(--brand);
   color: #ffffff;
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
   cursor: pointer;
 }
 
@@ -178,11 +397,17 @@
   cursor: not-allowed;
 }
 
+/* Opaque rather than transparent so it keeps its shape against a tint, and
+   stays the quiet option next to the solid primary. */
+/* It hugs its label instead of taking a share of the row, so the horizontal
+   padding is the only thing holding the word off the edges — a touch wider
+   than the primary's to compensate. */
 .order-btn--cancel {
   flex: 0 0 auto;
   min-width: 0;
-  background: transparent;
-  border: 1px solid var(--border);
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--card-edge);
   color: var(--text-muted);
   font-weight: 600;
 }
@@ -193,11 +418,294 @@
   color: var(--danger);
 }
 
-.counter-line {
+/* ------------------------------------------------------------- the history */
+
+.order-history__bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.order-history__date {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.order-history__date input {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  min-height: 40px;
+}
+
+.order-history__filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-chip {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.history-chip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.history-chip--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+}
+
+/* The day in three numbers, before any of the rows. Whoever opens this at
+   closing time is usually after exactly this and nothing else. */
+.order-history__summary {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--shadow-card);
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+
+.order-history__stat {
+  display: block;
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.order-history__stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* A single column, not the queue's grid: this is read down like a ledger,
+   and the eye needs the times and totals to line up from row to row. */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-tile);
+  padding: 12px 14px;
+}
+
+.history-row--delivered {
+  border-left-color: #b5dec5;
+}
+
+.history-row--cancelled {
+  border-left-color: #e6c3c0;
+  background: #fcfafa;
+}
+
+.history-row__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-row__number {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row__target {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.history-row__badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.history-row--delivered .history-row__badge {
+  color: #107a3d;
+  border-color: #b5dec5;
+}
+
+.history-row--cancelled .history-row__badge {
+  color: var(--accent);
+  border-color: #e6c3c0;
+}
+
+.history-row__total {
+  margin-left: auto;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row--cancelled .history-row__total {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Times run as their own line of small caps-ish metadata, separated by dots
+   drawn in CSS so the markup stays a plain list of facts. */
+.history-row__times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row__times span + span::before {
+  content: '·';
+  margin-right: 10px;
+  color: var(--border);
+}
+
+.history-row__items {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.history-row__items li {
+  display: flex;
+  gap: 6px;
+}
+
+.history-row__qty {
+  font-weight: 700;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row__note {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--accent-ink);
+}
+
+.history-row__reason {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* .glass-backdrop carries only the scrim colour; this is the overlay it needs,
+   matching the pattern every other panel in the app uses. */
+.counter-backdrop {
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+/* Header and running order stay put while only the menu scrolls. Reception is
+   reading an order down a phone line — losing the total off the bottom of the
+   dialog is how a dish gets missed. */
+.counter-modal {
+  width: 100%;
+  max-width: 620px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.counter-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.counter-form__scroll {
+  padding: 20px 24px 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.counter-find {
+  display: flex;
   gap: 10px;
-  padding: 7px 0;
+  margin-bottom: 14px;
+}
+
+.counter-find__section {
+  flex-shrink: 0;
+  max-width: 46%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--paper);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 42px;
+}
+
+.counter-section {
+  margin-bottom: 10px;
+}
+
+.counter-line {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -205,11 +713,40 @@
   border-bottom: none;
 }
 
+.counter-line__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .counter-line__name {
   flex: 1;
   font-size: 14px;
   color: var(--ink);
   min-width: 0;
+}
+
+/* Indented under the dish so a size reads as belonging to it rather than as
+   another dish on the list. */
+.counter-line__sizes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 24px;
+}
+
+.counter-line__size {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.counter-line__size-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .counter-line__price {
@@ -244,12 +781,118 @@
   font-weight: 600;
 }
 
+.counter-line__qty button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ------------------------------------------------------- the running order */
+
+.counter-summary {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--paper);
+  padding: 12px 24px 16px;
+}
+
+.counter-summary__empty {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Capped so a large order scrolls inside the summary rather than pushing the
+   total and the buttons out of the dialog. */
+.counter-summary__lines {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 22vh;
+  overflow-y: auto;
+}
+
+.counter-summary__lines li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 14px;
+}
+
+.counter-summary__qty {
+  font-weight: 700;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.counter-summary__name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+}
+
+.counter-summary__amount {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.counter-summary__remove {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.counter-summary__remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.counter-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .counter-total {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   margin-right: auto;
   font-size: 17px;
   font-weight: 800;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+.counter-total__count {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .counter-find {
+    flex-wrap: wrap;
+  }
+
+  .counter-find__section {
+    max-width: none;
+    width: 100%;
+  }
+
+  .counter-form__scroll,
+  .counter-summary {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 
 .food-settings__group {

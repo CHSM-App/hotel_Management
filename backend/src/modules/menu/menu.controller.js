@@ -3,6 +3,7 @@ const {
   updateMenuCategorySchema,
   createMenuItemSchema,
   updateMenuItemSchema,
+  itemPortionsSchema,
   availabilitySchema,
   statusSchema,
   foodSettingsSchema,
@@ -137,8 +138,22 @@ async function updateFoodSettingsHandler(req, res, next) {
   }
 }
 
+async function updateItemPortionsHandler(req, res, next) {
+  try {
+    const result = await menuService.setItemPortions(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parse(itemPortionsSchema, req.body)
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getMenuHandler,
+  updateItemPortionsHandler,
   createCategoryHandler,
   updateCategoryHandler,
   updateCategoryStatusHandler,

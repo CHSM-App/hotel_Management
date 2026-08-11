@@ -6,6 +6,7 @@ const {
   getOrderHandler,
   createCounterOrderHandler,
   updateStatusHandler,
+  updateItemReadyHandler,
   clearPinLockoutHandler,
 } = require('./orders.controller');
 
@@ -27,5 +28,11 @@ router.get('/', authenticate, requirePermission('orders.manage'), listOrdersHand
 router.get('/:id', authenticate, requirePermission('orders.manage'), getOrderHandler);
 router.post('/', authenticate, requirePermission('orders.manage'), createCounterOrderHandler);
 router.patch('/:id/status', authenticate, requirePermission('orders.manage'), updateStatusHandler);
+router.patch(
+  '/:id/items/:itemId/ready',
+  authenticate,
+  requirePermission('orders.manage'),
+  updateItemReadyHandler
+);
 
 module.exports = router;

@@ -63,8 +63,10 @@ async function allocateOrderNumber(transaction, lodgeId, orderDate) {
 }
 
 // Prices come from the database, never from the request. The client sends
-// item ids and quantities; anything it claims about price is ignored, so a
-// tampered payload can't buy a thali for ₹1.
+// item ids, portion ids and quantities; anything it claims about price is
+// ignored, so a tampered payload can't buy a thali for ₹1. A portion id is
+// checked to belong to the item it was sent with, which is what stops the
+// half-plate price of one dish being claimed for another.
 async function resolveOrderLines(pool, lodgeId, requestedItems) {
   const ids = [...new Set(requestedItems.map((i) => i.itemId))];
 
@@ -80,6 +82,21 @@ async function resolveOrderLines(pool, lodgeId, requestedItems) {
 
   const byId = new Map(result.recordset.map((row) => [String(row.id), row]));
 
+  const portionRequest = pool.request().input('lodgeId', sql.BigInt, lodgeId);
+  ids.forEach((id, index) => portionRequest.input(`pid${index}`, sql.BigInt, id));
+  const portionResult = await portionRequest.query(`
+    SELECT id, item_id, label, price, is_available
+    FROM dbo.menu_item_portions
+    WHERE lodge_id = @lodgeId
+      AND item_id IN (${ids.map((_, index) => `@pid${index}`).join(', ')})
+  `);
+
+  const portionById = new Map(portionResult.recordset.map((row) => [String(row.id), row]));
+
+  // Having any size row at all is what makes a dish size-only — there is no
+  // flag to keep in step with the rows themselves.
+  const itemsWithPortions = new Set(portionResult.recordset.map((row) => String(row.item_id)));
+
   const lines = [];
   for (const requested of requestedItems) {
     const row = byId.get(String(requested.itemId));
@@ -90,10 +107,45 @@ async function resolveOrderLines(pool, lodgeId, requestedItems) {
       throw new ApiError(`“${row.name}” has just run out. Remove it and place the order again.`, 409);
     }
 
-    const unitPrice = Number(row.price);
+    // A dish that offers sizes has no price of its own to fall back on, so a
+    // missing choice is refused rather than guessed at.
+    if (!itemsWithPortions.has(String(row.id))) {
+      const unitPrice = Number(row.price);
+      lines.push({
+        menuItemId: row.id,
+        menuItemPortionId: null,
+        itemName: row.name,
+        portionLabel: null,
+        unitPrice,
+        quantity: requested.quantity,
+        lineTotal: round2(unitPrice * requested.quantity),
+      });
+      continue;
+    }
+
+    if (!requested.portionId) {
+      throw new ApiError(`Choose a size for “${row.name}”.`, 400);
+    }
+
+    const portion = portionById.get(String(requested.portionId));
+    if (!portion || String(portion.item_id) !== String(row.id)) {
+      throw new ApiError('One of those sizes is no longer on the menu. Refresh and try again.', 409);
+    }
+    if (!portion.is_available) {
+      throw new ApiError(
+        `“${row.name} (${portion.label})” has just run out. Remove it and place the order again.`,
+        409
+      );
+    }
+
+    const unitPrice = Number(portion.price);
     lines.push({
       menuItemId: row.id,
-      itemName: row.name,
+      menuItemPortionId: portion.id,
+      // Composed here so the kitchen ticket, the bill and the reports all read
+      // the size without any of them knowing portions exist.
+      itemName: `${row.name} (${portion.label})`,
+      portionLabel: portion.label,
       unitPrice,
       quantity: requested.quantity,
       lineTotal: round2(unitPrice * requested.quantity),
@@ -156,15 +208,19 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
       await new sql.Request(transaction)
         .input('orderId', sql.BigInt, orderId)
         .input('menuItemId', sql.BigInt, line.menuItemId)
+        .input('menuItemPortionId', sql.BigInt, line.menuItemPortionId ?? null)
         .input('itemName', sql.NVarChar, line.itemName)
+        .input('portionLabel', sql.NVarChar, line.portionLabel ?? null)
         .input('unitPrice', sql.Decimal(10, 2), line.unitPrice)
         .input('quantity', sql.Int, line.quantity)
         .input('lineTotal', sql.Decimal(10, 2), line.lineTotal)
         .query(`
           INSERT INTO dbo.food_order_items
-            (order_id, menu_item_id, item_name, unit_price, quantity, line_total)
+            (order_id, menu_item_id, menu_item_portion_id, item_name, portion_label,
+             unit_price, quantity, line_total)
           VALUES
-            (@orderId, @menuItemId, @itemName, @unitPrice, @quantity, @lineTotal)
+            (@orderId, @menuItemId, @menuItemPortionId, @itemName, @portionLabel,
+             @unitPrice, @quantity, @lineTotal)
         `);
     }
 
@@ -175,6 +231,19 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
     await transaction.rollback();
     throw err;
   }
+}
+
+// The line's id travels with it because the kitchen screen ticks lines off
+// one at a time — it needs something to name the line it just cooked.
+function mapOrderItem(row) {
+  return {
+    id: row.id,
+    name: row.item_name,
+    unitPrice: Number(row.unit_price),
+    quantity: row.quantity,
+    lineTotal: Number(row.line_total),
+    readyAt: row.ready_at ?? null,
+  };
 }
 
 function mapOrder(row, items) {
@@ -246,7 +315,7 @@ async function listOrders(lodgeId, { status, date, live } = {}) {
   const orderIdParams = orderIds.map((_, index) => `@o${index}`).join(', ');
 
   const itemsResult = await itemsRequest.query(`
-    SELECT order_id, item_name, unit_price, quantity, line_total
+    SELECT id, order_id, item_name, unit_price, quantity, line_total, ready_at
     FROM dbo.food_order_items
     WHERE order_id IN (${orderIdParams})
     ORDER BY id ASC
@@ -255,12 +324,7 @@ async function listOrders(lodgeId, { status, date, live } = {}) {
   const itemsByOrder = new Map();
   for (const row of itemsResult.recordset) {
     const list = itemsByOrder.get(String(row.order_id)) || [];
-    list.push({
-      name: row.item_name,
-      unitPrice: Number(row.unit_price),
-      quantity: row.quantity,
-      lineTotal: Number(row.line_total),
-    });
+    list.push(mapOrderItem(row));
     itemsByOrder.set(String(row.order_id), list);
   }
 
@@ -294,19 +358,60 @@ async function getOrder(lodgeId, orderId) {
     .request()
     .input('orderId', sql.BigInt, orderId)
     .query(`
-      SELECT item_name, unit_price, quantity, line_total
+      SELECT id, item_name, unit_price, quantity, line_total, ready_at
       FROM dbo.food_order_items WHERE order_id = @orderId ORDER BY id ASC
     `);
 
-  return mapOrder(
-    row,
-    itemsResult.recordset.map((i) => ({
-      name: i.item_name,
-      unitPrice: Number(i.unit_price),
-      quantity: i.quantity,
-      lineTotal: Number(i.line_total),
-    }))
-  );
+  return mapOrder(row, itemsResult.recordset.map(mapOrderItem));
+}
+
+// Ticking a dish off as it comes out of the kitchen. Only once cooking has
+// actually started: nothing on a ticket still waiting to be accepted, or still
+// sitting in the queue untouched, can be ready, and an order already called
+// ready has nothing left to tick. The status check is here rather than on the
+// screen for the usual reason — two tablets, and the second one is a poll
+// behind.
+const ITEM_TICKABLE_STATUSES = ['PREPARING'];
+
+async function setItemReady(lodgeId, orderId, itemId, ready) {
+  const pool = await getPool();
+
+  const orderResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('orderId', sql.BigInt, orderId)
+    .query('SELECT status FROM dbo.food_orders WHERE id = @orderId AND lodge_id = @lodgeId');
+  const order = orderResult.recordset[0];
+  if (!order) {
+    throw new ApiError('Order not found.', 404);
+  }
+  if (!ITEM_TICKABLE_STATUSES.includes(order.status)) {
+    throw new ApiError(
+      order.status === 'PENDING' || order.status === 'QUEUED'
+        ? 'Start cooking this order before ticking dishes off it.'
+        : `This order is already ${order.status.toLowerCase()} — its items can’t be ticked off now.`,
+      409
+    );
+  }
+
+  // order_id is in the WHERE as well as the id, so a line id from another
+  // lodge's order can't be reached by pairing it with an order of your own.
+  const result = await pool
+    .request()
+    .input('orderId', sql.BigInt, orderId)
+    .input('itemId', sql.BigInt, itemId)
+    .query(`
+      UPDATE dbo.food_order_items
+      SET ready_at = ${ready ? 'SYSDATETIMEOFFSET()' : 'NULL'}
+      OUTPUT inserted.id
+      WHERE id = @itemId AND order_id = @orderId
+    `);
+
+  if (result.recordset.length === 0) {
+    throw new ApiError('That item is not on this order.', 404);
+  }
+
+  return getOrder(lodgeId, orderId);
 }
 
 // Every move through the queue lands here. The transition table is enforced
@@ -356,14 +461,32 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason } = {})
     throw new ApiError('Someone else just updated this order. Refresh to see where it is.', 409);
   }
 
+  // Calling the whole order ready settles every line, so a ticket that was
+  // moved on without each dish being ticked doesn't sit there reading as half
+  // cooked for the rest of its life.
+  if (nextStatus === 'READY') {
+    await pool
+      .request()
+      .input('orderId', sql.BigInt, orderId)
+      .query(`
+        UPDATE dbo.food_order_items
+        SET ready_at = SYSDATETIMEOFFSET()
+        WHERE order_id = @orderId AND ready_at IS NULL
+      `);
+  }
+
   return getOrder(lodgeId, orderId);
 }
 
 module.exports = {
   NEXT_STATUSES,
   todayIsoIST,
+  // Exported for its own sake: it is the only place a price is decided, and it
+  // is worth being able to exercise without writing an order to do it.
+  resolveOrderLines,
   createOrder,
   listOrders,
   getOrder,
   updateStatus,
+  setItemReady,
 };

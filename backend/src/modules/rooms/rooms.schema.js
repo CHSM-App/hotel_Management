@@ -54,4 +54,36 @@ const updateRoomSchema = z.object({
 
 const statusSchema = z.object({ isActive: z.boolean({ error: 'isActive must be true or false.' }) });
 
-module.exports = { createRoomSchema, updateRoomSchema, statusSchema };
+// When the property wants its rooms back, and what it charges for the guest
+// who doesn't. checkinMode isn't here on purpose — it is fixed at registration.
+const checkoutPolicySchema = z
+  .object({
+    checkOutTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a checkout time as HH:MM, e.g. 11:00.'),
+    lateGraceMinutes: z.coerce
+      .number()
+      .int()
+      .min(0, 'A grace period can’t be negative.')
+      .max(720, 'A grace period over 12 hours isn’t a grace period.'),
+    lateHalfDayPercent: z.coerce
+      .number()
+      .min(0, 'A percentage can’t be negative.')
+      .max(200, 'Keep the charge under 200% of a night.'),
+    lateFullDayAfterMinutes: z.coerce
+      .number()
+      .int()
+      .min(0, 'That has to be a number of minutes.')
+      .max(1440, 'Past 24 hours it is another night, not a late checkout.'),
+    lateFullDayPercent: z.coerce
+      .number()
+      .min(0, 'A percentage can’t be negative.')
+      .max(200, 'Keep the charge under 200% of a night.'),
+  })
+  // The bands have to be in order or the full-day rate is unreachable — the
+  // half-day band would run past the point the full-day one starts.
+  .refine((data) => data.lateFullDayAfterMinutes > data.lateGraceMinutes, {
+    message: 'The full-day charge has to start after the grace period ends.',
+  });
+
+module.exports = { createRoomSchema, updateRoomSchema, statusSchema, checkoutPolicySchema };

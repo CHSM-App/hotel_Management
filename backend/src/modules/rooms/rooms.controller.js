@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { createRoomSchema, updateRoomSchema, statusSchema } = require('./rooms.schema');
+const { createRoomSchema, updateRoomSchema, statusSchema, checkoutPolicySchema } = require('./rooms.schema');
 const roomsService = require('./rooms.service');
+const checkoutPolicyService = require('./checkoutPolicy.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('../../middleware/roomImageUpload');
 
@@ -9,6 +10,28 @@ async function listRoomsHandler(req, res, next) {
   try {
     const rooms = await roomsService.listRooms(req.user.lodgeId);
     res.json({ rooms });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getCheckoutPolicyHandler(req, res, next) {
+  try {
+    const policy = await checkoutPolicyService.getCheckoutPolicy(req.user.lodgeId);
+    res.json({ policy });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCheckoutPolicyHandler(req, res, next) {
+  try {
+    const parsed = checkoutPolicySchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const policy = await checkoutPolicyService.updateCheckoutPolicy(req.user.lodgeId, parsed.data);
+    res.json({ policy });
   } catch (err) {
     next(err);
   }
@@ -110,6 +133,8 @@ async function deleteRoomHandler(req, res, next) {
 
 module.exports = {
   listRoomsHandler,
+  getCheckoutPolicyHandler,
+  updateCheckoutPolicyHandler,
   createRoomHandler,
   updateRoomHandler,
   updateRoomStatusHandler,

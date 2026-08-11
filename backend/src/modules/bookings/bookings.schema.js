@@ -80,4 +80,24 @@ const updateBookingSchema = z.object({
   switchableChargeIds: z.array(z.coerce.number().int().positive()).optional(),
 });
 
-module.exports = { DATE_RE, ID_PROOF_TYPES, createBookingSchema, checkInSchema, updateBookingSchema };
+// What reception decided to charge for running past the checkout deadline.
+// Defaults to 0 so an on-time checkout can keep posting an empty body, and 0
+// is also the explicit "waived" answer — the two are indistinguishable here on
+// purpose, because late_checkout_minutes is what tells them apart later.
+const checkOutSchema = z.object({
+  lateCharge: z.coerce
+    .number()
+    .min(0, 'A late charge can’t be negative.')
+    .max(100000, 'That late charge looks wrong — check the amount.')
+    .optional()
+    .default(0),
+});
+
+module.exports = {
+  DATE_RE,
+  ID_PROOF_TYPES,
+  createBookingSchema,
+  checkInSchema,
+  updateBookingSchema,
+  checkOutSchema,
+};

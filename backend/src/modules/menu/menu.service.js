@@ -1,7 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 
-function mapItem(row) {
+function mapItem(row, portions = []) {
   return {
     id: row.id,
     categoryId: row.category_id,
@@ -12,7 +12,39 @@ function mapItem(row) {
     isAvailable: !!row.is_available,
     sortOrder: row.sort_order,
     isActive: !!row.is_active,
+    portions,
   };
+}
+
+function mapPortion(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    price: Number(row.price),
+    isAvailable: !!row.is_available,
+    sortOrder: row.sort_order,
+  };
+}
+
+// The sizes of every dish in one lodge, keyed by item id.
+async function getPortionsByItem(pool, lodgeId) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT id, item_id, label, price, is_available, sort_order
+      FROM dbo.menu_item_portions
+      WHERE lodge_id = @lodgeId
+      ORDER BY sort_order ASC, id ASC
+    `);
+
+  const byItem = new Map();
+  for (const row of result.recordset) {
+    const list = byItem.get(String(row.item_id)) || [];
+    list.push(mapPortion(row));
+    byItem.set(String(row.item_id), list);
+  }
+  return byItem;
 }
 
 // The whole menu in one call — sections with their items nested. Both the
@@ -36,16 +68,19 @@ async function getMenu(lodgeId, { activeOnly = false } = {}) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, category_id, name, description, price, food_type, is_available, sort_order, is_active
+      SELECT id, category_id, name, description, price, food_type, is_available,
+             sort_order, is_active
       FROM dbo.menu_items
       WHERE lodge_id = @lodgeId ${activeOnly ? 'AND is_active = 1' : ''}
       ORDER BY sort_order ASC, name ASC
     `);
 
+  const portionsByItem = await getPortionsByItem(pool, lodgeId);
+
   const itemsByCategory = new Map();
   for (const row of itemsResult.recordset) {
     const list = itemsByCategory.get(row.category_id) || [];
-    list.push(mapItem(row));
+    list.push(mapItem(row, portionsByItem.get(String(row.id)) || []));
     itemsByCategory.set(row.category_id, list);
   }
 
@@ -304,6 +339,20 @@ async function deleteItem(lodgeId, itemId) {
       .input('itemId', sql.BigInt, itemId)
       .query('UPDATE dbo.food_order_items SET menu_item_id = NULL WHERE menu_item_id = @itemId');
 
+    // The portion rows go with the dish, so the lines that pointed at them
+    // lose their soft link the same way they lose menu_item_id — the label and
+    // the price they were charged stay snapshotted on the line either way.
+    await new sql.Request(transaction)
+      .input('itemId', sql.BigInt, itemId)
+      .query(`
+        UPDATE dbo.food_order_items SET menu_item_portion_id = NULL
+        WHERE menu_item_portion_id IN (SELECT id FROM dbo.menu_item_portions WHERE item_id = @itemId)
+      `);
+
+    await new sql.Request(transaction)
+      .input('itemId', sql.BigInt, itemId)
+      .query('DELETE FROM dbo.menu_item_portions WHERE item_id = @itemId');
+
     await new sql.Request(transaction)
       .input('itemId', sql.BigInt, itemId)
       .query('DELETE FROM dbo.menu_items WHERE id = @itemId');
@@ -313,6 +362,74 @@ async function deleteItem(lodgeId, itemId) {
     await transaction.rollback();
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Portions
+// ---------------------------------------------------------------------------
+
+// A dish's sizes are saved as the complete list they should end up as, so an
+// empty list is the way back to a single-price dish. Rows are replaced rather
+// than diffed: nothing outside the order lines points at a portion id, and
+// those keep their own snapshot of the label and the price they charged.
+async function setItemPortions(lodgeId, itemId, input) {
+  const pool = await getPool();
+
+  const item = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('itemId', sql.BigInt, itemId)
+    .query('SELECT id FROM dbo.menu_items WHERE id = @itemId AND lodge_id = @lodgeId');
+  if (item.recordset.length === 0) {
+    throw new ApiError('Menu item not found.', 404);
+  }
+
+  const seen = new Set();
+  for (const portion of input.portions) {
+    const key = portion.label.trim().toLowerCase();
+    if (seen.has(key)) {
+      throw new ApiError(`This dish already has a size called “${portion.label}”.`, 409);
+    }
+    seen.add(key);
+  }
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    // Order lines keep the label and price they were charged, so all they lose
+    // here is the soft link back to a row that is about to be replaced.
+    await new sql.Request(transaction)
+      .input('itemId', sql.BigInt, itemId)
+      .query(`
+        UPDATE dbo.food_order_items SET menu_item_portion_id = NULL
+        WHERE menu_item_portion_id IN (SELECT id FROM dbo.menu_item_portions WHERE item_id = @itemId)
+      `);
+
+    await new sql.Request(transaction)
+      .input('itemId', sql.BigInt, itemId)
+      .query('DELETE FROM dbo.menu_item_portions WHERE item_id = @itemId');
+
+    for (const [index, portion] of input.portions.entries()) {
+      await new sql.Request(transaction)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('itemId', sql.BigInt, itemId)
+        .input('label', sql.NVarChar, portion.label.trim())
+        .input('price', sql.Decimal(10, 2), portion.price)
+        .input('isAvailable', sql.Bit, portion.isAvailable !== false)
+        .input('sortOrder', sql.Int, index)
+        .query(`
+          INSERT INTO dbo.menu_item_portions (lodge_id, item_id, label, price, is_available, sort_order)
+          VALUES (@lodgeId, @itemId, @label, @price, @isAvailable, @sortOrder)
+        `);
+    }
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+
+  return { id: itemId };
 }
 
 async function getFoodSettings(lodgeId) {
@@ -377,6 +494,7 @@ module.exports = {
   setItemAvailable,
   setItemActive,
   deleteItem,
+  setItemPortions,
   getFoodSettings,
   updateFoodSettings,
 };
