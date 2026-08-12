@@ -1,0 +1,707 @@
+/* Shared by InventoryPanel (the store cupboard) and RecipesPanel (what each
+   dish takes out of it). They are two halves of one job and are read one after
+   the other, so they use one set of styles rather than two that drift. */
+
+/* ---------------------------------------------------------------- top bar */
+
+.inv-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.inv-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.inv-bar__row--stats {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inv-bar__actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Shown only while a search or the low-stock filter is on, when the group
+   strip is hidden and the results decide what's on screen. */
+.inv-bar__searching {
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.inv-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Same drawn magnifier as the menu editor — two shapes cost less than a
+   request for an icon. */
+.inv-search__icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin-top: -6px;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.inv-search__icon::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  width: 5px;
+  height: 1.5px;
+  background: var(--text-muted);
+  transform: rotate(45deg);
+}
+
+.inv-search input {
+  width: 100%;
+  padding: 9px 12px 9px 32px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font: inherit;
+  color: var(--ink);
+}
+
+.inv-search input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* ----------------------------------------------------------------- tallies */
+
+.inv-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inv-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.inv-stat--btn {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.inv-stat--btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.inv-stat--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.inv-stat--bad {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------- list */
+
+.inv-panel__hint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin: 14px 0;
+}
+
+.inv-panel__lede {
+  margin-top: -6px;
+  margin-bottom: 16px;
+}
+
+.inv-negative-note {
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+
+.inv-list {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inv-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+/* The left edge carries the state, so a shelf that needs attention is findable
+   by colour down the side of the list rather than by reading every number. */
+.inv-item--low {
+  border-left-color: var(--color-warning);
+}
+
+.inv-item--bad {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.inv-item--off {
+  opacity: 0.6;
+}
+
+.inv-item__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.inv-item__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.inv-item__meta {
+  margin-top: 3px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inv-item__missing {
+  color: var(--accent);
+}
+
+/* Tabular figures so a column of quantities lines up on the decimal point
+   instead of wandering with the digits. */
+.inv-item__qty {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-item__number {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.inv-item--bad .inv-item__number {
+  color: var(--danger);
+}
+
+.inv-item__unit {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.inv-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.inv-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.inv-tag--low {
+  background: #fef9e7;
+  border-color: var(--color-warning);
+  color: #8a6d0b;
+}
+
+.inv-tag--bad {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.inv-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.inv-linkbtn:hover {
+  color: var(--brand-ink);
+}
+
+.inv-danger {
+  color: var(--danger);
+}
+
+.inv-danger:hover {
+  color: var(--danger);
+}
+
+/* --------------------------------------------------------------- sections */
+
+.inv-section {
+  margin-bottom: 22px;
+}
+
+.inv-section__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.inv-section__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.inv-section__tally {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------- modals */
+
+.inv-panel__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 60;
+}
+
+.inv-panel__modal {
+  width: 100%;
+  max-width: 460px;
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: var(--radius-card);
+}
+
+.inv-panel__modal--wide {
+  max-width: 620px;
+}
+
+.inv-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 0;
+}
+
+.inv-modal__head h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  color: var(--ink);
+}
+
+.inv-modal__sub {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.inv-modal__close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.inv-modal__close:hover {
+  color: var(--ink);
+}
+
+.inv-modal__body {
+  padding: 16px 20px 20px;
+}
+
+.inv-modal__note {
+  margin-top: 4px;
+  line-height: 1.55;
+}
+
+.inv-panel__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* ------------------------------------------------------------ mode picker */
+
+/* Two cards rather than a radio pair: "stock came in" and "correct to a count"
+   answer different questions, and picking the wrong one writes the wrong
+   number. The sentence under each is what tells them apart. */
+.inv-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.inv-mode__option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.inv-mode__option strong {
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.inv-mode__option span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.inv-mode__option:hover {
+  border-color: var(--brand);
+}
+
+.inv-mode__option--on {
+  border-color: var(--brand);
+  background: rgba(30, 58, 95, 0.06);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+/* ------------------------------------------------------------ size tabs */
+
+.inv-scopes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.inv-scopes__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.inv-scopes__tab:hover {
+  border-color: var(--brand);
+}
+
+.inv-scopes__tab--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.inv-scopes__count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.inv-scopes__tab--on .inv-scopes__count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* A size with nothing in it is the one thing worth spotting on this strip —
+   it's the case that silently deducts nothing at service. */
+.inv-scopes__count--none {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.inv-scopes__tab--on .inv-scopes__count--none {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* -------------------------------------------------------- recipe rows */
+
+.inv-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.inv-recipe__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.inv-recipe__row select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  font: inherit;
+  color: var(--ink);
+}
+
+.inv-recipe__qty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.inv-recipe__qty input {
+  width: 96px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  font: inherit;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-recipe__unit {
+  min-width: 28px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.inv-recipe__remove {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.inv-recipe__remove:hover {
+  color: var(--danger);
+}
+
+/* ----------------------------------------------------------------- ledger */
+
+.inv-ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.inv-ledger__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.inv-ledger__row:last-child {
+  border-bottom: none;
+}
+
+.inv-ledger__what {
+  min-width: 0;
+}
+
+.inv-ledger__reason {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.inv-ledger__reason--consumption {
+  background: rgba(30, 58, 95, 0.08);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.inv-ledger__reason--purchase,
+.inv-ledger__reason--opening {
+  background: #eaf7ef;
+  border-color: var(--color-success);
+  color: #15803d;
+}
+
+.inv-ledger__reason--adjustment,
+.inv-ledger__reason--reversal {
+  background: #fef9e7;
+  border-color: var(--color-warning);
+  color: #8a6d0b;
+}
+
+.inv-ledger__detail {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inv-ledger__change,
+.inv-ledger__balance {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.inv-ledger__change {
+  font-weight: 650;
+}
+
+.inv-ledger__change--out {
+  color: var(--danger);
+}
+
+.inv-ledger__change--in {
+  color: #15803d;
+}
+
+.inv-ledger__balance {
+  color: var(--text-muted);
+}
+
+.inv-ledger__when {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- narrow */
+
+@media (max-width: 640px) {
+  .inv-item {
+    flex-wrap: wrap;
+  }
+
+  .inv-item__body {
+    flex-basis: 100%;
+  }
+
+  .inv-item__actions {
+    flex: 1;
+    justify-content: flex-start;
+  }
+
+  .inv-mode {
+    grid-template-columns: 1fr;
+  }
+
+  .inv-recipe__row {
+    flex-wrap: wrap;
+  }
+
+  .inv-recipe__row select {
+    flex-basis: 100%;
+  }
+
+  /* The timestamp is the first thing worth losing when the ledger has to fit a
+     phone — the reason and the number are what the row is for. */
+  .inv-ledger__row {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .inv-ledger__when {
+    display: none;
+  }
+}

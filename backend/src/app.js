@@ -17,6 +17,7 @@ const staffRoutes = require('./modules/staff/staff.routes');
 const menuRoutes = require('./modules/menu/menu.routes');
 const tablesRoutes = require('./modules/tables/tables.routes');
 const ordersRoutes = require('./modules/orders/orders.routes');
+const inventoryRoutes = require('./modules/inventory/inventory.routes');
 const publicRoutes = require('./modules/public/public.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
@@ -91,6 +92,7 @@ app.use('/staff', staffRoutes);
 app.use('/menu', menuRoutes);
 app.use('/tables', tablesRoutes);
 app.use('/orders', ordersRoutes);
+app.use('/inventory', inventoryRoutes);
 app.use('/public', publicRoutes);
 
 // SPA fallback: any GET that wasn't an API route or a static file gets index.html
@@ -99,7 +101,7 @@ app.use('/public', publicRoutes);
 const API_PREFIXES = [
   '/auth', '/internal', '/me', '/rooms', '/categories', '/switchable-charges',
   '/seasons', '/pricing', '/bookings', '/billing', '/reports', '/roles',
-  '/staff', '/public', '/room-images', '/health',
+  '/staff', '/public', '/room-images', '/health', '/inventory',
 ];
 app.get(/.*/, (req, res, next) => {
   if (API_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + '/'))) {

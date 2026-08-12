@@ -4,6 +4,7 @@ import OwnerDashboard from './pages/lodge/OwnerDashboard';
 import AdminLogin from './pages/internal/AdminLogin';
 import LodgesDashboard from './pages/internal/LodgesDashboard';
 import LodgeRegistration from './pages/internal/LodgeRegistration';
+import LodgeDetail from './pages/internal/LodgeDetail';
 import LodgePublicPage from './pages/public/LodgePublicPage';
 import OrderPage from './pages/public/OrderPage';
 import NotFound from './pages/NotFound';
@@ -54,6 +55,16 @@ function App() {
           element={
             <RequireStaff>
               <LodgeRegistration />
+            </RequireStaff>
+          }
+        />
+        {/* Ranked below /lodges/new by the router regardless of order here —
+            a static segment always beats a dynamic one. */}
+        <Route
+          path="/vt-internal/lodges/:id"
+          element={
+            <RequireStaff>
+              <LodgeDetail />
             </RequireStaff>
           }
         />

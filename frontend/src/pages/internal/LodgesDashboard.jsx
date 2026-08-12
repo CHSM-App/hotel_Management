@@ -107,6 +107,7 @@ export default function LodgesDashboard() {
                     <th>GST</th>
                     <th>Status</th>
                     <th>Onboarded</th>
+                    <th aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
@@ -136,6 +137,11 @@ export default function LodgesDashboard() {
                         </span>
                       </td>
                       <td>{formatDate(lodge.created_at)}</td>
+                      <td className="dash-table__actions">
+                        <Link className="btn-view" to={`/vt-internal/lodges/${lodge.id}`}>
+                          View
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

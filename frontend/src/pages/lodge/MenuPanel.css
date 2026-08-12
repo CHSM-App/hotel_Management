@@ -158,75 +158,6 @@
   color: var(--accent);
 }
 
-/* ------------------------------------------------------------ section picker */
-
-/* Deliberately the widest, plainest control on the screen: it is the first
-   decision on this panel, and everything below it is the answer. */
-.menu-picker {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: 14px 18px;
-  margin-bottom: 16px;
-}
-
-.menu-picker__label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.menu-picker__field {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-
-/* The native arrow differs on every platform and sits at a different inset on
-   each; this replaces it with one chevron so the control looks the same on a
-   reception desktop and the owner's phone. */
-.menu-picker__field::after {
-  content: '';
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -6px;
-  border-right: 2px solid var(--text-muted);
-  border-bottom: 2px solid var(--text-muted);
-  transform: rotate(45deg);
-  pointer-events: none;
-}
-
-.menu-picker__field select {
-  width: 100%;
-  appearance: none;
-  -webkit-appearance: none;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--paper);
-  padding: 11px 38px 11px 14px;
-  font-family: var(--serif);
-  font-size: 16px;
-  color: var(--ink);
-  cursor: pointer;
-  min-height: 46px;
-}
-
-.menu-picker__field select:focus-visible {
-  outline: none;
-  border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
-}
-
 /* ------------------------------------------------------------------ section */
 
 .menu-section {
@@ -820,13 +751,6 @@
   .menu-bar__searching {
     width: 100%;
     margin-left: 0;
-  }
-
-  .menu-picker {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    padding: 12px 14px;
   }
 
   .menu-item {

@@ -60,6 +60,22 @@ async function updateCategoryStatusHandler(req, res, next) {
   }
 }
 
+// Carries the kitchen's permission as well as the owner's, same as the
+// single-item toggle it wraps — see menu.routes.js.
+async function updateCategoryAvailabilityHandler(req, res, next) {
+  try {
+    const { isAvailable } = parse(availabilitySchema, req.body);
+    const result = await menuService.setCategoryItemsAvailable(
+      req.user.lodgeId,
+      Number(req.params.id),
+      isAvailable
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteCategoryHandler(req, res, next) {
   try {
     await menuService.deleteCategory(req.user.lodgeId, Number(req.params.id));
@@ -157,6 +173,7 @@ module.exports = {
   createCategoryHandler,
   updateCategoryHandler,
   updateCategoryStatusHandler,
+  updateCategoryAvailabilityHandler,
   deleteCategoryHandler,
   createItemHandler,
   updateItemHandler,

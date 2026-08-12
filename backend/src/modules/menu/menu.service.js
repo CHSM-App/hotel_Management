@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const inventoryService = require('../inventory/inventory.service');
 
 function mapItem(row, portions = []) {
   return {
@@ -299,6 +300,45 @@ async function setItemAvailable(lodgeId, itemId, isAvailable) {
   return { id: itemId };
 }
 
+// The same switch as setItemAvailable, thrown over a whole section at once.
+// This is a real kitchen action rather than a convenience: the fish runs out
+// and every fish dish has to come off the guest's menu in one go, at eight in
+// the evening, on a phone. Twenty separate requests would half-succeed often
+// enough to matter, and each one would be a separate row in anyone's mind.
+//
+// Returns how many rows actually changed, so the screen can say "9 dishes
+// marked out" rather than claiming it did something to a section that was
+// already entirely out.
+async function setCategoryItemsAvailable(lodgeId, categoryId, isAvailable) {
+  const pool = await getPool();
+
+  const category = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .query('SELECT id, name FROM dbo.menu_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
+  if (category.recordset.length === 0) {
+    throw new ApiError('Menu section not found.', 404);
+  }
+
+  // is_available is matched on its previous value so the count is of dishes
+  // that moved, not of dishes in the section.
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .input('isAvailable', sql.Bit, isAvailable)
+    .query(`
+      UPDATE dbo.menu_items
+      SET is_available = @isAvailable
+      OUTPUT inserted.id
+      WHERE lodge_id = @lodgeId AND category_id = @categoryId
+        AND is_available <> @isAvailable
+    `);
+
+  return { changed: result.recordset.length, name: category.recordset[0].name };
+}
+
 async function setItemActive(lodgeId, itemId, isActive) {
   const pool = await getPool();
   const result = await pool
@@ -349,6 +389,10 @@ async function deleteItem(lodgeId, itemId) {
         WHERE menu_item_portion_id IN (SELECT id FROM dbo.menu_item_portions WHERE item_id = @itemId)
       `);
 
+    // What the dish was made of has to go before the rows it names do — the
+    // recipe points at both this item and its sizes with real foreign keys.
+    await inventoryService.deleteItemRecipes(transaction, itemId);
+
     await new sql.Request(transaction)
       .input('itemId', sql.BigInt, itemId)
       .query('DELETE FROM dbo.menu_item_portions WHERE item_id = @itemId');
@@ -370,8 +414,13 @@ async function deleteItem(lodgeId, itemId) {
 
 // A dish's sizes are saved as the complete list they should end up as, so an
 // empty list is the way back to a single-price dish. Rows are replaced rather
-// than diffed: nothing outside the order lines points at a portion id, and
-// those keep their own snapshot of the label and the price they charged.
+// than diffed, so a size gets a new id every time anything on the dish is
+// saved. Order lines don't care — they keep their own snapshot of the label and
+// the price they charged.
+//
+// Recipes do care, and are carried across by label rather than by id: a size
+// that was only re-priced keeps its ingredients, a size that was renamed loses
+// them. See detachPortionRecipes in inventory.service.js.
 async function setItemPortions(lodgeId, itemId, input) {
   const pool = await getPool();
 
@@ -405,6 +454,11 @@ async function setItemPortions(lodgeId, itemId, input) {
         WHERE menu_item_portion_id IN (SELECT id FROM dbo.menu_item_portions WHERE item_id = @itemId)
       `);
 
+    // Lifted out against the label each was written for, so they can be put
+    // back on the far side of the replace. Dish-level lines aren't touched:
+    // they don't name a size, so nothing about them changes here.
+    const detachedRecipes = await inventoryService.detachPortionRecipes(transaction, itemId);
+
     await new sql.Request(transaction)
       .input('itemId', sql.BigInt, itemId)
       .query('DELETE FROM dbo.menu_item_portions WHERE item_id = @itemId');
@@ -422,6 +476,8 @@ async function setItemPortions(lodgeId, itemId, input) {
           VALUES (@lodgeId, @itemId, @label, @price, @isAvailable, @sortOrder)
         `);
     }
+
+    await inventoryService.reattachPortionRecipes(transaction, lodgeId, itemId, detachedRecipes);
 
     await transaction.commit();
   } catch (err) {
@@ -492,6 +548,7 @@ module.exports = {
   createItem,
   updateItem,
   setItemAvailable,
+  setCategoryItemsAvailable,
   setItemActive,
   deleteItem,
   setItemPortions,

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const inventoryService = require('../inventory/inventory.service');
 
 // Handed to the guest's phone once, at placement, so it can poll its own
 // order's status without being able to read anyone else's. Same shape as the
@@ -373,7 +374,7 @@ async function getOrder(lodgeId, orderId) {
 // behind.
 const ITEM_TICKABLE_STATUSES = ['PREPARING'];
 
-async function setItemReady(lodgeId, orderId, itemId, ready) {
+async function setItemReady(lodgeId, orderId, itemId, ready, { userId = null } = {}) {
   const pool = await getPool();
 
   const orderResult = await pool
@@ -394,21 +395,52 @@ async function setItemReady(lodgeId, orderId, itemId, ready) {
     );
   }
 
-  // order_id is in the WHERE as well as the id, so a line id from another
-  // lodge's order can't be reached by pairing it with an order of your own.
-  const result = await pool
-    .request()
-    .input('orderId', sql.BigInt, orderId)
-    .input('itemId', sql.BigInt, itemId)
-    .query(`
-      UPDATE dbo.food_order_items
-      SET ready_at = ${ready ? 'SYSDATETIMEOFFSET()' : 'NULL'}
-      OUTPUT inserted.id
-      WHERE id = @itemId AND order_id = @orderId
-    `);
+  // The tick and the stock it eats share a transaction. A crash between them
+  // would otherwise leave the kitchen screen and the store cupboard telling
+  // different stories, with nothing to say which one was right.
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    // order_id is in the WHERE as well as the id, so a line id from another
+    // lodge's order can't be reached by pairing it with an order of your own.
+    //
+    // ready_at is also matched on its *previous* value, which is what makes
+    // this safe to deduct from: the row only moves on a real change of state,
+    // so a double-tap — or the second tablet a poll behind — updates nothing
+    // and consumes nothing. That guard is the whole idempotency story.
+    const result = await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .input('itemId', sql.BigInt, itemId)
+      .query(`
+        UPDATE dbo.food_order_items
+        SET ready_at = ${ready ? 'SYSDATETIMEOFFSET()' : 'NULL'}
+        OUTPUT inserted.id
+        WHERE id = @itemId AND order_id = @orderId AND ready_at IS ${ready ? 'NULL' : 'NOT NULL'}
+      `);
 
-  if (result.recordset.length === 0) {
-    throw new ApiError('That item is not on this order.', 404);
+    if (result.recordset.length === 0) {
+      // Nothing moved: either the line isn't on this order at all, or it was
+      // already where it was being asked to go. Only the first is an error.
+      const exists = await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .input('itemId', sql.BigInt, itemId)
+        .query('SELECT id FROM dbo.food_order_items WHERE id = @itemId AND order_id = @orderId');
+      if (exists.recordset.length === 0) {
+        throw new ApiError('That item is not on this order.', 404);
+      }
+    } else {
+      await inventoryService.applyOrderItemStock(transaction, lodgeId, {
+        orderId,
+        orderItemId: itemId,
+        reverse: !ready,
+        userId,
+      });
+    }
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
   }
 
   return getOrder(lodgeId, orderId);
@@ -418,7 +450,7 @@ async function setItemReady(lodgeId, orderId, itemId, ready) {
 // server-side rather than trusted from the button that was clicked: two people
 // on two screens will tap the same order, and the second tap has to fail
 // cleanly instead of dragging a delivered order back to preparing.
-async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason } = {}) {
+async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId = null } = {}) {
   const pool = await getPool();
 
   const currentResult = await pool
@@ -442,37 +474,63 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason } = {})
   const timestampColumn = STATUS_TIMESTAMP_COLUMN[nextStatus];
   const timestampSet = timestampColumn ? `, ${timestampColumn} = SYSDATETIMEOFFSET()` : '';
 
-  const result = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('orderId', sql.BigInt, orderId)
-    .input('nextStatus', sql.NVarChar, nextStatus)
-    .input('currentStatus', sql.NVarChar, current.status)
-    .input('cancelReason', sql.NVarChar, nextStatus === 'CANCELLED' ? cancelReason || null : null)
-    .query(`
-      UPDATE dbo.food_orders
-      SET status = @nextStatus, cancel_reason = COALESCE(@cancelReason, cancel_reason)${timestampSet}
-      OUTPUT inserted.id
-      WHERE id = @orderId AND lodge_id = @lodgeId AND status = @currentStatus
-    `);
-
-  // Lost the race against another screen between the read and the write.
-  if (result.recordset.length === 0) {
-    throw new ApiError('Someone else just updated this order. Refresh to see where it is.', 409);
-  }
-
-  // Calling the whole order ready settles every line, so a ticket that was
-  // moved on without each dish being ticked doesn't sit there reading as half
-  // cooked for the rest of its life.
-  if (nextStatus === 'READY') {
-    await pool
-      .request()
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const result = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
       .input('orderId', sql.BigInt, orderId)
+      .input('nextStatus', sql.NVarChar, nextStatus)
+      .input('currentStatus', sql.NVarChar, current.status)
+      .input('cancelReason', sql.NVarChar, nextStatus === 'CANCELLED' ? cancelReason || null : null)
       .query(`
-        UPDATE dbo.food_order_items
-        SET ready_at = SYSDATETIMEOFFSET()
-        WHERE order_id = @orderId AND ready_at IS NULL
+        UPDATE dbo.food_orders
+        SET status = @nextStatus, cancel_reason = COALESCE(@cancelReason, cancel_reason)${timestampSet}
+        OUTPUT inserted.id
+        WHERE id = @orderId AND lodge_id = @lodgeId AND status = @currentStatus
       `);
+
+    // Lost the race against another screen between the read and the write.
+    if (result.recordset.length === 0) {
+      throw new ApiError('Someone else just updated this order. Refresh to see where it is.', 409);
+    }
+
+    // Calling the whole order ready settles every line, so a ticket that was
+    // moved on without each dish being ticked doesn't sit there reading as half
+    // cooked for the rest of its life.
+    //
+    // Those lines are cooked food that nobody ticked, so they eat their
+    // ingredients here. Lines already ticked off are excluded by the same
+    // `ready_at IS NULL` filter that settles them, which is what stops a dish
+    // being deducted once on its tick and again on the order.
+    if (nextStatus === 'READY') {
+      const settled = await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .query(`
+          UPDATE dbo.food_order_items
+          SET ready_at = SYSDATETIMEOFFSET()
+          OUTPUT inserted.id
+          WHERE order_id = @orderId AND ready_at IS NULL
+        `);
+
+      for (const row of settled.recordset) {
+        await inventoryService.applyOrderItemStock(transaction, lodgeId, {
+          orderId,
+          orderItemId: row.id,
+          userId,
+        });
+      }
+    }
+
+    // Cancelling deliberately gives nothing back. Whatever was ticked off had
+    // already been cooked, and the onion in it is gone whether or not the guest
+    // ever took the plate. Anything genuinely unused goes back through a
+    // recount, which is the only person who can actually see the pan.
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
   }
 
   return getOrder(lodgeId, orderId);

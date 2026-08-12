@@ -1,0 +1,100 @@
+/* The strip of group chips shared by the Menu and Inventory tabs.
+   See SectionTabs.jsx for why this is a strip and not a dropdown. */
+
+.tabstrip {
+  display: flex;
+  gap: 8px;
+  /* Scrolls sideways rather than wrapping: ten sections on two or three lines
+     would push the list itself off a phone screen. The scrollbar is hidden
+     because the chips running to the edge are the affordance. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 2px 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabstrip::-webkit-scrollbar {
+  display: none;
+}
+
+.tabstrip__tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+  /* Comfortably past the 44px touch target — tapped on a phone in a kitchen,
+     often by someone already holding something. */
+  min-height: 44px;
+}
+
+.tabstrip__tab:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.tabstrip__tab:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+}
+
+.tabstrip__tab--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.tabstrip__tab--on:hover {
+  color: #fff;
+}
+
+.tabstrip__tab--dim {
+  opacity: 0.55;
+}
+
+.tabstrip__tab--dim .tabstrip__name {
+  text-decoration: line-through;
+}
+
+.tabstrip__count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--paper);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tabstrip__tab--on .tabstrip__count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.tabstrip__flag {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}
+
+.tabstrip__tab--on .tabstrip__flag {
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  .tabstrip {
+    margin-left: -2px;
+    margin-right: -2px;
+  }
+}

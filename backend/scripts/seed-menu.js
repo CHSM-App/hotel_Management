@@ -1,5 +1,14 @@
 /**
- * Seeds the full food menu for The Royal Palace (phone 9421072971).
+ * Seeds a standard multi-cuisine Indian menu into whichever lodge is named on
+ * the command line.
+ *
+ *   node scripts/seed-menu.js --phone 8263829478 --name "Hotel Renuka Palace"
+ *
+ * Both arguments are required and both are matched, because a phone alone is
+ * one typo away from writing a hundred dishes into somebody else's property.
+ * There is deliberately no default lodge — this script first shipped hard-wired
+ * to The Royal Palace, and a leftover default is exactly the kind of thing that
+ * seeds the wrong menu six months later.
  *
  * Idempotent: sections and items are matched by name and updated in place, so
  * re-running after a price change just restates the prices. Item rows are never
@@ -9,18 +18,32 @@
  * The printed menu splits each section into Veg / Egg / Non-Veg headings; the
  * schema carries that on the item as food_type instead, so those become one
  * section with typed items rather than three sections.
- *
- * Run with: node scripts/seed-royal-palace-menu.js
  */
 require('dotenv').config();
 const { getPool, sql } = require('../src/config/connection');
 
-const LODGE_PHONE = '9421072971';
-const LODGE_NAME = 'The Royal Palace';
+// Read as a pair rather than positionally: the two are both strings, and
+// getting them the wrong way round would otherwise fail with a confusing
+// "no lodge found" instead of an obvious one.
+function readArg(flag) {
+  const index = process.argv.indexOf(flag);
+  return index === -1 ? null : process.argv[index + 1] || null;
+}
 
-// The old "Starter" section held five dishes that the new "Starters" section
-// repeats at the same prices. Renaming it folds those rows into the new
-// section instead of leaving a duplicate section beside it.
+const LODGE_PHONE = readArg('--phone');
+const LODGE_NAME = readArg('--name');
+
+if (!LODGE_PHONE || !LODGE_NAME) {
+  console.error('Usage: node scripts/seed-menu.js --phone <number> --name "<lodge name>"');
+  console.error('Example: node scripts/seed-menu.js --phone 8263829478 --name "Hotel Renuka Palace"');
+  process.exit(1);
+}
+
+// Sections an earlier cut of this menu named differently. Folding the old name
+// into the new one keeps the dishes already under it — and any order lines
+// pointing at them — instead of leaving a stale section beside the new one.
+// Each rename is guarded on the new name not already existing, so this is a
+// no-op on a lodge being seeded for the first time.
 const RENAMES = [['Starter', 'Starters']];
 
 const VEG = 'VEG';

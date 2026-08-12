@@ -1,0 +1,75 @@
+/* The ⋮ button and its popup, shared by the Menu and Inventory tabs.
+   See RowMenu.jsx for what belongs inside one. */
+
+.rowmenu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.rowmenu__trigger {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.rowmenu__trigger:hover,
+.rowmenu__trigger[aria-expanded='true'] {
+  border-color: var(--border);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.rowmenu__trigger:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+}
+
+.rowmenu__pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Overrides whatever pill styling the host panel puts on its row buttons —
+   inside the popup these are full-width rows, not chips. */
+.rowmenu__pop button {
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 0;
+}
+
+.rowmenu__pop button:hover {
+  background: var(--paper);
+}
+
+/* Both panels mark their destructive row with their own class name. */
+.rowmenu__pop button.menu-danger:hover,
+.rowmenu__pop button.inv-danger:hover {
+  background: var(--danger-bg);
+}

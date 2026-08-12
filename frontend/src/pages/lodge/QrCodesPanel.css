@@ -222,6 +222,149 @@
    feature rather than an afterthought: drop the dashboard chrome and the
    on-screen controls, keep the cards, and stop a card being split across two
    pages. */
+/* ------------------------------------------------------- print settings bar */
+
+/* These decide what lands on paper, not what shows on screen. Kept as a block
+   above the codes rather than beside the Print button so the count and the
+   button sit together at the end of the decision. */
+.qr-print {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.qr-print__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.qr-print__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.qr-print__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.qr-print__field input {
+  width: 92px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--paper);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  min-height: 42px;
+}
+
+.qr-print__field input:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+}
+
+.qr-print__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.qr-print__sizes {
+  display: flex;
+  gap: 6px;
+}
+
+.qr-print__size {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 42px;
+}
+
+.qr-print__size strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.qr-print__size span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.qr-print__size:hover {
+  border-color: var(--brand);
+}
+
+.qr-print__size--on {
+  border-color: var(--brand);
+  background: rgba(30, 58, 95, 0.06);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.qr-print__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.qr-print__tally {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.qr-print__tally strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Extra copies exist for the printer only. Eight identical codes on screen
+   would say nothing the first one doesn't. */
+.qr-dupe {
+  display: none;
+}
+
+/* The wrapper around the one card that is always on screen. display:contents
+   so it generates no box of its own — without this the wrapper would become
+   the grid cell and the card would lose its own sizing. It exists purely to
+   carry qr-noprint when the copy count is zero. */
+.qr-orig {
+  display: contents;
+}
+
+@media (max-width: 640px) {
+  .qr-print__row {
+    gap: 14px;
+  }
+
+  .qr-print__sizes {
+    flex-wrap: wrap;
+  }
+}
+
 @media print {
   .dash-topbar,
   .dash-sidebar,
@@ -232,7 +375,20 @@
   .qr-group__hint,
   .qr-group__badge,
   .qr-card__tools,
+  .qr-print,
   .reset-banner {
+    display: none !important;
+  }
+
+  /* The copies come back for the print run only, and lay out as ordinary grid
+     cells so they flow and paginate with the originals. */
+  .qr-dupe {
+    display: contents !important;
+  }
+
+  /* Zero copies means zero on paper — including the one card the screen keeps
+     showing as its preview. */
+  .qr-noprint {
     display: none !important;
   }
 
@@ -244,9 +400,34 @@
     background: #ffffff !important;
   }
 
-  .qr-grid {
-    grid-template-columns: repeat(3, 1fr);
+  /* Columns are what actually set the printed size, so the three options are
+     three column counts. The single-code modifier is dropped here or the
+     property code would print one-per-row whatever was chosen. */
+  .qr-grid,
+  .qr-grid--single {
+    display: grid !important;
     gap: 8px;
+  }
+
+  .qr-panel--small .qr-grid,
+  .qr-panel--small .qr-grid--single {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .qr-panel--card .qr-grid,
+  .qr-panel--card .qr-grid--single {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .qr-panel--large .qr-grid,
+  .qr-panel--large .qr-grid--single {
+    grid-template-columns: 1fr;
+  }
+
+  /* qr-card--large is a screen treatment for the one property code. On paper
+     the chosen size governs every card equally. */
+  .qr-card--large {
+    max-width: none;
   }
 
   .qr-card {

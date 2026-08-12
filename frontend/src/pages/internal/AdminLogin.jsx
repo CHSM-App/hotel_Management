@@ -63,7 +63,7 @@ export default function AdminLogin() {
           </div>
           <div className="auth-card__eyebrow">Staff only</div>
           <h2>Admin sign-in</h2>
-          <p className="auth-card__hint">Not linked anywhere in the product. Bookmark this page.</p>
+          <p className="auth-card__hint">Restricted to Vengurla Tech internal accounts.</p>
 
           {error && <div className="form-banner form-banner--error">{error}</div>}
 

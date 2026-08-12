@@ -120,6 +120,7 @@ async function updateStatusHandler(req, res, next) {
     const input = parse(updateStatusSchema, req.body);
     const order = await ordersService.updateStatus(req.user.lodgeId, Number(req.params.id), input.status, {
       cancelReason: input.cancelReason,
+      userId: req.user.sub,
     });
     res.json({ order });
   } catch (err) {
@@ -137,7 +138,8 @@ async function updateItemReadyHandler(req, res, next) {
       req.user.lodgeId,
       Number(req.params.id),
       Number(req.params.itemId),
-      input.ready
+      input.ready,
+      { userId: req.user.sub }
     );
     res.json({ order });
   } catch (err) {

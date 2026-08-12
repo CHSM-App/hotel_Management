@@ -5,6 +5,7 @@ const {
   createCategoryHandler,
   updateCategoryHandler,
   updateCategoryStatusHandler,
+  updateCategoryAvailabilityHandler,
   deleteCategoryHandler,
   createItemHandler,
   updateItemHandler,
@@ -28,6 +29,16 @@ router.patch('/settings', authenticate, requirePermission('food.manage'), update
 router.post('/categories', authenticate, requirePermission('food.manage'), createCategoryHandler);
 router.patch('/categories/:id', authenticate, requirePermission('food.manage'), updateCategoryHandler);
 router.patch('/categories/:id/status', authenticate, requirePermission('food.manage'), updateCategoryStatusHandler);
+
+// "The fish is off" — every dish in a section, in one tap. Takes orders.manage
+// as well as food.manage for exactly the reason the single-item toggle does:
+// it happens mid-service, and the owner isn't always signed in.
+router.patch(
+  '/categories/:id/availability',
+  authenticate,
+  requirePermission('food.manage', 'orders.manage'),
+  updateCategoryAvailabilityHandler
+);
 router.delete('/categories/:id', authenticate, requirePermission('food.manage'), deleteCategoryHandler);
 
 router.post('/items', authenticate, requirePermission('food.manage'), createItemHandler);

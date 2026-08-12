@@ -1,0 +1,229 @@
+/* Read-only view of one property, reached from the View button on the internal
+   lodge list. Shares .dash-shell / .dash-topbar / .badge / .dash-table with
+   LodgesDashboard.css — only what's specific to this page lives here. */
+
+.detail-main {
+  max-width: 1180px;
+}
+
+.detail-back {
+  display: inline-block;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.detail-back:hover {
+  color: var(--brand);
+}
+
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.detail-header h1 {
+  font-size: 28px;
+}
+
+.detail-header__slug {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.detail-header__badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* auto-fit rather than a fixed count: a restaurant has no rooms tile and a
+   lodge with no kitchen has no food tiles, so the number of tiles varies. */
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.detail-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.detail-stat__value {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.detail-stat__label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.detail-stat__note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.detail-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+
+/* Tables and the activity strip read badly in a half-width column. */
+.detail-card--wide {
+  grid-column: 1 / -1;
+  padding: 20px 0 0;
+}
+
+.detail-card--wide h2,
+.detail-card--wide .detail-card__hint,
+.detail-card--wide .detail-dl--inline {
+  padding-left: 22px;
+  padding-right: 22px;
+}
+
+.detail-card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+
+.detail-card__hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: -8px 0 14px;
+}
+
+.detail-row {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.detail-row dt {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.detail-row dd {
+  color: var(--ink);
+  text-align: right;
+  word-break: break-word;
+}
+
+.detail-row a {
+  color: var(--brand);
+}
+
+/* The activity card is three short facts, so they sit side by side instead of
+   stacking into a tall near-empty panel. */
+.detail-dl--inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 28px;
+  padding-bottom: 20px;
+}
+
+.detail-features {
+  margin-bottom: 14px;
+}
+
+.detail-features:last-child {
+  margin-bottom: 0;
+}
+
+.detail-features__group {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.detail-features ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-features li {
+  font-size: 13px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: var(--ink);
+}
+
+.detail-badge-gap {
+  margin-left: 6px;
+}
+
+@media (max-width: 640px) {
+  .detail-header h1 {
+    font-size: 22px;
+  }
+
+  .detail-card {
+    padding: 16px;
+  }
+
+  .detail-card--wide {
+    padding: 16px 0 0;
+  }
+
+  .detail-card--wide h2,
+  .detail-card--wide .detail-card__hint,
+  .detail-card--wide .detail-dl--inline {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* Label above value once the row is too narrow to hold both on one line. */
+  .detail-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .detail-row dd {
+    text-align: left;
+  }
+}

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
+import SectionTabs from './SectionTabs';
+import RowMenu from './RowMenu';
 import './forms.css';
 import './MenuPanel.css';
 
@@ -82,6 +84,7 @@ function FoodTypeMark({ type }) {
   const label = FOOD_TYPES.find((t) => t.key === type)?.label || type;
   return <span className={className} title={label} aria-label={label} />;
 }
+
 
 // Matched against the name and the description both — an owner looking for the
 // paneer dishes shouldn't have to remember which ones are named for it.
@@ -267,6 +270,30 @@ export default function MenuPanel() {
     }
   };
 
+  // Marking a section out is the one bulk write here, and it's asked about
+  // first — it takes a whole course off the guest's menu, and it's reached by
+  // one tap on a phone in a busy kitchen.
+  const setSectionAvailability = async (section, isAvailable) => {
+    if (!isAvailable) {
+      const on = section.items.filter((i) => i.isAvailable).length;
+      if (on === 0) return;
+      if (!window.confirm(`Mark all ${on} dish${on === 1 ? '' : 'es'} in “${section.name}” out of stock?`)) {
+        return;
+      }
+    }
+
+    try {
+      await apiPatch(
+        `/menu/categories/${section.id}/availability`,
+        { isAvailable },
+        { token: session?.token }
+      );
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update the section.');
+    }
+  };
+
   const toggleSectionActive = async (section) => {
     try {
       await apiPatch(
@@ -424,28 +451,31 @@ export default function MenuPanel() {
       )}
 
       {/* The picker comes before the menu itself: pick a section, then read it.
-          It's hidden while searching, when the results decide what's shown. */}
+          It's hidden while searching, when the results decide what's shown.
+
+          A strip of tabs rather than the dropdown this used to be. Ten sections
+          is one tap here against two there, every section and its size is
+          readable without opening anything, and it matches how the Recipes and
+          Inventory tabs pick a group. It scrolls sideways when it has to. */}
       {!error && !searching && sections && sections.length > 0 && (
-        <div className="menu-picker">
-          <label className="menu-picker__label" htmlFor="menuSectionPicker">
-            Section
-          </label>
-          <div className="menu-picker__field">
-            <select
-              id="menuSectionPicker"
-              value={activeSection?.id ?? ''}
-              onChange={(e) => setActiveSectionId(e.target.value)}
-            >
-              {sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.name} · {section.items.length} dish
-                  {section.items.length === 1 ? '' : 'es'}
-                  {section.isActive ? '' : ' · hidden'}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <SectionTabs
+          ariaLabel="Menu sections"
+          activeId={activeSection?.id}
+          onChange={setActiveSectionId}
+          tabs={sections.map((section) => {
+            const out = section.items.filter((i) => !i.isAvailable).length;
+            return {
+              id: section.id,
+              name: section.name,
+              count: section.items.length,
+              // A section with dishes off the menu is worth seeing before you
+              // open it — that is usually why you came looking.
+              flagged: out > 0,
+              flagTitle: `${out} out of stock`,
+              dimmed: !section.isActive,
+            };
+          })}
+        />
       )}
 
       {!error && searching && shownSections?.length === 0 && (
@@ -488,19 +518,34 @@ export default function MenuPanel() {
                   <button type="button" onClick={() => openItemForm(null, section.id)}>
                     Add item
                   </button>
-                  <button type="button" onClick={() => openSectionForm(section)}>
-                    Edit
-                  </button>
-                  <button type="button" onClick={() => toggleSectionActive(section)}>
-                    {section.isActive ? 'Hide' : 'Show'}
-                  </button>
-                  <button
-                    type="button"
-                    className="menu-danger"
-                    onClick={() => deleteSection(section)}
-                  >
-                    Delete
-                  </button>
+                  {/* The day-end action, in the open. When the fish is off,
+                      every fish dish goes off together — see
+                      setCategoryItemsAvailable in menu.service.js. */}
+                  {section.items.length > 0 &&
+                    (section.items.every((i) => !i.isAvailable) ? (
+                      <button type="button" onClick={() => setSectionAvailability(section, true)}>
+                        Bring all back
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => setSectionAvailability(section, false)}>
+                        Mark all out
+                      </button>
+                    ))}
+                  <RowMenu label={`More actions for ${section.name}`}>
+                    <button type="button" onClick={() => openSectionForm(section)}>
+                      Edit section
+                    </button>
+                    <button type="button" onClick={() => toggleSectionActive(section)}>
+                      {section.isActive ? 'Hide from guests' : 'Show to guests'}
+                    </button>
+                    <button
+                      type="button"
+                      className="menu-danger"
+                      onClick={() => deleteSection(section)}
+                    >
+                      Delete section
+                    </button>
+                  </RowMenu>
                 </div>
               </div>
 
@@ -546,20 +591,28 @@ export default function MenuPanel() {
                               formatPrice(item.price)
                             )}
                           </div>
+                          {/* The one action a kitchen repeats mid-service stays
+                              in the open; the rest are behind the ⋮. */}
                           <div className="menu-item__actions">
-                            <button type="button" onClick={() => toggleAvailability(item)}>
-                              {item.isAvailable ? 'Mark out' : 'Back in'}
-                            </button>
-                            <button type="button" onClick={() => openItemForm(item)}>
-                              Edit
-                            </button>
                             <button
                               type="button"
-                              className="menu-danger"
-                              onClick={() => deleteItem(item)}
+                              className="menu-item__toggle"
+                              onClick={() => toggleAvailability(item)}
                             >
-                              Delete
+                              {item.isAvailable ? 'Mark out' : 'Back in'}
                             </button>
+                            <RowMenu label={`More actions for ${item.name}`}>
+                              <button type="button" onClick={() => openItemForm(item)}>
+                                Edit dish
+                              </button>
+                              <button
+                                type="button"
+                                className="menu-danger"
+                                onClick={() => deleteItem(item)}
+                              >
+                                Delete dish
+                              </button>
+                            </RowMenu>
                           </div>
                         </li>
                       ))}

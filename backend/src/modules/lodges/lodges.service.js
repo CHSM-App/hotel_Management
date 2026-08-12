@@ -93,4 +93,75 @@ async function listLodges() {
   return result.recordset;
 }
 
-module.exports = { createLodgeWithOwner, listLodges };
+// Everything internal staff need to answer "what is this account, and what has
+// it actually done" without signing in as the owner. One round trip with four
+// result sets rather than four queries: the whole thing renders as a single
+// page, so a partial answer is never useful.
+//
+// Read-only by design. Nothing here edits a lodge — that stays with the owner,
+// and support looking at a property must not be able to change it by accident.
+async function getLodgeDetail(id) {
+  const pool = await getPool();
+
+  const result = await pool.request().input('id', sql.BigInt, id).query(`
+    SELECT
+      id, name, slug, phone, whatsapp_number, address, city, state,
+      checkin_mode, is_gst_registered, gstin, is_specified_premises,
+      has_rooms, serves_food, food_room_service, food_table_service,
+      check_out_time, late_grace_minutes, late_half_day_percent,
+      late_full_day_after_minutes, late_full_day_percent,
+      is_active, created_at
+    FROM dbo.lodges
+    WHERE id = @id;
+
+    -- Owner first, then the rest by seniority of account. No password material
+    -- is selected: this screen shows who can sign in, never how.
+    SELECT id, name, email, phone, role, is_active, must_reset_password, created_at
+    FROM dbo.users
+    WHERE lodge_id = @id
+    ORDER BY CASE WHEN role = 'OWNER' THEN 0 ELSE 1 END, created_at;
+
+    SELECT
+      (SELECT COUNT(*) FROM dbo.rooms WHERE lodge_id = @id) AS rooms,
+      (SELECT COUNT(*) FROM dbo.rooms WHERE lodge_id = @id AND is_active = 1) AS rooms_active,
+      (SELECT COUNT(*) FROM dbo.room_categories WHERE lodge_id = @id) AS categories,
+      (SELECT COUNT(*) FROM dbo.features WHERE lodge_id = @id) AS features,
+      (SELECT COUNT(*) FROM dbo.switchable_charges WHERE lodge_id = @id) AS switchable_charges,
+      (SELECT COUNT(*) FROM dbo.seasons WHERE lodge_id = @id) AS seasons,
+      (SELECT COUNT(*) FROM dbo.bookings WHERE lodge_id = @id) AS bookings,
+      (SELECT COUNT(*) FROM dbo.bookings WHERE lodge_id = @id AND status = 'CHECKED_IN') AS bookings_in_house,
+      (SELECT COUNT(*) FROM dbo.bookings WHERE lodge_id = @id AND status = 'BOOKED') AS bookings_upcoming,
+      (SELECT COUNT(*) FROM dbo.menu_categories WHERE lodge_id = @id) AS menu_categories,
+      (SELECT COUNT(*) FROM dbo.menu_items WHERE lodge_id = @id) AS menu_items,
+      (SELECT COUNT(*) FROM dbo.dining_tables WHERE lodge_id = @id) AS dining_tables,
+      (SELECT COUNT(*) FROM dbo.food_orders WHERE lodge_id = @id) AS food_orders,
+      (SELECT COUNT(*) FROM dbo.invoices WHERE lodge_id = @id AND status = 'ISSUED') AS invoices_issued,
+      (SELECT COUNT(*) FROM dbo.invoices WHERE lodge_id = @id AND status = 'VOID') AS invoices_void,
+      -- Issued documents only. A void bill was withdrawn, so counting it here
+      -- would overstate what the account has actually billed.
+      (SELECT ISNULL(SUM(total_amount), 0) FROM dbo.invoices WHERE lodge_id = @id AND status = 'ISSUED') AS billed_total,
+      (SELECT MAX(created_at) FROM dbo.bookings WHERE lodge_id = @id) AS last_booking_at,
+      (SELECT MAX(placed_at) FROM dbo.food_orders WHERE lodge_id = @id) AS last_order_at,
+      (SELECT MAX(created_at) FROM dbo.invoices WHERE lodge_id = @id) AS last_invoice_at;
+
+    SELECT series_type, prefix, next_number
+    FROM dbo.invoice_series
+    WHERE lodge_id = @id
+    ORDER BY series_type;
+  `);
+
+  const [lodgeRows, staff, statsRows, invoiceSeries] = result.recordsets;
+
+  if (lodgeRows.length === 0) {
+    throw new ApiError('Lodge not found.', 404);
+  }
+
+  return {
+    lodge: lodgeRows[0],
+    staff,
+    stats: statsRows[0],
+    invoiceSeries,
+  };
+}
+
+module.exports = { createLodgeWithOwner, listLodges, getLodgeDetail };
