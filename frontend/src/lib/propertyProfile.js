@@ -147,7 +147,7 @@ export const FEATURES = [
   {
     key: 'reports',
     title: 'Reports',
-    description: 'Occupancy and a GST filing summary.',
+    description: 'Downloadable booking reports, occupancy and a GST filing summary.',
     permission: 'reports.view',
     capability: 'hasRooms',
     icon: 'barChart',

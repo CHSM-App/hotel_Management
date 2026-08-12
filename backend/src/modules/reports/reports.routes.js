@@ -1,6 +1,10 @@
 const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
-const { getOccupancyHandler, getGstSummaryHandler } = require('./reports.controller');
+const {
+  getOccupancyHandler,
+  getGstSummaryHandler,
+  getBookingsReportHandler,
+} = require('./reports.controller');
 
 const router = Router();
 
@@ -9,5 +13,6 @@ const owner = requirePermission('reports.view');
 
 router.get('/occupancy', authenticate, owner, getOccupancyHandler);
 router.get('/gst-summary', authenticate, owner, getGstSummaryHandler);
+router.get('/bookings', authenticate, owner, getBookingsReportHandler);
 
 module.exports = router;

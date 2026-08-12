@@ -37,4 +37,14 @@ async function getGstSummaryHandler(req, res, next) {
   }
 }
 
-module.exports = { getOccupancyHandler, getGstSummaryHandler };
+async function getBookingsReportHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const report = await reportsService.getBookingsReport(req.user.lodgeId, fromDate, toDate);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getOccupancyHandler, getGstSummaryHandler, getBookingsReportHandler };

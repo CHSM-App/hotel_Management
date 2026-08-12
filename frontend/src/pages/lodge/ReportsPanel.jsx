@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
+import {
+  BOOKING_STATUS_LABEL,
+  PAYMENT_MODE_LABEL,
+  downloadBookingReportCsv,
+  downloadBookingReportPdf,
+  reportPeriodLabel,
+  wholeMonthLabel,
+} from './bookingReportFile';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './ReportsPanel.css';
@@ -13,6 +21,7 @@ const DOCUMENT_LABEL = {
 };
 
 const TABS = [
+  { key: 'bookings', label: 'Bookings' },
   { key: 'occupancy', label: 'Occupancy' },
   { key: 'gst', label: 'GST summary' },
 ];
@@ -24,6 +33,11 @@ function todayIso() {
 function startOfMonthIso() {
   const d = new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
+function lastDayOfMonth(year, month) {
+  // Day 0 of the next month is the last day of this one.
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 // For plain YYYY-MM-DD values (report day rows, the date pickers) — forced
@@ -44,15 +58,61 @@ export default function ReportsPanel() {
   const session = getSession();
   const token = session?.token;
 
-  const [tab, setTab] = useState('occupancy');
+  const [tab, setTab] = useState('bookings');
   const [fromDate, setFromDate] = useState(startOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const validRange = Boolean(fromDate && toDate && toDate >= fromDate);
 
+  const [bookings, setBookings] = useState(null);
+  const [bookingsError, setBookingsError] = useState('');
+  const [downloadBusy, setDownloadBusy] = useState('');
+  const [downloadError, setDownloadError] = useState('');
   const [occupancy, setOccupancy] = useState(null);
   const [occupancyError, setOccupancyError] = useState('');
   const [gst, setGst] = useState(null);
   const [gstError, setGstError] = useState('');
+
+  // The month picker and the From/To pair drive the same range — this reads
+  // the range back as a month so picking "August 2026" keeps showing August
+  // rather than blanking the moment the component re-renders.
+  const monthValue = wholeMonthLabel(fromDate, toDate) ? fromDate.slice(0, 7) : '';
+
+  const handleMonthChange = (value) => {
+    if (!value) return;
+    const [year, month] = value.split('-').map(Number);
+    setFromDate(`${value}-01`);
+    setToDate(`${value}-${String(lastDayOfMonth(year, month)).padStart(2, '0')}`);
+  };
+
+  useEffect(() => {
+    if (!validRange) return;
+    setBookings(null);
+    setBookingsError('');
+    setDownloadError('');
+    apiGet(`/reports/bookings?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setBookings(data))
+      .catch((err) =>
+        setBookingsError(err instanceof ApiError ? err.message : 'Could not load the booking report.')
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate]);
+
+  const handleDownload = async (format) => {
+    if (!bookings) return;
+    setDownloadError('');
+    setDownloadBusy(format);
+    try {
+      if (format === 'csv') {
+        downloadBookingReportCsv(bookings);
+      } else {
+        await downloadBookingReportPdf(bookings);
+      }
+    } catch {
+      setDownloadError(`Could not build the ${format.toUpperCase()} file.`);
+    } finally {
+      setDownloadBusy('');
+    }
+  };
 
   useEffect(() => {
     if (!validRange) return;
@@ -81,7 +141,16 @@ export default function ReportsPanel() {
   return (
     <div className="reports-panel">
       <div className="dash-card reports-panel__filters">
-        <div className="field-row">
+        <div className="field-row field-row--triple">
+          <div className="field">
+            <label htmlFor="reportsMonth">Month</label>
+            <input
+              id="reportsMonth"
+              type="month"
+              value={monthValue}
+              onChange={(e) => handleMonthChange(e.target.value)}
+            />
+          </div>
           <div className="field">
             <label htmlFor="reportsFromDate">From</label>
             <input
@@ -96,7 +165,14 @@ export default function ReportsPanel() {
             <input id="reportsToDate" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </div>
         </div>
-        {!validRange && <p className="reports-panel__hint">Choose a valid date range.</p>}
+        {!validRange ? (
+          <p className="reports-panel__hint">Choose a valid date range.</p>
+        ) : (
+          <p className="reports-panel__hint">
+            Showing {reportPeriodLabel(fromDate, toDate)}. Pick a month for a full monthly report, or
+            set From and To for any other span.
+          </p>
+        )}
       </div>
 
       <div className="reports-panel__subtabs">
@@ -112,6 +188,153 @@ export default function ReportsPanel() {
           </button>
         ))}
       </div>
+
+      {tab === 'bookings' && (
+        <>
+          {bookingsError && (
+            <div className="dash-card">
+              <div className="dash-state">{bookingsError}</div>
+            </div>
+          )}
+          {!bookingsError && validRange && !bookings && (
+            <div className="dash-card">
+              <div className="dash-state">Loading…</div>
+            </div>
+          )}
+          {!bookingsError && bookings && (
+            <>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Bookings</span>
+                  <span className="reports-panel__stat-value">{bookings.summary.totalBookings}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Checked out</span>
+                  <span className="reports-panel__stat-value">
+                    {bookings.summary.byStatus.CHECKED_OUT || 0}
+                  </span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Cancelled</span>
+                  <span className="reports-panel__stat-value">
+                    {bookings.summary.byStatus.CANCELLED || 0}
+                  </span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Room nights</span>
+                  <span className="reports-panel__stat-value">{bookings.summary.roomNights}</span>
+                </div>
+                <div className="reports-panel__stat reports-panel__stat--accent">
+                  <span className="reports-panel__stat-label">Billed</span>
+                  <span className="reports-panel__stat-value">
+                    {formatPrice(bookings.summary.billedAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="dash-card reports-panel__download">
+                <div>
+                  <p className="reports-panel__download-title">
+                    Download the {reportPeriodLabel(fromDate, toDate)} booking report
+                  </p>
+                  <p className="reports-panel__hint">
+                    CSV opens in Excel for filtering and totals. PDF is print-ready for filing or
+                    sharing.
+                  </p>
+                </div>
+                <div className="reports-panel__download-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={Boolean(downloadBusy)}
+                    onClick={() => handleDownload('csv')}
+                  >
+                    {downloadBusy === 'csv' ? 'Preparing…' : 'Download CSV'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={Boolean(downloadBusy)}
+                    onClick={() => handleDownload('pdf')}
+                  >
+                    {downloadBusy === 'pdf' ? 'Preparing…' : 'Download PDF'}
+                  </button>
+                </div>
+                {downloadError && <p className="reports-panel__hint">{downloadError}</p>}
+              </div>
+
+              {bookings.bookings.length === 0 ? (
+                <div className="dash-card">
+                  <div className="dash-state">No bookings checked in during this period.</div>
+                </div>
+              ) : (
+                <div className="dash-card">
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Bill no.</th>
+                          <th>Guest</th>
+                          <th>Room</th>
+                          <th>Check-in</th>
+                          <th>Check-out</th>
+                          <th>Nights</th>
+                          <th>Status</th>
+                          <th>Advance</th>
+                          <th>CGST</th>
+                          <th>SGST</th>
+                          <th>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bookings.bookings.map((b) => (
+                          <tr key={b.id}>
+                            <td>{b.invoiceNumber || '—'}</td>
+                            <td>
+                              {b.guestName}
+                              <br />
+                              <span className="reports-panel__muted">{b.guestPhone}</span>
+                            </td>
+                            <td>
+                              {b.roomNumber}
+                              <br />
+                              <span className="reports-panel__muted">{b.categoryName}</span>
+                            </td>
+                            <td>{formatDateOnly(b.checkInDate)}</td>
+                            <td>{formatDateOnly(b.checkOutDate)}</td>
+                            <td>{b.nights}</td>
+                            <td>
+                              <span
+                                className={`badge ${b.status === 'CANCELLED' ? 'badge--off' : 'badge--on'}`}
+                              >
+                                {BOOKING_STATUS_LABEL[b.status] || b.status}
+                              </span>
+                            </td>
+                            <td>
+                              {b.advanceAmount ? formatPrice(b.advanceAmount) : '—'}
+                              {b.advancePaymentMethod && (
+                                <>
+                                  <br />
+                                  <span className="reports-panel__muted">
+                                    {PAYMENT_MODE_LABEL[b.advancePaymentMethod]}
+                                  </span>
+                                </>
+                              )}
+                            </td>
+                            <td>{b.cgstAmount != null ? formatPrice(b.cgstAmount) : '—'}</td>
+                            <td>{b.sgstAmount != null ? formatPrice(b.sgstAmount) : '—'}</td>
+                            <td>{formatPrice(b.billedAmount != null ? b.billedAmount : b.totalPrice)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
 
       {tab === 'occupancy' && (
         <>
