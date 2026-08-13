@@ -345,6 +345,8 @@
 
 /* Checkboxes -------------------------------------------------------------- */
 
+/* Flat, like the checkbox chips — a stack of these is a list of options to
+   read down, not a row of buttons to press. */
 .reg-shell .checkbox-field {
   margin-bottom: 0;
   padding: 14px 16px;
@@ -391,7 +393,8 @@
   padding: 0 16px;
   min-height: 46px;
   border-radius: 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   background: var(--surface);
   color: var(--ink);
   font-size: 13.5px;

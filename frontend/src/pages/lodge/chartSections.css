@@ -154,6 +154,24 @@
   padding: 6px 0;
 }
 
+/* A component of the line below it — the base rate, a season uplift, an extra.
+   Indented and quietened so the subtotal it rolls up into still reads as the
+   figure, rather than as one more row in a flat list of numbers. */
+.sim-result__line--part {
+  padding-left: 14px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.sim-result__part-nights {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 .sim-result__total {
   display: flex;
   justify-content: space-between;

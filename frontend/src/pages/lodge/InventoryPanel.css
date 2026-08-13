@@ -97,7 +97,8 @@
   align-items: center;
   gap: 6px;
   padding: 5px 11px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   background: var(--surface);
   font-size: 0.82rem;
@@ -161,7 +162,8 @@
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-left: 3px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
@@ -249,7 +251,8 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--text-muted);
@@ -317,7 +320,8 @@
   padding: 2px 9px;
   border-radius: 999px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
   font-size: 0.75rem;
   color: var(--text-muted);
 }
@@ -414,7 +418,8 @@
   flex-direction: column;
   gap: 3px;
   padding: 11px 13px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 10px;
   background: var(--surface);
   text-align: left;
@@ -440,7 +445,7 @@
 .inv-mode__option--on {
   border-color: var(--brand);
   background: rgba(30, 58, 95, 0.06);
-  box-shadow: inset 0 0 0 1px var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand), var(--shadow-pressed);
 }
 
 /* ------------------------------------------------------------ size tabs */
@@ -459,7 +464,8 @@
   align-items: center;
   gap: 7px;
   padding: 6px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   background: var(--surface);
   font: inherit;
@@ -483,6 +489,7 @@
   padding: 1px 5px;
   border-radius: 999px;
   background: var(--paper);
+  box-shadow: var(--shadow-pressed);
   color: var(--text-muted);
   font-size: 0.72rem;
   text-align: center;
@@ -605,7 +612,8 @@
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
   font-size: 0.72rem;
   color: var(--text-muted);
 }

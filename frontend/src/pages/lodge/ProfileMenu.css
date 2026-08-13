@@ -157,7 +157,8 @@
 .profile-menu__link {
   margin-top: 14px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -177,7 +178,8 @@
 .profile-menu__copy-link {
   flex-shrink: 0;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   color: var(--brand-ink);
   font-size: 10px;
   font-weight: 700;

@@ -14,7 +14,11 @@
   flex-shrink: 0;
   min-height: calc(100svh - 73px);
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-right: none;
+  /* Directional rather than a full extrusion: the sidebar runs the height of
+     the viewport, so a shadow on all four sides would have nowhere to land.
+     This is the edge catching the light and casting into the content. */
+  box-shadow: 1px 0 0 var(--neu-light), 6px 0 14px -4px var(--neu-dark);
   padding: 24px 16px;
   position: sticky;
   top: 0;
@@ -89,7 +93,8 @@
   margin-left: auto;
   flex-shrink: 0;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;

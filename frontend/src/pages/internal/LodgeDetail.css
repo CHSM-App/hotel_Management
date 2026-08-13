@@ -54,7 +54,8 @@
 
 .detail-stat {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 12px;
   padding: 16px 18px;
 }
@@ -91,7 +92,8 @@
 
 .detail-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 12px;
   padding: 20px 22px;
 }
@@ -187,7 +189,8 @@
 .detail-features li {
   font-size: 13px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   padding: 4px 12px;
   color: var(--ink);

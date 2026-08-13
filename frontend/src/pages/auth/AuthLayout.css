@@ -324,22 +324,32 @@
   padding: 12px 16px;
   min-height: 44px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-tile);
   background: var(--brand);
   color: #ffffff;
   font-weight: 600;
   font-size: 15px;
   cursor: pointer;
-  transition: background 150ms ease;
+  /* Brand-tinted rather than the neutral --neu-dark: a grey shadow under a
+     navy button looks detached from it. */
+  box-shadow: 5px 5px 12px rgba(20, 39, 68, 0.28), -5px -5px 12px var(--neu-light);
+  transition: background 150ms ease, box-shadow 150ms ease;
 }
 
 .btn-primary:hover {
   background: var(--brand-ink);
+  box-shadow: 7px 7px 16px rgba(20, 39, 68, 0.32), -7px -7px 16px var(--neu-light);
+}
+
+.btn-primary:active {
+  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
 }
 
 .btn-primary:disabled {
   background: var(--text-muted);
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .form-banner {

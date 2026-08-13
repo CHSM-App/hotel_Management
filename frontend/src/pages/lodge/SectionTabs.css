@@ -25,33 +25,38 @@
   gap: 7px;
   flex-shrink: 0;
   padding: 9px 14px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 999px;
   background: var(--surface);
+  box-shadow: var(--shadow-raised);
   font-family: var(--serif);
   font-size: 15px;
   color: var(--text);
   cursor: pointer;
+  transition: box-shadow 150ms ease, color 150ms ease;
   /* Comfortably past the 44px touch target — tapped on a phone in a kitchen,
      often by someone already holding something. */
   min-height: 44px;
 }
 
 .tabstrip__tab:hover {
-  border-color: var(--brand);
   color: var(--brand);
+  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
 }
 
+/* The extrusion can't be trusted to carry focus on its own here — these chips
+   scroll sideways and the shadow gets clipped at the edges — so keep a ring. */
 .tabstrip__tab:focus-visible {
-  outline: none;
-  border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
+/* Selected keeps the brand fill: it's the only cue that survives when the
+   strip is scrolled and several chips are half out of view. */
 .tabstrip__tab--on {
   background: var(--brand);
-  border-color: var(--brand);
   color: #fff;
+  box-shadow: var(--shadow-pressed), 3px 3px 8px var(--neu-dark);
 }
 
 .tabstrip__tab--on:hover {
@@ -66,18 +71,24 @@
   text-decoration: line-through;
 }
 
+/* --paper now matches the chip it sits on, so the count needs the carve to
+   separate from it. */
 .tabstrip__count {
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--paper);
+  background: var(--surface);
+  box-shadow: var(--shadow-pressed);
   font-family: var(--sans);
   font-size: 12px;
   color: var(--text-muted);
 }
 
+/* On the brand-filled chip the carve has nothing to bite into — a grey inset
+   over blue just reads as dirt — so the translucent fill does the work. */
 .tabstrip__tab--on .tabstrip__count {
   background: rgba(255, 255, 255, 0.22);
   color: #fff;
+  box-shadow: none;
 }
 
 .tabstrip__flag {

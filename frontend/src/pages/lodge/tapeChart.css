@@ -96,7 +96,8 @@
 }
 
 .tape-nav__today {
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   background: var(--surface);
   padding: 6px 14px;
@@ -129,7 +130,8 @@
   align-items: center;
   gap: 7px;
   padding: 4px 11px 4px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   background: var(--surface);
 }
@@ -147,9 +149,12 @@
   display: inline-block;
 }
 
+/* Matches the tile it stands for, so the legend still explains the grid —
+   but scaled to 11px. The tile's own 2px/4px carve covers most of a swatch
+   this small and turns it into a smudge. */
 .tape-legend__swatch--vacant {
   background: var(--tape-vacant);
-  box-shadow: inset 0 0 0 1px var(--tape-vacant-line);
+  box-shadow: inset 1px 1px 2px var(--neu-dark), inset -1px -1px 1px var(--neu-light);
 }
 
 .tape-legend__swatch--booked {
@@ -217,11 +222,16 @@
   gap: 9px;
 }
 
+/* Carved, and distinctly darker than the page. --tape-vacant was picked to sit
+   against a white card and now matches the surface within a shade, which left
+   the track invisible — a 6% fill on a 96px bar is 6px wide, so all that
+   reached the screen was a stray dot with nothing behind it to scale against. */
 .tape-month-card__meter-track {
   width: 96px;
   height: 6px;
   border-radius: 999px;
-  background: var(--tape-vacant);
+  background: var(--neu-dark);
+  box-shadow: inset 0 1px 2px rgba(22, 33, 46, 0.16);
   overflow: hidden;
 }
 
@@ -426,9 +436,13 @@
   z-index: 1;
 }
 
+/* An empty night is an empty slot: carved rather than filled. --tape-vacant is
+   within a shade of the page now, so the old flat fill would have left the
+   grid as bare outlines — the well is what gives the row its structure, and a
+   booked tile then reads as something dropped into it. */
 .tape-tile--vacant {
   background: var(--tape-vacant);
-  box-shadow: inset 0 0 0 1px var(--tape-vacant-line);
+  box-shadow: inset 2px 2px 4px var(--neu-dark), inset -1px -1px 3px var(--neu-light);
 }
 
 .tape-tile--vacant.tape-tile--weekend {
@@ -437,7 +451,7 @@
 
 .tape-tile--vacant:hover {
   background: var(--tape-vacant-hover);
-  box-shadow: inset 0 0 0 1px #b9c3cc;
+  box-shadow: inset 3px 3px 6px #b0bac8, inset -1px -1px 3px var(--neu-light);
 }
 
 .tape-tile--booked,
@@ -491,9 +505,10 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
 }
 
-.tape-tile--today {
-  box-shadow: inset 0 0 0 1.5px var(--brand-ink);
-}
+/* Today's column is marked in the date header only — the filled circle on the
+   date number in .tape-month__date--today. The tiles themselves used to carry
+   a 1.5px inset ring as well, which drew a hard rule down the whole grid and
+   fought the carve on every vacant night it crossed. */
 
 /* ---------- hover card ---------- */
 
@@ -605,7 +620,8 @@
 }
 
 .tape-skeleton__card {
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
   border-radius: var(--radius-card);
   background: var(--surface);
   padding: 14px 18px 18px;

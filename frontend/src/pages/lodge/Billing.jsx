@@ -696,6 +696,37 @@ export default function Billing({ lodge }) {
                           split GSTR-1 reports on. */}
                       {activeAmounts.subtotal > 0 && (
                         <>
+                          {/* What the room charge is actually made of — base
+                              rate, season uplift, each switched-on extra —
+                              read back from the booking's own snapshot. Staff
+                              are asked here to commit to a document they can
+                              only void, and a guest querying the total asks
+                              about these lines, not the sum of them.
+
+                              Empty for stays booked before the breakdown was
+                              snapshotted, which fall through to the subtotal
+                              line below on its own, exactly as before. */}
+                          {preview.roomCharges?.map((line) => (
+                            <div className="sim-result__line sim-result__line--part" key={line.label}>
+                              <span>
+                                {line.label}
+                                {line.nights > 1 && (
+                                  <span className="sim-result__part-nights">× {line.nights} nights</span>
+                                )}
+                              </span>
+                              <span>{formatPrice(line.amount)}</span>
+                            </div>
+                          ))}
+                          {/* Sits with the parts rather than the totals: it is
+                              inside this subtotal and taxed at the room's rate.
+                              Absent, not struck through, when the desk drops it
+                              — the toggle above is where that decision reads. */}
+                          {preview.roomCharges?.length > 0 && preview.lateCheckoutCharge > 0 && (
+                            <div className="sim-result__line sim-result__line--part">
+                              <span>Late checkout</span>
+                              <span>{formatPrice(preview.lateCheckoutCharge)}</span>
+                            </div>
+                          )}
                           <div className="sim-result__line">
                             <span>Room charges</span>
                             <span>{formatPrice(activeAmounts.subtotal)}</span>

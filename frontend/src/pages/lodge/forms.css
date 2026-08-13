@@ -15,15 +15,19 @@
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
   color: var(--ink);
   min-height: 44px;
+  box-shadow: var(--shadow-inset);
 }
 
+/* The well deepens on focus rather than swapping to a flat outline, so the
+   active field still belongs to the same material as the rest of the form. */
 .field input:focus-visible,
 .field select:focus-visible {
   border-color: var(--focus);
+  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
 }
 
 .field-row {
@@ -107,8 +111,9 @@
 }
 
 .form-section__badge {
-  background: var(--paper);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: none;
+  box-shadow: var(--shadow-pressed);
   color: var(--ink);
   font-size: 11px;
   font-weight: 700;
@@ -135,25 +140,37 @@
   color: var(--brand-ink);
 }
 
+/* Extruded rather than outlined — it carries no fill of its own, so the
+   shadow pair is the whole affordance. */
 .btn-secondary {
-  background: transparent;
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: none;
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-tile);
   padding: 12px 18px;
   min-height: 44px;
   font-weight: 600;
   font-size: 15px;
   cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow 150ms ease, color 150ms ease;
 }
 
 .btn-secondary:hover {
-  background: var(--paper);
+  color: var(--brand);
+  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
 }
 
+.btn-secondary:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* Flattened into the page: a disabled control shouldn't look pressable, and
+   opacity alone reads as "loading" when the extrusion is still there. */
 .btn-secondary:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+  box-shadow: none;
 }
 
 .checkbox-inline {
@@ -183,16 +200,21 @@
   gap: 8px;
 }
 
+/* Deliberately flat. A grid of these is a dense field of small targets, and
+   extruding every one of them turns a form section into gravel — the tick
+   itself is the control, so the chip only has to bound it. */
 .checkbox-chip {
   display: flex;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 9px 10px;
   font-size: 13px;
   color: var(--text);
   cursor: pointer;
+  background: var(--surface);
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 
 .checkbox-chip input {
@@ -223,9 +245,14 @@
   color: var(--text);
 }
 
+/* With no depth to carry it, the ticked state leans on the brand border and
+   tint — and on the ink going brand-dark, since the tint alone sits at about
+   1.2:1 against the base and can't be the only signal. */
 .checkbox-chip:has(input:checked) {
   border-color: var(--brand);
   background: #eef4f2;
+  color: var(--brand-ink);
+  font-weight: 600;
 }
 
 /* These chips are <label>s, and they live inside a .field — where
@@ -237,29 +264,34 @@
   margin-bottom: 0;
 }
 
+/* A carved track with the selected segment raised out of it — the inverse of
+   the chips above, because here the choice is the thing that should come
+   forward rather than the thing being pushed in. */
 .toggle-group {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 4px;
+  border: none;
+  border-radius: 12px;
+  padding: 4px;
+  background: var(--surface);
+  box-shadow: var(--shadow-inset);
   margin-bottom: 18px;
 }
 
 .toggle-group button {
   border: none;
-  background: var(--surface);
+  border-radius: 9px;
+  background: transparent;
   color: var(--text);
   padding: 9px 16px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-}
-
-.toggle-group button + button {
-  border-left: 1px solid var(--border);
+  transition: box-shadow 150ms ease, color 150ms ease;
 }
 
 .toggle-group button[aria-pressed='true'] {
   background: var(--brand);
   color: #ffffff;
+  box-shadow: var(--shadow-raised);
 }

@@ -3,8 +3,8 @@
 @theme {
   --color-primary: #1E3A5F;
   --color-secondary: #9C2B2B;
-  --color-background: #F7F5F0;
-  --color-surface: #FFFFFF;
+  --color-background: #E9ECF1;
+  --color-surface: #E9ECF1;
   --color-success: #16A34A;
   --color-warning: #EAB308;
   --color-danger: #C1121F;
@@ -13,62 +13,56 @@
   --color-cta-from: #B3261E;
   --color-cta-to: #7A1F1F;
 
-  /* Semantic radii — cards, room tiles, menu items get the generous end (16px) */
-  --radius-tile: 0.75rem; /* 12px */
-  --radius-card: 1rem;    /* 16px */
-
-  /* Layered shadows for depth */
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px -4px rgba(16, 24, 40, 0.08), 0 20px 40px -8px rgba(16, 24, 40, 0.10);
-  --shadow-elevated: 0 2px 4px rgba(16, 24, 40, 0.08), 0 12px 32px -6px rgba(16, 24, 40, 0.12), 0 28px 56px -12px rgba(16, 24, 40, 0.16);
-}
-
-@layer components {
-  /* Solid modal surface — PIN entry, payment popups, every form modal */
-  .glass-panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow-elevated);
-    border-radius: var(--radius-card);
-  }
-
-  /* Dimmed scrim behind a modal */
-  .glass-backdrop {
-    background: rgba(15, 23, 42, 0.45);
-  }
-
-  /* Gradient CTA button — e.g. "Convert to Booking" */
-  .btn-cta {
-    background-image: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
-    color: #fff;
-    border-radius: var(--radius-tile);
-    box-shadow: var(--shadow-card);
-    transition: filter 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-  }
-
-  .btn-cta:hover {
-    filter: brightness(1.06);
-    box-shadow: var(--shadow-elevated);
-  }
-
-  .btn-cta:active {
-    transform: translateY(1px);
-    filter: brightness(0.98);
-  }
+  /* Semantic radii — an extrusion needs generous corners to catch the light,
+     so both steps go up from the old 12/16px. */
+  --radius-tile: 0.875rem; /* 14px */
+  --radius-card: 1.25rem;  /* 20px */
 }
 
 :root {
+  /* --- Neumorphic depth ----------------------------------------------------
+     Cards, inputs and buttons all sit at exactly the same value as the page —
+     `--surface` and `--paper` are deliberately the same colour. Nothing is
+     separated by fill, so depth comes entirely from a fixed light source at
+     the top-left: a white highlight up-left, a cool shadow down-right.
+
+     Because the whole app already reads depth through these four tokens, the
+     shadow names below are unchanged: every existing `var(--shadow-card)` call
+     site becomes an extrusion without its stylesheet being touched. */
+  --neu-base: #e9ecf1;
+  --neu-light: #ffffff;
+  --neu-dark: #c3cad6;
+
+  /* Raised — panels and cards. */
+  --shadow-card: 6px 6px 14px var(--neu-dark), -6px -6px 14px var(--neu-light);
+  /* Modals, popovers, anything over a scrim. Only a step above --shadow-card:
+     the scrim behind a modal is already doing the separating, and a full-depth
+     extrusion on a 560px panel reads as a halo rather than as lift. */
+  --shadow-elevated: 8px 8px 18px var(--neu-dark), -7px -7px 16px var(--neu-light);
+  /* A shallower lift for buttons, chips and tabs, so dense rows of them stay
+     legible instead of turning to mush. */
+  --shadow-raised: 4px 4px 9px var(--neu-dark), -4px -4px 9px var(--neu-light);
+  /* Carved into the surface — inputs at rest, tabs and toggles when selected. */
+  --shadow-inset: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+  /* A control held down. Shallower than --shadow-inset so the travel between
+     raised and pressed reads as movement. */
+  --shadow-pressed: inset 2px 2px 5px var(--neu-dark), inset -2px -2px 5px var(--neu-light);
+
   --ink: #16212e;
   --text: #46525c;
   --text-muted: #5b6670;
-  --paper: #f7f5f0;
-  --surface: #ffffff;
-  --border: #dbe1e6;
+  --paper: var(--neu-base);
+  --surface: var(--neu-base);
+  /* Soft enough to read as a groove rather than a drawn line, but still
+     present: table rules and list dividers carry real meaning and shadows
+     alone can't separate a 32px row. */
+  --border: #d5dbe4;
   --brand: #1e3a5f;
   --brand-ink: #142744;
   --accent: #9c2b2b;
   --accent-ink: #7a1f1f;
   --danger: #c1121f;
-  --danger-bg: #fbeae9;
+  --danger-bg: #f7e4e5;
   --focus: #1e3a5f;
 
   --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -82,6 +76,63 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  /* Solid modal surface — PIN entry, payment popups, every form modal. No
+     outer shadow and no border: a light panel on a dark scrim is already fully
+     separated from the page, and an extrusion on top of that reads as a halo
+     rather than as lift. Depth inside the modal still works normally — this
+     only drops the edge, not the wells and buttons within it. */
+  .glass-panel {
+    background: var(--surface);
+    border: none;
+    border-radius: var(--radius-card);
+  }
+
+  /* Dimmed scrim behind a modal */
+  .glass-backdrop {
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  /* Gradient CTA button — e.g. "Convert to Booking". The one control that
+     keeps a fill: on a page where every surface is the same colour, the
+     primary action needs a value difference to stay findable. */
+  .btn-cta {
+    background-image: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
+    color: #fff;
+    border-radius: var(--radius-tile);
+    box-shadow: 5px 5px 12px rgba(122, 31, 31, 0.3), -5px -5px 12px var(--neu-light);
+    transition: filter 150ms ease, box-shadow 150ms ease;
+  }
+
+  .btn-cta:hover {
+    filter: brightness(1.06);
+    box-shadow: 7px 7px 16px rgba(122, 31, 31, 0.34), -7px -7px 16px var(--neu-light);
+  }
+
+  /* Pressed rather than nudged down: the inset does what translateY used to. */
+  .btn-cta:active {
+    filter: brightness(0.98);
+    box-shadow: inset 3px 3px 7px rgba(60, 12, 12, 0.45),
+      inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+  }
+
+  /* Reusable extrusion primitives, for markup that has no stylesheet of its
+     own. Raised = actionable or lifted; inset = a well things sit inside. */
+  .neu-raised {
+    background: var(--surface);
+    border: none;
+    border-radius: var(--radius-tile);
+    box-shadow: var(--shadow-raised);
+  }
+
+  .neu-inset {
+    background: var(--surface);
+    border: none;
+    border-radius: var(--radius-tile);
+    box-shadow: var(--shadow-inset);
+  }
 }
 
 *,
@@ -120,6 +171,9 @@ a {
   color: var(--brand);
 }
 
+/* Kept deliberately. Neumorphism's stock failure is that a control and its
+   background are the same colour, so a keyboard user has nothing to follow —
+   the ring is the only unambiguous focus signal in the system. */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -128,4 +182,18 @@ a {
 input,
 select {
   font: inherit;
+}
+
+/* Text fields read as a well pressed into the page. Matched on the bare
+   element (specificity 0,0,1) so any page stylesheet can still override it,
+   and excluding the controls that are drawn by the platform rather than by us
+   — an inset shadow on a checkbox just smudges its box. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
+select,
+textarea {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-inset);
 }

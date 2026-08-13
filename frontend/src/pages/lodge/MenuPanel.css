@@ -90,7 +90,8 @@
   align-items: baseline;
   gap: 5px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   padding: 5px 13px;
   font-size: 12.5px;
@@ -287,6 +288,7 @@
   margin-left: auto;
   background: var(--surface);
   border-radius: 999px;
+  box-shadow: var(--shadow-pressed);
   padding: 1px 9px;
   font-size: 11.5px;
   letter-spacing: 0;
@@ -456,7 +458,8 @@
   flex-shrink: 0;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   background: var(--surface);
   color: var(--text-muted);
   border-radius: 8px;
@@ -551,7 +554,8 @@
   justify-content: center;
   gap: 7px;
   flex: 1;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   background: var(--surface);
   color: var(--text);
   border-radius: 9px;
@@ -581,7 +585,7 @@
   background: #eef4f2;
   border-color: var(--brand);
   color: var(--brand-ink);
-  box-shadow: inset 0 0 0 1px var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand), var(--shadow-pressed);
 }
 
 .menu-type__option:focus-within {
@@ -626,7 +630,8 @@
   flex: 1;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
@@ -644,7 +649,8 @@
   flex-shrink: 0;
   width: 42px;
   height: 42px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   background: var(--surface);
   color: var(--text-muted);
   border-radius: 8px;
@@ -692,7 +698,8 @@
 /* --------------------------------------------------------------- preview */
 
 .menu-preview {
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: var(--radius-tile);
   background: var(--paper);
   padding: 10px 12px 12px;
@@ -713,7 +720,8 @@
    that only make sense inside a list. */
 .menu-preview__row {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -726,7 +734,8 @@
   font-size: 12.5px;
   color: var(--text-muted);
   background: var(--paper);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-pressed);
   padding: 10px 12px;
   margin: 0 0 18px;
 }

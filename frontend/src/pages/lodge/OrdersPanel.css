@@ -27,7 +27,8 @@
   padding: 3px;
   gap: 2px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
   border-radius: 10px;
 }
 
@@ -458,7 +459,8 @@ label.order-card__item:has(.order-card__tick:disabled) {
 .history-chip {
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   background: var(--surface);
   font: inherit;
@@ -517,7 +519,8 @@ label.order-card__item:has(.order-card__tick:disabled) {
 
 .history-row {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-left: 3px solid var(--border);
   border-radius: var(--radius-tile);
   padding: 12px 14px;
@@ -686,7 +689,8 @@ label.order-card__item:has(.order-card__tick:disabled) {
 .counter-find__section {
   flex-shrink: 0;
   max-width: 46%;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 9px;
   background: var(--paper);
   padding: 10px 12px;

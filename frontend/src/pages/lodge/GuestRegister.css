@@ -161,7 +161,8 @@
   align-items: center;
   gap: 6px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   padding: 5px 12px;
   font: inherit;
@@ -190,6 +191,7 @@
   color: var(--text-muted);
   background: var(--paper);
   border-radius: 999px;
+  box-shadow: var(--shadow-pressed);
   padding: 0 6px;
 }
 
@@ -227,7 +229,8 @@
 
 .guest-register__stat {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 12px;
   padding: 14px 16px;
 }
@@ -312,7 +315,8 @@
   font-weight: 600;
   color: var(--text-muted);
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
   border-radius: 999px;
   padding: 4px 10px;
   white-space: nowrap;
@@ -323,7 +327,8 @@
   align-items: center;
   gap: 6px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 8px;
   padding: 6px 12px;
   font: inherit;
@@ -449,7 +454,8 @@
   height: 48px;
   border-radius: 999px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
   color: var(--text-muted);
   margin-bottom: 4px;
 }
@@ -540,7 +546,8 @@
 .guest-register__view-btn {
   flex-shrink: 0;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   color: var(--accent);
   font: inherit;
@@ -694,7 +701,8 @@
   align-items: center;
   justify-content: center;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 9px;
   color: var(--ink);
   cursor: pointer;
@@ -870,7 +878,8 @@
   justify-content: space-between;
   gap: 14px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 10px;
   padding: 12px 14px;
   font: inherit;
@@ -998,7 +1007,8 @@
 
 .guest-register__chip {
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
@@ -1035,7 +1045,8 @@
   align-items: center;
   gap: 12px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -1046,7 +1057,8 @@
   height: 30px;
   border-radius: 999px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   color: var(--brand-ink);
   font-size: 13px;
   font-weight: 700;

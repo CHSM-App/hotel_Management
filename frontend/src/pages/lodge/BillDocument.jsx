@@ -119,14 +119,44 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
               "total tax" line would not reconcile. */}
           {invoice.roomSubtotal > 0 && (
             <>
-              <tr>
-                <td>Room charges{invoice.billingSide === 'GST' ? ' (SAC 996311)' : ''}</td>
-                <td className="bill-doc__amt">
-                  {formatPrice(
-                    invoice.lateCheckoutCharge > 0 ? invoice.nightsSubtotal : invoice.roomSubtotal
-                  )}
-                </td>
-              </tr>
+              {/* Itemised the same way food is, and for the same reason: a
+                  guest checking the bill wants to see what the rate was made
+                  of — the base, the season it fell in, the extra bed they
+                  asked for — not one figure to take on trust. Labels and
+                  amounts come from the snapshot frozen on the booking, so this
+                  shows what was charged even if a season has since been edited.
+
+                  Bills issued before that snapshot existed have no lines and
+                  print the single "Room charges" row below on its own. */}
+              {invoice.roomCharges?.length > 0 ? (
+                <>
+                  <tr>
+                    <td colSpan={2} className="bill-doc__section">
+                      Room charges{invoice.billingSide === 'GST' ? ' (SAC 996311)' : ''}
+                    </td>
+                  </tr>
+                  {invoice.roomCharges.map((line) => (
+                    <tr key={line.label}>
+                      <td className="bill-doc__item">
+                        {line.label}
+                        {line.nights > 1 && (
+                          <span className="bill-doc__item-qty">{line.nights} nights</span>
+                        )}
+                      </td>
+                      <td className="bill-doc__amt">{formatPrice(line.amount)}</td>
+                    </tr>
+                  ))}
+                </>
+              ) : (
+                <tr>
+                  <td>Room charges{invoice.billingSide === 'GST' ? ' (SAC 996311)' : ''}</td>
+                  <td className="bill-doc__amt">
+                    {formatPrice(
+                      invoice.lateCheckoutCharge > 0 ? invoice.nightsSubtotal : invoice.roomSubtotal
+                    )}
+                  </td>
+                </tr>
+              )}
               {/* Its own line, on the same SAC and inside the same tax lines
                   below — a guest disputing the total needs to see the overstay
                   named, not folded into the room and left to be argued about. */}
@@ -134,6 +164,15 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
                 <tr>
                   <td>Late checkout</td>
                   <td className="bill-doc__amt">{formatPrice(invoice.lateCheckoutCharge)}</td>
+                </tr>
+              )}
+              {/* The figure the tax below is charged on. Only needed once the
+                  block is itemised — unitemised, the single row above is
+                  already this number. */}
+              {invoice.roomCharges?.length > 0 && (
+                <tr>
+                  <td>Room total</td>
+                  <td className="bill-doc__amt">{formatPrice(invoice.roomSubtotal)}</td>
                 </tr>
               )}
               {invoice.cgstAmount > 0 && (

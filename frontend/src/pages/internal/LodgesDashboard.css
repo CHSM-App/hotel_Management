@@ -68,7 +68,7 @@
   background: var(--accent);
   color: #ffffff;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-tile);
   padding: 12px 18px;
   min-height: 44px;
   font-weight: 600;
@@ -78,16 +78,24 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: background 150ms ease;
+  box-shadow: 5px 5px 12px rgba(122, 31, 31, 0.28), -5px -5px 12px var(--neu-light);
+  transition: background 150ms ease, box-shadow 150ms ease;
 }
 
 .btn-accent:hover {
   background: var(--accent-ink);
+  box-shadow: 7px 7px 16px rgba(122, 31, 31, 0.32), -7px -7px 16px var(--neu-light);
+}
+
+.btn-accent:active {
+  box-shadow: inset 3px 3px 7px rgba(60, 12, 12, 0.45),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
 }
 
 .dash-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -184,20 +192,26 @@
 
 .btn-view {
   display: inline-block;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: none;
+  border-radius: 10px;
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--brand);
   background: var(--surface);
   text-decoration: none;
-  transition: background 150ms ease, border-color 150ms ease;
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow 150ms ease;
 }
 
+/* Hover can't change the fill any more — it's the same colour as the row it
+   sits in — so the lift is the hover state. */
 .btn-view:hover {
-  background: var(--paper);
-  border-color: var(--brand);
+  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+}
+
+.btn-view:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 @media (max-width: 640px) {

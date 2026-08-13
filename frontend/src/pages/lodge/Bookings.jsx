@@ -64,6 +64,30 @@ function formatDateLong(dateStr) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+// When the guest actually walked in or out, as against the dates they booked.
+// Same format the register uses — a stay opened from the chart and the same
+// stay opened from the register should not read as two different records.
+function formatDateTime(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// Just the night's date — the year is already on the stay's date range above,
+// and repeating it on every line of a five-night tariff is noise.
+function formatNightDate(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+// Reads after its label ("Left late by — 2h 15m"), so no "late" in the value.
+function formatLateBy(minutes) {
+  if (!minutes) return null;
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins === 0 ? `${hours} hours` : `${hours}h ${mins}m`;
+}
+
 // The chart is anchored to a whole calendar month, so every date that drives
 // it is normalised to the 1st before anything else looks at it.
 function monthStartOf(dateStr) {
@@ -1839,8 +1863,54 @@ export default function Bookings({ onCheckedOut }) {
                     <span className="chart-row__name">Dates</span>
                     <span className="chart-row__value">
                       {formatDateLong(bookingDetail.checkInDate)} – {formatDateLong(bookingDetail.checkOutDate)}
+                      {bookingDetail.nights?.length > 0 && (
+                        <span className="bookings-panel__muted">
+                          {' '}
+                          ({bookingDetail.nights.length}{' '}
+                          {bookingDetail.nights.length === 1 ? 'night' : 'nights'})
+                        </span>
+                      )}
                     </span>
                   </div>
+                  {/* What the guest booked is above; this is what actually
+                      happened. Blanks are spelled out rather than dashed — "—"
+                      makes a reader stop and work out whether the guest hasn't
+                      arrived or the arrival simply wasn't recorded. */}
+                  <div className="chart-row">
+                    <span className="chart-row__name">Came in</span>
+                    <span className="chart-row__value">
+                      {bookingDetail.actualCheckInAt
+                        ? formatDateTime(bookingDetail.actualCheckInAt)
+                        : 'Not arrived yet'}
+                    </span>
+                  </div>
+                  <div className="chart-row">
+                    <span className="chart-row__name">Left</span>
+                    <span className="chart-row__value">
+                      {bookingDetail.actualCheckOutAt
+                        ? formatDateTime(bookingDetail.actualCheckOutAt)
+                        : bookingDetail.actualCheckInAt
+                          ? 'Still staying'
+                          : 'Not arrived yet'}
+                    </span>
+                  </div>
+                  {formatLateBy(bookingDetail.lateCheckoutMinutes) && (
+                    <div className="chart-row">
+                      <span className="chart-row__name">Left late by</span>
+                      <span className="chart-row__value">
+                        {formatLateBy(bookingDetail.lateCheckoutMinutes)}
+                        {/* "agreed", not "charged" — this is what reception
+                            settled on at the door. Whether it reached the
+                            guest's bill is the billing desk's call. */}
+                        <span className="bookings-panel__muted">
+                          {' · '}
+                          {bookingDetail.lateCheckoutCharge > 0
+                            ? `${formatPrice(bookingDetail.lateCheckoutCharge)} agreed at checkout`
+                            : 'no charge taken'}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                   <div className="chart-row">
                     <span className="chart-row__name">Phone</span>
                     <span className="chart-row__value">{bookingDetail.guestPhone}</span>
@@ -1949,18 +2019,71 @@ export default function Bookings({ onCheckedOut }) {
                       </span>
                     </div>
                   )}
-                  <div className="chart-row">
-                    <span className="chart-row__name">Total price</span>
-                    <span className="chart-row__value">{formatPrice(bookingDetail.totalPrice)}</span>
-                  </div>
-                  {bookingDetail.advanceAmount != null && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">Advance paid</span>
-                      <span className="chart-row__value">
-                        {formatPrice(bookingDetail.advanceAmount)} ({bookingDetail.advancePaymentMethod})
-                      </span>
+                </div>
+
+                {/* Night by night, from the rates frozen when the booking was
+                    taken. A stay that crosses a season isn't one rate repeated,
+                    and this is where a guest asking why gets an answer instead
+                    of an assurance. The money rows live here rather than in the
+                    facts above so the nights and what they add up to are read
+                    as one block. */}
+                <div className="form-section">
+                  <div className="form-section__title">Room rate, night by night</div>
+                  {/* The per-night list is what can be missing, never the
+                      totals below it — what the stay came to and what has been
+                      paid must survive a booking whose snapshot didn't. */}
+                  {bookingDetail.nights?.length > 0 && (
+                    <div className="chart-list">
+                      {bookingDetail.nights.map((n) => (
+                        <div className="chart-row" key={n.date}>
+                          <span className="chart-row__name">{formatNightDate(n.date)}</span>
+                          <span className="chart-row__value">{formatPrice(n.amount)}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
+                  {bookingDetail.switchableCharges.length > 0 && (
+                    <p className="bookings-panel__hint">
+                      Every night above already includes{' '}
+                      {/* chargePerNight prices one of the thing, so a guest on
+                          three extra beds is owed the multiplied figure — it's
+                          what the nights above actually contain. */}
+                      {bookingDetail.switchableCharges
+                        .map((c) =>
+                          c.quantity > 1
+                            ? `${c.name} ×${c.quantity} ${formatPrice(c.chargePerNight * c.quantity)}`
+                            : `${c.name} ${formatPrice(c.chargePerNight)}`
+                        )
+                        .join(', ')}
+                      .
+                    </p>
+                  )}
+                  <div className="sim-result">
+                    <div className="sim-result__total">
+                      <span>
+                        Room charge for {bookingDetail.nights?.length === 1 ? 'the night' : 'all nights'}
+                      </span>
+                      <span>{formatPrice(bookingDetail.totalPrice)}</span>
+                    </div>
+                    {bookingDetail.lateCheckoutCharge > 0 && (
+                      <div className="sim-result__line">
+                        <span>Agreed for leaving late</span>
+                        <span>{formatPrice(bookingDetail.lateCheckoutCharge)}</span>
+                      </div>
+                    )}
+                    {bookingDetail.advanceAmount != null && (
+                      <div className="sim-result__line">
+                        <span>
+                          Advance already paid
+                          <span className="bookings-panel__muted">
+                            {' · '}
+                            {bookingDetail.advancePaymentMethod}
+                          </span>
+                        </span>
+                        <span>− {formatPrice(bookingDetail.advanceAmount)}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {actionError && <div className="form-banner form-banner--error">{actionError}</div>}

@@ -23,6 +23,37 @@ function nightlyAmounts(booking) {
   return Array.from({ length: nights }, () => even);
 }
 
+// The labelled parts a room charge is made of — base rate, season uplift, each
+// switched-on extra — summed across the nights each one applied to. Same shape
+// the price simulator produces, so a bill reads back the way the stay was
+// quoted instead of collapsing to one figure the guest can only dispute whole.
+//
+// Read from the booking's own snapshot rather than re-priced: a season edited
+// after checkout must not change a bill. Comes back empty for stays booked
+// before the lines were snapshotted, and for food bills, which have no room —
+// callers fall back to the single "Room charges" line those already showed.
+function roomChargeLines(booking) {
+  if (!booking.nightly_breakdown) return [];
+  let nights;
+  try {
+    nights = JSON.parse(booking.nightly_breakdown);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(nights)) return [];
+
+  const totals = new Map();
+  for (const night of nights) {
+    for (const line of night.lines ?? []) {
+      const prev = totals.get(line.label) ?? { label: line.label, amount: 0, nights: 0 };
+      prev.amount = round2(prev.amount + Number(line.amount));
+      prev.nights += 1;
+      totals.set(line.label, prev);
+    }
+  }
+  return Array.from(totals.values());
+}
+
 async function getGstSlabs(pool) {
   const result = await pool
     .request()
@@ -324,6 +355,9 @@ async function previewBill(lodgeId, bookingId, { includeLateCheckout = true } = 
     // Split out of the accommodation subtotal so the bill can show what the
     // nights cost and what the overstay cost as two separate lines.
     nightsSubtotal,
+    // What those nights were made of. Sums to nightsSubtotal, not to the
+    // accommodation subtotal — the late charge is its own line beside it.
+    roomCharges: roomChargeLines(booking),
     lateCheckoutCharge: late.amount,
     // What reception agreed at checkout, regardless of whether this preview is
     // carrying it. The desk needs the number visible to decide against it —
@@ -591,6 +625,10 @@ function mapInvoice(row) {
     // the printed bill can show the nights and the overstay as two lines.
     lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
     nightsSubtotal: round2(roomSubtotal - Number(row.late_checkout_charge ?? 0)),
+    // Aggregated here rather than shipping the raw per-night snapshot: the list
+    // renders the printed document straight from this payload, and three
+    // label/amount pairs per bill cost far less than every night's JSON.
+    roomCharges: roomChargeLines(row),
     lateCheckoutMinutes: row.late_checkout_minutes ?? null,
     cgstAmount: Number(row.cgst_amount),
     sgstAmount: Number(row.sgst_amount),
@@ -629,6 +667,7 @@ async function getInvoice(lodgeId, invoiceId) {
     .query(`
       SELECT i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
+             b.nightly_breakdown,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
@@ -658,6 +697,7 @@ async function listInvoices(lodgeId) {
     .query(`
       SELECT TOP 200 i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
+             b.nightly_breakdown,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state

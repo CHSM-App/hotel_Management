@@ -60,7 +60,11 @@ async function priceStay(lodgeId, roomId, checkInDate, checkOutDate, chargeIds =
     basePriceOverride
   );
   return {
-    nights: quote.nights.map((night) => ({ date: night.date, total: night.total })),
+    // `lines` rides along with each night so a bill cut weeks later can still
+    // say what the rate was made of — base, season, each extra. Snapshotted for
+    // the same reason the totals are: seasons get edited and extras get
+    // re-priced, and the bill has to keep showing what was actually charged.
+    nights: quote.nights.map((night) => ({ date: night.date, total: night.total, lines: night.lines })),
     charges: quote.lines.map((line) => ({ label: line.label, amount: line.amount })),
     totalPrice: quote.total,
   };
