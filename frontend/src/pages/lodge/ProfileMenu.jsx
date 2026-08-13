@@ -1,15 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { copyText } from '../../lib/clipboard';
 import './ProfileMenu.css';
 
 function roleLabel(role) {
   return role.charAt(0) + role.slice(1).toLowerCase();
 }
 
+const CHECKIN_LABEL = {
+  HOUR_24: '24-hour cycle',
+  NIGHT_BASED: 'Night-based',
+};
+
+// Lodge facts that are worth reading but never worth acting on from here —
+// they're what someone opens this menu to check ("what's our GSTIN again?"),
+// not something they edit. Anything with no value on file is left out rather
+// than shown empty; a blank row is noise in a list this short.
+function Fact({ label, value }) {
+  if (!value) return null;
+  return (
+    <div className="profile-menu__fact">
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
 const initialPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
 
-export default function ProfileMenu({ user, onSignOut }) {
+export default function ProfileMenu({ user, lodge, onSignOut }) {
   const token = getSession()?.token;
   const rootRef = useRef(null);
 
@@ -19,6 +39,7 @@ export default function ProfileMenu({ user, onSignOut }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [linkCopied, setLinkCopied] = useState('');
 
   const closeMenu = () => {
     setOpen(false);
@@ -89,6 +110,20 @@ export default function ProfileMenu({ user, onSignOut }) {
     }
   };
 
+  // A property with no rooms has no room brochure to link to, so its public
+  // link is the menu instead — that's the only thing a guest can do with it.
+  const publicUrl = lodge
+    ? `${window.location.origin}${lodge.hasRooms ? `/lodge/${lodge.slug}` : `/order/${lodge.slug}`}`
+    : '';
+
+  const handleCopyPublicLink = async () => {
+    const copied = await copyText(publicUrl);
+    // A button that shows "Copied!" when nothing reached the clipboard is worse
+    // than one that admits it — the owner would paste stale text into WhatsApp.
+    setLinkCopied(copied ? 'copied' : 'failed');
+    setTimeout(() => setLinkCopied(''), 2000);
+  };
+
   const initial = user.name ? user.name.charAt(0).toUpperCase() : '?';
 
   return (
@@ -119,6 +154,61 @@ export default function ProfileMenu({ user, onSignOut }) {
               {user.phone && <div>{user.phone}</div>}
               {user.email && <div>{user.email}</div>}
             </div>
+          )}
+
+          {lodge && (
+            <>
+              <div className="profile-menu__divider" />
+
+              <div className="profile-menu__lodge">
+                <div className="profile-menu__lodge-head">
+                  <div className="profile-menu__monogram" aria-hidden="true">
+                    {lodge.name.charAt(0)}
+                  </div>
+                  <div className="profile-menu__lodge-title">
+                    <div className="profile-menu__lodge-name">{lodge.name}</div>
+                    <div className="profile-menu__badges">
+                      <span className={`badge ${lodge.isGstRegistered ? 'badge--on' : 'badge--off'}`}>
+                        {lodge.isGstRegistered ? `GST · ${lodge.gstin || 'Registered'}` : 'Non-GST'}
+                      </span>
+                      {lodge.isSpecifiedPremises && (
+                        <span className="badge badge--accent">Specified premises</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <dl className="profile-menu__facts">
+                  <Fact
+                    label="Location"
+                    value={[lodge.city, lodge.state].filter(Boolean).join(', ')}
+                  />
+                  <Fact label="Address" value={lodge.address} />
+                  <Fact
+                    label="Check-in"
+                    value={CHECKIN_LABEL[lodge.checkinMode] || lodge.checkinMode}
+                  />
+                  <Fact label="Phone" value={lodge.phone} />
+                  <Fact label="WhatsApp" value={lodge.whatsappNumber} />
+                </dl>
+
+                <div className="profile-menu__link">
+                  <div className="profile-menu__link-head">
+                    <span>Public link</span>
+                    <button
+                      type="button"
+                      className="profile-menu__copy-link"
+                      onClick={handleCopyPublicLink}
+                    >
+                      {linkCopied === 'copied' && 'Copied!'}
+                      {linkCopied === 'failed' && 'Press Ctrl+C'}
+                      {!linkCopied && 'Copy'}
+                    </button>
+                  </div>
+                  <code>{publicUrl}</code>
+                </div>
+              </div>
+            </>
           )}
 
           <div className="profile-menu__divider" />

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
-import { copyText } from '../../lib/clipboard';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import Bookings from './Bookings';
@@ -16,30 +15,7 @@ import ProfileMenu from './ProfileMenu';
 import '../internal/LodgesDashboard.css';
 import './OwnerDashboard.css';
 
-const CHECKIN_LABEL = {
-  HOUR_24: '24-hour cycle',
-  NIGHT_BASED: 'Night-based',
-};
-
 const ICON_PATHS = {
-  location: (
-    <>
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </>
-  ),
-  address: (
-    <>
-      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <path d="M9 22V12h6v10" />
-    </>
-  ),
-  phone: (
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.902.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.908.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-  ),
-  chat: (
-    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-  ),
   calendar: (
     <>
       <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -50,18 +26,6 @@ const ICON_PATHS = {
     <>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <path d="M14 2v6h6M16 13H8M16 17H8" />
-    </>
-  ),
-  mail: (
-    <>
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="m2 7 10 6 10-6" />
-    </>
-  ),
-  home: (
-    <>
-      <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <path d="M9 22V12h6v10" />
     </>
   ),
   bed: (
@@ -119,67 +83,12 @@ function Icon({ name }) {
   );
 }
 
-function roleLabel(role) {
-  return role.charAt(0) + role.slice(1).toLowerCase();
-}
-
-function InfoTile({ icon, label, value }) {
-  if (!value) return null;
-  return (
-    <div className="info-tile">
-      <div className="info-tile__icon">
-        <Icon name={icon} />
-      </div>
-      <div className="info-tile__body">
-        <div className="info-tile__label">{label}</div>
-        <div className="info-tile__value">{value}</div>
-      </div>
-    </div>
-  );
-}
-
-// A short, ordered walkthrough for a lodge that's just getting set up —
-// each step's roles mirror the FEATURES entry it links to, so a RECEPTION
-// or KITCHEN login never lands on a section it can't open. `capability` does
-// the same job for the property itself: a restaurant is never told to add
-// rooms, and a lodge that doesn't serve food is never told to build a menu.
-const GETTING_STARTED_STEPS = [
-  {
-    key: 'rooms',
-    title: 'Set up your price chart',
-    description: 'Add room categories, seasonal rates and extras like AC or an extra bed.',
-    permission: 'rooms.manage',
-    capability: 'hasRooms',
-  },
-  {
-    key: 'rooms',
-    title: 'Add your rooms',
-    description: 'Create each room number under a category — every room needs one to be bookable.',
-    permission: 'rooms.manage',
-    capability: 'hasRooms',
-  },
-  {
-    key: 'bookings',
-    title: 'Take your first booking',
-    description: 'Walk-in guests check in right away; pre-reservations hold a room for later.',
-    permission: 'bookings.manage',
-    capability: 'hasRooms',
-  },
-  {
-    key: 'billing',
-    title: 'Check out and bill the stay',
-    description: 'Once a guest checks out, issue a tax invoice, bill of supply or cash receipt.',
-    permission: 'billing.manage',
-    capability: 'hasRooms',
-  },
-  {
-    key: 'menu',
-    title: 'Build your menu',
-    description: 'Add sections and dishes, then print the QR codes for your rooms and tables.',
-    permission: 'food.manage',
-    capability: 'servesFood',
-  },
-];
+// Where a login lands when it signs in. The front desk is the job: the tape
+// chart is what reception opens first and what an owner walks over to look at,
+// so it's the landing page rather than something one click away. A login that
+// can't reach it — a kitchen account, or a restaurant with no rooms — falls
+// through to the first section it *can* open.
+const LANDING_SECTION = 'bookings';
 
 // FEATURES and SIDEBAR_GROUP_ORDER come from lib/propertyProfile — the same
 // list the onboarding form reads to tell a new customer what their account will
@@ -195,8 +104,10 @@ export default function OwnerDashboard() {
   const session = getSession();
   const [me, setMe] = useState(null);
   const [error, setError] = useState('');
-  const [activeSection, setActiveSection] = useState('overview');
-  const [linkCopied, setLinkCopied] = useState('');
+  // Left null until the user picks a section — /me hasn't answered yet on the
+  // first render, so which section is even reachable isn't known here. The
+  // landing choice is made below, once the permissions are in.
+  const [activeSection, setActiveSection] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -221,18 +132,6 @@ export default function OwnerDashboard() {
     navigate('/login');
   };
 
-  // A property with no rooms has no room brochure to link to, so its public
-  // link is the menu instead — that's the only thing a guest can do with it.
-  const publicPath = me?.lodge.hasRooms ? `/lodge/${me?.lodge.slug}` : `/order/${me?.lodge.slug}`;
-
-  const handleCopyPublicLink = async () => {
-    const copied = await copyText(`${window.location.origin}${publicPath}`);
-    // A button that shows "Copied!" when nothing reached the clipboard is worse
-    // than one that admits it — the owner would paste stale text into WhatsApp.
-    setLinkCopied(copied ? 'copied' : 'failed');
-    setTimeout(() => setLinkCopied(''), 2000);
-  };
-
   // Driven by what /me says this login can actually reach, not by its role
   // name — that's what lets a lodge-defined role, or a customised built-in,
   // show the right menu without the frontend knowing the role exists. The
@@ -240,10 +139,12 @@ export default function OwnerDashboard() {
   const permissions = me?.user.permissions || [];
   const hasCapability = (item) => !item.capability || Boolean(me?.lodge[item.capability]);
   const visibleFeatures = FEATURES.filter((f) => permissions.includes(f.permission) && hasCapability(f));
-  const activeFeature = visibleFeatures.find((f) => f.key === activeSection);
-  const visibleSteps = GETTING_STARTED_STEPS.filter(
-    (s) => permissions.includes(s.permission) && hasCapability(s)
-  );
+  // Resolved rather than stored, so the landing section is whatever the loaded
+  // permissions allow without a second render to correct a wrong first guess.
+  const activeFeature =
+    visibleFeatures.find((f) => f.key === activeSection) ||
+    visibleFeatures.find((f) => f.key === LANDING_SECTION) ||
+    visibleFeatures[0];
   const sidebarGroups = SIDEBAR_GROUP_ORDER.map((group) => ({
     group,
     features: visibleFeatures.filter((f) => f.group === group),
@@ -256,28 +157,12 @@ export default function OwnerDashboard() {
           <div className="dash-topbar__mark">{me?.lodge.name || 'Loading…'}</div>
         </div>
         <div className="dash-topbar__actions">
-          {me?.user && <ProfileMenu user={me.user} onSignOut={handleSignOut} />}
+          {me?.user && <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={handleSignOut} />}
         </div>
       </div>
 
       <div className="dash-body">
         <nav className="dash-sidebar" aria-label="Dashboard sections">
-          <div className="dash-sidebar__group">
-            <ul className="dash-sidebar__list">
-              <li>
-                <button
-                  type="button"
-                  className="dash-sidebar__item"
-                  aria-current={activeSection === 'overview' ? 'page' : undefined}
-                  onClick={() => setActiveSection('overview')}
-                >
-                  <Icon name="home" />
-                  Overview
-                </button>
-              </li>
-            </ul>
-          </div>
-
           {sidebarGroups.map(({ group, features }) => (
             <div className="dash-sidebar__group" key={group}>
               <div className="dash-sidebar__label">{group}</div>
@@ -287,7 +172,7 @@ export default function OwnerDashboard() {
                     <button
                       type="button"
                       className="dash-sidebar__item"
-                      aria-current={activeSection === feature.key ? 'page' : undefined}
+                      aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
                       onClick={() => setActiveSection(feature.key)}
                     >
                       <Icon name={feature.icon} />
@@ -301,7 +186,11 @@ export default function OwnerDashboard() {
           ))}
         </nav>
 
-        <div className="dash-main">
+        {/* The sidebar names the section, so the panel doesn't repeat it as a
+            heading. Labelling the landmark keeps that name available to a
+            screen reader, which otherwise loses it the moment focus leaves
+            the nav. */}
+        <main className="dash-main" aria-label={activeFeature?.title}>
           {error && (
             <div className="dash-card">
               <div className="dash-state">{error}</div>
@@ -320,132 +209,6 @@ export default function OwnerDashboard() {
                 <div className="reset-banner">
                   You&apos;re signed in with the temporary password Vengurla Tech set up. Open your
                   profile menu (top right) and choose &quot;Change password&quot; to set your own.
-                </div>
-              )}
-
-              {activeSection === 'overview' && (
-                <>
-                  <div className="dash-header">
-                    <div>
-                      <h1>Welcome back, {me.user.name.split(' ')[0]}</h1>
-                      <p className="dash-header__count">
-                        Signed in as {me.user.roleName || roleLabel(me.user.role)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="overview-layout">
-                    <div className="overview-hero">
-                      <div className="overview-hero__top">
-                        <div className="overview-hero__identity">
-                          <div className="overview-hero__monogram" aria-hidden="true">
-                            {me.lodge.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h2>{me.lodge.name}</h2>
-                            <span className="overview-hero__slug">
-                              Public link: <code>{`${window.location.origin}${publicPath}`}</code>
-                              <button
-                                type="button"
-                                className="overview-hero__copy-link"
-                                onClick={handleCopyPublicLink}
-                              >
-                                {linkCopied === 'copied' && 'Copied!'}
-                                {linkCopied === 'failed' && 'Press Ctrl+C'}
-                                {!linkCopied && 'Copy'}
-                              </button>
-                            </span>
-                          </div>
-                        </div>
-                        <div className="overview-hero__badges">
-                          <span
-                            className={`badge ${me.lodge.isGstRegistered ? 'badge--on' : 'badge--off'}`}
-                          >
-                            {me.lodge.isGstRegistered
-                              ? `GST · ${me.lodge.gstin || 'Registered'}`
-                              : 'Non-GST'}
-                          </span>
-                          {me.lodge.isSpecifiedPremises && (
-                            <span className="badge badge--accent">Specified premises</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="info-grid">
-                        <InfoTile
-                          icon="location"
-                          label="Location"
-                          value={[me.lodge.city, me.lodge.state].filter(Boolean).join(', ')}
-                        />
-                        <InfoTile icon="address" label="Address" value={me.lodge.address} />
-                        <InfoTile
-                          icon="calendar"
-                          label="Check-in cycle"
-                          value={CHECKIN_LABEL[me.lodge.checkinMode] || me.lodge.checkinMode}
-                        />
-                        <InfoTile icon="phone" label="Lodge phone" value={me.lodge.phone} />
-                        <InfoTile icon="chat" label="WhatsApp" value={me.lodge.whatsappNumber} />
-                        {me.lodge.isGstRegistered && (
-                          <InfoTile icon="receipt" label="GSTIN" value={me.lodge.gstin} />
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="profile-card">
-                      <div className="profile-card__avatar" aria-hidden="true">
-                        {me.user.name.charAt(0)}
-                      </div>
-                      <h3>{me.user.name}</h3>
-                      <span className="badge badge--on profile-card__role">{me.user.roleName || roleLabel(me.user.role)}</span>
-                      <div className="profile-card__details">
-                        {me.user.email && (
-                          <div className="profile-card__detail">
-                            <Icon name="mail" />
-                            <span>{me.user.email}</span>
-                          </div>
-                        )}
-                        {me.user.phone && (
-                          <div className="profile-card__detail">
-                            <Icon name="phone" />
-                            <span>{me.user.phone}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {visibleSteps.length > 0 && (
-                    <div className="getting-started">
-                      <div className="getting-started__title">Getting started</div>
-                      <ol className="getting-started__list">
-                        {visibleSteps.map((step, i) => (
-                          <li className="getting-started__step" key={step.title}>
-                            <span className="getting-started__number">{i + 1}</span>
-                            <div className="getting-started__body">
-                              <strong>{step.title}</strong>
-                              <p>{step.description}</p>
-                            </div>
-                            <button
-                              type="button"
-                              className="getting-started__go"
-                              onClick={() => setActiveSection(step.key)}
-                            >
-                              Go
-                            </button>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {activeFeature && (
-                <div className="dash-header">
-                  <div>
-                    <h1>{activeFeature.title}</h1>
-                    <p className="dash-header__count">{activeFeature.description}</p>
-                  </div>
                 </div>
               )}
 
@@ -485,9 +248,22 @@ export default function OwnerDashboard() {
                     </div>
                   </div>
                 )}
+
+              {/* Nothing to land on: a role whose permissions have all been
+                  taken away, or that only holds permissions for capabilities
+                  this property doesn't have. Without this the page would be
+                  blank and look broken rather than restricted. */}
+              {!activeFeature && (
+                <div className="dash-card">
+                  <div className="dash-state">
+                    Your role doesn&apos;t open any sections yet. Ask the owner to review your
+                    permissions under Staff &amp; roles.
+                  </div>
+                </div>
+              )}
             </>
           )}
-        </div>
+        </main>
       </div>
     </div>
   );
