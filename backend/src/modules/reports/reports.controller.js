@@ -37,10 +37,23 @@ async function getGstSummaryHandler(req, res, next) {
   }
 }
 
+// Which side of the book to report on. Validated against a fixed set rather
+// than passed through — it reaches the query as a filter value.
+const BILLING_SIDES = ['ALL', 'GST', 'NON_GST'];
+
 async function getBookingsReportHandler(req, res, next) {
   try {
     const { fromDate, toDate } = parseDateRange(req.query);
-    const report = await reportsService.getBookingsReport(req.user.lodgeId, fromDate, toDate);
+    const billingSide = String(req.query.billingSide || 'ALL').toUpperCase();
+    if (!BILLING_SIDES.includes(billingSide)) {
+      throw new ApiError('Choose GST, non-GST, or all bills.', 400);
+    }
+    const report = await reportsService.getBookingsReport(
+      req.user.lodgeId,
+      fromDate,
+      toDate,
+      billingSide
+    );
     res.json(report);
   } catch (err) {
     next(err);

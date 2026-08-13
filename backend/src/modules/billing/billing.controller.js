@@ -13,7 +13,12 @@ async function listBillableBookingsHandler(req, res, next) {
 
 async function previewBillHandler(req, res, next) {
   try {
-    const preview = await billingService.previewBill(req.user.lodgeId, Number(req.params.bookingId));
+    const preview = await billingService.previewBill(req.user.lodgeId, Number(req.params.bookingId), {
+      // The billing desk re-previews with this off to see the bill without the
+      // overstay charge before committing to it. Absent means "as agreed at
+      // checkout", so only the explicit string turns it off.
+      includeLateCheckout: req.query.includeLateCheckout !== 'false',
+    });
     res.json(preview);
   } catch (err) {
     next(err);

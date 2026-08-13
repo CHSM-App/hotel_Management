@@ -54,6 +54,10 @@
   padding: 0;
   overflow: hidden;
   display: flex;
+  /* A little wider than the other modals: the guest rows are five columns
+     and the optional sections sit two-up, both of which read better with
+     the extra 60px than the height they'd otherwise cost. */
+  max-width: 780px;
 }
 
 .booking-form {
@@ -63,25 +67,57 @@
   min-height: 0;
 }
 
+/* ------------------------------------------------- new booking form
+
+   This is the tallest form in the app and reception fills it in at a
+   counter with a guest waiting, so it runs at a tighter density than the
+   shared form styles: smaller labels, 38px controls, half the vertical
+   rhythm. The overrides are scoped to .booking-form on purpose — every
+   other form in the app keeps the roomier defaults from forms.css. */
+
 .booking-form__head {
   flex-shrink: 0;
-  padding: 24px 28px 16px;
+  padding: 16px 22px 12px;
   border-bottom: 1px solid var(--border);
 }
 
+/* Title and the walk-in/reservation switch share a line — the switch is
+   the first decision, so it belongs beside the title, not below it. */
+.booking-form__head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
 .booking-form__head h3 {
-  margin-bottom: 14px;
+  margin: 0;
+  font-size: 18px;
 }
 
 .booking-form__head .toggle-group {
   margin-bottom: 0;
 }
 
+.booking-form__head .toggle-group button {
+  padding: 7px 14px;
+  font-size: 12.5px;
+}
+
+.booking-form__head .bookings-panel__hint {
+  margin-top: 8px;
+  max-width: 62ch;
+}
+
 .booking-form__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 28px 20px;
+  padding: 14px 22px 18px;
+  /* Keeps the fields from shifting sideways as sections open and the
+     scrollbar appears. */
+  scrollbar-gutter: stable;
 }
 
 .booking-form__foot {
@@ -90,9 +126,75 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 28px;
+  padding: 12px 22px;
   border-top: 1px solid var(--border);
   background: var(--paper);
+}
+
+/* --- density overrides --- */
+
+.booking-form .field {
+  margin-bottom: 12px;
+}
+
+.booking-form .field label {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.booking-form .field input,
+.booking-form .field select,
+.booking-form .bookings-panel__vehicle-row input,
+.booking-form .bookings-panel__vehicle-row select {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 7px;
+}
+
+.booking-form .field-row {
+  gap: 10px 12px;
+}
+
+.booking-form .form-section {
+  padding-top: 14px;
+}
+
+.booking-form .form-section__title,
+.booking-form .form-section--collapsible > summary {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+/* Matched with the same weight as the [open] rules in forms.css so the
+   tighter spacing actually lands. */
+.booking-form .form-section--collapsible[open] > summary {
+  margin-bottom: 10px;
+}
+
+.booking-form .form-section--collapsible:not([open]) > summary {
+  margin-bottom: 0;
+}
+
+.booking-form .bookings-panel__hint {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.booking-form .checkbox-grid {
+  gap: 6px;
+}
+
+.booking-form .checkbox-chip {
+  padding: 7px 9px;
+  font-size: 12.5px;
+}
+
+/* The room select carries the rate field beside it, and the rate's hint
+   makes that column taller — align to the tops so both labels line up. */
+.booking-form__room-row {
+  align-items: start;
+  grid-template-columns: 1.6fr 1fr;
 }
 
 .booking-form__total {
@@ -128,9 +230,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-right: 8px;
+  width: 17px;
+  height: 17px;
+  margin-right: 7px;
   border-radius: 50%;
   background: var(--brand);
   color: #fff;
@@ -139,22 +241,22 @@
 }
 
 .booking-form__room-meta {
-  margin-bottom: 18px;
+  margin: -2px 0 12px;
 }
 
 .booking-form__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .booking-form__chip {
   background: var(--paper);
   border: 1px solid var(--border);
   color: var(--text);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 999px;
   white-space: nowrap;
 }
@@ -166,39 +268,155 @@
 }
 
 .booking-form__room-note {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-muted);
   font-style: italic;
-  margin-top: 8px;
+  margin: 6px 0 0;
 }
 
 .booking-form__warn {
   font-size: 12px;
   font-weight: 600;
   color: var(--danger);
-  margin-top: 6px;
+  margin: 6px 0 0;
+}
+
+/* The priced breakdown reads as a quoted figure, not another form field —
+   boxing it separates it from the inputs above without adding height. */
+.booking-form .sim-result {
+  margin-top: 12px;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--paper);
+}
+
+.booking-form .sim-result__line {
+  font-size: 12.5px;
+  padding: 3px 0;
+}
+
+.booking-form .sim-result__total {
+  font-size: 15px;
+  padding-top: 7px;
+  margin-top: 5px;
+}
+
+.booking-form__party-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.booking-form__party-total {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.booking-form__party-split {
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
 .booking-form__subhead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
+  margin: 14px 0 8px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.booking-form__subhead-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-  margin: 20px 0 10px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--border);
 }
 
 .booking-form__subhead-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--ink);
   font-size: 11px;
-  font-weight: 500;
-  text-transform: none;
+  font-weight: 700;
+  text-align: center;
   letter-spacing: normal;
+}
+
+.booking-form__add-inline {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  color: var(--brand-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 5px 11px;
+  white-space: nowrap;
+}
+
+.booking-form__add-inline:hover {
+  border-style: solid;
+  border-color: var(--brand);
+  background: #eef4f2;
+}
+
+/* Advance payment and vehicles side by side: both are usually left shut,
+   and stacked they pushed the guest list out of view. */
+.booking-form__optional {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+/* Extra weight to beat `.form-section:first-child`, which zeroes the top
+   padding and border for the first card in the row. */
+.booking-form .booking-form__optional > .form-section {
+  margin-top: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.booking-form__optional .bookings-panel__add-btn {
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+/* Vehicle rows now live in a half-width card, so they wrap rather than
+   squeeze the plate field down to nothing. */
+.booking-form .bookings-panel__vehicle-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.booking-form .bookings-panel__vehicle-row input {
+  min-width: 120px;
+}
+
+.booking-form .bookings-panel__vehicle-row select {
+  min-width: 90px;
+}
+
+.booking-form .bookings-panel__remove-btn {
+  padding: 7px 11px;
+  font-size: 12px;
 }
 
 .bookings-panel__actions {
@@ -250,6 +468,11 @@
   margin-bottom: 10px;
 }
 
+.booking-form .bookings-panel__repeat-list {
+  gap: 8px;
+  margin-bottom: 0;
+}
+
 .bookings-panel__guest-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -263,20 +486,91 @@
   margin-bottom: 0;
 }
 
+/* One guest, one line: name / mobile / ID type / document, with the remove
+   button riding along at the end so the row stays scannable down the column
+   of names. Children drop the mobile column. */
+.bookings-panel__party-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1.3fr auto;
+  align-items: end;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.bookings-panel__party-row--child {
+  grid-template-columns: 1.2fr 1fr 1.3fr auto;
+}
+
+.bookings-panel__party-row .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+/* File inputs render their own filename text and will happily blow the grid
+   column out; this keeps the row from pushing the modal sideways. */
+.bookings-panel__party-row input[type='file'] {
+  max-width: 100%;
+  font-size: 11.5px;
+  /* The native button and the filename both sit inside this control, so it
+     needs less vertical padding than a text field to match their height. */
+  padding: 6px 8px;
+}
+
+.bookings-panel__row-remove-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 14px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.booking-form .bookings-panel__row-remove-btn {
+  min-height: 38px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.booking-form .bookings-panel__row-remove-btn:hover {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* Holds the remove column open for the primary guest's row, so its fields
+   line up with every row below it. */
+.bookings-panel__row-spacer {
+  display: block;
+}
+
 .bookings-panel__vehicle-row {
   display: flex;
   gap: 10px;
   align-items: center;
 }
 
-.bookings-panel__vehicle-row input {
+.bookings-panel__vehicle-row input,
+.bookings-panel__vehicle-row select {
   flex: 1;
+  min-width: 0;
   padding: 11px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
   min-height: 44px;
+}
+
+/* The plate is the thing being read down the list; the type is a four-option
+   pick, so it doesn't need to match the number field's width. */
+.bookings-panel__vehicle-row input {
+  flex: 1.4;
 }
 
 .bookings-panel__remove-btn {
@@ -341,16 +635,40 @@
   }
 
   .booking-form__head {
-    padding: 18px 16px 14px;
+    padding: 14px 16px 12px;
   }
 
   .booking-form__body {
-    padding: 4px 16px 16px;
+    padding: 12px 16px 16px;
   }
 
   .booking-form__foot {
     padding: 12px 16px;
     gap: 12px;
+  }
+
+  /* Density comes back off on a phone — 38px controls are a fine mouse
+     target but a poor thumb one, and the width saved is width nobody has. */
+  .booking-form .field input,
+  .booking-form .field select,
+  .booking-form .bookings-panel__vehicle-row input,
+  .booking-form .bookings-panel__vehicle-row select {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .booking-form .bookings-panel__row-remove-btn {
+    min-height: 44px;
+  }
+
+  .booking-form__optional {
+    grid-template-columns: 1fr;
+  }
+
+  /* Bookings.css loads after forms.css, so the room/rate pairing has to be
+     unwound here — the generic .field-row stacking rule can't reach it. */
+  .booking-form__room-row {
+    grid-template-columns: 1fr;
   }
 
   .booking-form__total-value {
@@ -442,6 +760,27 @@
 @media (max-width: 480px) {
   .bookings-panel__guest-row {
     grid-template-columns: 1fr;
+  }
+
+  /* No room for a real row on a phone — stack the fields and let the remove
+     button sit under them. */
+  .bookings-panel__party-row,
+  .bookings-panel__party-row--child {
+    grid-template-columns: 1fr;
+  }
+
+  .bookings-panel__row-spacer {
+    display: none;
+  }
+
+  /* Plate, type and Remove won't fit side by side at this width — wrap the
+     Remove button onto its own line rather than squeezing the plate field. */
+  .bookings-panel__vehicle-row {
+    flex-wrap: wrap;
+  }
+
+  .bookings-panel__vehicle-row .bookings-panel__remove-btn {
+    width: 100%;
   }
 }
 

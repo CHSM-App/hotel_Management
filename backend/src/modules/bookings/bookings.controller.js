@@ -8,14 +8,21 @@ const {
   checkOutSchema,
 } = require('./bookings.schema');
 const bookingsService = require('./bookings.service');
+const pricingService = require('../pricing/pricing.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 
-function parseChargeIds(raw) {
-  return String(raw || '')
-    .split(',')
-    .map((id) => Number(id.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0);
+// "3,5:2" — one of charge 3, two of charge 5. A bare id keeps meaning one,
+// which is every link and bookmark that predates counts.
+const parseChargeIds = pricingService.parseChargeSelections;
+
+// A quote is a preview, so a half-typed or absent override just falls back to
+// the category price rather than erroring at the guest-facing desk. The real
+// validation happens in the schema when the booking is actually saved.
+function parseBasePriceOverride(raw) {
+  if (raw == null || String(raw).trim() === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function parseDateRange(query) {
@@ -84,7 +91,14 @@ async function priceQuoteHandler(req, res, next) {
     }
     const { checkInDate, checkOutDate } = parseDateRange(req.query);
     const chargeIds = parseChargeIds(req.query.chargeIds);
-    const result = await bookingsService.priceStay(req.user.lodgeId, roomId, checkInDate, checkOutDate, chargeIds);
+    const result = await bookingsService.priceStay(
+      req.user.lodgeId,
+      roomId,
+      checkInDate,
+      checkOutDate,
+      chargeIds,
+      parseBasePriceOverride(req.query.basePriceOverride)
+    );
     res.json(result);
   } catch (err) {
     next(err);
@@ -137,6 +151,7 @@ function attachGuestFiles(guests, files) {
     phone: guest.phone || null,
     idProofType: guest.idProofType || null,
     idProofDocument: guestFileByIndex.get(index) || null,
+    isChild: Boolean(guest.isChild),
   }));
 }
 
@@ -147,8 +162,8 @@ async function createBookingHandler(req, res, next) {
   };
   try {
     const body = { ...req.body };
-    body.switchableChargeIds = parseJsonArrayField(body.switchableChargeIds);
-    body.vehicleNumbers = parseJsonArrayField(body.vehicleNumbers);
+    body.switchableCharges = parseJsonArrayField(body.switchableCharges ?? body.switchableChargeIds);
+    body.vehicles = parseJsonArrayField(body.vehicles);
     body.guests = parseJsonArrayField(body.guests);
 
     const parsed = createBookingSchema.safeParse(body);
@@ -206,7 +221,7 @@ async function checkInHandler(req, res, next) {
   try {
     const body = { ...req.body };
     body.guests = parseJsonArrayField(body.guests);
-    body.vehicleNumbers = parseJsonArrayField(body.vehicleNumbers);
+    body.vehicles = parseJsonArrayField(body.vehicles);
 
     const parsed = checkInSchema.safeParse(body);
     if (!parsed.success) {
@@ -232,7 +247,13 @@ async function checkInHandler(req, res, next) {
 
 async function updateBookingHandler(req, res, next) {
   try {
-    const parsed = updateBookingSchema.safeParse(req.body);
+    const body = { ...req.body };
+    // A client still sending the pre-quantity field means one of each, and
+    // must keep its three-way meaning: absent stays absent, [] still clears.
+    if (body.switchableCharges === undefined && body.switchableChargeIds !== undefined) {
+      body.switchableCharges = body.switchableChargeIds;
+    }
+    const parsed = updateBookingSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApiError(parsed.error.issues[0].message, 400);
     }

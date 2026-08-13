@@ -1,0 +1,288 @@
+/* The checkout policy is a settings form, not a table, so .dash-card's flush
+   edges are padded band by band here rather than in the shared card. */
+.checkout-policy__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--paper);
+}
+
+.checkout-policy__title {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.checkout-policy__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+/* The mode is set at registration and cannot be changed here, so it reads as a
+   badge rather than a control. */
+.checkout-policy__mode {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-ink);
+  white-space: nowrap;
+}
+
+.checkout-policy__mode::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* Label column on the left, controls on the right — the owner scans the
+   headings down one edge and only reads the copy for the row they are on. */
+.checkout-policy__section {
+  display: grid;
+  grid-template-columns: minmax(0, 270px) minmax(0, 1fr);
+  gap: 20px 40px;
+  padding: 24px;
+}
+
+.checkout-policy__section + .checkout-policy__section {
+  border-top: 1px solid var(--border);
+}
+
+.checkout-policy__section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.checkout-policy__note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.checkout-policy__body {
+  min-width: 0;
+}
+
+.checkout-policy__body .field:last-child {
+  margin-bottom: 0;
+}
+
+.checkout-policy__field--narrow input {
+  max-width: 200px;
+}
+
+/* Stands in for the checkout-time field on 24-hour properties, where the
+   deadline is worked out per guest and there is nothing to type. */
+.checkout-policy__rule {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.checkout-policy__rule-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.checkout-policy__rule-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.checkout-policy__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Minutes and percents get their unit inside the box, so the labels can stay
+   short and the four fields line up. */
+.checkout-policy__input {
+  position: relative;
+  display: block;
+}
+
+.checkout-policy__input input {
+  padding-right: 62px;
+  /* The unit sits where the spinner would, so drop the spinner. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.checkout-policy__input input::-webkit-outer-spin-button,
+.checkout-policy__input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.checkout-policy__unit {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Four number fields are easy to fill in and hard to picture. This is the same
+   rule reception will see quoted at them in the checkout dialog. */
+.checkout-policy__preview {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.checkout-policy__preview-title {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.checkout-policy__steps {
+  list-style: none;
+  margin: 0;
+  padding: 14px 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.checkout-policy__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.checkout-policy__marker {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* The rail joining the dots, drawn from each step down to the next. */
+.checkout-policy__step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 18px;
+  bottom: -16px;
+  width: 1px;
+  background: var(--border);
+}
+
+.checkout-policy__step[data-tone='free'] .checkout-policy__marker {
+  background: var(--color-success);
+}
+
+.checkout-policy__step[data-tone='half'] .checkout-policy__marker {
+  background: var(--color-warning);
+}
+
+.checkout-policy__step[data-tone='full'] .checkout-policy__marker {
+  background: var(--danger);
+}
+
+.checkout-policy__when {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.checkout-policy__charge {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.checkout-policy__banner {
+  margin: 0 24px 16px;
+}
+
+.checkout-policy__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--paper);
+}
+
+.checkout-policy__saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+@media (max-width: 860px) {
+  .checkout-policy__section {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 560px) {
+  .checkout-policy__head,
+  .checkout-policy__section,
+  .checkout-policy__footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .checkout-policy__banner {
+    margin: 0 16px 16px;
+  }
+
+  .checkout-policy__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .checkout-policy__field--narrow input {
+    max-width: none;
+  }
+}

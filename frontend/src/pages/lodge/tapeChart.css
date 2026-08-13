@@ -1,171 +1,694 @@
-.tape-legend {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 14px;
+/* The month tape chart reads like a seat map: one small tile per room per
+   night, coloured by state and carrying no text at all. Whose stay a tile
+   belongs to is answered on hover, so a whole month of rooms fits on screen
+   without turning into a wall of names.
+
+   The palette is deliberately quiet for the vacant majority and saturated only
+   where something is sold — a month of empty rooms should read as calm space,
+   and a busy one should show its shape from across the desk. */
+:root {
+  --tape-vacant: #e9edf0;
+  --tape-vacant-line: #dde3e8;
+  --tape-vacant-hover: #d8dee4;
+  --tape-weekend: #dfe4e9;
+  --tape-weekend-wash: rgba(30, 58, 95, 0.035);
+
+  --tape-booked: #c0392b;
+  --tape-booked-deep: #a52f22;
+  --tape-checked-in: #2f6fb5;
+  --tape-checked-in-deep: #245a96;
+
+  --tape-tile: 26px;
+  --tape-tile-h: 22px;
+  --tape-row-h: 32px;
+  --tape-room-col: 124px;
 }
 
-.tape-legend span {
+/* ---------- month stepper ---------- */
+
+.tape-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tape-nav__stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.tape-nav__arrow {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tape-nav__arrow:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.tape-nav__label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 128px;
+  justify-content: center;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.tape-nav__label strong {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.tape-nav__label span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* A date range is a longer string than a month name, so it gets its own width
+   and a step down in size rather than pushing the stepper out of shape. */
+.tape-nav__label--range {
+  min-width: 176px;
+}
+
+.tape-nav__label--range strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tape-nav__today {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tape-nav__today:hover {
+  background: var(--paper);
+  border-color: var(--brand);
+}
+
+/* ---------- legend ---------- */
+
+.tape-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.tape-legend__item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  padding: 4px 11px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.tape-legend__hint {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11.5px;
 }
 
 .tape-legend__swatch {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 3px;
   display: inline-block;
 }
 
 .tape-legend__swatch--vacant {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--tape-vacant);
+  box-shadow: inset 0 0 0 1px var(--tape-vacant-line);
 }
 
 .tape-legend__swatch--booked {
-  background: var(--accent);
+  background: var(--tape-booked);
 }
 
 .tape-legend__swatch--checked-in {
-  background: var(--brand);
+  background: var(--tape-checked-in);
 }
 
-.tape-chart-scroll {
-  overflow-x: auto;
+/* ---------- one card per room category ---------- */
+
+.tape-months {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tape-month-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
-.tape-grid {
-  display: grid;
-  grid-template-columns: 140px repeat(10, minmax(64px, 1fr));
-  grid-auto-rows: 48px;
+.tape-month-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--paper), var(--surface));
+}
+
+.tape-month-card__title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tape-month-card__title h4 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.tape-month-card__title span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Sold share for the month, as a bar rather than a number alone — the desk
+   reads "nearly full" off the fill long before it reads the percentage. */
+.tape-month-card__meter {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.tape-month-card__meter-track {
+  width: 96px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tape-vacant);
+  overflow: hidden;
+}
+
+.tape-month-card__meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--tape-checked-in), var(--tape-booked));
+  transition: width 0.3s ease;
+}
+
+.tape-month-card__meter-value {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Capped in height so a category's calendar scrolls in both directions inside
+   its own box: that is what lets its date header stay pinned while a large
+   category is scrolled through a whole month. */
+.tape-chart-scroll {
+  overflow: auto;
+  max-height: 58vh;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #c8d0d8 transparent;
+}
+
+.tape-chart-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.tape-chart-scroll::-webkit-scrollbar-thumb {
+  background: #c8d0d8;
+  border: 3px solid var(--surface);
+  border-radius: 999px;
+}
+
+.tape-chart-scroll::-webkit-scrollbar-thumb:hover {
+  background: #aab4bf;
+}
+
+.tape-month {
+  /* --tape-cols is set on the element by the component — the number of day
+     columns is however long the month being shown is. */
   min-width: max-content;
 }
 
-.tape-grid__corner,
-.tape-grid__date-head {
+.tape-month__head,
+.tape-month__row {
+  display: grid;
+  grid-template-columns: var(--tape-cols);
+  align-items: center;
+}
+
+.tape-month__head {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: var(--paper);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  height: 38px;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.tape-month__corner,
+.tape-month__room {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 14px;
+  background: var(--surface);
+  /* A hairline plus a soft fade, so the pinned column separates from the
+     tiles sliding under it instead of colliding with them. */
+  box-shadow: 1px 0 0 var(--border), 8px 0 10px -8px rgba(16, 24, 40, 0.18);
+}
+
+.tape-month__corner {
+  z-index: 4;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  box-shadow: 1px 0 0 var(--border), 8px 0 10px -8px rgba(16, 24, 40, 0.18),
+    inset 0 -1px 0 var(--border);
+}
+
+.tape-month__date {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  gap: 2px;
+  height: 100%;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
+  text-transform: uppercase;
+  transition: background 0.12s ease;
 }
 
-.tape-grid__corner {
-  left: 0;
-  z-index: 4;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.tape-grid__date-head strong {
-  font-size: 14px;
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.tape-grid__date-head--today strong,
-.tape-grid__date-head--today span {
-  color: var(--brand-ink);
-}
-
-.tape-grid__room-label {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  background: var(--paper);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  padding: 4px 10px;
+.tape-month__date strong {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  font-size: 13px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  font-size: 12px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
-.tape-grid__room-label span {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--text-muted);
+.tape-month__date--weekend {
+  background: var(--tape-weekend-wash);
 }
 
-.tape-grid__cell {
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  cursor: pointer;
-  padding: 0;
+.tape-month__date--weekend strong {
+  color: var(--accent-ink);
 }
 
-.tape-grid__cell:hover {
-  background: var(--paper);
-}
-
-.tape-grid__bar {
-  margin: 5px 2px;
-  border: none;
-  border-radius: 6px;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tape-grid__bar--booked {
-  background: var(--accent);
-  color: #ffffff;
-}
-
-.tape-grid__bar--checked-in {
+.tape-month__date--today strong {
   background: var(--brand);
   color: #ffffff;
 }
 
+/* The hovered night lights up in every category's header at once, which is
+   what lets one date be followed down the page. */
+.tape-month__date--active {
+  background: rgba(30, 58, 95, 0.08);
+}
+
+.tape-month__date--active strong {
+  color: var(--brand-ink);
+}
+
+.tape-month__row {
+  height: var(--tape-row-h);
+  box-shadow: inset 0 -1px 0 rgba(219, 225, 230, 0.55);
+}
+
+.tape-month__row:last-child {
+  box-shadow: none;
+}
+
+.tape-month__row--active {
+  background: rgba(30, 58, 95, 0.035);
+}
+
+/* Opaque, not the row's translucent tint: the room column is pinned over the
+   tiles sliding beneath it and would otherwise let them show through. */
+.tape-month__row--active .tape-month__room {
+  background: #f3f6f9;
+}
+
+.tape-month__room {
+  font-size: 12.5px;
+  color: var(--ink);
+  gap: 1px;
+}
+
+.tape-month__room strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tape-month__room span {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* ---------- the tiles ---------- */
+
+/* Vacant tiles sit inside their column with a gap; a sold night fills its
+   column edge to edge, so a run of nights fuses into one continuous bar and
+   only the ends of the stay get rounded. */
+.tape-tile {
+  border: none;
+  padding: 0;
+  height: var(--tape-tile-h);
+  width: calc(var(--tape-tile) - 3px);
+  margin: 0 1.5px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.tape-tile:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
+
+.tape-tile--vacant {
+  background: var(--tape-vacant);
+  box-shadow: inset 0 0 0 1px var(--tape-vacant-line);
+}
+
+.tape-tile--vacant.tape-tile--weekend {
+  background: var(--tape-weekend);
+}
+
+.tape-tile--vacant:hover {
+  background: var(--tape-vacant-hover);
+  box-shadow: inset 0 0 0 1px #b9c3cc;
+}
+
+.tape-tile--booked,
+.tape-tile--checked-in {
+  width: var(--tape-tile);
+  margin: 0;
+  border-radius: 0;
+  /* A single soft highlight down the top edge — enough to give the bar a
+     surface without turning it into a gradient swatch. */
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.04));
+}
+
+.tape-tile--booked {
+  background-color: var(--tape-booked);
+}
+
+.tape-tile--checked-in {
+  background-color: var(--tape-checked-in);
+}
+
+.tape-tile--start {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+  margin-left: 2px;
+  width: calc(var(--tape-tile) - 2px);
+}
+
+.tape-tile--end {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  margin-right: 2px;
+  width: calc(var(--tape-tile) - 2px);
+}
+
+.tape-tile--start.tape-tile--end {
+  width: calc(var(--tape-tile) - 4px);
+}
+
+/* Hovering one night lifts every tile of that stay together. Nothing moves or
+   resizes — a grid this dense can't afford tiles that jump under the pointer,
+   so the feedback is colour and a ring instead. */
+.tape-tile--active.tape-tile--booked {
+  background-color: var(--tape-booked-deep);
+}
+
+.tape-tile--active.tape-tile--checked-in {
+  background-color: var(--tape-checked-in-deep);
+}
+
+.tape-tile--active {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.tape-tile--today {
+  box-shadow: inset 0 0 0 1.5px var(--brand-ink);
+}
+
+/* ---------- hover card ---------- */
+
+.tape-tooltip {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 232px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #101a26;
+  color: #ffffff;
+  font-size: 11.5px;
+  line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.32);
+  pointer-events: none;
+  animation: tape-tooltip-in 0.12s ease-out;
+}
+
+@keyframes tape-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 4px));
+  }
+}
+
+.tape-tooltip--below {
+  transform: translate(-50%, 0);
+  animation-name: tape-tooltip-in-below;
+}
+
+@keyframes tape-tooltip-in-below {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+}
+
+.tape-tooltip__top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.tape-tooltip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tape-tooltip__dot--booked {
+  background: #e4655a;
+}
+
+.tape-tooltip__dot--checked-in {
+  background: #6aa6e6;
+}
+
+.tape-tooltip__dot--vacant {
+  background: #9aa6b2;
+}
+
+.tape-tooltip strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.tape-tooltip__meta {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.tape-tooltip__dates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-variant-numeric: tabular-nums;
+}
+
+.tape-tooltip__dates i {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tape-tooltip__hint {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+/* ---------- loading ---------- */
+
+.tape-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tape-skeleton__card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 14px 18px 18px;
+}
+
+.tape-skeleton__head,
+.tape-skeleton__row {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--tape-vacant) 25%, #f2f5f7 50%, var(--tape-vacant) 75%);
+  background-size: 400% 100%;
+  animation: tape-skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+.tape-skeleton__head {
+  height: 18px;
+  width: 180px;
+  margin-bottom: 18px;
+}
+
+.tape-skeleton__row {
+  height: var(--tape-tile-h);
+  margin-bottom: 10px;
+}
+
+@keyframes tape-skeleton-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tape-tooltip,
+  .tape-skeleton__head,
+  .tape-skeleton__row,
+  .tape-month-card__meter-fill {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* The chart keeps its shape on a phone and scrolls sideways inside
-   .tape-chart-scroll (the room column and date header stay pinned) — a
-   calendar grid can't reflow into a single column without ceasing to be a
-   calendar. Columns just get tighter so more days are visible per swipe. */
+   .tape-chart-scroll (the room column stays pinned) — a month of nights can't
+   reflow into a single column without ceasing to be a calendar. Tiles just get
+   tighter so more of the month is visible per swipe. */
 @media (max-width: 640px) {
-  .tape-legend {
-    flex-wrap: wrap;
-    gap: 10px 14px;
+  :root {
+    --tape-tile: 22px;
+    --tape-tile-h: 18px;
+    --tape-row-h: 27px;
+    --tape-room-col: 88px;
   }
 
-  .tape-grid {
-    grid-template-columns: 92px repeat(10, minmax(52px, 1fr));
-    grid-auto-rows: 44px;
+  .tape-nav {
+    width: 100%;
+    justify-content: space-between;
   }
 
-  .tape-grid__room-label {
-    padding: 4px 8px;
-    font-size: 12px;
+  .tape-legend__hint {
+    margin-left: 0;
+    width: 100%;
   }
 
-  .tape-grid__room-label span {
-    font-size: 10px;
+  .tape-month-card__head {
+    padding: 11px 14px;
   }
 
-  .tape-grid__bar {
-    font-size: 11px;
-    padding: 0 6px;
+  .tape-month-card__title h4 {
+    font-size: 14px;
+  }
+
+  .tape-month-card__meter-track {
+    width: 72px;
+  }
+
+  .tape-month__room {
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+
+  .tape-chart-scroll {
+    max-height: 62vh;
   }
 }

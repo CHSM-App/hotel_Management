@@ -18,7 +18,7 @@ const PERMISSIONS = [
   },
   {
     key: 'guests.view',
-    label: 'Guests & ID register',
+    label: 'Guest register',
     description: 'Browse past and present guests, and open their ID proofs.',
   },
   {

@@ -5,9 +5,31 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
-async function simulate(lodgeId, roomId, dateStr, chargeIds = []) {
-  const pool = await getPool();
+function toIsoDate(d) {
+  if (typeof d === 'string') return d.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
 
+// checkOutDate is exclusive — a stay from the 13th to the 17th is four
+// nights (13, 14, 15, 16), the same convention bookings price on.
+function datesInRange(checkInDate, checkOutDate) {
+  const dates = [];
+  const cur = new Date(`${checkInDate}T00:00:00Z`);
+  const end = new Date(`${checkOutDate}T00:00:00Z`);
+  while (cur < end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function addDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function loadRoom(pool, lodgeId, roomId) {
   const roomResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -24,57 +46,206 @@ async function simulate(lodgeId, roomId, dateStr, chargeIds = []) {
   if (!room) {
     throw new ApiError('Room not found.', 404);
   }
+  return room;
+}
 
-  const lines = [];
-  lines.push({ label: `${room.category_name} — base price`, amount: Number(room.category_base_price) });
-  let subtotal = Number(room.category_base_price);
-
+// Every season that touches any night in [checkInDate, checkOutDate) is
+// fetched once for the whole range — a 30-night quote must not turn into 30
+// round trips. end_date is inclusive in the table, start_date is compared
+// against the exclusive checkout.
+async function loadSeasons(pool, lodgeId, checkInDate, checkOutDate) {
   const seasonsResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .input('date', sql.Date, dateStr)
+    .input('fromDate', sql.Date, checkInDate)
+    .input('toDate', sql.Date, checkOutDate)
     .query(`
-      SELECT name, adjustment_percent
+      SELECT name, adjustment_percent, start_date, end_date
       FROM dbo.seasons
-      WHERE lodge_id = @lodgeId AND is_active = 1 AND @date BETWEEN start_date AND end_date
+      WHERE lodge_id = @lodgeId AND is_active = 1
+        AND start_date < @toDate AND end_date >= @fromDate
       ORDER BY start_date ASC
     `);
 
-  for (const row of seasonsResult.recordset) {
-    const percent = Number(row.adjustment_percent);
-    const amount = round2(subtotal * (percent / 100));
-    lines.push({ label: `${row.name} (${percent > 0 ? '+' : ''}${percent}%)`, amount });
+  return seasonsResult.recordset.map((row) => ({
+    name: row.name,
+    percent: Number(row.adjustment_percent),
+    startDate: toIsoDate(row.start_date),
+    endDate: toIsoDate(row.end_date),
+  }));
+}
+
+// A selection is "which extra, and how many of it" — three extra beds is one
+// charge taken three times, not three charges. Callers may pass either shape:
+// a bare id (or a legacy id array) means one of them, which is what every
+// extra meant before quantities existed.
+function normalizeSelections(selections) {
+  const byId = new Map();
+  for (const selection of selections || []) {
+    const id = Number(typeof selection === 'object' && selection !== null ? selection.id : selection);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    const rawQuantity = typeof selection === 'object' && selection !== null ? selection.quantity : 1;
+    const quantity = Number(rawQuantity ?? 1);
+    if (!Number.isFinite(quantity) || quantity < 1) continue;
+    // The same id arriving twice is the desk asking for more of it, not a
+    // duplicate to discard — chargeIds=3,3 is two extra beds.
+    byId.set(id, (byId.get(id) || 0) + Math.floor(quantity));
+  }
+  return Array.from(byId, ([id, quantity]) => ({ id, quantity }));
+}
+
+// Accepts the query-string form used by /price-quote and /simulate:
+// "3,5:2" is one of charge 3 and two of charge 5.
+function parseChargeSelections(raw) {
+  return normalizeSelections(
+    String(raw || '')
+      .split(',')
+      .map((part) => {
+        const [id, quantity] = part.split(':');
+        return { id: Number(String(id).trim()), quantity: quantity == null ? 1 : Number(quantity) };
+      })
+  );
+}
+
+async function loadCharges(pool, lodgeId, selections) {
+  const wanted = normalizeSelections(selections);
+  if (wanted.length === 0) return [];
+
+  const chargesResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT id, name, charge_per_night
+      FROM dbo.switchable_charges
+      WHERE lodge_id = @lodgeId AND is_active = 1
+    `);
+
+  const quantityById = new Map(wanted.map((s) => [s.id, s.quantity]));
+  return chargesResult.recordset
+    .filter((row) => quantityById.has(Number(row.id)))
+    .map((row) => {
+      const quantity = quantityById.get(Number(row.id));
+      const unitAmount = Number(row.charge_per_night);
+      return {
+        id: Number(row.id),
+        name: row.name,
+        quantity,
+        unitAmount,
+        amount: round2(unitAmount * quantity),
+      };
+    });
+}
+
+// The night's starting rate: whatever reception agreed for this booking if
+// they overrode it, otherwise the category's own price. A non-positive or
+// unparseable override is ignored rather than pricing a stay at zero.
+function basePriceOf(room, basePriceOverride) {
+  const override = Number(basePriceOverride);
+  if (basePriceOverride != null && Number.isFinite(override) && override > 0) return override;
+  return Number(room.category_base_price);
+}
+
+function baseLabel(room, basePriceOverride) {
+  const suffix = basePriceOf(room, basePriceOverride) === Number(room.category_base_price) ? '' : ' (custom)';
+  return `${room.category_name} — base price${suffix}`;
+}
+
+function seasonLabel(season) {
+  return `${season.name} (${season.percent > 0 ? '+' : ''}${season.percent}%)`;
+}
+
+// The count is part of the name of the thing being charged for — a bill line
+// reading "Extra bed ₹300" with no ×3 on it is a line a guest will argue with.
+function chargeLabel(charge) {
+  const count = charge.quantity > 1 ? ` ×${charge.quantity}` : '';
+  return `${charge.name}${count} (switched on)`;
+}
+
+// One night's line-by-line breakdown, from data already in memory.
+function priceNight(room, seasons, charges, dateStr, basePriceOverride = null) {
+  const lines = [];
+  let subtotal = basePriceOf(room, basePriceOverride);
+  lines.push({ label: baseLabel(room, basePriceOverride), amount: subtotal });
+
+  for (const season of seasons) {
+    if (dateStr < season.startDate || dateStr > season.endDate) continue;
+    const amount = round2(subtotal * (season.percent / 100));
+    lines.push({ label: seasonLabel(season), amount });
     subtotal += amount;
   }
 
   // Switchable charges (AC, extra bed) are added after the season
   // adjustment, flat — a ₹500 AC charge stays ₹500 during a +25% festival,
   // it never compounds with the season percentage.
-  if (chargeIds.length > 0) {
-    const chargesResult = await pool
-      .request()
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .query(`
-        SELECT id, name, charge_per_night
-        FROM dbo.switchable_charges
-        WHERE lodge_id = @lodgeId AND is_active = 1
-      `);
-
-    const requestedIds = new Set(chargeIds.map(Number));
-    for (const row of chargesResult.recordset) {
-      if (!requestedIds.has(Number(row.id))) continue;
-      const amount = Number(row.charge_per_night);
-      lines.push({ label: `${row.name} (switched on)`, amount });
-      subtotal += amount;
-    }
+  for (const charge of charges) {
+    lines.push({ label: chargeLabel(charge), amount: charge.amount });
+    subtotal += charge.amount;
   }
+
+  return { date: dateStr, lines, total: round2(subtotal) };
+}
+
+async function simulate(lodgeId, roomId, dateStr, chargeSelections = [], basePriceOverride = null) {
+  const pool = await getPool();
+  const room = await loadRoom(pool, lodgeId, roomId);
+  const seasons = await loadSeasons(pool, lodgeId, dateStr, addDays(dateStr, 1));
+  const charges = await loadCharges(pool, lodgeId, chargeSelections);
+
+  const night = priceNight(room, seasons, charges, dateStr, basePriceOverride);
 
   return {
     roomNumber: room.room_number,
     date: dateStr,
-    lines,
-    total: round2(subtotal),
+    lines: night.lines,
+    total: night.total,
   };
 }
 
-module.exports = { simulate };
+// A whole stay in one call. `lines` is the same shape the single-date
+// simulate returns — each label summed across the nights it applied to — so
+// the panel can show a stay total the same way it shows one night.
+async function simulateRange(lodgeId, roomId, checkInDate, checkOutDate, chargeSelections = [], basePriceOverride = null) {
+  const pool = await getPool();
+  const room = await loadRoom(pool, lodgeId, roomId);
+  const seasons = await loadSeasons(pool, lodgeId, checkInDate, checkOutDate);
+  const charges = await loadCharges(pool, lodgeId, chargeSelections);
+
+  const nights = datesInRange(checkInDate, checkOutDate).map((date) =>
+    priceNight(room, seasons, charges, date, basePriceOverride)
+  );
+
+  // Seeded in the order a night is priced — base, then seasons, then extras —
+  // so a season that only covers the tail of the stay still reads above the
+  // extras instead of wherever the first night happened to put it.
+  const totals = new Map();
+  for (const label of [
+    baseLabel(room, basePriceOverride),
+    ...seasons.map(seasonLabel),
+    ...charges.map(chargeLabel),
+  ]) {
+    if (!totals.has(label)) totals.set(label, { label, amount: 0, nights: 0 });
+  }
+
+  let total = 0;
+  for (const night of nights) {
+    for (const line of night.lines) {
+      const prev = totals.get(line.label) || { label: line.label, amount: 0, nights: 0 };
+      prev.amount = round2(prev.amount + line.amount);
+      prev.nights += 1;
+      totals.set(line.label, prev);
+    }
+    total += night.total;
+  }
+
+  return {
+    roomNumber: room.room_number,
+    checkInDate,
+    checkOutDate,
+    nightCount: nights.length,
+    nights,
+    lines: Array.from(totals.values()).filter((line) => line.nights > 0),
+    total: round2(total),
+  };
+}
+
+module.exports = { simulate, simulateRange, normalizeSelections, parseChargeSelections };

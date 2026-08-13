@@ -7,13 +7,23 @@ import './chartSections.css';
 import './tapeChart.css';
 import './Bookings.css';
 
-const DAYS_VISIBLE = 10;
+// The chart lands on a rolling window, not on the 1st of the month: two days
+// of hindsight so a guest who checked in before today is still on screen, and
+// a month of nights ahead of it to sell into.
+const LOOKBACK_DAYS = 2;
+const ROLLING_DAYS = 31;
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
 const ID_PROOF_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
 const ID_PROOF_MAX_BYTES = 5 * 1024 * 1024;
 const STATUS_LABEL = { BOOKED: 'Booked', CHECKED_IN: 'Checked in', CHECKED_OUT: 'Checked out', CANCELLED: 'Cancelled' };
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
+const VEHICLE_TYPE_LABEL = {
+  TWO_WHEELER: 'Two wheeler',
+  FOUR_WHEELER: 'Four wheeler',
+  TRAVELLER: 'Traveller',
+  BUS: 'Bus',
+};
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -54,38 +64,178 @@ function formatDateLong(dateStr) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+// The chart is anchored to a whole calendar month, so every date that drives
+// it is normalised to the 1st before anything else looks at it.
+function monthStartOf(dateStr) {
+  return `${dateStr.slice(0, 7)}-01`;
+}
+
+function addMonths(monthStart, n) {
+  const d = new Date(`${monthStart}T00:00:00Z`);
+  // Setting the day to 1 in the same call keeps a 31st from rolling into the
+  // month after the one being asked for.
+  d.setUTCMonth(d.getUTCMonth() + n, 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysInMonth(monthStart) {
+  const d = new Date(`${monthStart}T00:00:00Z`);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+}
+
+function formatDayShort(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+// The stepper's label, split in two so the dates carry the emphasis and the
+// year sits back from them — the year is the part nobody is actually reading.
+// A whole month names itself; a rolling window has to state its two ends.
+function formatViewLabel(view, dates) {
+  if (view.mode === 'month') {
+    const d = new Date(`${view.start}T00:00:00Z`);
+    return {
+      primary: d.toLocaleDateString('en-IN', { month: 'long', timeZone: 'UTC' }),
+      secondary: String(d.getUTCFullYear()),
+    };
+  }
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const startYear = first.slice(0, 4);
+  const endYear = last.slice(0, 4);
+  return {
+    primary: `${formatDayShort(first)} – ${formatDayShort(last)}`,
+    // A window that crosses new year has to show both, or the dates are a lie.
+    secondary: startYear === endYear ? startYear : `${startYear}–${endYear}`,
+  };
+}
+
+function isWeekend(dateStr) {
+  const day = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+// A stay occupies the nights from check-in up to (not including) check-out —
+// the check-out day itself is free for the next guest, which is what makes
+// back-to-back bookings on one room possible.
+function nightsOf(booking) {
+  return Math.max(0, daysBetween(booking.checkInDate, booking.checkOutDate));
+}
+
 const emptyGuest = { name: '', phone: '', idProofType: '', idProofFile: null };
+// Children are the same row minus the phone — a child travelling with the
+// party has no number of their own to reach them on.
+const emptyChild = { name: '', idProofType: '', idProofFile: null };
+// Type starts unset so reception picks what actually pulled up rather than
+// accepting whichever option happened to be listed first.
+const emptyVehicle = { number: '', type: '' };
+
+// "4 adults and 2 children" reads better on the desk than "6 guests", but
+// the children half only earns its place when there are any.
+function describeParty(adultCount, childCount) {
+  const adults = `${adultCount} adult${adultCount === 1 ? '' : 's'}`;
+  if (childCount === 0) return adults;
+  return `${adults} and ${childCount} child${childCount === 1 ? '' : 'ren'}`;
+}
+
+// A row someone added and then thought better of is dropped rather than
+// rejected — clicking "+ Add vehicle" and changing your mind shouldn't block
+// the booking. Anything half-filled is a real mistake and gets reported.
+function cleanVehicles(vehicles) {
+  return vehicles
+    .map((v) => ({ number: v.number.trim(), type: v.type }))
+    .filter((v) => v.number || v.type);
+}
+
+function vehicleRowError(vehicles) {
+  if (vehicles.some((v) => !v.number)) return 'Enter a vehicle number, or remove the empty row.';
+  if (vehicles.some((v) => !v.type)) return 'Choose a type for each vehicle.';
+  return '';
+}
+
+// An extra is carried as { id, quantity }: the checkbox owns whether it's on
+// the booking at all, the count beside it owns how many. quantity is held as
+// typed so the field can be cleared mid-edit, and read back through
+// selectionCount, which is what every consumer of it actually wants.
+function selectionCount(value) {
+  const count = Math.floor(Number(value));
+  return Number.isFinite(count) && count >= 1 ? count : 1;
+}
+
+function toggleSelection(selections, chargeId) {
+  return selections.some((c) => c.id === chargeId)
+    ? selections.filter((c) => c.id !== chargeId)
+    : [...selections, { id: chargeId, quantity: '1' }];
+}
+
+function withQuantity(selections, chargeId, quantity) {
+  return selections.map((c) => (c.id === chargeId ? { ...c, quantity } : c));
+}
+
+function selectionOf(selections, chargeId) {
+  return selections.find((c) => c.id === chargeId);
+}
+
+// "7:3,8" — the id alone when there's just one of it, so the common case reads
+// the same as it always did.
+function chargesParam(selections) {
+  return selections
+    .map((c) => (selectionCount(c.quantity) > 1 ? `${c.id}:${selectionCount(c.quantity)}` : String(c.id)))
+    .join(',');
+}
+
+function chargesPayload(selections) {
+  return selections.map((c) => ({ id: c.id, quantity: selectionCount(c.quantity) }));
+}
+
+// A blank or nonsense override is simply not sent, which lets the quote fall
+// back to the room category's own price — the same thing the booking will do
+// when it's saved.
+function overrideParam(value) {
+  const amount = Number(value);
+  return value !== '' && Number.isFinite(amount) && amount > 0 ? `&basePriceOverride=${amount}` : '';
+}
 
 const initialNewBooking = {
   bookingType: 'WALK_IN',
   checkInDate: todayIso(),
   checkOutDate: addDays(todayIso(), 1),
   roomId: '',
-  switchableChargeIds: [],
-  guestName: '',
-  guestPhone: '',
-  numGuests: 1,
-  idProofType: '',
-  idProofFile: null,
+  switchableCharges: [],
+  // Blank means "charge the category's price" — reception only fills this in
+  // when they've agreed something else for this stay.
+  basePriceOverride: '',
+  // The party is the guest count — adults[0] is the primary guest, and the
+  // total is however many names reception actually types in.
+  adults: [{ ...emptyGuest }],
+  children: [],
   advanceAmount: '',
   advancePaymentMethod: '',
-  guests: [],
-  vehicleNumbers: [],
+  vehicles: [],
 };
 
 export default function Bookings({ onCheckedOut }) {
   const session = getSession();
   const token = session?.token;
 
-  const [rangeStart, setRangeStart] = useState(todayIso());
+  // The chart opens on the days around now rather than on the 1st: the desk
+  // wants to see who is still in-house and everything coming, so the window
+  // starts a couple of days back and runs a month forward. Stepping the arrows
+  // leaves that window behind and moves whole calendar months instead.
+  const [view, setView] = useState(() => ({ mode: 'rolling', start: addDays(todayIso(), -LOOKBACK_DAYS) }));
   const [tapeData, setTapeData] = useState(null);
   const [tapeError, setTapeError] = useState('');
+  // The tile that's under the pointer right now, with the screen position to
+  // float its card at. Guest names live only in here — never on the tiles.
+  const [hoverTile, setHoverTile] = useState(null);
 
-  const dates = useMemo(
-    () => Array.from({ length: DAYS_VISIBLE }, (_, i) => addDays(rangeStart, i)),
-    [rangeStart]
-  );
-  const rangeEnd = useMemo(() => addDays(rangeStart, DAYS_VISIBLE), [rangeStart]);
+  const dates = useMemo(() => {
+    const length = view.mode === 'month' ? daysInMonth(view.start) : ROLLING_DAYS;
+    return Array.from({ length }, (_, i) => addDays(view.start, i));
+  }, [view]);
+
+  const rangeStart = view.start;
+  const rangeEnd = useMemo(() => addDays(view.start, dates.length), [view.start, dates.length]);
 
   const loadTapeChart = () => {
     apiGet(`/bookings/tape-chart?startDate=${rangeStart}&endDate=${rangeEnd}`, { token })
@@ -101,7 +251,73 @@ export default function Bookings({ onCheckedOut }) {
   useEffect(() => {
     loadTapeChart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeStart]);
+  }, [rangeStart, rangeEnd]);
+
+  // Changing the window unmounts the tile the pointer is on, and an unmounted
+  // tile never fires its mouseleave — so the card is dismissed with the move.
+  const goToMonth = (monthStart) => {
+    setHoverTile(null);
+    setView({ mode: 'month', start: monthStart });
+  };
+
+  const goToNow = () => {
+    setHoverTile(null);
+    setView({ mode: 'rolling', start: addDays(todayIso(), -LOOKBACK_DAYS) });
+  };
+
+  // Rooms are shown category by category rather than in one long list, so the
+  // desk can see at a glance which grade of room is still sellable. Insertion
+  // order follows the room ordering the API already sorted.
+  const categorySections = useMemo(() => {
+    if (!tapeData) return [];
+    const groups = new Map();
+    for (const room of tapeData.rooms) {
+      const name = room.categoryName || 'Uncategorised';
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(room);
+    }
+    return Array.from(groups, ([categoryName, rooms]) => ({ categoryName, rooms }));
+  }, [tapeData]);
+
+  // room id -> (date -> booking), covering only the nights on screen. Building
+  // it once per load keeps the render a plain lookup per tile instead of a scan
+  // of every booking for every day of every room.
+  const occupancy = useMemo(() => {
+    const byRoom = new Map();
+    if (!tapeData) return byRoom;
+    for (const booking of tapeData.bookings) {
+      const key = String(booking.roomId);
+      let byDate = byRoom.get(key);
+      if (!byDate) {
+        byDate = new Map();
+        byRoom.set(key, byDate);
+      }
+      // Clamped to the visible window: a stay can start before it or run past
+      // the end of it, and neither needs walking day by day.
+      const from = booking.checkInDate > rangeStart ? booking.checkInDate : rangeStart;
+      const to = booking.checkOutDate < rangeEnd ? booking.checkOutDate : rangeEnd;
+      for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, booking);
+    }
+    return byRoom;
+  }, [tapeData, rangeStart, rangeEnd]);
+
+  // How much of each category is sold across the window, as room-nights. It
+  // answers the question the desk actually opens this screen with — "what's
+  // left in the deluxe rooms?" — without them counting tiles.
+  const categoryStats = useMemo(() => {
+    const stats = new Map();
+    for (const section of categorySections) {
+      let sold = 0;
+      for (const room of section.rooms) sold += occupancy.get(String(room.id))?.size || 0;
+      const capacity = section.rooms.length * dates.length;
+      stats.set(section.categoryName, {
+        sold,
+        capacity,
+        percent: capacity ? Math.round((sold / capacity) * 100) : 0,
+      });
+    }
+    return stats;
+  }, [categorySections, occupancy, dates.length]);
 
   // New booking modal
   const [showNewBooking, setShowNewBooking] = useState(false);
@@ -152,7 +368,11 @@ export default function Bookings({ onCheckedOut }) {
       .then((data) => {
         setAvailableRooms(data.rooms);
         setAvailableRoomsError('');
-        setNewBooking((f) => (f.roomId && data.rooms.some((r) => String(r.id) === f.roomId) ? f : { ...f, roomId: '', switchableChargeIds: [] }));
+        setNewBooking((f) =>
+          f.roomId && data.rooms.some((r) => String(r.id) === f.roomId)
+            ? f
+            : { ...f, roomId: '', switchableCharges: [], basePriceOverride: '' }
+        );
       })
       .catch((err) => {
         setAvailableRooms([]);
@@ -166,71 +386,73 @@ export default function Bookings({ onCheckedOut }) {
       setQuote(null);
       return;
     }
-    const chargeIds = newBooking.switchableChargeIds.join(',');
+    const chargeIds = chargesParam(newBooking.switchableCharges);
+    const basePrice = overrideParam(newBooking.basePriceOverride);
+    // Typing a rate fires a quote per keystroke, so a slower earlier reply
+    // must not land on top of a newer one and show a total for a price that
+    // is no longer in the box.
+    let current = true;
     apiGet(
-      `/bookings/price-quote?roomId=${newBooking.roomId}&checkInDate=${newBooking.checkInDate}&checkOutDate=${newBooking.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}`,
+      `/bookings/price-quote?roomId=${newBooking.roomId}&checkInDate=${newBooking.checkInDate}&checkOutDate=${newBooking.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${basePrice}`,
       { token }
     )
-      .then((data) => setQuote(data))
-      .catch(() => setQuote(null));
+      .then((data) => current && setQuote(data))
+      .catch(() => current && setQuote(null));
+    return () => {
+      current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showNewBooking, newBooking.roomId, newBooking.checkInDate, newBooking.checkOutDate, newBooking.switchableChargeIds]);
+  }, [
+    showNewBooking,
+    newBooking.roomId,
+    newBooking.checkInDate,
+    newBooking.checkOutDate,
+    newBooking.switchableCharges,
+    newBooking.basePriceOverride,
+  ]);
 
   const selectedRoom = availableRooms?.find((r) => String(r.id) === newBooking.roomId);
-  const overOccupancy = Boolean(
-    selectedRoom?.maxOccupancy && Number(newBooking.numGuests) > selectedRoom.maxOccupancy
-  );
+  const numGuests = newBooking.adults.length + newBooking.children.length;
+  const overOccupancy = Boolean(selectedRoom?.maxOccupancy && numGuests > selectedRoom.maxOccupancy);
 
   const toggleCharge = (chargeId) => {
+    setNewBooking((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
+  };
+
+  const setChargeQuantity = (chargeId, quantity) => {
+    setNewBooking((f) => ({ ...f, switchableCharges: withQuantity(f.switchableCharges, chargeId, quantity) }));
+  };
+
+  // Adults and children are both plain repeating rows; the only asymmetries
+  // are the phone column (adults only) and the fact that adults[0] is the
+  // primary guest, so it can't be removed.
+  const addParty = (key, blank) => {
+    setNewBooking((f) => ({ ...f, [key]: [...f[key], { ...blank }] }));
+  };
+
+  const removeParty = (key, index) => {
+    setNewBooking((f) => ({ ...f, [key]: f[key].filter((_, i) => i !== index) }));
+  };
+
+  const updateParty = (key, index, patch) => {
     setNewBooking((f) => ({
       ...f,
-      switchableChargeIds: f.switchableChargeIds.includes(chargeId)
-        ? f.switchableChargeIds.filter((id) => id !== chargeId)
-        : [...f.switchableChargeIds, chargeId],
-    }));
-  };
-
-  // Guest details are captured for at least the primary guest (guestName/
-  // guestPhone above); staff can optionally add details for the rest, up to
-  // numGuests total.
-  const maxAdditionalGuests = Math.max(0, (Number(newBooking.numGuests) || 1) - 1);
-
-  const handleNumGuestsChange = (value) => {
-    setNewBooking((f) => {
-      const maxAdditional = Math.max(0, (Number(value) || 1) - 1);
-      return { ...f, numGuests: value, guests: f.guests.slice(0, maxAdditional) };
-    });
-  };
-
-  const addGuest = () => {
-    setNewBooking((f) =>
-      f.guests.length >= maxAdditionalGuests ? f : { ...f, guests: [...f.guests, { ...emptyGuest }] }
-    );
-  };
-
-  const removeGuest = (index) => {
-    setNewBooking((f) => ({ ...f, guests: f.guests.filter((_, i) => i !== index) }));
-  };
-
-  const updateGuest = (index, patch) => {
-    setNewBooking((f) => ({
-      ...f,
-      guests: f.guests.map((g, i) => (i === index ? { ...g, ...patch } : g)),
+      [key]: f[key].map((g, i) => (i === index ? { ...g, ...patch } : g)),
     }));
   };
 
   const addVehicle = () => {
-    setNewBooking((f) => ({ ...f, vehicleNumbers: [...f.vehicleNumbers, ''] }));
+    setNewBooking((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicle }] }));
   };
 
   const removeVehicle = (index) => {
-    setNewBooking((f) => ({ ...f, vehicleNumbers: f.vehicleNumbers.filter((_, i) => i !== index) }));
+    setNewBooking((f) => ({ ...f, vehicles: f.vehicles.filter((_, i) => i !== index) }));
   };
 
-  const updateVehicle = (index, value) => {
+  const updateVehicle = (index, patch) => {
     setNewBooking((f) => ({
       ...f,
-      vehicleNumbers: f.vehicleNumbers.map((v, i) => (i === index ? value : v)),
+      vehicles: f.vehicles.map((v, i) => (i === index ? { ...v, ...patch } : v)),
     }));
   };
 
@@ -255,77 +477,98 @@ export default function Bookings({ onCheckedOut }) {
       setNewBookingError('Choose a room.');
       return;
     }
-    if (!newBooking.guestName.trim()) {
+    if (newBooking.basePriceOverride !== '' && !(Number(newBooking.basePriceOverride) > 0)) {
+      setNewBookingError('Enter a rate greater than 0, or leave it blank for the category rate.');
+      return;
+    }
+    // adults[0] is the primary guest — the only one whose phone is required.
+    const primary = newBooking.adults[0];
+    if (!primary.name.trim()) {
       setNewBookingError('Enter the guest name.');
       return;
     }
-    if (!newBooking.guestPhone.trim()) {
+    if (!primary.phone.trim()) {
       setNewBookingError('Enter the guest phone number.');
       return;
     }
     // A walk-in guest is here now, so their ID proof is captured immediately;
     // a pre-reservation defers it to whenever they actually check in.
     if (newBooking.bookingType === 'WALK_IN') {
-      if (!newBooking.idProofType) {
+      if (!primary.idProofType) {
         setNewBookingError('Choose the ID proof type.');
         return;
       }
-      if (!newBooking.idProofFile) {
+      if (!primary.idProofFile) {
         setNewBookingError('Upload the guest’s ID proof (image or PDF).');
         return;
       }
-    }
-    if (newBooking.idProofFile && newBooking.idProofFile.size > ID_PROOF_MAX_BYTES) {
-      setNewBookingError('ID proof file must be 5MB or smaller.');
-      return;
     }
     const hasAdvanceAmount = newBooking.advanceAmount.trim() !== '';
     if (hasAdvanceAmount && !newBooking.advancePaymentMethod) {
       setNewBookingError('Choose a payment method for the advance amount.');
       return;
     }
-    if (newBooking.guests.some((g) => !g.name.trim())) {
-      setNewBookingError('Enter a name for each additional guest, or remove the empty row.');
+    if (newBooking.adults.slice(1).some((g) => !g.name.trim())) {
+      setNewBookingError('Enter a name for each adult, or remove the empty row.');
       return;
     }
-    if (newBooking.guests.some((g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES)) {
+    if (newBooking.children.some((g) => !g.name.trim())) {
+      setNewBookingError('Enter a name for each child, or remove the empty row.');
+      return;
+    }
+    const allParty = [...newBooking.adults, ...newBooking.children];
+    if (allParty.some((g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES)) {
       setNewBookingError('Each ID proof file must be 5MB or smaller.');
+      return;
+    }
+    const vehicles = cleanVehicles(newBooking.vehicles);
+    const vehicleError = vehicleRowError(vehicles);
+    if (vehicleError) {
+      setNewBookingError(vehicleError);
       return;
     }
 
     setSubmitting(true);
     try {
+      // Everyone after the primary guest travels in the `guests` array, adults
+      // first, each tagged so the split survives into the booking record.
+      const otherGuests = [
+        ...newBooking.adults.slice(1).map((g) => ({ ...g, isChild: false })),
+        ...newBooking.children.map((g) => ({ ...g, phone: '', isChild: true })),
+      ];
+
       const formData = new FormData();
       formData.append('roomId', String(Number(newBooking.roomId)));
       formData.append('checkInDate', newBooking.checkInDate);
       formData.append('checkOutDate', newBooking.checkOutDate);
-      formData.append('guestName', newBooking.guestName.trim());
-      formData.append('guestPhone', newBooking.guestPhone.trim());
-      formData.append('numGuests', String(Number(newBooking.numGuests) || 1));
-      formData.append('switchableChargeIds', JSON.stringify(newBooking.switchableChargeIds));
-      if (newBooking.idProofType) formData.append('idProofType', newBooking.idProofType);
-      if (newBooking.idProofFile) formData.append('idProofDocument', newBooking.idProofFile);
+      formData.append('guestName', primary.name.trim());
+      formData.append('guestPhone', primary.phone.trim());
+      formData.append('numGuests', String(numGuests));
+      formData.append('switchableCharges', JSON.stringify(chargesPayload(newBooking.switchableCharges)));
+      if (newBooking.basePriceOverride !== '') {
+        formData.append('basePriceOverride', String(Number(newBooking.basePriceOverride)));
+      }
+      if (primary.idProofType) formData.append('idProofType', primary.idProofType);
+      if (primary.idProofFile) formData.append('idProofDocument', primary.idProofFile);
       if (hasAdvanceAmount) {
         formData.append('advanceAmount', String(Number(newBooking.advanceAmount)));
         formData.append('advancePaymentMethod', newBooking.advancePaymentMethod);
       }
 
-      formData.append(
-        'vehicleNumbers',
-        JSON.stringify(newBooking.vehicleNumbers.map((v) => v.trim()).filter(Boolean))
-      );
+      formData.append('vehicles', JSON.stringify(vehicles));
 
       formData.append(
         'guests',
         JSON.stringify(
-          newBooking.guests.map((g) => ({
+          otherGuests.map((g) => ({
             name: g.name.trim(),
             phone: g.phone.trim(),
+            isChild: g.isChild,
             ...(g.idProofType ? { idProofType: g.idProofType } : {}),
           }))
         )
       );
-      newBooking.guests.forEach((g, i) => {
+      otherGuests.forEach((g, i) => {
         if (g.idProofFile) formData.append(`guestIdProofDocument_${i}`, g.idProofFile);
       });
 
@@ -353,7 +596,7 @@ export default function Bookings({ onCheckedOut }) {
     idProofType: '',
     idProofFile: null,
     guests: [],
-    vehicleNumbers: [],
+    vehicles: [],
   };
   const [checkInForm, setCheckInForm] = useState(initialCheckInForm);
   const [actionSubmitting, setActionSubmitting] = useState(false);
@@ -398,7 +641,11 @@ export default function Bookings({ onCheckedOut }) {
       numGuests: String(bookingDetail.numGuests),
       guestName: bookingDetail.guestName,
       guestPhone: bookingDetail.guestPhone,
-      switchableChargeIds: bookingDetail.switchableCharges.map((c) => c.id),
+      switchableCharges: bookingDetail.switchableCharges.map((c) => ({ id: c.id, quantity: String(c.quantity ?? 1) })),
+      // Blank here means the stay was never negotiated off the category price,
+      // and clearing the box is how it goes back to it.
+      basePriceOverride:
+        bookingDetail.basePriceOverride != null ? String(bookingDetail.basePriceOverride) : '',
     });
     setEditAvailableRooms(null);
     setEditAvailableRoomsError('');
@@ -409,12 +656,11 @@ export default function Bookings({ onCheckedOut }) {
   };
 
   const toggleEditFormCharge = (chargeId) => {
-    setEditForm((f) => ({
-      ...f,
-      switchableChargeIds: f.switchableChargeIds.includes(chargeId)
-        ? f.switchableChargeIds.filter((id) => id !== chargeId)
-        : [...f.switchableChargeIds, chargeId],
-    }));
+    setEditForm((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
+  };
+
+  const setEditFormChargeQuantity = (chargeId, quantity) => {
+    setEditForm((f) => ({ ...f, switchableCharges: withQuantity(f.switchableCharges, chargeId, quantity) }));
   };
 
   useEffect(() => {
@@ -436,15 +682,26 @@ export default function Bookings({ onCheckedOut }) {
       setEditQuote(null);
       return;
     }
-    const chargeIds = editForm.switchableChargeIds.join(',');
+    const chargeIds = chargesParam(editForm.switchableCharges);
+    const basePrice = overrideParam(editForm.basePriceOverride);
+    let current = true;
     apiGet(
-      `/bookings/price-quote?roomId=${editForm.roomId}&checkInDate=${bookingDetail.checkInDate}&checkOutDate=${editForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}`,
+      `/bookings/price-quote?roomId=${editForm.roomId}&checkInDate=${bookingDetail.checkInDate}&checkOutDate=${editForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${basePrice}`,
       { token }
     )
-      .then((data) => setEditQuote(data))
-      .catch(() => setEditQuote(null));
+      .then((data) => current && setEditQuote(data))
+      .catch(() => current && setEditQuote(null));
+    return () => {
+      current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showEditBooking, editForm?.roomId, editForm?.checkOutDate, editForm?.switchableChargeIds]);
+  }, [
+    showEditBooking,
+    editForm?.roomId,
+    editForm?.checkOutDate,
+    editForm?.switchableCharges,
+    editForm?.basePriceOverride,
+  ]);
 
   const handleSaveEditBooking = async (e) => {
     e.preventDefault();
@@ -471,6 +728,10 @@ export default function Bookings({ onCheckedOut }) {
         setEditError('Enter the guest phone number.');
         return;
       }
+      if (editForm.basePriceOverride !== '' && !(Number(editForm.basePriceOverride) > 0)) {
+        setEditError('Enter a rate greater than 0, or leave it blank for the category rate.');
+        return;
+      }
     }
 
     setEditSubmitting(true);
@@ -482,9 +743,14 @@ export default function Bookings({ onCheckedOut }) {
             numGuests: Number(editForm.numGuests),
             guestName: editForm.guestName.trim(),
             guestPhone: editForm.guestPhone.trim(),
-            switchableChargeIds: editForm.switchableChargeIds,
+            switchableCharges: chargesPayload(editForm.switchableCharges),
+            // null, not omitted — an emptied box means "go back to the
+            // category price", which the backend can only tell apart from
+            // "leave the agreed rate alone" if it's sent explicitly.
+            basePriceOverride:
+              editForm.basePriceOverride === '' ? null : Number(editForm.basePriceOverride),
           }
-        : { switchableChargeIds: editForm.switchableChargeIds };
+        : { switchableCharges: chargesPayload(editForm.switchableCharges) };
 
       const { booking } = await apiPatch(`/bookings/${selectedBookingId}`, body, { token });
       setBookingDetail(booking);
@@ -539,17 +805,17 @@ export default function Bookings({ onCheckedOut }) {
   };
 
   const addCheckInVehicle = () => {
-    setCheckInForm((f) => ({ ...f, vehicleNumbers: [...f.vehicleNumbers, ''] }));
+    setCheckInForm((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicle }] }));
   };
 
   const removeCheckInVehicle = (index) => {
-    setCheckInForm((f) => ({ ...f, vehicleNumbers: f.vehicleNumbers.filter((_, i) => i !== index) }));
+    setCheckInForm((f) => ({ ...f, vehicles: f.vehicles.filter((_, i) => i !== index) }));
   };
 
-  const updateCheckInVehicle = (index, value) => {
+  const updateCheckInVehicle = (index, patch) => {
     setCheckInForm((f) => ({
       ...f,
-      vehicleNumbers: f.vehicleNumbers.map((v, i) => (i === index ? value : v)),
+      vehicles: f.vehicles.map((v, i) => (i === index ? { ...v, ...patch } : v)),
     }));
   };
 
@@ -634,6 +900,12 @@ export default function Bookings({ onCheckedOut }) {
       setActionError('Each ID proof file must be 5MB or smaller.');
       return;
     }
+    const checkInVehicles = cleanVehicles(checkInForm.vehicles);
+    const checkInVehicleError = vehicleRowError(checkInVehicles);
+    if (checkInVehicleError) {
+      setActionError(checkInVehicleError);
+      return;
+    }
 
     setActionSubmitting(true);
     try {
@@ -644,10 +916,7 @@ export default function Bookings({ onCheckedOut }) {
       }
       if (checkInForm.idProofType) formData.append('idProofType', checkInForm.idProofType);
       if (checkInForm.idProofFile) formData.append('idProofDocument', checkInForm.idProofFile);
-      formData.append(
-        'vehicleNumbers',
-        JSON.stringify(checkInForm.vehicleNumbers.map((v) => v.trim()).filter(Boolean))
-      );
+      formData.append('vehicles', JSON.stringify(checkInVehicles));
       formData.append(
         'guests',
         JSON.stringify(
@@ -725,22 +994,151 @@ export default function Bookings({ onCheckedOut }) {
 
   const today = todayIso();
 
+  // The card floats above the chart in fixed coordinates rather than inside a
+  // tile, because the grid scrolls sideways under its own overflow and would
+  // otherwise clip a tooltip belonging to a tile near either edge.
+  const showTileHover = (event, tile) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const HALF_WIDTH = 116;
+    // Tiles in the first category sit close to the top of the window; theirs
+    // hangs below so it isn't cut off by the top edge.
+    const below = rect.top < 150;
+    setHoverTile({
+      ...tile,
+      below,
+      x: Math.min(Math.max(rect.left + rect.width / 2, HALF_WIDTH + 8), window.innerWidth - HALF_WIDTH - 8),
+      y: below ? rect.bottom + 8 : rect.top - 8,
+    });
+  };
+
+  const viewLabel = formatViewLabel(view, dates);
+  // The arrows always step calendar months, measured from whichever month the
+  // window currently opens in — so one click off the rolling view lands on a
+  // clean month either side of now.
+  const anchorMonth = monthStartOf(view.start);
+
+  // Each category prints the same month, so the header of dates is built once
+  // here and repeated at the top of every category's own calendar. The hovered
+  // date lights up in every one of them, which is what makes it possible to
+  // read the same night across categories without counting columns.
+  const renderDateHead = () => (
+    <div className="tape-month__head">
+      <div className="tape-month__corner">Room</div>
+      {dates.map((d) => {
+        const { weekday, day } = formatDateHead(d);
+        const classes = ['tape-month__date'];
+        if (d === today) classes.push('tape-month__date--today');
+        if (isWeekend(d)) classes.push('tape-month__date--weekend');
+        if (hoverTile?.date === d) classes.push('tape-month__date--active');
+        return (
+          <div key={d} className={classes.join(' ')}>
+            <span>{weekday.slice(0, 1)}</span>
+            <strong>{day}</strong>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const renderRoomRow = (room) => {
+    const byDate = occupancy.get(String(room.id));
+    const rowClasses = ['tape-month__row'];
+    if (hoverTile?.room.id === room.id) rowClasses.push('tape-month__row--active');
+    return (
+      <div key={room.id} className={rowClasses.join(' ')}>
+        <div className="tape-month__room">
+          <strong>{room.roomNumber}</strong>
+          {room.floor != null && <span>Floor {room.floor}</span>}
+        </div>
+        {dates.map((d) => {
+          const booking = byDate?.get(d);
+          // A vacant night is a plain grey slot that starts a booking for that
+          // room and date.
+          if (!booking) {
+            const classes = ['tape-tile', 'tape-tile--vacant'];
+            if (isWeekend(d)) classes.push('tape-tile--weekend');
+            if (d === today) classes.push('tape-tile--today');
+            return (
+              <button
+                key={d}
+                type="button"
+                className={classes.join(' ')}
+                onClick={() => openNewBooking(room.id, d)}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null })}
+                onMouseLeave={() => setHoverTile(null)}
+                onBlur={() => setHoverTile(null)}
+                aria-label={`${room.roomNumber} vacant on ${formatDateLong(d)}`}
+              />
+            );
+          }
+          // A stay reads as one continuous strip: only its first and last night
+          // get rounded ends, so a room let twice in a row still shows as two
+          // separate blocks.
+          const classes = ['tape-tile'];
+          classes.push(booking.status === 'CHECKED_IN' ? 'tape-tile--checked-in' : 'tape-tile--booked');
+          if (d === booking.checkInDate) classes.push('tape-tile--start');
+          if (d === addDays(booking.checkOutDate, -1)) classes.push('tape-tile--end');
+          if (d === today) classes.push('tape-tile--today');
+          // Pointing at any night of a stay lifts the whole stay, so its real
+          // extent is obvious even where it runs off the edge of the month.
+          if (hoverTile?.booking?.id === booking.id) classes.push('tape-tile--active');
+          return (
+            <button
+              key={d}
+              type="button"
+              className={classes.join(' ')}
+              onClick={() => openDetail(booking.id)}
+              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking })}
+              onFocus={(e) => showTileHover(e, { room, date: d, booking })}
+              onMouseLeave={() => setHoverTile(null)}
+              onBlur={() => setHoverTile(null)}
+              aria-label={`${room.roomNumber} ${STATUS_LABEL[booking.status]} on ${formatDateLong(d)}`}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="bookings-panel">
       <div className="bookings-panel__toolbar">
-        <div className="bookings-panel__nav">
-          <button type="button" className="btn-secondary" onClick={() => setRangeStart(addDays(rangeStart, -7))}>
-            ← Earlier
-          </button>
-          <span className="bookings-panel__range">
-            {formatDateLong(rangeStart)} – {formatDateLong(addDays(rangeStart, DAYS_VISIBLE - 1))}
-          </span>
-          <button type="button" className="btn-secondary" onClick={() => setRangeStart(addDays(rangeStart, 7))}>
-            Later →
-          </button>
-          {rangeStart !== today && (
-            <button type="button" className="btn-secondary" onClick={() => setRangeStart(today)}>
-              Today
+        <div className="tape-nav">
+          {/* One control, not three loose buttons: arrows flank the month they
+              move, so the whole thing reads as a single month stepper. */}
+          <div className="tape-nav__stepper">
+            <button
+              type="button"
+              className="tape-nav__arrow"
+              aria-label="Previous month"
+              onClick={() => goToMonth(addMonths(anchorMonth, -1))}
+            >
+              ‹
+            </button>
+            <span
+              className={`tape-nav__label${view.mode === 'rolling' ? ' tape-nav__label--range' : ''}`}
+              title={
+                view.mode === 'rolling'
+                  ? `${formatDateLong(dates[0])} to ${formatDateLong(dates[dates.length - 1])}`
+                  : undefined
+              }
+            >
+              <strong>{viewLabel.primary}</strong>
+              <span>{viewLabel.secondary}</span>
+            </span>
+            <button
+              type="button"
+              className="tape-nav__arrow"
+              aria-label="Next month"
+              onClick={() => goToMonth(addMonths(anchorMonth, 1))}
+            >
+              ›
+            </button>
+          </div>
+          {view.mode !== 'rolling' && (
+            <button type="button" className="tape-nav__today" onClick={goToNow}>
+              Back to now
             </button>
           )}
         </div>
@@ -750,9 +1148,16 @@ export default function Bookings({ onCheckedOut }) {
       </div>
 
       <div className="tape-legend">
-        <span><i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant</span>
-        <span><i className="tape-legend__swatch tape-legend__swatch--booked" />Booked</span>
-        <span><i className="tape-legend__swatch tape-legend__swatch--checked-in" />Checked in</span>
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
+        </span>
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--booked" />Reserved
+        </span>
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--checked-in" />Checked in
+        </span>
+        <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
 
       {tapeError && (
@@ -761,9 +1166,18 @@ export default function Bookings({ onCheckedOut }) {
         </div>
       )}
 
+      {/* A skeleton of the shape that's coming, rather than a line of text that
+          the chart then shoves down the page when it lands. */}
       {!tapeError && !tapeData && (
-        <div className="dash-card">
-          <div className="dash-state">Loading the tape chart…</div>
+        <div className="tape-skeleton" aria-busy="true" aria-label="Loading the tape chart">
+          {[0, 1].map((card) => (
+            <div key={card} className="tape-skeleton__card">
+              <div className="tape-skeleton__head" />
+              {[0, 1, 2, 3].map((row) => (
+                <div key={row} className="tape-skeleton__row" />
+              ))}
+            </div>
+          ))}
         </div>
       )}
 
@@ -773,62 +1187,93 @@ export default function Bookings({ onCheckedOut }) {
         </div>
       )}
 
+      {/* Every category is a self-contained calendar — its own header of dates
+          over its own rooms — rather than sections sharing one long grid, so a
+          category can be read (and scrolled) without the others in the way. */}
       {!tapeError && tapeData && tapeData.rooms.length > 0 && (
-        <div className="tape-chart-scroll">
-          <div className="tape-grid">
-            <div className="tape-grid__corner">Room</div>
-            {dates.map((d, i) => {
-              const { weekday, day } = formatDateHead(d);
-              return (
-                <div
-                  key={d}
-                  className={`tape-grid__date-head${d === today ? ' tape-grid__date-head--today' : ''}`}
-                  style={{ gridColumn: i + 2, gridRow: 1 }}
-                >
-                  <span>{weekday}</span>
-                  <strong>{day}</strong>
+        <div className="tape-months">
+          {categorySections.map((section) => {
+            const stats = categoryStats.get(section.categoryName);
+            return (
+              <section key={section.categoryName} className="tape-month-card">
+                <div className="tape-month-card__head">
+                  <div className="tape-month-card__title">
+                    <h4>{section.categoryName}</h4>
+                    <span>
+                      {section.rooms.length} room{section.rooms.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div
+                    className="tape-month-card__meter"
+                    title={`${stats.sold} of ${stats.capacity} room-nights sold this month`}
+                  >
+                    <span className="tape-month-card__meter-track">
+                      <span className="tape-month-card__meter-fill" style={{ width: `${stats.percent}%` }} />
+                    </span>
+                    <span className="tape-month-card__meter-value">{stats.percent}% sold</span>
+                  </div>
                 </div>
-              );
-            })}
+                <div className="tape-chart-scroll" onScroll={() => setHoverTile(null)}>
+                  {/* The column track is built here because the number of
+                      columns is the length of the month — February and August
+                      don't hold the same count, and every row lines up with
+                      the dates. */}
+                  <div
+                    className="tape-month"
+                    style={{ '--tape-cols': `var(--tape-room-col) repeat(${dates.length}, var(--tape-tile))` }}
+                  >
+                    {renderDateHead()}
+                    {section.rooms.map(renderRoomRow)}
+                  </div>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
-            {tapeData.rooms.map((room, rIdx) => (
-              <div key={room.id} style={{ display: 'contents' }}>
-                <div className="tape-grid__room-label" style={{ gridColumn: 1, gridRow: rIdx + 2 }}>
-                  {room.roomNumber}
-                  <span>{room.categoryName}</span>
-                </div>
-                {dates.map((d, i) => (
-                  <button
-                    key={d}
-                    type="button"
-                    className="tape-grid__cell"
-                    style={{ gridColumn: i + 2, gridRow: rIdx + 2 }}
-                    onClick={() => openNewBooking(room.id, d)}
-                    title={`${room.roomNumber} — ${formatDateLong(d)} — vacant`}
-                  />
-                ))}
-                {tapeData.bookings
-                  .filter((b) => String(b.roomId) === String(room.id))
-                  .map((booking) => {
-                    const startIdx = Math.max(0, daysBetween(rangeStart, booking.checkInDate));
-                    const endIdx = Math.min(DAYS_VISIBLE, daysBetween(rangeStart, booking.checkOutDate));
-                    if (endIdx <= startIdx) return null;
-                    return (
-                      <button
-                        key={booking.id}
-                        type="button"
-                        className={`tape-grid__bar tape-grid__bar--${booking.status === 'CHECKED_IN' ? 'checked-in' : 'booked'}`}
-                        style={{ gridColumn: `${startIdx + 2} / ${endIdx + 2}`, gridRow: rIdx + 2 }}
-                        onClick={() => openDetail(booking.id)}
-                        title={`${booking.guestName} — ${STATUS_LABEL[booking.status]}`}
-                      >
-                        {booking.guestName}
-                      </button>
-                    );
-                  })}
-              </div>
-            ))}
-          </div>
+      {hoverTile && (
+        <div
+          className={`tape-tooltip${hoverTile.below ? ' tape-tooltip--below' : ''}`}
+          role="tooltip"
+          style={{ left: `${hoverTile.x}px`, top: `${hoverTile.y}px` }}
+        >
+          {hoverTile.booking ? (
+            <>
+              <span className="tape-tooltip__top">
+                <span
+                  className={`tape-tooltip__dot tape-tooltip__dot--${
+                    hoverTile.booking.status === 'CHECKED_IN' ? 'checked-in' : 'booked'
+                  }`}
+                />
+                {hoverTile.booking.status === 'CHECKED_IN' ? 'Checked in' : 'Reserved'}
+              </span>
+              <strong>{hoverTile.booking.guestName}</strong>
+              <span className="tape-tooltip__meta">
+                Room {hoverTile.room.roomNumber} · {hoverTile.room.categoryName}
+              </span>
+              <span className="tape-tooltip__dates">
+                {formatDateLong(hoverTile.booking.checkInDate)}
+                <i>→</i>
+                {formatDateLong(hoverTile.booking.checkOutDate)}
+              </span>
+              <span className="tape-tooltip__meta">
+                {nightsOf(hoverTile.booking)} night{nightsOf(hoverTile.booking) === 1 ? '' : 's'}
+                {hoverTile.booking.guestPhone ? ` · ${hoverTile.booking.guestPhone}` : ''}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="tape-tooltip__top">
+                <span className="tape-tooltip__dot tape-tooltip__dot--vacant" />
+                Vacant
+              </span>
+              <strong>Room {hoverTile.room.roomNumber}</strong>
+              <span className="tape-tooltip__meta">{hoverTile.room.categoryName}</span>
+              <span className="tape-tooltip__dates">{formatDateLong(hoverTile.date)}</span>
+              <span className="tape-tooltip__hint">Click to book this night</span>
+            </>
+          )}
         </div>
       )}
 
@@ -843,24 +1288,26 @@ export default function Bookings({ onCheckedOut }) {
                   changes what the rest of the form requires, so it shouldn't
                   scroll out of sight. */}
               <div className="booking-form__head">
-                <h3>New booking</h3>
-                <div className="toggle-group">
-                  {!isFutureCheckIn && (
+                <div className="booking-form__head-row">
+                  <h3>New booking</h3>
+                  <div className="toggle-group">
+                    {!isFutureCheckIn && (
+                      <button
+                        type="button"
+                        aria-pressed={newBooking.bookingType === 'WALK_IN'}
+                        onClick={() => setNewBooking((f) => ({ ...f, bookingType: 'WALK_IN' }))}
+                      >
+                        Walk-in
+                      </button>
+                    )}
                     <button
                       type="button"
-                      aria-pressed={newBooking.bookingType === 'WALK_IN'}
-                      onClick={() => setNewBooking((f) => ({ ...f, bookingType: 'WALK_IN' }))}
+                      aria-pressed={newBooking.bookingType === 'RESERVATION'}
+                      onClick={() => setNewBooking((f) => ({ ...f, bookingType: 'RESERVATION' }))}
                     >
-                      Walk-in
+                      Pre-reservation
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    aria-pressed={newBooking.bookingType === 'RESERVATION'}
-                    onClick={() => setNewBooking((f) => ({ ...f, bookingType: 'RESERVATION' }))}
-                  >
-                    Pre-reservation
-                  </button>
+                  </div>
                 </div>
                 <p className="bookings-panel__hint">
                   {isFutureCheckIn
@@ -910,29 +1357,61 @@ export default function Bookings({ onCheckedOut }) {
                 {validRange && availableRoomsError && (
                   <div className="form-banner form-banner--error">{availableRoomsError}</div>
                 )}
+                {/* Room and its rate sit on one line once a room is picked —
+                    the rate only ever qualifies the room above it. */}
                 {validRange && !availableRoomsError && (
-                  <div className="field">
-                    <label htmlFor="roomId">Available rooms</label>
-                    <select
-                      id="roomId"
-                      value={newBooking.roomId}
-                      onChange={(e) =>
-                        setNewBooking((f) => ({ ...f, roomId: e.target.value, switchableChargeIds: [] }))
-                      }
-                      disabled={!availableRooms}
-                    >
-                      <option value="">
-                        {availableRooms ? 'Choose a room' : 'Loading…'}
-                      </option>
-                      {availableRooms?.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.roomNumber} — {r.categoryName}
-                          {r.floor ? ` · Floor ${r.floor}` : ''}
+                  <div className={selectedRoom ? 'field-row booking-form__room-row' : undefined}>
+                    <div className="field">
+                      <label htmlFor="roomId">Available rooms</label>
+                      <select
+                        id="roomId"
+                        value={newBooking.roomId}
+                        onChange={(e) =>
+                          setNewBooking((f) => ({
+                            ...f,
+                            roomId: e.target.value,
+                            switchableCharges: [],
+                            // A rate was agreed for a particular room; picking a
+                            // different one is a fresh negotiation.
+                            basePriceOverride: '',
+                          }))
+                        }
+                        disabled={!availableRooms}
+                      >
+                        <option value="">
+                          {availableRooms ? 'Choose a room' : 'Loading…'}
                         </option>
-                      ))}
-                    </select>
-                    {availableRooms && availableRooms.length === 0 && (
-                      <p className="bookings-panel__hint">No rooms are free for this date range.</p>
+                        {availableRooms?.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.roomNumber} — {r.categoryName}
+                            {r.floor ? ` · Floor ${r.floor}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {availableRooms && availableRooms.length === 0 && (
+                        <p className="bookings-panel__hint">No rooms are free for this date range.</p>
+                      )}
+                    </div>
+                    {selectedRoom && (
+                      <div className="field">
+                        <label htmlFor="basePriceOverride">Rate per night</label>
+                        <input
+                          id="basePriceOverride"
+                          type="number"
+                          min="1"
+                          step="1"
+                          inputMode="numeric"
+                          placeholder={`${selectedRoom.categoryBasePrice} (category rate)`}
+                          value={newBooking.basePriceOverride}
+                          onChange={(e) =>
+                            setNewBooking((f) => ({ ...f, basePriceOverride: e.target.value }))
+                          }
+                        />
+                        <p className="bookings-panel__hint">
+                          Blank charges {formatPrice(selectedRoom.categoryBasePrice)}. Season and
+                          extras still apply on top.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -971,16 +1450,34 @@ export default function Bookings({ onCheckedOut }) {
                   <div className="field">
                     <label>Extras</label>
                     <div className="checkbox-grid">
-                      {selectedRoom.switchableCharges.map((charge) => (
-                        <label className="checkbox-chip" key={charge.id}>
-                          <input
-                            type="checkbox"
-                            checked={newBooking.switchableChargeIds.includes(charge.id)}
-                            onChange={() => toggleCharge(charge.id)}
-                          />
-                          {charge.name} ({formatPrice(charge.chargePerNight)}/night)
-                        </label>
-                      ))}
+                      {selectedRoom.switchableCharges.map((charge) => {
+                        const selection = selectionOf(newBooking.switchableCharges, charge.id);
+                        return (
+                          <label className="checkbox-chip" key={charge.id}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selection)}
+                              onChange={() => toggleCharge(charge.id)}
+                            />
+                            {charge.name} ({formatPrice(charge.chargePerNight)}/night)
+                            {/* Only counted extras get a box, and only once the
+                                extra is on the booking — an unticked row has
+                                nothing to count, and AC is on or it isn't. */}
+                            {selection && charge.isCounter && (
+                              <input
+                                className="checkbox-chip__qty"
+                                type="number"
+                                min="1"
+                                step="1"
+                                inputMode="numeric"
+                                aria-label={`How many ${charge.name}`}
+                                value={selection.quantity}
+                                onChange={(e) => setChargeQuantity(charge.id, e.target.value)}
+                              />
+                            )}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1010,154 +1507,190 @@ export default function Bookings({ onCheckedOut }) {
                   <div className="form-section__title">
                     <span className="form-section__num">2</span>Guest details
                   </div>
-                  <div className="field-row">
-                    <div className="field">
-                      <label htmlFor="guestName">Guest name</label>
-                      <input
-                        id="guestName"
-                        value={newBooking.guestName}
-                        onChange={(e) => setNewBooking((f) => ({ ...f, guestName: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="guestPhone">Phone</label>
-                      <input
-                        id="guestPhone"
-                        value={newBooking.guestPhone}
-                        onChange={(e) => setNewBooking((f) => ({ ...f, guestPhone: e.target.value }))}
-                      />
-                    </div>
-                  </div>
 
-                  <div className="field-row">
-                    <div className="field">
-                      <label htmlFor="numGuests">Number of guests</label>
-                      <input
-                        id="numGuests"
-                        type="number"
-                        min="1"
-                        value={newBooking.numGuests}
-                        onChange={(e) => handleNumGuestsChange(e.target.value)}
-                      />
-                      {/* Caught here rather than at submit — the room's limit
-                          is right above, so the conflict is obvious in place. */}
-                      {overOccupancy && (
-                        <p className="booking-form__warn">
-                          Room {selectedRoom.roomNumber} sleeps {selectedRoom.maxOccupancy}.
-                        </p>
-                      )}
-                    </div>
-                    <div className="field">
-                      <label htmlFor="idProofType">
-                        ID proof type{idProofOptional ? ' (optional)' : ''}
-                      </label>
-                      <select
-                        id="idProofType"
-                        value={newBooking.idProofType}
-                        onChange={(e) => setNewBooking((f) => ({ ...f, idProofType: e.target.value }))}
-                      >
-                        <option value="">Choose one</option>
-                        {ID_PROOF_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* The party count is whatever reception typed in, not a
+                      number they set separately and then contradict. */}
+                  <div className="booking-form__party-summary">
+                    <span className="booking-form__party-total">
+                      {numGuests} guest{numGuests === 1 ? '' : 's'}
+                    </span>
+                    <span className="booking-form__party-split">
+                      {describeParty(newBooking.adults.length, newBooking.children.length)}
+                    </span>
                   </div>
+                  {overOccupancy && (
+                    <p className="booking-form__warn">
+                      Room {selectedRoom.roomNumber} sleeps {selectedRoom.maxOccupancy}.
+                    </p>
+                  )}
 
-                  {/* File inputs render their own filename text, so this needs
-                      the full width — sharing a triple row truncated it. */}
-                  <div className="field">
-                    <label htmlFor="idProofFile">
-                      ID proof document{idProofOptional ? ' (optional)' : ''}
-                    </label>
-                    <input
-                      id="idProofFile"
-                      type="file"
-                      accept={ID_PROOF_ACCEPT}
-                      onChange={(e) => setNewBooking((f) => ({ ...f, idProofFile: e.target.files[0] || null }))}
-                    />
-                    <p className="bookings-panel__hint">Image (JPG/PNG/WEBP) or PDF, up to 5MB.</p>
-                  </div>
-
-                  {/* Only offered once the party is bigger than one — with a
-                      single guest the button could only ever be disabled. */}
-                  {maxAdditionalGuests > 0 && (
-                    <div className="booking-form__subhead">
-                      Other guests
+                  {/* The add button rides in the sub-heading rather than sitting
+                      as a full-width bar under the list — same reach, two fewer
+                      rows of height across the two party lists. */}
+                  <div className="booking-form__subhead">
+                    <span className="booking-form__subhead-label">
+                      Adults
                       <span className="booking-form__subhead-count">
-                        {newBooking.guests.length} of {maxAdditionalGuests} added
+                        {newBooking.adults.length}
                       </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="booking-form__add-inline"
+                      onClick={() => addParty('adults', emptyGuest)}
+                    >
+                      + Add adult
+                    </button>
+                  </div>
+                  <div className="bookings-panel__repeat-list">
+                    {newBooking.adults.map((adult, index) => {
+                      const isPrimary = index === 0;
+                      return (
+                        <div className="bookings-panel__party-row" key={index}>
+                          <div className="field">
+                            <label htmlFor={`adultName-${index}`}>
+                              {isPrimary ? 'Name (primary guest)' : 'Name'}
+                            </label>
+                            <input
+                              id={`adultName-${index}`}
+                              value={adult.name}
+                              onChange={(e) => updateParty('adults', index, { name: e.target.value })}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`adultPhone-${index}`}>
+                              Mobile{isPrimary ? '' : ' (optional)'}
+                            </label>
+                            <input
+                              id={`adultPhone-${index}`}
+                              value={adult.phone}
+                              onChange={(e) => updateParty('adults', index, { phone: e.target.value })}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`adultIdProofType-${index}`}>
+                              ID type{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                            </label>
+                            <select
+                              id={`adultIdProofType-${index}`}
+                              value={adult.idProofType}
+                              onChange={(e) => updateParty('adults', index, { idProofType: e.target.value })}
+                            >
+                              <option value="">{isPrimary ? 'Choose one' : 'None'}</option>
+                              {ID_PROOF_TYPES.map((t) => (
+                                <option key={t} value={t}>
+                                  {t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`adultIdProofFile-${index}`}>
+                              Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                            </label>
+                            <input
+                              id={`adultIdProofFile-${index}`}
+                              type="file"
+                              accept={ID_PROOF_ACCEPT}
+                              onChange={(e) =>
+                                updateParty('adults', index, { idProofFile: e.target.files[0] || null })
+                              }
+                            />
+                          </div>
+                          {/* The primary guest is the booking itself — there's
+                              no booking left to remove them from. */}
+                          {isPrimary ? (
+                            <span className="bookings-panel__row-spacer" />
+                          ) : (
+                            <button
+                              type="button"
+                              className="bookings-panel__row-remove-btn"
+                              onClick={() => removeParty('adults', index)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="booking-form__subhead">
+                    <span className="booking-form__subhead-label">
+                      Children
+                      <span className="booking-form__subhead-count">
+                        {newBooking.children.length}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="booking-form__add-inline"
+                      onClick={() => addParty('children', emptyChild)}
+                    >
+                      + Add child
+                    </button>
+                  </div>
+                  {newBooking.children.length > 0 && (
+                    <div className="bookings-panel__repeat-list">
+                      {newBooking.children.map((child, index) => (
+                        <div
+                          className="bookings-panel__party-row bookings-panel__party-row--child"
+                          key={index}
+                        >
+                          <div className="field">
+                            <label htmlFor={`childName-${index}`}>Name</label>
+                            <input
+                              id={`childName-${index}`}
+                              value={child.name}
+                              onChange={(e) => updateParty('children', index, { name: e.target.value })}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`childIdProofType-${index}`}>ID type (optional)</label>
+                            <select
+                              id={`childIdProofType-${index}`}
+                              value={child.idProofType}
+                              onChange={(e) =>
+                                updateParty('children', index, { idProofType: e.target.value })
+                              }
+                            >
+                              <option value="">None</option>
+                              {ID_PROOF_TYPES.map((t) => (
+                                <option key={t} value={t}>
+                                  {t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`childIdProofFile-${index}`}>Document (optional)</label>
+                            <input
+                              id={`childIdProofFile-${index}`}
+                              type="file"
+                              accept={ID_PROOF_ACCEPT}
+                              onChange={(e) =>
+                                updateParty('children', index, { idProofFile: e.target.files[0] || null })
+                              }
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="bookings-panel__row-remove-btn"
+                            onClick={() => removeParty('children', index)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
-                {newBooking.guests.length > 0 && (
-                  <div className="bookings-panel__repeat-list">
-                    {newBooking.guests.map((guest, index) => (
-                      <div className="bookings-panel__guest-row" key={index}>
-                        <div className="field">
-                          <label htmlFor={`guestGuestName-${index}`}>Name</label>
-                          <input
-                            id={`guestGuestName-${index}`}
-                            value={guest.name}
-                            onChange={(e) => updateGuest(index, { name: e.target.value })}
-                          />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`guestPhone-${index}`}>Phone (optional)</label>
-                          <input
-                            id={`guestPhone-${index}`}
-                            value={guest.phone}
-                            onChange={(e) => updateGuest(index, { phone: e.target.value })}
-                          />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`guestIdProofType-${index}`}>ID proof type (optional)</label>
-                          <select
-                            id={`guestIdProofType-${index}`}
-                            value={guest.idProofType}
-                            onChange={(e) => updateGuest(index, { idProofType: e.target.value })}
-                          >
-                            <option value="">None</option>
-                            {ID_PROOF_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`guestIdProofFile-${index}`}>ID proof document (optional)</label>
-                          <input
-                            id={`guestIdProofFile-${index}`}
-                            type="file"
-                            accept={ID_PROOF_ACCEPT}
-                            onChange={(e) => updateGuest(index, { idProofFile: e.target.files[0] || null })}
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          className="bookings-panel__remove-btn"
-                          onClick={() => removeGuest(index)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {maxAdditionalGuests > 0 && (
-                  <button
-                    type="button"
-                    className="bookings-panel__add-btn"
-                    onClick={addGuest}
-                    disabled={newBooking.guests.length >= maxAdditionalGuests}
-                  >
-                    + Add guest
-                  </button>
-                )}
+                  <p className="bookings-panel__hint">
+                    Documents accept an image (JPG/PNG/WEBP) or PDF, up to 5MB.
+                  </p>
                 </div>
 
+              {/* The two optional sections share a row — both are usually left
+                  shut, and stacked they pushed the guest list off screen. */}
+              <div className="booking-form__optional">
               <details className="form-section form-section--collapsible">
                 <summary>
                   <span className="form-section__num">3</span>
@@ -1197,19 +1730,32 @@ export default function Bookings({ onCheckedOut }) {
                 <summary>
                   <span className="form-section__num">4</span>
                   Vehicles
-                  {newBooking.vehicleNumbers.length > 0 && (
-                    <span className="form-section__badge">{newBooking.vehicleNumbers.length}</span>
+                  {newBooking.vehicles.length > 0 && (
+                    <span className="form-section__badge">{newBooking.vehicles.length}</span>
                   )}
                 </summary>
-                {newBooking.vehicleNumbers.length > 0 && (
+                {newBooking.vehicles.length > 0 && (
                   <div className="bookings-panel__repeat-list">
-                    {newBooking.vehicleNumbers.map((vehicleNumber, index) => (
+                    {newBooking.vehicles.map((vehicle, index) => (
                       <div className="bookings-panel__vehicle-row" key={index}>
                         <input
-                          value={vehicleNumber}
-                          onChange={(e) => updateVehicle(index, e.target.value)}
+                          value={vehicle.number}
+                          onChange={(e) => updateVehicle(index, { number: e.target.value })}
                           placeholder="MH07AB1234"
+                          aria-label={`Vehicle number ${index + 1}`}
                         />
+                        <select
+                          value={vehicle.type}
+                          onChange={(e) => updateVehicle(index, { type: e.target.value })}
+                          aria-label={`Vehicle type ${index + 1}`}
+                        >
+                          <option value="">Type</option>
+                          {Object.entries(VEHICLE_TYPE_LABEL).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           className="bookings-panel__remove-btn"
@@ -1225,6 +1771,7 @@ export default function Bookings({ onCheckedOut }) {
                   + Add vehicle
                 </button>
               </details>
+              </div>
 
               </div>
 
@@ -1300,7 +1847,13 @@ export default function Bookings({ onCheckedOut }) {
                   </div>
                   <div className="chart-row">
                     <span className="chart-row__name">Guests</span>
-                    <span className="chart-row__value">{bookingDetail.numGuests}</span>
+                    <span className="chart-row__value">
+                      {bookingDetail.numGuests} ·{' '}
+                      {describeParty(
+                        bookingDetail.numGuests - bookingDetail.childCount,
+                        bookingDetail.childCount
+                      )}
+                    </span>
                   </div>
                   {bookingDetail.idProofType && (
                     <div className="chart-row">
@@ -1353,6 +1906,7 @@ export default function Bookings({ onCheckedOut }) {
                           {bookingDetail.guests.map((g) => (
                             <div key={g.id} className="bookings-panel__guest-detail">
                               {g.name}
+                              {g.isChild ? ' (child)' : ''}
                               {g.phone ? ` · ${g.phone}` : ''}
                               {g.idProofType ? ` · ${g.idProofType}` : ''}
                               {g.hasIdProofDocument && (
@@ -1375,17 +1929,23 @@ export default function Bookings({ onCheckedOut }) {
                       <span className="chart-row__value form-banner form-banner--error">{idProofError}</span>
                     </div>
                   )}
-                  {bookingDetail.vehicleNumbers.length > 0 && (
+                  {bookingDetail.vehicles.length > 0 && (
                     <div className="chart-row">
                       <span className="chart-row__name">Vehicles</span>
-                      <span className="chart-row__value">{bookingDetail.vehicleNumbers.join(' · ')}</span>
+                      <span className="chart-row__value">
+                        {bookingDetail.vehicles
+                          .map((v) => (v.type ? `${v.number} (${VEHICLE_TYPE_LABEL[v.type]})` : v.number))
+                          .join(' · ')}
+                      </span>
                     </div>
                   )}
                   {bookingDetail.switchableCharges.length > 0 && (
                     <div className="chart-row">
                       <span className="chart-row__name">Extras</span>
                       <span className="chart-row__value">
-                        {bookingDetail.switchableCharges.map((c) => c.name).join(' · ')}
+                        {bookingDetail.switchableCharges
+                          .map((c) => (c.quantity > 1 ? `${c.name} ×${c.quantity}` : c.name))
+                          .join(' · ')}
                       </span>
                     </div>
                   )}
@@ -1484,6 +2044,29 @@ export default function Bookings({ onCheckedOut }) {
                             </select>
                           )}
                         </div>
+
+                        <div className="field">
+                          <label htmlFor="editBasePriceOverride">Rate per night</label>
+                          <input
+                            id="editBasePriceOverride"
+                            type="number"
+                            min="1"
+                            step="1"
+                            inputMode="numeric"
+                            placeholder={String(
+                              editAvailableRooms?.find((r) => String(r.id) === editForm.roomId)
+                                ?.categoryBasePrice ?? ''
+                            )}
+                            value={editForm.basePriceOverride}
+                            onChange={(e) =>
+                              setEditForm((f) => ({ ...f, basePriceOverride: e.target.value }))
+                            }
+                          />
+                          <p className="bookings-panel__hint">
+                            Leave blank to charge the room category’s own rate. Season adjustments
+                            and extras still apply on top.
+                          </p>
+                        </div>
                       </>
                     )}
 
@@ -1494,16 +2077,31 @@ export default function Bookings({ onCheckedOut }) {
                       )}
                       {bookingDetail.availableSwitchableCharges.length > 0 && (
                         <div className="checkbox-grid">
-                          {bookingDetail.availableSwitchableCharges.map((charge) => (
-                            <label className="checkbox-chip" key={charge.id}>
-                              <input
-                                type="checkbox"
-                                checked={editForm.switchableChargeIds.includes(charge.id)}
-                                onChange={() => toggleEditFormCharge(charge.id)}
-                              />
-                              {charge.name} ({formatPrice(charge.chargePerNight)}/night)
-                            </label>
-                          ))}
+                          {bookingDetail.availableSwitchableCharges.map((charge) => {
+                            const selection = selectionOf(editForm.switchableCharges, charge.id);
+                            return (
+                              <label className="checkbox-chip" key={charge.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selection)}
+                                  onChange={() => toggleEditFormCharge(charge.id)}
+                                />
+                                {charge.name} ({formatPrice(charge.chargePerNight)}/night)
+                                {selection && charge.isCounter && (
+                                  <input
+                                    className="checkbox-chip__qty"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    inputMode="numeric"
+                                    aria-label={`How many ${charge.name}`}
+                                    value={selection.quantity}
+                                    onChange={(e) => setEditFormChargeQuantity(charge.id, e.target.value)}
+                                  />
+                                )}
+                              </label>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1719,15 +2317,28 @@ export default function Bookings({ onCheckedOut }) {
                     </button>
 
                     <div className="form-section__title">Add vehicles (optional)</div>
-                    {checkInForm.vehicleNumbers.length > 0 && (
+                    {checkInForm.vehicles.length > 0 && (
                       <div className="bookings-panel__repeat-list">
-                        {checkInForm.vehicleNumbers.map((vehicleNumber, index) => (
+                        {checkInForm.vehicles.map((vehicle, index) => (
                           <div className="bookings-panel__vehicle-row" key={index}>
                             <input
-                              value={vehicleNumber}
-                              onChange={(e) => updateCheckInVehicle(index, e.target.value)}
+                              value={vehicle.number}
+                              onChange={(e) => updateCheckInVehicle(index, { number: e.target.value })}
                               placeholder="MH07AB1234"
+                              aria-label={`Vehicle number ${index + 1}`}
                             />
+                            <select
+                              value={vehicle.type}
+                              onChange={(e) => updateCheckInVehicle(index, { type: e.target.value })}
+                              aria-label={`Vehicle type ${index + 1}`}
+                            >
+                              <option value="">Type</option>
+                              {Object.entries(VEHICLE_TYPE_LABEL).map(([value, label]) => (
+                                <option key={value} value={value}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
                             <button
                               type="button"
                               className="bookings-panel__remove-btn"

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const pricingService = require('../pricing/pricing.service');
+const billingService = require('../billing/billing.service');
 const lateCheckout = require('./lateCheckout');
 
 function round2(n) {
@@ -44,21 +45,59 @@ function datesInRange(checkInDate, checkOutDate) {
   return dates;
 }
 
-async function priceStay(lodgeId, roomId, checkInDate, checkOutDate, chargeIds = []) {
-  const nights = datesInRange(checkInDate, checkOutDate);
-  const nightly = [];
-  const chargeTotals = new Map();
-  let totalPrice = 0;
-  for (const date of nights) {
-    const result = await pricingService.simulate(lodgeId, roomId, date, chargeIds);
-    nightly.push({ date, total: result.total });
-    for (const line of result.lines) {
-      chargeTotals.set(line.label, round2((chargeTotals.get(line.label) || 0) + line.amount));
-    }
-    totalPrice += result.total;
+// The stay is priced by the same code the price simulator runs, so the demo
+// price a guest was quoted is provably the price the booking charges.
+// basePriceOverride is the rate reception agreed at the desk — it stands in
+// for the category's base price and everything else (seasons, extras) is
+// layered on top of it exactly as before.
+async function priceStay(lodgeId, roomId, checkInDate, checkOutDate, chargeIds = [], basePriceOverride = null) {
+  const quote = await pricingService.simulateRange(
+    lodgeId,
+    roomId,
+    checkInDate,
+    checkOutDate,
+    chargeIds,
+    basePriceOverride
+  );
+  return {
+    nights: quote.nights.map((night) => ({ date: night.date, total: night.total })),
+    charges: quote.lines.map((line) => ({ label: line.label, amount: line.amount })),
+    totalPrice: quote.total,
+  };
+}
+
+// An extra can only be charged if the lodge still offers it — a charge that
+// was retired since the booking screen loaded must not quietly reappear on a
+// bill. The count is the desk's business, not this check's.
+async function assertChargesAvailable(pool, lodgeId, selections) {
+  if (selections.length === 0) return;
+  const capableResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT id FROM dbo.switchable_charges WHERE lodge_id = @lodgeId AND is_active = 1');
+  const capableIds = new Set(capableResult.recordset.map((r) => Number(r.id)));
+  if (!selections.every((selection) => capableIds.has(selection.id))) {
+    throw new ApiError('One or more extras are not available.', 400);
   }
-  const charges = Array.from(chargeTotals, ([label, amount]) => ({ label, amount }));
-  return { nights: nightly, charges, totalPrice: round2(totalPrice) };
+}
+
+// Extras are replaced wholesale rather than diffed — the desk's list is the
+// answer, and a quantity change is otherwise an update-or-insert per row.
+async function replaceBookingCharges(transaction, bookingId, selections) {
+  await new sql.Request(transaction)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query('DELETE FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
+
+  for (const selection of selections) {
+    await new sql.Request(transaction)
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('chargeId', sql.BigInt, selection.id)
+      .input('quantity', sql.Int, selection.quantity)
+      .query(`
+        INSERT INTO dbo.booking_switchable_charges (booking_id, charge_id, quantity)
+        VALUES (@bookingId, @chargeId, @quantity)
+      `);
+  }
 }
 
 // excludeBookingId lets an edit to a booking's own room/dates check against
@@ -87,7 +126,7 @@ async function getActiveSwitchableCharges(pool, lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, charge_per_night
+      SELECT id, name, charge_per_night, is_counter
       FROM dbo.switchable_charges
       WHERE lodge_id = @lodgeId AND is_active = 1
       ORDER BY name ASC
@@ -97,6 +136,9 @@ async function getActiveSwitchableCharges(pool, lodgeId) {
     id: row.id,
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
+    // Extras that come in counts (extra beds) get a "how many" box on the
+    // booking form; the rest are a plain tick and always count 1.
+    isCounter: !!row.is_counter,
   }));
 }
 
@@ -293,6 +335,24 @@ async function getTapeChart(lodgeId, startDate, endDate) {
   };
 }
 
+// What each night of the stay cost, read from the snapshot frozen at booking
+// time. A stay spanning a season change is not one nightly rate repeated, and
+// the register is where that gets explained to a guest asking why their four
+// nights weren't four times the first one. Falls back to an even split for
+// bookings made before the column existed — the same fallback billing uses.
+function nightlyLines(row) {
+  const dates = datesInRange(toIsoDate(row.check_in_date), toIsoDate(row.check_out_date));
+  if (row.nightly_breakdown) {
+    try {
+      return JSON.parse(row.nightly_breakdown).map((n) => ({ date: n.date, amount: Number(n.total) }));
+    } catch {
+      // A malformed snapshot is not worth failing the whole record over.
+    }
+  }
+  const even = dates.length > 0 ? round2(Number(row.total_price) / dates.length) : 0;
+  return dates.map((date) => ({ date, amount: even }));
+}
+
 function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
   return {
     id: row.id,
@@ -307,15 +367,24 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
     totalPrice: Number(row.total_price),
+    // NULL for a stay priced at the category's own rate, which is most of
+    // them — the edit form reads this to show what was actually agreed.
+    basePriceOverride: row.base_price_override != null ? Number(row.base_price_override) : null,
     status: row.status,
     actualCheckInAt: row.actual_check_in_at,
     actualCheckOutAt: row.actual_check_out_at,
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : null,
     advancePaymentMethod: row.advance_payment_method,
+    nights: nightlyLines(row),
+    lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
+    lateCheckoutMinutes: row.late_checkout_minutes ?? null,
+    // chargePerNight is the price of one; quantity is how many the guest took,
+    // so the nightly cost of this extra is the two multiplied.
     switchableCharges: charges.map((c) => ({
       id: c.id,
       name: c.name,
       chargePerNight: Number(c.charge_per_night),
+      quantity: Number(c.quantity ?? 1),
     })),
     guests: guests.map((g) => ({
       id: g.id,
@@ -323,8 +392,15 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
       phone: g.guest_phone,
       idProofType: g.id_proof_type,
       hasIdProofDocument: !!g.id_proof_document,
+      isChild: !!g.is_child,
     })),
-    vehicleNumbers: vehicles.map((v) => v.vehicle_number),
+    // Adults are num_guests minus the children on file, not a count of adult
+    // rows: the primary guest has no row here, and a booking made before the
+    // party split existed has no rows at all — both still add up this way.
+    childCount: guests.filter((g) => g.is_child).length,
+    // NULL type means the plate predates the type being asked for — the UI
+    // shows the number alone rather than inventing a category for it.
+    vehicles: vehicles.map((v) => ({ number: v.vehicle_number, type: v.vehicle_type })),
     // Reception reads this out to the guest at check-in — it is the only way a
     // guest ever learns their PIN, so the booking screen has to show it. NULL
     // once they check out, which is what closes in-room ordering (see checkOut).
@@ -334,6 +410,10 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     // issued — that's the point a guest's stay turns into a fixed, printed
     // number. Voiding an invoice drops this back to false, reopening editing.
     hasIssuedInvoice: !!extra.hasIssuedInvoice,
+    // The issued bill in full — line items, tax split, what was collected. The
+    // guest register is where a stay is answered for after the fact, and
+    // "₹4,720" on its own answers nothing.
+    invoice: extra.invoice ?? null,
     availableSwitchableCharges: extra.availableSwitchableCharges || [],
   };
 }
@@ -396,7 +476,7 @@ async function getBooking(lodgeId, bookingId) {
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT sc.id, sc.name, sc.charge_per_night
+      SELECT sc.id, sc.name, sc.charge_per_night, bsc.quantity
       FROM dbo.booking_switchable_charges bsc
       JOIN dbo.switchable_charges sc ON sc.id = bsc.charge_id
       WHERE bsc.booking_id = @bookingId
@@ -406,7 +486,7 @@ async function getBooking(lodgeId, bookingId) {
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT id, guest_name, guest_phone, id_proof_type, id_proof_document
+      SELECT id, guest_name, guest_phone, id_proof_type, id_proof_document, is_child
       FROM dbo.booking_guests
       WHERE booking_id = @bookingId
       ORDER BY id ASC
@@ -415,12 +495,21 @@ async function getBooking(lodgeId, bookingId) {
   const vehiclesResult = await pool
     .request()
     .input('bookingId', sql.BigInt, bookingId)
-    .query('SELECT vehicle_number FROM dbo.booking_vehicles WHERE booking_id = @bookingId ORDER BY id ASC');
+    .query(
+      'SELECT vehicle_number, vehicle_type FROM dbo.booking_vehicles WHERE booking_id = @bookingId ORDER BY id ASC'
+    );
 
   const invoiceResult = await pool
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query("SELECT TOP 1 id FROM dbo.invoices WHERE booking_id = @bookingId AND status = 'ISSUED'");
+
+  // Loaded through the billing service rather than re-queried here, so the
+  // register shows the same document the bills screen and the printed invoice
+  // do — one mapping, one set of rounding rules.
+  const invoice = invoiceResult.recordset[0]
+    ? await billingService.getInvoice(lodgeId, Number(invoiceResult.recordset[0].id))
+    : null;
 
   // Whether this room has locked itself out of food ordering by failing the
   // PIN too many times. Reception is who the guest complains to, so it belongs
@@ -440,6 +529,7 @@ async function getBooking(lodgeId, bookingId) {
 
   return mapBooking(row, chargesResult.recordset, guestsResult.recordset, vehiclesResult.recordset, {
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
+    invoice,
     availableSwitchableCharges,
     foodOrderingLockedUntil: lockoutResult.recordset[0]?.locked_until ?? null,
   });
@@ -457,27 +547,22 @@ async function createBooking(lodgeId, userId, input) {
     throw new ApiError('Choose a valid room.', 400);
   }
 
-  if (input.switchableChargeIds.length > 0) {
-    const capableResult = await pool
-      .request()
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .query('SELECT id FROM dbo.switchable_charges WHERE lodge_id = @lodgeId AND is_active = 1');
-    const capableIds = new Set(capableResult.recordset.map((r) => Number(r.id)));
-    if (!input.switchableChargeIds.every((id) => capableIds.has(id))) {
-      throw new ApiError('One or more extras are not available.', 400);
-    }
-  }
+  const switchableCharges = pricingService.normalizeSelections(input.switchableCharges);
+  await assertChargesAvailable(pool, lodgeId, switchableCharges);
 
   if (await hasOverlap(() => pool.request(), input.roomId, input.checkInDate, input.checkOutDate)) {
     throw new ApiError('This room is already booked for part of that date range.', 409);
   }
+
+  const basePriceOverride = input.basePriceOverride ?? null;
 
   const { nights, totalPrice } = await priceStay(
     lodgeId,
     input.roomId,
     input.checkInDate,
     input.checkOutDate,
-    input.switchableChargeIds
+    switchableCharges,
+    basePriceOverride
   );
 
   const transaction = new sql.Transaction(pool);
@@ -504,6 +589,7 @@ async function createBooking(lodgeId, userId, input) {
       .input('checkInDate', sql.Date, input.checkInDate)
       .input('checkOutDate', sql.Date, input.checkOutDate)
       .input('totalPrice', sql.Decimal(10, 2), totalPrice)
+      .input('basePriceOverride', sql.Decimal(10, 2), basePriceOverride)
       .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(nights))
       .input('createdBy', sql.BigInt, userId ?? null)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
@@ -511,25 +597,20 @@ async function createBooking(lodgeId, userId, input) {
       .query(`
         INSERT INTO dbo.bookings
           (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_document,
-           check_in_date, check_out_date, total_price, nightly_breakdown, created_by,
+           check_in_date, check_out_date, total_price, base_price_override, nightly_breakdown, created_by,
            advance_amount, advance_payment_method)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofDocument,
-           @checkInDate, @checkOutDate, @totalPrice, @nightlyBreakdown, @createdBy,
+           @checkInDate, @checkOutDate, @totalPrice, @basePriceOverride, @nightlyBreakdown, @createdBy,
            @advanceAmount, @advancePaymentMethod)
       `);
 
     const bookingId = insertResult.recordset[0].id;
 
-    for (const chargeId of input.switchableChargeIds) {
-      await new sql.Request(transaction)
-        .input('bookingId', sql.BigInt, bookingId)
-        .input('chargeId', sql.BigInt, chargeId)
-        .query('INSERT INTO dbo.booking_switchable_charges (booking_id, charge_id) VALUES (@bookingId, @chargeId)');
-    }
+    await replaceBookingCharges(transaction, bookingId, switchableCharges);
 
-    await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicleNumbers);
+    await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicles);
 
     await transaction.commit();
     return { id: bookingId };
@@ -542,7 +623,7 @@ async function createBooking(lodgeId, userId, input) {
 // Shared by createBooking and checkIn — a booking's extra occupants and
 // vehicles can be added at either point (or both: a few now, the rest once
 // the guest actually arrives with a vehicle).
-async function insertGuestsAndVehicles(transaction, bookingId, guests, vehicleNumbers) {
+async function insertGuestsAndVehicles(transaction, bookingId, guests, vehicles) {
   for (const guest of guests) {
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)
@@ -550,17 +631,22 @@ async function insertGuestsAndVehicles(transaction, bookingId, guests, vehicleNu
       .input('guestPhone', sql.NVarChar, guest.phone)
       .input('idProofType', sql.NVarChar, guest.idProofType)
       .input('idProofDocument', sql.NVarChar, guest.idProofDocument)
+      .input('isChild', sql.Bit, guest.isChild ? 1 : 0)
       .query(`
-        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_document)
-        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofDocument)
+        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_document, is_child)
+        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofDocument, @isChild)
       `);
   }
 
-  for (const vehicleNumber of vehicleNumbers) {
+  for (const vehicle of vehicles) {
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)
-      .input('vehicleNumber', sql.NVarChar, vehicleNumber)
-      .query('INSERT INTO dbo.booking_vehicles (booking_id, vehicle_number) VALUES (@bookingId, @vehicleNumber)');
+      .input('vehicleNumber', sql.NVarChar, vehicle.number)
+      .input('vehicleType', sql.NVarChar, vehicle.type)
+      .query(`
+        INSERT INTO dbo.booking_vehicles (booking_id, vehicle_number, vehicle_type)
+        VALUES (@bookingId, @vehicleNumber, @vehicleType)
+      `);
   }
 }
 
@@ -634,7 +720,7 @@ async function checkIn(lodgeId, bookingId, input) {
       throw new ApiError('Booking not found or not ready for check-in.', 409);
     }
 
-    await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicleNumbers);
+    await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicles);
 
     await transaction.commit();
   } catch (err) {
@@ -784,7 +870,8 @@ async function updateBooking(lodgeId, bookingId, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT room_id, check_in_date, check_out_date, status, num_guests, guest_name, guest_phone
+      SELECT room_id, check_in_date, check_out_date, status, num_guests, guest_name, guest_phone,
+             base_price_override
       FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId
     `);
   const bookingRow = bookingResult.recordset[0];
@@ -851,39 +938,44 @@ async function updateBooking(lodgeId, bookingId, input) {
   const newGuestName = input.guestName != null ? input.guestName : bookingRow.guest_name;
   const newGuestPhone = input.guestPhone != null ? input.guestPhone : bookingRow.guest_phone;
 
-  let switchableChargeIds = input.switchableChargeIds;
-  if (switchableChargeIds == null) {
+  let switchableCharges;
+  if (input.switchableCharges == null) {
     const currentChargesResult = await pool
       .request()
       .input('bookingId', sql.BigInt, bookingId)
-      .query('SELECT charge_id FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
-    switchableChargeIds = currentChargesResult.recordset.map((r) => r.charge_id);
-  } else if (switchableChargeIds.length > 0) {
-    const capableResult = await pool
-      .request()
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .query('SELECT id FROM dbo.switchable_charges WHERE lodge_id = @lodgeId AND is_active = 1');
-    const capableIds = new Set(capableResult.recordset.map((r) => Number(r.id)));
-    if (!switchableChargeIds.every((id) => capableIds.has(id))) {
-      throw new ApiError('One or more extras are not available.', 400);
-    }
+      .query('SELECT charge_id, quantity FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
+    switchableCharges = currentChargesResult.recordset.map((r) => ({
+      id: Number(r.charge_id),
+      quantity: Number(r.quantity),
+    }));
+  } else {
+    switchableCharges = pricingService.normalizeSelections(input.switchableCharges);
+    await assertChargesAvailable(pool, lodgeId, switchableCharges);
   }
 
-  const { nights, totalPrice } = await priceStay(lodgeId, newRoomId, checkInDate, newCheckOutDate, switchableChargeIds);
+  // Omitted means "keep charging what was agreed" — an edit that only moves
+  // the checkout date must not quietly re-price the stay at rack rate. An
+  // explicit null is the way back to the category's own price.
+  const newBasePriceOverride =
+    input.basePriceOverride === undefined
+      ? bookingRow.base_price_override != null
+        ? Number(bookingRow.base_price_override)
+        : null
+      : input.basePriceOverride;
+
+  const { nights, totalPrice } = await priceStay(
+    lodgeId,
+    newRoomId,
+    checkInDate,
+    newCheckOutDate,
+    switchableCharges,
+    newBasePriceOverride
+  );
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
-    await new sql.Request(transaction)
-      .input('bookingId', sql.BigInt, bookingId)
-      .query('DELETE FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
-
-    for (const chargeId of switchableChargeIds) {
-      await new sql.Request(transaction)
-        .input('bookingId', sql.BigInt, bookingId)
-        .input('chargeId', sql.BigInt, chargeId)
-        .query('INSERT INTO dbo.booking_switchable_charges (booking_id, charge_id) VALUES (@bookingId, @chargeId)');
-    }
+    await replaceBookingCharges(transaction, bookingId, switchableCharges);
 
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)
@@ -893,12 +985,14 @@ async function updateBooking(lodgeId, bookingId, input) {
       .input('guestName', sql.NVarChar, newGuestName)
       .input('guestPhone', sql.NVarChar, newGuestPhone)
       .input('totalPrice', sql.Decimal(10, 2), totalPrice)
+      .input('basePriceOverride', sql.Decimal(10, 2), newBasePriceOverride)
       .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(nights))
       .query(`
         UPDATE dbo.bookings
         SET room_id = @roomId, check_out_date = @checkOutDate, num_guests = @numGuests,
             guest_name = @guestName, guest_phone = @guestPhone,
-            total_price = @totalPrice, nightly_breakdown = @nightlyBreakdown
+            total_price = @totalPrice, base_price_override = @basePriceOverride,
+            nightly_breakdown = @nightlyBreakdown
         WHERE id = @bookingId
       `);
 

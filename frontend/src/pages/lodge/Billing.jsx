@@ -24,6 +24,43 @@ const DOCUMENT_LABEL = {
   CASH_RECEIPT: 'Cash receipt',
 };
 
+// Colour suffix per document type, so the tag styling stays in the stylesheet
+// instead of being derived from the enum name.
+const DOCUMENT_TAG = {
+  TAX_INVOICE: 'tax',
+  BILL_OF_SUPPLY: 'supply',
+  CASH_RECEIPT: 'cash',
+};
+
+// A bill differs on two axes and the list has to show both: what was sold, and
+// which document GST law makes of it. A room tax invoice and a table cash
+// receipt are the same wall of digits otherwise.
+const SOURCE_LABEL = {
+  ROOM: 'Room',
+  ROOM_FOOD: 'Room + food',
+  TABLE: 'Table',
+};
+
+function billSource(inv) {
+  if (inv.kind === 'FOOD') return 'TABLE';
+  // A stay whose guest ordered to the room is neither a plain stay bill nor a
+  // food bill — it carries two taxed blocks, and staff reconciling the kitchen
+  // against the front desk need to spot it without opening it.
+  return inv.foodSubtotal > 0 ? 'ROOM_FOOD' : 'ROOM';
+}
+
+function tagClass(key) {
+  return key.toLowerCase().replace(/_/g, '-');
+}
+
+// Filtering is by document type only — that is the split staff hand over to an
+// accountant. What was sold stays visible as a tag on every row, but it is not
+// something the list needs to be narrowed down to.
+const BILL_FILTERS = [
+  { key: 'TAX_INVOICE', label: 'Tax invoice', match: (i) => i.documentType === 'TAX_INVOICE' },
+  { key: 'CASH_RECEIPT', label: 'Cash receipt', match: (i) => i.documentType === 'CASH_RECEIPT' },
+];
+
 function formatDateLong(dateStr) {
   const d = new Date(`${dateStr}T00:00:00Z`);
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -53,6 +90,7 @@ export default function Billing({ lodge }) {
   const [foodTabsError, setFoodTabsError] = useState('');
   const [invoices, setInvoices] = useState(null);
   const [invoicesError, setInvoicesError] = useState('');
+  const [billFilter, setBillFilter] = useState('ALL');
 
   const loadQueue = () => {
     if (!billsStays) return;
@@ -96,6 +134,17 @@ export default function Billing({ lodge }) {
     loadInvoices();
   };
 
+  // Only the types this property actually issues get a chip — a property that
+  // isn't GST registered only ever writes cash receipts, and should not be
+  // offered a "Tax invoice" filter that matches nothing.
+  const billFilters = invoices
+    ? BILL_FILTERS.map((f) => ({ ...f, count: invoices.filter(f.match).length })).filter((f) => f.count > 0)
+    : [];
+  // Looked up rather than trusted: voiding the last bill of a type empties its
+  // chip, and the list falls back to everything instead of going blank.
+  const activeFilter = billFilters.find((f) => f.key === billFilter) ?? null;
+  const visibleInvoices = invoices && (activeFilter ? invoices.filter(activeFilter.match) : invoices);
+
   // Bill modal. One modal serves both kinds — the amounts, the GST toggle and
   // the payment capture are identical; only the endpoints and the header
   // differ, so `billTarget` carries which is being billed.
@@ -108,6 +157,15 @@ export default function Billing({ lodge }) {
   const [paymentMethod, setPaymentMethod] = useState('');
   const [issueError, setIssueError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Whether the overstay charge reception agreed at the desk lands on this
+  // bill. Starts as "yes" — it was already agreed with the guest — and the
+  // person writing the bill is the one who can still take it back off.
+  const [includeLateCheckout, setIncludeLateCheckout] = useState(true);
+
+  // The billing side is picked once per bill, not once per preview response.
+  // Dropping the late charge re-fetches the same booking, and re-deriving the
+  // side from that response would silently undo a desk that chose Non-GST.
+  const sideChosen = useRef(false);
 
   const openBilling = (target) => {
     setBillTarget(target);
@@ -116,6 +174,8 @@ export default function Billing({ lodge }) {
     setCollectedAmount('');
     setPaymentMethod('');
     setIssueError('');
+    setIncludeLateCheckout(true);
+    sideChosen.current = false;
   };
 
   const closeBilling = () => {
@@ -126,9 +186,12 @@ export default function Billing({ lodge }) {
   // "counter" rather than an id — the till tab has no table row behind it.
   const foodTabPath = (tableId) => (tableId == null ? 'counter' : tableId);
 
+  // The late charge is in the path rather than subtracted here on the client:
+  // taking it off can move the stay into a lower GST band and change the round
+  // off, so the server re-derives the whole document instead.
   const previewPath = billTarget
     ? billTarget.kind === 'STAY'
-      ? `/billing/bookings/${billTarget.bookingId}/preview`
+      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}`
       : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
     : null;
 
@@ -137,7 +200,10 @@ export default function Billing({ lodge }) {
     apiGet(previewPath, { token })
       .then((data) => {
         setPreview(data);
-        setBillingSide(data.isGstRegistered ? 'GST' : 'NON_GST');
+        if (!sideChosen.current) {
+          sideChosen.current = true;
+          setBillingSide(data.isGstRegistered ? 'GST' : 'NON_GST');
+        }
       })
       .catch((err) => setPreviewError(err instanceof ApiError ? err.message : 'Could not load the bill preview.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,6 +239,8 @@ export default function Billing({ lodge }) {
         path,
         {
           billingSide,
+          // Sent only for a stay — a table has no checkout to be late for.
+          ...(billTarget.kind === 'STAY' ? { includeLateCheckout } : {}),
           ...(hasAmount ? { collectedAmount: Number(collectedAmount), paymentMethod } : {}),
         },
         { token }
@@ -390,7 +458,9 @@ export default function Billing({ lodge }) {
         <div className="chart-section">
           <div className="chart-section__header">
             <h3>Bills</h3>
-            <span className="chart-section__hint">Most recent first.</span>
+            <span className="chart-section__hint">
+              Most recent first. Tags show what was billed and which document was issued.
+            </span>
           </div>
 
           {invoicesError && <div className="form-banner form-banner--error">{invoicesError}</div>}
@@ -399,31 +469,73 @@ export default function Billing({ lodge }) {
             <div className="dash-state">No bills issued yet.</div>
           )}
           {!invoicesError && invoices && invoices.length > 0 && (
-            <div className="chart-list">
-              {invoices.map((inv) => (
-                <button
-                  type="button"
-                  className="chart-row billing-panel__invoice-row"
-                  key={inv.id}
-                  onClick={() => openDetail(inv.id)}
-                >
-                  <span className="chart-row__name">
-                    {inv.invoiceNumber}
-                    <span className="chart-row__dates">
-                      {/* A food bill has no guest and no room to name, so it
-                          identifies itself by the table it closed. */}
-                      {inv.kind === 'FOOD'
-                        ? `${inv.tableLabel || 'Counter'} · ${DOCUMENT_LABEL[inv.documentType]}`
-                        : `${inv.guestName} · ${inv.roomNumber} · ${DOCUMENT_LABEL[inv.documentType]}`}
-                    </span>
-                  </span>
-                  <span className="billing-panel__queue-actions">
-                    {inv.status === 'VOID' && <span className="badge badge--off">Void</span>}
-                    <span className="chart-row__value">{formatPrice(inv.totalAmount)}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+            <>
+              {/* Skipped when everything issued is of one type — a single chip
+                  filters nothing and only costs a row of screen. */}
+              {billFilters.length > 1 && (
+                <div className="billing-panel__filters">
+                  <button
+                    type="button"
+                    className="billing-panel__filter"
+                    aria-pressed={activeFilter == null}
+                    onClick={() => setBillFilter('ALL')}
+                  >
+                    All
+                    <span className="billing-panel__filter-count">{invoices.length}</span>
+                  </button>
+                  {billFilters.map((f) => (
+                    <button
+                      type="button"
+                      key={f.key}
+                      className="billing-panel__filter"
+                      aria-pressed={activeFilter?.key === f.key}
+                      onClick={() => setBillFilter(f.key)}
+                    >
+                      <span className={`bill-tag__dot bill-tag__dot--${tagClass(f.key)}`} aria-hidden="true" />
+                      {f.label}
+                      <span className="billing-panel__filter-count">{f.count}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="chart-list">
+                {visibleInvoices.map((inv) => {
+                  const source = billSource(inv);
+                  return (
+                    <button
+                      type="button"
+                      className={`chart-row billing-panel__invoice-row billing-panel__invoice-row--${tagClass(source)}${
+                        inv.status === 'VOID' ? ' billing-panel__invoice-row--void' : ''
+                      }`}
+                      key={inv.id}
+                      onClick={() => openDetail(inv.id)}
+                    >
+                      <span className="chart-row__name">
+                        <span className="billing-panel__invoice-id">
+                          {inv.invoiceNumber}
+                          <span className={`bill-tag bill-tag--${tagClass(source)}`}>{SOURCE_LABEL[source]}</span>
+                        </span>
+                        <span className="chart-row__dates">
+                          {/* A food bill has no guest and no room to name, so it
+                              identifies itself by the table it closed. */}
+                          {inv.kind === 'FOOD'
+                            ? inv.tableLabel || 'Counter'
+                            : `${inv.guestName} · ${inv.roomNumber}`}
+                        </span>
+                      </span>
+                      <span className="billing-panel__queue-actions">
+                        <span className={`bill-tag bill-tag--${DOCUMENT_TAG[inv.documentType]}`}>
+                          {DOCUMENT_LABEL[inv.documentType]}
+                        </span>
+                        {inv.status === 'VOID' && <span className="bill-tag bill-tag--void">Void</span>}
+                        <span className="chart-row__value">{formatPrice(inv.totalAmount)}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -460,10 +572,11 @@ export default function Billing({ lodge }) {
                           {preview.nights === 1 ? '' : 's'}
                         </span>
                       </div>
-                      {/* Only when there is one. Reception agreed this at the
-                          desk during checkout; it is surfaced here so it can be
-                          spotted before a document that can only be voided. */}
-                      {preview.lateCheckoutCharge > 0 && (
+                      {/* Only when reception agreed one at the desk. The
+                          amount stays legible even when it is being dropped —
+                          the decision here is whether to bill it, and that
+                          can't be taken with the number hidden. */}
+                      {preview.lateCheckoutAgreed > 0 && (
                         <div className="chart-row">
                           <span className="chart-row__name">
                             Late checkout
@@ -473,12 +586,50 @@ export default function Billing({ lodge }) {
                               </span>
                             )}
                           </span>
-                          <span className="chart-row__value">
-                            {formatPrice(preview.lateCheckoutCharge)}
+                          <span
+                            className={`chart-row__value${
+                              includeLateCheckout ? '' : ' billing-panel__late--dropped'
+                            }`}
+                          >
+                            {formatPrice(preview.lateCheckoutAgreed)}
                           </span>
                         </div>
                       )}
                     </div>
+
+                    {/* Reception agreed this with the guest at the door, but
+                        the bill is written here — a manager who decides the
+                        overstay isn't worth charging drops it without sending
+                        the guest back to the desk. Dropping it affects this
+                        document only: the booking keeps what was agreed and
+                        how late the guest actually was. */}
+                    {preview.lateCheckoutAgreed > 0 && (
+                      <>
+                        <div className="toggle-group">
+                          <button
+                            type="button"
+                            aria-pressed={includeLateCheckout}
+                            onClick={() => setIncludeLateCheckout(true)}
+                          >
+                            Add to bill
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={!includeLateCheckout}
+                            onClick={() => setIncludeLateCheckout(false)}
+                          >
+                            Leave it off
+                          </button>
+                        </div>
+                        <p className="billing-panel__hint">
+                          {includeLateCheckout
+                            ? 'Charged as part of the room, so it is taxed at the room’s own rate.'
+                            : `Not charged on this bill. The stay stays on record as ${lateLabel(
+                                preview.lateCheckoutMinutes ?? 0
+                              )}.`}
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -656,8 +807,17 @@ export default function Billing({ lodge }) {
           <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
             <div className="billing-panel__detail-header">
               <h3>{detailInvoice.invoiceNumber}</h3>
-              <span className={`badge ${detailInvoice.status === 'ISSUED' ? 'badge--on' : 'badge--off'}`}>
-                {detailInvoice.status === 'ISSUED' ? DOCUMENT_LABEL[detailInvoice.documentType] : 'Void'}
+              {/* Both tags, in the same colours as the list row that opened
+                  this — the document type alone left a voided bill and a live
+                  one looking identical until you read the word. */}
+              <span className="billing-panel__detail-tags">
+                <span className={`bill-tag bill-tag--${tagClass(billSource(detailInvoice))}`}>
+                  {SOURCE_LABEL[billSource(detailInvoice)]}
+                </span>
+                <span className={`bill-tag bill-tag--${DOCUMENT_TAG[detailInvoice.documentType]}`}>
+                  {DOCUMENT_LABEL[detailInvoice.documentType]}
+                </span>
+                {detailInvoice.status === 'VOID' && <span className="bill-tag bill-tag--void">Void</span>}
               </span>
             </div>
 

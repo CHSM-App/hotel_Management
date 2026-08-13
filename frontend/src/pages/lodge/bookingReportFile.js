@@ -1,7 +1,7 @@
-// Turning a booking report into a file an owner can keep — a CSV to open in
-// Excel, or a PDF to file and share. Both are built from the same report
-// payload the Bookings tab already has on screen, so what downloads is exactly
-// what was displayed.
+// Turning a booking report into a file an owner can keep — an Excel workbook
+// to sort and total, or a PDF to print and file. Both are built from the same
+// report payload the Bookings tab already has on screen, so what downloads is
+// exactly what was displayed.
 
 export const BOOKING_STATUS_LABEL = {
   BOOKED: 'Booked',
@@ -19,11 +19,20 @@ export const PAYMENT_MODE_LABEL = {
 
 const PAYMENT_MODES = ['CASH', 'UPI', 'CARD', 'UNRECORDED'];
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Which side of the book a report covers. Two downloads of the same month can
+// hold completely different rows, so the choice is stamped on the document and
+// into the filename — otherwise they are indistinguishable once saved.
+export const BILLING_SIDE_OPTIONS = [
+  { key: 'ALL', label: 'All bills', short: 'All' },
+  { key: 'GST', label: 'GST bills only', short: 'GST' },
+  { key: 'NON_GST', label: 'Non-GST bills only', short: 'Non-GST' },
+];
 
-// Written as an escape, not the literal character — a bare U+FEFF in source is
-// invisible and gets stripped by well-meaning editors.
-const BOM = '\uFEFF';
+function billingSideOption(billingSide) {
+  return BILLING_SIDE_OPTIONS.find((o) => o.key === billingSide) || BILLING_SIDE_OPTIONS[0];
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // YYYY-MM-DD read as a calendar date, never shifted by the viewer's timezone.
 function formatDate(iso) {
@@ -36,10 +45,18 @@ function formatAmount(n) {
   return Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Matches the backend's rounding, so a figure this file derives from two
-// server totals reads the same as one the server sent whole.
-function round2(n) {
-  return Math.round(n * 100) / 100;
+// An actual arrival/departure stamp against the date it was booked for. Nearly
+// always the same day, so the time alone is enough; a late checkout that rolls
+// past midnight gets its date spelled out rather than silently reading as an
+// impossibly early departure. 24-hour clock — compact, and unambiguous on a
+// document someone may read months later.
+function formatActualStamp(value, plannedDateIso) {
+  if (!value) return '—';
+  const d = new Date(value);
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const onDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (onDate === plannedDateIso) return time;
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${time}`;
 }
 
 // A real timestamp, unlike the plain calendar dates above — shown in the
@@ -68,7 +85,10 @@ export function reportPeriodLabel(fromDate, toDate) {
 function reportFilename(report, extension) {
   const month = wholeMonthLabel(report.fromDate, report.toDate);
   const period = month ? month.replace(' ', '-') : `${report.fromDate}-to-${report.toDate}`;
-  return `Booking-report-${period}.${extension}`;
+  const side = report.billingSide && report.billingSide !== 'ALL'
+    ? `-${billingSideOption(report.billingSide).short.replace('-', '')}`
+    : '';
+  return `Booking-report-${period}${side}.${extension}`;
 }
 
 function triggerDownload(blob, filename) {
@@ -82,126 +102,203 @@ function triggerDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Quote every field rather than only the ones that need it: guest names carry
-// commas and the odd stray quote, and a uniformly quoted row is one less thing
-// to get wrong.
-function csvCell(value) {
-  if (value === null || value === undefined) return '""';
-  return `"${String(value).replace(/"/g, '""')}"`;
-}
-
-function csvRow(cells) {
-  return cells.map(csvCell).join(',');
-}
-
-// Room and food are separate supplies on separate SACs, so the halves are
-// listed as well as the combined figure — that is the shape a CA needs, and
-// the combined line is what the guest actually paid.
-function taxPairs(tax) {
+// Room and food are separate supplies on separate SACs, so a property that
+// serves both gets the halves listed as well as the combined figure — that is
+// the shape a CA needs. A rooms-only lodge has one supply: splitting it would
+// print a column of zeroes and repeat the same number under three headings.
+// Each entry is [label, displayString, rawNumber] — the PDF wants the string,
+// the workbook wants the number so the cell can be summed.
+function taxPairs(tax, servesFood) {
+  const pair = (label, value) => [label, formatAmount(value), value];
+  if (!servesFood) {
+    return [
+      pair('Subtotal before tax', tax.taxableValue),
+      pair('CGST', tax.cgstAmount),
+      pair('SGST', tax.sgstAmount),
+      pair('Round off', tax.roundOff),
+      pair('Invoice total', tax.totalAmount),
+    ];
+  }
   return [
-    ['Room subtotal', formatAmount(tax.roomSubtotal)],
-    ['Food subtotal', formatAmount(tax.foodSubtotal)],
-    ['CGST on rooms', formatAmount(tax.roomCgst)],
-    ['SGST on rooms', formatAmount(tax.roomSgst)],
-    ['CGST on food', formatAmount(tax.foodCgst)],
-    ['SGST on food', formatAmount(tax.foodSgst)],
-    ['Total CGST', formatAmount(tax.cgstAmount)],
-    ['Total SGST', formatAmount(tax.sgstAmount)],
-    ['Round off', formatAmount(tax.roundOff)],
-    ['Invoice total', formatAmount(tax.totalAmount)],
+    pair('Room subtotal', tax.roomSubtotal),
+    pair('Food subtotal', tax.foodSubtotal),
+    pair('Subtotal before tax', tax.taxableValue),
+    pair('CGST on rooms', tax.roomCgst),
+    pair('SGST on rooms', tax.roomSgst),
+    pair('CGST on food', tax.foodCgst),
+    pair('SGST on food', tax.foodSgst),
+    pair('Total CGST', tax.cgstAmount),
+    pair('Total SGST', tax.sgstAmount),
+    pair('Round off', tax.roundOff),
+    pair('Invoice total', tax.totalAmount),
   ];
 }
 
-export function downloadBookingReportCsv(report) {
-  const { summary } = report;
-  const lines = [
-    csvRow([report.lodgeName || 'Booking report']),
-    csvRow(['Booking report', reportPeriodLabel(report.fromDate, report.toDate)]),
-    '',
-    csvRow([
-      'Bill no.',
-      'Guest',
-      'Phone',
-      'Guests',
-      'Room',
-      'Category',
-      'Check-in',
-      'Check-out',
-      'Nights',
-      'Status',
-      'Booked amount',
-      'Advance',
-      'Advance mode',
-      'Room subtotal',
-      'CGST',
-      'SGST',
-      'Round off',
-      'Billed amount',
-      'Balance collected',
-      'Balance mode',
-    ]),
+// Column definitions rather than two parallel arrays: the header and the row
+// are projected from one list, so a conditional column cannot shift the values
+// out from under the headings.
+function detailColumns(servesFood) {
+  const money = (n) => (n != null ? n.toFixed(2) : '');
+  return [
+    { label: 'Bill no.', width: 20, value: (b) => b.invoiceNumber || '' },
+    { label: 'Guest', width: 28, value: (b) => b.guestName },
+    { label: 'Phone', width: 15, value: (b) => b.guestPhone },
+    { label: 'Guests', width: 8, value: (b) => b.numGuests },
+    { label: 'Room', width: 8, value: (b) => b.roomNumber },
+    { label: 'Category', width: 16, value: (b) => b.categoryName },
+    { label: 'Check-in', width: 12, value: (b) => b.checkInDate },
+    { label: 'Check-out', width: 12, value: (b) => b.checkOutDate },
+    { label: 'Actual check-in', width: 22, value: (b) => (b.actualCheckInAt ? formatDateTime(b.actualCheckInAt) : '') },
+    { label: 'Actual check-out', width: 22, value: (b) => (b.actualCheckOutAt ? formatDateTime(b.actualCheckOutAt) : '') },
+    { label: 'Nights', width: 8, value: (b) => b.nights },
+    { label: 'Status', width: 13, value: (b) => BOOKING_STATUS_LABEL[b.status] || b.status },
+    { label: 'Booked amount', width: 15, value: (b) => b.totalPrice.toFixed(2) },
+    { label: 'Advance', width: 12, value: (b) => b.advanceAmount.toFixed(2) },
+    {
+      // A mode is only meaningful next to money that moved — a booking with no
+      // advance reads "0.00, Cash" otherwise, implying a payment.
+      label: 'Advance mode',
+      width: 14,
+      value: (b) => (b.advanceAmount && b.advancePaymentMethod ? PAYMENT_MODE_LABEL[b.advancePaymentMethod] : ''),
+    },
+    // Room and food subtotals only earn their place when both supplies exist;
+    // otherwise the room subtotal and the taxable subtotal are the same number.
+    ...(servesFood
+      ? [
+          { label: 'Room subtotal', width: 15, value: (b) => money(b.roomSubtotal) },
+          { label: 'Food subtotal', width: 15, value: (b) => money(b.foodSubtotal) },
+        ]
+      : []),
+    { label: 'Subtotal before tax', width: 18, value: (b) => money(b.subtotal) },
+    { label: 'CGST', width: 12, value: (b) => money(b.cgstAmount) },
+    { label: 'SGST', width: 12, value: (b) => money(b.sgstAmount) },
+    { label: 'Round off', width: 11, value: (b) => money(b.roundOff) },
+    { label: 'Billed amount', width: 15, value: (b) => money(b.billedAmount) },
+    { label: 'Balance collected', width: 17, value: (b) => money(b.balanceCollected) },
+    {
+      label: 'Balance mode',
+      width: 14,
+      value: (b) => (b.balancePaymentMethod ? PAYMENT_MODE_LABEL[b.balancePaymentMethod] : ''),
+    },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Excel
+// ---------------------------------------------------------------------------
+
+const MONEY = '#,##0.00';
+const HEADER_FILL = '#E8E8E8';
+
+const bold = (value, extra = {}) => ({ value, fontWeight: 'bold', ...extra });
+const text = (value) => ({ value: value === '' ? null : value });
+// Written as a real number, not a formatted string: this is the whole point of
+// an .xlsx over a .csv — the column can be summed, sorted and charted in Excel.
+const money = (value) => ({ value: value ?? null, type: Number, format: MONEY, align: 'right' });
+const count = (value) => ({ value: value ?? null, type: Number, align: 'right' });
+const sectionRow = (title) => [bold(title, { backgroundColor: HEADER_FILL })];
+const headerRow = (labels) =>
+  labels.map((label) => bold(label, { backgroundColor: HEADER_FILL, wrap: true }));
+
+// Money columns come through the CSV column definitions as fixed-2 strings so
+// the same list can serve both. In the workbook they have to go back to being
+// numbers, which is what these labels identify.
+const MONEY_COLUMNS = new Set([
+  'Booked amount',
+  'Advance',
+  'Room subtotal',
+  'Food subtotal',
+  'Subtotal before tax',
+  'CGST',
+  'SGST',
+  'Round off',
+  'Billed amount',
+  'Balance collected',
+]);
+const COUNT_COLUMNS = new Set(['Guests', 'Nights']);
+
+function summarySheet(report) {
+  const { summary } = report;
+  const rows = [
+    [bold(report.lodgeName || 'Booking report', { fontSize: 14 })],
+    [bold('Booking report'), text(reportPeriodLabel(report.fromDate, report.toDate))],
+    [bold('Bills included'), text(billingSideOption(report.billingSide).label)],
+    [bold('Generated'), text(formatDateTime(report.generatedAt || Date.now()))],
+    [],
+    sectionRow('SUMMARY'),
+    [bold('Total bookings'), count(summary.totalBookings)],
+  ];
+
+  for (const [status, label] of Object.entries(BOOKING_STATUS_LABEL)) {
+    rows.push([bold(label), count(summary.byStatus[status] || 0)]);
+  }
+  rows.push([bold('Room nights'), count(summary.roomNights)]);
+  rows.push([bold('Booked value'), money(summary.bookedValue)]);
+  rows.push([bold('Bills issued'), count(summary.billedCount)]);
+  rows.push([bold('Billed amount'), money(summary.billedAmount)]);
+  rows.push([bold('Total collected'), money(summary.totalCollected)]);
+
+  rows.push([]);
+  rows.push(sectionRow('PAYMENTS BY MODE'));
+  rows.push(headerRow(['Mode', 'Advance', 'Balance', 'Total']));
+  for (const mode of PAYMENT_MODES) {
+    const t = summary.byPaymentMode[mode];
+    rows.push([bold(PAYMENT_MODE_LABEL[mode]), money(t.advance), money(t.balance), money(t.total)]);
+  }
+  rows.push([
+    bold('Total collected'),
+    { ...money(summary.advanceCollected), fontWeight: 'bold' },
+    { ...money(summary.balanceCollected), fontWeight: 'bold' },
+    { ...money(summary.totalCollected), fontWeight: 'bold' },
+  ]);
+
+  rows.push([]);
+  rows.push(sectionRow('TAX — ISSUED BILLS ONLY'));
+  for (const [label, , raw] of taxPairs(summary.tax, report.servesFood)) {
+    rows.push([bold(label), money(raw)]);
+  }
+
+  return {
+    data: rows,
+    sheet: 'Summary',
+    columns: [{ width: 26 }, { width: 18 }, { width: 18 }, { width: 18 }],
+  };
+}
+
+function bookingsSheet(report) {
+  const columns = detailColumns(report.servesFood);
+  const rows = [headerRow(columns.map((c) => c.label))];
 
   for (const b of report.bookings) {
-    lines.push(
-      csvRow([
-        b.invoiceNumber || '',
-        b.guestName,
-        b.guestPhone,
-        b.numGuests,
-        b.roomNumber,
-        b.categoryName,
-        b.checkInDate,
-        b.checkOutDate,
-        b.nights,
-        BOOKING_STATUS_LABEL[b.status] || b.status,
-        b.totalPrice.toFixed(2),
-        b.advanceAmount.toFixed(2),
-        b.advancePaymentMethod ? PAYMENT_MODE_LABEL[b.advancePaymentMethod] : '',
-        b.roomSubtotal != null ? b.roomSubtotal.toFixed(2) : '',
-        b.cgstAmount != null ? b.cgstAmount.toFixed(2) : '',
-        b.sgstAmount != null ? b.sgstAmount.toFixed(2) : '',
-        b.roundOff != null ? b.roundOff.toFixed(2) : '',
-        b.billedAmount != null ? b.billedAmount.toFixed(2) : '',
-        b.balanceCollected != null ? b.balanceCollected.toFixed(2) : '',
-        b.balancePaymentMethod ? PAYMENT_MODE_LABEL[b.balancePaymentMethod] : '',
-      ])
+    rows.push(
+      columns.map((column) => {
+        const raw = column.value(b);
+        if (MONEY_COLUMNS.has(column.label)) {
+          return money(raw === '' || raw === null ? null : Number(raw));
+        }
+        if (COUNT_COLUMNS.has(column.label)) return count(raw);
+        return text(raw);
+      })
     );
   }
 
-  lines.push('');
-  lines.push(csvRow(['Total bookings', summary.totalBookings]));
-  for (const [status, label] of Object.entries(BOOKING_STATUS_LABEL)) {
-    lines.push(csvRow([label, summary.byStatus[status] || 0]));
-  }
-  lines.push(csvRow(['Room nights', summary.roomNights]));
-  lines.push(csvRow(['Booked value', summary.bookedValue.toFixed(2)]));
-  lines.push(csvRow(['Billed amount', summary.billedAmount.toFixed(2)]));
+  return {
+    data: rows,
+    sheet: 'Bookings',
+    // Freeze the header so the labels stay put while an owner scrolls a
+    // month's worth of rows — the reason the labels are bold in the first place.
+    stickyRowsCount: 1,
+    columns: columns.map((c) => ({ width: c.width || 16 })),
+  };
+}
 
-  lines.push('');
-  lines.push(csvRow(['PAYMENTS BY MODE']));
-  lines.push(csvRow(['Mode', 'Advance', 'Balance', 'Total']));
-  for (const mode of PAYMENT_MODES) {
-    const t = summary.byPaymentMode[mode];
-    lines.push(csvRow([PAYMENT_MODE_LABEL[mode], t.advance.toFixed(2), t.balance.toFixed(2), t.total.toFixed(2)]));
-  }
-  lines.push(
-    csvRow([
-      'Total',
-      summary.advanceCollected.toFixed(2),
-      summary.balanceCollected.toFixed(2),
-      summary.totalCollected.toFixed(2),
-    ])
-  );
-
-  lines.push('');
-  lines.push(csvRow(['TAX — ISSUED BILLS ONLY']));
-  for (const [label, value] of taxPairs(summary.tax)) lines.push(csvRow([label, value]));
-
-  // A BOM, or Excel on Windows opens the file in the system codepage and
-  // mangles every non-ASCII guest name.
-  const blob = new Blob([BOM, `${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8;' });
-  triggerDownload(blob, reportFilename(report, 'csv'));
+export async function downloadBookingReportExcel(report) {
+  const { default: writeXlsxFile } = await import('write-excel-file/browser');
+  const workbook = await writeXlsxFile([summarySheet(report), bookingsSheet(report)], {
+    fontFamily: 'Calibri',
+    fontSize: 11,
+  });
+  triggerDownload(await workbook.toBlob(), reportFilename(report, 'xlsx'));
 }
 
 // ---------------------------------------------------------------------------
@@ -226,22 +323,40 @@ const ZEBRA = 247;
 // by. The internal booking id is deliberately absent — it is never shown
 // anywhere in the app, so it identifies nothing an owner could look up. A row
 // with no bill yet is identified by guest, room and dates instead.
+// Widths are absolute points and must total CONTENT_WIDTH exactly. "In at" and
+// "Out at" carry the actual arrival/departure clock time beside the dates the
+// stay was booked for, so a late arrival or an overstay is visible on the row
+// rather than only in the billing screen.
 const COLUMNS = [
-  { label: 'Bill no.', width: 78 },
-  { label: 'Guest', width: 122 },
-  { label: 'Phone', width: 64 },
-  { label: 'Room', width: 40 },
-  { label: 'Check-in', width: 54 },
-  { label: 'Check-out', width: 54 },
+  { label: 'Bill no.', width: 70 },
+  { label: 'Guest', width: 84 },
+  { label: 'Room', width: 34 },
+  { label: 'Check-in', width: 51 },
+  { label: 'In at', width: 53 },
+  { label: 'Check-out', width: 51 },
+  { label: 'Out at', width: 53 },
   { label: 'Nights', width: 34, align: 'right' },
-  { label: 'Guests', width: 38, align: 'right' },
-  { label: 'Status', width: 56 },
-  { label: 'Advance', width: 52, align: 'right' },
-  { label: 'Mode', width: 40 },
-  { label: 'CGST', width: 46, align: 'right' },
-  { label: 'SGST', width: 46, align: 'right' },
-  { label: 'Total', width: 58, align: 'right' },
+  { label: 'Guests', width: 36, align: 'right' },
+  { label: 'Status', width: 54 },
+  { label: 'Advance', width: 44, align: 'right' },
+  { label: 'Mode', width: 34 },
+  // Subtotal sits immediately before the tax pair so the row reads as the bill
+  // does: taxable value, then what was charged on it, then the total.
+  { label: 'Subtotal', width: 48, align: 'right' },
+  { label: 'CGST', width: 44, align: 'right' },
+  { label: 'SGST', width: 44, align: 'right' },
+  { label: 'Total', width: 48, align: 'right' },
 ];
+
+const TOTALS_BY_COLUMN = (summary, tax) => ({
+  'Bill no.': 'Total',
+  Nights: summary.roomNights,
+  Advance: formatAmount(summary.advanceCollected),
+  Subtotal: formatAmount(tax.taxableValue),
+  CGST: formatAmount(tax.cgstAmount),
+  SGST: formatAmount(tax.sgstAmount),
+  Total: formatAmount(summary.billedAmount),
+});
 
 // jsPDF's built-in fonts have no glyph fallback, so an over-long guest name
 // has to be clipped by measured width rather than character count.
@@ -392,7 +507,9 @@ export async function downloadBookingReportPdf(report) {
   pdf.setFont('helvetica', 'bold').setFontSize(11).setTextColor(INK);
   pdf.text('BOOKING REPORT', layout.right, y, { align: 'right' });
   pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(MUTED);
-  pdf.text(period, layout.right, y + 13, { align: 'right' });
+  pdf.text(`${period}   ·   ${billingSideOption(report.billingSide).label}`, layout.right, y + 13, {
+    align: 'right',
+  });
   pdf.text(`Generated ${formatDateTime(report.generatedAt || Date.now())}`, layout.right, y + 24, {
     align: 'right',
   });
@@ -458,15 +575,15 @@ export async function downloadBookingReportPdf(report) {
     ],
     rows: [
       ['Rooms', formatAmount(tax.roomSubtotal), formatAmount(tax.roomCgst), formatAmount(tax.roomSgst), ''],
-      ['Food', formatAmount(tax.foodSubtotal), formatAmount(tax.foodCgst), formatAmount(tax.foodSgst), ''],
+      ...(report.servesFood
+        ? [['Food', formatAmount(tax.foodSubtotal), formatAmount(tax.foodCgst), formatAmount(tax.foodSgst), '']]
+        : []),
     ],
-    totals: [
-      'Total',
-      formatAmount(round2(tax.roomSubtotal + tax.foodSubtotal)),
-      formatAmount(tax.cgstAmount),
-      formatAmount(tax.sgstAmount),
-      '',
-    ],
+    // With one supply the totals row would restate the rooms row verbatim, so
+    // it is only drawn when there is something to add up.
+    totals: report.servesFood
+      ? ['Total', formatAmount(tax.taxableValue), formatAmount(tax.cgstAmount), formatAmount(tax.sgstAmount), '']
+      : null,
     fontSize: 8,
     rowHeight: 14,
   });
@@ -496,37 +613,26 @@ export async function downloadBookingReportPdf(report) {
       rows: report.bookings.map((b) => [
         b.invoiceNumber || '—',
         b.guestName,
-        b.guestPhone,
         b.roomNumber,
         formatDate(b.checkInDate),
+        formatActualStamp(b.actualCheckInAt, b.checkInDate),
         formatDate(b.checkOutDate),
+        formatActualStamp(b.actualCheckOutAt, b.checkOutDate),
         b.nights,
         b.numGuests,
         BOOKING_STATUS_LABEL[b.status] || b.status,
         b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
-        b.advancePaymentMethod ? PAYMENT_MODE_LABEL[b.advancePaymentMethod] : '—',
+        b.advanceAmount && b.advancePaymentMethod ? PAYMENT_MODE_LABEL[b.advancePaymentMethod] : '—',
+        formatAmount(b.subtotal),
         formatAmount(b.cgstAmount),
         formatAmount(b.sgstAmount),
         formatAmount(b.billedAmount != null ? b.billedAmount : b.totalPrice),
       ]),
-      // Only the columns that legitimately sum are totalled. Nights and the
-      // money columns add up; a column of phone numbers does not.
-      totals: [
-        'Total',
-        '',
-        '',
-        '',
-        '',
-        '',
-        summary.roomNights,
-        '',
-        '',
-        formatAmount(summary.advanceCollected),
-        '',
-        formatAmount(tax.cgstAmount),
-        formatAmount(tax.sgstAmount),
-        formatAmount(summary.billedAmount),
-      ],
+      // Only the columns that legitimately sum are totalled — nights and the
+      // money columns add up, a column of phone numbers does not. Keyed by
+      // label and projected through COLUMNS so adding or reordering a column
+      // can never silently slide the totals under the wrong headings.
+      totals: COLUMNS.map((column) => TOTALS_BY_COLUMN(summary, tax)[column.label] ?? ''),
     });
   }
 

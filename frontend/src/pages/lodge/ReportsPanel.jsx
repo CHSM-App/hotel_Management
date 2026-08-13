@@ -3,9 +3,10 @@ import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import {
+  BILLING_SIDE_OPTIONS,
   BOOKING_STATUS_LABEL,
   PAYMENT_MODE_LABEL,
-  downloadBookingReportCsv,
+  downloadBookingReportExcel,
   downloadBookingReportPdf,
   reportPeriodLabel,
   wholeMonthLabel,
@@ -48,6 +49,18 @@ function formatDateOnly(dateStr) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+// Actual arrival/departure clock time. The row already carries the date the
+// stay was booked for, so only the time is shown; a stamp that fell on some
+// other date (a checkout past midnight) carries its date too, or it would read
+// as an impossibly early departure.
+function formatClockTime(value, plannedDateIso) {
+  const d = new Date(value);
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const onDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (onDate === plannedDateIso) return time;
+  return `${formatDateOnly(onDate)}, ${time}`;
+}
+
 // For real timestamps (an invoice's issued-at) — has its own timezone
 // offset already, so no UTC forcing needed.
 function formatTimestamp(value) {
@@ -65,6 +78,9 @@ export default function ReportsPanel() {
 
   const [bookings, setBookings] = useState(null);
   const [bookingsError, setBookingsError] = useState('');
+  // Drives the fetch, not just the download — an owner should see on screen
+  // exactly the rows the file will contain.
+  const [billingSide, setBillingSide] = useState('ALL');
   const [downloadBusy, setDownloadBusy] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [occupancy, setOccupancy] = useState(null);
@@ -89,21 +105,23 @@ export default function ReportsPanel() {
     setBookings(null);
     setBookingsError('');
     setDownloadError('');
-    apiGet(`/reports/bookings?fromDate=${fromDate}&toDate=${toDate}`, { token })
+    apiGet(`/reports/bookings?fromDate=${fromDate}&toDate=${toDate}&billingSide=${billingSide}`, {
+      token,
+    })
       .then((data) => setBookings(data))
       .catch((err) =>
         setBookingsError(err instanceof ApiError ? err.message : 'Could not load the booking report.')
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, billingSide]);
 
   const handleDownload = async (format) => {
     if (!bookings) return;
     setDownloadError('');
     setDownloadBusy(format);
     try {
-      if (format === 'csv') {
-        downloadBookingReportCsv(bookings);
+      if (format === 'excel') {
+        await downloadBookingReportExcel(bookings);
       } else {
         await downloadBookingReportPdf(bookings);
       }
@@ -238,18 +256,35 @@ export default function ReportsPanel() {
                     Download the {reportPeriodLabel(fromDate, toDate)} booking report
                   </p>
                   <p className="reports-panel__hint">
-                    CSV opens in Excel for filtering and totals. PDF is print-ready for filing or
-                    sharing.
+                    Excel has a Summary sheet and a Bookings sheet, with real numbers you can total.
+                    PDF is print-ready for filing or sharing.
                   </p>
+                  <div
+                    className="reports-panel__side-picker"
+                    role="group"
+                    aria-label="Bills to include"
+                  >
+                    {BILLING_SIDE_OPTIONS.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className="reports-panel__side-option"
+                        aria-pressed={billingSide === option.key}
+                        onClick={() => setBillingSide(option.key)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="reports-panel__download-actions">
                   <button
                     type="button"
                     className="btn-secondary"
                     disabled={Boolean(downloadBusy)}
-                    onClick={() => handleDownload('csv')}
+                    onClick={() => handleDownload('excel')}
                   >
-                    {downloadBusy === 'csv' ? 'Preparing…' : 'Download CSV'}
+                    {downloadBusy === 'excel' ? 'Preparing…' : 'Download Excel'}
                   </button>
                   <button
                     type="button"
@@ -265,7 +300,11 @@ export default function ReportsPanel() {
 
               {bookings.bookings.length === 0 ? (
                 <div className="dash-card">
-                  <div className="dash-state">No bookings checked in during this period.</div>
+                  <div className="dash-state">
+                    {billingSide === 'ALL'
+                      ? 'No bookings arrived in this period.'
+                      : `No ${billingSide === 'GST' ? 'GST' : 'non-GST'} bills were issued in this period.`}
+                  </div>
                 </div>
               ) : (
                 <div className="dash-card">
@@ -281,6 +320,7 @@ export default function ReportsPanel() {
                           <th>Nights</th>
                           <th>Status</th>
                           <th>Advance</th>
+                          <th>Subtotal</th>
                           <th>CGST</th>
                           <th>SGST</th>
                           <th>Amount</th>
@@ -300,8 +340,24 @@ export default function ReportsPanel() {
                               <br />
                               <span className="reports-panel__muted">{b.categoryName}</span>
                             </td>
-                            <td>{formatDateOnly(b.checkInDate)}</td>
-                            <td>{formatDateOnly(b.checkOutDate)}</td>
+                            <td>
+                              {formatDateOnly(b.checkInDate)}
+                              <br />
+                              <span className="reports-panel__muted">
+                                {b.actualCheckInAt
+                                  ? `In ${formatClockTime(b.actualCheckInAt, b.checkInDate)}`
+                                  : 'Not arrived'}
+                              </span>
+                            </td>
+                            <td>
+                              {formatDateOnly(b.checkOutDate)}
+                              <br />
+                              <span className="reports-panel__muted">
+                                {b.actualCheckOutAt
+                                  ? `Out ${formatClockTime(b.actualCheckOutAt, b.checkOutDate)}`
+                                  : 'Not checked out'}
+                              </span>
+                            </td>
                             <td>{b.nights}</td>
                             <td>
                               <span
@@ -312,7 +368,7 @@ export default function ReportsPanel() {
                             </td>
                             <td>
                               {b.advanceAmount ? formatPrice(b.advanceAmount) : '—'}
-                              {b.advancePaymentMethod && (
+                              {Boolean(b.advanceAmount) && b.advancePaymentMethod && (
                                 <>
                                   <br />
                                   <span className="reports-panel__muted">
@@ -321,6 +377,7 @@ export default function ReportsPanel() {
                                 </>
                               )}
                             </td>
+                            <td>{b.subtotal != null ? formatPrice(b.subtotal) : '—'}</td>
                             <td>{b.cgstAmount != null ? formatPrice(b.cgstAmount) : '—'}</td>
                             <td>{b.sgstAmount != null ? formatPrice(b.sgstAmount) : '—'}</td>
                             <td>{formatPrice(b.billedAmount != null ? b.billedAmount : b.totalPrice)}</td>

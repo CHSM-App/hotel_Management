@@ -14,16 +14,562 @@
   margin: 12px 0 0;
 }
 
-.guest-register__view-btn {
+/* A range that can't be searched is a mistake to be fixed, not a note — it
+   gets the colour that says so. */
+.guest-register__hint--warn {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+/* ---- Toolbar ------------------------------------------------------------ */
+
+/* Two bands: the range and the search on top, the shortcuts and the status cut
+   below, divided by a hairline so the second band reads as refinement of the
+   first rather than as four unrelated controls in one box. */
+.guest-register__toolbar {
+  padding: 16px 20px;
+}
+
+.guest-register__toolbar-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px 24px;
+}
+
+.guest-register__range {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.guest-register__range-field {
+  width: 160px;
+}
+
+/* Sits on the inputs' own line, not on the labels' — it joins two dates, so it
+   has to line up with them. */
+.guest-register__range-dash {
+  color: var(--text-muted);
+  padding-bottom: 12px;
+}
+
+.guest-register__search {
+  flex: 1;
+  min-width: 240px;
+}
+
+.guest-register__search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.guest-register__search-box input {
+  padding-left: 36px;
+  padding-right: 34px;
+}
+
+.guest-register__search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.guest-register__search-clear {
+  position: absolute;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.guest-register__search-clear:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.guest-register__toolbar-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* Segmented, because the four ranges are one choice — picking a second
+   replaces the first rather than adding to it. */
+.guest-register__presets {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.guest-register__preset {
+  background: var(--surface);
+  border: none;
+  border-right: 1px solid var(--border);
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.guest-register__preset:last-child {
+  border-right: none;
+}
+
+.guest-register__preset:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.guest-register__preset[aria-pressed='true'] {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.guest-register__status-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Each chip carries its own count, so the cut is chosen knowing what's behind
+   it — a desk shouldn't have to click "Cancelled" to find out it's empty. */
+.guest-register__status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.guest-register__status-chip:hover {
+  border-color: var(--brand);
+  color: var(--ink);
+}
+
+.guest-register__status-chip[aria-pressed='true'] {
+  border-color: var(--brand);
+  background: #eef4f2;
+  color: var(--brand-ink);
+}
+
+.guest-register__status-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.guest-register__status-chip[aria-pressed='true'] .guest-register__status-count {
+  background: var(--surface);
+  color: var(--brand-ink);
+}
+
+.guest-register__clear-filters {
+  background: none;
+  border: none;
+  padding: 6px 2px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--accent);
-  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.guest-register__clear-filters:hover {
+  color: var(--accent-ink);
+}
+
+/* ---- Summary strip ------------------------------------------------------ */
+
+/* Four tiles normally, five when anything is left to bill — auto-fit so the
+   extra one joins the row instead of forcing a second. */
+.guest-register__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.guest-register__stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+/* The money tile is the one number the range is usually opened for, so it
+   carries the brand edge and the rest stay plain. */
+.guest-register__stat--money {
+  background: #eef4f2;
+  border-color: var(--brand);
+}
+
+/* Money still to be raised reads as an outstanding job, not as takings — the
+   accent keeps it visibly apart from the billed tile beside it. */
+.guest-register__stat--pending {
+  background: #fbf1e0;
+  border-color: var(--accent);
+}
+
+.guest-register__stat--pending .guest-register__stat-value {
+  color: var(--accent-ink);
+}
+
+.guest-register__stat-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.guest-register__stat-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  line-height: 1.2;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-register__stat-note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ---- Register table ----------------------------------------------------- */
+
+.guest-register__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.guest-register__card-title {
+  font-family: var(--serif);
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.guest-register__card-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.guest-register__card-tools {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guest-register__card-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.guest-register__refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.guest-register__refresh:hover:not(:disabled) {
+  background: var(--paper);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+
+.guest-register__refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The head has to stay while a long range scrolls, so the scroll happens here
+   rather than down the whole page. */
+.guest-register__table-scroll {
+  max-height: 62vh;
+  overflow: auto;
+}
+
+.guest-register__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.guest-register__table td {
+  vertical-align: middle;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+/* The record opens from the button on the end of the row, so the row itself
+   isn't clickable — the hover tint only keeps the eye on one line while a long
+   range is read across. */
+.guest-register__table tbody tr:hover {
+  background: var(--paper);
+}
+
+/* Guests still in the building are the rows a desk acts on; a left edge marks
+   them without adding a colour the status badge already carries. */
+.guest-register__row--in-house td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--brand);
+}
+
+.guest-register__row-phone {
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border);
+}
+
+.guest-register__row-phone:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+/* Two lines per cell: what identifies the row, and what qualifies it. Keeps
+   eight columns readable without any of them wrapping mid-value. */
+.guest-register__cell-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.guest-register__cell-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.guest-register__bill-no {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* Money is compared down the column, never across the row. */
+.guest-register__col-amount {
+  text-align: right;
+}
+
+.guest-register__amount {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Empty, loading and error states ------------------------------------ */
+
+.guest-register__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.guest-register__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.guest-register__empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.guest-register__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* Sized to the rows it stands in for, so the register doesn't jump when the
+   real ones arrive. */
+.guest-register__skeleton {
+  padding: 8px 20px;
+}
+
+.guest-register__skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.guest-register__skeleton-row:last-child {
+  border-bottom: none;
+}
+
+.guest-register__skeleton-bar {
+  height: 10px;
+  flex: 1;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--paper), #eceff2, var(--paper));
+  background-size: 200% 100%;
+  animation: guest-register-shimmer 1.4s ease-in-out infinite;
+}
+
+.guest-register__skeleton-bar--wide {
+  flex: 2;
+}
+
+.guest-register__skeleton-bar--short {
+  flex: 0 0 70px;
+}
+
+@keyframes guest-register-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guest-register__skeleton-bar {
+    animation: none;
+  }
+}
+
+.guest-register__loading-note {
+  padding: 0 20px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.guest-register__id-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--brand-ink);
+  background: #eef4f2;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* An ID document opens in a new tab, so it reads as a real action with an
+   outline rather than as an underlined word inside the value it belongs to. */
+.guest-register__view-btn {
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  padding: 0;
-  margin-left: 8px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.guest-register__view-btn:hover {
+  background: var(--paper);
+  border-color: var(--accent);
+}
+
+/* Tapping it dials. Underlined rather than only coloured, so it reads as
+   something you can act on and not just as a recorded number. */
+.guest-register__phone {
+  color: var(--brand);
+  font-weight: 600;
   text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border);
+}
+
+.guest-register__phone:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
 }
 
 .guest-register__view-details-btn {
@@ -53,39 +599,598 @@
   z-index: 100;
 }
 
+/* The record is a page of its own: a fixed head that keeps the guest's name and
+   status on screen, a scrolling body, and a footer that never leaves. Padding
+   lives on those three parts rather than on the panel, so the scrollbar runs
+   the full height instead of floating inside a padded box. */
 .guest-register__modal {
   width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 28px;
+  max-width: 620px;
+  max-height: min(88vh, 780px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
 }
 
-.guest-register__detail-header {
+.guest-register__record-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  /* The brand hairline is the same one the overview card carries — it marks
+     this as a record of the property's, not a generic dialog. */
+  box-shadow: inset 0 3px 0 0 var(--brand);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.guest-register__record-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  color: #ffffff;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guest-register__record-identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.guest-register__record-identity h3 {
+  font-size: 18px;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.guest-register__record-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.guest-register__record-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.guest-register__record-close:hover {
+  background: var(--paper);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.guest-register__record-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 24px;
+}
+
+.guest-register__record-back {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.guest-register__record-back:hover {
+  background: var(--surface);
+  border-color: var(--brand);
+}
+
+/* A darker bed than the record behind it: an ID scan is usually a pale
+   document, and it needs an edge to sit against to read as a page. */
+.guest-register__doc-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #2b3138;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.guest-register__doc-body .dash-state {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.guest-register__doc-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 55vh;
+  border: none;
+  background: #ffffff;
+  border-radius: 6px;
+}
+
+.guest-register__doc-image {
+  margin: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.guest-register__doc-image img {
+  max-width: 100%;
+  max-height: calc(88vh - 190px);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Zoomed: the image drops out of "fit" and the panel scrolls over it, which is
+   how the small print on a licence or Aadhaar gets read. */
+.guest-register__doc-image--zoomed {
+  cursor: zoom-out;
+}
+
+.guest-register__doc-image--zoomed img {
+  max-width: none;
+  max-height: none;
+}
+
+.guest-register__record-foot--doc {
+  align-items: center;
+}
+
+.guest-register__doc-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* The footer's buttons are a <button> and an <a> side by side — the link needs
+   the same box the button gets by default. */
+.guest-register__record-foot a.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.guest-register__tabs {
+  display: flex;
+  gap: 22px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.guest-register__tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 11px 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.guest-register__tab:hover {
+  color: var(--ink);
+}
+
+.guest-register__tab[aria-selected='true'] {
+  color: var(--brand-ink);
+  border-bottom-color: var(--brand);
+}
+
+/* The tariff reads as a small statement: a line per night, then what those
+   nights came to. Amounts are tabular so the column can be added up by eye. */
+.guest-register__tariff {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px 14px;
+}
+
+.guest-register__tariff-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  font-size: 13.5px;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+}
+
+.guest-register__tariff-row:first-child {
+  border-top: none;
+}
+
+.guest-register__tariff-row span:last-child {
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.guest-register__tariff-row--total {
+  border-top: 2px solid var(--border);
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.guest-register__tariff-row--total span:last-child {
+  color: var(--brand-ink);
+}
+
+.guest-register__tariff-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* The same note used outside the box, where there's no row above it to be
+   separated from. */
+.guest-register__section > .guest-register__tariff-note {
+  border-top: none;
+  padding: 12px 0 0;
+}
+
+.guest-register__bill-link {
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.guest-register__bill-link:hover {
+  border-color: var(--brand);
+}
+
+.guest-register__bill-link-go {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.guest-register__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.guest-register__summary-tile {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.guest-register__summary-tile strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.guest-register__summary-tile--money strong {
+  font-size: 17px;
+  color: var(--brand-ink);
+}
+
+.guest-register__summary-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.guest-register__section + .guest-register__section {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.guest-register__section-title {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+/* A definition list, because that's what a register entry is — a field and the
+   value recorded against it. The label column is fixed so every value in the
+   record lines up down one edge and can be read as a column. */
+.guest-register__facts {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 0;
+  margin: 0;
+}
+
+.guest-register__facts dt {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 9px 12px 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.guest-register__facts dd {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  word-break: break-word;
+}
+
+.guest-register__facts dt:first-of-type,
+.guest-register__facts dt:first-of-type + dd {
+  border-top: none;
+  padding-top: 0;
+}
+
+.guest-register__id-cell {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
 }
 
-.guest-register__guest-detail-list {
+.guest-register__muted {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.guest-register__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.guest-register__chip {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 3px 10px;
+}
+
+/* Number plates are read character by character and copied onto forms, so
+   they get a fixed pitch and the spacing to go with it. */
+.guest-register__chip--plate {
+  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', monospace;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.guest-register__subhead {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 18px 0 8px;
+}
+
+.guest-register__guest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-.guest-register__guest-detail {
+.guest-register__guest {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.guest-register__guest-initial {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--brand-ink);
   font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.guest-register__actions {
+.guest-register__guest-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.guest-register__guest-body strong {
+  display: block;
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.guest-register__guest-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.guest-register__id-error {
+  margin-top: 12px;
+}
+
+.guest-register__record-foot {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--paper);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+/* The date pair and the search each want a full row before they get cramped —
+   below this the toolbar stops trying to be one line. */
+@media (max-width: 900px) {
+  .guest-register__search {
+    flex-basis: 100%;
+  }
+
+  .guest-register__stats {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 640px) {
+  .guest-register__toolbar {
+    padding: 16px;
+  }
+
+  .guest-register__range {
+    flex: 1;
+  }
+
+  .guest-register__range-field {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Both control groups run the full width and scroll sideways rather than
+     wrapping into ragged rows of pills. */
+  .guest-register__toolbar-bottom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .guest-register__presets {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .guest-register__presets::-webkit-scrollbar {
+    display: none;
+  }
+
+  .guest-register__preset {
+    flex: 1;
+    padding: 9px 10px;
+  }
+
+  .guest-register__status-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .guest-register__status-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .guest-register__status-chip {
+    padding: 7px 12px;
+  }
+
+  .guest-register__stat {
+    padding: 12px 14px;
+  }
+
+  .guest-register__stat-value {
+    font-size: 18px;
+  }
+
+  .guest-register__card-head {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+  }
+
+  .guest-register__card-tools {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .guest-register__skeleton {
+    padding: 8px 16px;
+  }
+
+  /* Full-width so the way out of an empty result is a thumb-sized target. */
+  .guest-register__empty-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .guest-register__empty-actions .btn-secondary {
+    width: 100%;
+  }
+
+  /* A phone has less height to give the register, and the page's own scroll
+     shouldn't fight the table's. */
+  .guest-register__table-scroll {
+    max-height: none;
+  }
+
+  .guest-register__table thead th {
+    position: static;
+  }
+
   .guest-register__backdrop {
     padding: 10px;
     align-items: flex-start;
@@ -94,14 +1199,113 @@
   .guest-register__modal {
     max-width: none;
     max-height: calc(100svh - 20px);
-    padding: 20px 16px;
   }
 
-  .guest-register__actions button {
+  .guest-register__record-head {
+    padding: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  /* The status badge drops to its own line rather than squeezing the name —
+     the name is what identifies the record. */
+  .guest-register__record-identity {
+    flex-basis: calc(100% - 100px);
+  }
+
+  .guest-register__record-body {
+    padding: 18px 16px;
+  }
+
+  .guest-register__tabs {
+    padding: 0 16px;
+    gap: 18px;
+  }
+
+  /* Thumb-sized on a phone. These are the two controls the record is driven
+     from, and the desk is often working one-handed at the counter. */
+  .guest-register__tab {
+    padding: 14px 2px;
+    font-size: 14px;
+  }
+
+  .guest-register__view-btn {
+    min-height: 40px;
+    padding: 6px 16px;
+    font-size: 13px;
+  }
+
+  .guest-register__view-details-btn {
+    min-height: 40px;
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  .guest-register__bill-link {
+    padding: 14px;
+  }
+
+  /* Two tiles of dates side by side, money across the bottom — three columns
+     of timestamps wrap to three lines each on a phone. */
+  .guest-register__summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .guest-register__summary-tile--money {
+    grid-column: 1 / -1;
+  }
+
+  /* Label above value: a 140px column leaves nothing for the value at this
+     width. */
+  .guest-register__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .guest-register__facts dt {
+    padding: 10px 0 0;
+  }
+
+  .guest-register__facts dd {
+    padding: 2px 0 10px;
+    border-top: none;
+  }
+
+  .guest-register__facts dt:first-of-type + dd {
+    padding-top: 2px;
+  }
+
+  .guest-register__id-cell {
+    flex-wrap: wrap;
+  }
+
+  .guest-register__record-foot {
+    padding: 12px 16px;
+  }
+
+  .guest-register__record-foot button {
     width: 100%;
   }
 
-  .guest-register__detail-header {
-    align-items: flex-start;
+  .guest-register__doc-body {
+    padding: 10px;
+  }
+
+  .guest-register__doc-image img {
+    max-height: calc(100svh - 210px);
+  }
+
+  /* The zoom hint is a desktop affordance — a phone pinches instead, and the
+     two buttons need the whole row. */
+  .guest-register__doc-hint {
+    display: none;
+  }
+
+  .guest-register__record-foot--doc {
+    flex-wrap: wrap;
+  }
+
+  .guest-register__record-foot--doc a.btn-secondary {
+    width: 100%;
+    justify-content: center;
   }
 }

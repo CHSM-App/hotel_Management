@@ -8,7 +8,7 @@ async function listSwitchableCharges(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, charge_per_night, is_active, created_at
+      SELECT id, name, charge_per_night, is_active, is_counter, created_at
       FROM dbo.switchable_charges
       WHERE lodge_id = @lodgeId
       ORDER BY name ASC
@@ -19,6 +19,9 @@ async function listSwitchableCharges(lodgeId) {
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
     isActive: !!row.is_active,
+    // Read-only: it decides whether booking screens put a count box beside the
+    // extra, and nothing on the rates screen offers to change it.
+    isCounter: !!row.is_counter,
     createdAt: row.created_at,
   }));
 }

@@ -102,7 +102,7 @@ export const FEATURES = [
   },
   {
     key: 'guests',
-    title: 'Guests & ID register',
+    title: 'Guest register',
     description: 'Occupants, ID records and vehicle numbers.',
     permission: 'guests.view',
     capability: 'hasRooms',

@@ -206,6 +206,23 @@
   accent-color: var(--brand);
 }
 
+/* The count that appears beside a ticked extra (3 extra beds). Needs to
+   outrank `.checkbox-chip input` above, which sizes the checkbox itself down
+   to 16px square — hence matching the element and the class together. */
+.checkbox-chip input.checkbox-chip__qty {
+  width: 56px;
+  height: auto;
+  min-height: 0;
+  margin-left: auto;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .checkbox-chip:has(input:checked) {
   border-color: var(--brand);
   background: #eef4f2;

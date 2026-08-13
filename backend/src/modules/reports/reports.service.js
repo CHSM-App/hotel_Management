@@ -156,23 +156,32 @@ const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD'];
 // which a stay is counted once and the twelve monthly reports for a year add
 // up to the year's total; the guest register's overlap rule answers a
 // different question ("who was here on this date").
-async function getBookingsReport(lodgeId, fromDate, toDate) {
+async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL') {
   const pool = await getPool();
 
   const lodgeResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT name, gstin, is_gst_registered FROM dbo.lodges WHERE id = @lodgeId');
+    .query('SELECT name, gstin, is_gst_registered, serves_food FROM dbo.lodges WHERE id = @lodgeId');
+
+  // Filtering on the bill's side necessarily drops stays that carry no bill at
+  // all — i.billing_side is NULL for them, so they match neither GST nor
+  // NON_GST. That is the intent: asked for "GST bills", an owner means the
+  // bills, not the bookings that have yet to produce one.
+  const billingFilter =
+    billingSide === 'ALL' ? '' : 'AND i.billing_side = @billingSide';
 
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
+    .input('billingSide', sql.NVarChar, billingSide)
     .query(`
       SELECT b.id, b.guest_name, b.guest_phone, b.num_guests, b.status,
              b.check_in_date, b.check_out_date,
              DATEDIFF(day, b.check_in_date, b.check_out_date) AS nights,
+             b.actual_check_in_at, b.actual_check_out_at,
              b.total_price, b.advance_amount, b.advance_payment_method, b.created_at,
              r.room_number, c.name AS category_name,
              i.invoice_number, i.document_type, i.billing_side,
@@ -193,6 +202,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate) {
       ) i
       WHERE b.lodge_id = @lodgeId
         AND b.check_in_date BETWEEN @fromDate AND @toDate
+        ${billingFilter}
       ORDER BY b.check_in_date ASC, r.room_number ASC
     `);
 
@@ -207,6 +217,11 @@ async function getBookingsReport(lodgeId, fromDate, toDate) {
     checkOutDate: toIsoDate(row.check_out_date),
     nights: row.nights,
     status: row.status,
+    // When the guest actually arrived and left, as against the dates the stay
+    // was booked for. Null until it happens — a BOOKED reservation has neither,
+    // and a late checkout can land these on a different date to the booked one.
+    actualCheckInAt: row.actual_check_in_at || null,
+    actualCheckOutAt: row.actual_check_out_at || null,
     totalPrice: Number(row.total_price),
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : 0,
     advancePaymentMethod: row.advance_payment_method || null,
@@ -215,6 +230,12 @@ async function getBookingsReport(lodgeId, fromDate, toDate) {
     billingSide: row.billing_side || null,
     roomSubtotal: row.room_subtotal != null ? Number(row.room_subtotal) : null,
     foodSubtotal: row.food_subtotal != null ? Number(row.food_subtotal) : null,
+    // What the bill was taxed on, before CGST/SGST were added — rooms and food
+    // together, since both are taxable supplies on the same document.
+    subtotal:
+      row.invoice_number != null
+        ? round2(Number(row.room_subtotal || 0) + Number(row.food_subtotal || 0))
+        : null,
     // Room and food are taxed on separate SACs at separate rates. The report
     // shows what the guest was actually charged — the two added together — but
     // keeps the halves so the tax summary can break them out for filing.
@@ -304,12 +325,19 @@ async function getBookingsReport(lodgeId, fromDate, toDate) {
   }
 
   summary.totalCollected = round2(summary.advanceCollected + summary.balanceCollected);
+  // The taxable value the period's CGST/SGST was charged on — derived here so
+  // the register's subtotal column and the tax table's total cannot drift.
+  tax.taxableValue = round2(tax.roomSubtotal + tax.foodSubtotal);
 
   return {
     fromDate,
     toDate,
+    billingSide,
     generatedAt: new Date().toISOString(),
     lodgeName: lodgeResult.recordset[0]?.name || '',
+    // A rooms-only lodge has no food supply, so the report drops the food
+    // columns entirely rather than printing a column of zeroes.
+    servesFood: Boolean(lodgeResult.recordset[0]?.serves_food),
     gstin: lodgeResult.recordset[0]?.is_gst_registered ? lodgeResult.recordset[0]?.gstin || null : null,
     summary: { ...summary, byStatus, byPaymentMode, tax },
     bookings,

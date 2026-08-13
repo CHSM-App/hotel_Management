@@ -223,6 +223,20 @@ CREATE TABLE dbo.switchable_charges (
     CONSTRAINT uq_switchable_charges_lodge_name UNIQUE (lodge_id, name)
 );
 
+-- is_counter — whether this extra is taken in counts or is simply on or off.
+-- An extra bed is counted (a party of five takes three of them); AC is not,
+-- it is on or it isn't. It exists so the booking form knows which extras to
+-- put a count box beside, and is not something an owner configures — no
+-- screen shows or sets it.
+IF OBJECT_ID('dbo.switchable_charges', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.switchable_charges', 'is_counter') IS NULL
+    EXEC('ALTER TABLE dbo.switchable_charges ADD is_counter BIT NOT NULL
+          CONSTRAINT df_switchable_charges_is_counter DEFAULT 0');
+
+-- The Extra bed rows themselves are seeded further down, after the migration
+-- that adds lodges.has_rooms — the seed reads that column, and this file runs
+-- top to bottom as one batch.
+
 -- Which rooms are capable of which switchable charge (e.g. only rooms with
 -- an AC unit can ever have the AC charge switched on).
 IF OBJECT_ID('dbo.room_switchable_charges', 'U') IS NULL
@@ -293,6 +307,20 @@ CREATE TABLE dbo.booking_switchable_charges (
     CONSTRAINT pk_booking_switchable_charges PRIMARY KEY (booking_id, charge_id)
 );
 
+-- quantity — switchable_charges.charge_per_night is the price of ONE of the
+-- thing (one extra bed), and this is how many of it the guest took. Three
+-- extra beds at ₹100 is ₹300 a night, one row, quantity 3 — not three rows,
+-- which the primary key forbids anyway. DEFAULT 1 makes every extra already
+-- on a booking mean exactly what it meant before this column existed.
+IF OBJECT_ID('dbo.booking_switchable_charges', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.booking_switchable_charges', 'quantity') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.booking_switchable_charges ADD quantity INT NOT NULL
+          CONSTRAINT df_booking_switchable_charges_quantity DEFAULT 1');
+    EXEC('ALTER TABLE dbo.booking_switchable_charges ADD CONSTRAINT ck_booking_switchable_charges_quantity
+          CHECK (quantity >= 1)');
+END
+
 -- vehicle_number moved off dbo.bookings — a booking can now have zero or
 -- more vehicles, so it lives in its own table. No DEFAULT/CHECK on
 -- vehicle_number, so a plain DROP COLUMN is safe, same as fixed_price above.
@@ -303,11 +331,26 @@ IF OBJECT_ID('dbo.booking_vehicles', 'U') IS NULL
 CREATE TABLE dbo.booking_vehicles (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     booking_id      BIGINT NOT NULL REFERENCES dbo.bookings(id),
-    vehicle_number  NVARCHAR(20) NOT NULL
+    vehicle_number  NVARCHAR(20) NOT NULL,
+    vehicle_type    NVARCHAR(20) NULL
+        CONSTRAINT ck_booking_vehicles_type
+        CHECK (vehicle_type IS NULL OR vehicle_type IN ('TWO_WHEELER', 'FOUR_WHEELER', 'TRAVELLER', 'BUS'))
 );
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_vehicles_booking' AND object_id = OBJECT_ID('dbo.booking_vehicles'))
 CREATE INDEX ix_booking_vehicles_booking ON dbo.booking_vehicles(booking_id);
+
+-- vehicle_type — reception now picks what pulled up, because "how many cars
+-- do we need to park tonight" is a different question from "who is staying".
+-- NULL, not a default: plates recorded before this column existed have no
+-- honest answer, and guessing one would put a number in the parking count
+-- that nobody ever typed.
+IF OBJECT_ID('dbo.booking_vehicles', 'U') IS NOT NULL AND COL_LENGTH('dbo.booking_vehicles', 'vehicle_type') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.booking_vehicles ADD vehicle_type NVARCHAR(20) NULL');
+    EXEC('ALTER TABLE dbo.booking_vehicles ADD CONSTRAINT ck_booking_vehicles_type
+          CHECK (vehicle_type IS NULL OR vehicle_type IN (''TWO_WHEELER'', ''FOUR_WHEELER'', ''TRAVELLER'', ''BUS''))');
+END
 
 -- The primary guest (name/phone/ID proof) stays on dbo.bookings — this
 -- table holds every *additional* occupant, each with their own optional
@@ -320,11 +363,21 @@ CREATE TABLE dbo.booking_guests (
     guest_phone        NVARCHAR(20) NULL,
     id_proof_type      NVARCHAR(30) NULL,
     id_proof_document  NVARCHAR(255) NULL,
+    is_child           BIT NOT NULL DEFAULT 0,
     created_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
 );
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_guests_booking' AND object_id = OBJECT_ID('dbo.booking_guests'))
 CREATE INDEX ix_booking_guests_booking ON dbo.booking_guests(booking_id);
+
+-- is_child — booking now asks for adults and children separately, so a room
+-- of six can be read as "4 adults and 2 children" instead of a bare count.
+-- The primary guest on dbo.bookings is always an adult, and adults are
+-- derived as num_guests minus the children on file rather than counted from
+-- this table, so bookings made before this column existed (and guests added
+-- at check-in) still add up.
+IF OBJECT_ID('dbo.booking_guests', 'U') IS NOT NULL AND COL_LENGTH('dbo.booking_guests', 'is_child') IS NULL
+    ALTER TABLE dbo.booking_guests ADD is_child BIT NOT NULL CONSTRAINT df_booking_guests_is_child DEFAULT 0;
 
 -- Snapshot of the per-night price breakdown computed at booking time
 -- (same [{date, total}] shape as pricing.service.js's priceStay()). Billing
@@ -338,6 +391,14 @@ BEGIN
     EXEC('ALTER TABLE dbo.bookings ADD nightly_breakdown NVARCHAR(MAX) NULL');
     EXEC('ALTER TABLE dbo.bookings ADD CONSTRAINT ck_bookings_nightly_breakdown_json CHECK (nightly_breakdown IS NULL OR ISJSON(nightly_breakdown) = 1)');
 END
+
+-- base_price_override — the rate reception actually agreed for this stay,
+-- standing in for the room category's base_price when the booking is priced.
+-- Seasons and switchable charges still apply on top of it, exactly as they do
+-- to the category price, so an override moves the floor and nothing else.
+-- NULL (the normal case) means "charge the category's price".
+IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'base_price_override') IS NULL
+    ALTER TABLE dbo.bookings ADD base_price_override DECIMAL(10,2) NULL;
 
 -- id_proof_document — the guest's ID proof is now uploaded (image or PDF)
 -- and stored on disk under uploads/id-proofs, referenced here by filename;
@@ -505,6 +566,27 @@ IF COL_LENGTH('dbo.lodges', 'food_room_service') IS NULL
 
 IF COL_LENGTH('dbo.lodges', 'food_table_service') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD food_table_service BIT NOT NULL CONSTRAINT df_lodges_food_table_service DEFAULT 0');
+
+-- Every lodge that lets rooms gets an Extra bed extra, because every one of
+-- them has an extra bed to sell. The rate is seeded at 0 for the owner to set
+-- on Rooms & rates: a made-up price here would be billed to real guests at a
+-- number nobody chose. A lodge that already has a row by that name keeps its
+-- own rate and simply gains the counter. Sits here rather than beside the
+-- table because it reads has_rooms, added just above.
+--
+-- EXEC, not bare SQL: the batch is compiled in one pass, so a statement naming
+-- is_counter directly would fail against a table that doesn't have it yet.
+EXEC('UPDATE dbo.switchable_charges SET is_counter = 1
+      WHERE name = ''Extra bed'' AND is_counter = 0');
+
+EXEC('INSERT INTO dbo.switchable_charges (lodge_id, name, charge_per_night, is_counter)
+      SELECT l.id, ''Extra bed'', 0, 1
+      FROM dbo.lodges l
+      WHERE l.has_rooms = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM dbo.switchable_charges sc
+          WHERE sc.lodge_id = l.id AND sc.name = ''Extra bed''
+        )');
 
 -- The PIN a guest types to order from their room's QR. Issued at check-in and
 -- cleared at check-out, so a QR stuck to the wall is only live while somebody

@@ -45,6 +45,106 @@
   line-height: 1.5;
 }
 
+/* Bill type tags. The bill list is a wall of near-identical numbers; colour is
+   what separates a room tax invoice from a table cash receipt at a glance.
+   Defined here rather than reusing .badge — that class lives in the internal
+   dashboard's stylesheet, which a lodge user never loads. */
+.bill-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* What was sold */
+.bill-tag--room {
+  background: #e8eef6;
+  color: var(--brand-ink);
+}
+
+.bill-tag--room-food {
+  background: #ece7f5;
+  color: #4b3a6b;
+}
+
+.bill-tag--table {
+  background: #fbf1e0;
+  color: var(--accent-ink);
+}
+
+/* Which document it is */
+.bill-tag--tax {
+  background: #e4f2e9;
+  color: #14663f;
+}
+
+.bill-tag--supply {
+  background: #f1efe9;
+  color: var(--text-muted);
+}
+
+.bill-tag--cash {
+  background: #fdf3d8;
+  color: #7a5b12;
+}
+
+.bill-tag--void {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* The filter chips carry the same colour as the rows they pick out, shrunk to
+   a dot so the chip itself stays readable when selected. */
+.bill-tag__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.bill-tag__dot--tax-invoice { background: #1f7a4d; }
+.bill-tag__dot--cash-receipt { background: #c79512; }
+
+.billing-panel__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.billing-panel__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.billing-panel__filter:hover {
+  color: var(--ink);
+}
+
+.billing-panel__filter[aria-pressed='true'] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.billing-panel__filter-count {
+  font-weight: 700;
+  opacity: 0.7;
+}
+
 .billing-panel__queue-row,
 .billing-panel__invoice-row {
   gap: 12px;
@@ -55,13 +155,48 @@
   background: none;
   border: none;
   border-bottom: 1px solid var(--border);
+  /* A stripe down the left edge groups the list by what was billed without
+     making the reader match tag colours row by row. */
+  border-left: 3px solid transparent;
+  padding-left: 10px;
   cursor: pointer;
   text-align: left;
   font: inherit;
 }
 
+.billing-panel__invoice-row--room {
+  border-left-color: var(--brand);
+}
+
+.billing-panel__invoice-row--room-food {
+  border-left-color: #6b5599;
+}
+
+.billing-panel__invoice-row--table {
+  border-left-color: var(--accent);
+}
+
+/* A voided bill stays in the list for the audit trail, but reads as struck
+   through rather than as one of the live ones. */
+.billing-panel__invoice-row--void {
+  opacity: 0.6;
+}
+
 .billing-panel__invoice-row:last-child {
   border-bottom: none;
+}
+
+.billing-panel__invoice-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.billing-panel__detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .billing-panel__queue-actions {
@@ -74,6 +209,14 @@
   font-size: 12px;
   color: var(--text-muted);
   margin: 4px 0 0;
+}
+
+/* A late checkout charge the desk has decided not to bill. Struck through
+   rather than removed, because the row is what the decision is being made
+   about — the number has to stay readable to be argued with. */
+.billing-panel__late--dropped {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 .billing-panel__backdrop {
@@ -171,6 +314,18 @@
   .billing-panel__queue-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  /* Three things share that line on an invoice row — document type, void, and
+     the amount. space-between would scatter them evenly; keep the tags
+     together and let the amount hold the right edge. */
+  .billing-panel__invoice-row .billing-panel__queue-actions {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .billing-panel__invoice-row .chart-row__value {
+    margin-left: auto;
   }
 
   .billing-panel__detail-header {

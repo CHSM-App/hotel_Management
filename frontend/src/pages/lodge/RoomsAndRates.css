@@ -42,41 +42,5 @@
   }
 }
 
-/* ------------------------------------------------------ checkout policy */
-
-.checkout-policy__note {
-  margin: 0 0 14px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  max-width: 62ch;
-}
-
-/* The four number fields read back as one sentence. Owners fill in minutes and
-   percentages easily enough and then cannot picture what they have built —
-   this is the same rule reception will see quoted in the checkout dialog. */
-.checkout-policy__summary {
-  margin: 4px 0 0;
-  padding: 11px 13px;
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--ink);
-  max-width: 62ch;
-}
-
-.checkout-policy__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
-}
-
-.checkout-policy__saved {
-  margin-right: auto;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-success);
-}
+/* Checkout policy styles live in CheckoutPolicyPanel.css — this file is also
+   imported by FoodSetup and StaffAndRoles, which only want the subtabs. */

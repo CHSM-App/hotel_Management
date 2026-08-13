@@ -68,6 +68,21 @@ async function createLodgeWithOwner(input) {
           (@lodgeId, @name, @email, @phone, @passwordHash, 'OWNER', 1)
       `);
 
+    // Every property that lets rooms has an extra bed to sell, so it starts
+    // with one rather than waiting for the owner to think of it. Priced at 0
+    // deliberately — the owner sets the rate on Rooms & rates, and a number
+    // invented here would be charged to real guests. is_counter is what puts
+    // the "how many" box beside it at booking time; see schema.sql, which
+    // backfills the same row into lodges that predate this.
+    if (input.hasRooms) {
+      await new sql.Request(transaction)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .query(`
+          INSERT INTO dbo.switchable_charges (lodge_id, name, charge_per_night, is_counter)
+          VALUES (@lodgeId, 'Extra bed', 0, 1)
+        `);
+    }
+
     await transaction.commit();
     return { lodgeId, slug: input.slug };
   } catch (err) {

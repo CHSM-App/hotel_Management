@@ -131,8 +131,16 @@ function computeGstBreakdown(amounts, slabs) {
 // the charge itself would land in on its own. GST bands accommodation on the
 // nightly tariff, and ₹800 of late checkout on a ₹4,000 room is still a ₹4,000
 // room being occupied; billing it at the ₹800 band would understate the tax.
-function lateChargeSide(booking, amounts, slabs, isGstSide) {
-  const amount = round2(Number(booking.late_checkout_charge) || 0);
+//
+// `include` is the billing desk's call. Reception records what was agreed at
+// the door, but the bill is written later and by someone else — a manager who
+// decides the overstay isn't worth charging drops the line here rather than
+// having to send the guest back to the desk. Excluding it zeroes the line for
+// this document only; the booking keeps what reception agreed, and the minutes
+// behind it, so a waiver at billing stays distinguishable from a guest who
+// left on time.
+function lateChargeSide(booking, amounts, slabs, isGstSide, include = true) {
+  const amount = include ? round2(Number(booking.late_checkout_charge) || 0) : 0;
   if (amount <= 0) {
     return { amount: 0, cgstAmount: 0, sgstAmount: 0, taxable: false, ratePercent: 0 };
   }
@@ -260,7 +268,7 @@ async function listBillableBookings(lodgeId) {
   }));
 }
 
-async function previewBill(lodgeId, bookingId) {
+async function previewBill(lodgeId, bookingId, { includeLateCheckout = true } = {}) {
   const pool = await getPool();
   const booking = await loadBookingForBilling(lodgeId, bookingId);
 
@@ -276,7 +284,10 @@ async function previewBill(lodgeId, bookingId) {
 
   // Whatever reception agreed at the desk, shown as its own line but carried
   // inside the accommodation subtotal so the SAC and the tax stay correct.
-  const late = lateChargeSide(booking, amounts, slabs, true);
+  // Recomputed rather than adjusted client-side when the desk drops it: taking
+  // the charge off can move the stay into a lower GST band and change the
+  // round-off, so the whole document has to be re-derived, not patched.
+  const late = lateChargeSide(booking, amounts, slabs, true, includeLateCheckout);
   const subtotal = round2(nightsSubtotal + late.amount);
 
   // Anything the guest ate and was served during the stay, not yet billed.
@@ -314,6 +325,11 @@ async function previewBill(lodgeId, bookingId) {
     // nights cost and what the overstay cost as two separate lines.
     nightsSubtotal,
     lateCheckoutCharge: late.amount,
+    // What reception agreed at checkout, regardless of whether this preview is
+    // carrying it. The desk needs the number visible to decide against it —
+    // dropping the charge must not also hide what is being dropped.
+    lateCheckoutAgreed: round2(Number(booking.late_checkout_charge) || 0),
+    includeLateCheckout,
     lateCheckoutMinutes: booking.late_checkout_minutes ?? null,
     advancePaid: booking.advance_amount != null ? Number(booking.advance_amount) : 0,
     isGstRegistered: !!booking.is_gst_registered,
@@ -414,7 +430,15 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
   // Read off the booking, which is where reception's decision was recorded at
   // checkout — never recomputed from the policy here, or a lodge that edited
   // its late-fee percentages would silently restate bills issued last month.
-  const late = lateChargeSide(booking, amounts, slabs, billingSide === 'GST');
+  // Whether it lands on this document at all is the billing desk's call, taken
+  // in the preview and posted back with the rest of the bill.
+  const late = lateChargeSide(
+    booking,
+    amounts,
+    slabs,
+    billingSide === 'GST',
+    input.includeLateCheckout !== false
+  );
   const subtotal = round2(nightsSubtotal + late.amount);
 
   const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
+import { copyText } from '../../lib/clipboard';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import Bookings from './Bookings';
@@ -195,7 +196,7 @@ export default function OwnerDashboard() {
   const [me, setMe] = useState(null);
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('overview');
-  const [linkCopied, setLinkCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState('');
 
   useEffect(() => {
     let ignore = false;
@@ -224,11 +225,12 @@ export default function OwnerDashboard() {
   // link is the menu instead — that's the only thing a guest can do with it.
   const publicPath = me?.lodge.hasRooms ? `/lodge/${me?.lodge.slug}` : `/order/${me?.lodge.slug}`;
 
-  const handleCopyPublicLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}${publicPath}`).then(() => {
-      setLinkCopied(true);
-      setTimeout(() => setLinkCopied(false), 2000);
-    });
+  const handleCopyPublicLink = async () => {
+    const copied = await copyText(`${window.location.origin}${publicPath}`);
+    // A button that shows "Copied!" when nothing reached the clipboard is worse
+    // than one that admits it — the owner would paste stale text into WhatsApp.
+    setLinkCopied(copied ? 'copied' : 'failed');
+    setTimeout(() => setLinkCopied(''), 2000);
   };
 
   // Driven by what /me says this login can actually reach, not by its role
@@ -348,7 +350,9 @@ export default function OwnerDashboard() {
                                 className="overview-hero__copy-link"
                                 onClick={handleCopyPublicLink}
                               >
-                                {linkCopied ? 'Copied!' : 'Copy'}
+                                {linkCopied === 'copied' && 'Copied!'}
+                                {linkCopied === 'failed' && 'Press Ctrl+C'}
+                                {!linkCopied && 'Copy'}
                               </button>
                             </span>
                           </div>
