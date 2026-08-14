@@ -1,0 +1,83 @@
+/* A small question over whatever the user was doing. Narrow on purpose — it
+   asks one thing, and a wide panel invites a wall of explanation nobody reads
+   before clicking. */
+
+.confirm-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* Above every other modal: this can be raised from inside one, and a
+     confirmation hiding behind the thing it is confirming is useless. */
+  z-index: 200;
+}
+
+.confirm-dialog {
+  width: 100%;
+  max-width: 400px;
+  padding: 24px 26px;
+}
+
+.confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.confirm-dialog__message {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The safe answer keeps the filled button; the destructive one is pushed to
+   the far end and left unfilled, so leaving is something you reach for rather
+   than something your thumb lands on. */
+.confirm-dialog__danger {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-tile);
+  padding: 11px 18px;
+  min-height: 42px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--danger);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.confirm-dialog__danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+.confirm-dialog__danger:disabled,
+.confirm-dialog .btn-secondary:disabled,
+.confirm-dialog .btn-accent:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .confirm-dialog__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .confirm-dialog__danger {
+    margin-left: 0;
+  }
+}

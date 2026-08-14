@@ -74,4 +74,7 @@ async function updateCheckoutPolicy(lodgeId, input) {
   return mapPolicy(row);
 }
 
-module.exports = { getCheckoutPolicy, updateCheckoutPolicy };
+// Exported because the printed bill states the checkout deadline in its terms,
+// and a bill that prints a different time from the one the policy screen shows
+// is worse than a bill that prints none.
+module.exports = { getCheckoutPolicy, updateCheckoutPolicy, toClockTime };

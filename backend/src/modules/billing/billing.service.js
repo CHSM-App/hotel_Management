@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { toClockTime } = require('../rooms/checkoutPolicy.service');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
@@ -269,7 +270,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT b.*, r.room_number, c.name AS category_name,
-             l.is_gst_registered, l.gstin, l.is_specified_premises,
+             l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.city AS lodge_city, l.state AS lodge_state
       FROM dbo.bookings b
@@ -346,6 +347,11 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, isGstSide, food 
     // schedule contains.
     cgstRatePercent: ratePercentFromAmount(cgstAmount, roomNet),
     sgstRatePercent: ratePercentFromAmount(sgstAmount, roomNet),
+    // The taxable value per SAC — gross less that SAC's share of the discount.
+    // Already computed above for the rates; published because a tax invoice has
+    // to state what each rate was charged on, and the alternative is the
+    // document re-deriving the apportionment and drifting from this one.
+    roomTaxable: roomNet,
 
     // Food side, zeroed when there is none.
     foodSubtotal,
@@ -353,6 +359,7 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, isGstSide, food 
     foodSgstAmount: foodSgst,
     foodCgstRatePercent: ratePercentFromAmount(foodCgst, foodNet),
     foodSgstRatePercent: ratePercentFromAmount(foodSgst, foodNet),
+    foodTaxable: foodNet,
     foodSacCode: food?.sacCode ?? null,
 
     // What the desk took off this document, and what that came to as a
@@ -858,11 +865,17 @@ function mapInvoice(row) {
     sgstAmount: Number(row.sgst_amount),
     cgstRatePercent: ratePercentFromAmount(Number(row.cgst_amount), roomNet),
     sgstRatePercent: ratePercentFromAmount(Number(row.sgst_amount), roomNet),
+    // See buildBreakdown: the taxable value the rates above were charged on.
+    // Re-derived from the stored columns by the same apportionment that
+    // produced them, so a bill reprinted years later states the same figures
+    // it was issued with.
+    roomTaxable: roomNet,
     foodSubtotal,
     foodCgstAmount: foodCgst,
     foodSgstAmount: foodSgst,
     foodCgstRatePercent: ratePercentFromAmount(foodCgst, foodNet),
     foodSgstRatePercent: ratePercentFromAmount(foodSgst, foodNet),
+    foodTaxable: foodNet,
     // What the desk took off this bill, and the percentage it was agreed as.
     // 0 on every bill written before discounts existed, which prints nothing.
     discountAmount,
@@ -886,6 +899,10 @@ function mapInvoice(row) {
     lodgeAddress: row.lodge_address,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
+    // The property's own checkout rule, so the terms printed on the bill are
+    // the terms it actually enforces rather than a fixed line of text.
+    checkinMode: row.checkin_mode ?? null,
+    checkOutTime: toClockTime(row.check_out_time),
   };
 }
 
@@ -915,6 +932,8 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
     lodgeState: row.lodge_state,
     gstin: row.gstin,
     isGstRegistered: !!row.is_gst_registered,
+    checkinMode: row.checkin_mode ?? null,
+    checkOutTime: toClockTime(row.check_out_time),
 
     guestName: row.guest_name ?? null,
     guestPhone: row.guest_phone ?? null,
@@ -935,12 +954,14 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
     sgstAmount: side.sgstAmount,
     cgstRatePercent: side.cgstRatePercent,
     sgstRatePercent: side.sgstRatePercent,
+    roomTaxable: side.roomTaxable,
 
     foodSubtotal: side.foodSubtotal,
     foodCgstAmount: side.foodCgstAmount,
     foodSgstAmount: side.foodSgstAmount,
     foodCgstRatePercent: side.foodCgstRatePercent,
     foodSgstRatePercent: side.foodSgstRatePercent,
+    foodTaxable: side.foodTaxable,
     foodItems,
 
     discountAmount: side.discountAmount,
@@ -969,7 +990,7 @@ async function getInvoice(lodgeId, invoiceId) {
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
-             l.gstin, l.is_gst_registered, l.name AS lodge_name,
+             l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
@@ -999,7 +1020,7 @@ async function listInvoices(lodgeId) {
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
-             l.gstin, l.is_gst_registered, l.name AS lodge_name,
+             l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join

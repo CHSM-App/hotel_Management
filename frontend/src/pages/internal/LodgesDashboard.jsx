@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { propertyTypeOf } from '../../lib/propertyProfile';
 import './LodgesDashboard.css';
 
@@ -55,19 +56,35 @@ export default function LodgesDashboard() {
     };
   }, [session?.token]);
 
+  // Signing out drops the session and everything cached behind it, and a
+  // half-written booking with it — worth one question at a shared front desk
+  // where the button sits next to the profile menu people open all day.
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+
   const handleSignOut = () => {
     clearSession();
-    navigate('/vtadmin');
+    navigate('/vtadmin', { replace: true });
   };
 
   return (
     <div className="dash-shell">
+      {confirmSignOut && (
+        <ConfirmDialog
+          title="Sign out?"
+          message="You will need to sign in again to reach the admin dashboard."
+          confirmLabel="Sign out"
+          cancelLabel="Stay signed in"
+          danger
+          onConfirm={handleSignOut}
+          onCancel={() => setConfirmSignOut(false)}
+        />
+      )}
       <div className="dash-topbar">
         <div>
           <div className="dash-topbar__mark">Lodge Management System</div>
           <div className="dash-topbar__eyebrow">Vengurla Tech admin{session?.name ? ` · ${session.name}` : ''}</div>
         </div>
-        <button className="dash-topbar__signout" onClick={handleSignOut} type="button">
+        <button className="dash-topbar__signout" onClick={() => setConfirmSignOut(true)} type="button">
           Sign out
         </button>
       </div>

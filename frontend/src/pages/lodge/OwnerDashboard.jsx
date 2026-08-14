@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import Bookings from './Bookings';
@@ -127,9 +128,14 @@ export default function OwnerDashboard() {
     };
   }, [session?.token]);
 
+  // Signing out drops the session and everything cached behind it, and a
+  // half-written booking with it — worth one question at a shared front desk
+  // where the button sits next to the profile menu people open all day.
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+
   const handleSignOut = () => {
     clearSession();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   // Driven by what /me says this login can actually reach, not by its role
@@ -152,12 +158,23 @@ export default function OwnerDashboard() {
 
   return (
     <div className="dash-shell">
+      {confirmSignOut && (
+        <ConfirmDialog
+          title="Sign out?"
+          message="You will need your phone or email and password to get back in."
+          confirmLabel="Sign out"
+          cancelLabel="Stay signed in"
+          danger
+          onConfirm={handleSignOut}
+          onCancel={() => setConfirmSignOut(false)}
+        />
+      )}
       <div className="dash-topbar">
         <div>
           <div className="dash-topbar__mark">{me?.lodge.name || 'Loading…'}</div>
         </div>
         <div className="dash-topbar__actions">
-          {me?.user && <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={handleSignOut} />}
+          {me?.user && <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />}
         </div>
       </div>
 

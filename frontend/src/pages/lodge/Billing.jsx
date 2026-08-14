@@ -855,51 +855,57 @@ export default function Billing({ lodge }) {
                             <span>Room charges</span>
                             <span>{formatPrice(activeAmounts.subtotal)}</span>
                           </div>
-                          {(activeAmounts.cgstAmount > 0 || activeAmounts.sgstAmount > 0) && (
-                            <>
-                              <div className="sim-result__line">
-                                <span>CGST ({activeAmounts.cgstRatePercent}%)</span>
-                                <span>{formatPrice(activeAmounts.cgstAmount)}</span>
-                              </div>
-                              <div className="sim-result__line">
-                                <span>SGST ({activeAmounts.sgstRatePercent}%)</span>
-                                <span>{formatPrice(activeAmounts.sgstAmount)}</span>
-                              </div>
-                            </>
-                          )}
                         </>
                       )}
 
                       {activeAmounts.foodSubtotal > 0 && (
-                        <>
-                          <div className="sim-result__line">
-                            <span>Food</span>
-                            <span>{formatPrice(activeAmounts.foodSubtotal)}</span>
-                          </div>
-                          {(activeAmounts.foodCgstAmount > 0 || activeAmounts.foodSgstAmount > 0) && (
-                            <>
-                              <div className="sim-result__line">
-                                <span>CGST ({activeAmounts.foodCgstRatePercent}%)</span>
-                                <span>{formatPrice(activeAmounts.foodCgstAmount)}</span>
-                              </div>
-                              <div className="sim-result__line">
-                                <span>SGST ({activeAmounts.foodSgstRatePercent}%)</span>
-                                <span>{formatPrice(activeAmounts.foodSgstAmount)}</span>
-                              </div>
-                            </>
-                          )}
-                        </>
+                        <div className="sim-result__line">
+                          <span>Food</span>
+                          <span>{formatPrice(activeAmounts.foodSubtotal)}</span>
+                        </div>
                       )}
-                      {/* After both blocks and before the round off: the
-                          subtotals above are what was sold, and this is the
-                          one line where money comes off them. The tax lines
-                          were already computed on the discounted amounts, so
-                          the column still adds up to the total. */}
+
+                      {/* Before every tax line, because that is where it is
+                          actually applied: GST is computed on the subtotal
+                          less this, not on the subtotal. Printed under the tax
+                          it had already reduced, it read as a deduction from
+                          the taxed total — which is the one thing a discount
+                          on an invoice must not appear to be. */}
                       {activeAmounts.discountAmount > 0 && (
                         <div className="sim-result__line">
                           <span>Discount ({activeAmounts.discountPercent}%)</span>
                           <span>-{formatPrice(activeAmounts.discountAmount)}</span>
                         </div>
+                      )}
+
+                      {/* Room and food taxed separately — different SACs at
+                          different rates, which is the split GSTR-1 reports
+                          on. Both sit below the discount because both were
+                          computed on the amounts left after it. */}
+                      {(activeAmounts.cgstAmount > 0 || activeAmounts.sgstAmount > 0) && (
+                        <>
+                          <div className="sim-result__line">
+                            <span>CGST ({activeAmounts.cgstRatePercent}%)</span>
+                            <span>{formatPrice(activeAmounts.cgstAmount)}</span>
+                          </div>
+                          <div className="sim-result__line">
+                            <span>SGST ({activeAmounts.sgstRatePercent}%)</span>
+                            <span>{formatPrice(activeAmounts.sgstAmount)}</span>
+                          </div>
+                        </>
+                      )}
+
+                      {(activeAmounts.foodCgstAmount > 0 || activeAmounts.foodSgstAmount > 0) && (
+                        <>
+                          <div className="sim-result__line">
+                            <span>CGST ({activeAmounts.foodCgstRatePercent}%) on food</span>
+                            <span>{formatPrice(activeAmounts.foodCgstAmount)}</span>
+                          </div>
+                          <div className="sim-result__line">
+                            <span>SGST ({activeAmounts.foodSgstRatePercent}%) on food</span>
+                            <span>{formatPrice(activeAmounts.foodSgstAmount)}</span>
+                          </div>
+                        </>
                       )}
                       {activeAmounts.roundOff !== 0 && (
                         <div className="sim-result__line">
