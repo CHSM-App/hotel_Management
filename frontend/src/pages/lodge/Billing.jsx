@@ -22,6 +22,12 @@ function lateLabel(minutes) {
   return mins === 0 ? `${hours}h late` : `${hours}h ${mins}m late`;
 }
 
+// Fallback width for the PDF capture, in CSS pixels — roughly an A4 content
+// column at 96dpi. Normally the capture copy is sized to the visible preview at
+// download time, so the file shows exactly the layout the user was looking at;
+// this only decides it if that preview couldn't be measured.
+const BILL_PDF_WIDTH = 760;
+
 // Money that arrives this way leaves a reference the property reconciles
 // against its settlement statement; cash doesn't. Mirrors ONLINE_METHODS on
 // the server, which is what actually enforces it.
@@ -386,13 +392,48 @@ export default function Billing({ lodge }) {
 
   // Bill PDF share/download
   const billRef = useRef(null);
+  // The bill the user is actually looking at, measured at capture time so the
+  // offscreen copy can be laid out at exactly the same width.
+  const billPreviewRef = useRef(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState('');
 
   const buildBillPdfBlob = async () => {
-    const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
+    // html-to-image, not html2canvas — the difference is who paints the text.
+    // html2canvas re-draws every glyph itself with its own baseline arithmetic,
+    // which is known to sit text a few pixels below where the browser put it,
+    // and to mis-advance tracked or tabular-figure runs. html-to-image
+    // serialises the DOM into an SVG foreignObject and hands it back to the
+    // browser to rasterise: the engine that painted the preview paints the
+    // file, so the PDF cannot disagree with the screen about where a line of
+    // text sits. It also means tabular figures and letter-spacing survive
+    // capture, which under html2canvas they did not.
+    const [{ jsPDF }, { toCanvas }] = await Promise.all([import('jspdf'), import('html-to-image')]);
+
+    // Captured from the offscreen copy, laid out at the same width as the bill
+    // the user is looking at — identical width means identical wrapping means
+    // identical alignment. The copy exists so the visible bill is never
+    // restyled mid-download, and so shadows and scroll clipping never reach
+    // the sheet.
     const node = billRef.current;
-    const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff' });
+    const shownWidth = billPreviewRef.current?.offsetWidth;
+    node.parentElement.style.width = `${shownWidth || BILL_PDF_WIDTH}px`;
+
+    // The webfonts must be resolved before capture: a capture raced against
+    // Inter still loading would be laid out in one font and painted in another.
+    await document.fonts.ready;
+
+    const canvas = await toCanvas(node, {
+      // Three device pixels per CSS pixel. The text is rasterised, not
+      // embedded, so resolution is all that stands between the reader and
+      // visibly soft 9px captions.
+      pixelRatio: 3,
+      backgroundColor: '#ffffff',
+      // Screen furniture with no meaning on paper: a clipped box can crop a
+      // border, a shadow becomes a grey smear down the edge of the sheet, and
+      // rounded corners read as a web card. Applied to the capture clone only.
+      style: { overflow: 'visible', boxShadow: 'none', borderRadius: '0' },
+    });
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -1070,7 +1111,26 @@ export default function Billing({ lodge }) {
               </span>
             </div>
 
-            <BillDocument ref={billRef} invoice={detailInvoice} />
+            <BillDocument ref={billPreviewRef} invoice={detailInvoice} />
+
+            {/* What the PDF is rasterised from: the same document again, parked
+                offscreen and sized by buildBillPdfBlob to the width of the
+                visible copy above — so the file shows exactly the layout the
+                user approved, without restyling the bill under them while it
+                downloads. */}
+            {/* The initial width matters, not just the capture-time one: a
+                position:fixed box parked at -10000px with width:auto may
+                stretch from that offset to the viewport edge, so without this
+                the copy laid itself out ~10,000px wide and its amount column
+                poked into the page. buildBillPdfBlob overwrites this same
+                inline style with the preview's measured width. */}
+            <div
+              className="billing-panel__pdf-source"
+              style={{ width: BILL_PDF_WIDTH }}
+              aria-hidden="true"
+            >
+              <BillDocument ref={billRef} invoice={detailInvoice} />
+            </div>
 
             {detailInvoice.status === 'VOID' && (
               <div className="chart-list">

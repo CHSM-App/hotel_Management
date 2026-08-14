@@ -10,6 +10,11 @@
    its rules meeting — the moment a block floats inside a margin it stops
    looking printed and starts looking typeset. */
 .bill-doc {
+  /* Where the right-hand rule falls. The particulars' amount column, the totals
+     block and the prepared-by block all measure to this, so one line runs the
+     full height of the sheet instead of three at three different offsets. */
+  --bill-rail: 34%;
+
   --bill-line: #2c3742;
   --bill-hair: #b8c1c9;
   --bill-tint: #f4f6f8;
@@ -111,9 +116,12 @@
   overflow-wrap: anywhere;
 }
 
-/* Sharing a rule with the name, so it takes what it needs and no more. */
+/* Sharing a rule with the name, so it takes what it needs and no more. A
+   proportion rather than a pixel width: at 130px it held its size while every
+   column around it scaled, so the name field and this one drifted apart
+   between the modal and the printed sheet. */
 .bill-doc__filled--narrow {
-  flex: 0 0 130px;
+  flex: 0 0 22%;
 }
 
 /* ------------------------------------------------------------- entry grid */
@@ -124,8 +132,17 @@
    it. */
 .bill-doc__grid {
   width: 100%;
+  /* Fixed, not auto. Auto layout sizes columns from their content and the width
+     on offer, so the register block landed on one set of boundaries in the
+     modal and another on an A4 sheet — the same document, two alignments.
+     Declared widths make the proportions identical at every width. */
+  table-layout: fixed;
   border-collapse: collapse;
   border-bottom: 1px solid var(--bill-line);
+}
+
+.bill-doc__grid col {
+  width: 25%;
 }
 
 .bill-doc__grid td {
@@ -167,16 +184,22 @@
 
 .bill-doc__table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
-.bill-doc__particulars-head {
-  /* Letter-spaced the way the form prints it. */
-  letter-spacing: 0.22em;
+/* The right-hand rail, declared once. The totals and prepared-by blocks below
+   measure to the same token, so one rule runs the height of the sheet. */
+.bill-doc__col-amt {
+  width: var(--bill-rail);
 }
 
+/* The heading is spaced out the way the form prints it — with real spaces in
+   the text, not CSS tracking. Same look, and it survives being repainted glyph
+   by glyph into the PDF, which CSS letter-spacing does not. */
+
 .bill-doc__table thead th {
-  text-align: left;
+  text-align: center;
   font-size: 10px;
   font-weight: 700;
   color: #101820;
@@ -204,6 +227,10 @@
   text-align: right;
   white-space: nowrap;
 }
+
+/* Money stays right-aligned — a column of figures is read by its units place,
+   and centring them makes it impossible to add up by eye. Only the heading
+   above it is centred. */
 
 /* Heading for a supply block — "Room rent for", "Misc Charges" — so the lines
    underneath read as belonging to it rather than as loose rows next to the
@@ -274,8 +301,8 @@
 }
 
 .bill-doc__totals {
-  flex: 0 0 58%;
-  max-width: 320px;
+  flex: 0 0 var(--bill-rail);
+  max-width: none;
 }
 
 .bill-doc__totals-line {
@@ -306,13 +333,23 @@
    not compete with the particulars above it. */
 .bill-doc__tax-summary {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   border-bottom: 1px solid var(--bill-line);
   font-size: 9.5px;
 }
 
+.bill-doc__tax-summary col {
+  width: 21.5%;
+}
+
+/* A six-digit code needs less room than the figures beside it. */
+.bill-doc__tax-summary .bill-doc__col-sac {
+  width: 14%;
+}
+
 .bill-doc__tax-summary th {
-  text-align: left;
+  text-align: center;
   font-size: 8.5px;
   font-weight: 700;
   text-transform: uppercase;
@@ -344,6 +381,10 @@
   float: left;
   color: #6b7883;
   font-weight: 600;
+}
+
+.bill-doc__tax-summary td:first-child {
+  text-align: center;
 }
 
 .bill-doc__tax-total td {
@@ -389,8 +430,8 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  flex: 0 0 40%;
-  max-width: 230px;
+  flex: 0 0 var(--bill-rail);
+  max-width: none;
   padding: var(--bill-pad);
   text-align: center;
   font-size: 9.5px;
@@ -424,7 +465,7 @@
   }
 
   .bill-doc__filled--narrow {
-    flex: 0 0 100px;
+    flex: 0 0 30%;
   }
 
   /* The register grid and the tax summary are genuinely tabular — six and five
@@ -504,6 +545,20 @@
     display: table;
     overflow: visible;
     white-space: normal;
+  }
+
+  /* On screen the bill scrolls sideways inside the preview fold when the modal
+     is narrow. On paper there is nothing to scroll to — an overflow box just
+     clips whatever ran past its edge. */
+  .billing-panel__bill-preview .bill-doc {
+    overflow: visible;
+  }
+
+  /* The PDF's capture copy is a second .bill-doc in the DOM, and the rule above
+     makes every .bill-doc visible — without this it prints as a blank second
+     page from ten thousand pixels off the left edge. */
+  .billing-panel__pdf-source {
+    display: none !important;
   }
 
   /* More room to sign on paper than on a screen. */

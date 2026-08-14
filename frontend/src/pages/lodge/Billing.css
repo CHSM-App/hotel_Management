@@ -442,6 +442,17 @@
   overflow-x: auto;
 }
 
+/* The copy the PDF is rasterised from. Laid out for real — a display:none node
+   has no dimensions to photograph — but parked far off the left edge, where it
+   costs nothing and can't be reached. Its width is set inline from the same
+   constant the capture uses. */
+.billing-panel__pdf-source {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  pointer-events: none;
+}
+
 /* ============================================================ neumorphism
 
    Everything below is scoped to .billing-panel on purpose. .chart-section,

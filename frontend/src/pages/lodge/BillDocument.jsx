@@ -312,6 +312,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
           gain: it says the same thing as two cells and falls apart the moment
           anything in it changes height. */}
       <table className="bill-doc__grid">
+        {/* Column widths are declared, not inferred. Without this the table
+            falls back to auto layout, where the browser sizes each column from
+            its content and the space available — so the same bill lands on
+            different column boundaries in the modal and on an A4 sheet. */}
+        <colgroup>
+          <col />
+          <col />
+          <col />
+          <col />
+        </colgroup>
         <tbody>
           {isFoodBill ? (
             <tr>
@@ -365,6 +375,10 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
       </table>
 
       <table className="bill-doc__table">
+        <colgroup>
+          <col />
+          <col className="bill-doc__col-amt" />
+        </colgroup>
         <thead>
           <tr>
             <th className="bill-doc__particulars-head">P A R T I C U L A R S</th>
@@ -459,6 +473,13 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
 
       {taxRows.length > 0 && (
         <table className="bill-doc__tax-summary">
+          <colgroup>
+            <col className="bill-doc__col-sac" />
+            <col />
+            <col />
+            <col />
+            <col />
+          </colgroup>
           <thead>
             <tr>
               <th>SAC</th>
