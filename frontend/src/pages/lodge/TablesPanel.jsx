@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import './forms.css';
 import './MenuPanel.css';
 
@@ -8,7 +9,7 @@ const emptyForm = { mode: 'single', label: '', prefix: 'T', rangeStart: '', rang
 
 export default function TablesPanel() {
   const session = getSession();
-  const [tables, setTables] = useState(null);
+  const [tables, setTables] = useState(() => readCache('/tables'));
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -19,7 +20,7 @@ export default function TablesPanel() {
   const load = () => {
     apiGet('/tables', { token: session?.token })
       .then((data) => {
-        setTables(data.tables);
+        setTables(writeCache('/tables', data.tables));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load tables.'));

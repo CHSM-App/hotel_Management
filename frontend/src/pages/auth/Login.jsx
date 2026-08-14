@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
-import { setSession } from '../../lib/auth';
+import { isLodgeUser, setSession } from '../../lib/auth';
 import './AuthLayout.css';
 
 export default function Login() {
@@ -9,6 +9,14 @@ export default function Login() {
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // If they get here already signed in — a bookmark, a typed URL, or Back
+  // reaching an entry older than the replace — send them on rather than show a
+  // sign-in form to somebody who has already satisfied it. Below every hook,
+  // so the early return can't change how many run.
+  if (isLodgeUser()) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -25,7 +33,10 @@ export default function Login() {
     try {
       const data = await apiPost('/auth/login', form);
       setSession({ token: data.token, role: data.role, name: data.name });
-      navigate('/dashboard');
+      // replace, not push: signing in is a transition, not a place. Leaving
+      // /login on the stack means Back from the dashboard lands on a login
+      // form the user has already satisfied.
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in. Check your connection.');
     } finally {

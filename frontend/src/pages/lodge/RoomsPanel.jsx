@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import './forms.css';
 import './RoomsPanel.css';
@@ -50,8 +51,11 @@ function GuestIcon() {
 
 export default function RoomsPanel() {
   const session = getSession();
-  const [rooms, setRooms] = useState(null);
-  const [categories, setCategories] = useState(null);
+  // Seeded from what this session already fetched, so coming back to the page
+  // paints the rooms immediately instead of showing "Loading rooms…" again
+  // while a request crosses the internet to the database.
+  const [rooms, setRooms] = useState(() => readCache('/rooms'));
+  const [categories, setCategories] = useState(() => readCache('/categories'));
   const [error, setError] = useState('');
 
   const [showForm, setShowForm] = useState(false);
@@ -84,14 +88,16 @@ export default function RoomsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(lightbox)]);
 
+  // Refetched on every mount — this only decides whether the panel has
+  // anything to show while that is in flight.
   const loadAll = () => {
     Promise.all([
       apiGet('/rooms', { token: session?.token }),
       apiGet('/categories', { token: session?.token }),
     ])
       .then(([roomsData, categoriesData]) => {
-        setRooms(roomsData.rooms);
-        setCategories(categoriesData.categories);
+        setRooms(writeCache('/rooms', roomsData.rooms));
+        setCategories(writeCache('/categories', categoriesData.categories));
         setError('');
       })
       .catch((err) => {

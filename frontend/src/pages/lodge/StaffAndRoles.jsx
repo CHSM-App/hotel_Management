@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './chartSections.css';
@@ -19,17 +20,17 @@ export default function StaffAndRoles() {
   const token = getSession()?.token;
 
   const [tab, setTab] = useState('staff');
-  const [staff, setStaff] = useState(null);
-  const [roles, setRoles] = useState(null);
-  const [catalog, setCatalog] = useState([]);
+  const [staff, setStaff] = useState(() => readCache('/staff'));
+  const [roles, setRoles] = useState(() => readCache('/roles'));
+  const [catalog, setCatalog] = useState(() => readCache('/roles:permissions') ?? []);
   const [error, setError] = useState('');
 
   const loadAll = () => {
     Promise.all([apiGet('/staff', { token }), apiGet('/roles', { token })])
       .then(([s, r]) => {
-        setStaff(s.staff);
-        setRoles(r.roles);
-        setCatalog(r.permissions);
+        setStaff(writeCache('/staff', s.staff));
+        setRoles(writeCache('/roles', r.roles));
+        setCatalog(writeCache('/roles:permissions', r.permissions));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load staff and roles.'));

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { toQrDataUrl, tableOrderUrl, orderUrl } from '../../lib/qr';
 import './QrCodesPanel.css';
 
@@ -75,7 +76,7 @@ const PRINT_SIZES = [
 
 export default function QrCodesPanel({ lodge }) {
   const session = getSession();
-  const [tables, setTables] = useState(null);
+  const [tables, setTables] = useState(() => readCache('/tables:active'));
   const [codes, setCodes] = useState({});
   const [error, setError] = useState('');
 
@@ -93,7 +94,7 @@ export default function QrCodesPanel({ lodge }) {
     if (!tableServiceOn) return;
     apiGet('/tables', { token: session?.token })
       .then((data) => {
-        setTables(data.tables.filter((t) => t.isActive));
+        setTables(writeCache('/tables:active', data.tables.filter((t) => t.isActive)));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load tables.'));

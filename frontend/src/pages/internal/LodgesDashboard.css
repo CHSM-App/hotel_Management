@@ -1,21 +1,31 @@
 .dash-shell {
   min-height: 100svh;
   background: var(--paper);
+  /* The bar's own height, published so the sidebar can subtract it instead of
+     carrying a guess. It was guessing 73px against an actual 80px, and that
+     kind of drift is invisible until something has to line up with it. */
+  --dash-topbar-h: 58px;
 }
 
+/* A band across the top carrying a name and an avatar — it needs to be
+   present, not prominent. Sized off its tallest child rather than padded to a
+   round number, so it costs the page the least it can. */
 .dash-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 40px;
+  gap: 12px;
+  height: var(--dash-topbar-h);
+  padding: 0 40px;
   background: var(--brand);
   color: #ffffff;
 }
 
 .dash-topbar__mark {
   font-family: var(--serif);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .dash-topbar__eyebrow {
@@ -29,8 +39,8 @@
   border: 1px solid rgba(255, 255, 255, 0.4);
   color: #ffffff;
   border-radius: 8px;
-  padding: 9px 16px;
-  min-height: 40px;
+  padding: 6px 14px;
+  min-height: 34px;
   cursor: pointer;
   font-weight: 500;
 }
@@ -39,10 +49,14 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* 40px on every side was a lot of nothing around content that is mostly grids
+   and tables. Trimmed asymmetrically: less at the top, where the section tabs
+   already separate the page from the bar above it, and a little kept at the
+   bottom so the last row doesn't sit on the viewport edge. */
 .dash-main {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 40px;
+  padding: 22px 28px 32px;
 }
 
 .dash-header {
@@ -216,7 +230,7 @@
 
 @media (max-width: 640px) {
   .dash-topbar {
-    padding: 14px 16px;
+    padding: 0 16px;
   }
 
   .dash-main {
@@ -224,7 +238,7 @@
   }
 
   .dash-topbar__mark {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .dash-header {

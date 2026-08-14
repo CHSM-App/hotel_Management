@@ -6,8 +6,10 @@ const {
   checkInSchema,
   updateBookingSchema,
   checkOutSchema,
+  bookingDraftSchema,
 } = require('./bookings.schema');
 const bookingsService = require('./bookings.service');
+const draftsService = require('./drafts.service');
 const pricingService = require('../pricing/pricing.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
@@ -16,9 +18,19 @@ const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 // which is every link and bookmark that predates counts.
 const parseChargeIds = pricingService.parseChargeSelections;
 
-// A quote is a preview, so a half-typed or absent override just falls back to
-// the category price rather than erroring at the guest-facing desk. The real
-// validation happens in the schema when the booking is actually saved.
+// A quote is a preview typed into live, so a half-entered or absent concession
+// just prices the stay at full price rather than erroring at the guest-facing
+// desk. The real validation happens in the schema when the booking is saved.
+function parseDiscountAmount(raw) {
+  if (raw == null || String(raw).trim() === '') return 0;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// Read-only leftover: the rate a stay was booked at before concessions
+// replaced the override. Nothing sets it any more, but the edit form of a
+// booking that carries one has to quote against it, or the total on screen
+// wouldn't be the total the save produces.
 function parseBasePriceOverride(raw) {
   if (raw == null || String(raw).trim() === '') return null;
   const value = Number(raw);
@@ -97,7 +109,8 @@ async function priceQuoteHandler(req, res, next) {
       checkInDate,
       checkOutDate,
       chargeIds,
-      parseBasePriceOverride(req.query.basePriceOverride)
+      parseBasePriceOverride(req.query.basePriceOverride),
+      parseDiscountAmount(req.query.discountAmount)
     );
     res.json(result);
   } catch (err) {
@@ -147,6 +160,9 @@ function attachGuestFiles(guests, files) {
     if (match) guestFileByIndex.set(Number(match[1]), file.filename);
   }
   return guests.map((guest, index) => ({
+    // Only an edit carries one, where it says which existing row this guest
+    // is; create leaves it undefined and every guest is an insert.
+    id: guest.id,
     name: guest.name,
     phone: guest.phone || null,
     idProofType: guest.idProofType || null,
@@ -245,7 +261,16 @@ async function checkInHandler(req, res, next) {
   }
 }
 
+// An edit carries the same shapes a booking is created with — the party, the
+// vehicles, a replacement ID proof — so it arrives as multipart too, and the
+// array fields arrive as JSON strings. Absent stays absent: a save that only
+// changes the phone number must not read as "clear the guests", so the fields
+// are only parsed when they were actually sent.
 async function updateBookingHandler(req, res, next) {
+  const files = req.files || [];
+  const cleanupUploads = () => {
+    for (const file of files) fs.unlink(file.path, () => {});
+  };
   try {
     const body = { ...req.body };
     // A client still sending the pre-quantity field means one of each, and
@@ -253,13 +278,28 @@ async function updateBookingHandler(req, res, next) {
     if (body.switchableCharges === undefined && body.switchableChargeIds !== undefined) {
       body.switchableCharges = body.switchableChargeIds;
     }
+    if (body.switchableCharges !== undefined && typeof body.switchableCharges === 'string') {
+      body.switchableCharges = parseJsonArrayField(body.switchableCharges);
+    }
+    if (body.guests !== undefined) body.guests = parseJsonArrayField(body.guests);
+    if (body.vehicles !== undefined) body.vehicles = parseJsonArrayField(body.vehicles);
+
     const parsed = updateBookingSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApiError(parsed.error.issues[0].message, 400);
     }
-    const booking = await bookingsService.updateBooking(req.user.lodgeId, Number(req.params.id), parsed.data);
+
+    const primaryFile = files.find((file) => file.fieldname === 'idProofDocument');
+    const booking = await bookingsService.updateBooking(req.user.lodgeId, Number(req.params.id), {
+      ...parsed.data,
+      idProofDocument: primaryFile ? primaryFile.filename : null,
+      // Only when the party was sent at all — attachGuestFiles maps by
+      // position, and mapping an absent list would turn it into an empty one.
+      guests: parsed.data.guests && attachGuestFiles(parsed.data.guests, files),
+    });
     res.json({ booking });
   } catch (err) {
+    cleanupUploads();
     next(err);
   }
 }
@@ -297,7 +337,73 @@ async function cancelBookingHandler(req, res, next) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Parked bookings
+// ---------------------------------------------------------------------------
+
+function parseDraftBody(body) {
+  const parsed = bookingDraftSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(parsed.error.issues[0].message, 400);
+  }
+  return parsed.data.form;
+}
+
+async function listDraftsHandler(req, res, next) {
+  try {
+    const drafts = await draftsService.listDrafts(req.user.lodgeId);
+    res.json({ drafts });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getDraftHandler(req, res, next) {
+  try {
+    const draft = await draftsService.getDraft(req.user.lodgeId, Number(req.params.id));
+    res.json({ draft });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createDraftHandler(req, res, next) {
+  try {
+    const draft = await draftsService.createDraft(req.user.lodgeId, req.user.sub, parseDraftBody(req.body));
+    res.status(201).json({ draft });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateDraftHandler(req, res, next) {
+  try {
+    const draft = await draftsService.updateDraft(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parseDraftBody(req.body)
+    );
+    res.json({ draft });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteDraftHandler(req, res, next) {
+  try {
+    await draftsService.deleteDraft(req.user.lodgeId, Number(req.params.id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  listDraftsHandler,
+  getDraftHandler,
+  createDraftHandler,
+  updateDraftHandler,
+  deleteDraftHandler,
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
   listBookingsHandler,

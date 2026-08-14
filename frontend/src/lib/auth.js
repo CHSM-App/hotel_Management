@@ -1,3 +1,5 @@
+import { clearCache } from './dataCache';
+
 const STORAGE_KEY = 'lms.session';
 
 export function getSession() {
@@ -15,6 +17,8 @@ export function setSession({ token, role, name }) {
 
 export function clearSession() {
   localStorage.removeItem(STORAGE_KEY);
+  // Whatever the dashboard had cached belonged to the account that just left.
+  clearCache();
 }
 
 export function isStaff() {

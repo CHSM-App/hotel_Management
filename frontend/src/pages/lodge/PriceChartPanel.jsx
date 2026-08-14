@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import './forms.css';
 import './chartSections.css';
@@ -67,9 +68,9 @@ function DeleteOptionsModal({ title, isActive, error, busy, onDeactivate, onDele
 
 export default function PriceChartPanel() {
   const session = getSession();
-  const [categories, setCategories] = useState(null);
-  const [switchableCharges, setSwitchableCharges] = useState(null);
-  const [seasons, setSeasons] = useState(null);
+  const [categories, setCategories] = useState(() => readCache('/categories'));
+  const [switchableCharges, setSwitchableCharges] = useState(() => readCache('/switchable-charges'));
+  const [seasons, setSeasons] = useState(() => readCache('/seasons'));
   const [error, setError] = useState('');
 
   const [categoryForm, setCategoryForm] = useState(emptyCategoryForm);
@@ -102,9 +103,9 @@ export default function PriceChartPanel() {
       apiGet('/seasons', { token: session?.token }),
     ])
       .then(([categoriesData, chargesData, seasonsData]) => {
-        setCategories(categoriesData.categories);
-        setSwitchableCharges(chargesData.switchableCharges);
-        setSeasons(seasonsData.seasons);
+        setCategories(writeCache('/categories', categoriesData.categories));
+        setSwitchableCharges(writeCache('/switchable-charges', chargesData.switchableCharges));
+        setSeasons(writeCache('/seasons', seasonsData.seasons));
         setError('');
       })
       .catch((err) => {

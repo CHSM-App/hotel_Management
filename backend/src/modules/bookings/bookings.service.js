@@ -3,6 +3,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const pricingService = require('../pricing/pricing.service');
 const billingService = require('../billing/billing.service');
+const draftsService = require('./drafts.service');
 const lateCheckout = require('./lateCheckout');
 
 function round2(n) {
@@ -45,12 +46,52 @@ function datesInRange(checkInDate, checkOutDate) {
   return dates;
 }
 
+const CONCESSION_LABEL = 'Concession';
+
+// A concession is agreed once, on the whole stay, once every extra is on it —
+// so it lands here rather than inside the per-night pricing. It is then spread
+// back across the nights in proportion to what each one cost, because
+// everything downstream reads the per-night snapshot: the bill bands GST on
+// each night's own rate, and GST is charged on what the guest was actually
+// asked to pay, so a night conceded down to ₹900 must be taxed as a ₹900
+// night. Rounding drift goes on the last night, so the nights still sum to the
+// stay total to the paisa.
+function spreadConcession(nights, grossTotal, discount) {
+  const plain = nights.map((night) => ({ date: night.date, total: night.total, lines: night.lines }));
+  if (discount <= 0 || grossTotal <= 0) return plain;
+
+  let remaining = discount;
+  return plain.map((night, index) => {
+    const share = index === plain.length - 1 ? remaining : round2((discount * night.total) / grossTotal);
+    remaining = round2(remaining - share);
+    return {
+      date: night.date,
+      lines: [...night.lines, { label: CONCESSION_LABEL, amount: -share }],
+      total: round2(night.total - share),
+    };
+  });
+}
+
 // The stay is priced by the same code the price simulator runs, so the demo
 // price a guest was quoted is provably the price the booking charges.
-// basePriceOverride is the rate reception agreed at the desk — it stands in
-// for the category's base price and everything else (seasons, extras) is
-// layered on top of it exactly as before.
-async function priceStay(lodgeId, roomId, checkInDate, checkOutDate, chargeIds = [], basePriceOverride = null) {
+// basePriceOverride is the rate a stay was booked at before concessions
+// replaced it — no longer settable, still honoured for the bookings that carry
+// one so editing one of them doesn't silently re-price it at rack rate.
+//
+// The concession is clamped rather than rejected because this also serves the
+// live quote, which is read while somebody is still typing into the box: a
+// half-entered ₹5,000 against a ₹900 stay should show a free stay, not price
+// the nights as a refund. Callers that are actually saving compare what they
+// asked for against `discountAmount` to catch the clamp.
+async function priceStay(
+  lodgeId,
+  roomId,
+  checkInDate,
+  checkOutDate,
+  chargeIds = [],
+  basePriceOverride = null,
+  discountAmount = 0
+) {
   const quote = await pricingService.simulateRange(
     lodgeId,
     roomId,
@@ -59,14 +100,27 @@ async function priceStay(lodgeId, roomId, checkInDate, checkOutDate, chargeIds =
     chargeIds,
     basePriceOverride
   );
+
+  const grossTotal = quote.total;
+  const requested = Number(discountAmount);
+  const discount = round2(
+    Math.min(Math.max(Number.isFinite(requested) ? requested : 0, 0), grossTotal)
+  );
+
   return {
     // `lines` rides along with each night so a bill cut weeks later can still
-    // say what the rate was made of — base, season, each extra. Snapshotted for
-    // the same reason the totals are: seasons get edited and extras get
-    // re-priced, and the bill has to keep showing what was actually charged.
-    nights: quote.nights.map((night) => ({ date: night.date, total: night.total, lines: night.lines })),
+    // say what the rate was made of — base, season, each extra, the concession.
+    // Snapshotted for the same reason the totals are: seasons get edited and
+    // extras get re-priced, and the bill has to keep showing what was actually
+    // charged.
+    nights: spreadConcession(quote.nights, grossTotal, discount),
+    // What the stay is built from, before the concession. The concession is
+    // reported on its own rather than folded in as another line, because it
+    // isn't one: the desk needs to see the number it is being taken off.
     charges: quote.lines.map((line) => ({ label: line.label, amount: line.amount })),
-    totalPrice: quote.total,
+    grossTotal,
+    discountAmount: discount,
+    totalPrice: round2(grossTotal - discount),
   };
 }
 
@@ -222,6 +276,11 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
       ORDER BY r.room_number ASC
     `);
 
+  // Same shape listAvailableRooms returns, extras included — the booking form
+  // is one form whether it is taking a stay or correcting one, and a room that
+  // arrived without its extras would render an empty picker on the edit pass.
+  const switchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
+
   return {
     checkInDate,
     rooms: roomsResult.recordset.map((row) => ({
@@ -234,6 +293,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
       description: row.description,
       categoryName: row.category_name,
       categoryBasePrice: Number(row.category_base_price),
+      switchableCharges,
     })),
   };
 }
@@ -319,6 +379,13 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       ORDER BY check_in_date ASC
     `);
 
+  // Kept apart from `bookings` rather than merged with a flag: a draft holds
+  // no room and can sit on top of a real booking for the same nights, so the
+  // chart has to be able to draw it as a mark on the tile rather than as the
+  // tile. Anything that treats them as one list would eventually let a draft
+  // stand in for a stay.
+  const drafts = await draftsService.listDraftsForRange(pool, lodgeId, startDate, endDate);
+
   return {
     rooms: roomsResult.recordset.map((r) => ({
       id: r.id,
@@ -326,6 +393,7 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       floor: r.floor,
       categoryName: r.category_name,
     })),
+    drafts,
     bookings: bookingsResult.recordset.map((b) => ({
       id: b.id,
       roomId: b.room_id,
@@ -370,15 +438,34 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     hasIdProofDocument: !!row.id_proof_document,
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
+    // What the stay is charged after the concession, which is the number the
+    // guest was quoted and the one every screen shows.
     totalPrice: Number(row.total_price),
-    // NULL for a stay priced at the category's own rate, which is most of
-    // them — the edit form reads this to show what was actually agreed.
+    // What reception knocked off the quote; 0 on the stays nobody haggled
+    // over, which is most of them. The edit form reads it back to show what
+    // was actually agreed.
+    discountAmount: Number(row.discount_amount ?? 0),
+    // Before the concession — the quote the concession was taken off, kept so
+    // the register can show both halves rather than a total nobody can check.
+    grossTotalPrice: round2(Number(row.total_price) + Number(row.discount_amount ?? 0)),
+    // What the room charge is made of — base rate, season uplift, each extra,
+    // the concession — summed across the nights each one applied to, read from
+    // the snapshot frozen at booking time. Aggregated by the same code the bill
+    // uses, so the stay reads identically on both. Empty for bookings taken
+    // before the snapshot existed; the screen falls back to the total alone.
+    roomCharges: billingService.roomChargeLines(row),
+    // NULL for a stay priced at the category's own rate, which is now every
+    // new booking — only stays predating concessions carry a negotiated rate.
     basePriceOverride: row.base_price_override != null ? Number(row.base_price_override) : null,
     status: row.status,
     actualCheckInAt: row.actual_check_in_at,
     actualCheckOutAt: row.actual_check_out_at,
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : null,
     advancePaymentMethod: row.advance_payment_method,
+    // The UPI/card transaction number, for reconciling the property's
+    // settlement statement against what the desk says it took. NULL on cash,
+    // which leaves no such trail.
+    advanceReference: row.advance_reference ?? null,
     nights: nightlyLines(row),
     lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
     lateCheckoutMinutes: row.late_checkout_minutes ?? null,
@@ -408,7 +495,11 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     // Reception reads this out to the guest at check-in — it is the only way a
     // guest ever learns their PIN, so the booking screen has to show it. NULL
     // once they check out, which is what closes in-room ordering (see checkOut).
-    foodPin: row.food_pin ?? null,
+    // Withheld where a guest couldn't use one, which also covers the stays
+    // that were checked in before this property's food service was turned off:
+    // the column may still hold a number, but reading it out to a guest would
+    // be reading out a key to a door that no longer exists.
+    foodPin: extra.takesRoomOrders === false ? null : row.food_pin ?? null,
     foodOrderingLockedUntil: extra.foodOrderingLockedUntil ?? null,
     // A booking stays editable (extras, for now) right up until its bill is
     // issued — that's the point a guest's stay turns into a fixed, printed
@@ -464,10 +555,12 @@ async function getBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, c.name AS category_name
+      SELECT b.*, r.room_number, c.name AS category_name,
+             l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
+      JOIN dbo.lodges l ON l.id = b.lodge_id
       WHERE b.id = @bookingId AND b.lodge_id = @lodgeId
     `);
 
@@ -519,19 +612,26 @@ async function getBooking(lodgeId, bookingId) {
   // PIN too many times. Reception is who the guest complains to, so it belongs
   // on the booking they're already looking at. Keyed on the room number
   // because that's what the guest typed — see dbo.food_pin_lockouts.
-  const lockoutResult = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('roomLabel', sql.NVarChar, row.room_number)
-    .query(`
-      SELECT locked_until FROM dbo.food_pin_lockouts
-      WHERE lodge_id = @lodgeId AND room_label = @roomLabel
-        AND locked_until IS NOT NULL AND locked_until > SYSDATETIMEOFFSET()
-    `);
+  // Skipped entirely where nobody can order to a room — there is no PIN to
+  // fail, so no lockout to look for, and the register shouldn't pay a query
+  // for the answer "no".
+  const takesRoomOrders = !!row.serves_food && !!row.food_room_service;
+  const lockoutResult = takesRoomOrders
+    ? await pool
+        .request()
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('roomLabel', sql.NVarChar, row.room_number)
+        .query(`
+          SELECT locked_until FROM dbo.food_pin_lockouts
+          WHERE lodge_id = @lodgeId AND room_label = @roomLabel
+            AND locked_until IS NOT NULL AND locked_until > SYSDATETIMEOFFSET()
+        `)
+    : { recordset: [] };
 
   const availableSwitchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
 
   return mapBooking(row, chargesResult.recordset, guestsResult.recordset, vehiclesResult.recordset, {
+    takesRoomOrders,
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
     invoice,
     availableSwitchableCharges,
@@ -558,16 +658,24 @@ async function createBooking(lodgeId, userId, input) {
     throw new ApiError('This room is already booked for part of that date range.', 409);
   }
 
-  const basePriceOverride = input.basePriceOverride ?? null;
+  const requestedDiscount = input.discountAmount ?? 0;
 
-  const { nights, totalPrice } = await priceStay(
+  const { nights, totalPrice, discountAmount, grossTotal } = await priceStay(
     lodgeId,
     input.roomId,
     input.checkInDate,
     input.checkOutDate,
     switchableCharges,
-    basePriceOverride
+    null,
+    requestedDiscount
   );
+
+  // priceStay clamps for the sake of the live quote; a save is a decision, so
+  // a concession bigger than the stay is an error rather than a silent haircut
+  // reception never sees.
+  if (round2(requestedDiscount) > discountAmount) {
+    throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);
+  }
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
@@ -593,21 +701,22 @@ async function createBooking(lodgeId, userId, input) {
       .input('checkInDate', sql.Date, input.checkInDate)
       .input('checkOutDate', sql.Date, input.checkOutDate)
       .input('totalPrice', sql.Decimal(10, 2), totalPrice)
-      .input('basePriceOverride', sql.Decimal(10, 2), basePriceOverride)
+      .input('discountAmount', sql.Decimal(10, 2), discountAmount)
       .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(nights))
       .input('createdBy', sql.BigInt, userId ?? null)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
+      .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
       .query(`
         INSERT INTO dbo.bookings
           (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_document,
-           check_in_date, check_out_date, total_price, base_price_override, nightly_breakdown, created_by,
-           advance_amount, advance_payment_method)
+           check_in_date, check_out_date, total_price, discount_amount, nightly_breakdown, created_by,
+           advance_amount, advance_payment_method, advance_reference)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofDocument,
-           @checkInDate, @checkOutDate, @totalPrice, @basePriceOverride, @nightlyBreakdown, @createdBy,
-           @advanceAmount, @advancePaymentMethod)
+           @checkInDate, @checkOutDate, @totalPrice, @discountAmount, @nightlyBreakdown, @createdBy,
+           @advanceAmount, @advancePaymentMethod, @advanceReference)
       `);
 
     const bookingId = insertResult.recordset[0].id;
@@ -654,6 +763,82 @@ async function insertGuestsAndVehicles(transaction, bookingId, guests, vehicles)
   }
 }
 
+// The party after an edit. Unlike extras and vehicles this can't be a delete
+// and re-insert: a guest row owns an uploaded ID proof, and re-creating the
+// row would strand the document and lose the link to it. So rows that came
+// back with an id are updated in place, rows without one are new, and rows
+// that didn't come back at all were removed from the party.
+//
+// A guest's ID proof is only ever replaced, never cleared — the same rule the
+// primary guest's follows. Removing the guest is how you get rid of it.
+async function replaceBookingGuests(transaction, bookingId, guests, existingGuests) {
+  const existingIds = new Set(existingGuests.map((g) => Number(g.id)));
+  const keptIds = new Set();
+
+  for (const guest of guests) {
+    const id = Number(guest.id);
+    if (guest.id != null && existingIds.has(id)) {
+      keptIds.add(id);
+      await new sql.Request(transaction)
+        .input('id', sql.BigInt, id)
+        .input('bookingId', sql.BigInt, bookingId)
+        .input('guestName', sql.NVarChar, guest.name)
+        .input('guestPhone', sql.NVarChar, guest.phone)
+        .input('idProofType', sql.NVarChar, guest.idProofType)
+        .input('idProofDocument', sql.NVarChar, guest.idProofDocument)
+        .input('isChild', sql.Bit, guest.isChild ? 1 : 0)
+        .query(`
+          UPDATE dbo.booking_guests
+          SET guest_name = @guestName, guest_phone = @guestPhone,
+              id_proof_type = COALESCE(@idProofType, id_proof_type),
+              id_proof_document = COALESCE(@idProofDocument, id_proof_document),
+              is_child = @isChild
+          WHERE id = @id AND booking_id = @bookingId
+        `);
+      continue;
+    }
+
+    await new sql.Request(transaction)
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('guestName', sql.NVarChar, guest.name)
+      .input('guestPhone', sql.NVarChar, guest.phone)
+      .input('idProofType', sql.NVarChar, guest.idProofType)
+      .input('idProofDocument', sql.NVarChar, guest.idProofDocument)
+      .input('isChild', sql.Bit, guest.isChild ? 1 : 0)
+      .query(`
+        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_document, is_child)
+        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofDocument, @isChild)
+      `);
+  }
+
+  const removed = existingGuests.filter((g) => !keptIds.has(Number(g.id)));
+  for (const guest of removed) {
+    await new sql.Request(transaction)
+      .input('id', sql.BigInt, guest.id)
+      .input('bookingId', sql.BigInt, bookingId)
+      .query('DELETE FROM dbo.booking_guests WHERE id = @id AND booking_id = @bookingId');
+  }
+}
+
+// Vehicles carry no uploads and nothing references them, so the desk's list is
+// simply the answer — the same wholesale replace extras get.
+async function replaceBookingVehicles(transaction, bookingId, vehicles) {
+  await new sql.Request(transaction)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query('DELETE FROM dbo.booking_vehicles WHERE booking_id = @bookingId');
+
+  for (const vehicle of vehicles) {
+    await new sql.Request(transaction)
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('vehicleNumber', sql.NVarChar, vehicle.number)
+      .input('vehicleType', sql.NVarChar, vehicle.type)
+      .query(`
+        INSERT INTO dbo.booking_vehicles (booking_id, vehicle_number, vehicle_type)
+        VALUES (@bookingId, @vehicleNumber, @vehicleType)
+      `);
+  }
+}
+
 async function checkIn(lodgeId, bookingId, input) {
   const pool = await getPool();
 
@@ -662,8 +847,11 @@ async function checkIn(lodgeId, bookingId, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT num_guests, id_proof_type, check_in_date FROM dbo.bookings
-      WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'BOOKED'
+      SELECT b.num_guests, b.id_proof_type, b.check_in_date,
+             l.serves_food, l.food_room_service
+      FROM dbo.bookings b
+      JOIN dbo.lodges l ON l.id = b.lodge_id
+      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId AND b.status = 'BOOKED'
     `);
   const bookingRow = bookingResult.recordset[0];
   if (!bookingRow) {
@@ -695,6 +883,8 @@ async function checkIn(lodgeId, bookingId, input) {
     }
   }
 
+  const takesRoomOrders = !!bookingRow.serves_food && !!bookingRow.food_room_service;
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
@@ -703,9 +893,13 @@ async function checkIn(lodgeId, bookingId, input) {
       .input('bookingId', sql.BigInt, bookingId)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
+      .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
-      .input('foodPin', sql.NVarChar, newFoodPin())
+      // Only where a guest could actually use one. A rooms-only property has
+      // no kitchen and no QR to scan, so a PIN there is a number reception
+      // reads out for nothing — and one more secret sitting in the database.
+      .input('foodPin', sql.NVarChar, takesRoomOrders ? newFoodPin() : null)
       .query(`
         UPDATE dbo.bookings
         SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(),
@@ -715,6 +909,7 @@ async function checkIn(lodgeId, bookingId, input) {
               ELSE ISNULL(advance_amount, 0) + @advanceAmount
             END,
             advance_payment_method = COALESCE(@advancePaymentMethod, advance_payment_method),
+            advance_reference = COALESCE(@advanceReference, advance_reference),
             id_proof_type = COALESCE(@idProofType, id_proof_type),
             id_proof_document = COALESCE(@idProofDocument, id_proof_document)
         OUTPUT inserted.id
@@ -875,7 +1070,7 @@ async function updateBooking(lodgeId, bookingId, input) {
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT room_id, check_in_date, check_out_date, status, num_guests, guest_name, guest_phone,
-             base_price_override
+             base_price_override, discount_amount
       FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId
     `);
   const bookingRow = bookingResult.recordset[0];
@@ -927,16 +1122,27 @@ async function updateBooking(lodgeId, bookingId, input) {
     }
   }
 
+  // Every guest on file, with the ID proof each already carries — an edit
+  // that doesn't re-upload one must not wipe it.
+  const existingGuestsResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .query('SELECT id, id_proof_document FROM dbo.booking_guests WHERE booking_id = @bookingId');
+  const existingGuests = existingGuestsResult.recordset;
+
+  // The party as it will stand after this save, which is what the guest count
+  // has to accommodate — checked against the list in this request rather than
+  // the one on file, since both are changing at once.
+  const partySize = (input.guests ? input.guests.length : existingGuests.length) + 1;
+
   let newNumGuests = bookingRow.num_guests;
   if (input.numGuests != null) {
-    const guestsCountResult = await pool
-      .request()
-      .input('bookingId', sql.BigInt, bookingId)
-      .query('SELECT COUNT(*) AS count FROM dbo.booking_guests WHERE booking_id = @bookingId');
-    if (input.numGuests < guestsCountResult.recordset[0].count + 1) {
-      throw new ApiError('Guest count can’t be less than the guests already on file.', 400);
+    if (input.numGuests < partySize) {
+      throw new ApiError('Guest count can’t be less than the guests on the booking.', 400);
     }
     newNumGuests = input.numGuests;
+  } else if (partySize > newNumGuests) {
+    throw new ApiError('Guest details can’t exceed the number of guests.', 400);
   }
 
   const newGuestName = input.guestName != null ? input.guestName : bookingRow.guest_name;
@@ -957,24 +1163,33 @@ async function updateBooking(lodgeId, bookingId, input) {
     await assertChargesAvailable(pool, lodgeId, switchableCharges);
   }
 
-  // Omitted means "keep charging what was agreed" — an edit that only moves
-  // the checkout date must not quietly re-price the stay at rack rate. An
-  // explicit null is the way back to the category's own price.
-  const newBasePriceOverride =
-    input.basePriceOverride === undefined
-      ? bookingRow.base_price_override != null
-        ? Number(bookingRow.base_price_override)
-        : null
-      : input.basePriceOverride;
+  // Omitted means "keep the concession that was agreed" — an edit that only
+  // moves the checkout date must not quietly charge the guest full price
+  // again. An explicit 0 is how reception takes a concession back.
+  const requestedDiscount =
+    input.discountAmount === undefined
+      ? Number(bookingRow.discount_amount ?? 0)
+      : input.discountAmount;
 
-  const { nights, totalPrice } = await priceStay(
+  // Never settable any more, only carried: a stay booked at a negotiated
+  // nightly rate before concessions existed keeps pricing at that rate when
+  // its dates or extras are edited.
+  const legacyBasePriceOverride =
+    bookingRow.base_price_override != null ? Number(bookingRow.base_price_override) : null;
+
+  const { nights, totalPrice, discountAmount, grossTotal } = await priceStay(
     lodgeId,
     newRoomId,
     checkInDate,
     newCheckOutDate,
     switchableCharges,
-    newBasePriceOverride
+    legacyBasePriceOverride,
+    requestedDiscount
   );
+
+  if (round2(requestedDiscount) > discountAmount) {
+    throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);
+  }
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -989,16 +1204,43 @@ async function updateBooking(lodgeId, bookingId, input) {
       .input('guestName', sql.NVarChar, newGuestName)
       .input('guestPhone', sql.NVarChar, newGuestPhone)
       .input('totalPrice', sql.Decimal(10, 2), totalPrice)
-      .input('basePriceOverride', sql.Decimal(10, 2), newBasePriceOverride)
+      .input('discountAmount', sql.Decimal(10, 2), discountAmount)
       .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(nights))
+      // The advance is set to what was typed, not added to — an edit corrects
+      // the record. Sending nothing leaves it alone; sending null clears it,
+      // which is how a deposit keyed against the wrong stay is taken back off.
+      .input('setAdvance', sql.Bit, input.advanceAmount !== undefined ? 1 : 0)
+      .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
+      .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
+      .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
+      // COALESCE, not a flag: an ID proof is only ever replaced, never
+      // cleared — a stay that has one on file must not be editable back into
+      // one that doesn't.
+      .input('idProofType', sql.NVarChar, input.idProofType ?? null)
+      .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .query(`
         UPDATE dbo.bookings
         SET room_id = @roomId, check_out_date = @checkOutDate, num_guests = @numGuests,
             guest_name = @guestName, guest_phone = @guestPhone,
-            total_price = @totalPrice, base_price_override = @basePriceOverride,
-            nightly_breakdown = @nightlyBreakdown
+            total_price = @totalPrice, discount_amount = @discountAmount,
+            nightly_breakdown = @nightlyBreakdown,
+            advance_amount = CASE WHEN @setAdvance = 1 THEN @advanceAmount ELSE advance_amount END,
+            advance_payment_method =
+              CASE WHEN @setAdvance = 1 THEN @advancePaymentMethod ELSE advance_payment_method END,
+            advance_reference =
+              CASE WHEN @setAdvance = 1 THEN @advanceReference ELSE advance_reference END,
+            id_proof_type = COALESCE(@idProofType, id_proof_type),
+            id_proof_document = COALESCE(@idProofDocument, id_proof_document)
         WHERE id = @bookingId
       `);
+
+    if (input.guests) {
+      await replaceBookingGuests(transaction, bookingId, input.guests, existingGuests);
+    }
+
+    if (input.vehicles) {
+      await replaceBookingVehicles(transaction, bookingId, input.vehicles);
+    }
 
     await transaction.commit();
   } catch (err) {

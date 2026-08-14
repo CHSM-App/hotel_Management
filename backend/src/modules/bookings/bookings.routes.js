@@ -16,6 +16,11 @@ const {
   getLateCheckoutHandler,
   checkOutHandler,
   cancelBookingHandler,
+  listDraftsHandler,
+  getDraftHandler,
+  createDraftHandler,
+  updateDraftHandler,
+  deleteDraftHandler,
 } = require('./bookings.controller');
 
 const router = Router();
@@ -26,6 +31,12 @@ const staff = requirePermission('bookings.manage');
 const canSeeRegister = requirePermission('bookings.manage', 'guests.view');
 
 router.get('/', authenticate, canSeeRegister, listBookingsHandler);
+// Ahead of /:id, or "drafts" is parsed as a booking id.
+router.get('/drafts', authenticate, staff, listDraftsHandler);
+router.post('/drafts', authenticate, staff, createDraftHandler);
+router.get('/drafts/:id', authenticate, staff, getDraftHandler);
+router.put('/drafts/:id', authenticate, staff, updateDraftHandler);
+router.delete('/drafts/:id', authenticate, staff, deleteDraftHandler);
 router.get('/available-rooms', authenticate, staff, listAvailableRoomsHandler);
 router.get('/price-quote', authenticate, staff, priceQuoteHandler);
 router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
@@ -35,7 +46,7 @@ router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
 router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
 router.post('/', authenticate, staff, idProofUpload, createBookingHandler);
-router.patch('/:id', authenticate, staff, updateBookingHandler);
+router.patch('/:id', authenticate, staff, idProofUpload, updateBookingHandler);
 router.patch('/:id/check-in', authenticate, staff, idProofUpload, checkInHandler);
 router.patch('/:id/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/cancel', authenticate, staff, cancelBookingHandler);

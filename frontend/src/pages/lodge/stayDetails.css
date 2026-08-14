@@ -1,0 +1,147 @@
+/* Read-only stay details — the five sections a booking was taken through,
+   rendered wherever a stay has to be answered for: the tape chart's booking
+   detail, and the billing modal deciding what to charge for it.
+
+   Lives here rather than in Bookings.css because StayDetails.jsx is what uses
+   it, and a component whose styles are loaded by a sibling only works for as
+   long as that sibling happens to be in the bundle.
+
+   These are the read-only counterparts of the booking form's controls: label
+   above value, on the same grid, so a fact sits where the field that captured
+   it does and pressing Edit changes the control rather than the layout.
+
+   Surfaced the way the rest of the app is: carved for things that were
+   recorded and can only be read, extruded for the discrete entities on a
+   booking — each guest, each vehicle. The distinction is the same one the tape
+   chart makes between a vacant slot and something dropped into it, so a stay
+   reads as part of the same object rather than as a table pasted into it. */
+
+.detail-facts {
+  display: grid;
+  /* auto-fit, not a fixed two-up: the modal narrows to a phone, and a
+     forced second column would put "Not arrived yet" on two lines. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 22px;
+  /* One carved panel holding all the facts, rather than a well per fact — a
+     grid of six little wells reads as a waffle, and the facts are one record.
+     --shadow-pressed rather than --shadow-inset: shallow enough that a panel
+     this large doesn't sink away from the page. */
+  padding: 14px 16px;
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+}
+
+.detail-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Full width for anything carrying more than a value — the food PIN has an
+   instruction to read out under it, extras can run to several names. */
+.detail-fact--wide {
+  grid-column: 1 / -1;
+}
+
+/* Deliberately the same type as a form label, for the same reason it is in
+   the same place: this is what that field would have said. */
+.detail-fact__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.detail-fact__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* People and vehicles: one row each, name over detail. Boxed rather than
+   hairline-separated so a party of five reads as five things rather than as
+   a run of text. */
+.detail-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.detail-person {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  /* Extruded, not carved: a guest or a vehicle is a thing on the booking, and
+     it sits on the record rather than being cut into it. Transparent border
+     so the tile keeps its footprint if shadows are ever turned down. */
+  border: 1px solid transparent;
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.detail-person__name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.detail-person__role {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  /* Pressed into the tile it labels — "Primary guest", "Child" — so it reads
+     as a stamp on the card rather than as part of the name. */
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+}
+
+.detail-person__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* An empty section still answers its question — "no advance taken" is a
+   fact reception is asked for, and a missing block isn't one. Carved like the
+   facts panel it stands in for, so an empty section reads as an answer rather
+   than as something that failed to load. */
+.detail-empty {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* The money block. Carved for the same reason the booking form's quote is:
+   it is a figure being read off, not a field being filled in. */
+.stay-details .sim-result {
+  margin-top: 4px;
+  padding: 10px 16px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+  box-shadow: var(--shadow-inset);
+}

@@ -115,7 +115,7 @@ async function loadCharges(pool, lodgeId, selections) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, charge_per_night
+      SELECT id, name, charge_per_night, is_counter
       FROM dbo.switchable_charges
       WHERE lodge_id = @lodgeId AND is_active = 1
     `);
@@ -129,6 +129,9 @@ async function loadCharges(pool, lodgeId, selections) {
       return {
         id: Number(row.id),
         name: row.name,
+        // Whether this extra is taken in counts (extra beds) or is simply on
+        // or off (AC) — which decides whether its line shows the arithmetic.
+        isCounter: !!row.is_counter,
         quantity,
         unitAmount,
         amount: round2(unitAmount * quantity),
@@ -145,20 +148,37 @@ function basePriceOf(room, basePriceOverride) {
   return Number(room.category_base_price);
 }
 
+// Rupees as they read on a bill line: Indian grouping, and no trailing .00 on
+// the whole numbers most rates are.
+function money(amount) {
+  return `₹${Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+// The rate itself, not the words "base price". Every other line on the bill
+// says what one night of that thing costs, and a guest checking their bill is
+// multiplying those rates by the nights — "Deluxe — base price × 4 nights"
+// gives them nothing to multiply.
 function baseLabel(room, basePriceOverride) {
-  const suffix = basePriceOf(room, basePriceOverride) === Number(room.category_base_price) ? '' : ' (custom)';
-  return `${room.category_name} — base price${suffix}`;
+  const price = basePriceOf(room, basePriceOverride);
+  const suffix = price === Number(room.category_base_price) ? '' : ' (custom)';
+  return `${room.category_name} ${money(price)}${suffix}`;
 }
 
 function seasonLabel(season) {
   return `${season.name} (${season.percent > 0 ? '+' : ''}${season.percent}%)`;
 }
 
-// The count is part of the name of the thing being charged for — a bill line
-// reading "Extra bed ₹300" with no ×3 on it is a line a guest will argue with.
+// Every extra states its nightly rate, and a counted one states the count too:
+// "Extra bed 1 × ₹300" and "AC/Heater ₹200" against four nights each explain
+// themselves, where a bare name and a total is a line a guest will argue with.
+//
+// The count shows on an uncounted extra somebody asked for more than one of,
+// which the booking form can't do but the query-string form (chargeIds=3,3)
+// can — better an odd-looking line than a quantity silently off the bill.
 function chargeLabel(charge) {
-  const count = charge.quantity > 1 ? ` ×${charge.quantity}` : '';
-  return `${charge.name}${count} (switched on)`;
+  return charge.isCounter || charge.quantity > 1
+    ? `${charge.name} ${charge.quantity} × ${money(charge.unitAmount)}`
+    : `${charge.name} ${money(charge.unitAmount)}`;
 }
 
 // One night's line-by-line breakdown, from data already in memory.

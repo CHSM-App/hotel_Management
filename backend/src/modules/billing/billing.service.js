@@ -163,26 +163,102 @@ function computeGstBreakdown(amounts, slabs) {
 // nightly tariff, and ₹800 of late checkout on a ₹4,000 room is still a ₹4,000
 // room being occupied; billing it at the ₹800 band would understate the tax.
 //
-// `include` is the billing desk's call. Reception records what was agreed at
-// the door, but the bill is written later and by someone else — a manager who
-// decides the overstay isn't worth charging drops the line here rather than
-// having to send the guest back to the desk. Excluding it zeroes the line for
-// this document only; the booking keeps what reception agreed, and the minutes
-// behind it, so a waiver at billing stays distinguishable from a guest who
-// left on time.
-function lateChargeSide(booking, amounts, slabs, isGstSide, include = true) {
-  const amount = include ? round2(Number(booking.late_checkout_charge) || 0) : 0;
-  if (amount <= 0) {
-    return { amount: 0, cgstAmount: 0, sgstAmount: 0, taxable: false, ratePercent: 0 };
+// `amount` and `amounts` are both post-discount: a bill-level discount reduces
+// what was actually charged, and GST is due on that, not on the sticker price.
+function lateChargeTax(amount, amounts, slabs, isGstSide) {
+  if (amount <= 0 || !isGstSide) {
+    return { cgstAmount: 0, sgstAmount: 0, taxable: false, ratePercent: 0 };
   }
-  const ratePercent = isGstSide ? ratePercentFor(amounts[amounts.length - 1] ?? 0, slabs) : 0;
+  const ratePercent = ratePercentFor(amounts[amounts.length - 1] ?? 0, slabs);
   return {
-    amount,
     cgstAmount: round2((amount * (ratePercent / 100)) / 2),
     sgstAmount: round2((amount * (ratePercent / 100)) / 2),
     taxable: ratePercent > 0,
     ratePercent,
   };
+}
+
+// A discount is agreed on the whole bill, but tax isn't computed on the whole
+// bill: a stay is banded night by night on its own rate and food is taxed flat
+// on its own subtotal. So the reduction has to be pushed back down onto the
+// parts before either is worked out — each part gives up its own share of the
+// discount in proportion to its size.
+//
+// Pushing it down rather than subtracting it from the grand total is what
+// makes the document defensible. GST is charged on the transaction value, so a
+// night discounted below a slab boundary is genuinely taxed in the lower band
+// and a discounted food line is genuinely taxed on less. Subtracting after tax
+// would over-collect from the guest and over-report to GSTR-1.
+//
+// Rounding drift lands on the largest part, which is always big enough to
+// absorb it — parking it on "the last one" would go negative on a bill whose
+// last part is a ₹0 food side.
+function netOfDiscount(amounts, discount, gross) {
+  if (discount <= 0 || gross <= 0) return amounts.map(round2);
+
+  const shares = amounts.map((amount) => round2((discount * amount) / gross));
+  const drift = round2(discount - shares.reduce((sum, share) => sum + share, 0));
+  if (drift !== 0) {
+    let biggest = 0;
+    amounts.forEach((amount, index) => {
+      if (amount > amounts[biggest]) biggest = index;
+    });
+    shares[biggest] = round2(shares[biggest] + drift);
+  }
+  return amounts.map((amount, index) => round2(amount - shares[index]));
+}
+
+// What the desk asked to take off, held to what there is to take it off.
+function cappedDiscount(requested, gross) {
+  const amount = Number(requested);
+  return round2(Math.min(Math.max(Number.isFinite(amount) ? amount : 0, 0), gross));
+}
+
+// The desk decides what the guest hands over — "make it ₹1,500" — and this
+// works out the discount that lands there.
+//
+// It has to be searched rather than calculated. GST bands accommodation per
+// night, so taking money off can move a night into a lower slab and change its
+// rate; and the GST-side total is rounded to whole rupees. `payable` is
+// therefore a non-increasing STEP function of the discount, with no inverse to
+// compute — only a boundary to find.
+//
+// Bisected over integer paise, which both avoids float drift and bounds the
+// loop at ~log2(gross × 100) — under 25 turns for any bill this system will
+// ever write. `payable` must be pure, or those turns are 25 round trips to the
+// database; that is what the hoisted slabs and food rate are for.
+//
+// Lands at or *below* the target and reports what it actually reached, because
+// the steps mean an exact figure often isn't available. Under-shooting is the
+// right direction to miss in: the guest is asked for no more than the number
+// they were promised.
+function solveDiscountForTarget(target, grossSubtotal, payable) {
+  const wanted = Math.max(Number(target) || 0, 0);
+  const maxPaise = Math.round(grossSubtotal * 100);
+  if (maxPaise <= 0) return { discount: 0, achieved: payable(0) };
+
+  // Already at or under it — nothing to take off. Said explicitly so a target
+  // above the bill doesn't bisect its way to a spurious paisa of discount.
+  if (payable(0) <= wanted) return { discount: 0, achieved: payable(0) };
+
+  // Even giving the whole bill away can't reach it (an advance larger than the
+  // stay would do this). Hand back the most that can be given.
+  const maxDiscount = round2(grossSubtotal);
+  if (payable(maxDiscount) > wanted) {
+    return { discount: maxDiscount, achieved: payable(maxDiscount) };
+  }
+
+  // Invariant: payable(lo) > wanted, payable(hi) <= wanted. Converges on the
+  // smallest discount that gets there, which is the one to give.
+  let lo = 0;
+  let hi = maxPaise;
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (payable(round2(mid / 100)) <= wanted) hi = mid;
+    else lo = mid;
+  }
+  const discount = round2(hi / 100);
+  return { discount, achieved: payable(discount) };
 }
 
 async function loadBookingForBilling(lodgeId, bookingId) {
@@ -193,7 +269,9 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT b.*, r.room_number, c.name AS category_name,
-             l.is_gst_registered, l.gstin, l.is_specified_premises
+             l.is_gst_registered, l.gstin, l.is_specified_premises,
+             l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
+             l.city AS lodge_city, l.state AS lodge_state
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -232,13 +310,24 @@ function ratePercentFromAmount(taxAmount, subtotal) {
 // reports them separately — only the grand total merges them, and the rounding
 // to whole rupees happens once, on that total.
 //
-// `food` is optional so every existing room-only caller keeps its old shape.
-function buildBreakdown(roomSubtotal, cgstAmount, sgstAmount, isGstSide, food = null) {
+// Both sides are reported at their *gross* — what was sold, matching the
+// itemised lines printed above them — with the discount shown once as its own
+// line. The tax handed in was already computed on the discounted amounts by
+// the caller, so the document still adds up: gross room + gross food − discount
+// + tax + round off = total. Deriving the printed tax rates needs the net,
+// which is why the split is recomputed here rather than only in the caller.
+//
+// `food` is optional so every room-only caller keeps its old shape.
+function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, isGstSide, food = null, discountAmount = 0 }) {
   const foodSubtotal = food ? round2(food.subtotal) : 0;
   const foodCgst = food ? food.cgstAmount : 0;
   const foodSgst = food ? food.sgstAmount : 0;
 
-  const subtotal = round2(roomSubtotal + foodSubtotal);
+  const grossSubtotal = round2(roomSubtotal + foodSubtotal);
+  const discount = cappedDiscount(discountAmount, grossSubtotal);
+  const [roomNet, foodNet] = netOfDiscount([round2(roomSubtotal), foodSubtotal], discount, grossSubtotal);
+
+  const subtotal = round2(grossSubtotal - discount);
   const totalCgst = round2(cgstAmount + foodCgst);
   const totalSgst = round2(sgstAmount + foodSgst);
 
@@ -252,17 +341,29 @@ function buildBreakdown(roomSubtotal, cgstAmount, sgstAmount, isGstSide, food = 
     subtotal: round2(roomSubtotal),
     cgstAmount,
     sgstAmount,
-    cgstRatePercent: ratePercentFromAmount(cgstAmount, roomSubtotal),
-    sgstRatePercent: ratePercentFromAmount(sgstAmount, roomSubtotal),
+    // Off the discounted amount the tax was actually charged on, so a
+    // discounted bill still prints "CGST (6%)" rather than a rate nobody's
+    // schedule contains.
+    cgstRatePercent: ratePercentFromAmount(cgstAmount, roomNet),
+    sgstRatePercent: ratePercentFromAmount(sgstAmount, roomNet),
 
     // Food side, zeroed when there is none.
     foodSubtotal,
     foodCgstAmount: foodCgst,
     foodSgstAmount: foodSgst,
-    foodCgstRatePercent: ratePercentFromAmount(foodCgst, foodSubtotal),
-    foodSgstRatePercent: ratePercentFromAmount(foodSgst, foodSubtotal),
+    foodCgstRatePercent: ratePercentFromAmount(foodCgst, foodNet),
+    foodSgstRatePercent: ratePercentFromAmount(foodSgst, foodNet),
     foodSacCode: food?.sacCode ?? null,
 
+    // What the desk took off this document, and what that came to as a
+    // percentage of everything on it before tax — the two ways the same
+    // decision gets described, both printed.
+    discountAmount: discount,
+    discountPercent: grossSubtotal > 0 ? round2((discount / grossSubtotal) * 100) : 0,
+    grossSubtotal,
+
+    // What tax was charged on, after the discount. Kept under its old name
+    // because that is what it has always meant.
     combinedSubtotal: subtotal,
     roundOff,
     totalAmount,
@@ -299,7 +400,96 @@ async function listBillableBookings(lodgeId) {
   }));
 }
 
-async function previewBill(lodgeId, bookingId, { includeLateCheckout = true } = {}) {
+// Everything a stay bill is made of, priced twice — once as a GST document and
+// once as a cash receipt — for whichever side the desk picks. Shared by the
+// preview and the issue path so the bill that gets written is provably the one
+// that was shown.
+//
+// The discount is re-derived here rather than adjusted client-side, for the
+// same reason dropping the late charge is: taking money off can move a night
+// into a lower GST band and change the round-off, so the whole document has to
+// be recomputed, not patched.
+// Pure. Everything it needs is already in memory — the loaded booking, the
+// loaded orders, the GST slabs and the food rate — which is what lets
+// solveDiscountForTarget call it twenty-odd times without touching the
+// database. buildStayBill is the wrapper that fetches those two lookups.
+function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmount, slabs, foodRate }) {
+  // What was sold, before anything comes off it.
+  const grossNights = nightlyAmounts(booking);
+  const nightsSubtotal = round2(grossNights.reduce((sum, n) => sum + n, 0));
+  const grossLate = includeLateCheckout ? round2(Number(booking.late_checkout_charge) || 0) : 0;
+  const grossFood = foodSubtotalOf(foodOrders);
+  const grossSubtotal = round2(nightsSubtotal + grossLate + grossFood);
+
+  // What it is actually being charged at, which is what GST is due on. The
+  // nights, the overstay and the food each give up their share of the discount
+  // before any of them is banded or taxed.
+  const discount = cappedDiscount(discountAmount, grossSubtotal);
+  const net = netOfDiscount([...grossNights, grossLate, grossFood], discount, grossSubtotal);
+  const netNights = net.slice(0, grossNights.length);
+  const netLate = net[grossNights.length];
+  const netFood = net[grossNights.length + 1];
+
+  const { cgstAmount, sgstAmount, anyTaxable } = computeGstBreakdown(netNights, slabs);
+  const late = lateChargeTax(netLate, netNights, slabs, true);
+  const food = foodSideOf(foodOrders, netFood, foodRate);
+
+  // The room block on the document: the nights plus the overstay, gross. The
+  // overstay is carried inside the accommodation subtotal so its SAC and its
+  // tax stay correct, and shown as its own line so a guest can see it named.
+  const roomSubtotal = round2(nightsSubtotal + grossLate);
+
+  const gst = booking.is_gst_registered
+    ? {
+        // A stay under the nil threshold is a bill of supply — unless food was
+        // served, which is taxable at 5% or 18% regardless of the room rate and
+        // therefore makes the whole document a tax invoice.
+        documentType: anyTaxable || late.taxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY',
+        ...buildBreakdown({
+          roomSubtotal,
+          cgstAmount: round2(cgstAmount + late.cgstAmount),
+          sgstAmount: round2(sgstAmount + late.sgstAmount),
+          isGstSide: true,
+          food,
+          discountAmount: discount,
+        }),
+      }
+    : null;
+
+  const nonGst = {
+    documentType: 'CASH_RECEIPT',
+    ...buildBreakdown({
+      roomSubtotal,
+      cgstAmount: 0,
+      sgstAmount: 0,
+      isGstSide: false,
+      food: food ? { ...food, cgstAmount: 0, sgstAmount: 0 } : null,
+      discountAmount: discount,
+    }),
+  };
+
+  return { gst, nonGst, grossNights, nightsSubtotal, grossLate, grossSubtotal, discount };
+}
+
+// The two lookups the pricing needs, then the pricing. Callers that price the
+// same bill repeatedly fetch these once and call priceStayBill directly.
+async function loadPricingContext(pool, booking, foodOrders) {
+  return {
+    slabs: await getGstSlabs(pool),
+    foodRate: foodOrders.length ? await getFoodRate(pool, booking.is_specified_premises) : null,
+  };
+}
+
+async function buildStayBill(pool, booking, foodOrders, opts) {
+  const context = opts.slabs ? { slabs: opts.slabs, foodRate: opts.foodRate } : await loadPricingContext(pool, booking, foodOrders);
+  return priceStayBill(booking, foodOrders, { ...opts, ...context });
+}
+
+async function previewBill(
+  lodgeId,
+  bookingId,
+  { includeLateCheckout = true, discountAmount = 0, targetTotal = 0 } = {}
+) {
   const pool = await getPool();
   const booking = await loadBookingForBilling(lodgeId, bookingId);
 
@@ -308,57 +498,61 @@ async function previewBill(lodgeId, bookingId, { includeLateCheckout = true } = 
   }
 
   const active = await findActiveInvoice(pool.request(), bookingId);
-  const amounts = nightlyAmounts(booking);
-  const nightsSubtotal = round2(amounts.reduce((sum, n) => sum + n, 0));
-  const slabs = await getGstSlabs(pool);
-  const { cgstAmount, sgstAmount, anyTaxable } = computeGstBreakdown(amounts, slabs);
-
-  // Whatever reception agreed at the desk, shown as its own line but carried
-  // inside the accommodation subtotal so the SAC and the tax stay correct.
-  // Recomputed rather than adjusted client-side when the desk drops it: taking
-  // the charge off can move the stay into a lower GST band and change the
-  // round-off, so the whole document has to be re-derived, not patched.
-  const late = lateChargeSide(booking, amounts, slabs, true, includeLateCheckout);
-  const subtotal = round2(nightsSubtotal + late.amount);
 
   // Anything the guest ate and was served during the stay, not yet billed.
   const foodOrders = await loadUnbilledOrders(pool.request(), lodgeId, { bookingId });
-  const food = await buildFoodSide(pool, booking.is_specified_premises, foodOrders);
   const foodItems = await loadFoodItemsForOrders(pool.request(), foodOrders.map((o) => o.id));
 
-  const gst = booking.is_gst_registered
-    ? {
-        // A stay under the nil threshold is a bill of supply — unless food was
-        // served, which is taxable at 5% or 18% regardless of the room rate and
-        // therefore makes the whole document a tax invoice.
-        documentType: anyTaxable || late.taxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY',
-        ...buildBreakdown(
-          subtotal,
-          round2(cgstAmount + late.cgstAmount),
-          round2(sgstAmount + late.sgstAmount),
-          true,
-          food
-        ),
-      }
-    : null;
-  const nonGst = {
-    documentType: 'CASH_RECEIPT',
-    ...buildBreakdown(subtotal, 0, 0, false, food ? { ...food, cgstAmount: 0, sgstAmount: 0 } : null),
-  };
+  const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
+
+  // A target is the desk saying what the guest hands over; the discount that
+  // produces it has to be searched for. Both DB reads the pricing needs are
+  // hoisted out first, so the search costs no queries at all.
+  let applied = discountAmount;
+  let targetAchieved = null;
+  let context = null;
+  if (targetTotal > 0) {
+    context = await loadPricingContext(pool, booking, foodOrders);
+    const priced = (d) =>
+      priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmount: d, ...context });
+    const sideOf = (b) => b.gst ?? b.nonGst;
+    // What the guest hands over, not the bill's own total — the advance is
+    // already in the property's hands.
+    const payable = (d) => round2(sideOf(priced(d)).totalAmount - advancePaid);
+    const solved = solveDiscountForTarget(targetTotal, sideOf(priced(0)).grossSubtotal, payable);
+    applied = solved.discount;
+    targetAchieved = solved.achieved;
+  }
+
+  const bill = await buildStayBill(pool, booking, foodOrders, {
+    includeLateCheckout,
+    discountAmount: applied,
+    ...(context ?? {}),
+  });
+  const { gst, nonGst, grossNights, nightsSubtotal } = bill;
 
   return {
     bookingId: booking.id,
     guestName: booking.guest_name,
     roomNumber: booking.room_number,
     categoryName: booking.category_name,
-    nights: amounts.length,
+    nights: grossNights.length,
     // Split out of the accommodation subtotal so the bill can show what the
     // nights cost and what the overstay cost as two separate lines.
     nightsSubtotal,
     // What those nights were made of. Sums to nightsSubtotal, not to the
     // accommodation subtotal — the late charge is its own line beside it.
     roomCharges: roomChargeLines(booking),
-    lateCheckoutCharge: late.amount,
+    lateCheckoutCharge: bill.grossLate,
+    // Everything on this bill before tax and before anything comes off it —
+    // the figure a percentage discount is a percentage *of*, so the screen can
+    // convert between "10%" and "₹520" without guessing at the base.
+    discountBase: bill.grossSubtotal,
+    discountAmount: bill.discount,
+    // What the guest was actually brought to, when a target was asked for.
+    // Often not the exact figure typed: GST bands per night and the total
+    // rounds to the rupee, so the screen has to be able to say so.
+    targetAchieved,
     // What reception agreed at checkout, regardless of whether this preview is
     // carrying it. The desk needs the number visible to decide against it —
     // dropping the charge must not also hide what is being dropped.
@@ -372,6 +566,17 @@ async function previewBill(lodgeId, bookingId, { includeLateCheckout = true } = 
     foodItems,
     gst,
     nonGst,
+    // The document itself, ready to render. Built for the side this property
+    // actually issues on — a registered lodge writes tax invoices, an
+    // unregistered one has nothing but the cash receipt.
+    document: buildPreviewDocument({
+      row: booking,
+      side: gst ?? nonGst,
+      billingSide: booking.is_gst_registered ? 'GST' : 'NON_GST',
+      foodItems,
+      lateCheckoutCharge: bill.grossLate,
+      kind: 'STAY',
+    }),
     alreadyInvoiced: !!active,
   };
 }
@@ -437,14 +642,37 @@ async function loadFoodItemsByInvoice(pool, invoiceIds) {
   return byInvoice;
 }
 
+// What the food on a bill is worth before anything comes off it.
+function foodSubtotalOf(orders) {
+  return round2(orders.reduce((sum, o) => sum + o.subtotal, 0));
+}
+
 // Turns a set of unbilled orders into the food side of a bill, or null when
 // there's nothing to charge.
-async function buildFoodSide(pool, isSpecifiedPremises, orders) {
+//
+// `taxableSubtotal` is the food's share of the bill after any discount — what
+// the tax is due on. The returned `subtotal` stays gross, because that is what
+// the itemised lines above it on the document add up to; the discount is shown
+// once, on its own line, for the bill as a whole.
+// Pure once the rate is in hand — see priceStayBill for why that matters.
+function foodSideOf(orders, taxableSubtotal, rate) {
   if (orders.length === 0) return null;
-  const subtotal = round2(orders.reduce((sum, o) => sum + o.subtotal, 0));
-  const { ratePercent, sacCode } = await getFoodRate(pool, isSpecifiedPremises);
-  const { cgstAmount, sgstAmount, taxable } = computeFoodTax(subtotal, ratePercent);
-  return { subtotal, cgstAmount, sgstAmount, taxable, ratePercent, sacCode };
+  const subtotal = foodSubtotalOf(orders);
+  const taxedOn = taxableSubtotal == null ? subtotal : round2(taxableSubtotal);
+  const tax = computeFoodTax(taxedOn, rate.ratePercent);
+  return {
+    subtotal,
+    cgstAmount: tax.cgstAmount,
+    sgstAmount: tax.sgstAmount,
+    taxable: tax.taxable,
+    ratePercent: rate.ratePercent,
+    sacCode: rate.sacCode,
+  };
+}
+
+async function buildFoodSide(pool, isSpecifiedPremises, orders, taxableSubtotal = null, rate = null) {
+  if (orders.length === 0) return null;
+  return foodSideOf(orders, taxableSubtotal, rate ?? (await getFoodRate(pool, isSpecifiedPremises)));
 }
 
 async function issueInvoice(lodgeId, userId, bookingId, input) {
@@ -457,24 +685,13 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
 
   const billingSide = booking.is_gst_registered ? input.billingSide || 'GST' : 'NON_GST';
 
-  const amounts = nightlyAmounts(booking);
-  const nightsSubtotal = round2(amounts.reduce((sum, n) => sum + n, 0));
-  const slabs = await getGstSlabs(pool);
-
-  // Read off the booking, which is where reception's decision was recorded at
-  // checkout — never recomputed from the policy here, or a lodge that edited
-  // its late-fee percentages would silently restate bills issued last month.
-  // Whether it lands on this document at all is the billing desk's call, taken
-  // in the preview and posted back with the rest of the bill.
-  const late = lateChargeSide(
-    booking,
-    amounts,
-    slabs,
-    billingSide === 'GST',
-    input.includeLateCheckout !== false
-  );
-  const subtotal = round2(nightsSubtotal + late.amount);
-
+  // Whether the overstay charge lands on this document at all is the billing
+  // desk's call, taken in the preview and posted back with the rest of the
+  // bill. The charge itself is read off the booking, where reception's decision
+  // was recorded at checkout — never recomputed from the policy here, or a
+  // lodge that edited its late-fee percentages would silently restate bills
+  // issued last month.
+  const includeLateCheckout = input.includeLateCheckout !== false;
   const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
 
   const transaction = new sql.Transaction(pool);
@@ -489,24 +706,15 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
     // reception may deliver one more order between opening the bill and
     // issuing it, and the charge belongs on this document, not stranded.
     const foodOrders = await loadUnbilledOrders(new sql.Request(transaction), lodgeId, { bookingId });
-    const food = await buildFoodSide(pool, booking.is_specified_premises, foodOrders);
 
-    let documentType;
-    let breakdown;
-    if (billingSide === 'GST') {
-      const { cgstAmount, sgstAmount, anyTaxable } = computeGstBreakdown(amounts, slabs);
-      documentType = anyTaxable || late.taxable || food?.taxable ? 'TAX_INVOICE' : 'BILL_OF_SUPPLY';
-      breakdown = buildBreakdown(
-        subtotal,
-        round2(cgstAmount + late.cgstAmount),
-        round2(sgstAmount + late.sgstAmount),
-        true,
-        food
-      );
-    } else {
-      documentType = 'CASH_RECEIPT';
-      breakdown = buildBreakdown(subtotal, 0, 0, false, food ? { ...food, cgstAmount: 0, sgstAmount: 0 } : null);
-    }
+    // Priced by the same code the preview ran, so the document written here is
+    // the one the desk agreed to on screen.
+    const bill = await buildStayBill(pool, booking, foodOrders, {
+      includeLateCheckout,
+      discountAmount: input.discountAmount ?? 0,
+    });
+    const side = billingSide === 'GST' ? bill.gst : bill.nonGst;
+    const { documentType, ...breakdown } = side;
 
     const seriesType = billingSide;
     const seriesResult = await new sql.Request(transaction)
@@ -547,23 +755,26 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       .input('advancePaid', sql.Decimal(10, 2), advancePaid)
       .input('balanceCollected', sql.Decimal(10, 2), input.collectedAmount ?? 0)
       .input('balancePaymentMethod', sql.NVarChar, input.paymentMethod ?? null)
+      .input('balanceReference', sql.NVarChar, input.paymentReference ?? null)
       .input('foodSubtotal', sql.Decimal(10, 2), breakdown.foodSubtotal)
       .input('foodCgstAmount', sql.Decimal(10, 2), breakdown.foodCgstAmount)
       .input('foodSgstAmount', sql.Decimal(10, 2), breakdown.foodSgstAmount)
-      .input('lateCheckoutCharge', sql.Decimal(10, 2), late.amount)
+      .input('lateCheckoutCharge', sql.Decimal(10, 2), bill.grossLate)
+      .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
+      .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.invoices
           (lodge_id, booking_id, document_type, billing_side, invoice_number, room_subtotal,
            cgst_amount, sgst_amount, food_subtotal, food_cgst_amount, food_sgst_amount,
-           late_checkout_charge, round_off, total_amount, advance_paid, balance_collected,
-           balance_payment_method, created_by)
+           late_checkout_charge, discount_amount, discount_percent, round_off, total_amount,
+           advance_paid, balance_collected, balance_payment_method, balance_reference, created_by)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @bookingId, @documentType, @billingSide, @invoiceNumber, @roomSubtotal,
            @cgstAmount, @sgstAmount, @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
-           @lateCheckoutCharge, @roundOff, @totalAmount, @advancePaid, @balanceCollected,
-           @balancePaymentMethod, @createdBy)
+           @lateCheckoutCharge, @discountAmount, @discountPercent, @roundOff, @totalAmount,
+           @advancePaid, @balanceCollected, @balancePaymentMethod, @balanceReference, @createdBy)
       `);
 
     const invoiceId = inserted.recordset[0].id;
@@ -601,6 +812,19 @@ function mapInvoice(row) {
   const foodCgst = Number(row.food_cgst_amount ?? 0);
   const foodSgst = Number(row.food_sgst_amount ?? 0);
 
+  // The stored subtotals are gross — what was sold, matching the itemised
+  // lines on the document — and the discount is its own stored line. Tax was
+  // charged on the discounted amounts, so the printed rate has to be backed
+  // out of those, which means re-splitting the discount the way it was
+  // apportioned when the bill was issued. Display only; the amounts themselves
+  // are read straight off the row, never recomputed.
+  const discountAmount = Number(row.discount_amount ?? 0);
+  const [roomNet, foodNet] = netOfDiscount(
+    [roomSubtotal, foodSubtotal],
+    discountAmount,
+    round2(roomSubtotal + foodSubtotal)
+  );
+
   return {
     id: row.id,
     bookingId: row.booking_id,
@@ -632,18 +856,25 @@ function mapInvoice(row) {
     lateCheckoutMinutes: row.late_checkout_minutes ?? null,
     cgstAmount: Number(row.cgst_amount),
     sgstAmount: Number(row.sgst_amount),
-    cgstRatePercent: ratePercentFromAmount(Number(row.cgst_amount), roomSubtotal),
-    sgstRatePercent: ratePercentFromAmount(Number(row.sgst_amount), roomSubtotal),
+    cgstRatePercent: ratePercentFromAmount(Number(row.cgst_amount), roomNet),
+    sgstRatePercent: ratePercentFromAmount(Number(row.sgst_amount), roomNet),
     foodSubtotal,
     foodCgstAmount: foodCgst,
     foodSgstAmount: foodSgst,
-    foodCgstRatePercent: ratePercentFromAmount(foodCgst, foodSubtotal),
-    foodSgstRatePercent: ratePercentFromAmount(foodSgst, foodSubtotal),
+    foodCgstRatePercent: ratePercentFromAmount(foodCgst, foodNet),
+    foodSgstRatePercent: ratePercentFromAmount(foodSgst, foodNet),
+    // What the desk took off this bill, and the percentage it was agreed as.
+    // 0 on every bill written before discounts existed, which prints nothing.
+    discountAmount,
+    discountPercent: Number(row.discount_percent ?? 0),
     roundOff: Number(row.round_off),
     totalAmount: Number(row.total_amount),
     advancePaid: Number(row.advance_paid),
     balanceCollected: Number(row.balance_collected),
     balancePaymentMethod: row.balance_payment_method,
+    // The UPI/card transaction number for what was collected. NULL on cash and
+    // on every bill issued before this was recorded.
+    balanceReference: row.balance_reference ?? null,
     status: row.status,
     voidReason: row.void_reason,
     voidedAt: row.voided_at,
@@ -655,6 +886,75 @@ function mapInvoice(row) {
     lodgeAddress: row.lodge_address,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
+  };
+}
+
+// The bill as it will print, before it exists. Deliberately the same field
+// names mapInvoice produces from an issued row, so one component renders both
+// — a preview that goes through its own code path is a preview that can lie
+// about the document it is previewing.
+//
+// The number and the date are the two things a preview genuinely doesn't have.
+// The series is allocated at issue time on purpose, so abandoned previews
+// don't burn invoice numbers out of a sequence that has to be gapless.
+function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutCharge, kind, tableLabel }) {
+  const roomSubtotal = side.subtotal;
+  return {
+    kind,
+    tableLabel: tableLabel ?? null,
+    invoiceNumber: null,
+    createdAt: null,
+    status: 'PREVIEW',
+    documentType: side.documentType,
+    billingSide,
+
+    lodgeName: row.lodge_name,
+    lodgePhone: row.lodge_phone,
+    lodgeAddress: row.lodge_address,
+    lodgeCity: row.lodge_city,
+    lodgeState: row.lodge_state,
+    gstin: row.gstin,
+    isGstRegistered: !!row.is_gst_registered,
+
+    guestName: row.guest_name ?? null,
+    guestPhone: row.guest_phone ?? null,
+    numGuests: row.num_guests ?? null,
+    roomNumber: row.room_number ?? null,
+    categoryName: row.category_name ?? null,
+    checkInDate: isoDate(row.check_in_date),
+    checkOutDate: isoDate(row.check_out_date),
+    actualCheckInAt: row.actual_check_in_at ?? null,
+    actualCheckOutAt: row.actual_check_out_at ?? null,
+    lateCheckoutMinutes: row.late_checkout_minutes ?? null,
+
+    roomSubtotal,
+    lateCheckoutCharge,
+    nightsSubtotal: round2(roomSubtotal - lateCheckoutCharge),
+    roomCharges: roomChargeLines(row),
+    cgstAmount: side.cgstAmount,
+    sgstAmount: side.sgstAmount,
+    cgstRatePercent: side.cgstRatePercent,
+    sgstRatePercent: side.sgstRatePercent,
+
+    foodSubtotal: side.foodSubtotal,
+    foodCgstAmount: side.foodCgstAmount,
+    foodSgstAmount: side.foodSgstAmount,
+    foodCgstRatePercent: side.foodCgstRatePercent,
+    foodSgstRatePercent: side.foodSgstRatePercent,
+    foodItems,
+
+    discountAmount: side.discountAmount,
+    discountPercent: side.discountPercent,
+    roundOff: side.roundOff,
+    totalAmount: side.totalAmount,
+
+    advancePaid: row.advance_amount != null ? Number(row.advance_amount) : 0,
+    // Not known yet — the desk types it in the modal, and the screen overlays
+    // what it has typed onto this before rendering.
+    balanceCollected: 0,
+    balancePaymentMethod: null,
+    balanceReference: null,
+    voidReason: null,
   };
 }
 
@@ -801,7 +1101,12 @@ async function loadLodgeForBilling(pool, lodgeId) {
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT is_gst_registered, gstin, is_specified_premises FROM dbo.lodges WHERE id = @lodgeId');
+    .query(`
+      SELECT is_gst_registered, gstin, is_specified_premises,
+             name AS lodge_name, phone AS lodge_phone, address AS lodge_address,
+             city AS lodge_city, state AS lodge_state
+      FROM dbo.lodges WHERE id = @lodgeId
+    `);
   const row = result.recordset[0];
   if (!row) throw new ApiError('Lodge not found.', 404);
   return row;
@@ -831,7 +1136,43 @@ async function loadUnbilledTabOrders(request, lodgeId, tableId) {
   }));
 }
 
-async function previewFoodBill(lodgeId, tableId) {
+// A table bill is the food side on its own — no room, no overstay — so the
+// discount has nothing to share itself between and simply comes off the food.
+// Pure, for the same reason priceStayBill is.
+function priceFoodBill(lodge, orders, discountAmount, foodRate) {
+  const grossSubtotal = foodSubtotalOf(orders);
+  const discount = cappedDiscount(discountAmount, grossSubtotal);
+  const food = foodSideOf(orders, round2(grossSubtotal - discount), foodRate);
+
+  const gst = lodge.is_gst_registered
+    ? {
+        // Food is always taxable, so a GST-registered restaurant always issues
+        // a tax invoice — there's no nil band to fall through to a bill of
+        // supply the way a cheap room night does.
+        documentType: 'TAX_INVOICE',
+        ...buildBreakdown({ roomSubtotal: 0, cgstAmount: 0, sgstAmount: 0, isGstSide: true, food, discountAmount: discount }),
+      }
+    : null;
+  const nonGst = {
+    documentType: 'CASH_RECEIPT',
+    ...buildBreakdown({
+      roomSubtotal: 0,
+      cgstAmount: 0,
+      sgstAmount: 0,
+      isGstSide: false,
+      food: { ...food, cgstAmount: 0, sgstAmount: 0 },
+      discountAmount: discount,
+    }),
+  };
+
+  return { gst, nonGst, grossSubtotal, discount };
+}
+
+async function buildFoodBill(pool, lodge, orders, discountAmount, foodRate = null) {
+  return priceFoodBill(lodge, orders, discountAmount, foodRate ?? (await getFoodRate(pool, lodge.is_specified_premises)));
+}
+
+async function previewFoodBill(lodgeId, tableId, { discountAmount = 0, targetTotal = 0 } = {}) {
   const pool = await getPool();
   const lodge = await loadLodgeForBilling(pool, lodgeId);
   const orders = await loadUnbilledTabOrders(pool.request(), lodgeId, tableId);
@@ -840,22 +1181,25 @@ async function previewFoodBill(lodgeId, tableId) {
     throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
   }
 
-  const food = await buildFoodSide(pool, lodge.is_specified_premises, orders);
   const foodItems = await loadFoodItemsForOrders(pool.request(), orders.map((o) => o.id));
 
-  const gst = lodge.is_gst_registered
-    ? {
-        // Food is always taxable, so a GST-registered restaurant always issues
-        // a tax invoice — there's no nil band to fall through to a bill of
-        // supply the way a cheap room night does.
-        documentType: 'TAX_INVOICE',
-        ...buildBreakdown(0, 0, 0, true, food),
-      }
-    : null;
-  const nonGst = {
-    documentType: 'CASH_RECEIPT',
-    ...buildBreakdown(0, 0, 0, false, { ...food, cgstAmount: 0, sgstAmount: 0 }),
-  };
+  // No advance on a table tab, so what the customer hands over is the total.
+  const foodRate = await getFoodRate(pool, lodge.is_specified_premises);
+  let applied = discountAmount;
+  let targetAchieved = null;
+  if (targetTotal > 0) {
+    const priced = (d) => priceFoodBill(lodge, orders, d, foodRate);
+    const sideOf = (b) => b.gst ?? b.nonGst;
+    const solved = solveDiscountForTarget(
+      targetTotal,
+      sideOf(priced(0)).grossSubtotal,
+      (d) => sideOf(priced(d)).totalAmount
+    );
+    applied = solved.discount;
+    targetAchieved = solved.achieved;
+  }
+
+  const bill = await buildFoodBill(pool, lodge, orders, applied, foodRate);
 
   return {
     tableId: tableId ?? null,
@@ -864,8 +1208,21 @@ async function previewFoodBill(lodgeId, tableId) {
     foodItems,
     isGstRegistered: !!lodge.is_gst_registered,
     gstin: lodge.gstin,
-    gst,
-    nonGst,
+    // The base a percentage discount is a percentage of — see previewBill.
+    discountBase: bill.grossSubtotal,
+    discountAmount: bill.discount,
+    targetAchieved,
+    gst: bill.gst,
+    nonGst: bill.nonGst,
+    document: buildPreviewDocument({
+      row: lodge,
+      side: bill.gst ?? bill.nonGst,
+      billingSide: lodge.is_gst_registered ? 'GST' : 'NON_GST',
+      foodItems,
+      lateCheckoutCharge: 0,
+      kind: 'FOOD',
+      tableLabel: orders[0].tableLabel || 'Counter / takeaway',
+    }),
   };
 }
 
@@ -886,13 +1243,8 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
       throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
     }
 
-    const food = await buildFoodSide(pool, lodge.is_specified_premises, orders);
-
-    const documentType = billingSide === 'GST' ? 'TAX_INVOICE' : 'CASH_RECEIPT';
-    const breakdown =
-      billingSide === 'GST'
-        ? buildBreakdown(0, 0, 0, true, food)
-        : buildBreakdown(0, 0, 0, false, { ...food, cgstAmount: 0, sgstAmount: 0 });
+    const bill = await buildFoodBill(pool, lodge, orders, input.discountAmount ?? 0);
+    const { documentType, ...breakdown } = billingSide === 'GST' ? bill.gst : bill.nonGst;
 
     const seriesType = billingSide;
     const seriesResult = await new sql.Request(transaction)
@@ -933,21 +1285,26 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
       .input('totalAmount', sql.Decimal(10, 2), breakdown.totalAmount)
       .input('balanceCollected', sql.Decimal(10, 2), input.collectedAmount ?? 0)
       .input('balancePaymentMethod', sql.NVarChar, input.paymentMethod ?? null)
+      .input('balanceReference', sql.NVarChar, input.paymentReference ?? null)
+      .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
+      .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.invoices
           (lodge_id, booking_id, table_id, document_type, billing_side, invoice_number,
            room_subtotal, cgst_amount, sgst_amount,
            food_subtotal, food_cgst_amount, food_sgst_amount,
+           discount_amount, discount_percent,
            round_off, total_amount, advance_paid, balance_collected,
-           balance_payment_method, created_by)
+           balance_payment_method, balance_reference, created_by)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, NULL, @tableId, @documentType, @billingSide, @invoiceNumber,
            0, 0, 0,
            @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
+           @discountAmount, @discountPercent,
            @roundOff, @totalAmount, 0, @balanceCollected,
-           @balancePaymentMethod, @createdBy)
+           @balancePaymentMethod, @balanceReference, @createdBy)
       `);
 
     const invoiceId = inserted.recordset[0].id;
@@ -968,6 +1325,11 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
 }
 
 module.exports = {
+  // Exported so the guest register and the booking detail can itemise a stay
+  // with the same labels and the same aggregation the bill will use. A stay
+  // that reads one way on the booking screen and another on its invoice is a
+  // dispute waiting to happen.
+  roomChargeLines,
   listBillableBookings,
   previewBill,
   issueInvoice,

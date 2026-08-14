@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const rolesService = require('./roles.service');
-const { PERMISSIONS } = require('./permissions');
+const { permissionsFor } = require('./permissions');
 const { ApiError } = require('../../middleware/errorHandler');
 
 const permissionsField = z.array(z.string()).default([]);
@@ -29,8 +29,11 @@ async function listRolesHandler(req, res, next) {
   try {
     const roles = await rolesService.listRoles(req.user.lodgeId);
     // The catalog ships with the roles so the UI never has to keep its own copy
-    // of the permission list in sync with the backend's.
-    res.json({ roles, permissions: PERMISSIONS });
+    // of the permission list in sync with the backend's — and it is cut to what
+    // this property can actually do, so a rooms-only lodge is never offered a
+    // "Food orders" checkbox that grants access to a screen it doesn't have.
+    const capabilities = await rolesService.getLodgeCapabilities(req.user.lodgeId);
+    res.json({ roles, permissions: permissionsFor(capabilities) });
   } catch (err) {
     next(err);
   }

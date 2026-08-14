@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPut, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { UNIT_LABEL, formatQty, groupByCategory } from './inventoryUnits';
 import './forms.css';
 import './InventoryPanel.css';
@@ -26,8 +27,8 @@ const emptyLine = () => ({ key: Math.random().toString(36).slice(2), materialId:
 
 export default function RecipesPanel() {
   const session = getSession();
-  const [dishes, setDishes] = useState(null);
-  const [materials, setMaterials] = useState(null);
+  const [dishes, setDishes] = useState(() => readCache('/inventory/recipes'));
+  const [materials, setMaterials] = useState(() => readCache('/inventory/materials'));
   const [error, setError] = useState('');
 
   const [query, setQuery] = useState('');
@@ -50,8 +51,8 @@ export default function RecipesPanel() {
       apiGet('/inventory/materials?includeInactive=false', { token: session?.token }),
     ])
       .then(([recipeData, materialData]) => {
-        setDishes(recipeData.dishes);
-        setMaterials(materialData.materials);
+        setDishes(writeCache('/inventory/recipes', recipeData.dishes));
+        setMaterials(writeCache('/inventory/materials', materialData.materials));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load your dishes.'));

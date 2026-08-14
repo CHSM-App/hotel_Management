@@ -1,6 +1,13 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
-const { PERMISSIONS, SYSTEM_ROLE_KEYS, isValidPermission } = require('./permissions');
+const {
+  PERMISSIONS,
+  SYSTEM_ROLE_KEYS,
+  isValidPermission,
+  permissionsFor,
+  permissionAvailableFor,
+  roleAvailableFor,
+} = require('./permissions');
 
 function parsePermissions(raw) {
   try {
@@ -27,10 +34,23 @@ function mapRole(row) {
   };
 }
 
+// What this property is, which decides which roles and permissions mean
+// anything for it. Read here rather than threaded down from the caller so the
+// filter can't be forgotten at one of the call sites.
+async function lodgeCapabilities(pool, lodgeId) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT has_rooms, serves_food FROM dbo.lodges WHERE id = @lodgeId');
+  const row = result.recordset[0];
+  return { hasRooms: !!row?.has_rooms, servesFood: !!row?.serves_food };
+}
+
 // Effective roles for a lodge: every built-in, with any lodge-specific
 // override swapped in, plus the lodge's own custom roles.
 async function listRoles(lodgeId) {
   const pool = await getPool();
+  const capabilities = await lodgeCapabilities(pool, lodgeId);
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -50,7 +70,11 @@ async function listRoles(lodgeId) {
     }
   }
 
-  const roles = Array.from(byKey.values()).map(mapRole);
+  const roles = Array.from(byKey.values())
+    .map(mapRole)
+    // A built-in the property has no use for is not offered at all. KITCHEN at
+    // a rooms-only lodge is the case this exists for.
+    .filter((role) => roleAvailableFor(role.roleKey, capabilities));
   roles.sort((a, b) => {
     if (a.isSystem !== b.isSystem) return a.isSystem ? -1 : 1;
     if (a.isSystem) return SYSTEM_ROLE_KEYS.indexOf(a.roleKey) - SYSTEM_ROLE_KEYS.indexOf(b.roleKey);
@@ -75,17 +99,29 @@ async function getEffectiveRole(lodgeId, roleKey) {
   return row ? mapRole(row) : null;
 }
 
-function validatePermissions(permissions) {
+async function getLodgeCapabilities(lodgeId) {
+  return lodgeCapabilities(await getPool(), lodgeId);
+}
+
+function validatePermissions(permissions, capabilities) {
   const bad = permissions.filter((p) => !isValidPermission(p));
   if (bad.length > 0) {
     throw new ApiError(`Unknown permission: ${bad[0]}.`, 400);
+  }
+  // A permission the property has no screen for. The UI doesn't offer these,
+  // so reaching here means a stale form or a crafted request — either way,
+  // granting it would hand someone a key to a door that isn't there.
+  const unusable = permissions.filter((p) => !permissionAvailableFor(p, capabilities));
+  if (unusable.length > 0) {
+    const label = PERMISSIONS.find((x) => x.key === unusable[0])?.label ?? unusable[0];
+    throw new ApiError(`This property doesn’t serve food, so “${label}” can’t be granted.`, 400);
   }
   return Array.from(new Set(permissions));
 }
 
 async function createRole(lodgeId, input) {
   const pool = await getPool();
-  const permissions = validatePermissions(input.permissions);
+  const permissions = validatePermissions(input.permissions, await lodgeCapabilities(pool, lodgeId));
 
   // Slug from the display name, kept lodge-unique. Uppercase so custom keys
   // read the same way as the built-ins in the users table.
@@ -126,10 +162,14 @@ async function createRole(lodgeId, input) {
 // default row is never mutated — other lodges depend on it).
 async function updateRolePermissions(lodgeId, roleKey, input) {
   const pool = await getPool();
-  const permissions = validatePermissions(input.permissions);
+  const capabilities = await lodgeCapabilities(pool, lodgeId);
+  const permissions = validatePermissions(input.permissions, capabilities);
 
   const current = await getEffectiveRole(lodgeId, roleKey);
   if (!current) {
+    throw new ApiError('Role not found.', 404);
+  }
+  if (!roleAvailableFor(roleKey, capabilities)) {
     throw new ApiError('Role not found.', 404);
   }
   if (current.roleKey === 'OWNER' && !permissions.includes('staff.manage')) {
@@ -212,6 +252,7 @@ async function deleteRole(lodgeId, roleKey) {
 }
 
 module.exports = {
+  getLodgeCapabilities,
   PERMISSIONS,
   listRoles,
   getEffectiveRole,

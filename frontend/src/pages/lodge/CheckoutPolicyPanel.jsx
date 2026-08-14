@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import './forms.css';
 import './RoomsAndRates.css';
 import './CheckoutPolicyPanel.css';
@@ -56,7 +57,7 @@ function previewSteps(policy) {
 
 export default function CheckoutPolicyPanel() {
   const session = getSession();
-  const [policy, setPolicy] = useState(null);
+  const [policy, setPolicy] = useState(() => readCache('/rooms/checkout-policy'));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -64,7 +65,7 @@ export default function CheckoutPolicyPanel() {
   useEffect(() => {
     apiGet('/rooms/checkout-policy', { token: session?.token })
       .then((data) => {
-        setPolicy(data.policy);
+        setPolicy(writeCache('/rooms/checkout-policy', data.policy));
         setError('');
       })
       .catch((err) =>
@@ -93,7 +94,7 @@ export default function CheckoutPolicyPanel() {
         },
         { token: session?.token }
       );
-      setPolicy(data.policy);
+      setPolicy(writeCache('/rooms/checkout-policy', data.policy));
       setSaved(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save the checkout policy.');

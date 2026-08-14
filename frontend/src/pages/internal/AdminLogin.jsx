@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
-import { setSession } from '../../lib/auth';
+import { isStaff, setSession } from '../../lib/auth';
 import '../auth/AuthLayout.css';
 
 export default function AdminLogin() {
@@ -20,6 +20,12 @@ export default function AdminLogin() {
     return () => document.head.removeChild(meta);
   }, []);
 
+  // Already signed in — see the lodge login. Below every hook, including the
+  // effect above, so the early return can't change how many run.
+  if (isStaff()) {
+    return <Navigate to="/vt-internal/dashboard" replace />;
+  }
+
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   const handleSubmit = async (e) => {
@@ -35,7 +41,8 @@ export default function AdminLogin() {
     try {
       const data = await apiPost('/auth/admin-login', form);
       setSession({ token: data.token, role: data.role, name: data.name });
-      navigate('/vt-internal/dashboard');
+      // replace, not push — see the lodge login for why.
+      navigate('/vt-internal/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in. Check your connection.');
     } finally {

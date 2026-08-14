@@ -17,6 +17,12 @@
   --tape-booked-deep: #a52f22;
   --tape-checked-in: #2f6fb5;
   --tape-checked-in-deep: #245a96;
+  /* Amber rather than a lighter red or blue: a draft is not a weaker booking,
+     it is a different kind of thing, and a shade of an existing colour would
+     read as one. Dark enough to carry white text and to survive being printed
+     or looked at from across a desk. */
+  --tape-draft: #d99413;
+  --tape-draft-deep: #b87c0c;
 
   --tape-tile: 26px;
   --tape-tile-h: 22px;
@@ -163,6 +169,10 @@
 
 .tape-legend__swatch--checked-in {
   background: var(--tape-checked-in);
+}
+
+.tape-legend__swatch--draft {
+  background: var(--tape-draft);
 }
 
 /* ---------- one card per room category ---------- */
@@ -455,7 +465,8 @@
 }
 
 .tape-tile--booked,
-.tape-tile--checked-in {
+.tape-tile--checked-in,
+.tape-tile--draft {
   width: var(--tape-tile);
   margin: 0;
   border-radius: 0;
@@ -470,6 +481,13 @@
 
 .tape-tile--checked-in {
   background-color: var(--tape-checked-in);
+}
+
+/* Amber, and otherwise the same solid bar the booked and checked-in tiles
+   are — it keeps the shared top-edge highlight from the rule above. The colour
+   alone carries "draft"; the legend and the hover card say the rest. */
+.tape-tile--draft {
+  background-color: var(--tape-draft);
 }
 
 .tape-tile--start {
@@ -499,6 +517,27 @@
 
 .tape-tile--active.tape-tile--checked-in {
   background-color: var(--tape-checked-in-deep);
+}
+
+.tape-tile--active.tape-tile--draft {
+  background-color: var(--tape-draft-deep);
+}
+
+/* A draft against a night that is already let. The booking keeps the tile, so
+   this is a corner flag on it — small, but the only warning the desk gets that
+   somebody is drafting a room they can't have. */
+.tape-tile--has-draft {
+  position: relative;
+}
+
+.tape-tile--has-draft::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-width: 0 6px 6px 0;
+  border-style: solid;
+  border-color: transparent var(--tape-draft) transparent transparent;
 }
 
 .tape-tile--active {
@@ -570,6 +609,10 @@
 
 .tape-tooltip__dot--booked {
   background: #e4655a;
+}
+
+.tape-tooltip__dot--draft {
+  background: #e8b04a;
 }
 
 .tape-tooltip__dot--checked-in {

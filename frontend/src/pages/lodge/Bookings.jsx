@@ -1,7 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPatch, apiPatchForm, apiPostForm, apiGetBlob, apiDelete, ApiError } from '../../lib/api';
+import {
+  apiGet,
+  apiPost,
+  apiPut,
+  apiPatch,
+  apiPatchForm,
+  apiPostForm,
+  apiGetBlob,
+  apiDelete,
+  ApiError,
+} from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import StayDetails from './StayDetails';
+import { VEHICLE_TYPE_LABEL, describeParty, formatDateLong, idProofLabel } from './stayFormat';
 import './forms.css';
 import './chartSections.css';
 import './tapeChart.css';
@@ -13,18 +26,24 @@ import './Bookings.css';
 const LOOKBACK_DAYS = 2;
 const ROLLING_DAYS = 31;
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
+// Money that arrives this way leaves a reference the property can reconcile
+// against its settlement statement; cash doesn't, so asking for one there
+// would be asking staff to invent a number. Mirrors ONLINE_METHODS on the
+// server, which is what actually enforces it.
+const ONLINE_PAYMENT_METHODS = ['UPI', 'CARD'];
+const needsPaymentReference = (method) => ONLINE_PAYMENT_METHODS.includes(method);
+
+// What to send as the advance's transaction number. Dropped when the method is
+// cash: switching UPI → Cash after typing a reference would otherwise file a
+// transaction number against a payment that never had one.
+function advanceReferenceOf(form) {
+  return needsPaymentReference(form.advancePaymentMethod) ? form.advanceReference.trim() : '';
+}
 const ID_PROOF_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
 const ID_PROOF_MAX_BYTES = 5 * 1024 * 1024;
 const STATUS_LABEL = { BOOKED: 'Booked', CHECKED_IN: 'Checked in', CHECKED_OUT: 'Checked out', CANCELLED: 'Cancelled' };
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
-const VEHICLE_TYPE_LABEL = {
-  TWO_WHEELER: 'Two wheeler',
-  FOUR_WHEELER: 'Four wheeler',
-  TRAVELLER: 'Traveller',
-  BUS: 'Bus',
-};
-
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -57,35 +76,6 @@ function formatDateHead(dateStr) {
     weekday: d.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'UTC' }),
     day: d.getUTCDate(),
   };
-}
-
-function formatDateLong(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-}
-
-// When the guest actually walked in or out, as against the dates they booked.
-// Same format the register uses — a stay opened from the chart and the same
-// stay opened from the register should not read as two different records.
-function formatDateTime(value) {
-  if (!value) return '—';
-  return new Date(value).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
-// Just the night's date — the year is already on the stay's date range above,
-// and repeating it on every line of a five-night tariff is noise.
-function formatNightDate(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-}
-
-// Reads after its label ("Left late by — 2h 15m"), so no "late" in the value.
-function formatLateBy(minutes) {
-  if (!minutes) return null;
-  if (minutes < 60) return `${minutes} minutes`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins === 0 ? `${hours} hours` : `${hours}h ${mins}m`;
 }
 
 // The chart is anchored to a whole calendar month, so every date that drives
@@ -156,12 +146,6 @@ const emptyVehicle = { number: '', type: '' };
 
 // "4 adults and 2 children" reads better on the desk than "6 guests", but
 // the children half only earns its place when there are any.
-function describeParty(adultCount, childCount) {
-  const adults = `${adultCount} adult${adultCount === 1 ? '' : 's'}`;
-  if (childCount === 0) return adults;
-  return `${adults} and ${childCount} child${childCount === 1 ? '' : 'ren'}`;
-}
-
 // A row someone added and then thought better of is dropped rather than
 // rejected — clicking "+ Add vehicle" and changing your mind shouldn't block
 // the booking. Anything half-filled is a real mistake and gets reported.
@@ -212,31 +196,102 @@ function chargesPayload(selections) {
   return selections.map((c) => ({ id: c.id, quantity: selectionCount(c.quantity) }));
 }
 
-// A blank or nonsense override is simply not sent, which lets the quote fall
-// back to the room category's own price — the same thing the booking will do
-// when it's saved.
-function overrideParam(value) {
+// A blank or nonsense concession simply isn't sent, so the quote shows the
+// full price — the same thing the booking will do when it's saved.
+function discountParam(value) {
   const amount = Number(value);
-  return value !== '' && Number.isFinite(amount) && amount > 0 ? `&basePriceOverride=${amount}` : '';
+  return value !== '' && Number.isFinite(amount) && amount > 0 ? `&discountAmount=${amount}` : '';
 }
 
-const initialNewBooking = {
+// Read-only: nothing sets a negotiated nightly rate any more, but a booking
+// made before concessions replaced it still prices against one, so its edit
+// quote has to ask for the same rate the save will use.
+function legacyRateParam(booking) {
+  return booking?.basePriceOverride ? `&basePriceOverride=${booking.basePriceOverride}` : '';
+}
+
+const initialBookingForm = {
   bookingType: 'WALK_IN',
   checkInDate: todayIso(),
   checkOutDate: addDays(todayIso(), 1),
   roomId: '',
   switchableCharges: [],
-  // Blank means "charge the category's price" — reception only fills this in
-  // when they've agreed something else for this stay.
-  basePriceOverride: '',
+  // Blank means "charge the full quote" — reception only fills this in when
+  // they've agreed to knock something off, once, at the end.
+  discountAmount: '',
   // The party is the guest count — adults[0] is the primary guest, and the
   // total is however many names reception actually types in.
   adults: [{ ...emptyGuest }],
   children: [],
   advanceAmount: '',
   advancePaymentMethod: '',
+  // The UPI/card transaction number. Blank on cash, which leaves no trail to
+  // record — see ONLINE_PAYMENT_METHODS.
+  advanceReference: '',
   vehicles: [],
 };
+
+// A half-filled booking, parked on the server. Reception gets interrupted
+// mid-form — a guest walks up, a phone rings — and the answers already typed in
+// are worth keeping.
+//
+// It lives in the database rather than this browser so the whole desk can see
+// it: it shows on the tape chart against the room and nights it names, and the
+// person on the next shift can pick it up. It reserves nothing, though — see
+// dbo.booking_drafts.
+//
+// File inputs are the one thing a draft can't hold. A File is a handle to
+// something on disk, not data, so it can't be serialised — the count of what
+// was dropped rides along so reopening can say how many to attach again.
+function draftableForm(form) {
+  const strip = (people) => people.map((p) => ({ ...p, idProofFile: null }));
+  return {
+    ...form,
+    droppedFiles: [...form.adults, ...form.children].filter((p) => p.idProofFile).length,
+    adults: strip(form.adults),
+    children: strip(form.children),
+  };
+}
+
+// A draft saved against an older shape of this form would restore into a
+// half-populated one and crash on the first .map — cheaper to check the two
+// fields the form can't run without than to version the payload.
+function usableDraft(draft) {
+  return Boolean(draft?.form?.adults?.length && Array.isArray(draft.form.children));
+}
+
+// The whole form as one comparable string, for telling whether anything has
+// been touched since it opened. Files are reduced to their names because a
+// File object doesn't serialise, and swapping one attachment for another is
+// a change worth catching.
+function formFingerprint(form) {
+  const mark = (people) =>
+    people.map((p) => ({ ...p, idProofFile: p.idProofFile ? p.idProofFile.name : null }));
+  return JSON.stringify({ ...form, adults: mark(form.adults), children: mark(form.children) });
+}
+
+function formatSavedAt(value) {
+  return new Date(value).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+// Whether there is anything in this form worth keeping — an untouched form
+// saved as a draft is just a banner offering to restore nothing.
+function hasFormContent(form) {
+  const named = [...form.adults, ...form.children].some((p) => p.name.trim() !== '');
+  return Boolean(
+    named ||
+      form.roomId ||
+      form.switchableCharges.length ||
+      form.vehicles.some((v) => v.number.trim() !== '') ||
+      form.advanceAmount.trim() !== '' ||
+      form.discountAmount.trim() !== ''
+  );
+}
 
 export default function Bookings({ onCheckedOut }) {
   const session = getSession();
@@ -252,6 +307,10 @@ export default function Bookings({ onCheckedOut }) {
   // The tile that's under the pointer right now, with the screen position to
   // float its card at. Guest names live only in here — never on the tiles.
   const [hoverTile, setHoverTile] = useState(null);
+  // Every parked booking on this property. Sits beside the chart's own state
+  // because it is loaded with it and drawn on it.
+  const [drafts, setDrafts] = useState(() => readCache('/bookings/drafts') ?? []);
+  const [showDrafts, setShowDrafts] = useState(false);
 
   const dates = useMemo(() => {
     const length = view.mode === 'month' ? daysInMonth(view.start) : ROLLING_DAYS;
@@ -261,10 +320,17 @@ export default function Bookings({ onCheckedOut }) {
   const rangeStart = view.start;
   const rangeEnd = useMemo(() => addDays(view.start, dates.length), [view.start, dates.length]);
 
+  const tapeKey = `/bookings/tape-chart?startDate=${rangeStart}&endDate=${rangeEnd}`;
+
   const loadTapeChart = () => {
-    apiGet(`/bookings/tape-chart?startDate=${rangeStart}&endDate=${rangeEnd}`, { token })
+    // Paint this window as it looked last time, immediately, then correct it.
+    // Keyed on the dates so stepping back to a month already looked at is
+    // instant too — and so a month never shows another month's bookings.
+    const seen = readCache(tapeKey);
+    if (seen) setTapeData(seen);
+    apiGet(tapeKey, { token })
       .then((data) => {
-        setTapeData(data);
+        setTapeData(writeCache(tapeKey, data));
         setTapeError('');
       })
       .catch((err) => {
@@ -272,10 +338,25 @@ export default function Bookings({ onCheckedOut }) {
       });
   };
 
+  // The chart carries the drafts that fall in the window on screen; this is
+  // the full list, for the chip and the drafts panel — including the ones with
+  // no room or dates yet, which can't be drawn anywhere.
+  const loadDrafts = () => {
+    apiGet('/bookings/drafts', { token })
+      .then((data) => setDrafts(writeCache('/bookings/drafts', data.drafts.filter(usableDraft))))
+      .catch(() => setDrafts([]));
+  };
+
   useEffect(() => {
     loadTapeChart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeStart, rangeEnd]);
+
+  // Loaded once — every action that changes the list reloads it.
+  useEffect(() => {
+    loadDrafts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Changing the window unmounts the tile the pointer is on, and an unmounted
   // tile never fires its mouseleave — so the card is dismissed with the move.
@@ -325,6 +406,27 @@ export default function Bookings({ onCheckedOut }) {
     return byRoom;
   }, [tapeData, rangeStart, rangeEnd]);
 
+  // The same map for drafts, kept separate on purpose. A draft reserves
+  // nothing, so it can sit on a night a real booking already holds — merging
+  // the two would either hide the booking or make the draft look like one.
+  // Where both land on a night, the booking wins the tile and the draft shows
+  // as a corner mark on it.
+  const draftOccupancy = useMemo(() => {
+    const byRoom = new Map();
+    for (const draft of tapeData?.drafts ?? []) {
+      const key = String(draft.roomId);
+      let byDate = byRoom.get(key);
+      if (!byDate) {
+        byDate = new Map();
+        byRoom.set(key, byDate);
+      }
+      const from = draft.checkInDate > rangeStart ? draft.checkInDate : rangeStart;
+      const to = draft.checkOutDate < rangeEnd ? draft.checkOutDate : rangeEnd;
+      for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, draft);
+    }
+    return byRoom;
+  }, [tapeData, rangeStart, rangeEnd]);
+
   // How much of each category is sold across the window, as room-nights. It
   // answers the question the desk actually opens this screen with — "what's
   // left in the deluxe rooms?" — without them counting tiles.
@@ -343,19 +445,62 @@ export default function Bookings({ onCheckedOut }) {
     return stats;
   }, [categorySections, occupancy, dates.length]);
 
-  // New booking modal
-  const [showNewBooking, setShowNewBooking] = useState(false);
-  const [newBooking, setNewBooking] = useState(initialNewBooking);
+  // The booking form. One form, two jobs: taking a stay and correcting one.
+  // 'EDIT' is the same modal with the answers already filled in, which is why
+  // there is one piece of state here and not two — a second copy is where a
+  // field ends up on the new form and not on the edit.
+  //
+  // null closes it. `editTarget` is the booking being corrected, held apart
+  // from the form because it carries the facts an edit can't change (when the
+  // stay started, what it was booked at) and the ones it reads back from the
+  // server after saving.
+  const [formMode, setFormMode] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+  const showBookingForm = formMode !== null;
+  const editing = formMode === 'EDIT';
+
+  const [draftNote, setDraftNote] = useState('');
+  // The draft this form is working on, if any. Set means Save draft updates
+  // that row instead of writing a new one, and the form offers to delete it.
+  const [draftId, setDraftId] = useState(null);
+  // The form exactly as it was handed over, so closing can tell "typed
+  // nothing" from "typed something and is about to lose it". Compared as a
+  // string rather than field by field — the form grows fields, and a dirty
+  // check that has to be remembered when it does is a dirty check that will
+  // one day quietly say clean.
+  const [openedAs, setOpenedAs] = useState('');
+  // Non-null while the "you have unsaved details" prompt is up.
+  const [closePrompt, setClosePrompt] = useState(null);
+  // Bumped to re-ask which rooms are free when nothing the room list keys on
+  // has changed but the answer might have — see applyDraft.
+  const [roomsNonce, setRoomsNonce] = useState(0);
+  const [bookingForm, setBookingForm] = useState(initialBookingForm);
   const [availableRooms, setAvailableRooms] = useState(null);
   const [availableRoomsError, setAvailableRoomsError] = useState('');
   const [quote, setQuote] = useState(null);
-  const [newBookingError, setNewBookingError] = useState('');
+  const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Every route into the form goes through here, so there is one place that
+  // remembers what it was handed and one definition of "unchanged".
+  const beginForm = (mode, form) => {
+    setBookingForm(form);
+    setOpenedAs(formFingerprint(form));
+    setClosePrompt(null);
+    setFormError('');
+    setAvailableRooms(null);
+    setAvailableRoomsError('');
+    setQuote(null);
+    setFormMode(mode);
+  };
 
   const openNewBooking = (presetRoomId, presetDate) => {
     const checkInDate = presetDate || todayIso();
-    setNewBooking({
-      ...initialNewBooking,
+    setEditTarget(null);
+    setDraftId(null);
+    setDraftNote('');
+    beginForm('CREATE', {
+      ...initialBookingForm,
       checkInDate,
       checkOutDate: addDays(checkInDate, 1),
       roomId: presetRoomId ? String(presetRoomId) : '',
@@ -365,37 +510,145 @@ export default function Bookings({ onCheckedOut }) {
       // would fail at check-in time.
       bookingType: checkInDate > todayIso() ? 'RESERVATION' : 'WALK_IN',
     });
-    setNewBookingError('');
-    setAvailableRooms(null);
-    setQuote(null);
-    setShowNewBooking(true);
   };
 
-  const closeNewBooking = () => {
+  // Anything typed in since the form opened. A booking is filled in at a
+  // counter with a guest waiting, and the cost of asking once is a click —
+  // the cost of not asking is the whole form.
+  const formTouched = showBookingForm && formFingerprint(bookingForm) !== openedAs;
+
+  // The × and Close both come here. It closes outright when there is nothing
+  // to lose, and asks first when there is.
+  const requestCloseBookingForm = () => {
     if (submitting) return;
-    setShowNewBooking(false);
+    if (!formTouched) {
+      closeBookingForm();
+      return;
+    }
+    // A new booking can be parked and finished later; changes to one that
+    // already exists have nowhere to go but back into it, so the two are
+    // asked different questions.
+    setClosePrompt(editing ? 'EDIT' : 'CREATE');
+  };
+
+  const closeBookingForm = () => {
+    // Backing out of an edit returns to the booking it came from, not to the
+    // tape chart — leaving the desk where it was standing. Re-opening by id
+    // refetches, so an abandoned edit can't leave stale figures on screen.
+    if (editTarget) setSelectedBookingId(editTarget.id);
+    setClosePrompt(null);
+    setFormMode(null);
+    setEditTarget(null);
+    setDraftId(null);
+    setDraftNote('');
+  };
+
+  // Parks what's on screen and closes. Only offered on a new booking: an edit
+  // already has somewhere to keep its answers — the booking itself.
+  //
+  // Re-saving a draft that was opened from the list updates that row rather
+  // than laying down a second copy of the same half-finished booking.
+  const saveDraft = async () => {
+    if (submitting) return;
+    if (!hasFormContent(bookingForm)) {
+      setFormError('There is nothing to save yet — fill in a detail or two first.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const body = { form: draftableForm(bookingForm) };
+      if (draftId) await apiPut(`/bookings/drafts/${draftId}`, body, { token });
+      else await apiPost('/bookings/drafts', body, { token });
+      setClosePrompt(null);
+      setFormMode(null);
+      setDraftId(null);
+      setDraftNote('');
+      loadDrafts();
+      loadTapeChart();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Puts a parked draft into the form. A draft can be days old and the room it
+  // names may have been sold since; the room list only reloads when the dates
+  // change, and a draft opened onto matching dates wouldn't trip that — so it
+  // is asked again explicitly, which drops the room if it has gone.
+  //
+  // The row stays put until the booking is made or the draft is deleted, so
+  // closing the form without saving doesn't lose it.
+  const openDraft = (parked) => {
+    setDraftId(parked.id);
+    setEditTarget(null);
+    setRoomsNonce((n) => n + 1);
+    setShowDrafts(false);
+    beginForm('CREATE', parked.form);
+    setDraftNote(
+      parked.form.droppedFiles > 0
+        ? `${parked.form.droppedFiles} ID proof document${
+            parked.form.droppedFiles === 1 ? '' : 's'
+          } couldn’t be kept in a draft — attach ${
+            parked.form.droppedFiles === 1 ? 'it' : 'them'
+          } again before booking.`
+        : ''
+    );
+  };
+
+  const openDraftById = (id) => {
+    const parked = drafts.find((d) => String(d.id) === String(id));
+    if (parked) openDraft(parked);
+  };
+
+  // Deleting a draft throws away nothing that was ever agreed with a guest,
+  // so it goes without a confirmation step — unlike cancelling a booking.
+  const deleteDraft = async (id, { closeForm = false } = {}) => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await apiDelete(`/bookings/drafts/${id}`, { token });
+      if (closeForm) {
+        setFormMode(null);
+        setDraftId(null);
+        setDraftNote('');
+      }
+      loadDrafts();
+      loadTapeChart();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const validRange =
-    newBooking.checkInDate && newBooking.checkOutDate && newBooking.checkOutDate > newBooking.checkInDate;
-  const isFutureCheckIn = newBooking.checkInDate > todayIso();
+    bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.checkOutDate > bookingForm.checkInDate;
+  const isFutureCheckIn = bookingForm.checkInDate > todayIso();
   // A pre-reservation can be held without ID proof; a walk-in is standing at
-  // the desk, so theirs is captured on the spot.
-  const idProofOptional = newBooking.bookingType === 'RESERVATION';
+  // the desk, so theirs is captured on the spot. An edit never demands one:
+  // whatever the stay already has stays on file unless a new file replaces it.
+  const idProofOptional = editing || bookingForm.bookingType === 'RESERVATION';
+  // Once a guest has checked out there is no stay left to move or extend, so
+  // the room and the dates are fixed — matching the backend's own guard.
+  const canEditStay = !editing || editTarget?.status === 'BOOKED' || editTarget?.status === 'CHECKED_IN';
 
+  // Which rooms are free. Two endpoints for the same question: an edit has to
+  // ask the one that excludes the booking's own occupancy, or the room the
+  // guest is already in would look taken and drop off its own picker.
   useEffect(() => {
-    if (!showNewBooking || !validRange) return;
-    apiGet(
-      `/bookings/available-rooms?checkInDate=${newBooking.checkInDate}&checkOutDate=${newBooking.checkOutDate}`,
-      { token }
-    )
+    if (!showBookingForm || !validRange) return;
+    const path = editing
+      ? `/bookings/${editTarget.id}/available-rooms?checkOutDate=${bookingForm.checkOutDate}`
+      : `/bookings/available-rooms?checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}`;
+    apiGet(path, { token })
       .then((data) => {
         setAvailableRooms(data.rooms);
         setAvailableRoomsError('');
-        setNewBooking((f) =>
+        setBookingForm((f) =>
           f.roomId && data.rooms.some((r) => String(r.id) === f.roomId)
             ? f
-            : { ...f, roomId: '', switchableCharges: [], basePriceOverride: '' }
+            : { ...f, roomId: '', switchableCharges: [], discountAmount: '' }
         );
       })
       .catch((err) => {
@@ -403,21 +656,21 @@ export default function Bookings({ onCheckedOut }) {
         setAvailableRoomsError(err instanceof ApiError ? err.message : 'Could not load available rooms.');
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showNewBooking, newBooking.checkInDate, newBooking.checkOutDate]);
+  }, [showBookingForm, bookingForm.checkInDate, bookingForm.checkOutDate, roomsNonce]);
 
   useEffect(() => {
-    if (!showNewBooking || !validRange || !newBooking.roomId) {
+    if (!showBookingForm || !validRange || !bookingForm.roomId) {
       setQuote(null);
       return;
     }
-    const chargeIds = chargesParam(newBooking.switchableCharges);
-    const basePrice = overrideParam(newBooking.basePriceOverride);
-    // Typing a rate fires a quote per keystroke, so a slower earlier reply
-    // must not land on top of a newer one and show a total for a price that
-    // is no longer in the box.
+    const chargeIds = chargesParam(bookingForm.switchableCharges);
+    const discount = discountParam(bookingForm.discountAmount);
+    // Typing a concession fires a quote per keystroke, so a slower earlier
+    // reply must not land on top of a newer one and show a total for an
+    // amount that is no longer in the box.
     let current = true;
     apiGet(
-      `/bookings/price-quote?roomId=${newBooking.roomId}&checkInDate=${newBooking.checkInDate}&checkOutDate=${newBooking.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${basePrice}`,
+      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${legacyRateParam(editTarget)}${discount}`,
       { token }
     )
       .then((data) => current && setQuote(data))
@@ -427,65 +680,68 @@ export default function Bookings({ onCheckedOut }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    showNewBooking,
-    newBooking.roomId,
-    newBooking.checkInDate,
-    newBooking.checkOutDate,
-    newBooking.switchableCharges,
-    newBooking.basePriceOverride,
+    showBookingForm,
+    bookingForm.roomId,
+    bookingForm.checkInDate,
+    bookingForm.checkOutDate,
+    bookingForm.switchableCharges,
+    bookingForm.discountAmount,
   ]);
 
-  const selectedRoom = availableRooms?.find((r) => String(r.id) === newBooking.roomId);
-  const numGuests = newBooking.adults.length + newBooking.children.length;
+  const selectedRoom = availableRooms?.find((r) => String(r.id) === bookingForm.roomId);
+  const numGuests = bookingForm.adults.length + bookingForm.children.length;
   const overOccupancy = Boolean(selectedRoom?.maxOccupancy && numGuests > selectedRoom.maxOccupancy);
 
   const toggleCharge = (chargeId) => {
-    setNewBooking((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
+    setBookingForm((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
   };
 
   const setChargeQuantity = (chargeId, quantity) => {
-    setNewBooking((f) => ({ ...f, switchableCharges: withQuantity(f.switchableCharges, chargeId, quantity) }));
+    setBookingForm((f) => ({ ...f, switchableCharges: withQuantity(f.switchableCharges, chargeId, quantity) }));
   };
 
   // Adults and children are both plain repeating rows; the only asymmetries
   // are the phone column (adults only) and the fact that adults[0] is the
   // primary guest, so it can't be removed.
   const addParty = (key, blank) => {
-    setNewBooking((f) => ({ ...f, [key]: [...f[key], { ...blank }] }));
+    setBookingForm((f) => ({ ...f, [key]: [...f[key], { ...blank }] }));
   };
 
   const removeParty = (key, index) => {
-    setNewBooking((f) => ({ ...f, [key]: f[key].filter((_, i) => i !== index) }));
+    setBookingForm((f) => ({ ...f, [key]: f[key].filter((_, i) => i !== index) }));
   };
 
   const updateParty = (key, index, patch) => {
-    setNewBooking((f) => ({
+    setBookingForm((f) => ({
       ...f,
       [key]: f[key].map((g, i) => (i === index ? { ...g, ...patch } : g)),
     }));
   };
 
   const addVehicle = () => {
-    setNewBooking((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicle }] }));
+    setBookingForm((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicle }] }));
   };
 
   const removeVehicle = (index) => {
-    setNewBooking((f) => ({ ...f, vehicles: f.vehicles.filter((_, i) => i !== index) }));
+    setBookingForm((f) => ({ ...f, vehicles: f.vehicles.filter((_, i) => i !== index) }));
   };
 
   const updateVehicle = (index, patch) => {
-    setNewBooking((f) => ({
+    setBookingForm((f) => ({
       ...f,
       vehicles: f.vehicles.map((v, i) => (i === index ? { ...v, ...patch } : v)),
     }));
   };
 
-  const handleCreateBooking = async (e) => {
+  // One handler, because it is one form. Everything below the endpoint is
+  // identical: the same rows can be wrong in the same ways whether the stay is
+  // being taken or corrected.
+  const handleSubmitBooking = async (e) => {
     e.preventDefault();
-    setNewBookingError('');
+    setFormError('');
 
     if (!validRange) {
-      setNewBookingError('Check-out date must be after check-in date.');
+      setFormError('Check-out date must be after check-in date.');
       return;
     }
     // Belt-and-braces: the UI already hides Walk-in for a future date, but
@@ -493,62 +749,75 @@ export default function Bookings({ onCheckedOut }) {
     // immediately after creating the booking — and the backend's check-in
     // guard would reject that, leaving the booking created but the form
     // showing an error, as if it had failed outright.
-    if (newBooking.bookingType === 'WALK_IN' && isFutureCheckIn) {
-      setNewBookingError('Walk-in isn’t available for a future check-in date — switch to pre-reservation.');
+    if (!editing && bookingForm.bookingType === 'WALK_IN' && isFutureCheckIn) {
+      setFormError('Walk-in isn’t available for a future check-in date — switch to pre-reservation.');
       return;
     }
-    if (!newBooking.roomId) {
-      setNewBookingError('Choose a room.');
+    if (!bookingForm.roomId) {
+      setFormError('Choose a room.');
       return;
     }
-    if (newBooking.basePriceOverride !== '' && !(Number(newBooking.basePriceOverride) > 0)) {
-      setNewBookingError('Enter a rate greater than 0, or leave it blank for the category rate.');
+    if (bookingForm.discountAmount !== '' && !(Number(bookingForm.discountAmount) >= 0)) {
+      setFormError('Enter a concession of 0 or more, or leave it blank for no concession.');
+      return;
+    }
+    if (quote && Number(bookingForm.discountAmount || 0) > quote.grossTotal) {
+      setFormError(`The concession can’t be more than the stay total of ${formatPrice(quote.grossTotal)}.`);
       return;
     }
     // adults[0] is the primary guest — the only one whose phone is required.
-    const primary = newBooking.adults[0];
+    const primary = bookingForm.adults[0];
     if (!primary.name.trim()) {
-      setNewBookingError('Enter the guest name.');
+      setFormError('Enter the guest name.');
       return;
     }
     if (!primary.phone.trim()) {
-      setNewBookingError('Enter the guest phone number.');
+      setFormError('Enter the guest phone number.');
       return;
     }
     // A walk-in guest is here now, so their ID proof is captured immediately;
-    // a pre-reservation defers it to whenever they actually check in.
-    if (newBooking.bookingType === 'WALK_IN') {
+    // a pre-reservation defers it to whenever they actually check in. An edit
+    // asks for neither — the stay already has whatever it has.
+    if (!editing && bookingForm.bookingType === 'WALK_IN') {
       if (!primary.idProofType) {
-        setNewBookingError('Choose the ID proof type.');
+        setFormError('Choose the ID proof type.');
         return;
       }
       if (!primary.idProofFile) {
-        setNewBookingError('Upload the guest’s ID proof (image or PDF).');
+        setFormError('Upload the guest’s ID proof (image or PDF).');
         return;
       }
     }
-    const hasAdvanceAmount = newBooking.advanceAmount.trim() !== '';
-    if (hasAdvanceAmount && !newBooking.advancePaymentMethod) {
-      setNewBookingError('Choose a payment method for the advance amount.');
+    const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
+    if (hasAdvanceAmount && !bookingForm.advancePaymentMethod) {
+      setFormError('Choose a payment method for the advance amount.');
       return;
     }
-    if (newBooking.adults.slice(1).some((g) => !g.name.trim())) {
-      setNewBookingError('Enter a name for each adult, or remove the empty row.');
+    if (
+      hasAdvanceAmount &&
+      needsPaymentReference(bookingForm.advancePaymentMethod) &&
+      bookingForm.advanceReference.trim() === ''
+    ) {
+      setFormError('Enter the transaction number for the advance paid by UPI or card.');
       return;
     }
-    if (newBooking.children.some((g) => !g.name.trim())) {
-      setNewBookingError('Enter a name for each child, or remove the empty row.');
+    if (bookingForm.adults.slice(1).some((g) => !g.name.trim())) {
+      setFormError('Enter a name for each adult, or remove the empty row.');
       return;
     }
-    const allParty = [...newBooking.adults, ...newBooking.children];
+    if (bookingForm.children.some((g) => !g.name.trim())) {
+      setFormError('Enter a name for each child, or remove the empty row.');
+      return;
+    }
+    const allParty = [...bookingForm.adults, ...bookingForm.children];
     if (allParty.some((g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES)) {
-      setNewBookingError('Each ID proof file must be 5MB or smaller.');
+      setFormError('Each ID proof file must be 5MB or smaller.');
       return;
     }
-    const vehicles = cleanVehicles(newBooking.vehicles);
+    const vehicles = cleanVehicles(bookingForm.vehicles);
     const vehicleError = vehicleRowError(vehicles);
     if (vehicleError) {
-      setNewBookingError(vehicleError);
+      setFormError(vehicleError);
       return;
     }
 
@@ -557,34 +826,26 @@ export default function Bookings({ onCheckedOut }) {
       // Everyone after the primary guest travels in the `guests` array, adults
       // first, each tagged so the split survives into the booking record.
       const otherGuests = [
-        ...newBooking.adults.slice(1).map((g) => ({ ...g, isChild: false })),
-        ...newBooking.children.map((g) => ({ ...g, phone: '', isChild: true })),
+        ...bookingForm.adults.slice(1).map((g) => ({ ...g, isChild: false })),
+        ...bookingForm.children.map((g) => ({ ...g, phone: '', isChild: true })),
       ];
 
       const formData = new FormData();
-      formData.append('roomId', String(Number(newBooking.roomId)));
-      formData.append('checkInDate', newBooking.checkInDate);
-      formData.append('checkOutDate', newBooking.checkOutDate);
       formData.append('guestName', primary.name.trim());
       formData.append('guestPhone', primary.phone.trim());
       formData.append('numGuests', String(numGuests));
-      formData.append('switchableCharges', JSON.stringify(chargesPayload(newBooking.switchableCharges)));
-      if (newBooking.basePriceOverride !== '') {
-        formData.append('basePriceOverride', String(Number(newBooking.basePriceOverride)));
-      }
+      formData.append('switchableCharges', JSON.stringify(chargesPayload(bookingForm.switchableCharges)));
       if (primary.idProofType) formData.append('idProofType', primary.idProofType);
       if (primary.idProofFile) formData.append('idProofDocument', primary.idProofFile);
-      if (hasAdvanceAmount) {
-        formData.append('advanceAmount', String(Number(newBooking.advanceAmount)));
-        formData.append('advancePaymentMethod', newBooking.advancePaymentMethod);
-      }
-
       formData.append('vehicles', JSON.stringify(vehicles));
-
       formData.append(
         'guests',
         JSON.stringify(
           otherGuests.map((g) => ({
+            // Only an existing row has one. It is what keeps an edit an edit:
+            // the row is updated rather than replaced, so the ID proof already
+            // uploaded against it survives.
+            ...(g.id != null ? { id: g.id } : {}),
             name: g.name.trim(),
             phone: g.phone.trim(),
             isChild: g.isChild,
@@ -596,14 +857,73 @@ export default function Bookings({ onCheckedOut }) {
         if (g.idProofFile) formData.append(`guestIdProofDocument_${i}`, g.idProofFile);
       });
 
-      const created = await apiPostForm('/bookings', formData, { token });
-      if (newBooking.bookingType === 'WALK_IN') {
-        await apiPatch(`/bookings/${created.id}/check-in`, {}, { token });
+      if (editing) {
+        // Blank means "clear it" on the update path, where every field has a
+        // current value to be taken back from — unlike create, where leaving a
+        // field out is simply not setting it.
+        formData.append(
+          'discountAmount',
+          bookingForm.discountAmount === '' ? '0' : String(Number(bookingForm.discountAmount))
+        );
+        formData.append('advanceAmount', hasAdvanceAmount ? String(Number(bookingForm.advanceAmount)) : '');
+        formData.append('advancePaymentMethod', hasAdvanceAmount ? bookingForm.advancePaymentMethod : '');
+        formData.append(
+          'advanceReference',
+          hasAdvanceAmount ? advanceReferenceOf(bookingForm) : ''
+        );
+        // Omitted once the guest has checked out: there is no stay left to
+        // move or extend, and the backend refuses both.
+        if (canEditStay) {
+          formData.append('roomId', String(Number(bookingForm.roomId)));
+          formData.append('checkOutDate', bookingForm.checkOutDate);
+        }
+
+        const { booking } = await apiPatchForm(`/bookings/${editTarget.id}`, formData, { token });
+        // Straight back to the stay that was being corrected, showing what the
+        // save actually produced rather than what was typed — the server
+        // re-prices the stay, so the total here is the server's, not a guess.
+        setBookingDetail(booking);
+        setSelectedBookingId(editTarget.id);
+      } else {
+        formData.append('roomId', String(Number(bookingForm.roomId)));
+        formData.append('checkInDate', bookingForm.checkInDate);
+        formData.append('checkOutDate', bookingForm.checkOutDate);
+        if (bookingForm.discountAmount !== '') {
+          formData.append('discountAmount', String(Number(bookingForm.discountAmount)));
+        }
+        if (hasAdvanceAmount) {
+          formData.append('advanceAmount', String(Number(bookingForm.advanceAmount)));
+          formData.append('advancePaymentMethod', bookingForm.advancePaymentMethod);
+          const reference = advanceReferenceOf(bookingForm);
+          if (reference) formData.append('advanceReference', reference);
+        }
+
+        const created = await apiPostForm('/bookings', formData, { token });
+        if (bookingForm.bookingType === 'WALK_IN') {
+          await apiPatch(`/bookings/${created.id}/check-in`, {}, { token });
+        }
+        // The draft was a stand-in for this booking; it exists now, so the
+        // stand-in goes — otherwise the chart would carry both, and the desk
+        // would be looking at a pending booking that has already been taken.
+        if (draftId) {
+          await apiDelete(`/bookings/drafts/${draftId}`, { token }).catch(() => {});
+          loadDrafts();
+        }
       }
-      setShowNewBooking(false);
+
+      setFormMode(null);
+      setEditTarget(null);
+      setDraftId(null);
+      setDraftNote('');
       loadTapeChart();
     } catch (err) {
-      setNewBookingError(err instanceof ApiError ? err.message : 'Could not create the booking.');
+      setFormError(
+        err instanceof ApiError
+          ? err.message
+          : editing
+            ? 'Could not save these changes.'
+            : 'Could not create the booking.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -617,6 +937,7 @@ export default function Bookings({ onCheckedOut }) {
   const initialCheckInForm = {
     advanceAmount: '',
     advancePaymentMethod: '',
+    advanceReference: '',
     idProofType: '',
     idProofFile: null,
     guests: [],
@@ -639,153 +960,76 @@ export default function Bookings({ onCheckedOut }) {
   // check-out date edits are further restricted to BOOKED/CHECKED_IN by the
   // backend — once checked out there's no "stay" left to move or extend,
   // only extras can still be corrected.
-  const [showEditBooking, setShowEditBooking] = useState(false);
-  const [editForm, setEditForm] = useState(null);
-  const [editAvailableRooms, setEditAvailableRooms] = useState(null);
-  const [editAvailableRoomsError, setEditAvailableRoomsError] = useState('');
-  const [editQuote, setEditQuote] = useState(null);
-  const [editSubmitting, setEditSubmitting] = useState(false);
-  const [editError, setEditError] = useState('');
 
   const canEditBooking = Boolean(
     bookingDetail && bookingDetail.status !== 'CANCELLED' && !bookingDetail.hasIssuedInvoice
-  );
-  const canEditStayDetails = Boolean(
-    canEditBooking && (bookingDetail.status === 'BOOKED' || bookingDetail.status === 'CHECKED_IN')
   );
 
   // A pre-reservation holds the room for a future date — check-in only
   // opens once that date arrives, matching the backend's own guard.
   const canCheckInNow = Boolean(bookingDetail && bookingDetail.checkInDate <= todayIsoIST());
 
+  // A guest on file, in the shape the party editor works in. `id` is what
+  // makes an edit an edit rather than a delete and re-insert — the row keeps
+  // the ID proof already uploaded against it. `hasDocument` is only ever a
+  // marker: the file itself never comes back down, only the fact of it.
+  const partyRowOf = (guest) => ({
+    id: guest.id,
+    name: guest.name,
+    phone: guest.phone ?? '',
+    idProofType: guest.idProofType ?? '',
+    idProofFile: null,
+    hasDocument: guest.hasIdProofDocument,
+  });
+
+  // Opens the booking form with this stay's answers already in it. Same modal,
+  // same state, same fields — an edit is a booking whose questions have been
+  // answered once already.
   const openEditBooking = () => {
-    setEditForm({
+    const seeded = {
+      ...initialBookingForm,
+      // A stay that exists was either walked in or reserved and then arrived;
+      // either way the distinction is spent. The toggle is hidden in edit mode.
+      bookingType: 'RESERVATION',
+      checkInDate: bookingDetail.checkInDate,
       checkOutDate: bookingDetail.checkOutDate,
       roomId: String(bookingDetail.roomId),
-      numGuests: String(bookingDetail.numGuests),
-      guestName: bookingDetail.guestName,
-      guestPhone: bookingDetail.guestPhone,
       switchableCharges: bookingDetail.switchableCharges.map((c) => ({ id: c.id, quantity: String(c.quantity ?? 1) })),
-      // Blank here means the stay was never negotiated off the category price,
-      // and clearing the box is how it goes back to it.
-      basePriceOverride:
-        bookingDetail.basePriceOverride != null ? String(bookingDetail.basePriceOverride) : '',
-    });
-    setEditAvailableRooms(null);
-    setEditAvailableRoomsError('');
-    setEditQuote(null);
-    setEditError('');
-    setShowCheckInForm(false);
-    setShowEditBooking(true);
-  };
-
-  const toggleEditFormCharge = (chargeId) => {
-    setEditForm((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
-  };
-
-  const setEditFormChargeQuantity = (chargeId, quantity) => {
-    setEditForm((f) => ({ ...f, switchableCharges: withQuantity(f.switchableCharges, chargeId, quantity) }));
-  };
-
-  useEffect(() => {
-    if (!showEditBooking || !canEditStayDetails || !editForm?.checkOutDate) return;
-    apiGet(`/bookings/${selectedBookingId}/available-rooms?checkOutDate=${editForm.checkOutDate}`, { token })
-      .then((data) => {
-        setEditAvailableRooms(data.rooms);
-        setEditAvailableRoomsError('');
-      })
-      .catch((err) => {
-        setEditAvailableRooms([]);
-        setEditAvailableRoomsError(err instanceof ApiError ? err.message : 'Could not load available rooms.');
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showEditBooking, editForm?.checkOutDate]);
-
-  useEffect(() => {
-    if (!showEditBooking || !editForm?.roomId || !bookingDetail) {
-      setEditQuote(null);
-      return;
-    }
-    const chargeIds = chargesParam(editForm.switchableCharges);
-    const basePrice = overrideParam(editForm.basePriceOverride);
-    let current = true;
-    apiGet(
-      `/bookings/price-quote?roomId=${editForm.roomId}&checkInDate=${bookingDetail.checkInDate}&checkOutDate=${editForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${basePrice}`,
-      { token }
-    )
-      .then((data) => current && setEditQuote(data))
-      .catch(() => current && setEditQuote(null));
-    return () => {
-      current = false;
+      // Blank here means nothing was ever knocked off this stay, and clearing
+      // the box is how a concession gets taken back.
+      discountAmount: bookingDetail.discountAmount ? String(bookingDetail.discountAmount) : '',
+      // adults[0] is the primary guest, who lives on the booking itself rather
+      // than in the guests table — so no id, and saving them writes back to
+      // guestName/guestPhone/idProofType. Everyone else is a row.
+      adults: [
+        {
+          id: undefined,
+          name: bookingDetail.guestName,
+          phone: bookingDetail.guestPhone,
+          idProofType: bookingDetail.idProofType ?? '',
+          idProofFile: null,
+          hasDocument: bookingDetail.hasIdProofDocument,
+        },
+        ...bookingDetail.guests.filter((g) => !g.isChild).map(partyRowOf),
+      ],
+      children: bookingDetail.guests.filter((g) => g.isChild).map(partyRowOf),
+      vehicles: bookingDetail.vehicles.map((v) => ({ number: v.number, type: v.type ?? '' })),
+      advanceAmount: bookingDetail.advanceAmount != null ? String(bookingDetail.advanceAmount) : '',
+      advancePaymentMethod: bookingDetail.advancePaymentMethod ?? '',
+      advanceReference: bookingDetail.advanceReference ?? '',
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    showEditBooking,
-    editForm?.roomId,
-    editForm?.checkOutDate,
-    editForm?.switchableCharges,
-    editForm?.basePriceOverride,
-  ]);
-
-  const handleSaveEditBooking = async (e) => {
-    e.preventDefault();
-    setEditError('');
-
-    if (canEditStayDetails) {
-      if (!editForm.checkOutDate || editForm.checkOutDate <= bookingDetail.checkInDate) {
-        setEditError('Check-out date must be after check-in date.');
-        return;
-      }
-      if (!editForm.roomId) {
-        setEditError('Choose a room.');
-        return;
-      }
-      if (!editForm.numGuests || Number(editForm.numGuests) <= 0) {
-        setEditError('Enter a guest count greater than 0.');
-        return;
-      }
-      if (!editForm.guestName.trim()) {
-        setEditError('Enter the guest name.');
-        return;
-      }
-      if (!editForm.guestPhone.trim()) {
-        setEditError('Enter the guest phone number.');
-        return;
-      }
-      if (editForm.basePriceOverride !== '' && !(Number(editForm.basePriceOverride) > 0)) {
-        setEditError('Enter a rate greater than 0, or leave it blank for the category rate.');
-        return;
-      }
-    }
-
-    setEditSubmitting(true);
-    try {
-      const body = canEditStayDetails
-        ? {
-            checkOutDate: editForm.checkOutDate,
-            roomId: Number(editForm.roomId),
-            numGuests: Number(editForm.numGuests),
-            guestName: editForm.guestName.trim(),
-            guestPhone: editForm.guestPhone.trim(),
-            switchableCharges: chargesPayload(editForm.switchableCharges),
-            // null, not omitted — an emptied box means "go back to the
-            // category price", which the backend can only tell apart from
-            // "leave the agreed rate alone" if it's sent explicitly.
-            basePriceOverride:
-              editForm.basePriceOverride === '' ? null : Number(editForm.basePriceOverride),
-          }
-        : { switchableCharges: chargesPayload(editForm.switchableCharges) };
-
-      const { booking } = await apiPatch(`/bookings/${selectedBookingId}`, body, { token });
-      setBookingDetail(booking);
-      setShowEditBooking(false);
-      loadTapeChart();
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : 'Could not save these changes.');
-    } finally {
-      setEditSubmitting(false);
-    }
+    setEditTarget(bookingDetail);
+    setDraftId(null);
+    setDraftNote('');
+    setShowCheckInForm(false);
+    beginForm('EDIT', seeded);
+    // The detail modal steps aside rather than stacking behind. Both modals
+    // share a z-index and the detail one renders later in the tree, so it
+    // paints over the form — and two backdrops deep is a dead end anyway.
+    // editTarget is what brings the reader back here on cancel or save.
+    setSelectedBookingId(null);
   };
+
 
   const openDetail = (bookingId) => {
     setSelectedBookingId(bookingId);
@@ -795,9 +1039,6 @@ export default function Bookings({ onCheckedOut }) {
     setCheckInForm(initialCheckInForm);
     setActionError('');
     setIdProofError('');
-    setShowEditBooking(false);
-    setEditForm(null);
-    setEditError('');
   };
 
   // At booking time only the primary guest is required — a pre-booked stay
@@ -900,6 +1141,14 @@ export default function Bookings({ onCheckedOut }) {
     setActionError('');
 
     const hasAmount = checkInForm.advanceAmount.trim() !== '';
+    if (
+      hasAmount &&
+      needsPaymentReference(checkInForm.advancePaymentMethod) &&
+      checkInForm.advanceReference.trim() === ''
+    ) {
+      setActionError('Enter the transaction number for the advance paid by UPI or card.');
+      return;
+    }
     if (hasAmount && !checkInForm.advancePaymentMethod) {
       setActionError('Choose a payment method for the advance amount.');
       return;
@@ -937,6 +1186,8 @@ export default function Bookings({ onCheckedOut }) {
       if (hasAmount) {
         formData.append('advanceAmount', String(Number(checkInForm.advanceAmount)));
         formData.append('advancePaymentMethod', checkInForm.advancePaymentMethod);
+        const reference = advanceReferenceOf(checkInForm);
+        if (reference) formData.append('advanceReference', reference);
       }
       if (checkInForm.idProofType) formData.append('idProofType', checkInForm.idProofType);
       if (checkInForm.idProofFile) formData.append('idProofDocument', checkInForm.idProofFile);
@@ -1066,6 +1317,7 @@ export default function Bookings({ onCheckedOut }) {
 
   const renderRoomRow = (room) => {
     const byDate = occupancy.get(String(room.id));
+    const draftsByDate = draftOccupancy.get(String(room.id));
     const rowClasses = ['tape-month__row'];
     if (hoverTile?.room.id === room.id) rowClasses.push('tape-month__row--active');
     return (
@@ -1076,6 +1328,33 @@ export default function Bookings({ onCheckedOut }) {
         </div>
         {dates.map((d) => {
           const booking = byDate?.get(d);
+          const draft = draftsByDate?.get(d);
+
+          // A night nobody has booked, but somebody has a draft on. Yellow,
+          // and it opens that draft rather than starting a new booking — the
+          // room is still sellable, but whoever parked it should be finished
+          // or thrown away before the night is sold from under them.
+          if (!booking && draft) {
+            const classes = ['tape-tile', 'tape-tile--draft'];
+            if (d === draft.checkInDate) classes.push('tape-tile--start');
+            if (d === addDays(draft.checkOutDate, -1)) classes.push('tape-tile--end');
+            if (d === today) classes.push('tape-tile--today');
+            if (hoverTile?.draft?.id === draft.id) classes.push('tape-tile--active');
+            return (
+              <button
+                key={d}
+                type="button"
+                className={classes.join(' ')}
+                onClick={() => openDraftById(draft.id)}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, draft })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, draft })}
+                onMouseLeave={() => setHoverTile(null)}
+                onBlur={() => setHoverTile(null)}
+                aria-label={`${room.roomNumber} has a draft booking on ${formatDateLong(d)}`}
+              />
+            );
+          }
+
           // A vacant night is a plain grey slot that starts a booking for that
           // room and date.
           if (!booking) {
@@ -1107,14 +1386,19 @@ export default function Bookings({ onCheckedOut }) {
           // Pointing at any night of a stay lifts the whole stay, so its real
           // extent is obvious even where it runs off the edge of the month.
           if (hoverTile?.booking?.id === booking.id) classes.push('tape-tile--active');
+          // A draft sitting on a night that is already let. The booking keeps
+          // the tile — it is the real thing — and the draft shows as a corner
+          // flag, which is the desk's cue that somebody is drafting against a
+          // room they can't have.
+          if (draft) classes.push('tape-tile--has-draft');
           return (
             <button
               key={d}
               type="button"
               className={classes.join(' ')}
               onClick={() => openDetail(booking.id)}
-              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking })}
-              onFocus={(e) => showTileHover(e, { room, date: d, booking })}
+              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft })}
+              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft })}
               onMouseLeave={() => setHoverTile(null)}
               onBlur={() => setHoverTile(null)}
               aria-label={`${room.roomNumber} ${STATUS_LABEL[booking.status]} on ${formatDateLong(d)}`}
@@ -1166,9 +1450,20 @@ export default function Bookings({ onCheckedOut }) {
             </button>
           )}
         </div>
-        <button type="button" className="btn-accent" onClick={() => openNewBooking()}>
-          + New booking
-        </button>
+        <div className="bookings-panel__toolbar-actions">
+          {/* Drafts that name a room and dates are on the chart already; this
+              is how the rest are reached, and how a desk sees at a glance that
+              anything is pending at all. */}
+          {drafts.length > 0 && (
+            <button type="button" className="bookings-panel__draft-chip" onClick={() => setShowDrafts(true)}>
+              <span className="bookings-panel__draft-chip-dot" />
+              {drafts.length} draft{drafts.length === 1 ? '' : 's'}
+            </button>
+          )}
+          <button type="button" className="btn-accent" onClick={() => openNewBooking()}>
+            + New booking
+          </button>
+        </div>
       </div>
 
       <div className="tape-legend">
@@ -1180,6 +1475,9 @@ export default function Bookings({ onCheckedOut }) {
         </span>
         <span className="tape-legend__item">
           <i className="tape-legend__swatch tape-legend__swatch--checked-in" />Checked in
+        </span>
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
         </span>
         <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
@@ -1285,6 +1583,34 @@ export default function Bookings({ onCheckedOut }) {
                 {nightsOf(hoverTile.booking)} night{nightsOf(hoverTile.booking) === 1 ? '' : 's'}
                 {hoverTile.booking.guestPhone ? ` · ${hoverTile.booking.guestPhone}` : ''}
               </span>
+              {/* A draft against a night that is already let — the desk needs
+                  telling, because the person who parked it can't have it. */}
+              {hoverTile.draft && (
+                <span className="tape-tooltip__hint">
+                  A draft also names this night{hoverTile.draft.guestName ? ` (${hoverTile.draft.guestName})` : ''}.
+                </span>
+              )}
+            </>
+          ) : hoverTile.draft ? (
+            <>
+              <span className="tape-tooltip__top">
+                <span className="tape-tooltip__dot tape-tooltip__dot--draft" />
+                Draft
+              </span>
+              <strong>{hoverTile.draft.guestName || 'Unnamed guest'}</strong>
+              <span className="tape-tooltip__meta">
+                Room {hoverTile.room.roomNumber} · {hoverTile.room.categoryName}
+              </span>
+              <span className="tape-tooltip__dates">
+                {formatDateLong(hoverTile.draft.checkInDate)}
+                <i>→</i>
+                {formatDateLong(hoverTile.draft.checkOutDate)}
+              </span>
+              {/* Said plainly, because a yellow strip across a room looks like
+                  a held room and this one isn't. */}
+              <span className="tape-tooltip__hint">
+                Not booked — this room is still free. Click to finish or delete it.
+              </span>
             </>
           ) : (
             <>
@@ -1301,49 +1627,156 @@ export default function Bookings({ onCheckedOut }) {
         </div>
       )}
 
-      {showNewBooking && (
-        <div className="glass-backdrop bookings-panel__backdrop" onClick={closeNewBooking}>
-          <div
-            className="glass-panel bookings-panel__modal bookings-panel__modal--form"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <form className="booking-form" onSubmit={handleCreateBooking} noValidate>
+      {/* Every parked booking, including the ones with no room or dates yet,
+          which by definition can't be on the chart. */}
+      {showDrafts && (
+        <div className="glass-backdrop bookings-panel__backdrop" onClick={() => setShowDrafts(false)}>
+          <div className="glass-panel bookings-panel__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="bookings-panel__detail-header">
+              <h3>Draft bookings</h3>
+              <span className="badge badge--off">{drafts.length}</span>
+            </div>
+            <p className="bookings-panel__hint">
+              Started but not booked. A draft holds no room — the nights it names stay on sale until it
+              is finished.
+            </p>
+
+            {drafts.length === 0 && <div className="dash-state">Nothing parked right now.</div>}
+
+            <div className="detail-people">
+              {drafts.map((d) => (
+                <div className="detail-person" key={d.id}>
+                  <span className="detail-person__name">
+                    {d.guestName || 'Unnamed guest'}
+                    <span className="detail-person__role">{formatSavedAt(d.updatedAt)}</span>
+                  </span>
+                  <span className="detail-person__meta">
+                    {d.roomNumber
+                      ? `Room ${d.roomNumber}${d.categoryName ? ` · ${d.categoryName}` : ''}`
+                      : 'No room chosen'}
+                    {d.checkInDate && d.checkOutDate
+                      ? ` · ${formatDateLong(d.checkInDate)} – ${formatDateLong(d.checkOutDate)}`
+                      : ''}
+                    {d.createdByName ? ` · by ${d.createdByName}` : ''}
+                  </span>
+                  <span className="detail-person__meta">
+                    <button type="button" className="bookings-panel__link-btn" onClick={() => openDraft(d)}>
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      className="bookings-panel__link-btn bookings-panel__link-btn--danger"
+                      onClick={() => deleteDraft(d.id)}
+                      disabled={submitting}
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="bookings-panel__actions">
+              <button type="button" className="btn-secondary" onClick={() => setShowDrafts(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No backdrop dismissal here, unlike the read-only modals: this form
+          holds a guest's details typed in at a counter, and a stray click on
+          the way to the keyboard should not throw them away. It closes on the
+          × or the Close button, and nowhere else. */}
+      {showBookingForm && (
+        <div className="glass-backdrop bookings-panel__backdrop">
+          <div className="glass-panel bookings-panel__modal bookings-panel__modal--form">
+            <form className="booking-form" onSubmit={handleSubmitBooking} noValidate>
               {/* Header stays put while the body scrolls: the booking type
                   changes what the rest of the form requires, so it shouldn't
                   scroll out of sight. */}
               <div className="booking-form__head">
                 <div className="booking-form__head-row">
-                  <h3>New booking</h3>
-                  <div className="toggle-group">
-                    {!isFutureCheckIn && (
+                  <h3>{editing ? `Edit booking · ${editTarget.roomNumber}` : 'New booking'}</h3>
+                  {/* Walk-in against pre-reservation is a question about a
+                      stay that hasn't happened yet. On an edit it has, so the
+                      toggle would be asking about the past. */}
+                  {!editing && (
+                    <div className="toggle-group">
+                      {!isFutureCheckIn && (
+                        <button
+                          type="button"
+                          aria-pressed={bookingForm.bookingType === 'WALK_IN'}
+                          onClick={() => setBookingForm((f) => ({ ...f, bookingType: 'WALK_IN' }))}
+                        >
+                          Walk-in
+                        </button>
+                      )}
                       <button
                         type="button"
-                        aria-pressed={newBooking.bookingType === 'WALK_IN'}
-                        onClick={() => setNewBooking((f) => ({ ...f, bookingType: 'WALK_IN' }))}
+                        aria-pressed={bookingForm.bookingType === 'RESERVATION'}
+                        onClick={() => setBookingForm((f) => ({ ...f, bookingType: 'RESERVATION' }))}
                       >
-                        Walk-in
+                        Pre-reservation
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      aria-pressed={newBooking.bookingType === 'RESERVATION'}
-                      onClick={() => setNewBooking((f) => ({ ...f, bookingType: 'RESERVATION' }))}
+                    </div>
+                  )}
+                  {editing && (
+                    <span
+                      className={`badge ${editTarget.status === 'CHECKED_IN' ? 'badge--on' : 'badge--off'}`}
                     >
-                      Pre-reservation
-                    </button>
-                  </div>
+                      {STATUS_LABEL[editTarget.status]}
+                    </span>
+                  )}
+                  {/* Since the backdrop no longer dismisses, the way out has
+                      to be visible without scrolling to the bottom of a form
+                      this tall. The one in the footer is the same door. */}
+                  <button
+                    type="button"
+                    className="booking-form__close"
+                    onClick={requestCloseBookingForm}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
                 </div>
                 <p className="bookings-panel__hint">
-                  {isFutureCheckIn
-                    ? 'Walk-in isn’t available for a future check-in date — this holds the room for a guest arriving later.'
-                    : newBooking.bookingType === 'WALK_IN'
-                    ? 'Guest is here now — creates the booking and checks them in immediately.'
-                    : 'Holds the room for a guest arriving later. ID proof can be added at check-in.'}
+                  {editing
+                    ? canEditStay
+                      ? `${editTarget.guestName}’s stay, as it stands. Editable until the bill is issued — extend it, move rooms, correct the party or fix a detail.`
+                      : `${editTarget.guestName}’s stay has already checked out, so the room and dates are fixed. Everything else can still be corrected before billing.`
+                    : isFutureCheckIn
+                      ? 'Walk-in isn’t available for a future check-in date — this holds the room for a guest arriving later.'
+                      : bookingForm.bookingType === 'WALK_IN'
+                        ? 'Guest is here now — creates the booking and checks them in immediately.'
+                        : 'Holds the room for a guest arriving later. ID proof can be added at check-in.'}
                 </p>
               </div>
 
               <div className="booking-form__body">
-                {newBookingError && <div className="form-banner form-banner--error">{newBookingError}</div>}
+                {formError && <div className="form-banner form-banner--error">{formError}</div>}
+
+                {/* Says which draft this is and offers the way out of it —
+                    a parked booking that can't be thrown away accumulates. */}
+                {draftId && (
+                  <div className="form-banner form-banner--info booking-form__draft">
+                    <span>You are working on a saved draft.</span>
+                    <span className="booking-form__draft-actions">
+                      <button
+                        type="button"
+                        className="bookings-panel__link-btn bookings-panel__link-btn--danger"
+                        onClick={() => deleteDraft(draftId, { closeForm: true })}
+                        disabled={submitting}
+                      >
+                        Delete draft
+                      </button>
+                    </span>
+                  </div>
+                )}
+                {draftNote && <div className="form-banner form-banner--info">{draftNote}</div>}
 
                 <div className="form-section">
                   <div className="form-section__title">
@@ -1355,10 +1788,13 @@ export default function Bookings({ onCheckedOut }) {
                     <input
                       id="checkInDate"
                       type="date"
-                      value={newBooking.checkInDate}
+                      value={bookingForm.checkInDate}
+                      // Never editable on an existing stay: changing when one
+                      // started is a cancel and rebook, not an edit.
+                      disabled={editing}
                       onChange={(e) => {
                         const checkInDate = e.target.value;
-                        setNewBooking((f) => ({
+                        setBookingForm((f) => ({
                           ...f,
                           checkInDate,
                           bookingType: checkInDate > todayIso() ? 'RESERVATION' : f.bookingType,
@@ -1371,11 +1807,20 @@ export default function Bookings({ onCheckedOut }) {
                     <input
                       id="checkOutDate"
                       type="date"
-                      value={newBooking.checkOutDate}
-                      onChange={(e) => setNewBooking((f) => ({ ...f, checkOutDate: e.target.value }))}
+                      value={bookingForm.checkOutDate}
+                      min={editing ? addDays(bookingForm.checkInDate, 1) : undefined}
+                      disabled={!canEditStay}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, checkOutDate: e.target.value }))}
                     />
                   </div>
                 </div>
+                {editing && (
+                  <p className="bookings-panel__hint">
+                    {canEditStay
+                      ? 'Check-in is fixed — changing when a stay started is a cancel and rebook, not an edit.'
+                      : 'The guest has checked out, so the dates and the room are settled.'}
+                  </p>
+                )}
 
                 {!validRange && <p className="bookings-panel__hint">Choose a valid date range first.</p>}
                 {validRange && availableRoomsError && (
@@ -1389,18 +1834,19 @@ export default function Bookings({ onCheckedOut }) {
                       <label htmlFor="roomId">Available rooms</label>
                       <select
                         id="roomId"
-                        value={newBooking.roomId}
+                        value={bookingForm.roomId}
                         onChange={(e) =>
-                          setNewBooking((f) => ({
+                          setBookingForm((f) => ({
                             ...f,
                             roomId: e.target.value,
                             switchableCharges: [],
-                            // A rate was agreed for a particular room; picking a
-                            // different one is a fresh negotiation.
-                            basePriceOverride: '',
+                            // A concession was agreed against a particular
+                            // room's total; picking a different one is a fresh
+                            // negotiation.
+                            discountAmount: '',
                           }))
                         }
-                        disabled={!availableRooms}
+                        disabled={!availableRooms || !canEditStay}
                       >
                         <option value="">
                           {availableRooms ? 'Choose a room' : 'Loading…'}
@@ -1416,27 +1862,6 @@ export default function Bookings({ onCheckedOut }) {
                         <p className="bookings-panel__hint">No rooms are free for this date range.</p>
                       )}
                     </div>
-                    {selectedRoom && (
-                      <div className="field">
-                        <label htmlFor="basePriceOverride">Rate per night</label>
-                        <input
-                          id="basePriceOverride"
-                          type="number"
-                          min="1"
-                          step="1"
-                          inputMode="numeric"
-                          placeholder={`${selectedRoom.categoryBasePrice} (category rate)`}
-                          value={newBooking.basePriceOverride}
-                          onChange={(e) =>
-                            setNewBooking((f) => ({ ...f, basePriceOverride: e.target.value }))
-                          }
-                        />
-                        <p className="bookings-panel__hint">
-                          Blank charges {formatPrice(selectedRoom.categoryBasePrice)}. Season and
-                          extras still apply on top.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -1475,7 +1900,7 @@ export default function Bookings({ onCheckedOut }) {
                     <label>Extras</label>
                     <div className="checkbox-grid">
                       {selectedRoom.switchableCharges.map((charge) => {
-                        const selection = selectionOf(newBooking.switchableCharges, charge.id);
+                        const selection = selectionOf(bookingForm.switchableCharges, charge.id);
                         return (
                           <label className="checkbox-chip" key={charge.id}>
                             <input
@@ -1506,6 +1931,9 @@ export default function Bookings({ onCheckedOut }) {
                   </div>
                 )}
 
+                {/* What the stay costs, before anything is knocked off it.
+                    The concession is settled at the end of the form, against
+                    this figure. */}
                 {quote && (
                   <div className="sim-result">
                     {quote.charges.map((charge, i) => (
@@ -1519,9 +1947,9 @@ export default function Bookings({ onCheckedOut }) {
                     ))}
                     <div className="sim-result__total">
                       <span>
-                        Total · {quote.nights.length} night{quote.nights.length === 1 ? '' : 's'}
+                        Stay total · {quote.nights.length} night{quote.nights.length === 1 ? '' : 's'}
                       </span>
-                      <span>{formatPrice(quote.totalPrice)}</span>
+                      <span>{formatPrice(quote.grossTotal)}</span>
                     </div>
                   </div>
                 )}
@@ -1539,7 +1967,7 @@ export default function Bookings({ onCheckedOut }) {
                       {numGuests} guest{numGuests === 1 ? '' : 's'}
                     </span>
                     <span className="booking-form__party-split">
-                      {describeParty(newBooking.adults.length, newBooking.children.length)}
+                      {describeParty(bookingForm.adults.length, bookingForm.children.length)}
                     </span>
                   </div>
                   {overOccupancy && (
@@ -1548,168 +1976,15 @@ export default function Bookings({ onCheckedOut }) {
                     </p>
                   )}
 
-                  {/* The add button rides in the sub-heading rather than sitting
-                      as a full-width bar under the list — same reach, two fewer
-                      rows of height across the two party lists. */}
-                  <div className="booking-form__subhead">
-                    <span className="booking-form__subhead-label">
-                      Adults
-                      <span className="booking-form__subhead-count">
-                        {newBooking.adults.length}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      className="booking-form__add-inline"
-                      onClick={() => addParty('adults', emptyGuest)}
-                    >
-                      + Add adult
-                    </button>
-                  </div>
-                  <div className="bookings-panel__repeat-list">
-                    {newBooking.adults.map((adult, index) => {
-                      const isPrimary = index === 0;
-                      return (
-                        <div className="bookings-panel__party-row" key={index}>
-                          <div className="field">
-                            <label htmlFor={`adultName-${index}`}>
-                              {isPrimary ? 'Name (primary guest)' : 'Name'}
-                            </label>
-                            <input
-                              id={`adultName-${index}`}
-                              value={adult.name}
-                              onChange={(e) => updateParty('adults', index, { name: e.target.value })}
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`adultPhone-${index}`}>
-                              Mobile{isPrimary ? '' : ' (optional)'}
-                            </label>
-                            <input
-                              id={`adultPhone-${index}`}
-                              value={adult.phone}
-                              onChange={(e) => updateParty('adults', index, { phone: e.target.value })}
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`adultIdProofType-${index}`}>
-                              ID type{isPrimary && !idProofOptional ? '' : ' (optional)'}
-                            </label>
-                            <select
-                              id={`adultIdProofType-${index}`}
-                              value={adult.idProofType}
-                              onChange={(e) => updateParty('adults', index, { idProofType: e.target.value })}
-                            >
-                              <option value="">{isPrimary ? 'Choose one' : 'None'}</option>
-                              {ID_PROOF_TYPES.map((t) => (
-                                <option key={t} value={t}>
-                                  {t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`adultIdProofFile-${index}`}>
-                              Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
-                            </label>
-                            <input
-                              id={`adultIdProofFile-${index}`}
-                              type="file"
-                              accept={ID_PROOF_ACCEPT}
-                              onChange={(e) =>
-                                updateParty('adults', index, { idProofFile: e.target.files[0] || null })
-                              }
-                            />
-                          </div>
-                          {/* The primary guest is the booking itself — there's
-                              no booking left to remove them from. */}
-                          {isPrimary ? (
-                            <span className="bookings-panel__row-spacer" />
-                          ) : (
-                            <button
-                              type="button"
-                              className="bookings-panel__row-remove-btn"
-                              onClick={() => removeParty('adults', index)}
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="booking-form__subhead">
-                    <span className="booking-form__subhead-label">
-                      Children
-                      <span className="booking-form__subhead-count">
-                        {newBooking.children.length}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      className="booking-form__add-inline"
-                      onClick={() => addParty('children', emptyChild)}
-                    >
-                      + Add child
-                    </button>
-                  </div>
-                  {newBooking.children.length > 0 && (
-                    <div className="bookings-panel__repeat-list">
-                      {newBooking.children.map((child, index) => (
-                        <div
-                          className="bookings-panel__party-row bookings-panel__party-row--child"
-                          key={index}
-                        >
-                          <div className="field">
-                            <label htmlFor={`childName-${index}`}>Name</label>
-                            <input
-                              id={`childName-${index}`}
-                              value={child.name}
-                              onChange={(e) => updateParty('children', index, { name: e.target.value })}
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`childIdProofType-${index}`}>ID type (optional)</label>
-                            <select
-                              id={`childIdProofType-${index}`}
-                              value={child.idProofType}
-                              onChange={(e) =>
-                                updateParty('children', index, { idProofType: e.target.value })
-                              }
-                            >
-                              <option value="">None</option>
-                              {ID_PROOF_TYPES.map((t) => (
-                                <option key={t} value={t}>
-                                  {t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`childIdProofFile-${index}`}>Document (optional)</label>
-                            <input
-                              id={`childIdProofFile-${index}`}
-                              type="file"
-                              accept={ID_PROOF_ACCEPT}
-                              onChange={(e) =>
-                                updateParty('children', index, { idProofFile: e.target.files[0] || null })
-                              }
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            className="bookings-panel__row-remove-btn"
-                            onClick={() => removeParty('children', index)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="bookings-panel__hint">
-                    Documents accept an image (JPG/PNG/WEBP) or PDF, up to 5MB.
-                  </p>
+                  <PartyEditor
+                    adults={bookingForm.adults}
+                    children={bookingForm.children}
+                    idProofOptional={idProofOptional}
+                    idPrefix="new"
+                    onAdd={addParty}
+                    onRemove={removeParty}
+                    onUpdate={updateParty}
+                  />
                 </div>
 
               {/* The two optional sections share a row — both are usually left
@@ -1719,8 +1994,8 @@ export default function Bookings({ onCheckedOut }) {
                 <summary>
                   <span className="form-section__num">3</span>
                   Advance payment
-                  {newBooking.advanceAmount.trim() !== '' && (
-                    <span className="form-section__badge">{formatPrice(Number(newBooking.advanceAmount))}</span>
+                  {bookingForm.advanceAmount.trim() !== '' && (
+                    <span className="form-section__badge">{formatPrice(Number(bookingForm.advanceAmount))}</span>
                   )}
                 </summary>
                 <div className="field-row">
@@ -1730,16 +2005,16 @@ export default function Bookings({ onCheckedOut }) {
                       id="newBookingAdvanceAmount"
                       type="number"
                       min="0"
-                      value={newBooking.advanceAmount}
-                      onChange={(e) => setNewBooking((f) => ({ ...f, advanceAmount: e.target.value }))}
+                      value={bookingForm.advanceAmount}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, advanceAmount: e.target.value }))}
                     />
                   </div>
                   <div className="field">
-                    <label htmlFor="newBookingAdvancePaymentMethod">Method</label>
+                    <label htmlFor="newBookingAdvancePaymentMethod">Payment type</label>
                     <select
                       id="newBookingAdvancePaymentMethod"
-                      value={newBooking.advancePaymentMethod}
-                      onChange={(e) => setNewBooking((f) => ({ ...f, advancePaymentMethod: e.target.value }))}
+                      value={bookingForm.advancePaymentMethod}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, advancePaymentMethod: e.target.value }))}
                     >
                       <option value="">Choose one</option>
                       <option value="CASH">Cash</option>
@@ -1748,53 +2023,93 @@ export default function Bookings({ onCheckedOut }) {
                     </select>
                   </div>
                 </div>
+                {/* Only for money that left a trail. Asking for a reference
+                    against cash would be asking for one to be invented. */}
+                {needsPaymentReference(bookingForm.advancePaymentMethod) && (
+                  <div className="field">
+                    <label htmlFor="newBookingAdvanceReference">Transaction number</label>
+                    <input
+                      id="newBookingAdvanceReference"
+                      value={bookingForm.advanceReference}
+                      maxLength={64}
+                      placeholder={bookingForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, advanceReference: e.target.value }))}
+                    />
+                    <p className="bookings-panel__hint">
+                      What the settlement statement will be matched against at month end.
+                    </p>
+                  </div>
+                )}
               </details>
 
               <details className="form-section form-section--collapsible">
                 <summary>
                   <span className="form-section__num">4</span>
                   Vehicles
-                  {newBooking.vehicles.length > 0 && (
-                    <span className="form-section__badge">{newBooking.vehicles.length}</span>
+                  {bookingForm.vehicles.length > 0 && (
+                    <span className="form-section__badge">{bookingForm.vehicles.length}</span>
                   )}
                 </summary>
-                {newBooking.vehicles.length > 0 && (
-                  <div className="bookings-panel__repeat-list">
-                    {newBooking.vehicles.map((vehicle, index) => (
-                      <div className="bookings-panel__vehicle-row" key={index}>
-                        <input
-                          value={vehicle.number}
-                          onChange={(e) => updateVehicle(index, { number: e.target.value })}
-                          placeholder="MH07AB1234"
-                          aria-label={`Vehicle number ${index + 1}`}
-                        />
-                        <select
-                          value={vehicle.type}
-                          onChange={(e) => updateVehicle(index, { type: e.target.value })}
-                          aria-label={`Vehicle type ${index + 1}`}
-                        >
-                          <option value="">Type</option>
-                          {Object.entries(VEHICLE_TYPE_LABEL).map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="bookings-panel__remove-btn"
-                          onClick={() => removeVehicle(index)}
-                        >
-                          Remove
-                        </button>
+                <VehicleEditor
+                  vehicles={bookingForm.vehicles}
+                  onAdd={addVehicle}
+                  onRemove={removeVehicle}
+                  onUpdate={updateVehicle}
+                />
+              </details>
+              </div>
+
+              {/* Last thing on the form, on purpose. A guest haggles over the
+                  finished quote — every extra on it, every night of it — not
+                  over the nightly rate it was built from, and not before they
+                  know what they are haggling about. One number, once. */}
+              <div className="form-section">
+                <div className="form-section__title">
+                  <span className="form-section__num">5</span>Concession
+                </div>
+                <div className="field">
+                  <label htmlFor="discountAmount">Amount off the total (optional)</label>
+                  <input
+                    id="discountAmount"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={bookingForm.discountAmount}
+                    onChange={(e) => setBookingForm((f) => ({ ...f, discountAmount: e.target.value }))}
+                    disabled={!quote}
+                  />
+                  <p className="bookings-panel__hint">
+                    {quote
+                      ? 'Leave blank to charge the full stay total.'
+                      : 'Pick dates and a room first — there is nothing to knock off yet.'}
+                  </p>
+                </div>
+
+                {/* Both halves beside the box being typed into: the section
+                    above scrolls out of reach, and a concession can only be
+                    checked against what it came off. */}
+                {quote && (
+                  <div className="sim-result">
+                    <div className="sim-result__line">
+                      <span>
+                        Stay total · {quote.nights.length} night{quote.nights.length === 1 ? '' : 's'}
+                      </span>
+                      <span>{formatPrice(quote.grossTotal)}</span>
+                    </div>
+                    {quote.discountAmount > 0 && (
+                      <div className="sim-result__line">
+                        <span>Concession</span>
+                        <span>-{formatPrice(quote.discountAmount)}</span>
                       </div>
-                    ))}
+                    )}
+                    <div className="sim-result__total">
+                      <span>Payable</span>
+                      <span>{formatPrice(quote.totalPrice)}</span>
+                    </div>
                   </div>
                 )}
-                <button type="button" className="bookings-panel__add-btn" onClick={addVehicle}>
-                  + Add vehicle
-                </button>
-              </details>
               </div>
 
               </div>
@@ -1817,25 +2132,86 @@ export default function Bookings({ onCheckedOut }) {
                   )}
                 </div>
                 <div className="booking-form__foot-actions">
-                  <button type="button" className="btn-secondary" onClick={closeNewBooking} disabled={submitting}>
-                    Cancel
+                  <button type="button" className="btn-secondary" onClick={requestCloseBookingForm} disabled={submitting}>
+                    Close
                   </button>
+                  {/* New bookings only. An edit already has somewhere to keep
+                      its answers — the booking it is editing. */}
+                  {!editing && (
+                    <button type="button" className="btn-secondary" onClick={saveDraft} disabled={submitting}>
+                      {draftId ? 'Update draft' : 'Save draft'}
+                    </button>
+                  )}
                   <button className="btn-accent" type="submit" disabled={submitting}>
-                    {submitting
-                      ? 'Booking…'
-                      : newBooking.bookingType === 'WALK_IN'
-                      ? 'Add and check in'
-                      : 'Create reservation'}
+                    {editing
+                      ? submitting
+                        ? 'Saving…'
+                        : 'Save changes'
+                      : submitting
+                        ? 'Booking…'
+                        : bookingForm.bookingType === 'WALK_IN'
+                          ? 'Add and check in'
+                          : 'Create reservation'}
                   </button>
                 </div>
               </div>
             </form>
+
+            {/* Sits inside the form modal so the details behind it stay
+                visible — the question is "are you sure about losing this",
+                and it should be answerable with this still on screen. */}
+            {closePrompt && (
+              <div className="booking-form__confirm">
+                <div className="booking-form__confirm-card">
+                  <h4>{closePrompt === 'EDIT' ? 'Discard unsaved changes?' : 'Close without booking?'}</h4>
+                  <p>
+                    {closePrompt === 'EDIT'
+                      ? `Changes to ${editTarget?.guestName ?? 'this booking'} haven’t been saved. Closing now will leave the booking as it was.`
+                      : hasFormContent(bookingForm)
+                        ? 'This booking hasn’t been created yet. Save it as a draft to pick up later, or close and discard what has been entered.'
+                        : 'Nothing has been entered yet that is worth keeping. Closing now will clear the form.'}
+                  </p>
+                  <div className="booking-form__confirm-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setClosePrompt(null)}
+                      disabled={submitting}
+                    >
+                      Continue editing
+                    </button>
+                    {/* Only where there is somewhere for the details to go.
+                        An edit belongs to a booking that already exists, and
+                        a barely-started form has nothing worth parking. */}
+                    {closePrompt === 'CREATE' && hasFormContent(bookingForm) && (
+                      <button type="button" className="btn-accent" onClick={saveDraft} disabled={submitting}>
+                        {submitting ? 'Saving…' : draftId ? 'Update draft & close' : 'Save as draft & close'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="bookings-panel__danger-link"
+                      onClick={closeBookingForm}
+                      disabled={submitting}
+                    >
+                      {closePrompt === 'EDIT' ? 'Discard changes' : 'Discard & close'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {selectedBookingId && (
-        <div className="glass-backdrop bookings-panel__backdrop" onClick={closeDetail}>
+        <div
+          // Dismissable by backdrop while it is only being read, but not once
+          // the check-in form is open on top of it — that form has typed-in
+          // details of its own, and it has its own Back button.
+          className="glass-backdrop bookings-panel__backdrop"
+          onClick={showCheckInForm ? undefined : closeDetail}
+        >
           <div className="glass-panel bookings-panel__modal" onClick={(e) => e.stopPropagation()}>
             {detailError && <div className="form-banner form-banner--error">{detailError}</div>}
 
@@ -1850,423 +2226,40 @@ export default function Bookings({ onCheckedOut }) {
                   >
                     {STATUS_LABEL[bookingDetail.status]}
                   </span>
+                  {/* This modal is tall enough to scroll well past its own
+                      footer, so the way out exists at both ends. */}
+                  <button
+                    type="button"
+                    className="bookings-panel__close"
+                    onClick={closeDetail}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
                 </div>
 
-                <div className="chart-list">
-                  <div className="chart-row">
-                    <span className="chart-row__name">Room</span>
-                    <span className="chart-row__value">
-                      {bookingDetail.roomNumber} · {bookingDetail.categoryName}
-                    </span>
-                  </div>
-                  <div className="chart-row">
-                    <span className="chart-row__name">Dates</span>
-                    <span className="chart-row__value">
-                      {formatDateLong(bookingDetail.checkInDate)} – {formatDateLong(bookingDetail.checkOutDate)}
-                      {bookingDetail.nights?.length > 0 && (
-                        <span className="bookings-panel__muted">
-                          {' '}
-                          ({bookingDetail.nights.length}{' '}
-                          {bookingDetail.nights.length === 1 ? 'night' : 'nights'})
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  {/* What the guest booked is above; this is what actually
-                      happened. Blanks are spelled out rather than dashed — "—"
-                      makes a reader stop and work out whether the guest hasn't
-                      arrived or the arrival simply wasn't recorded. */}
-                  <div className="chart-row">
-                    <span className="chart-row__name">Came in</span>
-                    <span className="chart-row__value">
-                      {bookingDetail.actualCheckInAt
-                        ? formatDateTime(bookingDetail.actualCheckInAt)
-                        : 'Not arrived yet'}
-                    </span>
-                  </div>
-                  <div className="chart-row">
-                    <span className="chart-row__name">Left</span>
-                    <span className="chart-row__value">
-                      {bookingDetail.actualCheckOutAt
-                        ? formatDateTime(bookingDetail.actualCheckOutAt)
-                        : bookingDetail.actualCheckInAt
-                          ? 'Still staying'
-                          : 'Not arrived yet'}
-                    </span>
-                  </div>
-                  {formatLateBy(bookingDetail.lateCheckoutMinutes) && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">Left late by</span>
-                      <span className="chart-row__value">
-                        {formatLateBy(bookingDetail.lateCheckoutMinutes)}
-                        {/* "agreed", not "charged" — this is what reception
-                            settled on at the door. Whether it reached the
-                            guest's bill is the billing desk's call. */}
-                        <span className="bookings-panel__muted">
-                          {' · '}
-                          {bookingDetail.lateCheckoutCharge > 0
-                            ? `${formatPrice(bookingDetail.lateCheckoutCharge)} agreed at checkout`
-                            : 'no charge taken'}
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                  <div className="chart-row">
-                    <span className="chart-row__name">Phone</span>
-                    <span className="chart-row__value">{bookingDetail.guestPhone}</span>
-                  </div>
-                  <div className="chart-row">
-                    <span className="chart-row__name">Guests</span>
-                    <span className="chart-row__value">
-                      {bookingDetail.numGuests} ·{' '}
-                      {describeParty(
-                        bookingDetail.numGuests - bookingDetail.childCount,
-                        bookingDetail.childCount
-                      )}
-                    </span>
-                  </div>
-                  {bookingDetail.idProofType && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">ID proof</span>
-                      <span className="chart-row__value">
-                        {bookingDetail.idProofType}
-                        {bookingDetail.hasIdProofDocument && (
-                          <button type="button" className="bookings-panel__link-btn" onClick={handleViewIdProof}>
-                            View
-                          </button>
-                        )}
-                      </span>
-                    </div>
-                  )}
-                  {bookingDetail.status === 'CHECKED_IN' && bookingDetail.foodPin && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">Food PIN</span>
-                      <span className="chart-row__value">
-                        <div className="bookings-panel__pin">
-                          <span className="bookings-panel__pin-value">{bookingDetail.foodPin}</span>
-                          {bookingDetail.foodOrderingLockedUntil ? (
-                            <span className="badge badge--off">Locked</span>
-                          ) : null}
-                        </div>
-                        <div className="bookings-panel__pin-hint">
-                          {bookingDetail.foodOrderingLockedUntil ? (
-                            <>
-                              Too many wrong PINs — ordering is blocked for this room.
-                              <button
-                                type="button"
-                                className="bookings-panel__link-btn"
-                                onClick={handleClearFoodLockout}
-                                disabled={clearingLockout}
-                              >
-                                {clearingLockout ? 'Clearing…' : 'Unlock now'}
-                              </button>
-                            </>
-                          ) : (
-                            'Read this out to the guest — they need it to order food from the QR code.'
-                          )}
-                        </div>
-                      </span>
-                    </div>
-                  )}
-                  {bookingDetail.guests.length > 0 && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">Other guests</span>
-                      <span className="chart-row__value">
-                        <div className="bookings-panel__guest-detail-list">
-                          {bookingDetail.guests.map((g) => (
-                            <div key={g.id} className="bookings-panel__guest-detail">
-                              {g.name}
-                              {g.isChild ? ' (child)' : ''}
-                              {g.phone ? ` · ${g.phone}` : ''}
-                              {g.idProofType ? ` · ${g.idProofType}` : ''}
-                              {g.hasIdProofDocument && (
-                                <button
-                                  type="button"
-                                  className="bookings-panel__link-btn"
-                                  onClick={() => handleViewGuestIdProof(g.id)}
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </span>
-                    </div>
-                  )}
-                  {idProofError && (
-                    <div className="chart-row">
-                      <span className="chart-row__value form-banner form-banner--error">{idProofError}</span>
-                    </div>
-                  )}
-                  {bookingDetail.vehicles.length > 0 && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">Vehicles</span>
-                      <span className="chart-row__value">
-                        {bookingDetail.vehicles
-                          .map((v) => (v.type ? `${v.number} (${VEHICLE_TYPE_LABEL[v.type]})` : v.number))
-                          .join(' · ')}
-                      </span>
-                    </div>
-                  )}
-                  {bookingDetail.switchableCharges.length > 0 && (
-                    <div className="chart-row">
-                      <span className="chart-row__name">Extras</span>
-                      <span className="chart-row__value">
-                        {bookingDetail.switchableCharges
-                          .map((c) => (c.quantity > 1 ? `${c.name} ×${c.quantity}` : c.name))
-                          .join(' · ')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Night by night, from the rates frozen when the booking was
-                    taken. A stay that crosses a season isn't one rate repeated,
-                    and this is where a guest asking why gets an answer instead
-                    of an assurance. The money rows live here rather than in the
-                    facts above so the nights and what they add up to are read
-                    as one block. */}
-                <div className="form-section">
-                  <div className="form-section__title">Room rate, night by night</div>
-                  {/* The per-night list is what can be missing, never the
-                      totals below it — what the stay came to and what has been
-                      paid must survive a booking whose snapshot didn't. */}
-                  {bookingDetail.nights?.length > 0 && (
-                    <div className="chart-list">
-                      {bookingDetail.nights.map((n) => (
-                        <div className="chart-row" key={n.date}>
-                          <span className="chart-row__name">{formatNightDate(n.date)}</span>
-                          <span className="chart-row__value">{formatPrice(n.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {bookingDetail.switchableCharges.length > 0 && (
-                    <p className="bookings-panel__hint">
-                      Every night above already includes{' '}
-                      {/* chargePerNight prices one of the thing, so a guest on
-                          three extra beds is owed the multiplied figure — it's
-                          what the nights above actually contain. */}
-                      {bookingDetail.switchableCharges
-                        .map((c) =>
-                          c.quantity > 1
-                            ? `${c.name} ×${c.quantity} ${formatPrice(c.chargePerNight * c.quantity)}`
-                            : `${c.name} ${formatPrice(c.chargePerNight)}`
-                        )
-                        .join(', ')}
-                      .
-                    </p>
-                  )}
-                  <div className="sim-result">
-                    <div className="sim-result__total">
-                      <span>
-                        Room charge for {bookingDetail.nights?.length === 1 ? 'the night' : 'all nights'}
-                      </span>
-                      <span>{formatPrice(bookingDetail.totalPrice)}</span>
-                    </div>
-                    {bookingDetail.lateCheckoutCharge > 0 && (
-                      <div className="sim-result__line">
-                        <span>Agreed for leaving late</span>
-                        <span>{formatPrice(bookingDetail.lateCheckoutCharge)}</span>
-                      </div>
-                    )}
-                    {bookingDetail.advanceAmount != null && (
-                      <div className="sim-result__line">
-                        <span>
-                          Advance already paid
-                          <span className="bookings-panel__muted">
-                            {' · '}
-                            {bookingDetail.advancePaymentMethod}
-                          </span>
-                        </span>
-                        <span>− {formatPrice(bookingDetail.advanceAmount)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                {/* The same five sections the booking was taken through, in the
+                    same order — read-only, because reading a record and
+                    changing one are different jobs and only one of them should
+                    be one keystroke away. Edit opens these very sections as
+                    fields, in place of these rather than under them — two
+                    copies of the same booking in one modal is a scroll looking
+                    for the live one. */}
+                {!showCheckInForm && (
+                  <StayDetails
+                    booking={bookingDetail}
+                    idProofError={idProofError}
+                    onViewIdProof={handleViewIdProof}
+                    onViewGuestIdProof={handleViewGuestIdProof}
+                    onClearFoodLockout={handleClearFoodLockout}
+                    clearingLockout={clearingLockout}
+                  />
+                )}
 
                 {actionError && <div className="form-banner form-banner--error">{actionError}</div>}
 
-                {showEditBooking && editForm && (
-                  <form onSubmit={handleSaveEditBooking} className="form-section">
-                    <div className="form-section__title">
-                      {canEditStayDetails ? 'Edit booking' : 'Edit extras'}
-                    </div>
-                    <p className="bookings-panel__hint">
-                      {canEditStayDetails
-                        ? 'Editable until this stay is billed — extend the stay, move rooms or fix a detail.'
-                        : 'This stay is already checked out — only extras can still be corrected before billing.'}
-                    </p>
-
-                    {canEditStayDetails && (
-                      <>
-                        <div className="field-row">
-                          <div className="field">
-                            <label htmlFor="editGuestName">Guest name</label>
-                            <input
-                              id="editGuestName"
-                              value={editForm.guestName}
-                              onChange={(e) => setEditForm((f) => ({ ...f, guestName: e.target.value }))}
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor="editGuestPhone">Phone</label>
-                            <input
-                              id="editGuestPhone"
-                              value={editForm.guestPhone}
-                              onChange={(e) => setEditForm((f) => ({ ...f, guestPhone: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="field-row">
-                          <div className="field">
-                            <label htmlFor="editCheckOutDate">Check-out</label>
-                            <input
-                              id="editCheckOutDate"
-                              type="date"
-                              min={addDays(bookingDetail.checkInDate, 1)}
-                              value={editForm.checkOutDate}
-                              onChange={(e) =>
-                                setEditForm((f) => ({ ...f, checkOutDate: e.target.value, roomId: '' }))
-                              }
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor="editNumGuests">Number of guests</label>
-                            <input
-                              id="editNumGuests"
-                              type="number"
-                              min="1"
-                              value={editForm.numGuests}
-                              onChange={(e) => setEditForm((f) => ({ ...f, numGuests: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="field">
-                          <label htmlFor="editRoomId">Room</label>
-                          {editAvailableRoomsError && (
-                            <div className="form-banner form-banner--error">{editAvailableRoomsError}</div>
-                          )}
-                          {!editAvailableRoomsError && (
-                            <select
-                              id="editRoomId"
-                              value={editForm.roomId}
-                              onChange={(e) => setEditForm((f) => ({ ...f, roomId: e.target.value }))}
-                              disabled={!editAvailableRooms}
-                            >
-                              <option value="">{editAvailableRooms ? 'Choose a room' : 'Loading…'}</option>
-                              {editAvailableRooms?.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.roomNumber} — {r.categoryName} · {formatPrice(r.categoryBasePrice)}/night
-                                  {r.floor ? ` · Floor ${r.floor}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-
-                        <div className="field">
-                          <label htmlFor="editBasePriceOverride">Rate per night</label>
-                          <input
-                            id="editBasePriceOverride"
-                            type="number"
-                            min="1"
-                            step="1"
-                            inputMode="numeric"
-                            placeholder={String(
-                              editAvailableRooms?.find((r) => String(r.id) === editForm.roomId)
-                                ?.categoryBasePrice ?? ''
-                            )}
-                            value={editForm.basePriceOverride}
-                            onChange={(e) =>
-                              setEditForm((f) => ({ ...f, basePriceOverride: e.target.value }))
-                            }
-                          />
-                          <p className="bookings-panel__hint">
-                            Leave blank to charge the room category’s own rate. Season adjustments
-                            and extras still apply on top.
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="field">
-                      <label>Extras</label>
-                      {bookingDetail.availableSwitchableCharges.length === 0 && (
-                        <p className="bookings-panel__hint">No extras configured for this lodge.</p>
-                      )}
-                      {bookingDetail.availableSwitchableCharges.length > 0 && (
-                        <div className="checkbox-grid">
-                          {bookingDetail.availableSwitchableCharges.map((charge) => {
-                            const selection = selectionOf(editForm.switchableCharges, charge.id);
-                            return (
-                              <label className="checkbox-chip" key={charge.id}>
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(selection)}
-                                  onChange={() => toggleEditFormCharge(charge.id)}
-                                />
-                                {charge.name} ({formatPrice(charge.chargePerNight)}/night)
-                                {selection && charge.isCounter && (
-                                  <input
-                                    className="checkbox-chip__qty"
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    inputMode="numeric"
-                                    aria-label={`How many ${charge.name}`}
-                                    value={selection.quantity}
-                                    onChange={(e) => setEditFormChargeQuantity(charge.id, e.target.value)}
-                                  />
-                                )}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {editQuote && (
-                      <div className="sim-result">
-                        {editQuote.charges.map((charge, i) => (
-                          <div className="sim-result__line" key={i}>
-                            <span>
-                              {charge.label}
-                              {editQuote.nights.length > 1 ? ` (${editQuote.nights.length} nights)` : ''}
-                            </span>
-                            <span>{formatPrice(charge.amount)}</span>
-                          </div>
-                        ))}
-                        <div className="sim-result__total">
-                          <span>
-                            Total · {editQuote.nights.length} night{editQuote.nights.length === 1 ? '' : 's'}
-                          </span>
-                          <span>{formatPrice(editQuote.totalPrice)}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {editError && <div className="form-banner form-banner--error">{editError}</div>}
-                    <div className="bookings-panel__actions">
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setShowEditBooking(false)}
-                        disabled={editSubmitting}
-                      >
-                        Back
-                      </button>
-                      <button className="btn-accent" type="submit" disabled={editSubmitting}>
-                        {editSubmitting ? 'Saving…' : 'Save changes'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {bookingDetail.status === 'BOOKED' && !showCheckInForm && !showEditBooking && (
+                {bookingDetail.status === 'BOOKED' && !showCheckInForm && (
                   <>
                     {!canCheckInNow && (
                       <p className="bookings-panel__hint">
@@ -2351,7 +2344,7 @@ export default function Bookings({ onCheckedOut }) {
                         />
                       </div>
                       <div className="field">
-                        <label htmlFor="advancePaymentMethod">Method</label>
+                        <label htmlFor="advancePaymentMethod">Payment type</label>
                         <select
                           id="advancePaymentMethod"
                           value={checkInForm.advancePaymentMethod}
@@ -2366,6 +2359,20 @@ export default function Bookings({ onCheckedOut }) {
                         </select>
                       </div>
                     </div>
+                    {needsPaymentReference(checkInForm.advancePaymentMethod) && (
+                      <div className="field">
+                        <label htmlFor="checkInAdvanceReference">Transaction number</label>
+                        <input
+                          id="checkInAdvanceReference"
+                          value={checkInForm.advanceReference}
+                          maxLength={64}
+                          placeholder={
+                            checkInForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'
+                          }
+                          onChange={(e) => setCheckInForm((f) => ({ ...f, advanceReference: e.target.value }))}
+                        />
+                      </div>
+                    )}
 
                     <div className="form-section__title">Add guest details (optional)</div>
                     <p className="bookings-panel__hint">
@@ -2493,7 +2500,7 @@ export default function Bookings({ onCheckedOut }) {
                   </form>
                 )}
 
-                {bookingDetail.status === 'CHECKED_IN' && !showEditBooking && (
+                {bookingDetail.status === 'CHECKED_IN' && (
                   <div className="bookings-panel__actions">
                     <button type="button" className="btn-secondary" onClick={openEditBooking} disabled={actionSubmitting}>
                       Edit booking
@@ -2509,7 +2516,7 @@ export default function Bookings({ onCheckedOut }) {
                   </div>
                 )}
 
-                {bookingDetail.status === 'CHECKED_OUT' && !showEditBooking && (
+                {bookingDetail.status === 'CHECKED_OUT' && (
                   <div className="bookings-panel__actions">
                     {canEditBooking ? (
                       <button
@@ -2518,11 +2525,22 @@ export default function Bookings({ onCheckedOut }) {
                         onClick={openEditBooking}
                         disabled={actionSubmitting}
                       >
-                        Edit extras
+                        Edit booking
                       </button>
                     ) : (
                       <span className="bookings-panel__hint">This stay has been billed — extras are locked.</span>
                     )}
+                  </div>
+                )}
+
+                {/* Always present, whatever the stay's status — the panels
+                    above vary by it, and none of them is a way out. Hidden
+                    only behind the check-in form, which has its own Back. */}
+                {!showCheckInForm && (
+                  <div className="bookings-panel__actions bookings-panel__actions--close">
+                    <button type="button" className="btn-secondary" onClick={closeDetail}>
+                      Close
+                    </button>
                   </div>
                 )}
               </>
@@ -2556,6 +2574,215 @@ const BAND_LABEL = {
 // arithmetic behind it is spelled out, because the receptionist has to justify
 // the figure to a guest standing in front of them — and has to be able to
 // waive it in one tap when the guest's taxi was the thing that was late.
+// The party, editable. Shared by the new-booking form and the edit form so a
+// booking is corrected through the same rows it was taken through — the two
+// drifting apart is how a field ends up on one and not the other.
+//
+// `idPrefix` keeps the two instances from minting the same DOM ids when both
+// are mounted; `onAdd`/`onRemove`/`onUpdate` take the list key ('adults' or
+// 'children') so the caller keeps ownership of where the party lives in state.
+function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRemove, onUpdate }) {
+  const idTypeOptions = ID_PROOF_TYPES.map((t) => (
+    <option key={t} value={t}>
+      {idProofLabel(t)}
+    </option>
+  ));
+
+  // What is already held for this guest, so an edit doesn't read as though the
+  // document were missing and get one uploaded again on top of it.
+  const onFile = (person) =>
+    person.hasDocument && !person.idProofFile ? (
+      <span className="bookings-panel__muted"> · on file</span>
+    ) : null;
+
+  return (
+    <>
+      {/* The add button rides in the sub-heading rather than sitting as a
+          full-width bar under the list — same reach, two fewer rows of height
+          across the two party lists. */}
+      <div className="booking-form__subhead">
+        <span className="booking-form__subhead-label">
+          Adults
+          <span className="booking-form__subhead-count">{adults.length}</span>
+        </span>
+        <button type="button" className="booking-form__add-inline" onClick={() => onAdd('adults', emptyGuest)}>
+          + Add adult
+        </button>
+      </div>
+      <div className="bookings-panel__repeat-list">
+        {adults.map((adult, index) => {
+          const isPrimary = index === 0;
+          return (
+            <div className="bookings-panel__party-row" key={adult.id ?? `new-${index}`}>
+              <div className="field">
+                <label htmlFor={`${idPrefix}AdultName-${index}`}>
+                  {isPrimary ? 'Name (primary guest)' : 'Name'}
+                </label>
+                <input
+                  id={`${idPrefix}AdultName-${index}`}
+                  value={adult.name}
+                  onChange={(e) => onUpdate('adults', index, { name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idPrefix}AdultPhone-${index}`}>
+                  Mobile{isPrimary ? '' : ' (optional)'}
+                </label>
+                <input
+                  id={`${idPrefix}AdultPhone-${index}`}
+                  value={adult.phone}
+                  onChange={(e) => onUpdate('adults', index, { phone: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
+                  ID type{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                </label>
+                <select
+                  id={`${idPrefix}AdultIdProofType-${index}`}
+                  value={adult.idProofType}
+                  onChange={(e) => onUpdate('adults', index, { idProofType: e.target.value })}
+                >
+                  <option value="">{isPrimary ? 'Choose one' : 'None'}</option>
+                  {idTypeOptions}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
+                  Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                  {onFile(adult)}
+                </label>
+                <input
+                  id={`${idPrefix}AdultIdProofFile-${index}`}
+                  type="file"
+                  accept={ID_PROOF_ACCEPT}
+                  onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
+                />
+              </div>
+              {/* The primary guest is the booking itself — there's no booking
+                  left to remove them from. */}
+              {isPrimary ? (
+                <span className="bookings-panel__row-spacer" />
+              ) : (
+                <button
+                  type="button"
+                  className="bookings-panel__row-remove-btn"
+                  onClick={() => onRemove('adults', index)}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="booking-form__subhead">
+        <span className="booking-form__subhead-label">
+          Children
+          <span className="booking-form__subhead-count">{children.length}</span>
+        </span>
+        <button type="button" className="booking-form__add-inline" onClick={() => onAdd('children', emptyChild)}>
+          + Add child
+        </button>
+      </div>
+      {children.length > 0 && (
+        <div className="bookings-panel__repeat-list">
+          {children.map((child, index) => (
+            <div
+              className="bookings-panel__party-row bookings-panel__party-row--child"
+              key={child.id ?? `new-${index}`}
+            >
+              <div className="field">
+                <label htmlFor={`${idPrefix}ChildName-${index}`}>Name</label>
+                <input
+                  id={`${idPrefix}ChildName-${index}`}
+                  value={child.name}
+                  onChange={(e) => onUpdate('children', index, { name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idPrefix}ChildIdProofType-${index}`}>ID type (optional)</label>
+                <select
+                  id={`${idPrefix}ChildIdProofType-${index}`}
+                  value={child.idProofType}
+                  onChange={(e) => onUpdate('children', index, { idProofType: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {idTypeOptions}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor={`${idPrefix}ChildIdProofFile-${index}`}>
+                  Document (optional)
+                  {onFile(child)}
+                </label>
+                <input
+                  id={`${idPrefix}ChildIdProofFile-${index}`}
+                  type="file"
+                  accept={ID_PROOF_ACCEPT}
+                  onChange={(e) => onUpdate('children', index, { idProofFile: e.target.files[0] || null })}
+                />
+              </div>
+              <button
+                type="button"
+                className="bookings-panel__row-remove-btn"
+                onClick={() => onRemove('children', index)}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="bookings-panel__hint">
+        Documents accept an image (JPG/PNG/WEBP) or PDF, up to 5MB. An uploaded document replaces what
+        is on file; removing the guest is what takes one off a booking.
+      </p>
+    </>
+  );
+}
+
+// Vehicles, editable. Same reason as PartyEditor for being shared.
+function VehicleEditor({ vehicles, onAdd, onRemove, onUpdate }) {
+  return (
+    <>
+      {vehicles.length > 0 && (
+        <div className="bookings-panel__repeat-list">
+          {vehicles.map((vehicle, index) => (
+            <div className="bookings-panel__vehicle-row" key={index}>
+              <input
+                value={vehicle.number}
+                onChange={(e) => onUpdate(index, { number: e.target.value })}
+                placeholder="MH07AB1234"
+                aria-label={`Vehicle number ${index + 1}`}
+              />
+              <select
+                value={vehicle.type}
+                onChange={(e) => onUpdate(index, { type: e.target.value })}
+                aria-label={`Vehicle type ${index + 1}`}
+              >
+                <option value="">Type</option>
+                {Object.entries(VEHICLE_TYPE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="bookings-panel__remove-btn" onClick={() => onRemove(index)}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <button type="button" className="bookings-panel__add-btn" onClick={onAdd}>
+        + Add vehicle
+      </button>
+    </>
+  );
+}
+
 function LateCheckoutDialog({ lateCheckout, amount, onAmount, submitting, error, onCancel, onConfirm }) {
   const parsed = Number(amount);
   const valid = amount !== '' && Number.isFinite(parsed) && parsed >= 0;

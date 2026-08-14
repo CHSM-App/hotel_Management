@@ -66,6 +66,9 @@
      and the optional sections sit two-up, both of which read better with
      the extra 60px than the height they'd otherwise cost. */
   max-width: 780px;
+  /* Anchors the unsaved-details prompt, which covers the form rather than
+     opening a second modal on top of it. */
+  position: relative;
 }
 
 .booking-form {
@@ -397,8 +400,11 @@
 }
 
 /* Extra weight to beat `.form-section:first-child`, which zeroes the top
-   padding and border for the first card in the row. */
-.booking-form .booking-form__optional > .form-section {
+   padding and border for the first card in the row. Both selectors, because
+   the detail modal shows these same two sections read-only and outside a
+   .booking-form — without the card they read as two stray columns. */
+.booking-form .booking-form__optional > .form-section,
+.bookings-panel__modal .booking-form__optional > .form-section {
   margin-top: 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -440,9 +446,16 @@
 .bookings-panel__detail-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+/* The title takes the slack rather than the row spacing it out — with a status
+   badge and a close button both on the right, space-between would have left
+   the badge stranded in the middle. */
+.bookings-panel__detail-header h3 {
+  margin-right: auto;
+  min-width: 0;
 }
 
 .bookings-panel__danger-link {
@@ -613,16 +626,6 @@
 .bookings-panel__add-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.bookings-panel__guest-detail-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.bookings-panel__guest-detail {
-  font-size: 13px;
 }
 
 @media (max-width: 640px) {
@@ -843,4 +846,193 @@
 .late-modal__actions {
   margin-top: 18px;
   flex-wrap: wrap;
+}
+
+/* ------------------------------------------------- booking form: closing
+
+   The backdrop no longer dismisses this modal — reception fills it in at a
+   counter and a stray click used to throw the whole form away. That makes
+   the way out something that has to be visible, so it exists twice: here in
+   the header, and as Close in the footer. */
+.booking-form__close,
+.bookings-panel__close {
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  /* The glyph is a multiplication sign, which sits small in most faces —
+     without the bump it reads as a speck rather than a control. */
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.booking-form__close:hover:not(:disabled),
+.bookings-panel__close:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.booking-form__close:disabled,
+.bookings-panel__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A parked booking, offered on the way into a new one. Restore and Discard
+   sit on the banner rather than under it — the choice is the whole point of
+   the banner, and a line of text with no visible answer is a dead end. */
+.booking-form__draft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.booking-form__draft-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.booking-form__draft-actions .bookings-panel__link-btn {
+  margin-left: 0;
+}
+
+.booking-form__draft-actions .bookings-panel__link-btn + .bookings-panel__link-btn {
+  margin-left: 14px;
+}
+
+/* ------------------------------------------------- the parked draft
+
+   A draft holds no room and puts nothing on the chart, so this chip is the
+   only evidence one exists. Beside New booking because that is where someone
+   goes to start the booking they already started once. */
+.bookings-panel__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bookings-panel__draft-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px dashed var(--brand);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--brand-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bookings-panel__draft-chip:hover {
+  background: #eef4f2;
+}
+
+/* Dashed border and a hollow dot on purpose: everything else on this screen
+   that carries a solid marker is a real, committed stay. */
+.bookings-panel__draft-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+}
+
+
+/* Destructive, but only of something nobody agreed to — a quieter red than
+   the Cancel booking link, which ends a real reservation. */
+.bookings-panel__link-btn--danger {
+  color: var(--danger);
+}
+
+.bookings-panel__link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Open / Delete under a draft row, which is the one place a detail-person card
+   carries controls rather than facts. */
+.detail-person__meta .bookings-panel__link-btn {
+  margin-left: 0;
+}
+
+.detail-person__meta .bookings-panel__link-btn + .bookings-panel__link-btn {
+  margin-left: 14px;
+}
+
+/* ------------------------------------------------- unsaved details prompt
+
+   Covers the booking form rather than stacking a second modal over it: the
+   question is whether losing what is on screen is intended, and the answer
+   is easier with the form still legible behind the veil. */
+.booking-form__confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(22, 33, 46, 0.42);
+  border-radius: inherit;
+}
+
+.booking-form__confirm-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 20px 22px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.22);
+}
+
+.booking-form__confirm-card h4 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.booking-form__confirm-card p {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* Discard is last and unfilled, so the destructive answer is the one that
+   takes the most deliberate aim. */
+.booking-form__confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.booking-form__confirm-actions .bookings-panel__danger-link {
+  margin-left: auto;
+  padding: 12px 2px;
+}
+
+/* The detail modal's own way out, below whatever action panel its status
+   happens to show. Ruled off so it reads as leaving the record rather than as
+   one more thing to do to it. */
+.bookings-panel__actions--close {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }

@@ -139,7 +139,11 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
                     <tr key={line.label}>
                       <td className="bill-doc__item">
                         {line.label}
-                        {line.nights > 1 && (
+                        {/* Only rates get a night count. A concession is one
+                            decision on the whole stay, spread back across the
+                            nights so each is taxed on what was charged for it —
+                            annotating it "3 nights" would read as three of them. */}
+                        {line.nights > 1 && line.amount > 0 && (
                           <span className="bill-doc__item-qty">{line.nights} nights</span>
                         )}
                       </td>
@@ -233,6 +237,18 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
             </>
           )}
 
+          {/* After both supply blocks and before the round off. The subtotals
+              above are what was sold; the tax lines were charged on those
+              amounts less this, so the column adds up to the grand total. */}
+          {invoice.discountAmount > 0 && (
+            <tr>
+              <td>
+                Less: Discount
+                {invoice.discountPercent > 0 ? ` (${invoice.discountPercent}%)` : ''}
+              </td>
+              <td className="bill-doc__amt">-{formatPrice(invoice.discountAmount)}</td>
+            </tr>
+          )}
           {invoice.roundOff !== 0 && (
             <tr>
               <td>Round off</td>
@@ -254,6 +270,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
               <td>
                 Less: Balance collected
                 {invoice.balancePaymentMethod ? ` (${invoice.balancePaymentMethod})` : ''}
+                {/* The guest's copy of a UPI or card payment carries the same
+                    reference on their side, which is what makes a disputed
+                    payment answerable months later. */}
+                {invoice.balanceReference && (
+                  <span className="bill-doc__item-qty">Txn {invoice.balanceReference}</span>
+                )}
               </td>
               <td className="bill-doc__amt">-{formatPrice(invoice.balanceCollected)}</td>
             </tr>

@@ -1,3 +1,5 @@
+import { clearSession, getSession } from './auth';
+
 // In production the backend serves this SPA, so VITE_API_URL is set to '' (empty)
 // and requests go same-origin (/auth, /rooms, …). Only fall back to the local dev
 // server when the var is entirely unset — an explicit '' must stay empty.
@@ -13,10 +15,41 @@ export class ApiError extends Error {
   }
 }
 
-async function handleResponse(res) {
+// A 401 on a request we sent a session with means that session is no longer
+// good — expired, revoked, or the account changed underneath it. No screen can
+// do anything useful with that, so it is handled once here instead of every
+// panel rendering "Sign in required." on a dashboard that can no longer load
+// anything.
+//
+// Deliberately NOT every 401:
+//   /auth  — signing in with the wrong password is a 401, and belongs on the
+//            login form as an error, not as a bounce back to itself.
+//   /public — a guest mistyping the food PIN from their check-in slip is a
+//            401 too. Sending them to a staff login would be nonsense.
+// And with no session stored there is nothing to have expired.
+function isExpiredSession(res, path) {
+  if (res.status !== 401) return false;
+  if (path.startsWith('/auth') || path.startsWith('/public')) return false;
+  return Boolean(getSession());
+}
+
+// Full page replace rather than a router navigate: this runs outside React,
+// and throwing away every panel's state is exactly what should happen when the
+// session behind it has gone. `replace` so Back doesn't return to a dashboard
+// that can no longer load.
+function goToLogin() {
+  const target = getSession()?.role === 'SUPERADMIN' ? '/vtadmin' : '/login';
+  clearSession();
+  if (window.location.pathname !== target) {
+    window.location.replace(target);
+  }
+}
+
+async function handleResponse(res, path) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
+    if (isExpiredSession(res, path)) goToLogin();
     throw new ApiError(data?.error || 'Something went wrong. Try again.', res.status);
   }
 
@@ -30,7 +63,7 @@ export async function apiGet(path, { token } = {}) {
     },
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }
 
 export async function apiPost(path, body, { token } = {}) {
@@ -43,7 +76,7 @@ export async function apiPost(path, body, { token } = {}) {
     body: JSON.stringify(body),
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }
 
 // No Content-Type header here — the browser sets multipart/form-data with
@@ -57,7 +90,7 @@ export async function apiPostForm(path, formData, { token } = {}) {
     body: formData,
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }
 
 export async function apiGetBlob(path, { token } = {}) {
@@ -69,6 +102,7 @@ export async function apiGetBlob(path, { token } = {}) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => null);
+    if (isExpiredSession(res, path)) goToLogin();
     throw new ApiError(data?.error || 'Something went wrong. Try again.', res.status);
   }
 
@@ -85,7 +119,7 @@ export async function apiPatch(path, body, { token } = {}) {
     body: JSON.stringify(body),
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }
 
 // PUT where the request replaces a whole collection rather than editing parts
@@ -101,7 +135,7 @@ export async function apiPut(path, body, { token } = {}) {
     body: JSON.stringify(body),
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }
 
 export async function apiPatchForm(path, formData, { token } = {}) {
@@ -113,7 +147,7 @@ export async function apiPatchForm(path, formData, { token } = {}) {
     body: formData,
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }
 
 export async function apiDelete(path, { token } = {}) {
@@ -124,5 +158,5 @@ export async function apiDelete(path, { token } = {}) {
     },
   });
 
-  return handleResponse(res);
+  return handleResponse(res, path);
 }

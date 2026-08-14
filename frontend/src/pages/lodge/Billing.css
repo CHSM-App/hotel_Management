@@ -230,9 +230,16 @@
   z-index: 100;
 }
 
+/* The widest modal in the app, and it earns it: this one carries the amount
+   breakdown, the payment capture, the whole stay folded in behind "View full
+   stay details", and a full-size BillDocument behind "Preview the bill". At
+   560px the bill preview and the stay's two-column facts grid were both being
+   squeezed into a column narrower than the document they represent. The same
+   class dresses the issued-invoice modal, which is a bill document and little
+   else, so it benefits identically. */
 .billing-panel__modal {
   width: 100%;
-  max-width: 560px;
+  max-width: 820px;
   max-height: 90vh;
   overflow-y: auto;
   padding: 28px;
@@ -335,3 +342,228 @@
 }
 
 /* Printing is scoped to .bill-doc itself — see BillDocument.css. */
+
+/* ------------------------------------------------- full stay details
+
+   Folded into the bill rather than opening beside it: the desk is halfway
+   through writing a document, and answering "how many nights was that?"
+   shouldn't cost it that place. Shut by default — most bills are issued
+   without anyone needing to ask. */
+.billing-panel__stay-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* The shared collapsible styling makes a summary look like a section heading —
+   uppercase, muted, with a small "+" adrift on the right. That is right for a
+   form section the eye is meant to skim past, and wrong here, where it is the
+   one thing on the modal somebody has to find. So it is dressed as the button
+   it behaves like, in the same raised idiom as .btn-secondary. */
+.billing-panel__stay-details > summary {
+  padding: 10px 14px;
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  transition: box-shadow 150ms ease, color 150ms ease;
+}
+
+.billing-panel__stay-details > summary:hover {
+  color: var(--brand-ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+/* Brand-coloured and large enough to read as the control's own indicator
+   rather than a stray character at the end of a line. */
+.billing-panel__stay-details > summary::after {
+  color: var(--brand);
+  font-size: 18px;
+}
+
+.billing-panel__stay-details[open] > summary {
+  margin-bottom: 14px;
+}
+
+/* The stay's own sections carry the numbered headings and the top rules;
+   inside this fold the first of them would double up on the rule above. */
+.billing-panel__stay-details > div > .form-section:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+
+/* ------------------------------------------------- bill preview
+
+   Same fold treatment as the stay details above it, so the two optional
+   sections of this modal read as a pair. The document inside is the real
+   BillDocument at full size — scaled down it would be a picture of a bill
+   rather than something you can proofread. */
+.billing-panel__bill-preview {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.billing-panel__bill-preview > summary {
+  padding: 10px 14px;
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  transition: box-shadow 150ms ease, color 150ms ease;
+}
+
+.billing-panel__bill-preview > summary:hover {
+  color: var(--brand-ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.billing-panel__bill-preview > summary::after {
+  color: var(--brand);
+  font-size: 18px;
+}
+
+.billing-panel__bill-preview[open] > summary {
+  margin-bottom: 12px;
+}
+
+/* The bill is a fixed-width document; on a narrow modal it scrolls in its own
+   box rather than squashing the two-column meta rows into unreadable stacks. */
+.billing-panel__bill-preview .bill-doc {
+  overflow-x: auto;
+}
+
+/* ============================================================ neumorphism
+
+   Everything below is scoped to .billing-panel on purpose. .chart-section,
+   .chart-list and .chart-row are shared with the tape chart, the guest
+   register and the price chart — restyling them here would move four screens
+   nobody asked about.
+
+   The vocabulary is the one the rest of the app already uses: carved for a
+   surface things sit in, extruded for a thing you can act on, pressed for the
+   one currently chosen. */
+
+/* Each tab's body is a card rather than bare padding on the page. */
+.billing-panel .chart-section {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 18px 20px;
+}
+
+/* --- the tab strip ------------------------------------------------------ */
+
+/* No underline rule: the tabs are controls, and a pressed one says which is
+   current more plainly than a 2px line under it. */
+.billing-panel__subtabs {
+  gap: 6px;
+  margin-bottom: 2px;
+  border-bottom: none;
+}
+
+.billing-panel__subtabs-item {
+  border-bottom: none;
+  margin-right: 0;
+  padding: 8px 14px;
+  border-radius: var(--radius-tile);
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.billing-panel__subtabs-item:hover {
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--ink);
+}
+
+.billing-panel__subtabs-item[aria-current='page'] {
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+  color: var(--brand-ink);
+}
+
+/* Already where a press would put it — lifting under the pointer would read
+   as it being deselected. */
+.billing-panel__subtabs-item[aria-current='page']:hover {
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+}
+
+/* --- the bill-type filters ---------------------------------------------- */
+
+/* These were inverted: carved when idle and flat-filled when chosen, which is
+   the opposite of what every other control on the page says. A chip you have
+   not picked is something to press; the one you have picked is held down. */
+.billing-panel__filter {
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow 150ms ease, color 150ms ease;
+}
+
+.billing-panel__filter:hover {
+  box-shadow: var(--shadow-raised);
+  color: var(--ink);
+}
+
+.billing-panel__filter[aria-pressed='true'] {
+  background: var(--paper);
+  border-color: transparent;
+  box-shadow: var(--shadow-pressed);
+  color: var(--brand-ink);
+}
+
+/* --- the two lists ------------------------------------------------------ */
+
+/* Stays waiting to be billed, and bills already issued. Both were hairline-
+   separated rows; as tiles each one reads as a document you can open, which is
+   exactly what it is. */
+.billing-panel .chart-list {
+  gap: 8px;
+}
+
+.billing-panel__queue-row,
+.billing-panel__invoice-row {
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+/* The stripe naming what was billed survives the change — it groups the list
+   without the reader matching tag colours row by row. */
+.billing-panel__invoice-row {
+  border-left: 3px solid transparent;
+  padding-left: 12px;
+}
+
+.billing-panel__invoice-row:last-child {
+  border-bottom: none;
+}
+
+.billing-panel__invoice-row:hover {
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+/* A voided bill stays in the list for the audit trail, but it is not something
+   to act on — so it lies flat while the live ones stand up. */
+.billing-panel__invoice-row--void {
+  box-shadow: var(--shadow-pressed);
+}
+
+.billing-panel__invoice-row--void:hover {
+  box-shadow: var(--shadow-pressed);
+  transform: none;
+}

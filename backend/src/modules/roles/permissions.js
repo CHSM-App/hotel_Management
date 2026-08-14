@@ -40,11 +40,13 @@ const PERMISSIONS = [
     key: 'food.manage',
     label: 'Menu & QR codes',
     description: 'Build the food menu, set up dining tables and print the ordering QR codes.',
+    capability: 'servesFood',
   },
   {
     key: 'orders.manage',
     label: 'Food orders',
     description: 'Work the live order queue, take orders at the counter and mark items unavailable.',
+    capability: 'servesFood',
   },
 ];
 
@@ -54,8 +56,43 @@ const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 // re-scoped per lodge, but never renamed or deleted.
 const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN'];
 
+// What a property has to be for a built-in role to mean anything. A rooms-only
+// lodge has no kitchen, so a Kitchen role there is a login that can reach one
+// screen the dashboard already hides — worse than useless, because somebody
+// will eventually be given it.
+//
+// The same idea as the `capability` field on FEATURES in the frontend's
+// propertyProfile.js, which is what already hides the food sections.
+const SYSTEM_ROLE_CAPABILITY = { KITCHEN: 'servesFood' };
+
 function isValidPermission(key) {
   return PERMISSION_KEYS.includes(key);
 }
 
-module.exports = { PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLE_KEYS, isValidPermission };
+// The permissions worth offering a property of this shape. Filtering here
+// rather than in the UI means a rooms-only lodge can't be handed 'orders.manage'
+// by a crafted request either.
+function permissionsFor(capabilities) {
+  return PERMISSIONS.filter((p) => !p.capability || Boolean(capabilities?.[p.capability]));
+}
+
+function permissionAvailableFor(key, capabilities) {
+  const permission = PERMISSIONS.find((p) => p.key === key);
+  return Boolean(permission) && (!permission.capability || Boolean(capabilities?.[permission.capability]));
+}
+
+function roleAvailableFor(roleKey, capabilities) {
+  const needed = SYSTEM_ROLE_CAPABILITY[roleKey];
+  return !needed || Boolean(capabilities?.[needed]);
+}
+
+module.exports = {
+  PERMISSIONS,
+  PERMISSION_KEYS,
+  SYSTEM_ROLE_KEYS,
+  SYSTEM_ROLE_CAPABILITY,
+  isValidPermission,
+  permissionsFor,
+  permissionAvailableFor,
+  roleAvailableFor,
+};

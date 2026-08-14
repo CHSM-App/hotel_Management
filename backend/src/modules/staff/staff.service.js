@@ -39,8 +39,13 @@ async function listStaff(lodgeId) {
   return result.recordset.map(mapUser);
 }
 
+// getEffectiveRole resolves any seeded role by key, including the built-ins
+// shared across every lodge — so a rooms-only property would happily put
+// someone on KITCHEN. listRoles already hides it; this is what stops it being
+// assigned by a stale form or a crafted request.
 async function assertRoleExists(lodgeId, roleKey) {
-  const role = await rolesService.getEffectiveRole(lodgeId, roleKey);
+  const available = await rolesService.listRoles(lodgeId);
+  const role = available.find((r) => r.roleKey === roleKey);
   if (!role) {
     throw new ApiError('Choose a valid role.', 400);
   }

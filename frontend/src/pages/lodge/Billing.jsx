@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
+import StayDetails from './StayDetails';
 import './forms.css';
 import './chartSections.css';
+import './stayDetails.css';
 import './Billing.css';
 
 // How overdue the guest was, in words. Duplicated from the server's own
@@ -17,6 +21,12 @@ function lateLabel(minutes) {
   const mins = minutes % 60;
   return mins === 0 ? `${hours}h late` : `${hours}h ${mins}m late`;
 }
+
+// Money that arrives this way leaves a reference the property reconciles
+// against its settlement statement; cash doesn't. Mirrors ONLINE_METHODS on
+// the server, which is what actually enforces it.
+const ONLINE_PAYMENT_METHODS = ['UPI', 'CARD'];
+const needsPaymentReference = (method) => ONLINE_PAYMENT_METHODS.includes(method);
 
 const DOCUMENT_LABEL = {
   TAX_INVOICE: 'Tax invoice',
@@ -61,11 +71,6 @@ const BILL_FILTERS = [
   { key: 'CASH_RECEIPT', label: 'Cash receipt', match: (i) => i.documentType === 'CASH_RECEIPT' },
 ];
 
-function formatDateLong(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-}
-
 export default function Billing({ lodge }) {
   const session = getSession();
   const token = session?.token;
@@ -84,11 +89,11 @@ export default function Billing({ lodge }) {
   ];
 
   const [tab, setTab] = useState(billsStays ? 'ready' : billsTables ? 'tables' : 'bills');
-  const [queue, setQueue] = useState(null);
+  const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   const [queueError, setQueueError] = useState('');
-  const [foodTabs, setFoodTabs] = useState(null);
+  const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
   const [foodTabsError, setFoodTabsError] = useState('');
-  const [invoices, setInvoices] = useState(null);
+  const [invoices, setInvoices] = useState(() => readCache('/billing/invoices'));
   const [invoicesError, setInvoicesError] = useState('');
   const [billFilter, setBillFilter] = useState('ALL');
 
@@ -96,7 +101,7 @@ export default function Billing({ lodge }) {
     if (!billsStays) return;
     apiGet('/billing/queue', { token })
       .then((data) => {
-        setQueue(data.bookings);
+        setQueue(writeCache('/billing/queue', data.bookings));
         setQueueError('');
       })
       .catch((err) => setQueueError(err instanceof ApiError ? err.message : 'Could not load bookings ready to bill.'));
@@ -106,7 +111,7 @@ export default function Billing({ lodge }) {
     if (!billsTables) return;
     apiGet('/billing/food-tabs', { token })
       .then((data) => {
-        setFoodTabs(data.tabs);
+        setFoodTabs(writeCache('/billing/food-tabs', data.tabs));
         setFoodTabsError('');
       })
       .catch((err) => setFoodTabsError(err instanceof ApiError ? err.message : 'Could not load open tables.'));
@@ -115,7 +120,7 @@ export default function Billing({ lodge }) {
   const loadInvoices = () => {
     apiGet('/billing/invoices', { token })
       .then((data) => {
-        setInvoices(data.invoices);
+        setInvoices(writeCache('/billing/invoices', data.invoices));
         setInvoicesError('');
       })
       .catch((err) => setInvoicesError(err instanceof ApiError ? err.message : 'Could not load bills.'));
@@ -145,27 +150,54 @@ export default function Billing({ lodge }) {
   const activeFilter = billFilters.find((f) => f.key === billFilter) ?? null;
   const visibleInvoices = invoices && (activeFilter ? invoices.filter(activeFilter.match) : invoices);
 
-  // Bill modal. One modal serves both kinds — the amounts, the GST toggle and
-  // the payment capture are identical; only the endpoints and the header
-  // differ, so `billTarget` carries which is being billed.
+  // Bill modal. One modal serves both kinds — the amounts and the payment
+  // capture are identical; only the endpoints and the header differ, so
+  // `billTarget` carries which is being billed.
   //   { kind: 'STAY', bookingId }  |  { kind: 'FOOD', tableId, label }
   const [billTarget, setBillTarget] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
-  const [billingSide, setBillingSide] = useState('GST');
+
+  // The stay behind a queue row, read-only. Billing decides what to charge for
+  // a stay it can't see otherwise — the queue row carries a name, a room and a
+  // total, and every question beyond that ("how many nights", "what advance did
+  // they leave", "what were the extras") needed another screen until now.
+  const [detailStay, setDetailStay] = useState(null);
+  const [detailStayError, setDetailStayError] = useState('');
+
+  // Fetched the first time the section is opened, not when the bill modal is —
+  // most bills are issued without anyone needing to ask, and the queue row
+  // already carries the name, the room and the total.
+  const loadStayDetails = () => {
+    if (detailStay || detailStayError || billTarget?.kind !== 'STAY') return;
+    apiGet(`/bookings/${billTarget.bookingId}`, { token })
+      .then((data) => setDetailStay(data.booking))
+      .catch((err) =>
+        setDetailStayError(err instanceof ApiError ? err.message : 'Could not load this stay.')
+      );
+  };
+
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [collectedAmount, setCollectedAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
   const [issueError, setIssueError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // Whether the overstay charge reception agreed at the desk lands on this
   // bill. Starts as "yes" — it was already agreed with the guest — and the
   // person writing the bill is the one who can still take it back off.
   const [includeLateCheckout, setIncludeLateCheckout] = useState(true);
+  // A discount is agreed as a percentage or as a round figure depending on who
+  // is asking, so both boxes exist and each fills in the other. Only the amount
+  // is ever sent — a percentage and an amount that disagree have no right
+  // answer, and money is the half that gets collected.
 
-  // The billing side is picked once per bill, not once per preview response.
-  // Dropping the late charge re-fetches the same booking, and re-deriving the
-  // side from that response would silently undo a desk that chose Non-GST.
-  const sideChosen = useRef(false);
+  // The amount the preview on screen was actually built for. Lags the box by a
+  // beat: the server re-derives the whole document for a discount, since taking
+  // money off can move a night into a lower GST band and change the round off.
+
+  // What the preview on screen was built for. Lags the collected box by a beat.
+  const [appliedTarget, setAppliedTarget] = useState(0);
 
   const openBilling = (target) => {
     setBillTarget(target);
@@ -173,9 +205,13 @@ export default function Billing({ lodge }) {
     setPreviewError('');
     setCollectedAmount('');
     setPaymentMethod('');
+    setPaymentReference('');
     setIssueError('');
     setIncludeLateCheckout(true);
-    sideChosen.current = false;
+    setDetailStay(null);
+    setDetailStayError('');
+    setPreviewOpen(false);
+    setAppliedTarget(0);
   };
 
   const closeBilling = () => {
@@ -186,29 +222,28 @@ export default function Billing({ lodge }) {
   // "counter" rather than an id — the till tab has no table row behind it.
   const foodTabPath = (tableId) => (tableId == null ? 'counter' : tableId);
 
-  // The late charge is in the path rather than subtracted here on the client:
-  // taking it off can move the stay into a lower GST band and change the round
-  // off, so the server re-derives the whole document instead.
+  // The late charge and the discount are both in the path rather than
+  // subtracted here on the client: taking money off can move the stay into a
+  // lower GST band and change the round off, so the server re-derives the whole
+  // document instead.
   const previewPath = billTarget
     ? billTarget.kind === 'STAY'
-      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}`
-      : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
+      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}&targetTotal=${appliedTarget}`
+      : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview?targetTotal=${appliedTarget}`
     : null;
 
   useEffect(() => {
     if (!previewPath) return;
     apiGet(previewPath, { token })
-      .then((data) => {
-        setPreview(data);
-        if (!sideChosen.current) {
-          sideChosen.current = true;
-          setBillingSide(data.isGstRegistered ? 'GST' : 'NON_GST');
-        }
-      })
+      .then((data) => setPreview(data))
       .catch((err) => setPreviewError(err instanceof ApiError ? err.message : 'Could not load the bill preview.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewPath]);
 
+  // Decided by the property, not by the desk. A registered lodge always issues
+  // on the GST side; an unregistered one has no other document to issue, which
+  // is why the non-GST path stays and only the choice goes.
+  const billingSide = preview?.isGstRegistered ? 'GST' : 'NON_GST';
   const activeAmounts = preview ? (billingSide === 'GST' ? preview.gst : preview.nonGst) : null;
   // A table bill has no advance — nobody pays a deposit to sit down.
   const advancePaid = preview?.advancePaid ?? 0;
@@ -218,13 +253,73 @@ export default function Billing({ lodge }) {
     return Math.round(n * 100) / 100;
   }
 
+  // The server builds the document from everything it knows; the payment being
+  // typed into the modal right now is the one thing it doesn't, so it is laid
+  // over the top. Without this the preview would show "Balance due" in full on
+  // a bill about to be marked paid.
+  const collecting = collectedAmount.trim() !== '';
+  const documentPreview = preview?.document && {
+    ...preview.document,
+    balanceCollected: collecting ? Number(collectedAmount) || 0 : 0,
+    balancePaymentMethod: collecting ? paymentMethod || null : null,
+    balanceReference: collecting && needsPaymentReference(paymentMethod) ? paymentReference.trim() : null,
+  };
+
+  // Everything on the bill before tax — a discount comes off what was sold,
+  // never off the tax the government is owed, so this is what a percentage is
+  // a percentage of.
+  const discountBase = preview?.discountBase ?? 0;
+  // What the solver actually reached. Often not the exact figure typed — the
+  // total steps at every GST band boundary and rounds to the rupee.
+  const targetAchieved = preview?.targetAchieved ?? null;
+
+  // The desk types what it took from the guest; the discount is whatever makes
+  // the bill land there. That is the decision as it is actually made at a
+  // counter — "he gave me 1500" — rather than a discount worked out first and
+  // a total that falls out of it.
+  //
+  // Solved server-side, before tax, because a discount shown on an invoice has
+  // to come off the taxable value: GST is due on what the guest actually paid.
+  const typedCollected = collectedAmount.trim() === '' ? 0 : Number(collectedAmount);
+
+  // True while the box says one thing and the bill below still shows another.
+  // Issuing is blocked for that beat rather than quietly writing the bill the
+  // desk was looking at a moment ago.
+  const discountSettling =
+    !Number.isFinite(typedCollected) || round2(typedCollected) !== appliedTarget;
+
+  useEffect(() => {
+    const next = !Number.isFinite(typedCollected) || typedCollected < 0 ? 0 : round2(typedCollected);
+    if (next === appliedTarget) return undefined;
+    const timer = setTimeout(() => setAppliedTarget(next), 350);
+    return () => clearTimeout(timer);
+  }, [typedCollected, appliedTarget]);
+
   const handleIssue = async (e) => {
     e.preventDefault();
     setIssueError('');
 
-    const hasAmount = collectedAmount.trim() !== '';
-    if (hasAmount && !paymentMethod) {
-      setIssueError('Choose a payment method for the amount collected.');
+    // A bill is written when the guest settles — the property extends no
+    // credit, so there is no such thing as an issued bill with nothing
+    // collected against it. Enforced on the server too; this is only so the
+    // desk is told before the request goes out.
+    if (collectedAmount.trim() === '') {
+      setIssueError('Enter the amount collected from the guest.');
+      return;
+    }
+    const collected = Number(collectedAmount);
+    if (!Number.isFinite(collected) || collected < 0) {
+      setIssueError('Enter a valid amount collected.');
+      return;
+    }
+    // Zero has no payment type because no payment happened — the only way to
+    // get here is an advance that already covered the whole stay.
+    if (collected > 0 && !paymentMethod) {
+      setIssueError('Choose a payment type for the amount collected.');
+      return;
+    }
+    if (collected > 0 && needsPaymentReference(paymentMethod) && paymentReference.trim() === '') {
+      setIssueError('Enter the transaction number for a UPI or card payment.');
       return;
     }
 
@@ -239,9 +334,22 @@ export default function Billing({ lodge }) {
         path,
         {
           billingSide,
+          // What the server actually applied, read back off the preview —
+          // never what was typed. With a target in force the typed discount is
+          // blank and this solved figure is the only one that reproduces the
+          // bill on screen. Still an amount and never a percentage: the server
+          // re-derives that, so the two can't disagree on the document.
+          discountAmount: preview.discountAmount ?? 0,
           // Sent only for a stay — a table has no checkout to be late for.
           ...(billTarget.kind === 'STAY' ? { includeLateCheckout } : {}),
-          ...(hasAmount ? { collectedAmount: Number(collectedAmount), paymentMethod } : {}),
+          collectedAmount: collected,
+          ...(collected > 0 ? { paymentMethod } : {}),
+          // Dropped on cash: switching UPI → Cash after typing a reference
+          // would file a transaction number against a payment that never had
+          // one.
+          ...(collected > 0 && needsPaymentReference(paymentMethod)
+            ? { paymentReference: paymentReference.trim() }
+            : {}),
         },
         { token }
       );
@@ -630,6 +738,32 @@ export default function Billing({ lodge }) {
                         </p>
                       </>
                     )}
+
+                    {/* Shut by default and loaded only when opened. Most bills
+                        are issued off the three rows above; this is for the
+                        one where the guest queries a figure and the desk needs
+                        the whole stay — the party, the extras, the advance,
+                        night by night — without leaving the bill it is halfway
+                        through writing.
+
+                        The same component the tape chart renders, so a stay
+                        read here and read there is one record, not two
+                        summaries of it. Its own "still to collect" line is
+                        turned off: the real balance due, with tax, is a few
+                        rows further down this very modal. */}
+                    <details
+                      className="form-section--collapsible billing-panel__stay-details"
+                      onToggle={(e) => e.currentTarget.open && loadStayDetails()}
+                    >
+                      <summary>View full stay details</summary>
+                      {detailStayError && (
+                        <div className="form-banner form-banner--error">{detailStayError}</div>
+                      )}
+                      {!detailStayError && !detailStay && <div className="dash-state">Loading…</div>}
+                      {!detailStayError && detailStay && (
+                        <StayDetails booking={detailStay} showOutstanding={false} />
+                      )}
+                    </details>
                   </div>
                 )}
 
@@ -663,30 +797,18 @@ export default function Billing({ lodge }) {
                   </div>
                 )}
 
+                {/* Which side a bill is issued on isn't the desk's call — it
+                    follows the property's registration. Offering the choice
+                    only invited a cash receipt to be cut by mistake, which
+                    would open a second, parallel invoice series and produce a
+                    document sitting outside the GST returns. */}
                 <div className="form-section">
-                  <div className="form-section__title">Billing side</div>
-                  {preview.isGstRegistered ? (
-                    <div className="toggle-group">
-                      <button
-                        type="button"
-                        aria-pressed={billingSide === 'GST'}
-                        onClick={() => setBillingSide('GST')}
-                      >
-                        GST ({preview.gstin})
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={billingSide === 'NON_GST'}
-                        onClick={() => setBillingSide('NON_GST')}
-                      >
-                        Non-GST
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="billing-panel__hint">
-                      This property isn&apos;t GST registered — every bill is a cash receipt.
-                    </p>
-                  )}
+                  <div className="form-section__title">Bill</div>
+                  <p className="billing-panel__hint">
+                    {preview.isGstRegistered
+                      ? `Issued under GSTIN ${preview.gstin}.`
+                      : 'This property isn’t GST registered — every bill is a cash receipt.'}
+                  </p>
 
                   {activeAmounts && (
                     <div className="sim-result">
@@ -710,7 +832,9 @@ export default function Billing({ lodge }) {
                             <div className="sim-result__line sim-result__line--part" key={line.label}>
                               <span>
                                 {line.label}
-                                {line.nights > 1 && (
+                                {/* Rates only — a concession is one decision
+                                    on the whole stay, not one taken per night. */}
+                                {line.nights > 1 && line.amount > 0 && (
                                   <span className="sim-result__part-nights">× {line.nights} nights</span>
                                 )}
                               </span>
@@ -766,6 +890,17 @@ export default function Billing({ lodge }) {
                           )}
                         </>
                       )}
+                      {/* After both blocks and before the round off: the
+                          subtotals above are what was sold, and this is the
+                          one line where money comes off them. The tax lines
+                          were already computed on the discounted amounts, so
+                          the column still adds up to the total. */}
+                      {activeAmounts.discountAmount > 0 && (
+                        <div className="sim-result__line">
+                          <span>Discount ({activeAmounts.discountPercent}%)</span>
+                          <span>-{formatPrice(activeAmounts.discountAmount)}</span>
+                        </div>
+                      )}
                       {activeAmounts.roundOff !== 0 && (
                         <div className="sim-result__line">
                           <span>Round off</span>
@@ -790,8 +925,13 @@ export default function Billing({ lodge }) {
                   )}
                 </div>
 
+                {/* The decision as it is actually made at a counter: the guest
+                    hands over a figure, and whatever the bill has to give up to
+                    land there is the discount. Typing it here rather than
+                    working out a discount first is the difference between
+                    "he gave me 1500" and arithmetic. */}
                 <div className="form-section">
-                  <div className="form-section__title">Balance collected (optional)</div>
+                  <div className="form-section__title">Balance collected</div>
                   <div className="field-row">
                     <div className="field">
                       <label htmlFor="collectedAmount">Amount</label>
@@ -799,12 +939,13 @@ export default function Billing({ lodge }) {
                         id="collectedAmount"
                         type="number"
                         min="0"
+                        placeholder={balanceDue ? String(balanceDue) : '0'}
                         value={collectedAmount}
                         onChange={(e) => setCollectedAmount(e.target.value)}
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="paymentMethod">Method</label>
+                      <label htmlFor="paymentMethod">Payment type</label>
                       <select
                         id="paymentMethod"
                         value={paymentMethod}
@@ -817,14 +958,85 @@ export default function Billing({ lodge }) {
                       </select>
                     </div>
                   </div>
+                  {/* Only for money that left a trail — what the settlement
+                      statement gets matched against at month end. */}
+                  {needsPaymentReference(paymentMethod) && (
+                    <div className="field">
+                      <label htmlFor="paymentReference">Transaction number</label>
+                      <input
+                        id="paymentReference"
+                        value={paymentReference}
+                        maxLength={64}
+                        placeholder={paymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
+                        onChange={(e) => setPaymentReference(e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {/* Not typed — worked out. The desk said what it took; this is
+                    what the bill had to give up to get there, taken off before
+                    tax so GST is charged on what the guest actually paid.
+                    Shown in both readings because a guest asks for one and an
+                    owner asks for the other. */}
+                {activeAmounts && activeAmounts.discountAmount > 0 && (
+                  <div className="form-section">
+                    <div className="form-section__title">Discount applied</div>
+                    <div className="detail-facts">
+                      <div className="detail-fact">
+                        <span className="detail-fact__label">Amount</span>
+                        <span className="detail-fact__value">
+                          {formatPrice(activeAmounts.discountAmount)}
+                        </span>
+                      </div>
+                      <div className="detail-fact">
+                        <span className="detail-fact__label">Percent</span>
+                        <span className="detail-fact__value">{activeAmounts.discountPercent}%</span>
+                      </div>
+                    </div>
+                    <p className="billing-panel__hint">
+                      {targetAchieved != null && round2(typedCollected) !== targetAchieved
+                        ? `Nearest reachable is ${formatPrice(targetAchieved)} — GST bands each night and the total rounds to the rupee.`
+                        : `Taken off ${formatPrice(discountBase)} before tax, so GST is charged on what the guest actually pays.`}
+                    </p>
+                  </div>
+                )}
+
+                {/* Last on the form, because everything above it changes what
+                    prints — the discount, whether the overstay is billed, what
+                    was collected. Opened before committing to a document that
+                    can then only be voided, never edited.
+
+                    Built by the same code that shapes an issued bill and drawn
+                    by the same component, so this is the document, not an
+                    impression of it. */}
+                {preview.document && (
+                  <details
+                    className="form-section--collapsible billing-panel__bill-preview"
+                    onToggle={(e) => setPreviewOpen(e.currentTarget.open)}
+                  >
+                    <summary>Preview the bill</summary>
+                    {previewOpen && (
+                      <>
+                        <p className="billing-panel__hint">
+                          The number and date are stamped on when it is issued.
+                        </p>
+                        <BillDocument invoice={documentPreview} />
+                      </>
+                    )}
+                  </details>
+                )}
 
                 <div className="billing-panel__actions">
                   <button type="button" className="btn-secondary" onClick={closeBilling} disabled={submitting}>
                     Cancel
                   </button>
-                  <button className="btn-accent" type="submit" disabled={submitting || preview.alreadyInvoiced}>
-                    {submitting ? 'Issuing…' : 'Issue bill'}
+                  <button
+                    className="btn-accent"
+                    type="submit"
+                    disabled={submitting || preview.alreadyInvoiced || discountSettling}
+                  >
+                    {submitting ? 'Issuing…' : discountSettling ? 'Recalculating…' : 'Issue bill'}
                   </button>
                 </div>
               </form>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { UNITS, UNIT_LABEL, CATEGORIES, REASON_LABEL, formatQty, groupByCategory } from './inventoryUnits';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
@@ -39,7 +40,7 @@ function validateMaterial(form, isEditing) {
 
 export default function InventoryPanel() {
   const session = getSession();
-  const [materials, setMaterials] = useState(null);
+  const [materials, setMaterials] = useState(() => readCache('/inventory/materials'));
   const [error, setError] = useState('');
 
   const [query, setQuery] = useState('');
@@ -67,7 +68,7 @@ export default function InventoryPanel() {
   const load = () =>
     apiGet('/inventory/materials', { token: session?.token })
       .then((data) => {
-        setMaterials(data.materials);
+        setMaterials(writeCache('/inventory/materials', data.materials));
         setError('');
       })
       .catch((err) =>

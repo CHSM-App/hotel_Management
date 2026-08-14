@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import './forms.css';
 import './chartSections.css';
@@ -49,8 +50,8 @@ function ChartSection({ title, hint, children }) {
 
 export default function PriceSimulatorPanel() {
   const session = getSession();
-  const [rooms, setRooms] = useState(null);
-  const [charges, setCharges] = useState(null);
+  const [rooms, setRooms] = useState(() => readCache('/rooms'));
+  const [charges, setCharges] = useState(() => readCache('/switchable-charges'));
   const [error, setError] = useState('');
 
   const [simRoomId, setSimRoomId] = useState('');
@@ -85,8 +86,8 @@ export default function PriceSimulatorPanel() {
       apiGet('/switchable-charges', { token: session?.token }),
     ])
       .then(([roomsData, chargesData]) => {
-        setRooms(roomsData.rooms);
-        setCharges(chargesData.switchableCharges);
+        setRooms(writeCache('/rooms', roomsData.rooms));
+        setCharges(writeCache('/switchable-charges', chargesData.switchableCharges));
         setError('');
       })
       .catch((err) => {

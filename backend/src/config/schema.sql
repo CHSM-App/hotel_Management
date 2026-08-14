@@ -1059,6 +1059,34 @@ IF COL_LENGTH('dbo.invoices', 'late_checkout_charge') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD late_checkout_charge DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_late_charge DEFAULT 0');
 
 -- ---------------------------------------------------------------------------
+-- Concessions and discounts
+-- ---------------------------------------------------------------------------
+-- Two different decisions, taken by two different people at two different
+-- moments, so they are two columns and not one.
+--
+-- bookings.discount_amount is the concession reception agreed at the desk,
+-- once, on the whole stay after every extra was on it. It replaces the old
+-- base_price_override (still read, never written now, so stays booked at a
+-- negotiated rate keep pricing at it): haggling happens over the total a guest
+-- is quoted, not over the per-night rate that total was built from. It is
+-- spread back across the nights in nightly_breakdown so billing keeps taxing
+-- each night on what was actually charged for it.
+IF COL_LENGTH('dbo.bookings', 'discount_amount') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD discount_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_bookings_discount DEFAULT 0');
+
+-- invoices.discount_amount is the billing desk's own reduction, decided when
+-- the document is written and applied to everything on it — room, overstay and
+-- food alike. Snapshotted here like every other amount on an issued bill.
+-- The percentage is stored alongside rather than recomputed, because it is
+-- what was agreed with the guest ("10% off") and the amount is what that came
+-- to; round-off would otherwise make the printed percentage drift.
+IF COL_LENGTH('dbo.invoices', 'discount_amount') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD discount_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_discount DEFAULT 0');
+
+IF COL_LENGTH('dbo.invoices', 'discount_percent') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD discount_percent DECIMAL(5,2) NOT NULL CONSTRAINT df_invoices_discount_pct DEFAULT 0');
+
+-- ---------------------------------------------------------------------------
 -- Kitchen raw material inventory
 -- ---------------------------------------------------------------------------
 -- What the kitchen buys, what each dish eats, and a ledger tying the two
@@ -1178,3 +1206,65 @@ CREATE INDEX ix_stock_movements_material ON dbo.stock_movements(lodge_id, materi
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_stock_movements_order' AND object_id = OBJECT_ID('dbo.stock_movements'))
 CREATE INDEX ix_stock_movements_order ON dbo.stock_movements(order_id) WHERE order_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Parked bookings
+-- ---------------------------------------------------------------------------
+-- A booking reception started and got interrupted out of. Its own table rather
+-- than a bookings.status = 'DRAFT', because a draft is not a booking: it holds
+-- no room, it is not billable, it has no guest register entry, and it is
+-- allowed to be incomplete in ways every query against dbo.bookings assumes
+-- nothing ever is. Sharing the table would mean auditing every status filter in
+-- the codebase and getting one wrong would put an imaginary guest on a bill.
+--
+-- Crucially it does NOT block availability. Two people can draft the same room
+-- for the same nights, and a real booking will take it from under both — which
+-- is correct, because nothing has been agreed with anybody yet. The tape chart
+-- shows drafts so the desk can see what is pending, not to reserve anything.
+--
+-- payload is the whole booking form as the screen holds it, so reopening a
+-- draft restores every answer including the ones that have no column here.
+-- room_id, the dates and the guest name are lifted out of it only so the chart
+-- and the drafts list can render without parsing JSON per row.
+IF OBJECT_ID('dbo.booking_drafts', 'U') IS NULL
+CREATE TABLE dbo.booking_drafts (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id        BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    -- NULL until reception has picked one; such a draft simply doesn't appear
+    -- on the chart, since there is no row to draw it against.
+    room_id         BIGINT NULL REFERENCES dbo.rooms(id),
+    check_in_date   DATE NULL,
+    check_out_date  DATE NULL,
+    guest_name      NVARCHAR(200) NULL,
+    payload         NVARCHAR(MAX) NOT NULL
+        CONSTRAINT ck_booking_drafts_payload CHECK (ISJSON(payload) = 1),
+    created_by      BIGINT NULL REFERENCES dbo.users(id),
+    created_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    updated_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_drafts_lodge' AND object_id = OBJECT_ID('dbo.booking_drafts'))
+CREATE INDEX ix_booking_drafts_lodge ON dbo.booking_drafts(lodge_id, updated_at DESC);
+
+-- The chart asks "which drafts touch these nights", the same overlap question
+-- the tape chart asks of bookings.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_drafts_dates' AND object_id = OBJECT_ID('dbo.booking_drafts'))
+CREATE INDEX ix_booking_drafts_dates ON dbo.booking_drafts(lodge_id, check_in_date, check_out_date) WHERE room_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Transaction references for money that didn't arrive as cash
+-- ---------------------------------------------------------------------------
+-- A UPI or card payment leaves a number on both sides — the guest's app and
+-- the property's settlement statement — and reconciling the two at month end
+-- is impossible without it recorded against the stay. Cash leaves no such
+-- trail and needs none, which is why these are nullable rather than required
+-- columns: the requirement is on the payment method, and lives in the schemas.
+--
+-- NVARCHAR(64): a UPI transaction id is 12 digits, an RRN 12, a card auth code
+-- 6, and gateway references run longer. Wide enough for all of them without
+-- inviting a paragraph.
+IF COL_LENGTH('dbo.bookings', 'advance_reference') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD advance_reference NVARCHAR(64) NULL');
+
+IF COL_LENGTH('dbo.invoices', 'balance_reference') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD balance_reference NVARCHAR(64) NULL');

@@ -11,6 +11,14 @@ async function listBillableBookingsHandler(req, res, next) {
   }
 }
 
+// A preview is re-fetched on every keystroke in the discount box, so a
+// half-typed or nonsense figure prices the bill at full price rather than
+// erroring under the cursor. The service caps it at what is on the bill.
+function parseDiscount(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 async function previewBillHandler(req, res, next) {
   try {
     const preview = await billingService.previewBill(req.user.lodgeId, Number(req.params.bookingId), {
@@ -18,6 +26,11 @@ async function previewBillHandler(req, res, next) {
       // overstay charge before committing to it. Absent means "as agreed at
       // checkout", so only the explicit string turns it off.
       includeLateCheckout: req.query.includeLateCheckout !== 'false',
+      discountAmount: parseDiscount(req.query.discountAmount),
+      // What the desk wants the guest to hand over. When set it wins: the
+      // service solves for the discount that lands there and ignores any
+      // discount sent alongside it.
+      targetTotal: parseDiscount(req.query.targetTotal),
     });
     res.json(preview);
   } catch (err) {
@@ -62,7 +75,10 @@ function tableIdParam(raw) {
 
 async function previewFoodBillHandler(req, res, next) {
   try {
-    const preview = await billingService.previewFoodBill(req.user.lodgeId, tableIdParam(req.params.tableId));
+    const preview = await billingService.previewFoodBill(req.user.lodgeId, tableIdParam(req.params.tableId), {
+      discountAmount: parseDiscount(req.query.discountAmount),
+      targetTotal: parseDiscount(req.query.targetTotal),
+    });
     res.json(preview);
   } catch (err) {
     next(err);

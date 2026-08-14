@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import './forms.css';
 import './MenuPanel.css';
@@ -592,8 +593,8 @@ function Stepper({ qty, onChange, label }) {
 function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const session = getSession();
   const [sections, setSections] = useState(null);
-  const [tables, setTables] = useState([]);
-  const [rooms, setRooms] = useState([]);
+  const [tables, setTables] = useState(() => readCache('/tables:active') ?? []);
+  const [rooms, setRooms] = useState(() => readCache('/rooms:active') ?? []);
   const [cart, setCart] = useState({});
   const [target, setTarget] = useState({ kind: 'COUNTER', id: '' });
   const [note, setNote] = useState('');
@@ -612,8 +613,8 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
     ])
       .then(([menuData, tablesData, roomsData]) => {
         setSections(menuData.sections);
-        setTables(tablesData.tables.filter((t) => t.isActive));
-        setRooms(roomsData.rooms.filter((r) => r.isActive));
+        setTables(writeCache('/tables:active', tablesData.tables.filter((t) => t.isActive)));
+        setRooms(writeCache('/rooms:active', roomsData.rooms.filter((r) => r.isActive)));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load the menu.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps

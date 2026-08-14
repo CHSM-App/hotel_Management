@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import './forms.css';
 import './MenuPanel.css';
 
 export default function FoodSettingsPanel({ onSaved }) {
   const session = getSession();
-  const [settings, setSettings] = useState(null);
+  const [settings, setSettings] = useState(() => readCache('/menu/settings'));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -14,7 +15,7 @@ export default function FoodSettingsPanel({ onSaved }) {
   useEffect(() => {
     apiGet('/menu/settings', { token: session?.token })
       .then((data) => {
-        setSettings(data.settings);
+        setSettings(writeCache('/menu/settings', data.settings));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load these settings.'));

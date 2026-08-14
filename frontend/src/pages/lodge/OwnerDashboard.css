@@ -12,14 +12,14 @@
 .dash-sidebar {
   width: 240px;
   flex-shrink: 0;
-  min-height: calc(100svh - 73px);
+  min-height: calc(100svh - var(--dash-topbar-h));
   background: var(--surface);
   border-right: none;
   /* Directional rather than a full extrusion: the sidebar runs the height of
      the viewport, so a shadow on all four sides would have nowhere to land.
      This is the edge catching the light and casting into the content. */
   box-shadow: 1px 0 0 var(--neu-light), 6px 0 14px -4px var(--neu-dark);
-  padding: 24px 16px;
+  padding: 18px 14px;
   position: sticky;
   top: 0;
 }
@@ -39,7 +39,7 @@
   letter-spacing: 0.06em;
   color: var(--text-muted);
   padding: 0 12px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .dash-sidebar__list {
@@ -51,6 +51,9 @@
   gap: 2px;
 }
 
+/* Flush with the panel until you touch it. The whole sidebar is one surface,
+   and eight permanently-raised tiles would read as eight things competing
+   rather than a list to choose from. */
 .dash-sidebar__item {
   width: 100%;
   display: flex;
@@ -58,15 +61,14 @@
   gap: 10px;
   text-align: left;
   background: transparent;
-  border: none;
-  border-left: 3px solid transparent;
-  border-radius: 8px;
-  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-tile);
+  padding: 9px 12px;
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 .dash-sidebar__item svg {
@@ -74,15 +76,31 @@
   color: var(--text-muted);
 }
 
+/* Rises to meet the pointer — the same extrusion every other control in the
+   app uses to say it can be pressed. */
 .dash-sidebar__item:hover {
-  background: var(--paper);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--ink);
 }
 
+/* And the section you are in is the one held down. That is the whole reason
+   this palette exists: a pressed control reads as "currently engaged" without
+   needing a marker bolted to its edge, so the 3px brand rule the old flat
+   version needed is gone. Kept shallow (--shadow-pressed, not
+   --shadow-inset) because it sits inside a panel that is itself raised. */
 .dash-sidebar__item[aria-current='page'] {
-  background: #eef4f2;
-  border-left-color: var(--brand);
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
   color: var(--brand-ink);
   font-weight: 600;
+}
+
+/* A pressed item doesn't lift again under the pointer — it is already where a
+   press would put it, and the travel would read as it being deselected. */
+.dash-sidebar__item[aria-current='page']:hover {
+  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
 }
 
 .dash-sidebar__item[aria-current='page'] svg {
@@ -104,9 +122,15 @@
   border-radius: 999px;
 }
 
+/* Wider than the superadmin dashboard's 1100px, because this one has already
+   given 240px to the sidebar and its content is grids — rooms, the tape chart,
+   the bills list — where another column is worth more than a shorter line
+   length. On a 1600px screen this is the difference between four rooms a row
+   and five. */
 .dash-body > .dash-main {
   flex: 1;
   min-width: 0;
+  max-width: 1360px;
 }
 
 @media (max-width: 800px) {

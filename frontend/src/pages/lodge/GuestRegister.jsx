@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiGetBlob, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import BillDocument from './BillDocument';
 import '../internal/LodgesDashboard.css';
@@ -123,7 +124,14 @@ export default function GuestRegister() {
   const [toDate, setToDate] = useState(todayIso());
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [bookings, setBookings] = useState(null);
+  // Seeded from what this session already fetched for the range the page opens
+  // on, so coming back paints the register immediately instead of showing a
+  // loading state while a request crosses to the database. Changing the range
+  // keeps the existing behaviour: the previous rows stay until the new ones
+  // land, which is what the screen already did.
+  const [bookings, setBookings] = useState(() =>
+    readCache(`/bookings?fromDate=${startOfMonthIso()}&toDate=${todayIso()}`)
+  );
   const [error, setError] = useState('');
 
   // Bumped to ask for the same range again — a failed fetch retried from the
@@ -148,7 +156,7 @@ export default function GuestRegister() {
     apiGet(`/bookings?fromDate=${fromDate}&toDate=${toDate}`, { token })
       .then((data) => {
         if (!active) return;
-        setBookings(data.bookings);
+        setBookings(writeCache(`/bookings?fromDate=${fromDate}&toDate=${toDate}`, data.bookings));
         setError('');
         setLoadedKey(rangeKey);
       })

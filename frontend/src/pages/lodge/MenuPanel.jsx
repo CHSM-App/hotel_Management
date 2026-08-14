@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
@@ -106,7 +107,7 @@ function groupByType(items) {
 
 export default function MenuPanel() {
   const session = getSession();
-  const [sections, setSections] = useState(null);
+  const [sections, setSections] = useState(() => readCache('/menu'));
   const [error, setError] = useState('');
 
   // One section on screen at a time, chosen from the picker above it. A full à
@@ -135,7 +136,7 @@ export default function MenuPanel() {
   const load = () => {
     apiGet('/menu', { token: session?.token })
       .then((data) => {
-        setSections(data.sections);
+        setSections(writeCache('/menu', data.sections));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load the menu.'));
