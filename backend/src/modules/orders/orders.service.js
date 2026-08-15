@@ -234,6 +234,88 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
   }
 }
 
+// Rewrites an order's lines to exactly what was sent, the way a guest changing
+// their mind before the kitchen starts expects "edit my order" to behave.
+//
+// Deleting the old lines is only safe because nothing has eaten stock yet:
+// ingredients come off the shelf when a dish is ticked off (which needs
+// PREPARING) or when the whole order is called READY. `allowedStatuses` is what
+// keeps that true — it is enforced in the UPDATE's WHERE rather than after a
+// read, so an order the kitchen accepts mid-edit fails the write instead of
+// having the food changed underneath a cook who has already started.
+async function replaceOrderItems(lodgeId, orderId, items, { note, guestName, allowedStatuses } = {}) {
+  if (items.length === 0) {
+    throw new ApiError('Add at least one item to the order.', 400);
+  }
+
+  const pool = await getPool();
+  const lines = await resolveOrderLines(pool, lodgeId, items);
+  const subtotal = round2(lines.reduce((sum, l) => sum + l.lineTotal, 0));
+
+  const statusFilter = allowedStatuses?.length
+    ? ` AND status IN (${allowedStatuses.map((_, i) => `@s${i}`).join(', ')})`
+    : '';
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const orderRequest = new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('orderId', sql.BigInt, orderId)
+      .input('subtotal', sql.Decimal(10, 2), subtotal)
+      .input('note', sql.NVarChar, note ?? null)
+      .input('guestName', sql.NVarChar, guestName || null);
+    (allowedStatuses || []).forEach((status, i) => orderRequest.input(`s${i}`, sql.NVarChar, status));
+
+    const updated = await orderRequest.query(`
+      UPDATE dbo.food_orders
+      SET subtotal = @subtotal,
+          -- An edit carries the whole order, note included, so a note cleared
+          -- on the guest's screen is cleared here. COALESCE only covers a
+          -- caller that omits the field entirely, which then means "leave it".
+          note = COALESCE(@note, note),
+          guest_name = COALESCE(@guestName, guest_name)
+      OUTPUT inserted.id
+      WHERE id = @orderId AND lodge_id = @lodgeId${statusFilter}
+    `);
+
+    if (updated.recordset.length === 0) {
+      throw new ApiError('The kitchen has already moved this order on. Refresh to see where it is.', 409);
+    }
+
+    await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .query('DELETE FROM dbo.food_order_items WHERE order_id = @orderId');
+
+    for (const line of lines) {
+      await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .input('menuItemId', sql.BigInt, line.menuItemId)
+        .input('menuItemPortionId', sql.BigInt, line.menuItemPortionId ?? null)
+        .input('itemName', sql.NVarChar, line.itemName)
+        .input('portionLabel', sql.NVarChar, line.portionLabel ?? null)
+        .input('unitPrice', sql.Decimal(10, 2), line.unitPrice)
+        .input('quantity', sql.Int, line.quantity)
+        .input('lineTotal', sql.Decimal(10, 2), line.lineTotal)
+        .query(`
+          INSERT INTO dbo.food_order_items
+            (order_id, menu_item_id, menu_item_portion_id, item_name, portion_label,
+             unit_price, quantity, line_total)
+          VALUES
+            (@orderId, @menuItemId, @menuItemPortionId, @itemName, @portionLabel,
+             @unitPrice, @quantity, @lineTotal)
+        `);
+    }
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+
+  return { subtotal };
+}
+
 // The line's id travels with it because the kitchen screen ticks lines off
 // one at a time — it needs something to name the line it just cooked.
 function mapOrderItem(row) {
@@ -450,7 +532,13 @@ async function setItemReady(lodgeId, orderId, itemId, ready, { userId = null } =
 // server-side rather than trusted from the button that was clicked: two people
 // on two screens will tap the same order, and the second tap has to fail
 // cleanly instead of dragging a delivered order back to preparing.
-async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId = null } = {}) {
+//
+// `fromStatuses` narrows the transition table further for callers who may move
+// an order on only from where they are allowed to touch it. A guest cancelling
+// from their phone may do so while their order is still waiting; the kitchen
+// may cancel a dish it has already started. Both are "→ CANCELLED", and only
+// this tells them apart.
+async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId = null, fromStatuses = null } = {}) {
   const pool = await getPool();
 
   const currentResult = await pool
@@ -461,6 +549,13 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId
   const current = currentResult.recordset[0];
   if (!current) {
     throw new ApiError('Order not found.', 404);
+  }
+
+  if (fromStatuses && !fromStatuses.includes(current.status)) {
+    throw new ApiError(
+      `This order is already ${current.status.toLowerCase()} — it can’t be moved from here.`,
+      409
+    );
   }
 
   const allowed = NEXT_STATUSES[current.status] || [];
@@ -543,6 +638,7 @@ module.exports = {
   // is worth being able to exercise without writing an order to do it.
   resolveOrderLines,
   createOrder,
+  replaceOrderItems,
   listOrders,
   getOrder,
   updateStatus,

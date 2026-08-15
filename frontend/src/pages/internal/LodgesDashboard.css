@@ -21,17 +21,31 @@
   color: #ffffff;
 }
 
+/* The bar is a fixed 58px and the property's name is whatever the owner typed.
+   A flex item defaults to min-width: auto, so a long name wrapped to a second
+   line and spilled out of the band on a phone instead of giving way to the
+   avatar beside it. It takes the slack and truncates. */
+.dash-topbar > :first-child {
+  min-width: 0;
+}
+
 .dash-topbar__mark {
   font-family: var(--serif);
   font-size: 16px;
   font-weight: 600;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dash-topbar__eyebrow {
   font-size: 12px;
   color: #cfe1dd;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dash-topbar__signout {

@@ -70,6 +70,23 @@
   background: var(--paper);
 }
 
+/* On a phone this ⋮ is the only way into rename, restock and delete, and 30px
+   is a mouse target rather than a thumb one. The popup's own rows grow with
+   it — 9px of padding on 14px text is 32px tall, which is a miss waiting to
+   happen on a list where the row below it is Delete. */
+@media (max-width: 640px) {
+  .rowmenu__trigger {
+    width: 40px;
+    height: 40px;
+    font-size: 19px;
+  }
+
+  .rowmenu__pop button {
+    padding: 12px 12px;
+    min-height: 44px;
+  }
+}
+
 /* Both panels mark their destructive row with their own class name. */
 .rowmenu__pop button.menu-danger:hover,
 .rowmenu__pop button.inv-danger:hover {

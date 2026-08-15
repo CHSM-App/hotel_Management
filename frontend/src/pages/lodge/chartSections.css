@@ -234,6 +234,16 @@
   }
 }
 
+/* The two columns left here are check-in and check-out. At the 16px floor this
+   width puts on form controls (index.css) a date field wants about 150px, and
+   half of a 360px phone's card is 149px — so the pair takes a row each rather
+   than clipping the year off both. */
+@media (max-width: 480px) {
+  .sim-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chart-delete-modal__backdrop {
   position: fixed;
   inset: 0;

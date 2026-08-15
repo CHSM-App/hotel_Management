@@ -805,6 +805,18 @@
     justify-content: space-between;
   }
 
+  /* Stepping a month is the most-tapped control on this screen and 30px is a
+     mouse target. The stepper's own padding keeps the pill in proportion. */
+  .tape-nav__arrow {
+    width: 42px;
+    height: 42px;
+  }
+
+  .tape-nav__label {
+    min-width: 0;
+    flex: 1;
+  }
+
   .tape-legend__hint {
     margin-left: 0;
     width: 100%;

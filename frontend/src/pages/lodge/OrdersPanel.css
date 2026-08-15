@@ -883,6 +883,21 @@ label.order-card__item:has(.order-card__tick:disabled) {
 }
 
 @media (max-width: 560px) {
+  /* Near-fullscreen, like every other modal in the app at this width — 20px of
+     scrim showing on each side is width this dialog does not have to give. */
+  .counter-backdrop {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .counter-modal {
+    max-width: none;
+    /* svh rather than vh: 92vh is measured against the tallest the viewport
+       ever gets on mobile Safari, so the footer with "Place order" in it sat
+       under the address bar until the page was scrolled. */
+    max-height: calc(100svh - 20px);
+  }
+
   .counter-find {
     flex-wrap: wrap;
   }
@@ -896,6 +911,22 @@ label.order-card__item:has(.order-card__tick:disabled) {
   .counter-summary {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  /* The total and the two buttons are ~350px of content on a 320px screen.
+     The total takes its own line above them and the pair splits the row —
+     both stay full-height targets rather than being squeezed to fit. */
+  .counter-foot {
+    flex-wrap: wrap;
+  }
+
+  .counter-total {
+    flex-basis: 100%;
+    margin-right: 0;
+  }
+
+  .counter-foot button {
+    flex: 1;
   }
 }
 

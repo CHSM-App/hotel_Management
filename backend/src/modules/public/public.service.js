@@ -353,9 +353,17 @@ async function clearPinLockout(lodgeId, roomLabel) {
 }
 
 // The guest types their room number and the PIN reception gave them at
-// check-in. Verified here, at placement — there's no session to hand out and
-// nothing to log in to, so the PIN is checked afresh on every order.
-async function placeRoomOrder(slug, roomNumber, { pin, items, note, guestName, guestPhone }) {
+// check-in, and every guest-side request carries both. There is still no server
+// session behind it: the phone remembers the pair and re-sends it, and this
+// checks it afresh each time. That is what makes the guest's "log in" survive a
+// refresh while still going dead the moment reception checks them out and the
+// PIN is cleared — nothing has to be expired or revoked, because nothing was
+// ever issued.
+//
+// Every caller that touches a room's food gets here first, so the lockout and
+// the uniform failure below cover the whole guest surface rather than just
+// placement.
+async function verifyRoomAccess(slug, roomNumber, pin) {
   const lodge = await getLodgeBySlug(slug);
   assertServesFood(lodge);
   if (!lodge.foodRoomService) {
@@ -402,13 +410,186 @@ async function placeRoomOrder(slug, roomNumber, { pin, items, note, guestName, g
   // then got it right shouldn't be closer to a lockout on their next order.
   await clearPinLockout(lodge.id, roomLabel);
 
+  return {
+    lodge,
+    pool,
+    roomLabel,
+    roomId: row.room_id,
+    bookingId: row.booking_id,
+    guestName: row.guest_name,
+    guestPhone: row.guest_phone,
+  };
+}
+
+// What the phone gets when the guest signs in: enough to greet them and to
+// know the sign-in took, and nothing about the property it couldn't already
+// read off the public menu. The PIN itself is never echoed back.
+async function openGuestSession(slug, roomNumber, pin) {
+  const access = await verifyRoomAccess(slug, roomNumber, pin);
+  return {
+    roomNumber: access.roomLabel,
+    guestName: access.guestName || '',
+    lodge: { name: access.lodge.name, slug: access.lodge.slug, phone: access.lodge.phone },
+  };
+}
+
+// The orders belonging to *this stay*, not to this room. Scoped on booking_id,
+// so the guest who checks in on Friday cannot read what the last guest in that
+// room ate on Thursday — the room number is reused, the booking never is.
+const GUEST_ORDER_HISTORY_LIMIT = 40;
+
+// PENDING and QUEUED only. Once a pan is on the heat the food exists, and a
+// screen that offered "cancel" then would be writing a cheque the kitchen has
+// to honour. From there the guest is told to call the desk, who can cancel it
+// as staff and decide what happens to the dish.
+const GUEST_EDITABLE_STATUSES = ['PENDING', 'QUEUED'];
+
+async function listGuestOrders(slug, roomNumber, pin) {
+  const access = await verifyRoomAccess(slug, roomNumber, pin);
+  const { pool, lodge, bookingId } = access;
+
+  const ordersResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodge.id)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('limit', sql.Int, GUEST_ORDER_HISTORY_LIMIT)
+    .query(`
+      SELECT TOP (@limit)
+             o.id, o.public_token, o.order_number, o.status, o.subtotal, o.note,
+             o.placed_at, o.cancelled_at
+      FROM dbo.food_orders o
+      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.source = 'ROOM'
+      ORDER BY o.placed_at DESC
+    `);
+
+  const rows = ordersResult.recordset;
+  if (rows.length === 0) {
+    return { roomNumber: access.roomLabel, guestName: access.guestName || '', orders: [] };
+  }
+
+  const itemsRequest = pool.request();
+  rows.forEach((row, index) => itemsRequest.input(`o${index}`, sql.BigInt, row.id));
+  const itemsResult = await itemsRequest.query(`
+    SELECT order_id, id, item_name, unit_price, quantity, line_total,
+           menu_item_id, menu_item_portion_id
+    FROM dbo.food_order_items
+    WHERE order_id IN (${rows.map((_, index) => `@o${index}`).join(', ')})
+    ORDER BY id ASC
+  `);
+
+  const itemsByOrder = new Map();
+  for (const row of itemsResult.recordset) {
+    const list = itemsByOrder.get(String(row.order_id)) || [];
+    list.push({
+      id: row.id,
+      name: row.item_name,
+      unitPrice: Number(row.unit_price),
+      quantity: row.quantity,
+      lineTotal: Number(row.line_total),
+      // The two ids the edit screen needs to put this line back in the cart as
+      // the dish and size it came from, rather than by matching on its name.
+      itemId: row.menu_item_id,
+      portionId: row.menu_item_portion_id,
+    });
+    itemsByOrder.set(String(row.order_id), list);
+  }
+
+  return {
+    roomNumber: access.roomLabel,
+    guestName: access.guestName || '',
+    orders: rows.map((row) => ({
+      // The order's own opaque token is its handle everywhere on the guest
+      // side. Order numbers restart daily and are called across the kitchen,
+      // so they name an order to a human but must never address one.
+      token: row.public_token,
+      orderNumber: row.order_number,
+      status: row.status,
+      subtotal: Number(row.subtotal),
+      note: row.note || '',
+      placedAt: row.placed_at,
+      cancelledAt: row.cancelled_at,
+      // Decided here rather than on the phone, so the buttons a guest sees and
+      // the rules the server enforces can never drift apart.
+      canModify: GUEST_EDITABLE_STATUSES.includes(row.status),
+      items: itemsByOrder.get(String(row.id)) || [],
+    })),
+  };
+}
+
+// Finds an order the signed-in guest is actually allowed to touch: theirs, on
+// this stay, at this property. A token from someone else's order is a 404 —
+// the same answer a token that never existed gets.
+async function findGuestOrder(access, token) {
+  const result = await access.pool
+    .request()
+    .input('lodgeId', sql.BigInt, access.lodge.id)
+    .input('bookingId', sql.BigInt, access.bookingId)
+    .input('token', sql.NVarChar, String(token || ''))
+    .query(`
+      SELECT id, status, order_number
+      FROM dbo.food_orders
+      WHERE public_token = @token AND lodge_id = @lodgeId AND booking_id = @bookingId
+    `);
+
+  const row = result.recordset[0];
+  if (!row) {
+    throw new ApiError('Order not found.', 404);
+  }
+  return row;
+}
+
+const TOO_LATE_MESSAGE =
+  'The kitchen has already started this order, so it can’t be changed from here. Please call the front desk.';
+
+async function updateGuestOrder(slug, roomNumber, pin, token, { items, note, guestName }) {
+  const access = await verifyRoomAccess(slug, roomNumber, pin);
+  const order = await findGuestOrder(access, token);
+
+  if (!GUEST_EDITABLE_STATUSES.includes(order.status)) {
+    throw new ApiError(TOO_LATE_MESSAGE, 409);
+  }
+
+  // The status is passed down as well as checked above: this read is already a
+  // moment old, and the write is what has to be right if the kitchen accepts
+  // the order in between.
+  const { subtotal } = await ordersService.replaceOrderItems(access.lodge.id, order.id, items, {
+    note,
+    guestName: guestName || access.guestName,
+    allowedStatuses: GUEST_EDITABLE_STATUSES,
+  });
+
+  return { token, orderNumber: order.order_number, status: order.status, subtotal };
+}
+
+async function cancelGuestOrder(slug, roomNumber, pin, token) {
+  const access = await verifyRoomAccess(slug, roomNumber, pin);
+  const order = await findGuestOrder(access, token);
+
+  if (!GUEST_EDITABLE_STATUSES.includes(order.status)) {
+    throw new ApiError(TOO_LATE_MESSAGE, 409);
+  }
+
+  await ordersService.updateStatus(access.lodge.id, order.id, 'CANCELLED', {
+    // Written onto the order so the kitchen screen shows who dropped it — a
+    // ticket that vanishes with no reason reads like the system lost it.
+    cancelReason: 'Cancelled by the guest',
+    fromStatuses: GUEST_EDITABLE_STATUSES,
+  });
+
+  return { token, orderNumber: order.order_number, status: 'CANCELLED' };
+}
+
+async function placeRoomOrder(slug, roomNumber, { pin, items, note, guestName, guestPhone }) {
+  const { lodge, roomId, bookingId, guestName: bookedName, guestPhone: bookedPhone } =
+    await verifyRoomAccess(slug, roomNumber, pin);
+
   // PIN-verified, so the kitchen doesn't need to vet it — straight to the queue.
   const created = await ordersService.createOrder(lodge.id, {
     source: 'ROOM',
-    roomId: row.room_id,
-    bookingId: row.booking_id,
-    guestName: guestName || row.guest_name,
-    guestPhone: guestPhone || row.guest_phone,
+    roomId,
+    bookingId,
+    guestName: guestName || bookedName,
+    guestPhone: guestPhone || bookedPhone,
     note,
     items,
     status: 'QUEUED',
@@ -500,6 +681,10 @@ module.exports = {
   getPublicMenu,
   getLodgeOrderingContext,
   getTableOrderingContext,
+  openGuestSession,
+  listGuestOrders,
+  updateGuestOrder,
+  cancelGuestOrder,
   placeRoomOrder,
   placeTableOrder,
   getPublicOrderStatus,

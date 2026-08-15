@@ -1117,6 +1117,16 @@
 
   .guest-register__range {
     flex: 1;
+    gap: 10px;
+  }
+
+  /* Decorative, and the width it costs is width the two fields need: with the
+     16px floor this breakpoint puts on form controls (index.css), a date input
+     wants about 150px before "15/08/2026" and its picker glyph start clipping,
+     and the pair plus a dash does not fit a 360px phone. From and To are
+     labelled, so nothing is lost by dropping the character between them. */
+  .guest-register__range-dash {
+    display: none;
   }
 
   .guest-register__range-field {

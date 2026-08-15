@@ -4,6 +4,10 @@ const {
   getLodgePageHandler,
   getMenuPageHandler,
   getTableOrderPageHandler,
+  openSessionHandler,
+  listGuestOrdersHandler,
+  updateGuestOrderHandler,
+  cancelGuestOrderHandler,
   placeRoomOrderHandler,
   placeTableOrderHandler,
   getOrderStatusHandler,
@@ -25,6 +29,21 @@ router.get('/lodges/:slug', getLodgePageHandler);
 
 router.get('/lodges/:slug/menu', getMenuPageHandler);
 router.post('/lodges/:slug/orders', pinAttemptLimiter, placeRoomOrderHandler);
+
+// The guest side of a stay's food. Every one of these carries the room number
+// and PIN in its body and is checked afresh — there is still no session issued
+// here, only a phone that remembers the pair and re-sends it. So every one gets
+// the same limiter as placement: they are all PIN attempts, and a route that
+// only *reads* would otherwise be the cheap way to guess.
+//
+// /session exists so a wrong PIN is caught at sign-in rather than at the end of
+// a cart the guest has spent five minutes filling.
+router.post('/lodges/:slug/session', pinAttemptLimiter, openSessionHandler);
+router.post('/lodges/:slug/my-orders', pinAttemptLimiter, listGuestOrdersHandler);
+router.patch('/lodges/:slug/orders/:token', pinAttemptLimiter, updateGuestOrderHandler);
+// POST rather than DELETE: cancelling is a status the order keeps, not a row
+// that goes away, and the identity has to travel in a body.
+router.post('/lodges/:slug/orders/:token/cancel', pinAttemptLimiter, cancelGuestOrderHandler);
 
 // No PIN limiter on the table route: a table order has no secret to guess, and
 // throttling it by IP would punish a restaurant whose diners all sit behind one

@@ -127,15 +127,29 @@
   margin-bottom: 0;
 }
 
-/* The two ends of the range, read left to right as one control. */
+/* The two ends of the range, read left to right as one control. Sized by its
+   content as before, but allowed to shrink — min-width: auto would have made
+   the pair an immovable 302px, which is what let it run off a phone. */
 .billing-panel__bill-range {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
+.billing-panel__bill-range .field {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 148px is the width a date field wants before the picker glyph starts sitting
+   on the year. It is a floor on a desktop toolbar and a ceiling on a phone —
+   two of them plus the dash is 302px, which a 360px screen does not have once
+   the page gutter and the card padding are taken off, so below the breakpoint
+   the pair shrinks to fit rather than pushing the panel sideways. */
 .billing-panel__bill-range input[type='date'] {
   min-width: 148px;
+  width: 100%;
   font-size: 13px;
 }
 
@@ -482,6 +496,31 @@
 
   .billing-panel__detail-header {
     align-items: flex-start;
+  }
+
+  /* The range gets the row to itself and the search the one below, rather than
+     the two fighting over 344px. Even alone it is close: the 16px floor this
+     breakpoint puts on form controls (index.css) means a date field needs
+     about 150px to show "15/08/2026" and its picker glyph without clipping,
+     and two of those plus the dash is more than a 360px phone has. The dash is
+     decorative — aria-hidden already — so it goes, and its width goes to the
+     two fields that have to stay readable. */
+  .billing-panel__bill-range {
+    flex-basis: 100%;
+    gap: 8px;
+  }
+
+  .billing-panel__bill-range-dash {
+    display: none;
+  }
+
+  .billing-panel__bill-range input[type='date'] {
+    min-width: 0;
+  }
+
+  .billing-panel__bill-search {
+    min-width: 0;
+    flex-basis: 100%;
   }
 }
 

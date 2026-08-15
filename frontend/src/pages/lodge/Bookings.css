@@ -559,10 +559,13 @@
   top: calc(100% + 4px);
   left: 0;
   /* Wider than the name column it hangs from: a phone number and a date don't
-     fit in it, and the whole point is reading them before choosing. */
+     fit in it, and the whole point is reading them before choosing. Capped
+     against the viewport as well as at 320px — on a phone the party row is
+     already full width, so a fixed 320px popup hung off its left edge ran past
+     the modal and gave the form a sideways scroll. */
   min-width: 100%;
   width: max-content;
-  max-width: 320px;
+  max-width: min(320px, calc(100vw - 40px));
   max-height: 264px;
   overflow-y: auto;
   margin: 0;
@@ -763,9 +766,17 @@
   }
 
   /* Buttons shrink to share the row rather than stacking — stacking would
-     push the total off a short phone screen, defeating the point of it. */
+     push the total off a short phone screen, defeating the point of it.
+     wrap is the escape hatch below ~340px, where the quoted total and two
+     labelled buttons genuinely cannot share a line: the actions drop under
+     the total instead of overflowing the modal. */
+  .booking-form__foot {
+    flex-wrap: wrap;
+  }
+
   .booking-form__foot-actions {
     gap: 8px;
+    margin-left: auto;
   }
 
   .booking-form__foot-actions button {
@@ -817,6 +828,15 @@
 
   .bookings-panel__detail-header {
     align-items: flex-start;
+  }
+
+  /* The backdrop no longer dismisses these modals, so × is the way out and it
+     has to be hittable — 30px is a mouse target sat in the corner of a form
+     that fills the screen. */
+  .booking-form__close,
+  .bookings-panel__close {
+    width: 40px;
+    height: 40px;
   }
 }
 

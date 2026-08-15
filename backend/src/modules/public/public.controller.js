@@ -15,11 +15,18 @@ const guestFields = {
 // roomNumber moved out of the URL and into the body when ordering went to a
 // single link — the room is something the guest asserts, alongside the PIN that
 // backs the assertion, not something the address identifies.
-const roomOrderSchema = z.object({
-  ...guestFields,
+const roomIdentity = {
   roomNumber: z.string().trim().min(1, 'Enter your room number.').max(20),
   pin: z.string().trim().min(1, 'Enter the PIN reception gave you.'),
-});
+};
+
+const roomOrderSchema = z.object({ ...guestFields, ...roomIdentity });
+
+// Sign-in, and reading back the guest's own orders. Both carry the identity and
+// nothing else.
+const roomIdentitySchema = z.object(roomIdentity);
+
+const editOrderSchema = z.object({ ...guestFields, ...roomIdentity });
 
 const tableOrderSchema = z.object(guestFields);
 
@@ -88,6 +95,68 @@ async function placeRoomOrderHandler(req, res, next) {
   }
 }
 
+async function openSessionHandler(req, res, next) {
+  try {
+    const input = parse(roomIdentitySchema, req.body);
+    const session = await publicService.openGuestSession(
+      String(req.params.slug || ''),
+      input.roomNumber,
+      input.pin
+    );
+    res.json(session);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// A read, sent as a POST, because what authorises it is a secret — and a secret
+// in a query string is a secret in the browser history, in the proxy log and in
+// the referrer of the next image the page loads.
+async function listGuestOrdersHandler(req, res, next) {
+  try {
+    const input = parse(roomIdentitySchema, req.body);
+    const result = await publicService.listGuestOrders(
+      String(req.params.slug || ''),
+      input.roomNumber,
+      input.pin
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateGuestOrderHandler(req, res, next) {
+  try {
+    const input = parse(editOrderSchema, req.body);
+    const result = await publicService.updateGuestOrder(
+      String(req.params.slug || ''),
+      input.roomNumber,
+      input.pin,
+      String(req.params.token || ''),
+      input
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function cancelGuestOrderHandler(req, res, next) {
+  try {
+    const input = parse(roomIdentitySchema, req.body);
+    const result = await publicService.cancelGuestOrder(
+      String(req.params.slug || ''),
+      input.roomNumber,
+      input.pin,
+      String(req.params.token || '')
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function placeTableOrderHandler(req, res, next) {
   try {
     const input = parse(tableOrderSchema, req.body);
@@ -111,6 +180,10 @@ module.exports = {
   getLodgePageHandler,
   getMenuPageHandler,
   getTableOrderPageHandler,
+  openSessionHandler,
+  listGuestOrdersHandler,
+  updateGuestOrderHandler,
+  cancelGuestOrderHandler,
   placeRoomOrderHandler,
   placeTableOrderHandler,
   getOrderStatusHandler,

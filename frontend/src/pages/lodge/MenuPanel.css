@@ -1064,4 +1064,30 @@
     align-items: flex-start;
     gap: 6px;
   }
+
+  /* Portion name, price and the remove button share one line. The price and
+     the button are fixed at 118 + 42 plus 16 of gaps, so on a 360px phone the
+     name — the field actually being typed into — was left about 80px. Trimming
+     the price column is what buys it back; a rupee figure needs far less than
+     118px once the field is no longer matching a desktop rhythm. */
+  .menu-portions__row .menu-money {
+    width: 92px;
+  }
+}
+
+/* Below this the three of them stop fitting at any width worth having, so the
+   name takes the line and the price and remove button share the one under it. */
+@media (max-width: 380px) {
+  .menu-portions__row {
+    flex-wrap: wrap;
+  }
+
+  .menu-portions__name {
+    flex-basis: 100%;
+  }
+
+  .menu-portions__row .menu-money {
+    flex: 1;
+    width: auto;
+  }
 }

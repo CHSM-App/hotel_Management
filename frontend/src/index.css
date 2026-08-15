@@ -72,6 +72,10 @@
   font: 16px/1.5 var(--sans);
   color: var(--text);
   background: var(--paper);
+  /* Mobile Safari and Chrome inflate text in landscape unless told not to,
+     which silently breaks every width this app was measured at. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -184,6 +188,15 @@ select {
   font: inherit;
 }
 
+/* An image never widens its container. Every photo in the app is already sized
+   by its own rule (72px dish thumbnails, 190px room covers); this only catches
+   the ones sized by the file — a room photo dropped into a narrow modal, a QR
+   rendered at its natural pixel size — which would otherwise push the page
+   sideways on a phone. */
+img {
+  max-width: 100%;
+}
+
 /* Text fields read as a well pressed into the page. Matched on the bare
    element (specificity 0,0,1) so any page stylesheet can still override it,
    and excluding the controls that are drawn by the platform rather than by us
@@ -196,4 +209,27 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow-inset);
+}
+
+/* --- the 16px floor -------------------------------------------------------
+   iOS Safari zooms the whole page in when a field smaller than 16px takes
+   focus, and it never zooms back out — the guest register's search box or the
+   booking form's date field would leave reception looking at a page a third
+   wider than the screen, with the layout every rule below this line assumes
+   now off to the right.
+
+   Several panels deliberately run 13–14px controls for density at a desk
+   (.booking-form, .menu-search, the billing date range). Those are correct on
+   a mouse and wrong on a thumb, so the floor is applied by width rather than
+   by editing each one, and !important is what lets a bare element selector
+   outrank the two-class rules that set them. Density comes back above 640px. */
+@media (max-width: 640px) {
+  /* File inputs are excluded: they take no typed text, so they never trigger
+     the zoom, and inflating one would blow out the guest row it sits in — its
+     11.5px is holding the native button and a filename inside a grid cell. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }

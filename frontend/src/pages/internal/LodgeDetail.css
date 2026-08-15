@@ -179,8 +179,13 @@
   margin-bottom: 6px;
 }
 
+/* The margin and padding a browser gives a <ul> are reset here rather than
+   left to the list-style removal — the default 40px of padding-inline-start
+   was indenting the whole chip row, which costs a chip a line on a phone. */
 .detail-features ul {
   list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;

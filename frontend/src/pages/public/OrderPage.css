@@ -3,14 +3,20 @@
    columns of dishes rather than one — on a tablet or a laptop the old 560px
    left half the window empty and stretched each card across the rest. */
 .order-page {
-  max-width: 760px;
-  margin: 0 auto;
   /* Barely any gutter: on a 360px phone the old 16px each side cost 9% of the
      screen, and the dishes are what want it. 8px is what keeps text and card
-     edges off the glass rather than a designed margin. */
-  padding: 14px 8px 120px;
+     edges off the glass rather than a designed margin. Published as a variable
+     because the sticky tab strip bleeds through it — see .order-tabs. */
+  --order-gutter: 8px;
+
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 14px var(--order-gutter) 120px;
   background: var(--paper);
-  min-height: 100vh;
+  /* svh, not vh: on mobile Safari 100vh is the height with the address bar
+     collapsed, so a short menu got a scrollbar's worth of dead space under it
+     that the page could be dragged into. */
+  min-height: 100svh;
 }
 
 .order-page__state {
@@ -156,7 +162,13 @@
 
 /* The page scrolls on the document, so top: 0 is the viewport. Negative side
    margins let the strip bleed to the screen edges while its padding keeps the
-   first and last tab aligned with the cards below. */
+   first and last tab aligned with the cards below.
+
+   The bleed has to match .order-page's own gutter exactly. It was -16px against
+   an 8px gutter, so on a phone the strip ran 8px past each edge of the viewport
+   and gave the whole document a horizontal scroll — the page could be dragged
+   sideways off the menu. Both numbers now come from the same variable, so the
+   gutter can't be retuned without the bleed following it. */
 .order-tabs {
   position: sticky;
   top: 0;
@@ -165,8 +177,8 @@
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;
-  margin: 0 -16px 16px;
-  padding: 10px 16px;
+  margin: 0 calc(-1 * var(--order-gutter)) 16px;
+  padding: 10px var(--order-gutter);
   background: var(--paper);
   border-bottom: 1px solid var(--border);
 }
@@ -433,7 +445,9 @@
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 16px;
+  /* Clear of the home indicator on a notched phone, and unchanged at 16px on
+     everything else — the inset is 0 where there is no notch. */
+  bottom: calc(16px + env(safe-area-inset-bottom));
   width: min(528px, calc(100% - 32px));
   display: flex;
   align-items: center;
@@ -536,28 +550,28 @@
   margin-bottom: 6px;
 }
 
-/* Room number and PIN are what authorise the order, so they're grouped and
-   given a tinted panel rather than sitting among the optional fields — the
-   guest should see at a glance that these two are the ones that matter. */
-.order-sheet__identity {
-  background: var(--paper);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-inset);
-  border-radius: 10px;
-  padding: 14px 14px 4px;
-  margin-bottom: 16px;
-}
-
-.order-sheet__identity-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.order-sheet__identity-hint {
-  font-size: 12.5px;
+/* Room number and PIN used to be collected here, at the end. They moved to the
+   sign-in screen, so what's left is a one-line reminder of where the food is
+   about to be sent — worth keeping, because a guest signed in on a phone that
+   remembers them has nothing else on screen saying which room that is. */
+.order-sheet__signed {
+  font-size: 13.5px;
   color: var(--text-muted);
-  margin: 0 0 12px;
+  margin: 0 0 16px;
+}
+
+.order-sheet__signed strong {
+  color: var(--ink);
+}
+
+.order-sheet__warn {
+  background: #fdf6e7;
+  border: 1px solid #f0dfae;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--ink);
+  margin-bottom: 14px;
 }
 
 .order-sheet input {
@@ -702,4 +716,387 @@
 
 .food-mark--egg::after {
   background: var(--color-warning);
+}
+
+/* ------------------------------------------------------------- sign-in gate */
+
+/* The gate gets the whole viewport and centres one short form. It is the first
+   thing a guest sees after scanning the QR by their bed, so it carries the
+   property's name and nothing else to read. */
+.order-page--gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 40px;
+}
+
+.guest-login {
+  width: min(380px, 100%);
+  background: var(--surface);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-elevated);
+  border-radius: var(--radius-card);
+  padding: 26px 20px calc(22px + env(safe-area-inset-bottom));
+}
+
+.guest-login__lodge {
+  font-family: var(--serif);
+  font-size: 25px;
+  color: var(--ink);
+  margin: 0;
+  text-align: center;
+}
+
+.guest-login__lead {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 6px 0 20px;
+}
+
+.guest-login__error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.guest-login__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.guest-login__input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 48px;
+  margin-bottom: 16px;
+  /* Wide and spaced: this is four digits copied off a paper slip, and a guest
+     reads them back to check before tapping. */
+  letter-spacing: 0.04em;
+  font-size: 16px; /* 16px stops iOS Safari zooming the page on focus. */
+}
+
+.guest-login__input:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+}
+
+.guest-login__submit {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  background: var(--brand);
+  color: #ffffff;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 16px;
+  min-height: 50px;
+  cursor: pointer;
+}
+
+.guest-login__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Ruled off below the form, because it answers a different question — not "how
+   do I order" but "I can't". Quieter than the submit button and unmissable all
+   the same: with no browse-only path left, this is the only way out of a screen
+   a guest can otherwise be stuck on. */
+.guest-login__help {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.guest-login__help p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+.guest-login__call {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--brand);
+  font-size: 14.5px;
+  font-weight: 700;
+  text-decoration: none;
+  /* 48px so it clears the tap-target floor — this is reached by a thumb, in a
+     room, by someone who has already had one thing go wrong. */
+  min-height: 48px;
+  line-height: 24px;
+}
+
+.guest-login__call-none {
+  margin: 0 !important;
+  font-weight: 600;
+  color: var(--ink) !important;
+}
+
+/* ------------------------------------------------- who's signed in / notices */
+
+.order-page__who {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.order-page__room {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: var(--shadow-inset);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+
+.order-page__signout {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  padding: 5px 4px;
+  cursor: pointer;
+}
+
+/* Order placed, order changed, order cancelled. It replaces the full-screen
+   confirmation the room side used to get: the order list right below is a
+   better answer to "did that work", so this only has to catch the eye once. */
+.order-page__flash {
+  background: #e8f5ec;
+  border: 1px solid #bfe0cb;
+  color: #14532d;
+  border-radius: var(--radius-tile);
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------- your orders */
+
+.guest-orders {
+  margin-bottom: 22px;
+}
+
+.guest-orders__title {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+
+.guest-orders__error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  margin-bottom: 12px;
+}
+
+.guest-orders__empty {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.guest-orders__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guest-order {
+  background: var(--surface);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
+  border-radius: var(--radius-tile);
+  padding: 14px;
+}
+
+/* A cancelled or delivered order is history. It stays readable — the guest may
+   be checking what they were charged for — but stops competing with the live
+   ones above it. */
+.guest-order--cancelled,
+.guest-order--delivered {
+  opacity: 0.72;
+}
+
+.guest-order__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.guest-order__number {
+  font-weight: 800;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.guest-order__chip {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--brand);
+  background: var(--paper);
+  box-shadow: var(--shadow-inset);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.guest-order--ready .guest-order__chip {
+  color: var(--color-success);
+}
+
+.guest-order--cancelled .guest-order__chip {
+  color: var(--danger);
+}
+
+.guest-order__total {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-order__lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.guest-order__lines li {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  padding: 3px 0;
+}
+
+.guest-order__qty {
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.guest-order__name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+
+.guest-order__amount {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-order__note {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+}
+
+.guest-order__status {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 10px 0 0;
+}
+
+.guest-order__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.guest-order__actions button {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 42px;
+  cursor: pointer;
+}
+
+.guest-order__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.guest-order__cancel {
+  color: var(--danger);
+  border-color: var(--danger-bg);
+}
+
+/* ------------------------------------------------------------ editing strip */
+
+/* While an order is being edited the steppers on the menu below are pointed at
+   food that has already been sent to the kitchen. Sticky, because that fact has
+   to stay on screen however far down the menu the guest scrolls. */
+.order-page__editing {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--brand);
+  color: #ffffff;
+  border-radius: var(--radius-tile);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.order-page__editing span {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-page__editing button {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.order-page__editing-stop {
+  border-color: transparent !important;
+  text-decoration: underline;
 }

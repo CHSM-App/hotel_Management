@@ -482,6 +482,17 @@
   .lodge-public__header h1 {
     font-size: 24px;
   }
+
+  /* The pairing above holds for the selects, which say "2 guests" and take
+     whatever width they're given. It doesn't hold for the dates: at the 16px
+     floor this width puts on form controls (index.css) a date field wants
+     about 150px to show "15/08/2026" and its picker glyph, and half of a
+     360px card is 146px. Rather than clip the year off both ends of the stay,
+     the two dates take a row each — they are the first thing a guest sets and
+     the one field on this page that is read back to check. */
+  .lodge-public__date-field:has(input[type='date']) {
+    flex-basis: 100%;
+  }
 }
 
 .lodge-public__lightbox {
