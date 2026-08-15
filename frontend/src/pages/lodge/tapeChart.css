@@ -12,11 +12,20 @@
   --tape-vacant-hover: #d8dee4;
   --tape-weekend: #dfe4e9;
   --tape-weekend-wash: rgba(30, 58, 95, 0.035);
+  /* An empty night that has already passed: flatter and fainter than a vacant
+     one, because the carve on a vacant tile is what says "click me". */
+  --tape-past: #f1f4f6;
 
   --tape-booked: #c0392b;
   --tape-booked-deep: #a52f22;
   --tape-checked-in: #2f6fb5;
   --tape-checked-in-deep: #245a96;
+  /* A finished stay. Slate rather than a faded red or blue, because it is not
+     a weaker version of either — the room was sold, the guest has gone, and
+     nothing about it is still to be done. Desaturated so a month of history
+     reads as a record while today's business keeps the loud colours. */
+  --tape-checked-out: #8695a3;
+  --tape-checked-out-deep: #6f7e8c;
   /* Amber rather than a lighter red or blue: a draft is not a weaker booking,
      it is a different kind of thing, and a shade of an existing colour would
      read as one. Dark enough to carry white text and to survive being printed
@@ -90,35 +99,6 @@
   color: var(--text-muted);
 }
 
-/* A date range is a longer string than a month name, so it gets its own width
-   and a step down in size rather than pushing the stepper out of shape. */
-.tape-nav__label--range {
-  min-width: 176px;
-}
-
-.tape-nav__label--range strong {
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-}
-
-.tape-nav__today {
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  border-radius: 999px;
-  background: var(--surface);
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--brand);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.tape-nav__today:hover {
-  background: var(--paper);
-  border-color: var(--brand);
-}
-
 /* ---------- legend ---------- */
 
 .tape-legend {
@@ -169,6 +149,10 @@
 
 .tape-legend__swatch--checked-in {
   background: var(--tape-checked-in);
+}
+
+.tape-legend__swatch--checked-out {
+  background: var(--tape-checked-out);
 }
 
 .tape-legend__swatch--draft {
@@ -294,15 +278,52 @@
 }
 
 .tape-month__head,
+.tape-month__band,
 .tape-month__row {
   display: grid;
   grid-template-columns: var(--tape-cols);
   align-items: center;
 }
 
-.tape-month__head {
+/* The month band names the calendar month each run of columns belongs to. It
+   pins above the date row, so the pair scrolls as one two-line header. */
+.tape-month__band {
   position: sticky;
   top: 0;
+  z-index: 3;
+  height: 22px;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.tape-month__band-corner {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  height: 100%;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border), 8px 0 10px -8px rgba(16, 24, 40, 0.18),
+    inset 0 -1px 0 var(--border);
+}
+
+.tape-month__band-month {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.tape-month__head {
+  position: sticky;
+  top: 22px;
   z-index: 3;
   height: 38px;
   background: var(--surface);
@@ -466,6 +487,7 @@
 
 .tape-tile--booked,
 .tape-tile--checked-in,
+.tape-tile--checked-out,
 .tape-tile--draft {
   width: var(--tape-tile);
   margin: 0;
@@ -481,6 +503,12 @@
 
 .tape-tile--checked-in {
   background-color: var(--tape-checked-in);
+}
+
+/* A stay that has finished. Still a solid bar and still clickable — the stay
+   is what the desk goes back to a past month to read. */
+.tape-tile--checked-out {
+  background-color: var(--tape-checked-out);
 }
 
 /* Amber, and otherwise the same solid bar the booked and checked-in tiles
@@ -519,8 +547,26 @@
   background-color: var(--tape-checked-in-deep);
 }
 
+.tape-tile--active.tape-tile--checked-out {
+  background-color: var(--tape-checked-out-deep);
+}
+
 .tape-tile--active.tape-tile--draft {
   background-color: var(--tape-draft-deep);
+}
+
+/* A night that has already gone and was never sold. Nothing can be done with
+   it, so it takes no pointer and doesn't light up under one — it is flat
+   background the sold tiles sit against, one shade off the empty nights ahead
+   that are still worth clicking. */
+.tape-tile--past,
+.tape-tile--past.tape-tile--weekend,
+/* Beats .tape-tile--vacant:hover, which a past night still matches — the
+   carve-and-darken there is an invitation this tile isn't making. */
+.tape-tile--past:hover {
+  background: var(--tape-past);
+  box-shadow: none;
+  cursor: default;
 }
 
 /* A draft against a night that is already let. The booking keeps the tile, so
@@ -617,6 +663,10 @@
 
 .tape-tooltip__dot--checked-in {
   background: #6aa6e6;
+}
+
+.tape-tooltip__dot--checked-out {
+  background: #b3c0cc;
 }
 
 .tape-tooltip__dot--vacant {

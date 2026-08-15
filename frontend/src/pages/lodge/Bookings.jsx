@@ -20,11 +20,6 @@ import './chartSections.css';
 import './tapeChart.css';
 import './Bookings.css';
 
-// The chart lands on a rolling window, not on the 1st of the month: two days
-// of hindsight so a guest who checked in before today is still on screen, and
-// a month of nights ahead of it to sell into.
-const LOOKBACK_DAYS = 2;
-const ROLLING_DAYS = 31;
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
 // Money that arrives this way leaves a reference the property can reconcile
 // against its settlement statement; cash doesn't, so asking for one there
@@ -42,18 +37,26 @@ function advanceReferenceOf(form) {
 const ID_PROOF_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
 const ID_PROOF_MAX_BYTES = 5 * 1024 * 1024;
 const STATUS_LABEL = { BOOKED: 'Booked', CHECKED_IN: 'Checked in', CHECKED_OUT: 'Checked out', CANCELLED: 'Cancelled' };
+// What a stay looks like on the chart, and in the hover card, per status.
+// A completed stay is drawn in a quieter colour than a live one: it is history,
+// and nothing on the desk can be done about it any more.
+const TILE_CLASS = {
+  BOOKED: 'tape-tile--booked',
+  CHECKED_IN: 'tape-tile--checked-in',
+  CHECKED_OUT: 'tape-tile--checked-out',
+};
+const TOOLTIP_DOT = { BOOKED: 'booked', CHECKED_IN: 'checked-in', CHECKED_OUT: 'checked-out' };
+// The chart says "Reserved" where the data says BOOKED — the desk's word for a
+// room held for a date still to come.
+const TILE_STATUS_LABEL = { ...STATUS_LABEL, BOOKED: 'Reserved' };
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
+// Today by the IST calendar, which is the only "today" this app has: every
+// lodge on it is in India, and UTC lags IST by up to 5.5 hours — a plain
+// toISOString() would still read "yesterday" for the first few hours of an IST
+// day. That gap is what decides whether a night counts as past, so the whole
+// screen shares one definition of it and stays matched to the backend guards.
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// Check-in eligibility has to go by the IST calendar date specifically —
-// every lodge on this system is in India, and UTC lags IST by up to 5.5
-// hours, so plain todayIso() would still read "yesterday" for the first
-// few hours of an IST day. Kept separate from todayIso() (used elsewhere
-// just for UI defaults) so this stays matched to the backend's own guard.
-function todayIsoIST() {
   const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
   return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
@@ -84,6 +87,12 @@ function monthStartOf(dateStr) {
   return `${dateStr.slice(0, 7)}-01`;
 }
 
+// The month the columns belong to, named in full across the date header.
+function formatMonthBand(monthStart) {
+  const d = new Date(`${monthStart}T00:00:00Z`);
+  return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
 function addMonths(monthStart, n) {
   const d = new Date(`${monthStart}T00:00:00Z`);
   // Setting the day to 1 in the same call keeps a 31st from rolling into the
@@ -97,30 +106,13 @@ function daysInMonth(monthStart) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
 }
 
-function formatDayShort(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-}
-
-// The stepper's label, split in two so the dates carry the emphasis and the
-// year sits back from them — the year is the part nobody is actually reading.
-// A whole month names itself; a rolling window has to state its two ends.
-function formatViewLabel(view, dates) {
-  if (view.mode === 'month') {
-    const d = new Date(`${view.start}T00:00:00Z`);
-    return {
-      primary: d.toLocaleDateString('en-IN', { month: 'long', timeZone: 'UTC' }),
-      secondary: String(d.getUTCFullYear()),
-    };
-  }
-  const first = dates[0];
-  const last = dates[dates.length - 1];
-  const startYear = first.slice(0, 4);
-  const endYear = last.slice(0, 4);
+// The stepper's label, split in two so the month name carries the emphasis and
+// the year sits back from it — the year is the part nobody is actually reading.
+function formatViewLabel(monthStart) {
+  const d = new Date(`${monthStart}T00:00:00Z`);
   return {
-    primary: `${formatDayShort(first)} – ${formatDayShort(last)}`,
-    // A window that crosses new year has to show both, or the dates are a lie.
-    secondary: startYear === endYear ? startYear : `${startYear}–${endYear}`,
+    primary: d.toLocaleDateString('en-IN', { month: 'long', timeZone: 'UTC' }),
+    secondary: String(d.getUTCFullYear()),
   };
 }
 
@@ -140,6 +132,11 @@ const emptyGuest = { name: '', phone: '', idProofType: '', idProofFile: null };
 // Children are the same row minus the phone — a child travelling with the
 // party has no number of their own to reach them on.
 const emptyChild = { name: '', idProofType: '', idProofFile: null };
+// A late arrival taken at check-in. One row for adults and children alike,
+// because the desk is typing a name off an ID card and doesn't want two
+// differently-shaped forms to choose between first — which of the two it is
+// rides on the row instead. Adult unless said otherwise: most are.
+const emptyCheckInGuest = { name: '', phone: '', idProofType: '', idProofFile: null, isChild: false };
 // Type starts unset so reception picks what actually pulled up rather than
 // accepting whichever option happened to be listed first.
 const emptyVehicle = { number: '', type: '' };
@@ -297,11 +294,16 @@ export default function Bookings({ onCheckedOut }) {
   const session = getSession();
   const token = session?.token;
 
-  // The chart opens on the days around now rather than on the 1st: the desk
-  // wants to see who is still in-house and everything coming, so the window
-  // starts a couple of days back and runs a month forward. Stepping the arrows
-  // leaves that window behind and moves whole calendar months instead.
-  const [view, setView] = useState(() => ({ mode: 'rolling', start: addDays(todayIso(), -LOOKBACK_DAYS) }));
+  // The line between what can still be sold and what only be looked at. Read
+  // once here so the chart, the tiles and the form all draw it in the same
+  // place.
+  const today = todayIso();
+
+  // The chart always shows one whole calendar month, the 1st to the last, and
+  // opens on the month today falls in. The arrows step a month at a time, so
+  // every view of the chart is a page of the same calendar rather than a
+  // window that has drifted off it.
+  const [month, setMonth] = useState(() => monthStartOf(todayIso()));
   const [tapeData, setTapeData] = useState(null);
   const [tapeError, setTapeError] = useState('');
   // The tile that's under the pointer right now, with the screen position to
@@ -312,13 +314,13 @@ export default function Bookings({ onCheckedOut }) {
   const [drafts, setDrafts] = useState(() => readCache('/bookings/drafts') ?? []);
   const [showDrafts, setShowDrafts] = useState(false);
 
-  const dates = useMemo(() => {
-    const length = view.mode === 'month' ? daysInMonth(view.start) : ROLLING_DAYS;
-    return Array.from({ length }, (_, i) => addDays(view.start, i));
-  }, [view]);
+  const dates = useMemo(
+    () => Array.from({ length: daysInMonth(month) }, (_, i) => addDays(month, i)),
+    [month]
+  );
 
-  const rangeStart = view.start;
-  const rangeEnd = useMemo(() => addDays(view.start, dates.length), [view.start, dates.length]);
+  const rangeStart = month;
+  const rangeEnd = useMemo(() => addMonths(month, 1), [month]);
 
   const tapeKey = `/bookings/tape-chart?startDate=${rangeStart}&endDate=${rangeEnd}`;
 
@@ -358,16 +360,11 @@ export default function Bookings({ onCheckedOut }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Changing the window unmounts the tile the pointer is on, and an unmounted
+  // Changing the month unmounts the tile the pointer is on, and an unmounted
   // tile never fires its mouseleave — so the card is dismissed with the move.
   const goToMonth = (monthStart) => {
     setHoverTile(null);
-    setView({ mode: 'month', start: monthStart });
-  };
-
-  const goToNow = () => {
-    setHoverTile(null);
-    setView({ mode: 'rolling', start: addDays(todayIso(), -LOOKBACK_DAYS) });
+    setMonth(monthStart);
   };
 
   // Rooms are shown category by category rather than in one long list, so the
@@ -400,11 +397,16 @@ export default function Bookings({ onCheckedOut }) {
       // Clamped to the visible window: a stay can start before it or run past
       // the end of it, and neither needs walking day by day.
       const from = booking.checkInDate > rangeStart ? booking.checkInDate : rangeStart;
-      const to = booking.checkOutDate < rangeEnd ? booking.checkOutDate : rangeEnd;
+      let to = booking.checkOutDate < rangeEnd ? booking.checkOutDate : rangeEnd;
+      // A completed stay holds no night from today on — the room pickers stop
+      // counting it the moment the guest checks out. Someone who left early
+      // would otherwise leave the nights they didn't use looking sold here
+      // while the picker happily sells them.
+      if (booking.status === 'CHECKED_OUT' && to > today) to = today;
       for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, booking);
     }
     return byRoom;
-  }, [tapeData, rangeStart, rangeEnd]);
+  }, [tapeData, rangeStart, rangeEnd, today]);
 
   // The same map for drafts, kept separate on purpose. A draft reserves
   // nothing, so it can sit on a night a real booking already holds — merging
@@ -624,7 +626,11 @@ export default function Bookings({ onCheckedOut }) {
 
   const validRange =
     bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.checkOutDate > bookingForm.checkInDate;
-  const isFutureCheckIn = bookingForm.checkInDate > todayIso();
+  const isFutureCheckIn = bookingForm.checkInDate > today;
+  // A night that has already gone can't be sold. Only ever asked of a new
+  // booking — an existing stay keeps the check-in date it started on, and a
+  // guest who checked out last week must stay editable.
+  const isPastCheckIn = !editing && bookingForm.checkInDate < today;
   // A pre-reservation can be held without ID proof; a walk-in is standing at
   // the desk, so theirs is captured on the spot. An edit never demands one:
   // whatever the stay already has stays on file unless a new file replaces it.
@@ -742,6 +748,13 @@ export default function Bookings({ onCheckedOut }) {
 
     if (!validRange) {
       setFormError('Check-out date must be after check-in date.');
+      return;
+    }
+    // The chart won't offer a past night and the date field won't accept one,
+    // but a typed date reaches neither guard — and a booking backdated past
+    // check-in would be a stay nobody can ever check in to.
+    if (isPastCheckIn) {
+      setFormError('Check-in can’t be a past date — a night that has gone can’t be booked.');
       return;
     }
     // Belt-and-braces: the UI already hides Walk-in for a future date, but
@@ -967,7 +980,7 @@ export default function Bookings({ onCheckedOut }) {
 
   // A pre-reservation holds the room for a future date — check-in only
   // opens once that date arrives, matching the backend's own guard.
-  const canCheckInNow = Boolean(bookingDetail && bookingDetail.checkInDate <= todayIsoIST());
+  const canCheckInNow = Boolean(bookingDetail && bookingDetail.checkInDate <= todayIso());
 
   // A guest on file, in the shape the party editor works in. `id` is what
   // makes an edit an edit rather than a delete and re-insert — the row keeps
@@ -1041,21 +1054,26 @@ export default function Bookings({ onCheckedOut }) {
     setIdProofError('');
   };
 
-  // At booking time only the primary guest is required — a pre-booked stay
-  // might arrive with more guests or a vehicle the guest couldn't name in
-  // advance, so check-in can add to whatever guests/vehicles already exist.
-  const maxAdditionalGuestsAtCheckIn = bookingDetail
-    ? Math.max(0, bookingDetail.numGuests - 1 - bookingDetail.guests.length - checkInForm.guests.length)
+  // Who is actually standing at the desk: the primary guest, whoever was named
+  // when the room was booked, and whoever is being added now. A reservation for
+  // two turning up as three is an ordinary evening, so check-in counts the
+  // party rather than holding it to the number booked — the server raises
+  // num_guests to match on save.
+  const checkInPartySize = bookingDetail
+    ? 1 + bookingDetail.guests.length + checkInForm.guests.length
     : 0;
+  // Worth saying out loud, because it is the desk's decision and nobody else's:
+  // the room sleeps four and five people have arrived.
+  const overRoomOccupancy = Boolean(
+    bookingDetail?.roomMaxOccupancy && checkInPartySize > bookingDetail.roomMaxOccupancy
+  );
 
   // A walk-in booking already has its ID proof on file; a pre-reservation
   // doesn't, so check-in is where it becomes required.
   const needsIdProofAtCheckIn = Boolean(bookingDetail && !bookingDetail.idProofType);
 
   const addCheckInGuest = () => {
-    setCheckInForm((f) =>
-      maxAdditionalGuestsAtCheckIn <= 0 ? f : { ...f, guests: [...f.guests, { ...emptyGuest }] }
-    );
+    setCheckInForm((f) => ({ ...f, guests: [...f.guests, { ...emptyCheckInGuest }] }));
   };
 
   const removeCheckInGuest = (index) => {
@@ -1198,6 +1216,7 @@ export default function Bookings({ onCheckedOut }) {
           checkInForm.guests.map((g) => ({
             name: g.name.trim(),
             phone: g.phone.trim(),
+            isChild: g.isChild,
             ...(g.idProofType ? { idProofType: g.idProofType } : {}),
           }))
         )
@@ -1267,8 +1286,6 @@ export default function Bookings({ onCheckedOut }) {
     }
   };
 
-  const today = todayIso();
-
   // The card floats above the chart in fixed coordinates rather than inside a
   // tile, because the grid scrolls sideways under its own overflow and would
   // otherwise clip a tooltip belonging to a tile near either edge.
@@ -1286,33 +1303,40 @@ export default function Bookings({ onCheckedOut }) {
     });
   };
 
-  const viewLabel = formatViewLabel(view, dates);
-  // The arrows always step calendar months, measured from whichever month the
-  // window currently opens in — so one click off the rolling view lands on a
-  // clean month either side of now.
-  const anchorMonth = monthStartOf(view.start);
+  const viewLabel = formatViewLabel(month);
 
   // Each category prints the same month, so the header of dates is built once
   // here and repeated at the top of every category's own calendar. The hovered
   // date lights up in every one of them, which is what makes it possible to
   // read the same night across categories without counting columns.
   const renderDateHead = () => (
-    <div className="tape-month__head">
-      <div className="tape-month__corner">Room</div>
-      {dates.map((d) => {
-        const { weekday, day } = formatDateHead(d);
-        const classes = ['tape-month__date'];
-        if (d === today) classes.push('tape-month__date--today');
-        if (isWeekend(d)) classes.push('tape-month__date--weekend');
-        if (hoverTile?.date === d) classes.push('tape-month__date--active');
-        return (
-          <div key={d} className={classes.join(' ')}>
-            <span>{weekday.slice(0, 1)}</span>
-            <strong>{day}</strong>
-          </div>
-        );
-      })}
-    </div>
+    <>
+      {/* The month these columns are the days of. Named on every category's own
+          calendar, so a card scrolled to halfway down the page still says which
+          month its day numbers belong to without a look back at the stepper. */}
+      <div className="tape-month__band">
+        <div className="tape-month__band-corner" />
+        <div className="tape-month__band-month" style={{ gridColumn: `span ${dates.length}` }}>
+          <span>{formatMonthBand(month)}</span>
+        </div>
+      </div>
+      <div className="tape-month__head">
+        <div className="tape-month__corner">Room</div>
+        {dates.map((d) => {
+          const { weekday, day } = formatDateHead(d);
+          const classes = ['tape-month__date'];
+          if (d === today) classes.push('tape-month__date--today');
+          if (isWeekend(d)) classes.push('tape-month__date--weekend');
+          if (hoverTile?.date === d) classes.push('tape-month__date--active');
+          return (
+            <div key={d} className={classes.join(' ')}>
+              <span>{weekday.slice(0, 1)}</span>
+              <strong>{day}</strong>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 
   const renderRoomRow = (room) => {
@@ -1329,6 +1353,7 @@ export default function Bookings({ onCheckedOut }) {
         {dates.map((d) => {
           const booking = byDate?.get(d);
           const draft = draftsByDate?.get(d);
+          const past = d < today;
 
           // A night nobody has booked, but somebody has a draft on. Yellow,
           // and it opens that draft rather than starting a new booking — the
@@ -1351,6 +1376,25 @@ export default function Bookings({ onCheckedOut }) {
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
                 aria-label={`${room.roomNumber} has a draft booking on ${formatDateLong(d)}`}
+              />
+            );
+          }
+
+          // A night that has already gone. Nothing can be sold into it, so it
+          // isn't a button at all — a room that stood empty last Tuesday is a
+          // fact, not an offer. It still answers on hover, which is the whole
+          // reason to keep looking at a month that has happened.
+          if (!booking && past) {
+            const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
+            if (isWeekend(d)) classes.push('tape-tile--weekend');
+            return (
+              <div
+                key={d}
+                className={classes.join(' ')}
+                role="img"
+                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)}`}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
+                onMouseLeave={() => setHoverTile(null)}
               />
             );
           }
@@ -1379,9 +1423,16 @@ export default function Bookings({ onCheckedOut }) {
           // get rounded ends, so a room let twice in a row still shows as two
           // separate blocks.
           const classes = ['tape-tile'];
-          classes.push(booking.status === 'CHECKED_IN' ? 'tape-tile--checked-in' : 'tape-tile--booked');
+          classes.push(TILE_CLASS[booking.status] || 'tape-tile--booked');
           if (d === booking.checkInDate) classes.push('tape-tile--start');
-          if (d === addDays(booking.checkOutDate, -1)) classes.push('tape-tile--end');
+          // A stay that ended early stops where it stopped: the strip is capped
+          // on its last occupied night, not on the checkout date it was sold
+          // for, so it doesn't trail off into nights that are back on sale.
+          const lastNight =
+            booking.status === 'CHECKED_OUT' && booking.checkOutDate > today
+              ? addDays(today, -1)
+              : addDays(booking.checkOutDate, -1);
+          if (d === lastNight) classes.push('tape-tile--end');
           if (d === today) classes.push('tape-tile--today');
           // Pointing at any night of a stay lifts the whole stay, so its real
           // extent is obvious even where it runs off the edge of the month.
@@ -1397,8 +1448,8 @@ export default function Bookings({ onCheckedOut }) {
               type="button"
               className={classes.join(' ')}
               onClick={() => openDetail(booking.id)}
-              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft })}
-              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft })}
+              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft, past })}
+              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft, past })}
               onMouseLeave={() => setHoverTile(null)}
               onBlur={() => setHoverTile(null)}
               aria-label={`${room.roomNumber} ${STATUS_LABEL[booking.status]} on ${formatDateLong(d)}`}
@@ -1420,18 +1471,11 @@ export default function Bookings({ onCheckedOut }) {
               type="button"
               className="tape-nav__arrow"
               aria-label="Previous month"
-              onClick={() => goToMonth(addMonths(anchorMonth, -1))}
+              onClick={() => goToMonth(addMonths(month, -1))}
             >
               ‹
             </button>
-            <span
-              className={`tape-nav__label${view.mode === 'rolling' ? ' tape-nav__label--range' : ''}`}
-              title={
-                view.mode === 'rolling'
-                  ? `${formatDateLong(dates[0])} to ${formatDateLong(dates[dates.length - 1])}`
-                  : undefined
-              }
-            >
+            <span className="tape-nav__label">
               <strong>{viewLabel.primary}</strong>
               <span>{viewLabel.secondary}</span>
             </span>
@@ -1439,16 +1483,11 @@ export default function Bookings({ onCheckedOut }) {
               type="button"
               className="tape-nav__arrow"
               aria-label="Next month"
-              onClick={() => goToMonth(addMonths(anchorMonth, 1))}
+              onClick={() => goToMonth(addMonths(month, 1))}
             >
               ›
             </button>
           </div>
-          {view.mode !== 'rolling' && (
-            <button type="button" className="tape-nav__today" onClick={goToNow}>
-              Back to now
-            </button>
-          )}
         </div>
         <div className="bookings-panel__toolbar-actions">
           {/* Drafts that name a room and dates are on the chart already; this
@@ -1475,6 +1514,9 @@ export default function Bookings({ onCheckedOut }) {
         </span>
         <span className="tape-legend__item">
           <i className="tape-legend__swatch tape-legend__swatch--checked-in" />Checked in
+        </span>
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--checked-out" />Stayed
         </span>
         <span className="tape-legend__item">
           <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
@@ -1565,10 +1607,10 @@ export default function Bookings({ onCheckedOut }) {
               <span className="tape-tooltip__top">
                 <span
                   className={`tape-tooltip__dot tape-tooltip__dot--${
-                    hoverTile.booking.status === 'CHECKED_IN' ? 'checked-in' : 'booked'
+                    TOOLTIP_DOT[hoverTile.booking.status] || 'booked'
                   }`}
                 />
-                {hoverTile.booking.status === 'CHECKED_IN' ? 'Checked in' : 'Reserved'}
+                {TILE_STATUS_LABEL[hoverTile.booking.status] || 'Reserved'}
               </span>
               <strong>{hoverTile.booking.guestName}</strong>
               <span className="tape-tooltip__meta">
@@ -1583,6 +1625,10 @@ export default function Bookings({ onCheckedOut }) {
                 {nightsOf(hoverTile.booking)} night{nightsOf(hoverTile.booking) === 1 ? '' : 's'}
                 {hoverTile.booking.guestPhone ? ` · ${hoverTile.booking.guestPhone}` : ''}
               </span>
+              {/* Said on a past night because the tile is otherwise inert-
+                  looking there: this is the one thing on a month that has
+                  happened that still opens. */}
+              {hoverTile.past && <span className="tape-tooltip__hint">Click to open this stay</span>}
               {/* A draft against a night that is already let — the desk needs
                   telling, because the person who parked it can't have it. */}
               {hoverTile.draft && (
@@ -1616,12 +1662,14 @@ export default function Bookings({ onCheckedOut }) {
             <>
               <span className="tape-tooltip__top">
                 <span className="tape-tooltip__dot tape-tooltip__dot--vacant" />
-                Vacant
+                {hoverTile.past ? 'Nobody stayed' : 'Vacant'}
               </span>
               <strong>Room {hoverTile.room.roomNumber}</strong>
               <span className="tape-tooltip__meta">{hoverTile.room.categoryName}</span>
               <span className="tape-tooltip__dates">{formatDateLong(hoverTile.date)}</span>
-              <span className="tape-tooltip__hint">Click to book this night</span>
+              <span className="tape-tooltip__hint">
+                {hoverTile.past ? 'This night has passed — it can’t be booked' : 'Click to book this night'}
+              </span>
             </>
           )}
         </div>
@@ -1789,6 +1837,10 @@ export default function Bookings({ onCheckedOut }) {
                       id="checkInDate"
                       type="date"
                       value={bookingForm.checkInDate}
+                      // Today at the earliest — a night that has passed can't
+                      // be sold. Left off an edit, whose field is disabled and
+                      // whose date is often legitimately in the past.
+                      min={editing ? undefined : today}
                       // Never editable on an existing stay: changing when one
                       // started is a cancel and rebook, not an edit.
                       disabled={editing}
@@ -1797,7 +1849,7 @@ export default function Bookings({ onCheckedOut }) {
                         setBookingForm((f) => ({
                           ...f,
                           checkInDate,
-                          bookingType: checkInDate > todayIso() ? 'RESERVATION' : f.bookingType,
+                          bookingType: checkInDate > today ? 'RESERVATION' : f.bookingType,
                         }));
                       }}
                     />
@@ -1808,7 +1860,9 @@ export default function Bookings({ onCheckedOut }) {
                       id="checkOutDate"
                       type="date"
                       value={bookingForm.checkOutDate}
-                      min={editing ? addDays(bookingForm.checkInDate, 1) : undefined}
+                      // A stay is at least one night, whichever way it was
+                      // started — the check-in date is the floor for both.
+                      min={bookingForm.checkInDate ? addDays(bookingForm.checkInDate, 1) : undefined}
                       disabled={!canEditStay}
                       onChange={(e) => setBookingForm((f) => ({ ...f, checkOutDate: e.target.value }))}
                     />
@@ -1822,6 +1876,14 @@ export default function Bookings({ onCheckedOut }) {
                   </p>
                 )}
 
+                {/* Reachable by typing into the date field, which no `min`
+                    catches, and by re-opening a draft parked before its own
+                    dates went by. */}
+                {isPastCheckIn && (
+                  <div className="form-banner form-banner--error">
+                    Check-in is in the past. A night that has gone can’t be booked — pick today or later.
+                  </div>
+                )}
                 {!validRange && <p className="bookings-panel__hint">Choose a valid date range first.</p>}
                 {validRange && availableRoomsError && (
                   <div className="form-banner form-banner--error">{availableRoomsError}</div>
@@ -2376,8 +2438,27 @@ export default function Bookings({ onCheckedOut }) {
 
                     <div className="form-section__title">Add guest details (optional)</div>
                     <p className="bookings-panel__hint">
-                      For guests whose details weren&apos;t taken at booking time.
+                      For anyone who arrived with the guest but wasn&apos;t named when the room was
+                      booked. The booking&apos;s guest count is raised to match.
                     </p>
+                    {/* What the register will say once this check-in is saved,
+                        against what was booked — reception should see the party
+                        grow as they type it, not discover it afterwards. */}
+                    <p className="bookings-panel__hint">
+                      <strong>
+                        {checkInPartySize} guest{checkInPartySize === 1 ? '' : 's'}
+                      </strong>{' '}
+                      checking in
+                      {bookingDetail.numGuests !== checkInPartySize
+                        ? ` · booked for ${bookingDetail.numGuests}`
+                        : ''}
+                    </p>
+                    {overRoomOccupancy && (
+                      <div className="form-banner form-banner--info">
+                        Room {bookingDetail.roomNumber} sleeps {bookingDetail.roomMaxOccupancy}. Check-in
+                        isn’t blocked — make sure the extra bedding is arranged.
+                      </div>
+                    )}
                     {checkInForm.guests.length > 0 && (
                       <div className="bookings-panel__repeat-list">
                         {checkInForm.guests.map((guest, index) => (
@@ -2389,6 +2470,22 @@ export default function Bookings({ onCheckedOut }) {
                                 value={guest.name}
                                 onChange={(e) => updateCheckInGuest(index, { name: e.target.value })}
                               />
+                            </div>
+                            {/* One row for both, rather than two lists to pick
+                                between before typing a name. The register reads
+                                the party back as adults and children from this. */}
+                            <div className="field">
+                              <label htmlFor={`checkInGuestType-${index}`}>Type</label>
+                              <select
+                                id={`checkInGuestType-${index}`}
+                                value={guest.isChild ? 'CHILD' : 'ADULT'}
+                                onChange={(e) =>
+                                  updateCheckInGuest(index, { isChild: e.target.value === 'CHILD' })
+                                }
+                              >
+                                <option value="ADULT">Adult</option>
+                                <option value="CHILD">Child</option>
+                              </select>
                             </div>
                             <div className="field">
                               <label htmlFor={`checkInGuestPhone-${index}`}>Phone (optional)</label>
@@ -2437,12 +2534,7 @@ export default function Bookings({ onCheckedOut }) {
                         ))}
                       </div>
                     )}
-                    <button
-                      type="button"
-                      className="bookings-panel__add-btn"
-                      onClick={addCheckInGuest}
-                      disabled={maxAdditionalGuestsAtCheckIn <= 0}
-                    >
+                    <button type="button" className="bookings-panel__add-btn" onClick={addCheckInGuest}>
                       + Add guest
                     </button>
 

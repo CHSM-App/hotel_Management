@@ -352,6 +352,15 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
   }));
 }
 
+// Completed stays are on the chart alongside live ones so a month that has
+// already happened reads as what happened, not as a month of empty rooms.
+// CANCELLED is left off: it held nothing, and drawing it would report a room
+// as taken on a night it was always on sale.
+//
+// A checked-out stay never blocks a night, though — hasOverlap() and the room
+// pickers both ignore CHECKED_OUT — so the chart only paints its nights that
+// have already passed. Otherwise a guest who left early would leave their
+// remaining nights looking sold on a chart while the room picker sells them.
 async function getTapeChart(lodgeId, startDate, endDate) {
   const pool = await getPool();
 
@@ -374,7 +383,7 @@ async function getTapeChart(lodgeId, startDate, endDate) {
     .query(`
       SELECT id, room_id, guest_name, guest_phone, check_in_date, check_out_date, status, total_price
       FROM dbo.bookings
-      WHERE lodge_id = @lodgeId AND status IN ('BOOKED', 'CHECKED_IN')
+      WHERE lodge_id = @lodgeId AND status IN ('BOOKED', 'CHECKED_IN', 'CHECKED_OUT')
         AND check_in_date < @endDate AND check_out_date > @startDate
       ORDER BY check_in_date ASC
     `);
@@ -431,6 +440,10 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     roomId: row.room_id,
     roomNumber: row.room_number,
     categoryName: row.category_name,
+    // How many the room sleeps, so check-in can say something when the party
+    // that turned up outgrows it. Advice, not a limit — the desk decides, and
+    // NULL wherever the property never recorded one.
+    roomMaxOccupancy: row.max_occupancy ?? null,
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
@@ -555,7 +568,7 @@ async function getBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, c.name AS category_name,
+      SELECT b.*, r.room_number, r.max_occupancy, c.name AS category_name,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
@@ -872,15 +885,25 @@ async function checkIn(lodgeId, bookingId, input) {
     throw new ApiError('Upload the guest’s ID proof before check-in.', 400);
   }
 
+  // Who actually turned up, counting the primary guest. Check-in used to
+  // reject a party larger than the one booked, which is backwards: a
+  // reservation for two arriving as three is an ordinary evening at a desk,
+  // and the register is meant to record who slept in the room. So the booked
+  // count gives way to the counted one — never downward, since a party that
+  // arrives short has still paid for the room it booked, and num_guests is
+  // what the stay was sold as.
+  //
+  // Safe to move: num_guests is a record of the party, not an input to
+  // anything priced. Nothing in pricing reads it, and a room's max_occupancy
+  // is advice to the desk rather than a constraint the database enforces.
+  let newNumGuests = bookingRow.num_guests;
   if (input.guests.length > 0) {
     const existingGuestsResult = await pool
       .request()
       .input('bookingId', sql.BigInt, bookingId)
       .query('SELECT COUNT(*) AS count FROM dbo.booking_guests WHERE booking_id = @bookingId');
     const existingCount = existingGuestsResult.recordset[0].count;
-    if (existingCount + input.guests.length + 1 > bookingRow.num_guests) {
-      throw new ApiError('Guest details can’t exceed the number of guests.', 400);
-    }
+    newNumGuests = Math.max(bookingRow.num_guests, existingCount + input.guests.length + 1);
   }
 
   const takesRoomOrders = !!bookingRow.serves_food && !!bookingRow.food_room_service;
@@ -896,6 +919,7 @@ async function checkIn(lodgeId, bookingId, input) {
       .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
+      .input('numGuests', sql.Int, newNumGuests)
       // Only where a guest could actually use one. A rooms-only property has
       // no kitchen and no QR to scan, so a PIN there is a number reception
       // reads out for nothing — and one more secret sitting in the database.
@@ -904,6 +928,7 @@ async function checkIn(lodgeId, bookingId, input) {
         UPDATE dbo.bookings
         SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(),
             food_pin = @foodPin,
+            num_guests = @numGuests,
             advance_amount = CASE
               WHEN @advanceAmount IS NULL THEN advance_amount
               ELSE ISNULL(advance_amount, 0) + @advanceAmount
