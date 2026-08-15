@@ -21,6 +21,7 @@ const inventoryRoutes = require('./modules/inventory/inventory.routes');
 const publicRoutes = require('./modules/public/public.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
+const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('./middleware/menuImageUpload');
 
 const app = express();
 
@@ -68,6 +69,7 @@ app.use(
 );
 app.use(express.json());
 app.use('/room-images', express.static(ROOM_IMAGE_DIR));
+app.use('/menu-images', express.static(MENU_IMAGE_DIR));
 
 // Built frontend (Vite output lands in src/public via CI). Serves index.html,
 // assets/*, favicon, etc. Static files take precedence over the SPA fallback below.
@@ -101,7 +103,7 @@ app.use('/public', publicRoutes);
 const API_PREFIXES = [
   '/auth', '/internal', '/me', '/rooms', '/categories', '/switchable-charges',
   '/seasons', '/pricing', '/bookings', '/billing', '/reports', '/roles',
-  '/staff', '/public', '/room-images', '/health', '/inventory',
+  '/staff', '/public', '/room-images', '/menu-images', '/health', '/inventory',
 ];
 app.get(/.*/, (req, res, next) => {
   if (API_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + '/'))) {

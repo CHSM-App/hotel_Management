@@ -1,10 +1,14 @@
-/* Phone-first and nothing else: this page is only ever reached by scanning a
-   QR with a camera. Width is capped so it stays readable if someone opens it
-   on a laptop, but every size and target is chosen for a thumb. */
+/* Phone-first: this page is mostly reached by scanning a QR with a camera, and
+   every size and target is chosen for a thumb. The cap is wide enough for two
+   columns of dishes rather than one — on a tablet or a laptop the old 560px
+   left half the window empty and stretched each card across the rest. */
 .order-page {
-  max-width: 560px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 20px 16px 120px;
+  /* Barely any gutter: on a 360px phone the old 16px each side cost 9% of the
+     screen, and the dishes are what want it. 8px is what keeps text and card
+     edges off the glass rather than a designed margin. */
+  padding: 14px 8px 120px;
   background: var(--paper);
   min-height: 100vh;
 }
@@ -195,16 +199,19 @@
 
 /* ------------------------------------------------------------- sections */
 
+/* Headings pulled in hard. On a menu this is chrome between the guest and the
+   next dish, and at their original size the two of them together cost a whole
+   card's height before a single item was shown. */
 .order-section {
-  margin-bottom: 22px;
+  margin-bottom: 13px;
 }
 
 .order-section__title {
   font-family: var(--serif);
-  font-size: 21px;
+  font-size: 17px;
   color: var(--ink);
-  margin: 0 0 12px;
-  padding-bottom: 8px;
+  margin: 0 0 7px;
+  padding-bottom: 5px;
   border-bottom: 2px solid var(--border);
 }
 
@@ -212,14 +219,14 @@
    rule runs to the right edge so the group reads as a divider across the
    column rather than a label floating above the first card. */
 .order-group {
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
 .order-group__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 8px;
+  margin: 0 0 5px;
 }
 
 .order-group__head .food-mark {
@@ -240,16 +247,70 @@
   background: var(--border);
 }
 
+/* A compact card: the dish on the left, its photo on the right. A full-width
+   photo per dish looked handsome and put one item on a screen — a menu is read
+   by running down a column of names, so the photo confirms the choice rather
+   than announcing it. Roughly five dishes a screen instead of one. */
+/* Two dishes to a line wherever the window allows it, one where it doesn't.
+   auto-fit rather than a fixed two, so the count follows the width instead of
+   forcing a 150px-wide card onto a small phone.
+
+   align-items: start keeps a plain dish its own height rather than stretching
+   it to match a four-size dish sitting beside it. */
+.order-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  align-items: start;
+  gap: 6px;
+}
+
 .order-item {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   background: var(--surface);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: var(--radius-tile);
-  padding: 12px;
-  margin-bottom: 8px;
+  padding: 9px 10px;
+}
+
+/* stretch, so the text column is as tall as the photo and its price can sit on
+   the bottom edge in line with the photo's foot. */
+.order-item__row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.order-item__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Square and fixed: dish photos arrive in every shape a phone camera makes,
+   and a column of identical squares is what lets the eye run down the names
+   beside them without the rhythm breaking. 72px is the floor — below it a
+   photographed curry stops being identifiable and the photo is wasted bytes. */
+.order-item__photo {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 9px;
+  background: var(--paper);
+}
+
+/* The veg/non-veg mark stays beside the name rather than moving onto the photo —
+   it is a fact about the dish, and on the image it would be decoration over a
+   picture of gravy. */
+.order-item__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .order-item__body {
@@ -260,55 +321,63 @@
 .order-item__name {
   font-weight: 600;
   color: var(--ink);
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 1.3;
 }
 
+/* One line, then it stops. The full text is the property's own copy and it is
+   already on the printed menu — here it only has to jog a memory, and a second
+   line costs another dish off the bottom of every screen. */
 .order-item__desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
+  line-height: 1.35;
   margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Price at the start, the way to order it right after — pinned to the bottom
+   of the text column so it lines up with the foot of the photo. */
+.order-item__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
 }
 
 .order-item__price {
   font-weight: 700;
+  font-size: 14px;
   color: var(--ink);
-  margin-top: 6px;
   font-variant-numeric: tabular-nums;
 }
 
-/* A dish with sizes puts its steppers inside the body, one per row, so the
-   card's own right-hand column stays empty rather than holding a control that
-   would be ambiguous about which size it applied to. */
-.order-item--sized {
-  align-items: stretch;
-}
-
+/* Full width beneath the dish and its photo. The card's own gap separates it
+   from the name above, and a rule divides it from the row so the sizes read as
+   a choice attached to the dish rather than more of its description. */
 .order-sizes {
   list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
+  margin: 0;
+  padding: 7px 0 0;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .order-sizes__row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.order-sizes__row:first-child {
-  padding-top: 0;
-  border-top: none;
 }
 
 .order-sizes__label {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text);
 }
@@ -323,25 +392,28 @@
 .order-item__qty {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
+/* 32px is as small as these go. They are the one thing on this page a guest
+   taps repeatedly, often holding a phone in one hand at a table — shaving
+   further would buy a few pixels a screen and cost mis-taps. */
 .order-item__qty button {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--brand);
   background: var(--surface);
   color: var(--brand);
   border-radius: 8px;
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
 
 .order-item__qty span {
-  min-width: 18px;
+  min-width: 16px;
   text-align: center;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -349,10 +421,10 @@
 
 .order-item__add {
   width: auto !important;
-  padding: 0 18px;
+  padding: 0 15px;
   background: var(--brand) !important;
   color: #ffffff !important;
-  font-size: 14px !important;
+  font-size: 13px !important;
 }
 
 /* Sticky summary bar — the standard food-ordering pattern, and the only way a

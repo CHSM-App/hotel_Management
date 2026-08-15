@@ -36,13 +36,28 @@ async function getLodgeBySlug(slug) {
   };
 }
 
-// A stripped-down room listing for the public brochure page — active rooms
-// only, no booking/guest data, cheapest category first so the page reads
-// like a rate card. When a date range is given, each room also gets an
-// `available` flag — same overlap rule as the reception tape chart (a room
-// is unavailable if any BOOKED/CHECKED_IN stay overlaps the requested
-// range), so a guest sees the same truth staff would see.
-async function listPublicRooms(lodgeId, checkInDate, checkOutDate) {
+// How many photos one room type carries onto the page. A type with eight rooms
+// behind it can pool forty, which is a slower page and a gallery nobody reaches
+// the end of.
+const MAX_TYPE_IMAGES = 12;
+
+// What the public page lists: the room *types* a guest can book, not the
+// individual rooms behind them. Every booking site works this way — you choose
+// a "Deluxe Double", and which room you get is decided at the desk — and it is
+// what keeps five identical Deluxe rooms from reading as five separate
+// products on a page that should be selling one.
+//
+// Room numbers, floors and room ids deliberately never leave this function.
+// Hiding them in the page would have left them in the JSON for anyone with
+// devtools; more to the point, per-room availability published daily lets
+// anybody map which rooms are occupied when, which is the property's business
+// and nobody else's. A count per type answers the guest's question — is there
+// space — without answering that one.
+//
+// Cheapest type first, so the page reads like a rate card. With a date range,
+// each type carries how many of its rooms are free, on the same overlap rule
+// the reception tape chart uses, so a guest sees the truth staff see.
+async function listPublicRoomTypes(lodgeId, checkInDate, checkOutDate) {
   const pool = await getPool();
   const hasDateRange = Boolean(checkInDate && checkOutDate);
 
@@ -59,11 +74,14 @@ async function listPublicRooms(lodgeId, checkInDate, checkOutDate) {
   }
 
   const roomsResult = await roomsRequest.query(`
-      SELECT r.id, r.room_number, r.floor, r.bed_size, r.bathroom_type, r.max_occupancy, r.description,
-             c.name AS category_name, c.base_price AS category_base_price${availabilityColumn}
+      SELECT r.id, r.bed_size, r.bathroom_type, r.max_occupancy, r.description,
+             c.id AS category_id, c.name AS category_name, c.base_price AS category_base_price${availabilityColumn}
       FROM dbo.rooms r
       JOIN dbo.room_categories c ON c.id = r.category_id
       WHERE r.lodge_id = @lodgeId AND r.is_active = 1
+      -- room_number still orders the rows even though it is never returned: it
+      -- decides whose photos lead each type's gallery, and "the lowest-numbered
+      -- room first" is at least stable between page loads.
       ORDER BY c.base_price ASC, r.room_number ASC
     `);
 
@@ -85,19 +103,56 @@ async function listPublicRooms(lodgeId, checkInDate, checkOutDate) {
     imagesByRoom.set(row.room_id, list);
   }
 
-  return roomsResult.recordset.map((row) => ({
-    id: row.id,
-    roomNumber: row.room_number,
-    floor: row.floor,
-    bedSize: row.bed_size,
-    bathroomType: row.bathroom_type,
-    maxOccupancy: row.max_occupancy,
-    description: row.description,
-    categoryName: row.category_name,
-    price: Number(row.category_base_price),
-    images: imagesByRoom.get(row.id) || [],
-    available: hasDateRange ? !!row.is_available : null,
-  }));
+  const byCategory = new Map();
+  for (const row of roomsResult.recordset) {
+    const key = String(row.category_id);
+    let type = byCategory.get(key);
+    if (!type) {
+      type = {
+        id: row.category_id,
+        name: row.category_name,
+        // Every room in a category is sold at the category's price, so this is
+        // the exact nightly rate rather than a "from".
+        price: Number(row.category_base_price),
+        roomCount: 0,
+        // null, not 0, when no dates were asked for — "we don't know" and "none
+        // free" have to look different to the page.
+        availableCount: hasDateRange ? 0 : null,
+        bedSizes: [],
+        bathroomTypes: [],
+        minOccupancy: null,
+        maxOccupancy: null,
+        description: '',
+        images: [],
+      };
+      byCategory.set(key, type);
+    }
+
+    type.roomCount += 1;
+    if (hasDateRange && row.is_available) type.availableCount += 1;
+    if (row.bed_size && !type.bedSizes.includes(row.bed_size)) type.bedSizes.push(row.bed_size);
+    if (row.bathroom_type && !type.bathroomTypes.includes(row.bathroom_type)) {
+      type.bathroomTypes.push(row.bathroom_type);
+    }
+    // A range, because rooms in one category needn't sleep the same number —
+    // "sleeps 2–3" is honest where a single figure would be wrong for some of
+    // the rooms it is describing.
+    if (row.max_occupancy) {
+      type.minOccupancy = type.minOccupancy == null ? row.max_occupancy : Math.min(type.minOccupancy, row.max_occupancy);
+      type.maxOccupancy = type.maxOccupancy == null ? row.max_occupancy : Math.max(type.maxOccupancy, row.max_occupancy);
+    }
+    // Descriptions are written per room today, so the type borrows the first
+    // one written. A category-level description is what this really wants.
+    if (!type.description && row.description && row.description.trim()) {
+      type.description = row.description.trim();
+    }
+    for (const filename of imagesByRoom.get(row.id) || []) {
+      if (type.images.length >= MAX_TYPE_IMAGES) break;
+      if (!type.images.includes(filename)) type.images.push(filename);
+    }
+  }
+
+  return Array.from(byCategory.values());
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +191,10 @@ async function getPublicMenu(lodgeId) {
           // carries the price that is actually charged.
           price: item.price,
           foodType: item.foodType,
+          // The dish photo, as a bare filename the browser resolves against the
+          // /menu-images static mount. null on the dishes nobody photographed,
+          // which on most menus is most of them.
+          image: item.image,
           portions: item.portions.map((portion) => ({
             id: portion.id,
             label: portion.label,
@@ -437,7 +496,7 @@ async function getPublicOrderStatus(token) {
 
 module.exports = {
   getLodgeBySlug,
-  listPublicRooms,
+  listPublicRoomTypes,
   getPublicMenu,
   getLodgeOrderingContext,
   getTableOrderingContext,

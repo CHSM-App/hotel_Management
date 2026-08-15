@@ -7,6 +7,14 @@ const createMenuCategorySchema = z.object({
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
 });
 
+// The dish form is multipart now that it can carry a photo, so every field
+// arrives as a string — which the coercions here already handled, except for a
+// checkbox, whose "true"/"false" needs saying out loud.
+const formBoolean = z.preprocess((value) => {
+  if (typeof value === 'string') return value === 'true' || value === '1';
+  return value;
+}, z.boolean().optional().default(false));
+
 const createMenuItemSchema = z.object({
   categoryId: z.coerce.number().int().positive('Choose a menu section.'),
   name: z.string().trim().min(1, 'Item name is required.'),
@@ -14,6 +22,9 @@ const createMenuItemSchema = z.object({
   price: z.coerce.number().min(0, 'Price can’t be negative.'),
   foodType: z.enum(FOOD_TYPES, { error: 'Choose veg, non-veg or egg.' }).optional().default('VEG'),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
+  // Only an edit can mean it: "take the photo off this dish", as distinct from
+  // an edit that simply doesn't mention the photo and leaves it where it is.
+  removeImage: formBoolean,
 });
 
 // A dish's sizes in the order they should appear. An empty list is the way

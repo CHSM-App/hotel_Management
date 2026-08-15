@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPut, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
-import { UNIT_LABEL, formatQty, groupByCategory } from './inventoryUnits';
+import {
+  UNIT_LABEL,
+  formatQty,
+  groupByCategory,
+  recipeUnitLabel,
+  toRecipeQty,
+  toStockQty,
+} from './inventoryUnits';
 import './forms.css';
 import './InventoryPanel.css';
 
@@ -108,22 +115,27 @@ export default function RecipesPanel() {
       const sized = recipe.lines.some((l) => l.portionId !== null);
       const next = {};
 
+      // Stored in the material's shelf unit, edited in the fine one — 0.18 kg
+      // of rice is shown, and typed back, as 180 g.
+      const asRow = (l) => {
+        const material = materialById.get(String(l.materialId));
+        return {
+          key: `l${l.id}`,
+          materialId: String(l.materialId),
+          quantity: String(material ? toRecipeQty(l.quantity, material.unit) : l.quantity),
+        };
+      };
+
       if (sized) {
         for (const portion of recipe.portions) {
           next[String(portion.id)] = recipe.lines
             .filter((l) => String(l.portionId) === String(portion.id))
-            .map((l) => ({
-              key: `l${l.id}`,
-              materialId: String(l.materialId),
-              quantity: String(l.quantity),
-            }));
+            .map(asRow);
           if (next[String(portion.id)].length === 0) next[String(portion.id)] = [emptyLine()];
         }
       }
 
-      next.ALL = recipe.lines
-        .filter((l) => l.portionId === null)
-        .map((l) => ({ key: `l${l.id}`, materialId: String(l.materialId), quantity: String(l.quantity) }));
+      next.ALL = recipe.lines.filter((l) => l.portionId === null).map(asRow);
       if (next.ALL.length === 0) next.ALL = [emptyLine()];
 
       setEditing(recipe);
@@ -188,23 +200,37 @@ export default function RecipesPanel() {
           setFormError('Choose a raw material for every ingredient, or clear the row.');
           return;
         }
+        const material = materialById.get(row.materialId);
         const value = Number(row.quantity);
         if (String(row.quantity).trim() === '' || !Number.isFinite(value) || value <= 0) {
-          const name = materialById.get(row.materialId)?.name || 'that ingredient';
+          const name = material?.name || 'that ingredient';
           setFormError(`How much ${name} does it take? Quantities have to be above zero.`);
           return;
         }
         if (seen.has(row.materialId)) {
-          const name = materialById.get(row.materialId)?.name || 'That material';
+          const name = material?.name || 'That material';
           setFormError(`${name} is listed twice for the same size.`);
           return;
         }
         seen.add(row.materialId);
 
+        // Typed in the fine unit, stored in the material's own. The column keeps
+        // three decimals, which is exactly one gram of a kilo — so anything
+        // finer than a whole gram rounds away, and half a gram would be stored
+        // as nothing at all. Said here rather than silently saving a zero.
+        const stored = material ? toStockQty(value, material.unit) : value;
+        if (stored <= 0) {
+          setFormError(
+            `${material?.name || 'That ingredient'} is too small to record — ` +
+              `the smallest a recipe can hold is 1 ${recipeUnitLabel(material?.unit)}.`
+          );
+          return;
+        }
+
         lines.push({
           portionId: key === 'ALL' ? null : Number(key),
           materialId: Number(row.materialId),
-          quantity: value,
+          quantity: stored,
         });
       }
     }
@@ -432,7 +458,10 @@ export default function RecipesPanel() {
                       <div className="inv-recipe__qty">
                         <input
                           type="number"
-                          step="0.001"
+                          // A whole gram is the finest the stored column can
+                          // hold, so it is the finest worth stepping in.
+                          step="1"
+                          min="0"
                           value={row.quantity}
                           placeholder="0"
                           aria-label="Quantity per serving"
@@ -443,8 +472,10 @@ export default function RecipesPanel() {
                             );
                           }}
                         />
+                        {/* The fine unit, not the shelf one: rice counted by
+                            the kilo is cooked by the gram. */}
                         <span className="inv-recipe__unit">
-                          {material ? UNIT_LABEL[material.unit] : '—'}
+                          {material ? recipeUnitLabel(material.unit) : '—'}
                         </span>
                       </div>
 

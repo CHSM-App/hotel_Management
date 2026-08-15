@@ -7,14 +7,27 @@
    where something is sold — a month of empty rooms should read as calm space,
    and a busy one should show its shape from across the desk. */
 :root {
-  --tape-vacant: #e9edf0;
-  --tape-vacant-line: #dde3e8;
-  --tape-vacant-hover: #d8dee4;
-  --tape-weekend: #dfe4e9;
+  /* A night still for sale is a shallow mint well. The card surface is itself a
+     blue-grey (--neu-base), so a grey tile at the same lightness sank into it
+     and only the carve held the grid together — a green cast separates the tile
+     from the card and says "sellable" in the same stroke.
+
+     The hairline is the rim of that well, a shade off its own fill rather than
+     a contrasting ring: an outline strong enough to see on one tile becomes a
+     cage across a month of them, and it is the sold nights, not the empty ones,
+     that should carry the eye. Green gets assertive only under the pointer. */
+  --tape-vacant: #e4f0e8;
+  --tape-vacant-edge: #c2dbc9;
+  --tape-vacant-well: #b3c8ba;
+  --tape-vacant-hover: #d5e9db;
+  --tape-vacant-edge-hover: #8fc0a0;
+  /* The same well, one step deeper — a weekend is a shade of vacant, not a
+     different state, so it stays in the mint family. */
+  --tape-weekend: #dbeae0;
   --tape-weekend-wash: rgba(30, 58, 95, 0.035);
-  /* An empty night that has already passed: flatter and fainter than a vacant
-     one, because the carve on a vacant tile is what says "click me". */
-  --tape-past: #f1f4f6;
+  /* An empty night that has already passed: flat, and deliberately outside the
+     mint family, because the green means "on sale" and this one isn't. */
+  --tape-past: #eceef1;
 
   --tape-booked: #c0392b;
   --tape-booked-deep: #a52f22;
@@ -26,12 +39,15 @@
      reads as a record while today's business keeps the loud colours. */
   --tape-checked-out: #8695a3;
   --tape-checked-out-deep: #6f7e8c;
-  /* Amber rather than a lighter red or blue: a draft is not a weaker booking,
+  /* Yellow rather than a lighter red or blue: a draft is not a weaker booking,
      it is a different kind of thing, and a shade of an existing colour would
-     read as one. Dark enough to carry white text and to survive being printed
-     or looked at from across a desk. */
-  --tape-draft: #d99413;
-  --tape-draft-deep: #b87c0c;
+     read as one. Nothing is ever printed on these tiles — they are empty
+     buttons — so the colour is free to be bright, and being the only warm
+     light hue on the chart is what makes a parked room findable at a glance. */
+  --tape-draft: #f2c31d;
+  /* Pressed and hovered: darker, so the tile still reads as the same yellow
+     rather than as a different state colour. */
+  --tape-draft-deep: #d4a70c;
 
   --tape-tile: 26px;
   --tape-tile-h: 22px;
@@ -140,7 +156,8 @@
    this small and turns it into a smudge. */
 .tape-legend__swatch--vacant {
   background: var(--tape-vacant);
-  box-shadow: inset 1px 1px 2px var(--neu-dark), inset -1px -1px 1px var(--neu-light);
+  border: 1px solid var(--tape-vacant-edge);
+  box-shadow: inset 1px 1px 2px var(--tape-vacant-well);
 }
 
 .tape-legend__swatch--booked {
@@ -455,9 +472,12 @@
   height: var(--tape-tile-h);
   width: calc(var(--tape-tile) - 3px);
   margin: 0 1.5px;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  /* border-color rides along, or the rim would snap to its hover green while
+     the fill underneath it was still fading. */
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease,
+    filter 0.12s ease;
 }
 
 .tape-tile:focus-visible {
@@ -467,22 +487,29 @@
   z-index: 1;
 }
 
-/* An empty night is an empty slot: carved rather than filled. --tape-vacant is
-   within a shade of the page now, so the old flat fill would have left the
-   grid as bare outlines — the well is what gives the row its structure, and a
-   booked tile then reads as something dropped into it. */
+/* An empty night is an empty slot: carved rather than filled, so a booked tile
+   reads as something dropped into it. The carve is shallower than it was —
+   the rim now shares the work, and a 2px well plus a hairline on a 22px tile
+   is two treatments arguing over the same edge.
+
+   border-box is global, so the hairline costs the tile no width and the columns
+   stay aligned with the dates above them. */
 .tape-tile--vacant {
   background: var(--tape-vacant);
-  box-shadow: inset 2px 2px 4px var(--neu-dark), inset -1px -1px 3px var(--neu-light);
+  border: 1px solid var(--tape-vacant-edge);
+  box-shadow: inset 1px 1px 3px var(--tape-vacant-well), inset -1px -1px 2px var(--neu-light);
 }
 
 .tape-tile--vacant.tape-tile--weekend {
   background: var(--tape-weekend);
 }
 
+/* The one tile the pointer is on can afford a real green — it is one tile, not
+   a month of them, and this is the moment it means "click here to sell it". */
 .tape-tile--vacant:hover {
   background: var(--tape-vacant-hover);
-  box-shadow: inset 3px 3px 6px #b0bac8, inset -1px -1px 3px var(--neu-light);
+  border-color: var(--tape-vacant-edge-hover);
+  box-shadow: inset 1px 1px 4px #9bb8a4, inset -1px -1px 2px var(--neu-light);
 }
 
 .tape-tile--booked,
@@ -511,7 +538,7 @@
   background-color: var(--tape-checked-out);
 }
 
-/* Amber, and otherwise the same solid bar the booked and checked-in tiles
+/* Yellow, and otherwise the same solid bar the booked and checked-in tiles
    are — it keeps the shared top-edge highlight from the rule above. The colour
    alone carries "draft"; the legend and the hover card say the rest. */
 .tape-tile--draft {
@@ -565,6 +592,9 @@
    carve-and-darken there is an invitation this tile isn't making. */
 .tape-tile--past:hover {
   background: var(--tape-past);
+  /* No green edge either: that outline means "this night is on sale", and a
+     night that has gone is the one empty tile that isn't. */
+  border-color: transparent;
   box-shadow: none;
   cursor: default;
 }
@@ -658,7 +688,7 @@
 }
 
 .tape-tooltip__dot--draft {
-  background: #e8b04a;
+  background: #f7d24f;
 }
 
 .tape-tooltip__dot--checked-in {

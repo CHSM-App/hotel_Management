@@ -61,8 +61,10 @@ function parseFromToRange(query) {
 async function listAvailableRoomsHandler(req, res, next) {
   try {
     const { checkInDate, checkOutDate } = parseDateRange(req.query);
-    const rooms = await bookingsService.listAvailableRooms(req.user.lodgeId, checkInDate, checkOutDate);
-    res.json({ rooms });
+    // Already { rooms, conflicts } — the service reports what is holding the
+    // rooms it left out, not just which ones are free.
+    const result = await bookingsService.listAvailableRooms(req.user.lodgeId, checkInDate, checkOutDate);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -132,6 +134,18 @@ async function getTapeChartHandler(req, res, next) {
   }
 }
 
+// Guests this property has had before, matched on a partly-typed name. Runs
+// per keystroke from the booking form, so a query too short to narrow anything
+// down comes back empty rather than with the first eight names on file.
+async function searchGuestsHandler(req, res, next) {
+  try {
+    const guests = await bookingsService.searchGuests(req.user.lodgeId, req.query.q);
+    res.json({ guests });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getBookingHandler(req, res, next) {
   try {
     const booking = await bookingsService.getBooking(req.user.lodgeId, Number(req.params.id));
@@ -173,8 +187,13 @@ function attachGuestFiles(guests, files) {
 
 async function createBookingHandler(req, res, next) {
   const files = req.files || [];
+  // A booking that fails to save leaves nothing behind on disk — including the
+  // copy taken of a returning guest's document, which multer never saw and so
+  // isn't in req.files.
+  let carriedIdProof = null;
   const cleanupUploads = () => {
     for (const file of files) fs.unlink(file.path, () => {});
+    if (carriedIdProof) fs.unlink(path.join(UPLOAD_DIR, carriedIdProof), () => {});
   };
   try {
     const body = { ...req.body };
@@ -187,17 +206,39 @@ async function createBookingHandler(req, res, next) {
       throw new ApiError(parsed.error.issues[0].message, 400);
     }
 
-    // A walk-in booking claims its ID proof type up front, so the document
-    // must arrive with it. A pre-reservation omits idProofType entirely and
-    // defers both to check-in.
+    // A returning guest's document, carried over from the stay the suggestion
+    // was read off. A freshly uploaded file always wins: reception attaching
+    // one is them saying this card is the one to keep.
     const primaryFile = files.find((file) => file.fieldname === 'idProofDocument');
-    if (parsed.data.idProofType && !primaryFile) {
+    if (!primaryFile && parsed.data.idProofFromBookingId) {
+      carriedIdProof = await bookingsService.copyIdProofFromBooking(
+        req.user.lodgeId,
+        parsed.data.idProofFromBookingId
+      );
+    }
+
+    // The carry-over was asked for and couldn't be honoured: the stay's
+    // document has gone from disk since the suggestion was drawn. Said as its
+    // own error, because "upload the ID proof" in answer to a form that just
+    // showed one on file reads as the form having lost track of itself.
+    if (parsed.data.idProofFromBookingId && !primaryFile && !carriedIdProof) {
+      throw new ApiError(
+        'That guest’s ID proof is no longer on file — please upload it again.',
+        400
+      );
+    }
+
+    // A walk-in booking claims its ID proof type up front, so the document
+    // must arrive with it — either uploaded now or carried from a previous
+    // stay. A pre-reservation omits idProofType entirely and defers both to
+    // check-in.
+    if (parsed.data.idProofType && !primaryFile && !carriedIdProof) {
       throw new ApiError('Upload the guest’s ID proof (image or PDF).', 400);
     }
 
     const result = await bookingsService.createBooking(req.user.lodgeId, req.user.sub, {
       ...parsed.data,
-      idProofDocument: primaryFile ? primaryFile.filename : null,
+      idProofDocument: primaryFile ? primaryFile.filename : carriedIdProof,
       guests: attachGuestFiles(parsed.data.guests, files),
     });
     res.status(201).json(result);
@@ -407,6 +448,7 @@ module.exports = {
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
   listBookingsHandler,
+  searchGuestsHandler,
   priceQuoteHandler,
   getTapeChartHandler,
   getBookingHandler,

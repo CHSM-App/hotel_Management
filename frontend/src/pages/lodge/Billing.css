@@ -108,6 +108,150 @@
 .bill-tag__dot--tax-invoice { background: #1f7a4d; }
 .bill-tag__dot--cash-receipt { background: #c79512; }
 
+/* --- narrowing the bills list ------------------------------------------- */
+
+/* The date range and the search on one line above the document-type chips:
+   when a bill was issued is the coarse cut staff make almost every time, and
+   the chips refine what the dates left. */
+.billing-panel__bill-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* Both controls borrow .field for the input styling and give back its
+   bottom margin — inside a toolbar the row's own gap does that spacing. */
+.billing-panel__bill-tools .field {
+  margin-bottom: 0;
+}
+
+/* The two ends of the range, read left to right as one control. */
+.billing-panel__bill-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.billing-panel__bill-range input[type='date'] {
+  min-width: 148px;
+  font-size: 13px;
+}
+
+.billing-panel__bill-range-dash {
+  color: var(--text-muted);
+}
+
+.billing-panel__bill-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 230px;
+}
+
+.billing-panel__bill-search input {
+  padding-left: 36px;
+  padding-right: 34px;
+}
+
+.billing-panel__bill-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.billing-panel__bill-search-clear {
+  position: absolute;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.billing-panel__bill-search-clear:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* Only shown once something is actually filtering, so the row stays quiet in
+   the common case of looking at everything. */
+.billing-panel__bill-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.billing-panel__bill-clear {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Segmented, because the ranges are one choice — picking a second replaces the
+   first rather than adding to it. Same treatment the guest register gives the
+   same four shortcuts. */
+.billing-panel__bill-presets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--shadow-inset);
+}
+
+.billing-panel__bill-preset {
+  border: none;
+  border-radius: 999px;
+  background: none;
+  padding: 6px 13px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.billing-panel__bill-preset:hover {
+  color: var(--ink);
+}
+
+.billing-panel__bill-preset[aria-pressed='true'] {
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--brand-ink);
+}
+
+.billing-panel__bill-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
 .billing-panel__filters {
   display: flex;
   flex-wrap: wrap;

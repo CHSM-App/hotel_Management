@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   apiGet,
   apiPost,
@@ -150,6 +150,42 @@ function cleanVehicles(vehicles) {
   return vehicles
     .map((v) => ({ number: v.number.trim(), type: v.type }))
     .filter((v) => v.number || v.type);
+}
+
+// Said when a change of dates takes the chosen room away. The overlapping
+// stays are named by their dates because that is the actionable part: it tells
+// the owner how far they can extend, or which nights to move. Guest names are
+// deliberately absent — who holds the room isn't the desk's question here, and
+// the availability endpoint doesn't return them.
+//
+// "reserved through" rather than "to": a stay checking out on the 19th holds
+// the nights up to the 18th, and "booked to the 19th" reads as though the 19th
+// itself were taken when it is free to sell.
+function roomUnavailableMessage(roomNumber, conflicts, checkOutDate) {
+  const room = roomNumber ? `Room ${roomNumber}` : 'That room';
+
+  if (conflicts.length === 0) {
+    return `${room} is no longer available for the selected dates. Please choose another room.`;
+  }
+
+  // The nights actually occupied, so a one-night stay reads "on 16 Aug" rather
+  // than "16 Aug – 16 Aug".
+  const periods = conflicts.map((c) => {
+    const lastNight = addDays(c.checkOutDate, -1);
+    return lastNight === c.checkInDate
+      ? `on ${formatDateLong(c.checkInDate)}`
+      : `from ${formatDateLong(c.checkInDate)} to ${formatDateLong(lastNight)}`;
+  });
+
+  const listed =
+    periods.length === 1
+      ? periods[0]
+      : `${periods.slice(0, -1).join(', ')} and ${periods[periods.length - 1]}`;
+
+  return (
+    `${room} is unavailable for a stay ending ${formatDateLong(checkOutDate)} — ` +
+    `it is already reserved ${listed}.`
+  );
 }
 
 function vehicleRowError(vehicles) {
@@ -479,9 +515,47 @@ export default function Bookings({ onCheckedOut }) {
   const [bookingForm, setBookingForm] = useState(initialBookingForm);
   const [availableRooms, setAvailableRooms] = useState(null);
   const [availableRoomsError, setAvailableRoomsError] = useState('');
+  // Set when a date change takes the chosen room away — see the availability
+  // effect. Extending a stay over a night somebody else holds used to empty the
+  // picker with no explanation at all.
+  const [roomTakenNote, setRoomTakenNote] = useState('');
   const [quote, setQuote] = useState(null);
+  // The banner is for failures with no one field behind them — a rejected save,
+  // a dropped connection. Anything a single input caused belongs under that
+  // input instead, as { id, message } naming the control to sit beneath.
+  //
+  // One at a time on purpose: the checks below run in form order and stop at
+  // the first failure, so there has only ever been one message to show. What
+  // changed is where it appears, not how many there are.
   const [formError, setFormError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Reports a failure against the control that caused it and takes the cursor
+  // there. The form is tall enough that a message about the guest's phone is
+  // off-screen when the room dropdown is in view, so it always scrolls.
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    // Advance payment and vehicles are collapsible and usually shut. Scrolling
+    // to a field inside a closed <details> would land on the summary with the
+    // message nowhere in sight, so open whatever it is folded inside first.
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      if (node.tagName === 'DETAILS') node.open = true;
+    }
+
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+
+  // Rendered under whichever field the current message belongs to. The id guard
+  // matters: an undefined id would otherwise match `fieldError?.id` on a form
+  // with no error at all, and try to read a message off null.
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
 
   // Every route into the form goes through here, so there is one place that
   // remembers what it was handed and one definition of "unchanged".
@@ -490,8 +564,10 @@ export default function Bookings({ onCheckedOut }) {
     setOpenedAs(formFingerprint(form));
     setClosePrompt(null);
     setFormError('');
+    setFieldError(null);
     setAvailableRooms(null);
     setAvailableRoomsError('');
+    setRoomTakenNote('');
     setQuote(null);
     setFormMode(mode);
   };
@@ -644,6 +720,12 @@ export default function Bookings({ onCheckedOut }) {
   // guest is already in would look taken and drop off its own picker.
   useEffect(() => {
     if (!showBookingForm || !validRange) return;
+    // Read before the request: these are the room as it stood when the dates
+    // changed, which is the one about to be lost if the new range clashes.
+    // Its number comes from the previous list, since it won't be in the new one.
+    const chosenRoomId = bookingForm.roomId;
+    const chosenRoomNumber = availableRooms?.find((r) => String(r.id) === chosenRoomId)?.roomNumber;
+
     const path = editing
       ? `/bookings/${editTarget.id}/available-rooms?checkOutDate=${bookingForm.checkOutDate}`
       : `/bookings/available-rooms?checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}`;
@@ -651,6 +733,19 @@ export default function Bookings({ onCheckedOut }) {
       .then((data) => {
         setAvailableRooms(data.rooms);
         setAvailableRoomsError('');
+
+        const stillFree = chosenRoomId && data.rooms.some((r) => String(r.id) === chosenRoomId);
+        if (chosenRoomId && !stillFree) {
+          // Which stays are in the way, so the message can name the nights
+          // rather than just refusing.
+          const clashes = (data.conflicts ?? []).filter((c) => String(c.roomId) === chosenRoomId);
+          setRoomTakenNote(
+            roomUnavailableMessage(chosenRoomNumber, clashes, bookingForm.checkOutDate)
+          );
+        } else {
+          setRoomTakenNote('');
+        }
+
         setBookingForm((f) =>
           f.roomId && data.rooms.some((r) => String(r.id) === f.roomId)
             ? f
@@ -659,6 +754,7 @@ export default function Bookings({ onCheckedOut }) {
       })
       .catch((err) => {
         setAvailableRooms([]);
+        setRoomTakenNote('');
         setAvailableRoomsError(err instanceof ApiError ? err.message : 'Could not load available rooms.');
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -745,16 +841,17 @@ export default function Bookings({ onCheckedOut }) {
   const handleSubmitBooking = async (e) => {
     e.preventDefault();
     setFormError('');
+    setFieldError(null);
 
     if (!validRange) {
-      setFormError('Check-out date must be after check-in date.');
+      failOn('checkOutDate', 'Check-out date must be after check-in date.');
       return;
     }
     // The chart won't offer a past night and the date field won't accept one,
     // but a typed date reaches neither guard — and a booking backdated past
     // check-in would be a stay nobody can ever check in to.
     if (isPastCheckIn) {
-      setFormError('Check-in can’t be a past date — a night that has gone can’t be booked.');
+      failOn('checkInDate', 'Check-in can’t be a past date — a night that has gone can’t be booked.');
       return;
     }
     // Belt-and-braces: the UI already hides Walk-in for a future date, but
@@ -763,29 +860,35 @@ export default function Bookings({ onCheckedOut }) {
     // guard would reject that, leaving the booking created but the form
     // showing an error, as if it had failed outright.
     if (!editing && bookingForm.bookingType === 'WALK_IN' && isFutureCheckIn) {
-      setFormError('Walk-in isn’t available for a future check-in date — switch to pre-reservation.');
+      failOn(
+        'bookingTypeToggle',
+        'Walk-in isn’t available for a future check-in date — switch to pre-reservation.'
+      );
       return;
     }
     if (!bookingForm.roomId) {
-      setFormError('Choose a room.');
+      failOn('roomId', 'Choose a room.');
       return;
     }
     if (bookingForm.discountAmount !== '' && !(Number(bookingForm.discountAmount) >= 0)) {
-      setFormError('Enter a concession of 0 or more, or leave it blank for no concession.');
+      failOn('discountAmount', 'Enter a concession of 0 or more, or leave it blank for no concession.');
       return;
     }
     if (quote && Number(bookingForm.discountAmount || 0) > quote.grossTotal) {
-      setFormError(`The concession can’t be more than the stay total of ${formatPrice(quote.grossTotal)}.`);
+      failOn(
+        'discountAmount',
+        `The concession can’t be more than the stay total of ${formatPrice(quote.grossTotal)}.`
+      );
       return;
     }
     // adults[0] is the primary guest — the only one whose phone is required.
     const primary = bookingForm.adults[0];
     if (!primary.name.trim()) {
-      setFormError('Enter the guest name.');
+      failOn('newAdultName-0', 'Enter the guest name.');
       return;
     }
     if (!primary.phone.trim()) {
-      setFormError('Enter the guest phone number.');
+      failOn('newAdultPhone-0', 'Enter the guest phone number.');
       return;
     }
     // A walk-in guest is here now, so their ID proof is captured immediately;
@@ -793,17 +896,20 @@ export default function Bookings({ onCheckedOut }) {
     // asks for neither — the stay already has whatever it has.
     if (!editing && bookingForm.bookingType === 'WALK_IN') {
       if (!primary.idProofType) {
-        setFormError('Choose the ID proof type.');
+        failOn('newAdultIdProofType-0', 'Choose the ID proof type.');
         return;
       }
-      if (!primary.idProofFile) {
-        setFormError('Upload the guest’s ID proof (image or PDF).');
+      // A returning guest whose card is already on file has satisfied this —
+      // the server copies that document onto this booking. Asking for it again
+      // is asking for something the property already has.
+      if (!primary.idProofFile && !primary.fromBookingId) {
+        failOn('newAdultIdProofFile-0', 'Upload the guest’s ID proof (image or PDF).');
         return;
       }
     }
     const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
     if (hasAdvanceAmount && !bookingForm.advancePaymentMethod) {
-      setFormError('Choose a payment method for the advance amount.');
+      failOn('newBookingAdvancePaymentMethod', 'Choose a payment method for the advance amount.');
       return;
     }
     if (
@@ -811,28 +917,53 @@ export default function Bookings({ onCheckedOut }) {
       needsPaymentReference(bookingForm.advancePaymentMethod) &&
       bookingForm.advanceReference.trim() === ''
     ) {
-      setFormError('Enter the transaction number for the advance paid by UPI or card.');
+      failOn(
+        'newBookingAdvanceReference',
+        'Enter the transaction number for the advance paid by UPI or card.'
+      );
       return;
     }
-    if (bookingForm.adults.slice(1).some((g) => !g.name.trim())) {
-      setFormError('Enter a name for each adult, or remove the empty row.');
+    // Which row, not just that one of them is empty — with six adults on a
+    // booking, "enter a name for each adult" doesn't say which one is blank.
+    const blankAdult = bookingForm.adults.findIndex((g, i) => i > 0 && !g.name.trim());
+    if (blankAdult !== -1) {
+      failOn(`newAdultName-${blankAdult}`, 'Enter a name for this adult, or remove the row.');
       return;
     }
-    if (bookingForm.children.some((g) => !g.name.trim())) {
-      setFormError('Enter a name for each child, or remove the empty row.');
+    const blankChild = bookingForm.children.findIndex((g) => !g.name.trim());
+    if (blankChild !== -1) {
+      failOn(`newChildName-${blankChild}`, 'Enter a name for this child, or remove the row.');
       return;
     }
-    const allParty = [...bookingForm.adults, ...bookingForm.children];
-    if (allParty.some((g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES)) {
-      setFormError('Each ID proof file must be 5MB or smaller.');
+    const oversizedAdult = bookingForm.adults.findIndex(
+      (g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES
+    );
+    if (oversizedAdult !== -1) {
+      failOn(`newAdultIdProofFile-${oversizedAdult}`, 'This ID proof must be 5MB or smaller.');
+      return;
+    }
+    const oversizedChild = bookingForm.children.findIndex(
+      (g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES
+    );
+    if (oversizedChild !== -1) {
+      failOn(`newChildIdProofFile-${oversizedChild}`, 'This ID proof must be 5MB or smaller.');
+      return;
+    }
+    // Checked against the rows as typed rather than the cleaned list, so the
+    // index the message lands on is the row the owner is looking at — cleaning
+    // drops the entirely blank rows and renumbers everything after them.
+    const badVehicle = bookingForm.vehicles.findIndex(
+      (v) => (v.number.trim() || v.type) && vehicleRowError([{ number: v.number.trim(), type: v.type }])
+    );
+    if (badVehicle !== -1) {
+      const row = bookingForm.vehicles[badVehicle];
+      failOn(
+        row.number.trim() ? `newVehicleType-${badVehicle}` : `newVehicleNumber-${badVehicle}`,
+        vehicleRowError([{ number: row.number.trim(), type: row.type }])
+      );
       return;
     }
     const vehicles = cleanVehicles(bookingForm.vehicles);
-    const vehicleError = vehicleRowError(vehicles);
-    if (vehicleError) {
-      setFormError(vehicleError);
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -850,6 +981,13 @@ export default function Bookings({ onCheckedOut }) {
       formData.append('switchableCharges', JSON.stringify(chargesPayload(bookingForm.switchableCharges)));
       if (primary.idProofType) formData.append('idProofType', primary.idProofType);
       if (primary.idProofFile) formData.append('idProofDocument', primary.idProofFile);
+      // A returning guest picked off the suggestions, with no new file attached:
+      // the server copies their document across from the stay named here. Only
+      // on create — an edit's primary guest is whoever the stay already belongs
+      // to, and their document is already on it.
+      if (!editing && !primary.idProofFile && primary.fromBookingId) {
+        formData.append('idProofFromBookingId', String(primary.fromBookingId));
+      }
       formData.append('vehicles', JSON.stringify(vehicles));
       formData.append(
         'guests',
@@ -1751,7 +1889,10 @@ export default function Bookings({ onCheckedOut }) {
                       stay that hasn't happened yet. On an edit it has, so the
                       toggle would be asking about the past. */}
                   {!editing && (
-                    <div className="toggle-group">
+                    // tabIndex so a walk-in/pre-reservation mismatch has
+                    // something to move the cursor to — the choice is a pair of
+                    // buttons, and neither one alone is what's wrong.
+                    <div className="toggle-group" id="bookingTypeToggle" tabIndex={-1}>
                       {!isFutureCheckIn && (
                         <button
                           type="button"
@@ -1791,6 +1932,10 @@ export default function Bookings({ onCheckedOut }) {
                     ×
                   </button>
                 </div>
+                {/* Below the head row, not inside it — that row is a flex line
+                    of title, toggle and close button, and a message dropped
+                    among them lands beside the ×. */}
+                {fieldErr('bookingTypeToggle')}
                 <p className="bookings-panel__hint">
                   {editing
                     ? canEditStay
@@ -1844,6 +1989,7 @@ export default function Bookings({ onCheckedOut }) {
                       // Never editable on an existing stay: changing when one
                       // started is a cancel and rebook, not an edit.
                       disabled={editing}
+                      aria-invalid={invalid('checkInDate')}
                       onChange={(e) => {
                         const checkInDate = e.target.value;
                         setBookingForm((f) => ({
@@ -1853,6 +1999,17 @@ export default function Bookings({ onCheckedOut }) {
                         }));
                       }}
                     />
+                    {/* A past check-in is flagged as it is typed rather than
+                        only on submit, so it stays a live warning — it just
+                        sits under the date it is about now, instead of in a
+                        banner further down the form. */}
+                    {fieldErr('checkInDate') ||
+                      (isPastCheckIn && (
+                        <p className="field__error">
+                          Check-in is in the past. A night that has gone can’t be booked — pick
+                          today or later.
+                        </p>
+                      ))}
                   </div>
                   <div className="field">
                     <label htmlFor="checkOutDate">Check-out</label>
@@ -1864,8 +2021,10 @@ export default function Bookings({ onCheckedOut }) {
                       // started — the check-in date is the floor for both.
                       min={bookingForm.checkInDate ? addDays(bookingForm.checkInDate, 1) : undefined}
                       disabled={!canEditStay}
+                      aria-invalid={invalid('checkOutDate')}
                       onChange={(e) => setBookingForm((f) => ({ ...f, checkOutDate: e.target.value }))}
                     />
+                    {fieldErr('checkOutDate')}
                   </div>
                 </div>
                 {editing && (
@@ -1876,14 +2035,6 @@ export default function Bookings({ onCheckedOut }) {
                   </p>
                 )}
 
-                {/* Reachable by typing into the date field, which no `min`
-                    catches, and by re-opening a draft parked before its own
-                    dates went by. */}
-                {isPastCheckIn && (
-                  <div className="form-banner form-banner--error">
-                    Check-in is in the past. A night that has gone can’t be booked — pick today or later.
-                  </div>
-                )}
                 {!validRange && <p className="bookings-panel__hint">Choose a valid date range first.</p>}
                 {validRange && availableRoomsError && (
                   <div className="form-banner form-banner--error">{availableRoomsError}</div>
@@ -1897,7 +2048,9 @@ export default function Bookings({ onCheckedOut }) {
                       <select
                         id="roomId"
                         value={bookingForm.roomId}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          // Picking again answers the notice, so it goes.
+                          setRoomTakenNote('');
                           setBookingForm((f) => ({
                             ...f,
                             roomId: e.target.value,
@@ -1906,9 +2059,10 @@ export default function Bookings({ onCheckedOut }) {
                             // room's total; picking a different one is a fresh
                             // negotiation.
                             discountAmount: '',
-                          }))
-                        }
+                          }));
+                        }}
                         disabled={!availableRooms || !canEditStay}
+                        aria-invalid={invalid('roomId')}
                       >
                         <option value="">
                           {availableRooms ? 'Choose a room' : 'Loading…'}
@@ -1920,6 +2074,14 @@ export default function Bookings({ onCheckedOut }) {
                           </option>
                         ))}
                       </select>
+                      {/* The submit-time "Choose a room." comes second: if the
+                          room was taken away by a date change, that is the
+                          reason the field is empty and the one worth reading. */}
+                      {roomTakenNote ? (
+                        <p className="field__error">{roomTakenNote}</p>
+                      ) : (
+                        fieldErr('roomId')
+                      )}
                       {availableRooms && availableRooms.length === 0 && (
                         <p className="bookings-panel__hint">No rooms are free for this date range.</p>
                       )}
@@ -2046,6 +2208,12 @@ export default function Bookings({ onCheckedOut }) {
                     onAdd={addParty}
                     onRemove={removeParty}
                     onUpdate={updateParty}
+                    // Looking a guest up is for taking a booking. This same
+                    // form edits existing stays, where the primary guest is
+                    // settled — swapping them for someone else is a cancel and
+                    // rebook, so no suggestions there.
+                    guestLookupToken={editing ? null : token}
+                    fieldErr={fieldErr}
                   />
                 </div>
 
@@ -2077,12 +2245,14 @@ export default function Bookings({ onCheckedOut }) {
                       id="newBookingAdvancePaymentMethod"
                       value={bookingForm.advancePaymentMethod}
                       onChange={(e) => setBookingForm((f) => ({ ...f, advancePaymentMethod: e.target.value }))}
+                      aria-invalid={invalid('newBookingAdvancePaymentMethod')}
                     >
                       <option value="">Choose one</option>
                       <option value="CASH">Cash</option>
                       <option value="UPI">UPI</option>
                       <option value="CARD">Card</option>
                     </select>
+                    {fieldErr('newBookingAdvancePaymentMethod')}
                   </div>
                 </div>
                 {/* Only for money that left a trail. Asking for a reference
@@ -2096,7 +2266,9 @@ export default function Bookings({ onCheckedOut }) {
                       maxLength={64}
                       placeholder={bookingForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
                       onChange={(e) => setBookingForm((f) => ({ ...f, advanceReference: e.target.value }))}
+                      aria-invalid={invalid('newBookingAdvanceReference')}
                     />
+                    {fieldErr('newBookingAdvanceReference')}
                     <p className="bookings-panel__hint">
                       What the settlement statement will be matched against at month end.
                     </p>
@@ -2117,6 +2289,8 @@ export default function Bookings({ onCheckedOut }) {
                   onAdd={addVehicle}
                   onRemove={removeVehicle}
                   onUpdate={updateVehicle}
+                  idPrefix="new"
+                  fieldErr={fieldErr}
                 />
               </details>
               </div>
@@ -2141,7 +2315,9 @@ export default function Bookings({ onCheckedOut }) {
                     value={bookingForm.discountAmount}
                     onChange={(e) => setBookingForm((f) => ({ ...f, discountAmount: e.target.value }))}
                     disabled={!quote}
+                    aria-invalid={invalid('discountAmount')}
                   />
+                  {fieldErr('discountAmount')}
                   <p className="bookings-panel__hint">
                     {quote
                       ? 'Leave blank to charge the full stay total.'
@@ -2673,7 +2849,151 @@ const BAND_LABEL = {
 // `idPrefix` keeps the two instances from minting the same DOM ids when both
 // are mounted; `onAdd`/`onRemove`/`onUpdate` take the list key ('adults' or
 // 'children') so the caller keeps ownership of where the party lives in state.
-function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRemove, onUpdate }) {
+// The name field on a new booking, with the property's own guest history behind
+// it. A lodge's regulars are its business, and making a returning guest spell
+// out a phone number and hand over an ID card the property already holds a copy
+// of is the kind of thing a desk notices every single time.
+//
+// Only ever offered for the primary guest of a *new* booking. Changing who an
+// existing stay belongs to is a cancel and rebook, not a lookup.
+function GuestNameField({ id, value, token, onChange, onPick }) {
+  const [matches, setMatches] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  // Set when a suggestion is taken, so the fetch that the same keystroke would
+  // otherwise fire doesn't reopen the list over the name just chosen.
+  const picked = useRef('');
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    const term = value.trim();
+    if (term.length < 2 || term === picked.current) {
+      setMatches([]);
+      return undefined;
+    }
+    // A query per keystroke would be a query per keystroke. A quarter second is
+    // below the threshold where a suggestion list feels like it lagged, and
+    // above the speed anyone types a name.
+    let stale = false;
+    const timer = setTimeout(() => {
+      apiGet(`/bookings/guest-search?q=${encodeURIComponent(term)}`, { token })
+        .then((data) => {
+          // Two keystrokes in flight can land out of order; the later one owns
+          // the list, so an answer to a name already typed past is dropped.
+          if (stale) return;
+          setMatches(data.guests);
+          setActive(-1);
+          setOpen(data.guests.length > 0);
+        })
+        // Suggestions are a convenience: a lookup that fails leaves reception
+        // typing the name out, which is what they were doing anyway.
+        .catch(() => setMatches([]));
+    }, 250);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [value, token]);
+
+  // Clicking anywhere else is a dismissal. Listening on the document rather
+  // than the input's blur, because blur fires before the click lands on a
+  // suggestion and would close the list out from under the pointer.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocumentDown = (e) => {
+      if (!boxRef.current?.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocumentDown);
+    return () => document.removeEventListener('mousedown', onDocumentDown);
+  }, [open]);
+
+  const take = (guest) => {
+    picked.current = guest.name;
+    setOpen(false);
+    setMatches([]);
+    onPick(guest);
+  };
+
+  const onKeyDown = (e) => {
+    if (!open || matches.length === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((i) => (i + step + matches.length) % matches.length);
+    } else if (e.key === 'Enter' && active >= 0) {
+      // Only swallowed when a suggestion is actually highlighted — Enter on a
+      // typed name has to keep submitting the form.
+      e.preventDefault();
+      take(matches[active]);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="guest-typeahead" ref={boxRef}>
+      <input
+        id={id}
+        value={value}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={`${id}-suggestions`}
+        aria-autocomplete="list"
+        aria-activedescendant={active >= 0 ? `${id}-suggestion-${active}` : undefined}
+        // The browser's own saved-form dropdown would sit on top of this one.
+        autoComplete="off"
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onFocus={() => setOpen(matches.length > 0)}
+      />
+      {open && (
+        <ul className="guest-typeahead__list" id={`${id}-suggestions`} role="listbox">
+          {matches.map((guest, i) => (
+            <li key={guest.bookingId} role="option" aria-selected={i === active} id={`${id}-suggestion-${i}`}>
+              <button
+                type="button"
+                className={`guest-typeahead__option${i === active ? ' guest-typeahead__option--active' : ''}`}
+                // mousedown, not click: the input's blur would otherwise race
+                // the click and the option would move out from under the cursor.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  take(guest);
+                }}
+                onMouseEnter={() => setActive(i)}
+              >
+                <span className="guest-typeahead__name">{guest.name}</span>
+                <span className="guest-typeahead__meta">
+                  {guest.phone}
+                  {guest.stayCount > 1 ? ` · ${guest.stayCount} stays` : ''}
+                  {guest.lastStayDate ? ` · last ${formatDateLong(guest.lastStayDate)}` : ''}
+                </span>
+                {/* The one thing that changes what reception has to do next. */}
+                {guest.hasIdProofDocument && (
+                  <span className="guest-typeahead__badge">{idProofLabel(guest.idProofType)} on file</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// fieldErr renders the message for one input's id, or nothing — the party rows
+// are where "enter a name for this adult" has to appear, and only the form
+// knows which row failed.
+function PartyEditor({
+  adults,
+  children,
+  idProofOptional,
+  idPrefix,
+  onAdd,
+  onRemove,
+  onUpdate,
+  guestLookupToken,
+  fieldErr,
+}) {
   const idTypeOptions = ID_PROOF_TYPES.map((t) => (
     <option key={t} value={t}>
       {idProofLabel(t)}
@@ -2710,11 +3030,37 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
                 <label htmlFor={`${idPrefix}AdultName-${index}`}>
                   {isPrimary ? 'Name (primary guest)' : 'Name'}
                 </label>
-                <input
-                  id={`${idPrefix}AdultName-${index}`}
-                  value={adult.name}
-                  onChange={(e) => onUpdate('adults', index, { name: e.target.value })}
-                />
+                {isPrimary && guestLookupToken ? (
+                  <GuestNameField
+                    id={`${idPrefix}AdultName-${index}`}
+                    value={adult.name}
+                    token={guestLookupToken}
+                    onChange={(name) =>
+                      // Typing over a name that was picked drops the carried
+                      // document with it — what's on file belongs to the guest
+                      // who was chosen, not to whoever is being typed now.
+                      onUpdate('adults', index, { name, fromBookingId: null, hasDocument: false })
+                    }
+                    onPick={(guest) =>
+                      onUpdate('adults', index, {
+                        name: guest.name,
+                        phone: guest.phone,
+                        idProofType: guest.idProofType ?? '',
+                        // Not the document itself — only the stay to copy it
+                        // from, which the server resolves on save.
+                        fromBookingId: guest.hasIdProofDocument ? guest.bookingId : null,
+                        hasDocument: guest.hasIdProofDocument,
+                      })
+                    }
+                  />
+                ) : (
+                  <input
+                    id={`${idPrefix}AdultName-${index}`}
+                    value={adult.name}
+                    onChange={(e) => onUpdate('adults', index, { name: e.target.value })}
+                  />
+                )}
+                {fieldErr(`${idPrefix}AdultName-${index}`)}
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultPhone-${index}`}>
@@ -2725,6 +3071,7 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
                   value={adult.phone}
                   onChange={(e) => onUpdate('adults', index, { phone: e.target.value })}
                 />
+                {fieldErr(`${idPrefix}AdultPhone-${index}`)}
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
@@ -2738,6 +3085,7 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
                   <option value="">{isPrimary ? 'Choose one' : 'None'}</option>
                   {idTypeOptions}
                 </select>
+                {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
@@ -2750,6 +3098,7 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
                   accept={ID_PROOF_ACCEPT}
                   onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
                 />
+                {fieldErr(`${idPrefix}AdultIdProofFile-${index}`)}
               </div>
               {/* The primary guest is the booking itself — there's no booking
                   left to remove them from. */}
@@ -2768,6 +3117,18 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
           );
         })}
       </div>
+
+      {/* Said in full rather than left to the "· on file" note beside the
+          Document field: reception has just picked a returning guest and is
+          about to look for the upload box, and this is the sentence that stops
+          them asking for a card the property already holds. */}
+      {adults[0]?.fromBookingId && !adults[0].idProofFile && (
+        <p className="bookings-panel__hint">
+          {idProofLabel(adults[0].idProofType) || 'The ID proof'} from this guest’s previous stay
+          will be attached to this booking — no need to ask for it again. Attaching a file below
+          replaces it.
+        </p>
+      )}
 
       <div className="booking-form__subhead">
         <span className="booking-form__subhead-label">
@@ -2792,6 +3153,7 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
                   value={child.name}
                   onChange={(e) => onUpdate('children', index, { name: e.target.value })}
                 />
+                {fieldErr(`${idPrefix}ChildName-${index}`)}
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}ChildIdProofType-${index}`}>ID type (optional)</label>
@@ -2815,6 +3177,7 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
                   accept={ID_PROOF_ACCEPT}
                   onChange={(e) => onUpdate('children', index, { idProofFile: e.target.files[0] || null })}
                 />
+                {fieldErr(`${idPrefix}ChildIdProofFile-${index}`)}
               </div>
               <button
                 type="button"
@@ -2836,34 +3199,45 @@ function PartyEditor({ adults, children, idProofOptional, idPrefix, onAdd, onRem
 }
 
 // Vehicles, editable. Same reason as PartyEditor for being shared.
-function VehicleEditor({ vehicles, onAdd, onRemove, onUpdate }) {
+function VehicleEditor({ vehicles, onAdd, onRemove, onUpdate, idPrefix, fieldErr }) {
+  const rowId = (kind, index) => `${idPrefix}Vehicle${kind}-${index}`;
+  // A row can be wrong in either half — a number with no type, or a type with
+  // no number — and only one of the two is ever reported, so whichever it is
+  // renders under the row.
+  const errorFor = (index) => fieldErr(rowId('Number', index)) || fieldErr(rowId('Type', index));
+
   return (
     <>
       {vehicles.length > 0 && (
         <div className="bookings-panel__repeat-list">
           {vehicles.map((vehicle, index) => (
-            <div className="bookings-panel__vehicle-row" key={index}>
-              <input
-                value={vehicle.number}
-                onChange={(e) => onUpdate(index, { number: e.target.value })}
-                placeholder="MH07AB1234"
-                aria-label={`Vehicle number ${index + 1}`}
-              />
-              <select
-                value={vehicle.type}
-                onChange={(e) => onUpdate(index, { type: e.target.value })}
-                aria-label={`Vehicle type ${index + 1}`}
-              >
-                <option value="">Type</option>
-                {Object.entries(VEHICLE_TYPE_LABEL).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="bookings-panel__remove-btn" onClick={() => onRemove(index)}>
-                Remove
-              </button>
+            <div key={index}>
+              <div className="bookings-panel__vehicle-row">
+                <input
+                  id={rowId('Number', index)}
+                  value={vehicle.number}
+                  onChange={(e) => onUpdate(index, { number: e.target.value })}
+                  placeholder="MH07AB1234"
+                  aria-label={`Vehicle number ${index + 1}`}
+                />
+                <select
+                  id={rowId('Type', index)}
+                  value={vehicle.type}
+                  onChange={(e) => onUpdate(index, { type: e.target.value })}
+                  aria-label={`Vehicle type ${index + 1}`}
+                >
+                  <option value="">Type</option>
+                  {Object.entries(VEHICLE_TYPE_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="bookings-panel__remove-btn" onClick={() => onRemove(index)}>
+                  Remove
+                </button>
+              </div>
+              {errorFor(index)}
             </div>
           ))}
         </div>

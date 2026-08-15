@@ -8,10 +8,14 @@ export const API_BASE =
     ? import.meta.env.VITE_API_URL
     : 'https://hotel.vengurlatech.com';
 
+// `field`, when the server sent one, names the form input the message is about,
+// so a form can show it under that field and put the cursor there rather than
+// in a banner at the top. Null for everything that isn't about one input.
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, field = null) {
     super(message);
     this.status = status;
+    this.field = field;
   }
 }
 
@@ -50,7 +54,11 @@ async function handleResponse(res, path) {
 
   if (!res.ok) {
     if (isExpiredSession(res, path)) goToLogin();
-    throw new ApiError(data?.error || 'Something went wrong. Try again.', res.status);
+    throw new ApiError(
+      data?.error || 'Something went wrong. Try again.',
+      res.status,
+      data?.field ?? null
+    );
   }
 
   return data;
@@ -103,7 +111,11 @@ export async function apiGetBlob(path, { token } = {}) {
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     if (isExpiredSession(res, path)) goToLogin();
-    throw new ApiError(data?.error || 'Something went wrong. Try again.', res.status);
+    throw new ApiError(
+      data?.error || 'Something went wrong. Try again.',
+      res.status,
+      data?.field ?? null
+    );
   }
 
   return res.blob();

@@ -1,7 +1,13 @@
+const fs = require('fs');
+const path = require('path');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('../../middleware/menuImageUpload');
 const inventoryService = require('../inventory/inventory.service');
 
+// A dish photo the property uploaded, or nothing. The filename alone travels —
+// the browser builds the URL against the /menu-images static mount, the same
+// way it does for room photos.
 function mapItem(row, portions = []) {
   return {
     id: row.id,
@@ -13,8 +19,18 @@ function mapItem(row, portions = []) {
     isAvailable: !!row.is_available,
     sortOrder: row.sort_order,
     isActive: !!row.is_active,
+    image: row.image_filename ?? null,
     portions,
   };
+}
+
+// A dish photo that is no longer referenced by any row. Deleted best-effort:
+// an orphaned file wastes a few hundred kilobytes, while a failed unlink that
+// took the whole request down would lose the menu edit the user actually
+// asked for.
+function removeMenuImage(filename) {
+  if (!filename) return;
+  fs.unlink(path.join(MENU_IMAGE_DIR, path.basename(filename)), () => {});
 }
 
 function mapPortion(row) {
@@ -70,7 +86,7 @@ async function getMenu(lodgeId, { activeOnly = false } = {}) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT id, category_id, name, description, price, food_type, is_available,
-             sort_order, is_active
+             sort_order, is_active, image_filename
       FROM dbo.menu_items
       WHERE lodge_id = @lodgeId ${activeOnly ? 'AND is_active = 1' : ''}
       ORDER BY sort_order ASC, name ASC
@@ -233,10 +249,12 @@ async function createItem(lodgeId, input) {
     .input('price', sql.Decimal(10, 2), input.price)
     .input('foodType', sql.NVarChar, input.foodType)
     .input('sortOrder', sql.Int, input.sortOrder)
+    .input('imageFilename', sql.NVarChar, input.imageFilename ?? null)
     .query(`
-      INSERT INTO dbo.menu_items (lodge_id, category_id, name, description, price, food_type, sort_order)
+      INSERT INTO dbo.menu_items
+        (lodge_id, category_id, name, description, price, food_type, sort_order, image_filename)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @categoryId, @name, @description, @price, @foodType, @sortOrder)
+      VALUES (@lodgeId, @categoryId, @name, @description, @price, @foodType, @sortOrder, @imageFilename)
     `);
 
   return { id: result.recordset[0].id };
@@ -256,6 +274,25 @@ async function updateItem(lodgeId, itemId, input) {
     throw new ApiError('That section already has an item with this name.', 409);
   }
 
+  // The photo has three fates on a save, and the form has to be able to say
+  // which: a new file replaces it, "remove" clears it, and sending neither
+  // leaves whatever is on file alone. That last case is the common one — most
+  // edits are a price change — so it can't be expressed by absence meaning
+  // "clear", the way a text field would.
+  const currentResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('itemId', sql.BigInt, itemId)
+    .query('SELECT image_filename FROM dbo.menu_items WHERE id = @itemId AND lodge_id = @lodgeId');
+  if (currentResult.recordset.length === 0) {
+    throw new ApiError('Menu item not found.', 404);
+  }
+  const currentImage = currentResult.recordset[0].image_filename;
+
+  let nextImage = currentImage;
+  if (input.imageFilename) nextImage = input.imageFilename;
+  else if (input.removeImage) nextImage = null;
+
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -266,16 +303,22 @@ async function updateItem(lodgeId, itemId, input) {
     .input('price', sql.Decimal(10, 2), input.price)
     .input('foodType', sql.NVarChar, input.foodType)
     .input('sortOrder', sql.Int, input.sortOrder)
+    .input('imageFilename', sql.NVarChar, nextImage)
     .query(`
       UPDATE dbo.menu_items
       SET category_id = @categoryId, name = @name, description = @description,
-          price = @price, food_type = @foodType, sort_order = @sortOrder
+          price = @price, food_type = @foodType, sort_order = @sortOrder,
+          image_filename = @imageFilename
       OUTPUT inserted.id
       WHERE id = @itemId AND lodge_id = @lodgeId
     `);
   if (result.recordset.length === 0) {
     throw new ApiError('Menu item not found.', 404);
   }
+
+  // Only once the row has stopped pointing at it. The other order would leave
+  // the menu naming a file that had already gone if the update then failed.
+  if (currentImage && currentImage !== nextImage) removeMenuImage(currentImage);
 
   return { id: itemId };
 }
@@ -367,10 +410,11 @@ async function deleteItem(lodgeId, itemId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('itemId', sql.BigInt, itemId)
-    .query('SELECT id FROM dbo.menu_items WHERE id = @itemId AND lodge_id = @lodgeId');
+    .query('SELECT id, image_filename FROM dbo.menu_items WHERE id = @itemId AND lodge_id = @lodgeId');
   if (existing.recordset.length === 0) {
     throw new ApiError('Menu item not found.', 404);
   }
+  const { image_filename: imageFilename } = existing.recordset[0];
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -406,6 +450,10 @@ async function deleteItem(lodgeId, itemId) {
     await transaction.rollback();
     throw err;
   }
+
+  // After the commit, never before: a rolled-back delete must leave the dish
+  // and its photo exactly as they were.
+  removeMenuImage(imageFilename);
 }
 
 // ---------------------------------------------------------------------------

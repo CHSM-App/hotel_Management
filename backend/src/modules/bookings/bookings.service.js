@@ -1,6 +1,9 @@
 const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
 const billingService = require('../billing/billing.service');
 const draftsService = require('./drafts.service');
@@ -200,6 +203,42 @@ async function getActiveSwitchableCharges(pool, lodgeId) {
   }));
 }
 
+// The stays standing in the way, for a window and optionally ignoring one
+// booking's own occupancy. The availability queries answer "which rooms are
+// free"; this answers "and what is holding the rest", so a form that has just
+// lost the room the user picked can say which dates took it rather than
+// silently emptying the picker.
+//
+// Same overlap rule as the queries above, deliberately: a room is held from
+// check-in up to but not including check-out, so a stay ending on the 18th
+// does not block one starting on the 18th.
+async function listRoomConflicts(pool, lodgeId, checkInDate, checkOutDate, excludeBookingId = null) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('checkInDate', sql.Date, checkInDate)
+    .input('checkOutDate', sql.Date, checkOutDate)
+    .input('excludeBookingId', sql.BigInt, excludeBookingId)
+    .query(`
+      SELECT b.room_id, b.check_in_date, b.check_out_date
+      FROM dbo.bookings b
+      JOIN dbo.rooms r ON r.id = b.room_id
+      WHERE r.lodge_id = @lodgeId AND r.is_active = 1
+        AND b.status IN ('BOOKED', 'CHECKED_IN')
+        AND (@excludeBookingId IS NULL OR b.id <> @excludeBookingId)
+        AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+      ORDER BY b.room_id, b.check_in_date ASC
+    `);
+
+  // Guest names are deliberately not returned. Naming who holds the room is a
+  // detail the picker never shows, and this endpoint feeds a dropdown.
+  return result.recordset.map((row) => ({
+    roomId: row.room_id,
+    checkInDate: toIsoDate(row.check_in_date),
+    checkOutDate: toIsoDate(row.check_out_date),
+  }));
+}
+
 async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
   const pool = await getPool();
 
@@ -223,19 +262,23 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
     `);
 
   const switchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
+  const conflicts = await listRoomConflicts(pool, lodgeId, checkInDate, checkOutDate);
 
-  return roomsResult.recordset.map((row) => ({
-    id: row.id,
-    roomNumber: row.room_number,
-    floor: row.floor,
-    bedSize: row.bed_size,
-    bathroomType: row.bathroom_type,
-    maxOccupancy: row.max_occupancy,
-    description: row.description,
-    categoryName: row.category_name,
-    categoryBasePrice: Number(row.category_base_price),
-    switchableCharges,
-  }));
+  return {
+    rooms: roomsResult.recordset.map((row) => ({
+      id: row.id,
+      roomNumber: row.room_number,
+      floor: row.floor,
+      bedSize: row.bed_size,
+      bathroomType: row.bathroom_type,
+      maxOccupancy: row.max_occupancy,
+      description: row.description,
+      categoryName: row.category_name,
+      categoryBasePrice: Number(row.category_base_price),
+      switchableCharges,
+    })),
+    conflicts,
+  };
 }
 
 // Rooms a booking could move into for an edited check-out date — same
@@ -280,6 +323,9 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
   // is one form whether it is taking a stay or correcting one, and a room that
   // arrived without its extras would render an empty picker on the edit pass.
   const switchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
+  // Excluding this booking's own stay, exactly as the room query does — its own
+  // nights are not a clash with itself.
+  const conflicts = await listRoomConflicts(pool, lodgeId, checkInDate, checkOutDate, bookingId);
 
   return {
     checkInDate,
@@ -295,6 +341,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
       categoryBasePrice: Number(row.category_base_price),
       switchableCharges,
     })),
+    conflicts,
   };
 }
 
@@ -524,6 +571,178 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     invoice: extra.invoice ?? null,
     availableSwitchableCharges: extra.availableSwitchableCharges || [],
   };
+}
+
+// Only the four characters T-SQL treats as special in a LIKE pattern. The
+// escape character may not precede anything else — "\^" is not a literal caret,
+// it is undefined — so escaping a wider set would break on ordinary names.
+const LIKE_SPECIALS = /[%_[\\]/g;
+
+function likeContains(value) {
+  return `%${value.replace(LIKE_SPECIALS, (ch) => `\\${ch}`)}%`;
+}
+
+// Whether a stored ID-proof filename still resolves to a file. The column and
+// the disk can disagree — a document removed by hand, a restored database, a
+// half-finished upload — and everything that offers to reuse a guest's ID has
+// to ask the disk before it promises anything.
+async function idProofExists(filename) {
+  if (!filename) return false;
+  try {
+    await fs.access(path.join(UPLOAD_DIR, path.basename(filename)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// A name typed into the booking form, answered with "have we had them before?".
+// The desk's own reason for asking is that a returning guest shouldn't be made
+// to spell out a phone number and hand over an ID card they already handed over
+// last time.
+//
+// Matched anywhere in the name rather than from the start: reception types the
+// surname as often as the first name, and one property's guest history is small
+// enough that scanning it costs nothing a person would notice.
+async function searchGuests(lodgeId, query) {
+  const term = String(query ?? '').trim();
+  // Two characters is where a suggestion list stops being the whole guest book.
+  if (term.length < 2) return [];
+
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('q', sql.NVarChar, likeContains(term))
+    .query(`
+      WITH matches AS (
+        SELECT id, guest_name, guest_phone, id_proof_type, id_proof_document, check_in_date
+        FROM dbo.bookings
+        WHERE lodge_id = @lodgeId
+          -- A cancelled booking is not evidence anybody ever stayed, and its
+          -- details were never checked against an ID card at a desk.
+          AND status <> 'CANCELLED'
+          AND guest_name LIKE @q ESCAPE '\\'
+      ),
+      ranked AS (
+        SELECT *,
+               -- Their stays, best candidate first: ones carrying an ID
+               -- document ahead of ones without, then most recent. Several are
+               -- kept rather than just the winner because whether a document is
+               -- really there is a question about the disk, which SQL can't
+               -- answer — so the choosing finishes in JS below.
+               ROW_NUMBER() OVER (
+                 PARTITION BY guest_name, guest_phone
+                 ORDER BY CASE WHEN id_proof_document IS NULL THEN 1 ELSE 0 END,
+                          check_in_date DESC, id DESC
+               ) AS rn,
+               COUNT(*) OVER (PARTITION BY guest_name, guest_phone) AS stay_count,
+               MAX(check_in_date) OVER (PARTITION BY guest_name, guest_phone) AS last_stay
+        FROM matches
+      ),
+      people AS (
+        SELECT TOP 8 guest_name, guest_phone, last_stay
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY last_stay DESC
+      )
+      SELECT r.id, r.guest_name, r.guest_phone, r.id_proof_type, r.id_proof_document,
+             r.stay_count, r.last_stay, r.rn
+      FROM ranked r
+      JOIN people p ON p.guest_name = r.guest_name AND p.guest_phone = r.guest_phone
+      -- Five deep: enough that one guest's tidied-up old document doesn't cost
+      -- them the feature, bounded so a regular with fifty stays doesn't have
+      -- all fifty checked against the disk on every keystroke.
+      WHERE r.rn <= 5
+      ORDER BY p.last_stay DESC, r.guest_name, r.guest_phone, r.rn
+    `);
+
+  // The query returns several stays per guest, best candidate first. One
+  // suggestion is built from each guest's run of them: the first stay whose
+  // document is actually on disk wins, and if none is, the guest is still
+  // suggested — just without a document to carry.
+  //
+  // Checking the disk is the whole point. A row can name a file that is no
+  // longer there, and a suggestion that promises a document the save then
+  // can't produce sends reception back to the upload box *after* they have
+  // filled the form in. Better the badge never appears and the card is asked
+  // for up front.
+  const byPerson = new Map();
+  for (const row of result.recordset) {
+    const key = `${row.guest_name} ${row.guest_phone}`;
+    if (!byPerson.has(key)) byPerson.set(key, []);
+    byPerson.get(key).push(row);
+  }
+
+  const suggestions = [];
+  for (const stays of byPerson.values()) {
+    let chosen = stays[0];
+    let hasDocument = false;
+    for (const stay of stays) {
+      if (await idProofExists(stay.id_proof_document)) {
+        chosen = stay;
+        hasDocument = true;
+        break;
+      }
+    }
+    suggestions.push({
+      // The stay this suggestion was read off — quoted back on save as the
+      // booking to copy the ID document from.
+      bookingId: chosen.id,
+      name: chosen.guest_name,
+      phone: chosen.guest_phone,
+      // Read off the stay whose document is being offered, so the type named
+      // in the form is the type of the card that will actually be attached.
+      idProofType: hasDocument ? chosen.id_proof_type : stays[0].id_proof_type,
+      // The document itself never leaves the server here; the form only needs
+      // to know there is one, so it can say so instead of asking again.
+      hasIdProofDocument: hasDocument,
+      stayCount: chosen.stay_count,
+      lastStayDate: toIsoDate(chosen.last_stay),
+    });
+  }
+  return suggestions;
+}
+
+// Carries a returning guest's ID document onto the booking being taken now.
+//
+// The file is copied rather than the filename shared: dbo.bookings owns its
+// id_proof_document one-to-one, and two rows pointing at one file would mean
+// replacing the document on this year's stay silently rewrote last year's, and
+// deleting either one broke the other.
+//
+// Returns null when there is nothing to copy, which the caller treats the same
+// as no document — a suggestion can go stale between being shown and being
+// saved, and that is not worth failing a booking over.
+async function copyIdProofFromBooking(lodgeId, bookingId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    // Scoped to the lodge: the booking id arrives from the browser, and without
+    // this it would read a document out of another property's guest file.
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT id_proof_document FROM dbo.bookings
+      WHERE id = @bookingId AND lodge_id = @lodgeId
+    `);
+
+  const source = result.recordset[0]?.id_proof_document;
+  if (!source) return null;
+
+  // basename, because the stored value is the only thing standing between a
+  // crafted id and a copy of an arbitrary file on this disk.
+  const from = path.join(UPLOAD_DIR, path.basename(source));
+  const copy = `${crypto.randomUUID()}${path.extname(source)}`;
+  try {
+    await fs.copyFile(from, path.join(UPLOAD_DIR, copy));
+  } catch {
+    // The row named a file that is no longer on disk. The booking is still a
+    // booking; it just goes in without a document, exactly as it would have
+    // before this feature existed.
+    return null;
+  }
+  return copy;
 }
 
 async function getIdProofFilename(lodgeId, bookingId) {
@@ -1299,6 +1518,8 @@ module.exports = {
   listAvailableRooms,
   listAvailableRoomsForBooking,
   listBookings,
+  searchGuests,
+  copyIdProofFromBooking,
   getTapeChart,
   getBooking,
   getIdProofFilename,

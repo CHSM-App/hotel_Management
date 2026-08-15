@@ -1,3 +1,4 @@
+const fs = require('fs');
 const {
   createMenuCategorySchema,
   updateMenuCategorySchema,
@@ -14,7 +15,11 @@ const { ApiError } = require('../../middleware/errorHandler');
 function parse(schema, body) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw new ApiError(parsed.error.issues[0].message, 400);
+    const issue = parsed.error.issues[0];
+    // Only the first path segment: the form has one control per top-level
+    // field, so a nested failure like portions.2.price belongs on the portions
+    // block — there is no input named "2" to point at.
+    throw new ApiError(issue.message, 400, issue.path[0] ? String(issue.path[0]) : null);
   }
   return parsed.data;
 }
@@ -85,24 +90,35 @@ async function deleteCategoryHandler(req, res, next) {
   }
 }
 
+// A dish photo that arrived on a request that then failed. Multer has already
+// written it to disk by the time the handler runs, so a rejected save would
+// otherwise leave the file behind with nothing pointing at it.
+function discardUpload(req) {
+  if (req.file) fs.unlink(req.file.path, () => {});
+}
+
 async function createItemHandler(req, res, next) {
   try {
-    const result = await menuService.createItem(req.user.lodgeId, parse(createMenuItemSchema, req.body));
+    const result = await menuService.createItem(req.user.lodgeId, {
+      ...parse(createMenuItemSchema, req.body),
+      imageFilename: req.file ? req.file.filename : null,
+    });
     res.status(201).json(result);
   } catch (err) {
+    discardUpload(req);
     next(err);
   }
 }
 
 async function updateItemHandler(req, res, next) {
   try {
-    const result = await menuService.updateItem(
-      req.user.lodgeId,
-      Number(req.params.id),
-      parse(updateMenuItemSchema, req.body)
-    );
+    const result = await menuService.updateItem(req.user.lodgeId, Number(req.params.id), {
+      ...parse(updateMenuItemSchema, req.body),
+      imageFilename: req.file ? req.file.filename : null,
+    });
     res.json(result);
   } catch (err) {
+    discardUpload(req);
     next(err);
   }
 }

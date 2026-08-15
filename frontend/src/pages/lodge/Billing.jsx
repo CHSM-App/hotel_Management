@@ -77,6 +77,94 @@ const BILL_FILTERS = [
   { key: 'CASH_RECEIPT', label: 'Cash receipt', match: (i) => i.documentType === 'CASH_RECEIPT' },
 ];
 
+// Bills are filed by the month they were issued in, and the timestamp arrives
+// in UTC. Every property on this system is in India, so a bill raised at half
+// past midnight on the 1st has to count as the new month, not as the old one it
+// still is in UTC — hence the shift before the date is read off.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function istOf(value) {
+  return new Date(new Date(value).getTime() + IST_OFFSET_MS);
+}
+
+// The calendar day a bill was issued on, which is what every date control here
+// compares against. Taken from when the bill was raised rather than when the
+// guest stayed: a bill raised in April for a March stay is April's business,
+// which is the month an accountant asks for it in.
+function billDateOf(inv) {
+  return inv.createdAt ? istOf(inv.createdAt).toISOString().slice(0, 10) : '';
+}
+
+function istTodayIso() {
+  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function addDaysIso(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function firstOfMonth(monthKey) {
+  return `${monthKey}-01`;
+}
+
+// Day 0 of the next month is the last day of this one, which saves knowing
+// which months are 30, 31 or 28 days long.
+function lastOfMonth(monthKey) {
+  const d = new Date(`${monthKey}-01T00:00:00Z`);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+}
+
+function addMonthsToKey(monthKey, n) {
+  const d = new Date(`${monthKey}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + n, 1);
+  return d.toISOString().slice(0, 7);
+}
+
+// The ranges a desk actually asks for, so the common questions cost one click
+// instead of typing two dates. Same four the guest register offers, in the same
+// order — the two screens are read by the same people on the same day.
+const BILL_DATE_PRESETS = [
+  { key: 'today', label: 'Today', range: () => [istTodayIso(), istTodayIso()] },
+  { key: 'week', label: 'Last 7 days', range: () => [addDaysIso(istTodayIso(), -6), istTodayIso()] },
+  {
+    key: 'month',
+    label: 'This month',
+    range: () => [firstOfMonth(istTodayIso().slice(0, 7)), istTodayIso()],
+  },
+  {
+    key: 'prev',
+    label: 'Last month',
+    range: () => {
+      const key = addMonthsToKey(istTodayIso().slice(0, 7), -1);
+      return [firstOfMonth(key), lastOfMonth(key)];
+    },
+  },
+];
+
+// Short, because it rides at the end of a row that already carries a name and a
+// room — it is there to show why a bill fell into the month on screen.
+function formatBillDate(value) {
+  if (!value) return '';
+  return istOf(value).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+// What reception actually has in hand when they go looking for a bill: the
+// number off the printed copy, the guest's name, the room, the table, or the
+// phone number the guest is quoting down the line.
+function billMatchesSearch(inv, query) {
+  if (!query) return true;
+  return [inv.invoiceNumber, inv.guestName, inv.roomNumber, inv.tableLabel, inv.guestPhone].some(
+    (field) => field && String(field).toLowerCase().includes(query)
+  );
+}
+
 export default function Billing({ lodge }) {
   const session = getSession();
   const token = session?.token;
@@ -102,6 +190,14 @@ export default function Billing({ lodge }) {
   const [invoices, setInvoices] = useState(() => readCache('/billing/invoices'));
   const [invoicesError, setInvoicesError] = useState('');
   const [billFilter, setBillFilter] = useState('ALL');
+  const [billSearch, setBillSearch] = useState('');
+  // One range is the whole date filter. The month picker, the presets and the
+  // two date boxes are three ways of setting these two values rather than three
+  // filters that could disagree with each other — which is what a month
+  // dropdown sitting next to its own from/to inputs would otherwise be.
+  // Empty means unbounded on that end, so '' / '' is "every bill".
+  const [billFrom, setBillFrom] = useState('');
+  const [billTo, setBillTo] = useState('');
 
   const loadQueue = () => {
     if (!billsStays) return;
@@ -145,16 +241,67 @@ export default function Billing({ lodge }) {
     loadInvoices();
   };
 
+  // The three ways the bills list narrows: what kind of document it is, when it
+  // was issued, and a search over the things staff have in hand when they come
+  // looking. Each counts over the set the *other two* leave, so a chip never
+  // advertises a number that turns into an empty list when it is clicked, and
+  // the month picker never offers a month that has been searched out of
+  // existence.
+  const billQuery = billSearch.trim().toLowerCase();
+  const matchesDate = (inv) => {
+    const day = billDateOf(inv);
+    if (!day) return !billFrom && !billTo;
+    return (!billFrom || day >= billFrom) && (!billTo || day <= billTo);
+  };
+  const matchesSearch = (inv) => billMatchesSearch(inv, billQuery);
+
+  // Which of the three date controls is showing the range that is actually set.
+  // Derived from the range rather than remembered alongside it, so typing a
+  // date un-highlights the preset it no longer matches instead of leaving two
+  // controls both claiming to be in charge.
+  const activePreset = BILL_DATE_PRESETS.find((p) => {
+    const [from, to] = p.range();
+    return from === billFrom && to === billTo;
+  });
+  // A range nobody can satisfy. Left to filter to nothing rather than silently
+  // ignored — the note beside the boxes says why the list emptied.
+  const invalidRange = Boolean(billFrom && billTo && billTo < billFrom);
+
+  const applyPreset = (preset) => {
+    const [from, to] = preset.range();
+    setBillFrom(from);
+    setBillTo(to);
+  };
+
+  const clearBillDates = () => {
+    setBillFrom('');
+    setBillTo('');
+  };
+
   // Only the types this property actually issues get a chip — a property that
   // isn't GST registered only ever writes cash receipts, and should not be
   // offered a "Tax invoice" filter that matches nothing.
   const billFilters = invoices
-    ? BILL_FILTERS.map((f) => ({ ...f, count: invoices.filter(f.match).length })).filter((f) => f.count > 0)
+    ? BILL_FILTERS.map((f) => ({
+        ...f,
+        count: invoices.filter((i) => f.match(i) && matchesDate(i) && matchesSearch(i)).length,
+      })).filter((f) => f.count > 0)
     : [];
   // Looked up rather than trusted: voiding the last bill of a type empties its
   // chip, and the list falls back to everything instead of going blank.
   const activeFilter = billFilters.find((f) => f.key === billFilter) ?? null;
-  const visibleInvoices = invoices && (activeFilter ? invoices.filter(activeFilter.match) : invoices);
+
+  const visibleInvoices =
+    invoices &&
+    invoices.filter((i) => (!activeFilter || activeFilter.match(i)) && matchesDate(i) && matchesSearch(i));
+  const billsFiltered = Boolean(billQuery) || Boolean(billFrom) || Boolean(billTo) || activeFilter != null;
+
+  const clearBillFilters = () => {
+    setBillFilter('ALL');
+    setBillSearch('');
+    setBillFrom('');
+    setBillTo('');
+  };
 
   // Bill modal. One modal serves both kinds — the amounts and the payment
   // capture are identical; only the endpoints and the header differ, so
@@ -619,6 +766,107 @@ export default function Billing({ lodge }) {
           )}
           {!invoicesError && invoices && invoices.length > 0 && (
             <>
+              {/* The dates a bill was issued between, with the shortcuts for the
+                  common answers underneath. Search sits alongside for the one
+                  bill somebody is holding a copy of. */}
+              <div className="billing-panel__bill-tools">
+                <div className="billing-panel__bill-range">
+                  <div className="field">
+                    <input
+                      type="date"
+                      aria-label="Bills issued from"
+                      value={billFrom}
+                      onChange={(e) => setBillFrom(e.target.value)}
+                    />
+                  </div>
+                  <span className="billing-panel__bill-range-dash" aria-hidden="true">
+                    –
+                  </span>
+                  <div className="field">
+                    <input
+                      type="date"
+                      aria-label="Bills issued up to"
+                      value={billTo}
+                      onChange={(e) => setBillTo(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="field billing-panel__bill-search">
+                  <svg
+                    className="billing-panel__bill-search-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3.5-3.5" />
+                  </svg>
+                  <input
+                    aria-label="Search bills"
+                    value={billSearch}
+                    onChange={(e) => setBillSearch(e.target.value)}
+                    placeholder="Bill number, guest, room, table or phone"
+                  />
+                  {billSearch && (
+                    <button
+                      type="button"
+                      className="billing-panel__bill-search-clear"
+                      onClick={() => setBillSearch('')}
+                      aria-label="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {billsFiltered && (
+                  <span className="billing-panel__bill-count">
+                    {visibleInvoices.length} of {invoices.length}
+                    <button type="button" className="billing-panel__bill-clear" onClick={clearBillFilters}>
+                      Clear
+                    </button>
+                  </span>
+                )}
+              </div>
+
+              {/* Shortcuts into the same range the controls above hold — the
+                  four questions asked often enough that typing two dates for
+                  them is work nobody should be doing twice a day. */}
+              <div className="billing-panel__bill-presets">
+                {BILL_DATE_PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    className="billing-panel__bill-preset"
+                    aria-pressed={activePreset?.key === p.key}
+                    onClick={() => applyPreset(p)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="billing-panel__bill-preset"
+                  aria-pressed={!billFrom && !billTo}
+                  onClick={clearBillDates}
+                >
+                  All time
+                </button>
+              </div>
+
+              {invalidRange && (
+                <p className="billing-panel__bill-note">
+                  The “to” date is before the “from” date, so nothing can match. Swap them or clear
+                  the dates.
+                </p>
+              )}
+
               {/* Skipped when everything issued is of one type — a single chip
                   filters nothing and only costs a row of screen. */}
               {billFilters.length > 1 && (
@@ -630,7 +878,12 @@ export default function Billing({ lodge }) {
                     onClick={() => setBillFilter('ALL')}
                   >
                     All
-                    <span className="billing-panel__filter-count">{invoices.length}</span>
+                    {/* Counted within the dates and search on screen, like every
+                        other chip — "All 42" above a list of six would be
+                        describing a list nobody is looking at. */}
+                    <span className="billing-panel__filter-count">
+                      {invoices.filter((i) => matchesDate(i) && matchesSearch(i)).length}
+                    </span>
                   </button>
                   {billFilters.map((f) => (
                     <button
@@ -645,6 +898,17 @@ export default function Billing({ lodge }) {
                       <span className="billing-panel__filter-count">{f.count}</span>
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Nothing left after filtering is a different thing from having
+                  issued no bills, and says so — with the way out beside it. */}
+              {visibleInvoices.length === 0 && (
+                <div className="dash-state">
+                  No bills match these filters.{' '}
+                  <button type="button" className="billing-panel__bill-clear" onClick={clearBillFilters}>
+                    Clear filters
+                  </button>
                 </div>
               )}
 
@@ -667,10 +931,13 @@ export default function Billing({ lodge }) {
                         </span>
                         <span className="chart-row__dates">
                           {/* A food bill has no guest and no room to name, so it
-                              identifies itself by the table it closed. */}
+                              identifies itself by the table it closed. The date
+                              earns its place now the list filters by month —
+                              without it a row can't say why it is on screen. */}
                           {inv.kind === 'FOOD'
                             ? inv.tableLabel || 'Counter'
                             : `${inv.guestName} · ${inv.roomNumber}`}
+                          {inv.createdAt && ` · ${formatBillDate(inv.createdAt)}`}
                         </span>
                       </span>
                       <span className="billing-panel__queue-actions">

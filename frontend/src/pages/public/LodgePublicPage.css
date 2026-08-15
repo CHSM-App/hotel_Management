@@ -70,19 +70,6 @@
   background: #1ebe5b;
 }
 
-.lodge-public__dates {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card, 12px);
-  box-shadow: var(--shadow-card);
-  padding: 16px 18px;
-  margin-bottom: 24px;
-}
-
 .lodge-public__date-field {
   display: flex;
   flex-direction: column;
@@ -97,13 +84,22 @@
   color: var(--text-muted);
 }
 
-.lodge-public__date-field input {
+/* The selects match the date inputs exactly — inside one panel they read as a
+   row of equals, and a select styled like a select would break that. */
+.lodge-public__date-field input,
+.lodge-public__date-field select {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
+  font: inherit;
   font-size: 14px;
   color: var(--text);
   background: var(--paper);
+  min-height: 39px;
+}
+
+.lodge-public__date-field select {
+  cursor: pointer;
 }
 
 .lodge-public__dates-status {
@@ -120,6 +116,130 @@
   text-align: center;
   color: var(--text-muted);
   padding: 40px 0;
+}
+
+/* --- the rooms section -------------------------------------------------- */
+
+.lodge-public__section-head {
+  margin-bottom: 18px;
+}
+
+.lodge-public__section-head h2 {
+  margin: 0 0 4px;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.lodge-public__section-head p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* One panel holding everything a guest sets — dates, party size, ordering and
+   which type they want — sitting directly above the results it acts on, the way
+   a booking site puts its search bar. */
+.lodge-public__search {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--shadow-card);
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.lodge-public__search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+/* The one control that reads over the results rather than describing what is
+   wanted, so it sits apart from the fields. */
+.lodge-public__search-row .lodge-public__filter-toggle {
+  margin-left: auto;
+  padding-bottom: 9px;
+}
+
+.lodge-public__search-status {
+  margin-top: 10px;
+}
+
+/* A hairline, not a gap: the chips are part of the same panel, one step down
+   from the fields above them. */
+.lodge-public__search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.lodge-public__filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lodge-public__filter-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 7px 15px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.lodge-public__filter-chip:hover {
+  border-color: var(--brand);
+  color: var(--ink);
+}
+
+.lodge-public__filter-chip[aria-pressed='true'] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.lodge-public__filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lodge-public__filter-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.lodge-public__filter-clear {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
 }
 
 .lodge-public__room-grid {
@@ -175,6 +295,12 @@
   background: rgba(15, 23, 42, 0.78);
 }
 
+/* Amber, not green: "only 1 room left" is a different message from "available"
+   and reads as one at a glance, which is the whole reason for saying it. */
+.lodge-public__availability-badge--low {
+  background: #d98014;
+}
+
 .lodge-public__room-cover-btn {
   display: block;
   width: 100%;
@@ -204,15 +330,21 @@
   border-radius: 999px;
 }
 
+/* Stands in for a photo the property hasn't uploaded yet. It carries the room
+   type's name now rather than a room number, which is a longer string — so it
+   wraps and stays inside the tile instead of running off it. */
 .lodge-public__room-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 16px;
   font-family: var(--serif);
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
   color: rgba(255, 255, 255, 0.85);
 }
 
@@ -231,10 +363,13 @@
   margin-bottom: 4px;
 }
 
+/* The room type's name is now the card's title, so it carries the weight the
+   room number used to. */
 .lodge-public__room-number {
   font-family: var(--serif);
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
@@ -320,23 +455,53 @@
     grid-template-columns: 1fr;
   }
 
-  /* The two date pickers share a row and the status message drops below —
-     stacking them entirely would push the rooms off the first screen. */
-  .lodge-public__dates {
+  .lodge-public__search {
+    padding: 14px;
+  }
+
+  /* Fields pair up two to a line rather than stacking one per row, which would
+     push the rooms themselves off the first screen. */
+  .lodge-public__search-row {
     gap: 12px;
   }
 
   .lodge-public__date-field {
-    flex: 1 1 0;
+    flex: 1 1 calc(50% - 6px);
     min-width: 0;
   }
 
-  .lodge-public__date-field input {
+  .lodge-public__date-field input,
+  .lodge-public__date-field select {
     width: 100%;
+  }
+
+  /* No auto margin on a phone: it would strand the toggle on a line of its own
+     against the right edge. */
+  .lodge-public__search-row .lodge-public__filter-toggle {
+    margin-left: 0;
+    flex-basis: 100%;
+    padding-bottom: 0;
   }
 
   .lodge-public__dates-status {
     flex-basis: 100%;
+  }
+
+  .lodge-public__filter-chips {
+    /* Room types scroll sideways rather than stacking: a phone shouldn't spend
+       four rows on a control the page can be read without. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .lodge-public__filter-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lodge-public__filter-chip {
+    flex-shrink: 0;
   }
 }
 

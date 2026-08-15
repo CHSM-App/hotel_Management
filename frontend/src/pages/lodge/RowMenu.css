@@ -32,11 +32,13 @@
   box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
 }
 
+/* Fixed, and rendered into document.body — see RowMenu.jsx. top/left are set
+   inline from the trigger's rect, so nothing here may position it. Below the
+   modal layer (z-index 100): opening any of these items opens a dialog, and the
+   popup closes on the way. */
 .rowmenu__pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 20;
+  position: fixed;
+  z-index: 90;
   min-width: 168px;
   display: flex;
   flex-direction: column;

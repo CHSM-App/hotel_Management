@@ -410,6 +410,21 @@ IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'id
 IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'id_proof_number') IS NOT NULL
     ALTER TABLE dbo.bookings DROP COLUMN id_proof_number;
 
+-- The returning-guest suggestions offered while a name is being typed into the
+-- booking form, which run a debounced query per keystroke against one lodge's
+-- history. The search matches anywhere in the name, so this can't seek on the
+-- name itself — what it does is keep the scan inside one lodge and carry every
+-- column the suggestion list reads, so the query never touches the table.
+--
+-- Placed here, below the ALTERs, rather than beside the other bookings index:
+-- this file runs as one batch, and on a database that predates
+-- id_proof_document that column does not exist until the statement above has
+-- run. EXEC on top of that, so the INCLUDE list isn't parsed before then
+-- either — the same deferral as ix_food_orders_public_token near the end.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bookings_lodge_guest_name' AND object_id = OBJECT_ID('dbo.bookings'))
+    EXEC('CREATE INDEX ix_bookings_lodge_guest_name ON dbo.bookings(lodge_id, guest_name)
+          INCLUDE (guest_phone, id_proof_type, id_proof_document, check_in_date, status)');
+
 -- GST slabs for accommodation (SAC 996311) — a rate change is a row update,
 -- not a deploy. Looked up by nightly rate: the first row (ascending by
 -- max_amount, NULL last) whose max_amount the rate falls at-or-under.
@@ -633,6 +648,14 @@ CREATE TABLE dbo.menu_items (
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_menu_items_lodge' AND object_id = OBJECT_ID('dbo.menu_items'))
 CREATE INDEX ix_menu_items_lodge ON dbo.menu_items(lodge_id, category_id);
+
+-- image_filename — a photo of the dish, stored on disk under
+-- uploads/menu-images and referenced here by filename, exactly as room photos
+-- are. A guest ordering from a phone buys with their eyes, and a menu that is
+-- a wall of names sells the cheap familiar things and nothing else.
+-- NULL is the norm: a kitchen photographs its signature dishes, not all forty.
+IF OBJECT_ID('dbo.menu_items', 'U') IS NOT NULL AND COL_LENGTH('dbo.menu_items', 'image_filename') IS NULL
+    ALTER TABLE dbo.menu_items ADD image_filename NVARCHAR(255) NULL;
 
 -- A dining table, for properties doing table service. qr_token is what the
 -- table's QR encodes: a random opaque string rather than the table label, so

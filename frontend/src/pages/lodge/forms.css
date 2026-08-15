@@ -30,6 +30,24 @@
   box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
 }
 
+/* A failed field says so under itself rather than in a banner at the top of
+   the form, where the reader has to work out which of thirty inputs it meant.
+   Shared, because more than one panel puts messages here now. */
+.field__error {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+/* Focused from code only, to carry the cursor to an error on something that
+   isn't a single control — a list of rows, a pair of toggle buttons. It takes
+   no ring of its own. */
+.field[tabindex]:focus,
+.toggle-group[tabindex]:focus {
+  outline: none;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

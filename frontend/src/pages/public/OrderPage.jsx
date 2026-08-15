@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { apiGet, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { formatPrice } from '../lodge/priceFormat';
 import './OrderPage.css';
 
@@ -363,26 +363,90 @@ export default function OrderPage({ mode }) {
                 <span className="order-group__rule" aria-hidden="true" />
               </div>
 
-              {group.items.map((item) => {
-                const portions = item.portions ?? [];
-                const hasSizes = portions.length > 0;
+              {/* Wrapped so the dishes can lay out as a grid without the group
+                  heading above them becoming a cell in it. */}
+              <div className="order-items">
+                {group.items.map((item) => {
+                  const portions = item.portions ?? [];
+                  const hasSizes = portions.length > 0;
 
-                return (
-                  <div className={`order-item ${hasSizes ? 'order-item--sized' : ''}`} key={item.id}>
-                    <FoodTypeMark type={item.foodType} />
-                    <div className="order-item__body">
-                      <div className="order-item__name">{item.name}</div>
-                      {item.description && (
-                        <div className="order-item__desc">{item.description}</div>
-                      )}
-                      {!hasSizes && (
-                        <div className="order-item__price">{formatPrice(item.price)}</div>
-                      )}
+                  return (
+                    <div className="order-item" key={item.id}>
+                      {/* Dish on the left, photo on the right — the shape every
+                          food-ordering app converged on, because a menu is read
+                          by running down a column of names and a full-width
+                          photo per dish puts one item on a screen. */}
+                      <div className="order-item__row">
+                        <div className="order-item__main">
+                          <div className="order-item__head">
+                            <FoodTypeMark type={item.foodType} />
+                            <div className="order-item__body">
+                              <div className="order-item__name">{item.name}</div>
+                              {item.description && (
+                                <div className="order-item__desc">{item.description}</div>
+                              )}
+                            </div>
+                          </div>
 
-                      {/* Each size is its own priced row with its own stepper.
-                          Nothing is pre-selected and there is no bare "Add" —
-                          the guest picks the size by adding it, so a half plate
-                          can never be ordered by accident. */}
+                          {/* Price and the way to order it on one line, sitting
+                              at the bottom of the row so it lines up with the
+                              foot of the photo beside it. */}
+                          {!hasSizes && (
+                            <div className="order-item__foot">
+                              <div className="order-item__price">{formatPrice(item.price)}</div>
+                              {canOrder && (
+                                <div className="order-item__qty">
+                                  {cart[item.id] ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setQty(item.id, null, cart[item.id] - 1)}
+                                        aria-label={`One less ${item.name}`}
+                                      >
+                                        −
+                                      </button>
+                                      <span>{cart[item.id]}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setQty(item.id, null, cart[item.id] + 1)}
+                                        aria-label={`One more ${item.name}`}
+                                      >
+                                        +
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="order-item__add"
+                                      onClick={() => setQty(item.id, null, 1)}
+                                    >
+                                      Add
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {item.image && (
+                          <img
+                            className="order-item__photo"
+                            src={`${API_BASE}/menu-images/${item.image}`}
+                            alt={item.name}
+                            loading="lazy"
+                          />
+                        )}
+                      </div>
+
+                      {/* Full width under both columns, because a dish with four
+                          sizes needs the room and each row carries its own price
+                          and stepper.
+
+                          Each size is its own priced row. Nothing is pre-selected
+                          and there is no bare "Add" — the guest picks the size by
+                          adding it, so a half plate can never be ordered by
+                          accident. */}
                       {hasSizes && (
                         <ul className="order-sizes">
                           {portions.map((portion) => {
@@ -431,41 +495,9 @@ export default function OrderPage({ mode }) {
                         </ul>
                       )}
                     </div>
-
-                    {canOrder && !hasSizes && (
-                      <div className="order-item__qty">
-                        {cart[item.id] ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setQty(item.id, null, cart[item.id] - 1)}
-                              aria-label={`One less ${item.name}`}
-                            >
-                              −
-                            </button>
-                            <span>{cart[item.id]}</span>
-                            <button
-                              type="button"
-                              onClick={() => setQty(item.id, null, cart[item.id] + 1)}
-                              aria-label={`One more ${item.name}`}
-                            >
-                              +
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="order-item__add"
-                            onClick={() => setQty(item.id, null, 1)}
-                          >
-                            Add
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           ))}
         </section>

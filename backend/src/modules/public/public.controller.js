@@ -42,14 +42,14 @@ async function getLodgePageHandler(req, res, next) {
     const hasValidRange =
       DATE_RE.test(checkInDate) && DATE_RE.test(checkOutDate) && checkOutDate > checkInDate;
 
-    const rooms = lodge.hasRooms
-      ? await publicService.listPublicRooms(
+    const roomTypes = lodge.hasRooms
+      ? await publicService.listPublicRoomTypes(
           lodge.id,
           hasValidRange ? checkInDate : null,
           hasValidRange ? checkOutDate : null
         )
       : [];
-    res.json({ lodge, rooms });
+    res.json({ lodge, roomTypes });
   } catch (err) {
     next(err);
   }

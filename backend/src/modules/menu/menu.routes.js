@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
+const { menuImageUpload } = require('../../middleware/menuImageUpload');
 const {
   getMenuHandler,
   createCategoryHandler,
@@ -41,8 +42,12 @@ router.patch(
 );
 router.delete('/categories/:id', authenticate, requirePermission('food.manage'), deleteCategoryHandler);
 
-router.post('/items', authenticate, requirePermission('food.manage'), createItemHandler);
-router.patch('/items/:id', authenticate, requirePermission('food.manage'), updateItemHandler);
+// The dish photo rides along with the dish's own save rather than having an
+// upload endpoint of its own — same as a room's photos. Upload middleware sits
+// after the permission check so an unauthorised request is turned away before
+// anything is written to disk.
+router.post('/items', authenticate, requirePermission('food.manage'), menuImageUpload, createItemHandler);
+router.patch('/items/:id', authenticate, requirePermission('food.manage'), menuImageUpload, updateItemHandler);
 
 // The one menu write the kitchen can make. An item that runs out mid-service
 // has to come off the guest's menu immediately, and the owner isn't always

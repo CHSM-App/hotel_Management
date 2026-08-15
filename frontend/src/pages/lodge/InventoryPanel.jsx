@@ -534,8 +534,9 @@ export default function InventoryPanel() {
                       ))}
                     </select>
                     <span className="field__hint">
-                      Recipes are written in this same unit — there’s no conversion. If your dishes take
-                      grams, count in grams.
+                      Count stock the way it is bought — rice by the kilo, oil by the litre. Recipes
+                      are written in the smaller unit and converted for you, so a dish takes
+                      180&nbsp;g of a material stocked in kg.
                     </span>
                   </div>
 

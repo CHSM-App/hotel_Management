@@ -5,6 +5,7 @@ const {
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
   listBookingsHandler,
+  searchGuestsHandler,
   priceQuoteHandler,
   getTapeChartHandler,
   getBookingHandler,
@@ -37,6 +38,10 @@ router.post('/drafts', authenticate, staff, createDraftHandler);
 router.get('/drafts/:id', authenticate, staff, getDraftHandler);
 router.put('/drafts/:id', authenticate, staff, updateDraftHandler);
 router.delete('/drafts/:id', authenticate, staff, deleteDraftHandler);
+// Answers the same question the register does — who has stayed here — so it
+// takes the same permission, and reveals nothing a register reader can't
+// already page through.
+router.get('/guest-search', authenticate, canSeeRegister, searchGuestsHandler);
 router.get('/available-rooms', authenticate, staff, listAvailableRoomsHandler);
 router.get('/price-quote', authenticate, staff, priceQuoteHandler);
 router.get('/tape-chart', authenticate, staff, getTapeChartHandler);

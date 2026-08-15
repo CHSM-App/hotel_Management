@@ -98,6 +98,11 @@ const createBookingSchema = z
     numGuests: z.coerce.number().int().positive().optional().default(1),
     discountAmount: discountAmountField(),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
+    // A returning guest picked off the name suggestions: the stay whose ID
+    // document should be carried onto this one, so reception doesn't ask for a
+    // card the property already holds a copy of. The document is copied
+    // server-side — the browser never sees it, and never sends it back.
+    idProofFromBookingId: z.coerce.number().int().positive().optional(),
     advanceAmount: z.coerce.number().nonnegative().optional(),
     advancePaymentMethod: z.enum(PAYMENT_METHODS).optional(),
     advanceReference: paymentReferenceField(),
