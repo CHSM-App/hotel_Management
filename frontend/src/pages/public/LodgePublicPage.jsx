@@ -325,6 +325,43 @@ export default function LodgePublicPage() {
                 />
               </div>
 
+              {/* Beside the dates rather than as a row of chips underneath: a
+                  property with a dozen categories wrapped to three lines of
+                  pills, which pushed the rooms themselves below the fold and
+                  read as navigation rather than as one of the things being
+                  asked. As a select it is the same act as the fields around it
+                  — when, what, how many — and takes one line whatever the
+                  property's list looks like. */}
+              {roomTypes.length > 1 && (
+                <div className="lodge-public__date-field lodge-public__date-field--wide">
+                  <label htmlFor="publicRoomType">Room type</label>
+                  <select
+                    id="publicRoomType"
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                  >
+                    <option value="ALL">All room types</option>
+                    {roomTypes.map((t) => {
+                      // Through availabilityOf, so the dropdown says exactly
+                      // what the card says. A raw count here would publish the
+                      // property's free-room tally, which that helper is
+                      // deliberately written not to do — and only the answers
+                      // that change a decision are worth the words: "Available"
+                      // against every row is noise.
+                      const availability = availabilityOf(t);
+                      const note =
+                        availability && availability.tone !== 'yes' ? ` — ${availability.label}` : '';
+                      return (
+                        <option key={t.id} value={String(t.id)}>
+                          {t.name}
+                          {note}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
               {largestRoom > 0 && (
                 <div className="lodge-public__date-field">
                   <label htmlFor="publicGuests">Guests</label>
@@ -381,34 +418,16 @@ export default function LodgePublicPage() {
               </div>
             )}
 
-            {roomTypes.length > 1 && (
+            {/* Only once something is actually filtered — an always-present
+                "clear" on an unfiltered page is a control that does nothing. */}
+            {filtersApplied && (
               <div className="lodge-public__search-chips">
-                <div className="lodge-public__filter-chips">
-                  <button
-                    type="button"
-                    className="lodge-public__filter-chip"
-                    aria-pressed={typeFilter === 'ALL'}
-                    onClick={() => setTypeFilter('ALL')}
-                  >
-                    All rooms
-                  </button>
-                  {roomTypes.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className="lodge-public__filter-chip"
-                      aria-pressed={typeFilter === String(t.id)}
-                      onClick={() => setTypeFilter(String(t.id))}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-                {filtersApplied && (
-                  <button type="button" className="lodge-public__filter-clear" onClick={clearFilters}>
-                    Clear filters
-                  </button>
-                )}
+                <span className="lodge-public__filter-summary">
+                  Showing {visibleTypes.length} of {roomTypes.length} room types
+                </span>
+                <button type="button" className="lodge-public__filter-clear" onClick={clearFilters}>
+                  Clear filters
+                </button>
               </div>
             )}
           </div>

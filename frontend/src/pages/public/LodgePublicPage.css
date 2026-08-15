@@ -182,34 +182,16 @@
   border-top: 1px solid var(--border);
 }
 
-.lodge-public__filter-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/* The room type list is a select in the row above now, so it gets more room
+   than the dates beside it — category names are phrases ("Deluxe Double AC"),
+   where a date is a fixed width. */
+.lodge-public__date-field--wide {
+  min-width: 200px;
 }
 
-.lodge-public__filter-chip {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  padding: 7px 15px;
-  font: inherit;
+.lodge-public__filter-summary {
   font-size: 13px;
-  font-weight: 600;
   color: var(--text-muted);
-  cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
-}
-
-.lodge-public__filter-chip:hover {
-  border-color: var(--brand);
-  color: var(--ink);
-}
-
-.lodge-public__filter-chip[aria-pressed='true'] {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
 }
 
 .lodge-public__filter-toggle {
@@ -487,22 +469,9 @@
     flex-basis: 100%;
   }
 
-  .lodge-public__filter-chips {
-    /* Room types scroll sideways rather than stacking: a phone shouldn't spend
-       four rows on a control the page can be read without. */
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-  }
-
-  .lodge-public__filter-chips::-webkit-scrollbar {
-    display: none;
-  }
-
-  .lodge-public__filter-chip {
-    flex-shrink: 0;
-  }
+  /* Room types used to be a sideways-scrolling strip of chips down here. As a
+     select in the row above it pairs up with the other fields and costs one
+     line, which is the whole reason it moved. */
 }
 
 @media (max-width: 480px) {
