@@ -19,11 +19,12 @@ import './forms.css';
 import './MenuPanel.css';
 
 // Ordered the way an Indian menu is read and the way a kitchen board is written
-// — veg, then egg, then non-veg. The groups inside a section and the Type
-// dropdown on the item form both walk this list, so the two can't disagree.
+// — veg, then non-veg. The groups inside a section and the Type dropdown on the
+// item form both walk this list, so the two can't disagree. Egg is not a third
+// choice: an egg dish is entered as non-veg, which is the side of the line a
+// guest reading the marks puts it on anyway.
 const FOOD_TYPES = [
   { key: 'VEG', label: 'Veg' },
-  { key: 'EGG', label: 'Egg' },
   { key: 'NON_VEG', label: 'Non-veg' },
 ];
 

@@ -255,7 +255,7 @@
   font-size: 14px;
 }
 
-/* --------------------------------------------------- veg / egg / non-veg group */
+/* --------------------------------------------------------- veg / non-veg group */
 
 /* Not sticky: .menu-section clips to its rounded corners with overflow:hidden,
    which makes it the scrollport for anything inside and leaves a sticky header
@@ -532,14 +532,6 @@
 
 .food-mark--non-veg::after {
   background: var(--danger);
-}
-
-.food-mark--egg {
-  border-color: var(--color-warning);
-}
-
-.food-mark--egg::after {
-  background: var(--color-warning);
 }
 
 /* -------------------------------------------------------------------- modal */

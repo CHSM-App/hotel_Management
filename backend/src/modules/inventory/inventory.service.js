@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { normaliseFoodType } = require('../menu/menu.schema');
 
 // DECIMAL(12,3) in the schema, so every quantity that leaves JavaScript rounds
 // to the same place the column would round it to. Doing it here rather than
@@ -416,7 +417,7 @@ async function getItemRecipe(lodgeId, itemId) {
   return {
     itemId: item.id,
     name: item.name,
-    foodType: item.food_type,
+    foodType: normaliseFoodType(item.food_type),
     portions: portionsResult.recordset.map((row) => ({ id: row.id, label: row.label })),
     lines: linesResult.recordset.map((row) => ({
       id: row.id,
@@ -458,7 +459,7 @@ async function listRecipeSummary(lodgeId) {
     name: row.name,
     categoryId: row.category_id,
     categoryName: row.category_name,
-    foodType: row.food_type,
+    foodType: normaliseFoodType(row.food_type),
     isActive: !!row.is_active,
     portionCount: row.portion_count,
     lineCount: row.line_count,

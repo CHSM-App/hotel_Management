@@ -17,7 +17,9 @@
  *
  * The printed menu splits each section into Veg / Egg / Non-Veg headings; the
  * schema carries that on the item as food_type instead, so those become one
- * section with typed items rather than three sections.
+ * section with typed items rather than three sections. There are two types
+ * rather than three — the egg dishes are seeded as non-veg, which is the side
+ * of the line a guest reading the marks puts them on.
  */
 require('dotenv').config();
 const { getPool, sql } = require('../src/config/connection');
@@ -47,7 +49,6 @@ if (!LODGE_PHONE || !LODGE_NAME) {
 const RENAMES = [['Starter', 'Starters']];
 
 const VEG = 'VEG';
-const EGG = 'EGG';
 const NON_VEG = 'NON_VEG';
 
 const MENU = [
@@ -62,9 +63,9 @@ const MENU = [
       ['Poha', 'Flattened rice cooked with onion, peanuts and mild spices.', 60, VEG],
       ['Upma', 'Semolina cooked with vegetables, herbs and mild spices.', 60, VEG],
       ['Aloo Paratha', 'Indian flatbread stuffed with spiced potato filling.', 100, VEG],
-      ['Egg Bhurji', 'Scrambled eggs cooked with onion, tomato and Indian spices.', 100, EGG],
-      ['Masala Omelette', 'Omelette prepared with onion, tomato, green chilli and herbs.', 90, EGG],
-      ['Cheese Omelette', 'Fluffy omelette filled with melted cheese and herbs.', 130, EGG],
+      ['Egg Bhurji', 'Scrambled eggs cooked with onion, tomato and Indian spices.', 100, NON_VEG],
+      ['Masala Omelette', 'Omelette prepared with onion, tomato, green chilli and herbs.', 90, NON_VEG],
+      ['Cheese Omelette', 'Fluffy omelette filled with melted cheese and herbs.', 130, NON_VEG],
       ['Chicken Sandwich', 'Grilled sandwich filled with seasoned chicken and vegetables.', 160, NON_VEG],
       ['Chicken Omelette', 'Omelette prepared with chicken pieces, onion and spices.', 150, NON_VEG],
     ],
@@ -78,9 +79,9 @@ const MENU = [
       ['Paneer Tikka', 'Marinated paneer grilled with capsicum and onion.', 240, VEG],
       ['Crispy Corn', 'Crispy fried corn tossed with spices and herbs.', 180, VEG],
       ['Veg Spring Roll', 'Crispy rolls stuffed with seasoned vegetables.', 160, VEG],
-      ['Chilli Egg', 'Boiled eggs tossed with onion, capsicum and spicy sauce.', 150, EGG],
-      ['Egg 65', 'Crispy fried egg pieces coated with South Indian spices.', 160, EGG],
-      ['Egg Pakora', 'Spiced egg pieces coated in gram flour and deep-fried.', 140, EGG],
+      ['Chilli Egg', 'Boiled eggs tossed with onion, capsicum and spicy sauce.', 150, NON_VEG],
+      ['Egg 65', 'Crispy fried egg pieces coated with South Indian spices.', 160, NON_VEG],
+      ['Egg Pakora', 'Spiced egg pieces coated in gram flour and deep-fried.', 140, NON_VEG],
       ['Chicken 65', 'Crispy fried chicken marinated with South Indian spices.', 240, NON_VEG],
       ['Chicken Lollipop', 'Fried chicken wings marinated with aromatic spices.', 280, NON_VEG],
       ['Chicken Chilli', 'Chicken tossed with onion, capsicum and chilli sauce.', 260, NON_VEG],
@@ -112,9 +113,9 @@ const MENU = [
       ['Kadai Paneer', 'Paneer cooked with capsicum, onion and kadai spices.', 220, VEG],
       ['Shahi Paneer', 'Paneer cooked in rich creamy and mildly spiced gravy.', 230, VEG],
       ['Veg Handi', 'Mixed vegetables cooked in a rich restaurant-style gravy.', 200, VEG],
-      ['Egg Curry', 'Boiled eggs cooked in onion-tomato Indian gravy.', 160, EGG],
-      ['Egg Masala', 'Eggs cooked with onion, tomato and aromatic spices.', 170, EGG],
-      ['Egg Kolhapuri', 'Eggs cooked in a spicy Kolhapuri-style gravy.', 180, EGG],
+      ['Egg Curry', 'Boiled eggs cooked in onion-tomato Indian gravy.', 160, NON_VEG],
+      ['Egg Masala', 'Eggs cooked with onion, tomato and aromatic spices.', 170, NON_VEG],
+      ['Egg Kolhapuri', 'Eggs cooked in a spicy Kolhapuri-style gravy.', 180, NON_VEG],
       ['Chicken Masala', 'Chicken cooked in a rich onion-tomato masala.', 260, NON_VEG],
       ['Chicken Handi', 'Chicken cooked slowly in a creamy restaurant-style gravy.', 280, NON_VEG],
       ['Butter Chicken', 'Tender chicken cooked in creamy tomato and butter gravy.', 300, NON_VEG],
@@ -133,8 +134,8 @@ const MENU = [
       ['Jeera Rice', 'Basmati rice flavored with roasted cumin seeds.', 140, VEG],
       ['Veg Pulao', 'Basmati rice cooked with vegetables and aromatic spices.', 160, VEG],
       ['Veg Biryani', 'Fragrant rice layered with vegetables and biryani spices.', 180, VEG],
-      ['Egg Biryani', 'Aromatic basmati rice cooked with boiled eggs and spices.', 200, EGG],
-      ['Egg Fried Rice', 'Fried rice tossed with scrambled egg and vegetables.', 180, EGG],
+      ['Egg Biryani', 'Aromatic basmati rice cooked with boiled eggs and spices.', 200, NON_VEG],
+      ['Egg Fried Rice', 'Fried rice tossed with scrambled egg and vegetables.', 180, NON_VEG],
       ['Chicken Biryani', 'Fragrant basmati rice layered with spiced chicken.', 260, NON_VEG],
       ['Chicken Dum Biryani', 'Slow-cooked chicken and aromatic rice prepared dum style.', 280, NON_VEG],
       ['Mutton Biryani', 'Fragrant basmati rice cooked with tender mutton and spices.', 360, NON_VEG],
@@ -161,8 +162,8 @@ const MENU = [
       ['Schezwan Fried Rice', 'Spicy fried rice prepared with Schezwan sauce.', 180, VEG],
       ['Veg Hakka Noodles', 'Stir-fried noodles with vegetables and Chinese sauces.', 160, VEG],
       ['Veg Manchurian Gravy', 'Vegetable dumplings served in spicy Manchurian gravy.', 180, VEG],
-      ['Egg Fried Rice', 'Fried rice tossed with egg and fresh vegetables.', 180, EGG],
-      ['Egg Hakka Noodles', 'Hakka noodles tossed with scrambled egg and vegetables.', 190, EGG],
+      ['Egg Fried Rice', 'Fried rice tossed with egg and fresh vegetables.', 180, NON_VEG],
+      ['Egg Hakka Noodles', 'Hakka noodles tossed with scrambled egg and vegetables.', 190, NON_VEG],
       ['Chicken Fried Rice', 'Stir-fried rice with chicken, vegetables and sauces.', 220, NON_VEG],
       ['Chicken Schezwan Rice', 'Spicy fried rice with chicken and Schezwan sauce.', 240, NON_VEG],
       ['Chicken Hakka Noodles', 'Noodles tossed with chicken, vegetables and sauces.', 220, NON_VEG],
@@ -177,8 +178,8 @@ const MENU = [
       ['Veg Burger', 'Vegetable patty served with lettuce, sauce and bun.', 150, VEG],
       ['French Fries', 'Crispy golden potato fries served with sauce.', 100, VEG],
       ['Veg Pizza', 'Pizza topped with vegetables and melted cheese.', 220, VEG],
-      ['Egg Sandwich', 'Toasted sandwich filled with seasoned egg and vegetables.', 130, EGG],
-      ['Egg Burger', 'Burger with egg, vegetables and house sauce.', 150, EGG],
+      ['Egg Sandwich', 'Toasted sandwich filled with seasoned egg and vegetables.', 130, NON_VEG],
+      ['Egg Burger', 'Burger with egg, vegetables and house sauce.', 150, NON_VEG],
       ['Chicken Sandwich', 'Toasted bread filled with seasoned chicken and vegetables.', 160, NON_VEG],
       ['Chicken Burger', 'Chicken patty served with lettuce, cheese and sauce.', 200, NON_VEG],
       ['Chicken Pizza', 'Pizza topped with chicken, vegetables and cheese.', 280, NON_VEG],

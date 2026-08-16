@@ -638,7 +638,7 @@ CREATE TABLE dbo.menu_items (
     price         DECIMAL(10,2) NOT NULL
         CONSTRAINT ck_menu_items_price CHECK (price >= 0),
     food_type     NVARCHAR(10) NOT NULL DEFAULT 'VEG'
-        CONSTRAINT ck_menu_items_food_type CHECK (food_type IN ('VEG', 'NON_VEG', 'EGG')),
+        CONSTRAINT ck_menu_items_food_type CHECK (food_type IN ('VEG', 'NON_VEG')),
     is_available  BIT NOT NULL DEFAULT 1,
     sort_order    INT NOT NULL DEFAULT 0,
     is_active     BIT NOT NULL DEFAULT 1,
@@ -656,6 +656,37 @@ CREATE INDEX ix_menu_items_lodge ON dbo.menu_items(lodge_id, category_id);
 -- NULL is the norm: a kitchen photographs its signature dishes, not all forty.
 IF OBJECT_ID('dbo.menu_items', 'U') IS NOT NULL AND COL_LENGTH('dbo.menu_items', 'image_filename') IS NULL
     ALTER TABLE dbo.menu_items ADD image_filename NVARCHAR(255) NULL;
+
+-- Egg was a third food type sitting between veg and non-veg, and it is gone:
+-- the mark a guest actually reads is the one that answers "can I eat this",
+-- and for everyone the veg mark is for, an omelette is on the far side of the
+-- line with the chicken. Two types, and every egg dish keeps its name, price
+-- and section — only its mark changes.
+--
+-- The rows have to move before the constraint that forbids them goes on, and
+-- the constraint has to come off before the rows can move, so the drop is
+-- first. Guarded on the old definition still mentioning EGG, so this is a
+-- no-op on every run after the first; the ADD is guarded on absence instead,
+-- which also puts the constraint back if it was ever dropped by hand.
+IF OBJECT_ID('dbo.menu_items', 'U') IS NOT NULL
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = 'ck_menu_items_food_type'
+          AND parent_object_id = OBJECT_ID('dbo.menu_items')
+          AND definition LIKE '%EGG%'
+    )
+        EXEC('ALTER TABLE dbo.menu_items DROP CONSTRAINT ck_menu_items_food_type');
+
+    EXEC('UPDATE dbo.menu_items SET food_type = ''NON_VEG'' WHERE food_type = ''EGG''');
+
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = 'ck_menu_items_food_type'
+          AND parent_object_id = OBJECT_ID('dbo.menu_items')
+    )
+        EXEC('ALTER TABLE dbo.menu_items ADD CONSTRAINT ck_menu_items_food_type CHECK (food_type IN (''VEG'', ''NON_VEG''))');
+END
 
 -- A dining table, for properties doing table service. qr_token is what the
 -- table's QR encodes: a random opaque string rather than the table label, so

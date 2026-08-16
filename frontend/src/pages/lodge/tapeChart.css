@@ -12,15 +12,15 @@
      and only the carve held the grid together — a green cast separates the tile
      from the card and says "sellable" in the same stroke.
 
-     The hairline is the rim of that well, a shade off its own fill rather than
-     a contrasting ring: an outline strong enough to see on one tile becomes a
-     cage across a month of them, and it is the sold nights, not the empty ones,
-     that should carry the eye. Green gets assertive only under the pointer. */
+     The hairline is the rim of that well, a couple of steps off its own fill:
+     dark enough that each empty night keeps its own outline across a month of
+     them, still short of the saturation the sold nights carry. Green gets
+     assertive only under the pointer. */
   --tape-vacant: #e4f0e8;
-  --tape-vacant-edge: #c2dbc9;
+  --tape-vacant-edge: #a5c9b1;
   --tape-vacant-well: #b3c8ba;
   --tape-vacant-hover: #d5e9db;
-  --tape-vacant-edge-hover: #8fc0a0;
+  --tape-vacant-edge-hover: #74ad88;
   /* The same well, one step deeper — a weekend is a shade of vacant, not a
      different state, so it stays in the mint family. */
   --tape-weekend: #dbeae0;

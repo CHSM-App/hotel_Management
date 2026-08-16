@@ -17,7 +17,6 @@ import './InventoryPanel.css';
 // both screens.
 const FOOD_TYPES = [
   { key: 'VEG', label: 'Veg' },
-  { key: 'EGG', label: 'Egg' },
   { key: 'NON_VEG', label: 'Non-veg' },
 ];
 

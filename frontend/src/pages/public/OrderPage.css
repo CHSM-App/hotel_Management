@@ -6,8 +6,18 @@
   /* Barely any gutter: on a 360px phone the old 16px each side cost 9% of the
      screen, and the dishes are what want it. 8px is what keeps text and card
      edges off the glass rather than a designed margin. Published as a variable
-     because the sticky tab strip bleeds through it — see .order-tabs. */
+     because the sticky bar bleeds through it — see .order-sticky. */
   --order-gutter: 8px;
+
+  /* Two curves for the whole page, so nothing moves in a way nothing else on
+     the page moves. --order-ease is the settling one used for anything arriving
+     or growing; --order-spring overshoots a hair and is kept for the two places
+     that should feel like a reaction to a finger — a quantity changing and a
+     dish landing in the cart. Both are quick: this is a menu read standing up
+     in a corridor, and animation that has to be waited for is a cost, not a
+     flourish. */
+  --order-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --order-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   max-width: 760px;
   margin: 0 auto;
@@ -65,10 +75,10 @@
 
 /* ------------------------------------------------- search and diet filter */
 
+/* Search alone now — the diet chips moved down into the sticky bar. This one
+   scrolls away with the header, which is the point: it's typed once at the
+   start, not reached for again halfway down the menu. */
 .order-find {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   margin-bottom: 12px;
 }
 
@@ -116,71 +126,112 @@
   box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
 }
 
+/* A carved track with the live segment raised out of it, deliberately not the
+   row of free-standing pills sitting above it. Stacked in the sticky bar the
+   two strips were reading as one control repeated, when they answer different
+   questions: a tab is somewhere to go, and every section stays reachable
+   whichever one is lit, while these three are a state the menu is in — exactly
+   one holds and the other two are what it isn't. The well is what says "one of
+   these", and it's the same well the staff side uses for the same kind of
+   choice (.toggle-group in forms.css), down to the radii and the 4px gap.
+
+   Sized down from the tabs as well — smaller text, tighter, and squared off
+   against their 999px — because between "which section" and "veg or not", the
+   section is the bigger question and should stay the louder strip.
+
+   fit-content so the track wraps its three segments rather than ruling right
+   across the screen. It wraps rather than scrolls sideways the way the tabs do:
+   three fixed short labels can't outgrow a phone, and an overflow container
+   here would clip the raised shadow off the first and last segment — the very
+   thing that says which one is live. Margins, not padding, place it against the
+   gutter: unlike the tabs this has a visible edge, and that edge has to line up
+   with the cards' edges below rather than with the bar's bleed. */
 .order-diet {
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--order-gutter));
+  margin: 0 var(--order-gutter) 10px;
+  padding: 4px;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-inset);
 }
 
-.order-diet::-webkit-scrollbar {
-  display: none;
+/* No tab row above it in the bar — a property with one section shows none, and
+   nor does a search — so it takes the top margin that row would have given it.
+   Either it's the bar's first row, or the editing strip is and this follows it. */
+.order-diet:first-child,
+.order-page__editing + .order-diet {
+  margin-top: 10px;
 }
 
 .order-diet__chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   flex-shrink: 0;
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  background: var(--surface);
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: none;
   color: var(--text);
-  border-radius: 999px;
   padding: 8px 15px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  min-height: 40px;
+  min-height: 36px;
+  transition: box-shadow 150ms ease, color 150ms ease;
 }
 
 .order-diet__chip[aria-pressed='true'] {
   background: var(--brand);
-  border-color: var(--brand);
   color: #ffffff;
+  box-shadow: var(--shadow-raised);
 }
 
-/* The mark keeps its own colours on the selected chip — a white-on-brand veg
+/* The mark keeps its own colours on the selected segment — a white-on-brand veg
    square would stop being the green square everyone reads at a glance. */
 .order-diet__chip .food-mark {
   margin-top: 0;
   background: #ffffff;
 }
 
-/* --------------------------------------------------------- section tabs */
+/* ------------------------------------------------- sticky sections + diet */
 
-/* The page scrolls on the document, so top: 0 is the viewport. Negative side
-   margins let the strip bleed to the screen edges while its padding keeps the
-   first and last tab aligned with the cards below.
+/* The section tabs and the diet chips, pinned to the top of the viewport as one
+   block. The page scrolls on the document, so top: 0 is the viewport.
 
-   The bleed has to match .order-page's own gutter exactly. It was -16px against
-   an 8px gutter, so on a phone the strip ran 8px past each edge of the viewport
-   and gave the whole document a horizontal scroll — the page could be dragged
-   sideways off the menu. Both numbers now come from the same variable, so the
-   gutter can't be retuned without the bleed following it. */
-.order-tabs {
+   Sticky lives here rather than on either strip: two separately-stuck rows at
+   top: 0 would land on top of each other, and giving the second a top equal to
+   the first's height would hard-code a number that changes with the font. One
+   sticky parent, two ordinary rows inside it.
+
+   Negative side margins let the bar bleed to the screen edges while the rows'
+   own padding keeps the first and last chip aligned with the cards below. The
+   bleed has to match .order-page's gutter exactly. It was -16px against an 8px
+   gutter, so on a phone the bar ran 8px past each edge of the viewport and gave
+   the whole document a horizontal scroll — the page could be dragged sideways
+   off the menu. Both numbers come from the same variable, so the gutter can't
+   be retuned without the bleed following it. */
+.order-sticky {
   position: sticky;
   top: 0;
   z-index: 20;
+  margin: 0 calc(-1 * var(--order-gutter)) 16px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+}
+
+.order-tabs {
   display: flex;
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;
-  margin: 0 calc(-1 * var(--order-gutter)) 16px;
-  padding: 10px var(--order-gutter);
-  background: var(--paper);
-  border-bottom: 1px solid var(--border);
+  padding: 10px var(--order-gutter) 8px;
 }
 
 .order-tabs::-webkit-scrollbar {
@@ -213,9 +264,21 @@
 
 /* Headings pulled in hard. On a menu this is chrome between the guest and the
    next dish, and at their original size the two of them together cost a whole
-   card's height before a single item was shown. */
+   card's height before a single item was shown.
+
+   Every section is on the page at once now rather than one at a time, so the
+   gap between them is doing work it wasn't before: it is the only thing saying
+   the dishes above and the dishes below are different parts of the menu.
+   scroll-margin-top is the backstop for a heading jumped to by any route other
+   than the tabs, which measure the bar instead — it has to stay at least as
+   tall as the two rows of that bar. */
 .order-section {
-  margin-bottom: 13px;
+  margin-bottom: 22px;
+  scroll-margin-top: 112px;
+}
+
+.order-section + .order-section {
+  padding-top: 4px;
 }
 
 .order-section__title {
@@ -227,7 +290,7 @@
   border-bottom: 2px solid var(--border);
 }
 
-/* The veg / egg / non-veg split the printed menu has, kept on the phone. The
+/* The veg / non-veg split the printed menu has, kept on the phone. The
    rule runs to the right edge so the group reads as a divider across the
    column rather than a label floating above the first card. */
 .order-group {
@@ -285,6 +348,23 @@
   box-shadow: var(--shadow-raised);
   border-radius: var(--radius-tile);
   padding: 9px 10px;
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+/* The card lifts under the finger holding it. Only on a device that can
+   actually hover — on a phone :hover sticks after a tap and the dish would stay
+   raised until something else was touched. */
+@media (hover: hover) {
+  .order-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+}
+
+/* A dish already in the cart is worth spotting while scrolling back up a
+   section, and the ring does it without costing the card any height. */
+.order-item--in-cart {
+  box-shadow: var(--shadow-raised), inset 0 0 0 1.5px var(--brand);
 }
 
 /* stretch, so the text column is as tall as the photo and its price can sit on
@@ -422,6 +502,17 @@
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
+  transition: transform 120ms var(--order-spring), background-color 120ms ease,
+    color 120ms ease;
+}
+
+/* Squashes under the finger and fills as it goes. The press is the only
+   feedback a stepper on a phone gets — there is no cursor to change and no
+   sound — so it has to be in the button itself. */
+.order-item__qty button:active {
+  transform: scale(0.88);
+  background: var(--brand);
+  color: #ffffff;
 }
 
 .order-item__qty span {
@@ -431,12 +522,39 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The count itself pops when it changes. Keyed on the number in the JSX, so
+   React replaces the node on every change and the animation runs again — the
+   same trick a scoreboard uses, and the reason a quantity going 2 → 3 reads as
+   something that happened rather than something that is. */
+.order-qty-pop {
+  display: inline-block;
+  animation: order-qty-pop 220ms var(--order-spring);
+}
+
+@keyframes order-qty-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+}
+
 .order-item__add {
   width: auto !important;
   padding: 0 15px;
   background: var(--brand) !important;
   color: #ffffff !important;
   font-size: 13px !important;
+  transition: transform 140ms var(--order-spring), box-shadow 140ms ease;
+}
+
+@media (hover: hover) {
+  .order-item__add:hover {
+    box-shadow: 0 4px 12px rgba(30, 58, 95, 0.32);
+  }
+}
+
+.order-item__add:active {
+  transform: scale(0.92);
 }
 
 /* Sticky summary bar — the standard food-ordering pattern, and the only way a
@@ -461,85 +579,408 @@
   font-weight: 700;
   box-shadow: var(--shadow-elevated);
   cursor: pointer;
+  /* translateX is already doing the centring, so the entrance has to carry it
+     through every frame or the bar would snap to the left edge on the way up. */
+  animation: order-bar-in 320ms var(--order-spring);
+  transition: background-color 200ms ease;
+}
+
+/* Rises past its resting place and settles — the first dish added is the moment
+   the page turns from something being read into an order being built, and the
+   bar arriving is the only thing that says so. */
+@keyframes order-bar-in {
+  from {
+    transform: translateX(-50%) translateY(140%);
+  }
+  60% {
+    transform: translateX(-50%) translateY(-6%);
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.order-page__bar:active {
+  transform: translateX(-50%) scale(0.985);
+}
+
+/* The total, re-keyed on its own value so a changed price animates in place.
+   The bar is at the far end of the screen from the dish just tapped, and this
+   is what connects the two. */
+.order-page__bar-total {
+  display: inline-block;
+  animation: order-total-bump 260ms var(--order-spring);
+}
+
+@keyframes order-total-bump {
+  from {
+    transform: scale(0.82);
+    opacity: 0.5;
+  }
+}
+
+/* Editing wears the accent, not the brand. The bar is the one control present
+   in both views and in both modes, and "these taps are rewriting an order the
+   kitchen already has" is too big a difference to leave to a changed word on
+   the right-hand end. Same colour the editing strip's siblings use elsewhere in
+   the product for a state that has to end. */
+.order-page__bar--editing {
+  background: var(--accent);
+  box-shadow: var(--shadow-elevated), 0 0 0 2px rgba(255, 255, 255, 0.25) inset;
 }
 
 .order-page__bar-cta {
   margin-left: auto;
 }
 
+/* The scrim dims and softens what's behind it, so the sheet reads as being in
+   front of the menu rather than pasted onto it. The blur is a progressive
+   nicety — a browser without it just gets the dimming. */
 .order-sheet-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(16, 33, 46, 0.5);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 50;
+  animation: order-scrim-in 180ms ease-out;
 }
 
+@keyframes order-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Rising from the edge it's anchored to, which is what says it can be sent back
+   there. The curve is the usual sheet ease — quick off the mark, settling
+   rather than stopping. */
+@keyframes order-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.order-sheet,
+.order-choice {
+  animation: order-sheet-up 260ms var(--order-ease);
+}
+
+/* Every animation on this page is decoration: each screen is just as usable
+   arriving instantly, and for a guest who has asked their phone to stop moving
+   things, it should. One blanket rule rather than a list to keep in step with
+   the ones above — anything added later is covered the day it's written.
+
+   The two infinite ones are killed outright rather than shortened. A pulse that
+   never stops is the exact thing this setting exists to turn off, and READY
+   still says READY in green without it. */
+@media (prefers-reduced-motion: reduce) {
+  .order-page *,
+  .order-page__bar,
+  .order-sheet-backdrop,
+  .order-sheet,
+  .order-sheet *,
+  .order-choice,
+  .order-choice * {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* No vertical padding of its own: the header and the actions row supply it,
+   because both are sticky and content passing under a padded edge would show
+   in the gap above and below them.
+
+   svh rather than vh — on mobile Safari 100vh is measured with the address bar
+   collapsed, so a full sheet would run its last line under the bar. */
 .order-sheet {
+  position: relative;
   background: var(--surface);
   width: min(560px, 100%);
-  max-height: 92vh;
+  max-height: 92svh;
   overflow-y: auto;
-  border-radius: 20px 20px 0 0;
-  padding: 22px 18px calc(22px + env(safe-area-inset-bottom));
+  border-radius: 22px 22px 0 0;
+  padding: 0 16px;
+  box-shadow: 0 -18px 40px rgba(16, 33, 46, 0.28);
+}
+
+.order-sheet__grab {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 22px;
+  background: var(--surface);
+}
+
+.order-sheet__grab::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  width: 38px;
+  height: 4px;
+  margin-left: -19px;
+  border-radius: 999px;
+  background: var(--neu-dark);
+}
+
+/* Pinned under the grabber, so the sheet always says which order is being
+   worked on however far down the lines the guest has scrolled. */
+.order-sheet__head {
+  position: sticky;
+  top: 22px;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--surface);
+  padding: 2px 0 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 .order-sheet h2 {
+  flex: 1;
+  min-width: 0;
   font-family: var(--serif);
-  font-size: 21px;
+  font-size: 22px;
   color: var(--ink);
-  margin: 0 0 14px;
+  margin: 0;
+}
+
+/* The count is here rather than beside the total because it answers a different
+   question — not what this costs, but whether everything made it on. */
+.order-sheet__count {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 .order-sheet__error {
   background: var(--danger-bg);
   color: var(--danger);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 12px;
   font-size: 14px;
-  margin-bottom: 14px;
+  margin: 12px 0 4px;
 }
 
 .order-sheet__lines {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 12px 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
+/* Each line is a tile, the same raised card the dishes on the menu are, rather
+   than a row divided off by a hairline. It has controls in it now — a stepper
+   and a way off the order — and a thing you press ought to look like a thing,
+   not like a row in a receipt.
+
+   Two rows to a tile: the dish gets the full width for its name, and the
+   controls sit under it where they have room to be finger-sized. Cramming a
+   stepper and a Remove onto the same row as a name like "Paneer Butter Masala
+   (Full plate)" is what forces either a truncated dish or 24px taps. */
 .order-sheet__lines li {
   display: flex;
-  gap: 10px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
+  border-radius: var(--radius-tile);
+  padding: 11px 12px;
   font-size: 14.5px;
+  animation: order-line-in 260ms var(--order-ease) backwards;
 }
 
-.order-sheet__qty {
-  font-weight: 700;
-  color: var(--brand);
+/* Dealt out rather than appearing all at once — five lines landing on the same
+   frame is a flash, five landing 40ms apart is a list being laid down. Capped
+   at six, because past that the wait to see the last one starts costing more
+   than the effect is worth. */
+.order-sheet__lines li:nth-child(1) { animation-delay: 0ms; }
+.order-sheet__lines li:nth-child(2) { animation-delay: 40ms; }
+.order-sheet__lines li:nth-child(3) { animation-delay: 80ms; }
+.order-sheet__lines li:nth-child(4) { animation-delay: 120ms; }
+.order-sheet__lines li:nth-child(5) { animation-delay: 160ms; }
+.order-sheet__lines li:nth-child(n + 6) { animation-delay: 200ms; }
+
+@keyframes order-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.order-sheet__line-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .order-sheet__name {
   flex: 1;
   min-width: 0;
   color: var(--ink);
+  font-weight: 600;
+}
+
+/* Only worth saying above one — at a quantity of one the unit price and the
+   line total are the same number printed twice. */
+.order-sheet__each {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.order-sheet__line-edit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The same stepper as the menu's, at the same 32px, so changing a quantity is
+   the same gesture in both places. */
+.order-sheet__stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.order-sheet__stepper button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--brand);
+  background: var(--surface);
+  color: var(--brand);
+  border-radius: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.order-sheet__stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.order-sheet__stepper span {
+  min-width: 16px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Underlined text rather than a filled button: it sits beside a stepper the
+   guest is tapping repeatedly, and the one control here that can't be undone
+   with the next tap shouldn't be the easiest thing to hit by accident. */
+.order-sheet__remove {
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  padding: 6px 2px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.order-sheet__remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .order-sheet__amount {
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
   color: var(--ink);
 }
 
+/* Dashed and unfilled: it belongs with the lines above it as another row of the
+   order being worked on, not with the two solid buttons at the foot of the
+   sheet that end the job. */
+.order-sheet__more {
+  display: block;
+  width: 100%;
+  border: 1px dashed var(--brand);
+  background: transparent;
+  color: var(--brand);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 46px;
+}
+
+.order-sheet__empty {
+  background: var(--paper);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-inset);
+  border-radius: var(--radius-tile);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.order-sheet__empty p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.order-sheet__cancel-all {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 46px;
+}
+
+/* The one number the guest is actually agreeing to, so it gets a surface of its
+   own rather than being another line of text between the dishes and the form.
+   Carved in, the counterpart of the raised tiles above it: those are things,
+   this is what they come to. */
 .order-sheet__total {
   display: flex;
   justify-content: space-between;
-  font-size: 17px;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--ink);
-  padding: 10px 0 16px;
+  background: var(--paper);
+  box-shadow: var(--shadow-inset);
+  border-radius: var(--radius-tile);
+  padding: 14px 16px;
+  margin: 12px 0 18px;
   font-variant-numeric: tabular-nums;
+}
+
+.order-sheet__total span:first-child {
+  font-family: var(--serif);
+  font-weight: 700;
 }
 
 .order-sheet__label {
@@ -567,57 +1008,193 @@
 .order-sheet__warn {
   background: #fdf6e7;
   border: 1px solid #f0dfae;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 12px;
   font-size: 13.5px;
   color: var(--ink);
-  margin-bottom: 14px;
+  margin: 12px 0 4px;
 }
 
+/* The same well every other form in the product types into, rather than the
+   flat outlined box this sheet had of its own. */
 .order-sheet input {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
+  box-shadow: var(--shadow-inset);
   color: var(--ink);
   min-height: 46px;
   margin-bottom: 16px;
+  font-family: inherit;
   font-size: 16px; /* 16px stops iOS Safari zooming the page on focus. */
 }
 
+/* The well deepens on focus rather than swapping to a flat ring, so the active
+   field still belongs to the same material as the rest of the sheet. */
+.order-sheet input:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
+}
+
+/* Pinned to the foot of the sheet, so "Place order" is one thumb-reach away
+   whether the order is two lines or twelve — a long sheet used to bury it under
+   however many dishes were on it. The sheet's bottom padding lives here, safe
+   area included, because this is what the sheet now ends with. */
 .order-sheet__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   gap: 10px;
+  background: var(--surface);
+  padding: 12px 0 calc(16px + env(safe-area-inset-bottom));
+  /* A soft edge above it rather than a rule: what's scrolling under has to read
+     as underneath, without drawing a second hard line across the sheet. */
+  box-shadow: 0 -10px 14px -10px rgba(16, 33, 46, 0.35);
 }
 
 .order-sheet__back {
   flex: 0 0 auto;
   padding: 14px 20px;
-  border: 1px solid var(--border);
-  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
+  background: var(--surface);
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 12px;
+  font-family: inherit;
   font-weight: 600;
   font-size: 15px;
   cursor: pointer;
+  min-height: 52px;
 }
 
 .order-sheet__place {
   flex: 1;
   padding: 14px;
   border: none;
-  background: var(--brand);
+  /* A gradient rather than the flat brand fill: this is the one button on the
+     sheet that commits, and it should be the one thing on screen with any
+     depth to it. */
+  background: linear-gradient(180deg, #2a4f7d 0%, var(--brand) 100%);
   color: #ffffff;
-  border-radius: 10px;
+  border-radius: 12px;
+  font-family: inherit;
   font-weight: 700;
   font-size: 16px;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  min-height: 50px;
+  min-height: 52px;
+  box-shadow: 0 6px 14px rgba(30, 58, 95, 0.28);
+}
+
+.order-sheet__place:active {
+  transform: translateY(1px);
+  box-shadow: 0 3px 8px rgba(30, 58, 95, 0.26);
 }
 
 .order-sheet__place:disabled,
 .order-sheet__back:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Nothing to commit, so it stops looking committable — the raised, gradient
+   version of this button reads as "press me" from across the room. */
+.order-sheet__place:disabled {
+  background: var(--text-muted);
+  box-shadow: none;
+  transform: none;
+}
+
+/* ----------------------------------------------------- cancel: how much? */
+
+/* Shares the sheet's backdrop and its bottom-of-the-screen position, because
+   it is answering for the same order and should arrive from the same place. */
+.order-choice {
+  background: var(--surface);
+  width: min(560px, 100%);
+  border-radius: 22px 22px 0 0;
+  padding: 22px 16px calc(20px + env(safe-area-inset-bottom));
+  box-shadow: 0 -18px 40px rgba(16, 33, 46, 0.28);
+}
+
+.order-choice h2 {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.order-choice__lead {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+/* Each option is a paragraph you tap, not a word: what separates these two is
+   the consequence, and the consequence doesn't fit on a button face. */
+.order-choice__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
+  background: var(--surface);
+  border-radius: var(--radius-tile);
+  padding: 15px 14px;
+  margin-bottom: 10px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.order-choice__option:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+.order-choice__option--danger {
+  border-color: var(--danger);
+}
+
+.order-choice__title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.order-choice__option--danger .order-choice__title {
+  color: var(--danger);
+}
+
+.order-choice__note {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* Plain text, and last. Neither of the two above is the safe answer, so the
+   way out of the question has to be visible without competing with them. */
+.order-choice__back {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 12px;
+  margin-top: 2px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 46px;
+}
+
+.order-choice__option:disabled,
+.order-choice__back:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -708,14 +1285,6 @@
 
 .food-mark--non-veg::after {
   background: var(--danger);
-}
-
-.food-mark--egg {
-  border-color: var(--color-warning);
-}
-
-.food-mark--egg::after {
-  background: var(--color-warning);
 }
 
 /* ------------------------------------------------------------- sign-in gate */
@@ -883,6 +1452,9 @@
 /* Order placed, order changed, order cancelled. It replaces the full-screen
    confirmation the room side used to get: the order list right below is a
    better answer to "did that work", so this only has to catch the eye once. */
+/* "Order #14 sent to the kitchen." It replaces the confirmation screen the room
+   side no longer shows, so it has to be caught the moment it appears — it drops
+   in from above the fold rather than materialising in place. */
 .order-page__flash {
   background: #e8f5ec;
   border: 1px solid #bfe0cb;
@@ -893,19 +1465,133 @@
   font-weight: 600;
   margin-bottom: 16px;
   text-align: center;
+  animation: order-flash-in 340ms var(--order-spring);
+}
+
+@keyframes order-flash-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.96);
+  }
 }
 
 /* ------------------------------------------------------------- your orders */
+
+/* Whichever half was just switched to slides in from the side. It reads as
+   moving between two screens rather than one screen redrawing, which is the
+   whole claim the switch above is making. Short — this fires on a tap the guest
+   made deliberately, and they are already looking at where it lands. */
+.order-view-in {
+  animation: order-view-in 260ms var(--order-ease);
+}
+
+@keyframes order-view-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* --------------------------------------------------------- the two views */
+
+/* The page's top-level switch: ordering, or checking on an order. Full width
+   and the largest control on the page, because it's the first decision made on
+   it and everything below belongs to one side of it or the other.
+
+   The same carved track as the diet filter, one size up. That's deliberate —
+   the guest meets this shape here first, and meets it again further down
+   meaning the same thing: these are the choices, one of them is where you are. */
+.order-views {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-inset);
+}
+
+.order-views__tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 44px;
+  transition: box-shadow 150ms ease, color 150ms ease;
+}
+
+.order-views__tab[aria-current='true'] {
+  background: var(--brand);
+  color: #ffffff;
+  box-shadow: var(--shadow-raised);
+}
+
+/* How many orders are live right now — the one fact from the other view worth
+   carrying onto this one, so nobody has to go and look to find out there's
+   nothing to look at. */
+.order-views__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-views__tab[aria-current='true'] .order-views__badge {
+  background: #ffffff;
+  color: var(--brand);
+}
 
 .guest-orders {
   margin-bottom: 22px;
 }
 
-.guest-orders__title {
-  font-family: var(--serif);
-  font-size: 18px;
-  color: var(--ink);
-  margin: 0 0 10px;
+/* No heading on this view any more — the tab above it is the heading, and
+   printing "Your orders" twice, ten pixels apart, is how a screen starts
+   looking like it was assembled rather than designed. */
+.guest-orders__none {
+  background: var(--surface);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
+  border-radius: var(--radius-card);
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.guest-orders__none p {
+  margin: 0 0 14px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+}
+
+.guest-orders__none button {
+  border: none;
+  background: var(--brand);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 12px 22px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 46px;
 }
 
 .guest-orders__error {
@@ -915,12 +1601,6 @@
   padding: 10px 12px;
   font-size: 13.5px;
   margin-bottom: 12px;
-}
-
-.guest-orders__empty {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin: 0;
 }
 
 .guest-orders__list {
@@ -938,6 +1618,26 @@
   box-shadow: var(--shadow-raised);
   border-radius: var(--radius-tile);
   padding: 14px;
+  animation: order-card-in 300ms var(--order-ease) backwards;
+}
+
+/* Same dealt-out rhythm the sheet's lines use, so a list of orders and a list
+   of dishes arrive the same way. */
+.guest-orders__list li:nth-child(2) {
+  animation-delay: 60ms;
+}
+.guest-orders__list li:nth-child(3) {
+  animation-delay: 120ms;
+}
+.guest-orders__list li:nth-child(n + 4) {
+  animation-delay: 180ms;
+}
+
+@keyframes order-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
 }
 
 /* A cancelled or delivered order is history. It stays readable — the guest may
@@ -973,8 +1673,78 @@
   padding: 4px 10px;
 }
 
+/* The one thing on this page that changes without the guest touching anything:
+   the fifteen-second poll moves an order to READY while they are looking at it.
+   A colour swapping silently is easy to miss on a phone held at arm's length,
+   so the chip breathes until the food is collected. Slow and low-contrast on
+   purpose — this is a kitchen telling someone their food is up, not an alarm. */
+/* Both of the live states animate on a pseudo-element, and both animate only
+   transform and opacity. These two are the page's only infinite animations —
+   they run for as long as an order is cooking, which can be twenty minutes on a
+   phone in someone's hand — so they have to be the cheap kind the compositor
+   can run without repainting the chip on every frame. A pulsing box-shadow or a
+   sliding background-position would repaint it 60 times a second for the whole
+   twenty minutes. */
+.guest-order--ready .guest-order__chip,
+.guest-order--preparing .guest-order__chip {
+  position: relative;
+}
+
 .guest-order--ready .guest-order__chip {
   color: var(--color-success);
+}
+
+/* A ring expanding out of the chip and fading — a kitchen saying the food is
+   up, not an alarm, so it's slow and it stops short of the edge of loud. */
+.guest-order--ready .guest-order__chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid rgba(22, 163, 74, 0.55);
+  animation: order-ready-pulse 2.4s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes order-ready-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(1.32);
+    opacity: 0;
+  }
+}
+
+/* Cooking is progress, so it moves across rather than pulsing in place — the
+   two live states never read as the same event. */
+.guest-order--preparing .guest-order__chip {
+  overflow: hidden;
+}
+
+.guest-order--preparing .guest-order__chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(30, 58, 95, 0.16) 50%,
+    transparent 80%
+  );
+  animation: order-cooking-sweep 2.1s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes order-cooking-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .guest-order--cancelled .guest-order__chip {
@@ -1064,33 +1834,40 @@
 /* While an order is being edited the steppers on the menu below are pointed at
    food that has already been sent to the kitchen. Sticky, because that fact has
    to stay on screen however far down the menu the guest scrolls. */
+/* The top row of the sticky bar while an order is being edited — it does its
+   own sticking no longer, because .order-sticky does it for the whole block.
+   Full bleed to the bar's edges, so the brand band reads as the bar wearing a
+   different hat rather than a card floating in it.
+
+   Wraps, because the sentence and two buttons don't fit a 360px phone on one
+   line, and squeezing them was costing the buttons their tap targets. */
 .order-page__editing {
-  position: sticky;
-  top: 0;
-  z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   background: var(--brand);
   color: #ffffff;
-  border-radius: var(--radius-tile);
-  padding: 10px 12px;
-  margin-bottom: 14px;
+  padding: 9px var(--order-gutter);
   font-size: 13.5px;
   font-weight: 600;
 }
 
+/* Wide enough to want its own line on a phone and to share one on a laptop,
+   rather than being pinned to either by a hard-coded 100%. */
 .order-page__editing span {
-  flex: 1;
+  flex: 1 1 230px;
   min-width: 0;
 }
 
 .order-page__editing button {
+  flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.5);
   background: transparent;
   color: #ffffff;
   border-radius: 8px;
   padding: 7px 11px;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;

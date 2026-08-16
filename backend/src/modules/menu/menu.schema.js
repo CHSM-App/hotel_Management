@@ -1,6 +1,20 @@
 const { z } = require('zod');
 
-const FOOD_TYPES = ['VEG', 'NON_VEG', 'EGG'];
+// Two, not three: egg used to be its own type and has been folded into
+// non-veg — see the migration in schema.sql, which moved the dishes and put
+// the same pair on the CHECK constraint. An old client still sending 'EGG' is
+// refused here rather than at the database.
+const FOOD_TYPES = ['VEG', 'NON_VEG'];
+
+// What a stored food_type means today. The schema migration rewrites every EGG
+// row to NON_VEG, but init-db is a deploy step rather than something that runs
+// on boot — so between the two, a database can still hand back a type no screen
+// has a group or a mark for, and the dishes carrying it would silently vanish
+// from the menu they're grouped into. Reads go through here so that can't
+// happen; the constraint, not this, is what stops new ones being written.
+function normaliseFoodType(value) {
+  return value === 'EGG' ? 'NON_VEG' : value;
+}
 
 const createMenuCategorySchema = z.object({
   name: z.string().trim().min(1, 'Section name is required.'),
@@ -20,7 +34,7 @@ const createMenuItemSchema = z.object({
   name: z.string().trim().min(1, 'Item name is required.'),
   description: z.string().trim().max(300).optional().default(''),
   price: z.coerce.number().min(0, 'Price can’t be negative.'),
-  foodType: z.enum(FOOD_TYPES, { error: 'Choose veg, non-veg or egg.' }).optional().default('VEG'),
+  foodType: z.enum(FOOD_TYPES, { error: 'Choose veg or non-veg.' }).optional().default('VEG'),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
   // Only an edit can mean it: "take the photo off this dish", as distinct from
   // an edit that simply doesn't mention the photo and leaves it where it is.
@@ -59,6 +73,7 @@ const foodSettingsSchema = z.object({
 
 module.exports = {
   FOOD_TYPES,
+  normaliseFoodType,
   createMenuCategorySchema,
   updateMenuCategorySchema: createMenuCategorySchema,
   createMenuItemSchema,

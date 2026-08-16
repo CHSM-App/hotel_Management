@@ -4,6 +4,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('../../middleware/menuImageUpload');
 const inventoryService = require('../inventory/inventory.service');
+const { normaliseFoodType } = require('./menu.schema');
 
 // A dish photo the property uploaded, or nothing. The filename alone travels —
 // the browser builds the URL against the /menu-images static mount, the same
@@ -15,7 +16,7 @@ function mapItem(row, portions = []) {
     name: row.name,
     description: row.description,
     price: Number(row.price),
-    foodType: row.food_type,
+    foodType: normaliseFoodType(row.food_type),
     isAvailable: !!row.is_available,
     sortOrder: row.sort_order,
     isActive: !!row.is_active,
