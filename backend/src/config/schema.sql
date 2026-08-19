@@ -1277,7 +1277,7 @@ CREATE TABLE dbo.stock_movements (
     material_id    BIGINT NOT NULL REFERENCES dbo.raw_materials(id),
     change_qty     DECIMAL(12,3) NOT NULL,
     balance_after  DECIMAL(12,3) NOT NULL,
-    reason         NVARCHAR(12) NOT NULL
+    reason         NVARCHAR(12) NOT NULL 
         CONSTRAINT ck_stock_movements_reason CHECK (reason IN ('OPENING', 'PURCHASE', 'ADJUSTMENT', 'CONSUMPTION', 'REVERSAL')),
     order_id       BIGINT NULL REFERENCES dbo.food_orders(id),
     order_item_id  BIGINT NULL REFERENCES dbo.food_order_items(id),
