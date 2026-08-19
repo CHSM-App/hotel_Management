@@ -226,11 +226,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
     if (invoice.discountAmount > 0) {
       particulars.push({ kind: 'plain', key: 'disc', label: discountLabel, amount: -invoice.discountAmount });
     }
+    // Prices are GST-inclusive, so these two are *inside* the room total above,
+    // not added to it. They are marked 'incl' rather than 'plain' so the column
+    // still adds up: an inclusive bill that listed tax as another line would
+    // overshoot its own total by the tax twice over. A tax invoice still has to
+    // state the amounts, which is why they are printed at all.
     if (invoice.cgstAmount > 0) {
-      particulars.push({ kind: 'plain', key: 'cgst', label: `CGST (${invoice.cgstRatePercent}%)`, amount: invoice.cgstAmount });
+      particulars.push({ kind: 'incl', key: 'cgst', label: `CGST (${invoice.cgstRatePercent}%)`, amount: invoice.cgstAmount });
     }
     if (invoice.sgstAmount > 0) {
-      particulars.push({ kind: 'plain', key: 'sgst', label: `SGST (${invoice.sgstRatePercent}%)`, amount: invoice.sgstAmount });
+      particulars.push({ kind: 'incl', key: 'sgst', label: `SGST (${invoice.sgstRatePercent}%)`, amount: invoice.sgstAmount });
     }
   }
 
@@ -258,10 +263,10 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
       particulars.push({ kind: 'plain', key: 'fdisc', label: discountLabel, amount: -invoice.discountAmount });
     }
     if (invoice.foodCgstAmount > 0) {
-      particulars.push({ kind: 'plain', key: 'fcgst', label: `CGST (${invoice.foodCgstRatePercent}%)`, amount: invoice.foodCgstAmount });
+      particulars.push({ kind: 'incl', key: 'fcgst', label: `CGST (${invoice.foodCgstRatePercent}%)`, amount: invoice.foodCgstAmount });
     }
     if (invoice.foodSgstAmount > 0) {
-      particulars.push({ kind: 'plain', key: 'fsgst', label: `SGST (${invoice.foodSgstRatePercent}%)`, amount: invoice.foodSgstAmount });
+      particulars.push({ kind: 'incl', key: 'fsgst', label: `SGST (${invoice.foodSgstRatePercent}%)`, amount: invoice.foodSgstAmount });
     }
   }
 
@@ -404,8 +409,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
                   {line.label}
                   {line.sac && <span className="bill-doc__sac">SAC {line.sac}</span>}
                   {line.note && <span className="bill-doc__item-qty">{line.note}</span>}
+                  {/* Says the amount beside it is already counted above. A guest
+                      reading down the column has to be told once, on the line
+                      itself — the alternative is a total that looks wrong. */}
+                  {line.kind === 'incl' && (
+                    <span className="bill-doc__item-qty">included in the above</span>
+                  )}
                 </td>
-                <td className="bill-doc__amt">{amt(line.amount)}</td>
+                <td className={`bill-doc__amt${line.kind === 'incl' ? ' bill-doc__amt--incl' : ''}`}>
+                  {amt(line.amount)}
+                </td>
               </tr>
             )
           )}

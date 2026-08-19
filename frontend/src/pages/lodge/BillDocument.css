@@ -228,6 +228,23 @@
   white-space: nowrap;
 }
 
+/* A tax amount that is already inside the total above it. Greyed and bracketed
+   so a reader adding the column by eye can see it is not another entry to add —
+   the convention a GST-inclusive bill uses to state its tax without stating it
+   twice. The figure is still exact and still printed, because a tax invoice has
+   to declare what tax it carries. */
+.bill-doc__amt--incl {
+  color: #555;
+}
+
+.bill-doc__amt--incl::before {
+  content: '(';
+}
+
+.bill-doc__amt--incl::after {
+  content: ')';
+}
+
 /* Money stays right-aligned — a column of figures is read by its units place,
    and centring them makes it impossible to add up by eye. Only the heading
    above it is centred. */
