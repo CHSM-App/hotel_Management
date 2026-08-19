@@ -1,126 +1,80 @@
 require('dotenv').config();
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const { getPool, sql } = require('../src/config/connection');
+const fs = require('fs');
+const { getPool } = require('../src/config/connection');
+const migrations = require('../src/config/migrations');
+const schemaDiff = require('../src/config/schemaDiff');
 
-// Applies the numbered files in backend/migrations, in order, once each.
+// CLI over src/config/migrations.js — the engine itself lives there so the
+// bootstrap script and the server's boot check share it.
 //
-// Before this, a schema change meant editing schema.sql and re-running it as
-// one batch, relying on every statement being written defensively enough to be
-// harmless the second time. That works — schema.sql is carefully written that
-// way — but nothing recorded what had actually been applied to a given
-// database, so "is production on the current schema?" could only be answered by
-// inspecting it, and two people adding columns in the same week had no defined
-// order.
-//
-//   npm run migrate          apply anything outstanding
-//   npm run migrate:status   list what is applied and what is pending
-//
-// schema.sql keeps its job of building a database from nothing. Migrations
-// carry it forward from there, which is why 001 is the first *new* change
-// rather than a replay of the existing schema.
-//
-// Deliberately small: a dependency-free runner is ~100 lines and does what this
-// project needs. Reach for Flyway or Knex when there are branches to merge or
-// down-migrations to run — neither of which applies here yet.
+//   npm run migrate                    apply anything outstanding
+//   npm run migrate:status             list what is applied and what is pending
+//   npm run migrate:create -- <name>   scaffold the next numbered migration
+//   npm run migrate:diff               compare the database against schema.sql
+//                                      and report what is missing
+//   npm run migrate:diff -- <name>     ...and write it as the next migration
+//   npm run migrate:baseline           record everything as applied WITHOUT
+//                                      running it — for a database whose schema
+//                                      is already current (built by schema.sql,
+//                                      or predating this runner)
 
-const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
-
-// GO is a batch separator understood by sqlcmd and SSMS, not by SQL Server
-// itself — sending a file containing it as one statement fails. mssql's
-// .batch() handles a single batch, so the file is split and each part sent in
-// turn, which is also what makes CREATE TRIGGER / CREATE VIEW work (both must
-// be the first statement in their batch).
-function splitBatches(sqlText) {
-  return sqlText
-    .split(/^\s*GO\s*$/gim)
-    .map((batch) => batch.trim())
-    .filter((batch) => batch.length > 0);
-}
-
-function checksum(text) {
-  // Normalises line endings first: a file checked out with CRLF on Windows and
-  // LF on the CI runner is the same migration and must not look modified.
-  return crypto.createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
-}
-
-function listMigrations() {
-  if (!fs.existsSync(MIGRATIONS_DIR)) return [];
-  return fs
-    .readdirSync(MIGRATIONS_DIR)
-    .filter((name) => name.endsWith('.sql'))
-    // Lexicographic order over zero-padded numeric prefixes, which is why the
-    // naming convention is 001_, 002_, ... rather than 1_, 2_.
-    .sort()
-    .map((name) => {
-      const text = fs.readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8');
-      return { name, text, checksum: checksum(text) };
-    });
-}
-
-async function ensureHistoryTable(pool) {
-  await pool.request().batch(`
-    IF OBJECT_ID('dbo.schema_migrations', 'U') IS NULL
-    CREATE TABLE dbo.schema_migrations (
-        name        NVARCHAR(200) NOT NULL PRIMARY KEY,
-        checksum    CHAR(64)      NOT NULL,
-        applied_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
-        applied_by  NVARCHAR(128) NOT NULL DEFAULT SUSER_SNAME()
-    );
-  `);
-}
-
-async function appliedMigrations(pool) {
-  const result = await pool
-    .request()
-    .query('SELECT name, checksum, applied_at FROM dbo.schema_migrations ORDER BY name');
-  return new Map(result.recordset.map((row) => [row.name, row]));
+function describeTarget() {
+  return `${process.env.DB_NAME}@${process.env.DB_SERVER}`;
 }
 
 async function status() {
   const pool = await getPool();
-  await ensureHistoryTable(pool);
-  const applied = await appliedMigrations(pool);
-  const all = listMigrations();
+  const { all, applied, pending, modified } = await migrations.plan(pool);
 
   if (all.length === 0) {
     console.log('No migration files found in backend/migrations.');
     return;
   }
 
-  console.log(`\nDatabase: ${process.env.DB_NAME}@${process.env.DB_SERVER}\n`);
-  let pending = 0;
+  console.log(`\nDatabase: ${describeTarget()}\n`);
   for (const migration of all) {
     const record = applied.get(migration.name);
     if (!record) {
-      pending += 1;
       console.log(`  PENDING  ${migration.name}`);
     } else if (record.checksum !== migration.checksum) {
-      // An applied migration whose file has since changed. The database does
-      // NOT have what the file now says, and re-running is not the fix — write
-      // a new migration instead.
       console.log(`  MODIFIED ${migration.name}  <-- file changed after it was applied`);
     } else {
-      console.log(`  applied  ${migration.name}  (${new Date(record.applied_at).toISOString().slice(0, 19)})`);
+      console.log(
+        `  applied  ${migration.name}  (${new Date(record.applied_at).toISOString().slice(0, 19)})`
+      );
     }
   }
-  console.log(`\n${all.length - pending} applied, ${pending} pending.\n`);
+  console.log(`\n${all.length - pending.length} applied, ${pending.length} pending.\n`);
+  if (modified.length > 0) process.exitCode = 1;
 }
 
 async function migrate() {
   const pool = await getPool();
-  await ensureHistoryTable(pool);
-  const applied = await appliedMigrations(pool);
-  const all = listMigrations();
+
+  // Migrations carry an *existing* schema forward; on an empty database they
+  // fail confusingly part-way through (the first ALTER hits a table that was
+  // never created). dbo.lodges is the root of the whole schema — if it is
+  // missing, this database has never seen schema.sql and needs bootstrapping,
+  // not migrating.
+  const bootstrapped = await pool
+    .request()
+    .query("SELECT OBJECT_ID('dbo.lodges', 'U') AS id");
+  if (!bootstrapped.recordset[0].id) {
+    console.error(
+      `\nThis database (${describeTarget()}) is empty — dbo.lodges does not exist.\n` +
+        `Migrations only carry an existing schema forward. Build it first:\n\n` +
+        `  npm run db:init\n\n` +
+        `which applies schema.sql and records every migration as already applied.\n`
+    );
+    process.exit(1);
+  }
+
+  const { pending, modified } = await migrations.plan(pool);
 
   // A modified migration is a hard stop rather than a warning. Continuing would
   // mean the database and the repository disagree about what has been applied,
   // and every later migration would be built on that assumption.
-  const modified = all.filter((m) => {
-    const record = applied.get(m.name);
-    return record && record.checksum !== m.checksum;
-  });
   if (modified.length > 0) {
     console.error(
       `\nRefusing to run — these migrations were changed after being applied:\n` +
@@ -131,39 +85,20 @@ async function migrate() {
     process.exit(1);
   }
 
-  const pending = all.filter((m) => !applied.has(m.name));
   if (pending.length === 0) {
     console.log('Database is up to date — nothing to apply.');
     return;
   }
 
-  console.log(`\nDatabase: ${process.env.DB_NAME}@${process.env.DB_SERVER}`);
+  console.log(`\nDatabase: ${describeTarget()}`);
   console.log(`Applying ${pending.length} migration(s):\n`);
 
   for (const migration of pending) {
     process.stdout.write(`  ${migration.name} ... `);
-
-    // Each migration is one transaction: it applies completely or not at all,
-    // and its history row commits with it so the two can never disagree.
-    //
-    // Caveat worth knowing: some DDL in SQL Server cannot be rolled back
-    // cleanly inside a transaction, and a batch containing CREATE PROCEDURE or
-    // CREATE TRIGGER must be its own batch. Keep migrations to one logical
-    // change and this stays predictable.
-    const transaction = new sql.Transaction(pool);
-    await transaction.begin();
     try {
-      for (const batch of splitBatches(migration.text)) {
-        await new sql.Request(transaction).batch(batch);
-      }
-      await new sql.Request(transaction)
-        .input('name', sql.NVarChar, migration.name)
-        .input('checksum', sql.Char(64), migration.checksum)
-        .query('INSERT INTO dbo.schema_migrations (name, checksum) VALUES (@name, @checksum)');
-      await transaction.commit();
-      console.log('ok');
+      const { skipped } = await migrations.applyMigration(pool, migration);
+      console.log(skipped ? 'skipped (applied by a concurrent run)' : 'ok');
     } catch (err) {
-      await transaction.rollback().catch(() => {});
       console.log('FAILED');
       console.error(`\n${migration.name} failed and was rolled back:\n  ${err.message}\n`);
       process.exit(1);
@@ -173,10 +108,112 @@ async function migrate() {
   console.log('\nAll migrations applied.\n');
 }
 
-const command = process.argv[2] === '--status' ? status : migrate;
+async function baseline() {
+  const pool = await getPool();
+  const { modified } = await migrations.plan(pool);
+  if (modified.length > 0) {
+    console.error(
+      `\nRefusing to baseline — these migrations were changed after being applied:\n` +
+        modified.map((m) => `  - ${m.name}`).join('\n') + '\n'
+    );
+    process.exit(1);
+  }
+  const recorded = await migrations.baseline(pool);
+  if (recorded.length === 0) {
+    console.log('Nothing to baseline — every migration is already recorded.');
+  } else {
+    console.log(`\nDatabase: ${describeTarget()}`);
+    console.log(`Recorded as applied without running (schema assumed current):\n`);
+    for (const name of recorded) console.log(`  ${name}`);
+    console.log('');
+  }
+}
 
-command()
-  .then(() => process.exit(0))
+// Compares the live database against a scratch database built from schema.sql,
+// and either reports the difference or writes it as the next migration.
+//
+// This is the answer to "I changed schema.sql — what migration do I need?".
+// Writing that migration by hand means restating a change you have already
+// made, and any discrepancy between the two stays invisible until a fresh
+// database comes up different from a migrated one.
+async function diff(name) {
+  const pool = await getPool();
+  console.log(`\nDatabase: ${describeTarget()}`);
+  console.log('Building a reference database from schema.sql...');
+
+  const result = await schemaDiff.diffAgainstSchemaFile(pool);
+
+  for (const table of result.newTables) {
+    console.log(`  + table   dbo.${table.name} (${table.columns.length} columns)`);
+  }
+  for (const { table, column } of result.newColumns) {
+    console.log(`  + column  dbo.${table}.${column.column_name}`);
+  }
+  for (const index of result.newIndexes) {
+    console.log(`  + index   ${index.index_name} on dbo.${index.table_name}`);
+  }
+
+  if (result.unsupported.length > 0) {
+    console.log('\n  Needs a hand-written migration — not generated:');
+    for (const note of result.unsupported) console.log(`    ! ${note}`);
+  }
+
+  if (!schemaDiff.hasChanges(result)) {
+    console.log('\nNo additive differences — the database matches schema.sql.\n');
+    return;
+  }
+
+  if (!name) {
+    console.log(
+      `\nRe-run with a name to write this as a migration:\n` +
+        `  npm run migrate:diff -- add_whatever_this_is\n`
+    );
+    return;
+  }
+
+  // createMigration owns the numbering and the filename convention, so the
+  // generated file is indistinguishable from a hand-written one.
+  const filePath = migrations.createMigration(name);
+  fs.writeFileSync(filePath, schemaDiff.renderMigration(result, path.basename(filePath)), 'utf8');
+  console.log(`\nWrote ${path.relative(process.cwd(), filePath)}`);
+  console.log('Review it before running `npm run migrate` — generated SQL is a draft.\n');
+}
+
+// Creating a file needs no database, so this path never touches the pool —
+// scaffolding a migration must work with the VPN down.
+function create(name) {
+  if (!name) {
+    console.error('Usage: npm run migrate:create -- <lower_snake_case_name>');
+    process.exit(1);
+  }
+  const filePath = migrations.createMigration(name);
+  console.log(`Created ${path.relative(process.cwd(), filePath)}`);
+  console.log('Remember to mirror the change in src/config/schema.sql.');
+}
+
+async function main() {
+  const [flag, arg] = process.argv.slice(2);
+  switch (flag) {
+    case undefined:
+      return migrate();
+    case '--status':
+      return status();
+    case '--baseline':
+      return baseline();
+    case '--create':
+      return create(arg);
+    case '--diff':
+      return diff(arg);
+    default:
+      console.error(
+        `Unknown option "${flag}". Use --status, --baseline, --create <name> or --diff [name].`
+      );
+      process.exit(1);
+  }
+}
+
+main()
+  .then(() => process.exit(process.exitCode || 0))
   .catch((err) => {
     console.error(err.message || err);
     process.exit(1);

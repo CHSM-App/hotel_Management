@@ -2217,10 +2217,12 @@ export default function Bookings({ onCheckedOut }) {
                   />
                 </div>
 
-              {/* The two optional sections share a row — both are usually left
-                  shut, and stacked they pushed the guest list off screen. */}
+              {/* The two optional sections share a row — stacked they pushed
+                  the guest list off screen. Both start open: the desk fills
+                  them in often enough that a shut section was a click of
+                  friction on nearly every booking. */}
               <div className="booking-form__optional">
-              <details className="form-section form-section--collapsible">
+              <details className="form-section form-section--collapsible" open>
                 <summary>
                   <span className="form-section__num">3</span>
                   Advance payment
@@ -2276,7 +2278,7 @@ export default function Bookings({ onCheckedOut }) {
                 )}
               </details>
 
-              <details className="form-section form-section--collapsible">
+              <details className="form-section form-section--collapsible" open>
                 <summary>
                   <span className="form-section__num">4</span>
                   Vehicles

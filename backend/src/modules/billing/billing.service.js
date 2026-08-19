@@ -6,6 +6,26 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+// Every price in this system is what the guest hands over — GST is already
+// inside it, not added on top of it. So tax is extracted from an amount rather
+// than applied to one:
+//
+//     tax = inclusive x rate / (100 + rate)
+//
+// The forward form (amount x rate / 100) would answer a different question —
+// what to *add* to a tax-exclusive price — and using it on an inclusive one
+// over-collects from the guest and over-reports to GSTR-1. At 12% on a Rs 5,000
+// inclusive price this returns Rs 535.71, leaving Rs 4,464.29 taxable, and
+// 4,464.29 x 12% = 535.71 back again. The forward form would have returned
+// Rs 600 and made the guest pay Rs 5,600 for a Rs 5,000 room.
+//
+// Not rounded here. Both callers halve the result into CGST and SGST and round
+// each half independently, and rounding twice would lose a paisa on the way.
+function taxWithin(inclusiveAmount, ratePercent) {
+  if (!ratePercent) return 0;
+  return (inclusiveAmount * ratePercent) / (100 + ratePercent);
+}
+
 function nightCount(checkInDate, checkOutDate) {
   const start = new Date(`${checkInDate}T00:00:00Z`);
   const end = new Date(`${checkOutDate}T00:00:00Z`);
@@ -96,8 +116,8 @@ async function getFoodRate(pool, isSpecifiedPremises) {
 // independently, matching the accommodation rule that exists to keep GSTR-1
 // reconciliation clean.
 function computeFoodTax(subtotal, ratePercent) {
-  const cgstAmount = round2((subtotal * (ratePercent / 100)) / 2);
-  const sgstAmount = round2((subtotal * (ratePercent / 100)) / 2);
+  const cgstAmount = round2(taxWithin(subtotal, ratePercent) / 2);
+  const sgstAmount = round2(taxWithin(subtotal, ratePercent) / 2);
   return { cgstAmount, sgstAmount, taxable: ratePercent > 0 && subtotal > 0 };
 }
 
@@ -149,8 +169,8 @@ function computeGstBreakdown(amounts, slabs) {
   for (const amount of amounts) {
     const ratePercent = ratePercentFor(amount, slabs);
     if (ratePercent > 0) anyTaxable = true;
-    cgstAmount += round2(amount * (ratePercent / 100) / 2);
-    sgstAmount += round2(amount * (ratePercent / 100) / 2);
+    cgstAmount += round2(taxWithin(amount, ratePercent) / 2);
+    sgstAmount += round2(taxWithin(amount, ratePercent) / 2);
   }
   return { cgstAmount: round2(cgstAmount), sgstAmount: round2(sgstAmount), anyTaxable };
 }
@@ -172,8 +192,8 @@ function lateChargeTax(amount, amounts, slabs, isGstSide) {
   }
   const ratePercent = ratePercentFor(amounts[amounts.length - 1] ?? 0, slabs);
   return {
-    cgstAmount: round2((amount * (ratePercent / 100)) / 2),
-    sgstAmount: round2((amount * (ratePercent / 100)) / 2),
+    cgstAmount: round2(taxWithin(amount, ratePercent) / 2),
+    sgstAmount: round2(taxWithin(amount, ratePercent) / 2),
     taxable: ratePercent > 0,
     ratePercent,
   };
@@ -272,6 +292,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
       SELECT b.*, r.room_number, c.name AS category_name,
              l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              l.city AS lodge_city, l.state AS lodge_state
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
@@ -326,13 +347,30 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, isGstSide, food 
 
   const grossSubtotal = round2(roomSubtotal + foodSubtotal);
   const discount = cappedDiscount(discountAmount, grossSubtotal);
-  const [roomNet, foodNet] = netOfDiscount([round2(roomSubtotal), foodSubtotal], discount, grossSubtotal);
+  const [roomGross, foodGross] = netOfDiscount(
+    [round2(roomSubtotal), foodSubtotal],
+    discount,
+    grossSubtotal
+  );
+
+  // The taxable value of an inclusive amount is what is left once the tax
+  // inside it comes out. Every figure below that a tax invoice has to state —
+  // the per-SAC taxable value, and the rate derived from it — is computed
+  // against these, not against the discounted gross. Printing the gross as the
+  // taxable value would state a figure that doesn't reconcile: taxable x rate
+  // would not come back to the tax charged.
+  const roomNet = round2(roomGross - cgstAmount - sgstAmount);
+  const foodNet = round2(foodGross - foodCgst - foodSgst);
 
   const subtotal = round2(grossSubtotal - discount);
   const totalCgst = round2(cgstAmount + foodCgst);
   const totalSgst = round2(sgstAmount + foodSgst);
 
-  const preRound = subtotal + totalCgst + totalSgst;
+  // The tax is already inside `subtotal` — it was extracted from these amounts,
+  // not charged on top of them — so the total is the subtotal, full stop.
+  // Adding totalCgst + totalSgst here is what the exclusive model did, and
+  // doing it now would bill the guest the tax twice.
+  const preRound = subtotal;
   const totalAmount = isGstSide ? Math.round(preRound) : round2(preRound);
   const roundOff = round2(totalAmount - preRound);
 
@@ -826,11 +864,20 @@ function mapInvoice(row) {
   // apportioned when the bill was issued. Display only; the amounts themselves
   // are read straight off the row, never recomputed.
   const discountAmount = Number(row.discount_amount ?? 0);
-  const [roomNet, foodNet] = netOfDiscount(
+  const [roomGross, foodGross] = netOfDiscount(
     [roomSubtotal, foodSubtotal],
     discountAmount,
     round2(roomSubtotal + foodSubtotal)
   );
+
+  // ...and then the tax that was sitting inside those amounts comes out, the
+  // same way it did when the bill was issued. Prices are GST-inclusive, so the
+  // discounted gross is not the taxable value — subtracting the stored tax is
+  // what makes taxable x rate come back to the tax printed beside it. Reading
+  // the stored tax rather than recomputing it keeps a bill reprinted years
+  // later identical to the one issued, even if the slabs have moved since.
+  const roomNet = round2(roomGross - Number(row.cgst_amount) - Number(row.sgst_amount));
+  const foodNet = round2(foodGross - foodCgst - foodSgst);
 
   return {
     id: row.id,
@@ -897,6 +944,10 @@ function mapInvoice(row) {
     lodgeName: row.lodge_name,
     lodgePhone: row.lodge_phone,
     lodgeAddress: row.lodge_address,
+    // The Devanagari masthead, when the property stored one — the bill's
+    // language toggle decides whether it prints; null means English only.
+    lodgeNameMr: row.lodge_name_mr ?? null,
+    lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
     // The property's own checkout rule, so the terms printed on the bill are
@@ -928,6 +979,10 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
     lodgeName: row.lodge_name,
     lodgePhone: row.lodge_phone,
     lodgeAddress: row.lodge_address,
+    // The Devanagari masthead, when the property stored one — the bill's
+    // language toggle decides whether it prints; null means English only.
+    lodgeNameMr: row.lodge_name_mr ?? null,
+    lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
     gstin: row.gstin,
@@ -991,7 +1046,8 @@ async function getInvoice(lodgeId, invoiceId) {
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
-             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
+             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1021,7 +1077,8 @@ async function listInvoices(lodgeId) {
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
-             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
+             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1125,6 +1182,7 @@ async function loadLodgeForBilling(pool, lodgeId) {
     .query(`
       SELECT is_gst_registered, gstin, is_specified_premises,
              name AS lodge_name, phone AS lodge_phone, address AS lodge_address,
+             name_mr AS lodge_name_mr, address_mr AS lodge_address_mr,
              city AS lodge_city, state AS lodge_state
       FROM dbo.lodges WHERE id = @lodgeId
     `);

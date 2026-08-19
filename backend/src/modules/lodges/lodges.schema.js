@@ -11,6 +11,10 @@ const createLodgeSchema = z
     phone: z.string().trim().optional().default(''),
     whatsappNumber: z.string().trim().optional().default(''),
     address: z.string().trim().optional().default(''),
+    // The masthead in Devanagari, exactly as the property writes it. Optional:
+    // a lodge without them simply bills in English.
+    lodgeNameMr: z.string().trim().max(200).optional().default(''),
+    addressMr: z.string().trim().max(500).optional().default(''),
     city: z.string().trim().optional().default(''),
     state: z.string().trim().optional().default(''),
     checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED']).default('HOUR_24'),

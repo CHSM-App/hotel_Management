@@ -410,8 +410,48 @@
 .billing-panel__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
   margin-top: 6px;
+}
+
+/* The paper picker sits in the actions row with the Print and PDF buttons it
+   governs. Pushed to the left of them so the two buttons stay where the hand
+   already expects them — a control that displaces the primary action is a
+   control that gets misclicked. */
+.billing-panel__paper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.billing-panel__paper-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The same material as every other dropdown in the app (.field select), cut
+   down to toolbar size — a bare browser select next to neumorphic buttons
+   read as something pasted in from another product. */
+.billing-panel__paper select {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-inset);
+  cursor: pointer;
+}
+
+.billing-panel__paper select:focus-visible {
+  border-color: var(--focus);
+  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
 }
 
 .billing-panel__detail-header {
@@ -457,6 +497,21 @@
 
   .billing-panel__actions button {
     width: 100%;
+  }
+
+  /* The row is column-reverse on narrow screens, so source order runs bottom
+     to top — the picker has to be ordered back above the buttons it governs,
+     and its auto margin means nothing once the row is a column. */
+  .billing-panel__paper {
+    order: 1;
+    margin-right: 0;
+    justify-content: space-between;
+  }
+
+  .billing-panel__paper select {
+    flex: 1;
+    min-width: 0;
+    margin-left: 10px;
   }
 
   /* Tabs scroll sideways rather than wrapping onto a second line, so the
@@ -586,13 +641,15 @@
    sections of this modal read as a pair. The document inside is the real
    BillDocument at full size — scaled down it would be a picture of a bill
    rather than something you can proofread. */
-.billing-panel__bill-preview {
+.billing-panel__bill-preview,
+.billing-panel__paper-previews {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
-.billing-panel__bill-preview > summary {
+.billing-panel__bill-preview > summary,
+.billing-panel__paper-previews > summary {
   padding: 10px 14px;
   border-radius: var(--radius-tile);
   background: var(--surface);
@@ -605,17 +662,20 @@
   transition: box-shadow 150ms ease, color 150ms ease;
 }
 
-.billing-panel__bill-preview > summary:hover {
+.billing-panel__bill-preview > summary:hover,
+.billing-panel__paper-previews > summary:hover {
   color: var(--brand-ink);
   box-shadow: var(--shadow-pressed);
 }
 
-.billing-panel__bill-preview > summary::after {
+.billing-panel__bill-preview > summary::after,
+.billing-panel__paper-previews > summary::after {
   color: var(--brand);
   font-size: 18px;
 }
 
-.billing-panel__bill-preview[open] > summary {
+.billing-panel__bill-preview[open] > summary,
+.billing-panel__paper-previews[open] > summary {
   margin-bottom: 12px;
 }
 
@@ -760,4 +820,143 @@
 .billing-panel__invoice-row--void:hover {
   box-shadow: var(--shadow-pressed);
   transform: none;
+}
+
+/* ====================================================== paper previews ====
+
+   The bill drawn on each sheet it can print on. The point of these is
+   proportion: how much of the paper the document actually covers, and whether
+   it runs off the bottom. So the sheet is drawn to the paper's real aspect
+   ratio and the bill is scaled into it, rather than the document being
+   restyled to fit a box. */
+
+/* Both preview surfaces sit on a padded, recessed ground — the document and
+   the sheets read as paper laid on the desk rather than as markup touching
+   the fold's edges. */
+.billing-panel__bill-preview .bill-print-target,
+.billing-panel__paper-previews .paper-preview__grid {
+  padding: 16px;
+  background: var(--paper);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--shadow-inset);
+}
+
+.billing-panel__paper-previews .billing-panel__paper {
+  margin: 0;
+}
+
+.paper-preview__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  /* Sheets are different heights and hang from a common top edge, the way
+     they would if laid out on a desk. */
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+/* Each preview is the control that selects that paper — clicking the sheet you
+   want is the whole interaction, and a separate radio beside it would be a
+   second thing to hit for the same decision. */
+.paper-preview__choice {
+  display: block;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.paper-preview__choice:hover .paper-preview__sheet {
+  box-shadow: 0 3px 12px rgb(16 24 32 / 22%);
+}
+
+.paper-preview__choice--on {
+  border-color: var(--brand);
+  background: var(--paper);
+}
+
+.paper-preview__choice:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The sheet itself: white paper on the panel's darker ground, so the margin
+   round the bill reads as paper rather than as padding. */
+.paper-preview__sheet {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(16 24 32 / 16%);
+  /* The document inside is inert at this size — it is a picture of a bill,
+     not something to be read or clicked through. */
+  pointer-events: none;
+}
+
+/* A roll has no bottom edge. Fading it out says the paper continues rather
+   than that the bill was cut off. */
+.paper-preview__sheet--roll::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 24px;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0%), #fff);
+}
+
+.paper-preview__ink {
+  position: absolute;
+  overflow: hidden;
+}
+
+/* The stay block inside a thumbnail always answers to the sheet's variable.
+   Restated here at higher specificity because the phone stylesheet flattens
+   .memo__stay to height:auto below 640px — right for the full-size memo being
+   read on a narrow screen, wrong for a thumbnail whose whole job is to show
+   the proportions of a sheet of paper. */
+.paper-preview__ink .memo__stay {
+  height: var(--memo-stay-h, 130px);
+}
+
+.paper-preview__caption {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.paper-preview__choice--on .paper-preview__caption {
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+
+@media print {
+  /* Screen furniture. The sheet being printed is the bill itself, and six
+     thumbnails of it would follow onto the page. */
+  .billing-panel__paper-previews {
+    display: none !important;
+  }
+}
+
+/* The chosen stock, named on the fold while it is shut — the summary is all
+   that shows between issuing bills, and "Paper size" alone answers nothing. */
+.billing-panel__paper-current {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+/* Paper and language side by side in the issue form's fold — two settings of
+   the same kind, read as one row of print options. */
+.billing-panel__print-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 12px;
 }

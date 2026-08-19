@@ -345,7 +345,9 @@ export default function StayDetails({
           <div className="form-section__title">
             Bill {booking.invoice.invoiceNumber}
           </div>
-          <BillDocument invoice={booking.invoice} />
+          <div className="bill-print-target">
+            <BillDocument invoice={booking.invoice} />
+          </div>
         </div>
       )}
     </div>
