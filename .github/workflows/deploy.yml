@@ -9,7 +9,15 @@ permissions:
   contents: write
 
 jobs:
-  deploy:
+  # Nothing reaches the live property until this passes. Previously the workflow
+  # went straight from a push to a force push at the server, so a bad commit was
+  # deployed before anyone could read it.
+  #
+  # A separate job rather than a step, so the deploy job's `needs:` is what
+  # enforces the gate — a deploy cannot start while tests are failing, and the
+  # dependency is visible in the workflow graph rather than buried in a script.
+  test:
+    name: Test
     runs-on: ubuntu-latest
 
     steps:
@@ -20,10 +28,64 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # `npm ci` rather than `npm install`: it installs exactly what the lock
+      # file pins and fails if the two have drifted, so CI tests the dependency
+      # tree the server will actually run.
+      - name: Install backend deps
+        run: npm ci
+        working-directory: backend
+
+      - name: Run backend tests
+        run: npm test
+        working-directory: backend
+
+      # Fails the build on a known vulnerability at high or above. Moderate and
+      # below are reported by `npm audit` but not blocked — at this project's
+      # size, blocking on every advisory means the gate gets disabled the first
+      # time it fires on something unexploitable.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        working-directory: backend
+
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so the deploy tag below refers to a real commit rather
+          # than a shallow clone's grafted head.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend deps
-        run: npm install
+        run: npm ci
         working-directory: frontend
+
+      # Reported, not enforced. The frontend currently has 7 pre-existing
+      # react-hooks errors (setState-in-effect in Bookings, ReportsPanel,
+      # LodgeDetail and LodgePublicPage). Blocking on them would fail every
+      # deploy for problems unrelated to the commit being deployed, and a gate
+      # that fires on day one is a gate someone deletes on day two.
+      #
+      # Turn this into a hard gate — drop `continue-on-error` — once those are
+      # cleared. The backend test job above is already blocking.
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: frontend
+        continue-on-error: true
 
       - name: Build frontend
         run: npm run build
@@ -40,18 +102,32 @@ jobs:
           test -f backend/src/public/index.html \
             || { echo "::error::backend/src/public/index.html missing — frontend build failed"; exit 1; }
 
+      # The deploy branch is force-pushed, so its history is destroyed on every
+      # release and there is nothing to roll back to. A tag on the source commit
+      # survives that: `git checkout deploy-<sha>` gives you the exact tree that
+      # produced a bad release, which is what a rollback needs.
+      - name: Tag this deploy
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          TAG="deploy-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          git tag -a "$TAG" -m "Deployed ${GITHUB_SHA}"
+          git push origin "$TAG"
+
+          echo "::notice::Tagged this deploy as $TAG — roll back with: git checkout $TAG"
+
       - name: Deploy backend branch
         run: |
           cd backend
-
-          # Configure git
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           # Init a fresh repo in backend/ (now contains the built frontend in src/public).
           # A fresh init + force push keeps the backend branch as a clean deploy
           # snapshot with no accumulated history. Default branch name is `deploy`
           # only locally; we push HEAD to the remote `backend` branch below.
+          #
+          # node_modules is NOT committed — the server runs `npm ci` itself. The
+          # test job above has already verified this lock file installs cleanly.
           git init
           git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 

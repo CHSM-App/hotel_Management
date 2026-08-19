@@ -17,6 +17,38 @@ const args = process.argv.slice(2);
 const confirmed = args.includes('--yes');
 const wipeReference = args.includes('--wipe-reference');
 
+// This script ships to the server: CI pushes the whole of backend/, scripts
+// included, so the file sits one `node scripts/reset-data.js --yes` away from
+// every booking, invoice and lodge the business has. The flag alone is too thin
+// a guard for that — it's four characters, and shell history will happily
+// replay it.
+//
+// So production has to be named explicitly, and named as the *database* rather
+// than as a mood: --i-understand-this-deletes-production=<DB_NAME> can't be
+// arrived at by pressing up-arrow, and can't be copied from a runbook written
+// for a different environment without noticing.
+const PRODUCTION_ACK_FLAG = '--i-understand-this-deletes-production';
+
+function assertProductionAcknowledged() {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  const ack = args.find((a) => a.startsWith(`${PRODUCTION_ACK_FLAG}=`));
+  const named = ack ? ack.slice(PRODUCTION_ACK_FLAG.length + 1) : null;
+
+  if (named !== process.env.DB_NAME) {
+    console.error(
+      `\nRefusing to run: NODE_ENV is production.\n\n` +
+        `This deletes every booking, invoice and lodge in "${process.env.DB_NAME}".\n` +
+        `There is no undo, and no backup is taken by this script.\n\n` +
+        `If that is genuinely what you want, re-run with:\n` +
+        `  ${PRODUCTION_ACK_FLAG}=${process.env.DB_NAME}\n`
+    );
+    process.exit(1);
+  }
+
+  console.warn(`\n!! PRODUCTION RESET acknowledged for "${process.env.DB_NAME}".`);
+}
+
 // Children before parents. food_orders.invoice_id points at invoices, so orders
 // clear before invoices; invoices point at bookings, bookings at rooms, and
 // everything lodge-scoped clears before dbo.lodges itself.
@@ -62,6 +94,16 @@ async function count(pool, table, where = '1 = 1') {
 }
 
 async function run() {
+  // Before the connection, not just before the DELETEs. A destructive run
+  // against production should be turned away without the script so much as
+  // opening a session on it — and if the acknowledgement is missing, nothing
+  // below is going to happen anyway.
+  //
+  // Gated on `confirmed` so a dry run stays a safe, unguarded read: surveying
+  // production to see what a reset *would* remove is a reasonable thing to do,
+  // and requiring the scary flag for it would train people to pass it.
+  if (confirmed) assertProductionAcknowledged();
+
   const pool = await getPool();
 
   // The rows that survive. Anything not matching these predicates is data.

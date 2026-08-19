@@ -1,8 +1,7 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
+const { uploadDir } = require('../config/uploadRoot');
 
 // A photo of the dish, shown on the menu a guest orders from. Not sensitive —
 // it is the most public thing this system holds — so it is served from a static
@@ -13,8 +12,7 @@ const { ApiError } = require('./errorHandler');
 // Its own directory rather than sharing room-images: the two are deleted on
 // different schedules and by different code, and one folder holding both would
 // make "is this file still referenced?" a question spanning two tables.
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'menu-images');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const UPLOAD_DIR = uploadDir('menu-images');
 
 const ALLOWED_MIME_EXT = {
   'image/jpeg': '.jpg',

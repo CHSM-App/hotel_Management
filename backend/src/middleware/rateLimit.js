@@ -58,8 +58,10 @@ function createRateLimiter({ windowMs, max, message, countWhen = () => true }) {
   };
 }
 
-// Guards the room-ordering endpoint, which is the only public route that checks
-// a secret. Counts **only rejected attempts** (401), which is load-bearing
+// Guards the room-ordering endpoint, which is the public route a *guest* uses
+// to prove themselves. (The staff login doors check a secret too — see
+// loginAttemptLimiter below, which is tuned differently.)
+// Counts **only rejected attempts** (401), which is load-bearing
 // rather than a nicety: guest Wi-Fi is behind NAT, so on a busy evening every
 // diner and every guest in the building shares one public IP. Charging for
 // successful orders would let a full restaurant lock itself out — the limit has
@@ -83,4 +85,42 @@ const pinAttemptLimiter = createRateLimiter({
   countWhen: (res) => res.statusCode === 401,
 });
 
-module.exports = { createRateLimiter, pinAttemptLimiter };
+// Guards the two staff login doors. Like the PIN limiter this charges only
+// failures, but for a different reason: staff sign in from the property's own
+// connection, often several people from one desk at the start of a shift, and a
+// successful login is not evidence of anything to throttle.
+//
+// Tighter than the PIN limiter (20 vs 50) because the two protect different
+// things. A wrong PIN is a guest misreading a slip; a wrong staff password in
+// bulk is someone working through a list. There is no per-account lockout
+// behind this to fall back on — unlike rooms, which have dbo.food_pin_lockouts
+// — so this limiter is the whole defence rather than the outer half of two.
+//
+// Deliberately not a per-account lockout: that hands anyone who knows an
+// owner's phone number a way to lock them out of their own property at will,
+// which on a system reception depends on all day is the more likely attack.
+// Charging the source instead means a wrong guess costs the guesser.
+const loginAttemptLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many failed sign-in attempts. Please wait a few minutes and try again.',
+  countWhen: (res) => res.statusCode === 401,
+});
+
+// The SUPERADMIN door, which is the key to every property on the platform
+// rather than to one. Nobody signs in here but Vengurla Tech staff, so the
+// budget can be small enough that a script is stopped early without any
+// legitimate user ever noticing it exists.
+const adminLoginAttemptLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many failed sign-in attempts. Please wait a few minutes and try again.',
+  countWhen: (res) => res.statusCode === 401,
+});
+
+module.exports = {
+  createRateLimiter,
+  pinAttemptLimiter,
+  loginAttemptLimiter,
+  adminLoginAttemptLimiter,
+};

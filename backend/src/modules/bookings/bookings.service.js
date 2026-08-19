@@ -163,7 +163,36 @@ async function replaceBookingCharges(transaction, bookingId, selections) {
 
 // excludeBookingId lets an edit to a booking's own room/dates check against
 // every OTHER booking without the row conflicting with itself.
-async function hasOverlap(makeRequest, roomId, checkInDate, checkOutDate, excludeBookingId) {
+//
+// `lock` takes UPDLOCK + HOLDLOCK over the range this scans, and is what makes
+// the answer binding rather than advisory. It only means anything inside an
+// explicit transaction — outside one the locks are released as soon as the
+// statement ends — so callers using this as a cheap pre-flight leave it off.
+//
+// Both hints are needed, for different reasons:
+//
+//   HOLDLOCK holds a *range* lock until the transaction ends, so nothing else
+//   can INSERT a booking into the gap this query just found empty. Without it
+//   there is a window between deciding a room is free and writing the row, and
+//   two clerks can both walk through it.
+//
+//   UPDLOCK makes that range lock an *update* lock rather than a shared one.
+//   Shared range locks are compatible with each other, so both transactions
+//   would take one, and then both would need an incompatible insert lock to
+//   write — each waiting on the other's read lock. That is a deadlock, and SQL
+//   Server resolves it by killing one transaction with error 1205. 1205 is not
+//   an ApiError, so it reaches the clerk as a generic 500 rather than "this
+//   room is taken". Update range locks are mutually exclusive, so the second
+//   transaction waits instead, then re-reads, sees the committed booking, and
+//   returns a clean 409.
+async function hasOverlap(
+  makeRequest,
+  roomId,
+  checkInDate,
+  checkOutDate,
+  excludeBookingId,
+  { lock = false } = {}
+) {
   const request = makeRequest()
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
@@ -173,8 +202,11 @@ async function hasOverlap(makeRequest, roomId, checkInDate, checkOutDate, exclud
     request.input('excludeBookingId', sql.BigInt, excludeBookingId);
     excludeClause = 'AND id <> @excludeBookingId';
   }
+  // Fixed strings selected by a boolean, never interpolated input — as far as
+  // anything arriving from a request is concerned, this query is a constant.
+  const lockHint = lock ? 'WITH (UPDLOCK, HOLDLOCK)' : '';
   const result = await request.query(`
-    SELECT TOP 1 id FROM dbo.bookings
+    SELECT TOP 1 id FROM dbo.bookings ${lockHint}
     WHERE room_id = @roomId AND status IN ('BOOKED', 'CHECKED_IN')
       AND check_in_date < @checkOutDate AND check_out_date > @checkInDate
       ${excludeClause}
@@ -886,6 +918,9 @@ async function createBooking(lodgeId, userId, input) {
   const switchableCharges = pricingService.normalizeSelections(input.switchableCharges);
   await assertChargesAvailable(pool, lodgeId, switchableCharges);
 
+  // Pre-flight, deliberately unlocked: it rejects the common case before the
+  // pricing work below without holding a lock across it. The check that decides
+  // the outcome is the one inside the transaction.
   if (await hasOverlap(() => pool.request(), input.roomId, input.checkInDate, input.checkOutDate)) {
     throw new ApiError('This room is already booked for part of that date range.', 409);
   }
@@ -916,7 +951,9 @@ async function createBooking(lodgeId, userId, input) {
       () => new sql.Request(transaction),
       input.roomId,
       input.checkInDate,
-      input.checkOutDate
+      input.checkOutDate,
+      undefined,
+      { lock: true }
     );
     if (conflict) {
       throw new ApiError('This room is already booked for part of that date range.', 409);
@@ -1359,7 +1396,15 @@ async function updateBooking(lodgeId, bookingId, input) {
     }
   }
 
-  if (newRoomId !== bookingRow.room_id || newCheckOutDate !== currentCheckOutDate) {
+  // Whether this edit can free or take a night. An edit that only corrects a
+  // phone number moves no dates and needs no availability check at all.
+  const movingStay = newRoomId !== bookingRow.room_id || newCheckOutDate !== currentCheckOutDate;
+
+  // Pre-flight only — see the matching note in createBooking. The binding check
+  // is inside the transaction below, because everything between here and there
+  // (guest list, charges, pricing) is several round trips during which another
+  // clerk can take the room.
+  if (movingStay) {
     const conflict = await hasOverlap(() => pool.request(), newRoomId, checkInDate, newCheckOutDate, bookingId);
     if (conflict) {
       throw new ApiError('That room is already booked for part of this date range.', 409);
@@ -1436,8 +1481,31 @@ async function updateBooking(lodgeId, bookingId, input) {
   }
 
   const transaction = new sql.Transaction(pool);
+  // Default isolation, not SERIALIZABLE. The lock hints on the overlap check
+  // below give that one statement the range lock it needs; raising the level
+  // for the whole transaction would extend range locking to the charge, guest
+  // and vehicle rewrites too, which need no such guarantee and would only widen
+  // the surface for deadlocks between concurrent edits.
   await transaction.begin();
   try {
+    // Re-checked here, holding a lock, and first — before any row is written.
+    // The pre-flight above was a courtesy; this is the one that decides, and it
+    // closes the window in which two concurrent edits could move two stays into
+    // the same room for the same nights.
+    if (movingStay) {
+      const conflict = await hasOverlap(
+        () => new sql.Request(transaction),
+        newRoomId,
+        checkInDate,
+        newCheckOutDate,
+        bookingId,
+        { lock: true }
+      );
+      if (conflict) {
+        throw new ApiError('That room is already booked for part of this date range.', 409);
+      }
+    }
+
     await replaceBookingCharges(transaction, bookingId, switchableCharges);
 
     await new sql.Request(transaction)
