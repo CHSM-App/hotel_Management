@@ -1,4 +1,10 @@
-require('dotenv').config();
+// The .env path is pinned to this file's location rather than left to resolve
+// from process.cwd(). Passenger starts the app with cwd set to the application
+// directory, so a bare config() finds backend/.env; IIS/iisnode makes no such
+// guarantee, and when cwd is the site root or inetsrv the file is silently not
+// found — every DB_* var is then undefined and validateEnv() below exits the
+// process, which the browser sees as a bare 500 on every request.
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const { validateEnv } = require('./config/env');
 const { logger } = require('./config/logger');
