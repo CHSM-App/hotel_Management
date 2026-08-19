@@ -1,15 +1,17 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
+const { uploadDir } = require('../config/uploadRoot');
 
 // Room photos aren't sensitive like a guest's ID proof, so they're served
 // straight from a public static mount (see app.js) instead of an
 // authenticated route — a room card showing several thumbnails would
 // otherwise mean a separate authenticated fetch per image.
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'room-images');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+//
+// Still under UPLOAD_ROOT rather than in-tree: not because they're sensitive,
+// but because a deploy that silently empties every property's room gallery is
+// its own kind of outage. See config/uploadRoot.js.
+const UPLOAD_DIR = uploadDir('room-images');
 
 const ALLOWED_MIME_EXT = {
   'image/jpeg': '.jpg',

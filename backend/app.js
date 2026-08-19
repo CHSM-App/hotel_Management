@@ -8,4 +8,3 @@
 // app.listen(); Passenger provides the port via the PORT env var and proxies
 // hotel.vengurlatech.com to it, so the SPA and the API are served on one origin.
 require('./src/server');
- 

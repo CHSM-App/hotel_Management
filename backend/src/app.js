@@ -1,6 +1,10 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const { getPool } = require('./config/connection');
+const { requestLogger } = require('./middleware/requestLogger');
 const authRoutes = require('./modules/auth/auth.routes');
 const lodgesRoutes = require('./modules/lodges/lodges.routes');
 const meRoutes = require('./modules/me/me.routes');
@@ -55,6 +59,80 @@ function isDevOrigin(origin) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Security headers
+// ---------------------------------------------------------------------------
+//
+// The backend serves the SPA and the API from one origin, so these headers
+// protect the dashboard as well as the endpoints — and the JWT lives in
+// localStorage on that same origin, which is what makes XSS here expensive
+// rather than merely embarrassing.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        // Vite emits plain <script src> bundles, so no inline script is needed
+        // and none is allowed — that is the directive doing the real work.
+        scriptSrc: ["'self'"],
+        // Styles are the exception: the SPA sets element styles at runtime
+        // (chart bars, tape-chart offsets, print layout), and React writes
+        // those as inline style attributes. 'unsafe-inline' for styles is a
+        // far weaker concession than it would be for scripts.
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        // data: for the QR codes and the html-to-image/jsPDF canvases, which
+        // are generated in the browser as data URIs. blob: for the same
+        // pipeline when it hands back a Blob to download.
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        fontSrc: ["'self'", 'data:'],
+        // Same-origin API only. Nothing in this app talks to a third party, so
+        // anything that tries is either a bug or an exfiltration attempt.
+        connectSrc: ["'self'"],
+        // Nothing may embed this app — the clickjacking defence, and the
+        // modern replacement for X-Frame-Options.
+        frameAncestors: ["'none'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        // jsPDF and html-to-image build documents in workers/blobs.
+        workerSrc: ["'self'", 'blob:'],
+      },
+    },
+    // HSTS tells browsers to refuse plain HTTP for this host. Only meaningful
+    // once the site is reliably on HTTPS — enabling it before then locks
+    // visitors out of a working site, and the header is remembered for its full
+    // duration, so it cannot simply be taken back. Off unless asked for.
+    hsts: process.env.ENABLE_HSTS === 'true'
+      ? { maxAge: 15552000, includeSubDomains: true, preload: false }
+      : false,
+    // Uploaded images are served from this origin. Without nosniff a file whose
+    // bytes look like HTML could be interpreted as a document rather than an
+    // image, which on the same origin as the dashboard is stored XSS. The
+    // upload filters already restrict type and rewrite filenames; this is the
+    // second lock on the same door.
+    noSniff: true,
+    // Referrer stops leaking booking ids and guest identifiers in the URL to
+    // anywhere a user might navigate next.
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    // Express advertises itself by default; there is no reason to tell an
+    // attacker which framework and version to look up.
+    hidePoweredBy: true,
+    // Lets the SPA's generated PDFs and images load without tripping the
+    // cross-origin isolation checks a strict default would impose.
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'same-site' },
+  })
+);
+
+// gzip for JSON responses. The reports and tape-chart endpoints return the
+// large payloads on this system, and they are the ones staff wait on.
+app.use(compression());
+
+// Request logging, before the routes so every request is recorded including the
+// ones that never reach a handler. See middleware/requestLogger.js.
+app.use(requestLogger);
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -76,35 +154,86 @@ app.use('/menu-images', express.static(MENU_IMAGE_DIR));
 const CLIENT_DIR = path.join(__dirname, 'public');
 app.use(express.static(CLIENT_DIR));
 
-app.get('/health', (req, res) => res.json({ ok: true }));
+// Two probes, because "is the process alive" and "can it actually serve a
+// request" are different questions and conflating them is how an outage stays
+// green on a dashboard for an hour.
+//
+// /health hits the database. It is what an uptime monitor should watch: an app
+// that cannot reach SQL Server can't serve a single business endpoint, so
+// reporting it healthy is worse than reporting nothing.
+app.get('/health', async (req, res) => {
+  try {
+    const pool = await getPool();
+    await pool.request().query('SELECT 1');
+    res.json({ ok: true, database: 'up' });
+  } catch (err) {
+    // 503 rather than 500: this is "not ready to serve", which is a state a load
+    // balancer knows how to act on. The message is the driver's, not a stack —
+    // whoever is reading this at 2am needs the reason, and nothing here is
+    // sensitive that the connection log doesn't already print.
+    res.status(503).json({ ok: false, database: 'down', error: err.message });
+  }
+});
 
-app.use('/auth', authRoutes);
-app.use('/internal/lodges', lodgesRoutes);
-app.use('/me', meRoutes);
-app.use('/rooms', roomsRoutes);
-app.use('/categories', categoriesRoutes);
-app.use('/switchable-charges', switchableChargesRoutes);
-app.use('/seasons', seasonsRoutes);
-app.use('/pricing', pricingRoutes);
-app.use('/bookings', bookingsRoutes);
-app.use('/billing', billingRoutes);
-app.use('/reports', reportsRoutes);
-app.use('/roles', rolesRoutes);
-app.use('/staff', staffRoutes);
-app.use('/menu', menuRoutes);
-app.use('/tables', tablesRoutes);
-app.use('/orders', ordersRoutes);
-app.use('/inventory', inventoryRoutes);
-app.use('/public', publicRoutes);
+// /health/live answers only "is this process running" — no dependencies. This
+// is what a process supervisor should restart on, because restarting the app
+// when the *database* is down accomplishes nothing but a slower recovery.
+app.get('/health/live', (req, res) => res.json({ ok: true }));
+
+// Every API mount point, declared once.
+//
+// This list used to be written out twice — once as the app.use() calls and
+// again as a hand-maintained API_PREFIXES array for the SPA fallback below —
+// and the two had already drifted: /menu, /tables and /orders were mounted but
+// missing from the prefix list, so an unknown GET under them fell through to
+// the SPA and returned index.html with a 200. Any client parsing that as JSON
+// fails on the first character.
+//
+// Deriving the prefixes from the same array that mounts the routers makes that
+// class of bug impossible rather than merely fixed: adding a router adds its
+// prefix, because they are the same line.
+const API_ROUTES = [
+  ['/auth', authRoutes],
+  ['/internal/lodges', lodgesRoutes],
+  ['/me', meRoutes],
+  ['/rooms', roomsRoutes],
+  ['/categories', categoriesRoutes],
+  ['/switchable-charges', switchableChargesRoutes],
+  ['/seasons', seasonsRoutes],
+  ['/pricing', pricingRoutes],
+  ['/bookings', bookingsRoutes],
+  ['/billing', billingRoutes],
+  ['/reports', reportsRoutes],
+  ['/roles', rolesRoutes],
+  ['/staff', staffRoutes],
+  ['/menu', menuRoutes],
+  ['/tables', tablesRoutes],
+  ['/orders', ordersRoutes],
+  ['/inventory', inventoryRoutes],
+  ['/public', publicRoutes],
+];
+
+for (const [prefix, router] of API_ROUTES) {
+  app.use(prefix, router);
+}
+
+// Paths that serve API-shaped responses without being a mounted router: the
+// static upload mounts and the health probes. They belong in the fallback
+// exclusion list for the same reason — a missing image should 404, not return
+// the SPA shell.
+const NON_ROUTER_API_PREFIXES = ['/room-images', '/menu-images', '/health'];
+
+// '/internal/lodges' is mounted, but '/internal/anything-else' should also be
+// treated as API rather than handed to the SPA, so the first path segment is
+// what gets matched.
+const API_PREFIXES = [
+  ...API_ROUTES.map(([prefix]) => '/' + prefix.split('/')[1]),
+  ...NON_ROUTER_API_PREFIXES,
+];
 
 // SPA fallback: any GET that wasn't an API route or a static file gets index.html
 // so React Router can resolve the client-side route (e.g. a refresh on /bookings).
-// API prefixes are listed so an unknown API path still returns a JSON 404 below.
-const API_PREFIXES = [
-  '/auth', '/internal', '/me', '/rooms', '/categories', '/switchable-charges',
-  '/seasons', '/pricing', '/bookings', '/billing', '/reports', '/roles',
-  '/staff', '/public', '/room-images', '/menu-images', '/health', '/inventory',
-];
+// API prefixes are excluded so an unknown API path still returns the JSON 404 below.
 app.get(/.*/, (req, res, next) => {
   if (API_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + '/'))) {
     return next();

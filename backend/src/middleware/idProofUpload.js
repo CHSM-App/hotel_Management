@@ -1,14 +1,16 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
+const { uploadDir } = require('../config/uploadRoot');
 
 // Guest ID proofs (Aadhaar, passport, ...) are sensitive documents, so they
 // live outside any statically-served directory — access goes through the
 // authenticated /bookings/:id/id-proof route instead of a public URL.
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'id-proofs');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+//
+// The directory sits under UPLOAD_ROOT, which in production points outside the
+// deployed tree: these are KYC records the property must retain, and the deploy
+// overwrites everything inside backend/. See config/uploadRoot.js.
+const UPLOAD_DIR = uploadDir('id-proofs');
 
 const ALLOWED_MIME_EXT = {
   'image/jpeg': '.jpg',
