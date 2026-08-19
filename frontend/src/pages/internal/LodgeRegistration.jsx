@@ -33,6 +33,8 @@ const initialForm = {
   city: '',
   state: '',
   address: '',
+  lodgeNameMr: '',
+  addressMr: '',
   checkinMode: 'HOUR_24',
   // Chosen from PROPERTY_TYPES rather than set as raw bits — see the picker in
   // the form below. The four capability flags are derived from these two on
@@ -319,6 +321,33 @@ export default function LodgeRegistration() {
               <div className="field">
                 <label htmlFor="address">Address</label>
                 <input id="address" value={form.address} onChange={update('address')} placeholder="Beach road, near jetty" />
+              </div>
+
+              {/* Typed by the property, never transliterated — a guessed
+                  Devanagari spelling of a business name has no place on a tax
+                  document. Left empty, the bill's Marathi toggle keeps the
+                  English name and only the captions translate. */}
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="lodgeNameMr">Name in Marathi (optional)</label>
+                  <input
+                    id="lodgeNameMr"
+                    value={form.lodgeNameMr}
+                    onChange={update('lodgeNameMr')}
+                    placeholder="आनंद होम स्टे"
+                    lang="mr"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="addressMr">Address in Marathi (optional)</label>
+                  <input
+                    id="addressMr"
+                    value={form.addressMr}
+                    onChange={update('addressMr')}
+                    placeholder="मोती तलावाजवळ, सावंतवाडी, वेंगुर्ला"
+                    lang="mr"
+                  />
+                </div>
               </div>
 
               {capabilities.hasRooms && (

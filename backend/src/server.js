@@ -18,13 +18,44 @@ try {
 }
 
 const app = require('./app');
-const { closePool } = require('./config/connection');
+const { getPool, closePool } = require('./config/connection');
+const { drift } = require('./config/migrations');
 
 const port = process.env.PORT || 5000;
 
 const server = app.listen(port, () => {
   logger.info({ port }, 'API listening');
 });
+
+// Schema drift check — advisory, after the port is bound. A database that is
+// behind the code is worth a loud log line at every boot, but not a refusal to
+// start: the app already tolerates the database being down entirely at boot
+// (requests fail until it returns), and a deploy pipeline that runs
+// `npm run migrate` before restarting will simply log nothing here.
+(async () => {
+  try {
+    const { tracked, pending, modified } = await drift(await getPool());
+    if (!tracked && pending.length > 0) {
+      logger.warn(
+        { pending },
+        'Database has no schema_migrations table — run `npm run migrate` (or `npm run migrate -- --baseline` if the schema is already current)'
+      );
+    } else if (modified.length > 0) {
+      logger.error(
+        { modified },
+        'Applied migrations differ from their files — the database and repository disagree'
+      );
+    } else if (pending.length > 0) {
+      logger.warn({ pending }, 'Database is behind the code — run `npm run migrate`');
+    } else {
+      logger.info('Database schema is up to date');
+    }
+  } catch (err) {
+    // The connection layer already logged the failure; the drift check just
+    // didn't get to run. It is a boot-time convenience, not a gate.
+    logger.debug({ err }, 'Schema drift check skipped — database unreachable');
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // Shutdown

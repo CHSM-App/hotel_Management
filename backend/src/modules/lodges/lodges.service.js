@@ -30,6 +30,8 @@ async function createLodgeWithOwner(input) {
       .input('phone', sql.NVarChar, input.phone || null)
       .input('whatsappNumber', sql.NVarChar, input.whatsappNumber || null)
       .input('address', sql.NVarChar, input.address || null)
+      .input('nameMr', sql.NVarChar, input.lodgeNameMr || null)
+      .input('addressMr', sql.NVarChar, input.addressMr || null)
       .input('city', sql.NVarChar, input.city || null)
       .input('state', sql.NVarChar, input.state || null)
       .input('checkinMode', sql.NVarChar, input.checkinMode)
@@ -42,12 +44,12 @@ async function createLodgeWithOwner(input) {
       .input('foodTableService', sql.Bit, input.foodTableService)
       .query(`
         INSERT INTO dbo.lodges
-          (name, slug, phone, whatsapp_number, address, city, state, checkin_mode,
+          (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state, checkin_mode,
            is_gst_registered, gstin, is_specified_premises,
            has_rooms, serves_food, food_room_service, food_table_service)
         OUTPUT inserted.id
         VALUES
-          (@name, @slug, @phone, @whatsappNumber, @address, @city, @state, @checkinMode,
+          (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state, @checkinMode,
            @isGstRegistered, @gstin, @isSpecifiedPremises,
            @hasRooms, @servesFood, @foodRoomService, @foodTableService)
       `);

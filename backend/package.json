@@ -8,6 +8,9 @@
     "db:init": "node scripts/init-db.js",
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
+    "migrate:create": "node scripts/migrate.js --create",
+    "migrate:baseline": "node scripts/migrate.js --baseline",
+    "migrate:diff": "node scripts/migrate.js --diff",
     "test": "node --test \"tests/**/*.test.js\""
   },
   "keywords": [],

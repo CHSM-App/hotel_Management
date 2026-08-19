@@ -292,6 +292,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
       SELECT b.*, r.room_number, c.name AS category_name,
              l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              l.city AS lodge_city, l.state AS lodge_state
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
@@ -943,6 +944,10 @@ function mapInvoice(row) {
     lodgeName: row.lodge_name,
     lodgePhone: row.lodge_phone,
     lodgeAddress: row.lodge_address,
+    // The Devanagari masthead, when the property stored one — the bill's
+    // language toggle decides whether it prints; null means English only.
+    lodgeNameMr: row.lodge_name_mr ?? null,
+    lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
     // The property's own checkout rule, so the terms printed on the bill are
@@ -974,6 +979,10 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
     lodgeName: row.lodge_name,
     lodgePhone: row.lodge_phone,
     lodgeAddress: row.lodge_address,
+    // The Devanagari masthead, when the property stored one — the bill's
+    // language toggle decides whether it prints; null means English only.
+    lodgeNameMr: row.lodge_name_mr ?? null,
+    lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
     gstin: row.gstin,
@@ -1037,7 +1046,8 @@ async function getInvoice(lodgeId, invoiceId) {
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
-             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
+             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1067,7 +1077,8 @@ async function listInvoices(lodgeId) {
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
-             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state
+             l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1171,6 +1182,7 @@ async function loadLodgeForBilling(pool, lodgeId) {
     .query(`
       SELECT is_gst_registered, gstin, is_specified_premises,
              name AS lodge_name, phone AS lodge_phone, address AS lodge_address,
+             name_mr AS lodge_name_mr, address_mr AS lodge_address_mr,
              city AS lodge_city, state AS lodge_state
       FROM dbo.lodges WHERE id = @lodgeId
     `);

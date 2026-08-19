@@ -10,6 +10,11 @@ CREATE TABLE dbo.lodges (
     phone                  NVARCHAR(20) NULL,
     whatsapp_number        NVARCHAR(20) NULL,
     address                NVARCHAR(500) NULL,
+    -- The masthead in Devanagari, as the property wrote it — the bill prints
+    -- these when its language toggle is set to Marathi, falling back to the
+    -- English fields when empty. See migration 002.
+    name_mr                NVARCHAR(200) NULL,
+    address_mr             NVARCHAR(500) NULL,
     city                   NVARCHAR(100) NULL,
     state                  NVARCHAR(100) NULL,
     checkin_mode           NVARCHAR(20) NOT NULL DEFAULT 'HOUR_24'
@@ -861,6 +866,32 @@ CREATE TABLE dbo.food_pin_lockouts (
     locked_until     DATETIMEOFFSET NULL,
     CONSTRAINT pk_food_pin_lockouts PRIMARY KEY (lodge_id, room_label)
 );
+
+-- Durable record of failed staff sign-ins — the same backstop food_pin_lockouts
+-- gives the guest PIN door, because the in-memory limiter's counters die with
+-- the process and Passenger recycles processes on its own schedule. Keyed on
+-- the identifier AS TYPED, not on a user id, so guessing against an address
+-- that doesn't exist costs the same as guessing against a real account.
+-- Mirrors migration 001.
+IF OBJECT_ID('dbo.login_attempts', 'U') IS NULL
+CREATE TABLE dbo.login_attempts (
+    -- Lowercased by the application before it reaches here, so 'Owner@x.com'
+    -- and 'owner@x.com' share one budget rather than two.
+    identifier       NVARCHAR(255) NOT NULL,
+    -- 'STAFF' or 'ADMIN'. The two doors have different budgets and must not
+    -- share a counter — the admin door is the key to every property.
+    door             NVARCHAR(10) NOT NULL
+        CONSTRAINT ck_login_attempts_door CHECK (door IN ('STAFF', 'ADMIN')),
+    failed_count     INT NOT NULL DEFAULT 0,
+    first_failed_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    last_failed_at   DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    locked_until     DATETIMEOFFSET NULL,
+    CONSTRAINT pk_login_attempts PRIMARY KEY (identifier, door)
+);
+
+-- Finds rows worth clearing without scanning the whole table.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_login_attempts_last_failed')
+    CREATE INDEX ix_login_attempts_last_failed ON dbo.login_attempts (last_failed_at);
 
 -- How a guest's own phone follows their order to the pass. Replaces looking a
 -- status up by (room number, order number), which was itself a "is room 12

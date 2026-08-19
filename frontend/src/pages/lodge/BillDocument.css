@@ -26,7 +26,7 @@
   border-radius: 2px;
   overflow: hidden;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.4;
   /* Every figure on a bill sits in a column somebody adds up. */
   font-variant-numeric: tabular-nums;
@@ -474,7 +474,7 @@
    below), so a phone-sized preview can't change what the guest receives. */
 @media (max-width: 640px) {
   .bill-doc {
-    font-size: 10.5px;
+    font-size: 12px;
   }
 
   .bill-doc__lodge-name {
@@ -518,27 +518,50 @@
 }
 
 @media print {
+  /* The default sheet, and the only one this file can state. @page is legal
+     only at the top level of a stylesheet and is resolved before the cascade
+     reaches any element, so it can be neither nested under a class nor fed a
+     custom property — picking a different paper means writing a new @page,
+     which the billing panel does into an injected <style> at print time.
+     That tag lands after this file in <head>, so it wins on order.
+
+     This rule is what prints when nothing overrides it: Ctrl+P on the page,
+     or any print path that doesn't go through the paper picker. */
   @page {
     size: A4;
     margin: 12mm;
   }
 
+  /* Everything is hidden and the one bill being printed is put back. Scoped to
+     a marked ancestor rather than to `.bill-doc` itself: the billing modal can
+     hold several copies of the document at once — the offscreen PDF source and
+     a thumbnail per paper size — and a bare `.bill-doc` rule would make every
+     one of them visible and print each on its own page. */
   body * {
     visibility: hidden;
   }
 
-  .bill-doc,
-  .bill-doc * {
+  .bill-print-target,
+  .bill-print-target * {
     visibility: visible;
   }
 
-  .bill-doc {
+  .bill-print-target {
+    /* On screen this box carries a padded ground so the preview reads as
+       paper on a desk; on the sheet itself that padding would shove the form
+       off its own margins. */
+    padding: 0;
+    background: none;
+    box-shadow: none;
     position: absolute;
-    inset: 0;
+    /* Not `inset: 0`. That pins all four edges, and an absolutely positioned
+       box pinned top *and* bottom is stretched to the full page height no
+       matter what `height: auto` says — which pushed the form past the foot of
+       the sheet and onto a second page. Pinned at the top-left corner only,
+       the bill takes the height its own content asks for. */
+    top: 0;
+    left: 0;
     margin: 0;
-    /* A form fills its sheet. The old slip-width cap left two-thirds of an A4
-       page white and made the ruled blocks look like a receipt someone had
-       stretched. */
     width: 100%;
     max-width: none;
     height: auto;
@@ -552,6 +575,30 @@
        matters. Browsers drop backgrounds by default when printing; this asks
        for them, and a printer that still refuses only loses tint — every rule
        and every number survives. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+
+    /* Scale the form to the sheet. The document is authored at a screen width
+       and its type is sized in px, so on paper it prints at whatever that
+       comes to — on the smaller stocks, wider and taller than the page. The
+       panel measures the bill against the chosen paper before printing and
+       writes the ratio here; the fallback of 1 is full size, which is what a
+       plain Ctrl+P on A4 has always given.
+
+       A transform rather than a zoom: zoom reflows, so the line breaks would
+       differ between the preview, the PDF and the page. This scales the laid
+       out form as drawn, which is exactly what the PDF does to its capture. */
+    transform: scale(var(--bill-print-scale, 1));
+    transform-origin: top left;
+  }
+
+  /* The wrapper is the positioned, scaled box; the document inside it keeps
+     the properties that belong to the paper itself. */
+  .bill-print-target .bill-doc {
+    width: 100%;
+    max-width: none;
+    border-radius: 0;
+    overflow: visible;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -571,10 +618,13 @@
     overflow: visible;
   }
 
-  /* The PDF's capture copy is a second .bill-doc in the DOM, and the rule above
-     makes every .bill-doc visible — without this it prints as a blank second
-     page from ten thousand pixels off the left edge. */
-  .billing-panel__pdf-source {
+  /* The other copies of the document in the modal. Neither is the bill being
+     printed: one is the offscreen source the PDF is rasterised from, the other
+     the strip of paper-size thumbnails. Taken out of the print flow entirely
+     rather than merely hidden — a visibility:hidden box still occupies its
+     page, which is how a blank second sheet gets fed. */
+  .billing-panel__pdf-source,
+  .billing-panel__paper-previews {
     display: none !important;
   }
 
@@ -583,3 +633,437 @@
     height: 34px;
   }
 }
+
+/* ============================================================ cash memo ====
+
+   The Cash Memo layout — the printed book the house actually issues, replacing
+   the ruled tax-invoice form above. Its styles are kept because .bill-doc
+   itself (the frame, the paper, the print rules) is shared; only the blocks
+   inside it changed.
+
+   The whole form is three stacked rules and two money tables. Every money
+   column measures to the same two column widths, so Rs. and Ps. keep one
+   vertical from the top of the sheet to the net payment — which is the one
+   thing a hand-written memo gets right that a typeset bill usually loses. */
+
+.memo {
+  --memo-rs: 88px;
+  --memo-ps: 40px;
+}
+
+/* --------------------------------------------------------------- masthead */
+
+/* Three things on one band: the kind of document, the phones stacked in the
+   corner, the house name across the middle. Grid rather than flex because the
+   name has to centre on the sheet, not on what is left after the phones. */
+/* Centring is against the sheet, not against what the phone block leaves
+   over. As a two-column grid the kind label centred in `1fr` — the sheet
+   minus the phones — and sat visibly left of the middle. The phones are
+   pinned to the corner instead, out of the flow, so both the label and the
+   name centre on the paper the way the printed book has them. */
+.memo__head {
+  position: relative;
+  /* Symmetric side padding wide enough to clear the pinned phone block, so
+     the centred name stays truly centred instead of sliding under it. */
+  padding: 8px 112px 6px;
+}
+
+.memo__kind {
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: #101820;
+}
+
+.memo__phones {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12px;
+  font-weight: 600;
+  color: #101820;
+}
+
+/* The house's name, set in a display face rather than the body serif — the
+   one line on the bill that is signage, not form. Baloo 2 at its heaviest
+   weight: the same heavy rounded character as the आनंद painted on the house's
+   bill book, but cleaner-drawn than a bubble face, and a true
+   Devanagari-and-Latin family — आनंद होम स्टे and ANAND HOME STAY carry the
+   same weight. (The body serif, Fraunces, covers Latin only and left the
+   Marathi name falling back to a plain system font.) Only the 800 weight is
+   loaded — it is the one this line uses. */
+.memo__name {
+  text-align: center;
+  font-family: 'Baloo 2', var(--serif);
+  font-weight: 800;
+  font-size: 34px;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #101820;
+}
+
+/* Devanagari joins its letters under one headstroke — tracking it apart
+   breaks the शिरोरेखा into fragments. Latin gets the spacing, Marathi none. */
+.memo__name--dv {
+  letter-spacing: 0;
+}
+
+.memo__addr,
+.memo__gstin {
+  text-align: center;
+  padding: 3px 10px;
+  border-top: 1px solid var(--bill-line);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #101820;
+}
+
+.memo__gstin {
+  letter-spacing: 0.04em;
+}
+
+/* ------------------------------------------------------------ ruled lines */
+
+/* The fill-in rules: No./Date, Name/Mob., Reg./Room/Persons. Each is a row of
+   captions and dotted rules, sharing the width the way the book does. */
+.memo__row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px 3px;
+  border-top: 1px solid var(--bill-line);
+}
+
+.memo__row--split {
+  gap: 6px 10px;
+  flex-wrap: wrap;
+}
+
+.memo__label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #47535e;
+}
+
+/* --------------------------------------------------------------- the body */
+
+/* Stay details left, money column right. One table so both halves share the
+   same rules and the money column's vertical runs the full height. */
+.memo__body,
+.memo__totals {
+  width: 100%;
+  border-collapse: collapse;
+  /* Fixed, so the declared column widths hold. Under auto layout the browser
+     sizes the money columns from their content, and the two tables land on
+     different verticals — which is exactly the misalignment the ruled Rs./Ps.
+     column exists to prevent. */
+  table-layout: fixed;
+}
+
+.memo__col-rs {
+  width: var(--memo-rs);
+}
+
+.memo__col-ps {
+  width: var(--memo-ps);
+}
+
+.memo__body thead th {
+  border-top: 1px solid var(--bill-line);
+  border-bottom: 1px solid var(--bill-line);
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #47535e;
+  background: var(--bill-tint);
+}
+
+.memo__body thead th:nth-child(2),
+.memo__body thead th:nth-child(3) {
+  text-align: center;
+}
+
+/* The vertical that separates the money from everything else. Set on the
+   cells rather than the column, because a border on <col> is not painted over
+   a cell that declares its own background. */
+.memo__body thead th:nth-child(2),
+.memo__body tbody td:nth-child(2),
+.memo__totals td:nth-child(2) {
+  border-left: 1px solid var(--bill-line);
+}
+
+.memo__body thead th:nth-child(3),
+.memo__body tbody td:nth-child(3),
+.memo__totals td:nth-child(3) {
+  border-left: 1px solid var(--bill-hair);
+}
+
+.memo__stay {
+  /* The open space the pre-printed form leaves. It is what stops a two-night
+     bill from looking like a torn-off scrap — and it is the block that
+     absorbs whatever the chosen sheet has left over, which is how the form
+     fills its page instead of stopping wherever the entries ran out.
+
+     A variable because two different callers size it to a page: the print
+     handler measures the bill against the chosen paper and sets the height
+     that fills the sheet, and each paper-size thumbnail does the same for the
+     sheet it draws. The fallback is the form's own resting height. */
+  height: var(--memo-stay-h, 130px);
+  vertical-align: top;
+  padding: 6px 10px 8px;
+}
+
+.memo__stay-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.memo__stay-line--fine {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.memo__rs,
+.memo__ps {
+  text-align: right;
+  padding: 3px 8px;
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+
+.memo__ps {
+  text-align: center;
+}
+
+/* The stay's own gross, written against the top of the block. */
+.memo__rs--lead,
+.memo__ps--lead {
+  font-size: 17px;
+  font-weight: 600;
+  color: #101820;
+  padding-top: 8px;
+}
+
+/* ---------------------------------------------------------- misc charges */
+
+.memo__misc {
+  margin-top: 8px;
+  border-top: 1px dotted #8d99a4;
+  padding-top: 5px;
+}
+
+.memo__misc-head {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: #101820;
+  margin-bottom: 3px;
+}
+
+.memo__sac {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 11px;
+  color: #47535e;
+}
+
+.memo__misc-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 1px 0;
+}
+
+.memo__qty {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #47535e;
+}
+
+/* -------------------------------------------------------- the money stack */
+
+.memo__money-label {
+  padding: 3px 10px;
+  text-align: right;
+  font-size: 12.5px;
+  color: #1c262f;
+}
+
+.memo__money--strong .memo__money-label,
+.memo__money--strong .memo__rs,
+.memo__money--strong .memo__ps {
+  font-weight: 700;
+  font-size: 14.5px;
+  color: #101820;
+}
+
+.memo__money--rule td {
+  border-top: 1px solid var(--bill-line);
+}
+
+.memo__money:last-child td {
+  border-bottom: 1px solid var(--bill-line);
+}
+
+/* The payment reference, under the rule it belongs to rather than beside it —
+   a UTR is long enough to push the caption off its own line. */
+.memo__ref {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: #47535e;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------- foot */
+
+.memo__row--words {
+  border-bottom: 1px solid var(--bill-line);
+}
+
+.memo__foot {
+  padding: 6px 10px 8px;
+}
+
+.memo__terms {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #47535e;
+}
+
+.memo__signs {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.memo__sign {
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 11px;
+  color: #47535e;
+}
+
+.memo__sign-line {
+  display: block;
+  width: 120px;
+  height: 26px;
+  border-bottom: 1px solid var(--bill-line);
+  margin-bottom: 2px;
+}
+
+.memo__thanks {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #101820;
+  padding-bottom: 2px;
+}
+
+@media (max-width: 640px) {
+  .memo {
+    --memo-rs: 68px;
+    --memo-ps: 32px;
+  }
+
+  .memo__name {
+    font-size: 27px;
+  }
+
+  .memo__stay {
+    height: auto;
+  }
+
+  .memo__signs {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 18px;
+  }
+
+  .memo__sign-line {
+    width: 96px;
+  }
+}
+
+@media print {
+  /* A floor for the open space on paper, not a target. The panel measures the
+     bill against the chosen sheet at print time and overrides this with
+     whatever height actually fills the page — a fixed figure here can only
+     ever be a guess at how far the entries above it ran. */
+  .memo__stay {
+    min-height: 130px;
+  }
+
+  .memo__sign-line {
+    height: 34px;
+  }
+}
+
+/* A preview has no number and no date — the series is allocated at issue time
+   so abandoned previews don't gap it. Set apart from a filled-in value so the
+   desk reads it as "not yet", not as what the bill will say. */
+.memo__pending {
+  font-weight: 400;
+  font-style: italic;
+  color: #8d99a4;
+}
+
+/* Extras stack on their own rule rather than running along it: two or three of
+   them set inline wrap into an unreadable ribbon, and each needs its amount
+   sitting under the last one so the column reads. */
+.memo__stay-line--extras {
+  align-items: flex-start;
+}
+
+.memo__extras {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Each extra on its own dotted rule — the same rule a filled-in field gets, so
+   an added charge looks written onto the form rather than printed beside it. */
+.memo__extra {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 1px dotted #8d99a4;
+  padding-bottom: 1px;
+}
+
+.memo__extra-name {
+  font-weight: 600;
+  color: #101820;
+  overflow-wrap: anywhere;
+}
+
+.memo__extra-amt {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #101820;
+  font-variant-numeric: tabular-nums;
+}
+
+/* No per-paper type rules, deliberately. Every stock receives the same
+   document scaled by one transform (see fitBillToSheet in Billing.jsx): the
+   line breaks the desk approved in the preview are the line breaks that print.
+   An earlier cut restyled the type per sheet under .bill-paper-* classes —
+   which reflowed the form at print time, after its height had already been
+   measured for the fit, and stacked a smaller font on top of the scale so an
+   A6 slip printed at ~4px. If a stock ever needs its own layout, it needs its
+   own measured fit, not a class that restyles this one behind its back. */

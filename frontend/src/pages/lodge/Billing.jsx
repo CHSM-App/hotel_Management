@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -27,6 +27,127 @@ function lateLabel(minutes) {
 // download time, so the file shows exactly the layout the user was looking at;
 // this only decides it if that preview couldn't be measured.
 const BILL_PDF_WIDTH = 760;
+
+// The stock a bill can be printed on. One table drives both outputs: the
+// browser's own print dialog, via a class on <html> that picks an @page rule
+// (see BillDocument.css), and the downloaded PDF, via the jsPDF format.
+//
+// They have to come from the same row. A desk that picks A5, prints it, then
+// downloads the same bill as an A4 PDF has been given two different documents
+// and no reason to expect it.
+//
+// `format` is what jsPDF takes: a named size it knows, or [width, height] in
+// points for one it doesn't. A roll has no page height, so it gets a nominal
+// long sheet — the bill is scaled to fit whichever dimension is tighter, and
+// on a roll that is always the width.
+//
+// `page` is the CSS `size`/`margin` pair for the browser's own print dialog.
+// It cannot live in the stylesheet: @page is only legal at the top level, so
+// it can't be nested under a class, and it is resolved before the cascade
+// reaches any element, so it can't read a custom property either. The rule is
+// therefore written into a <style> tag at print time and taken out again after.
+// `pt` is the sheet in points, the same unit jsPDF works in. It is stated here
+// even where `format` is a name jsPDF already knows, because the on-screen
+// preview needs the proportions to draw the paper — and a second table of
+// dimensions is a second thing to get out of step with this one.
+const PAPER_SIZES = [
+  { id: 'a4', label: 'A4', hint: '210 × 297 mm', format: 'a4', page: 'A4', margin: '12mm', pt: [595.28, 841.89] },
+  { id: 'a5', label: 'A5', hint: '148 × 210 mm', format: 'a5', page: 'A5', margin: '8mm', pt: [419.53, 595.28] },
+  { id: 'a6', label: 'A6', hint: '105 × 148 mm', format: 'a6', page: 'A6', margin: '5mm', pt: [297.64, 419.53] },
+  {
+    id: 'letter',
+    label: 'Letter',
+    hint: '8.5 × 11 in',
+    format: 'letter',
+    page: 'letter',
+    margin: '12mm',
+    pt: [612, 792],
+  },
+  {
+    id: 'half-letter',
+    label: 'Half Letter',
+    hint: '8.5 × 5.5 in',
+    format: [612, 396],
+    page: '8.5in 5.5in',
+    margin: '8mm',
+    pt: [612, 396],
+  },
+  {
+    id: 'thermal-80',
+    label: '80mm roll',
+    hint: 'thermal receipt',
+    // Width only — the height in the PDF is measured from the bill itself.
+    // 226.77pt is 80mm. The second figure is a placeholder jsPDF never sees.
+    format: [226.77, 850],
+    continuous: true,
+    // Height auto: a roll has no page to break against, and pinning one would
+    // cut the memo off at whatever length was guessed.
+    page: '80mm auto',
+    margin: '3mm',
+    // The preview draws a roll as a tall strip rather than a sheet — there is
+    // no page height to be faithful to, so this is only how much of the roll
+    // to show before it runs off the bottom.
+    pt: [226.77, 560],
+  },
+];
+
+// Margin on a roll, in points (~3mm) — matching the @page margin above, so the
+// printed slip and the downloaded one have the same edge.
+const ROLL_MARGIN = 8.5;
+
+// Device pixels per CSS pixel in the capture. Named because the PDF fit maths
+// has to divide it back out to find the bill's natural size on paper.
+const CAPTURE_PIXEL_RATIO = 3;
+
+// How wide a sheet is drawn in the paper picker, in CSS pixels. Wide enough
+// that the memo's own structure is legible at a glance — masthead, ruled
+// block, money column — without six of them filling the modal.
+const PAPER_PREVIEW_WIDTH = 190;
+
+// The widest stock on offer, in points. Every preview is drawn against this so
+// the sheets keep their sizes relative to each other.
+const WIDEST_PAPER_PT = Math.max(...PAPER_SIZES.map((p) => p.pt[0]));
+
+// The @page margins are written as CSS lengths; the fit maths needs them as
+// numbers. Only mm and in appear in PAPER_SIZES, and an unrecognised unit
+// falls back to no margin rather than throwing mid-print.
+function mmToPt(value) {
+  const m = /^([\d.]+)(mm|in)$/.exec(String(value).trim());
+  if (!m) return 0;
+  const n = Number(m[1]);
+  return m[2] === 'in' ? n * 72 : (n * 72) / 25.4;
+}
+
+// Print CSS is laid out at 96 CSS pixels to the inch, whatever the printer's
+// own resolution — so a point converts at 96/72.
+const ptToPx = (pt) => (pt * 96) / 72;
+
+// The stay block's own height before any sheet-filling stretch is added — the
+// open space the printed form leaves under the entries. Kept in step with the
+// .memo__stay rule in BillDocument.css.
+const STAY_BASE_HEIGHT = 130;
+
+// How a bill lands on a sheet, answered once for all three outputs — the print
+// dialog, the PDF, and each thumbnail. Width decides the scale, and the height
+// left under the fitted bill goes to the open stay block, so the form runs the
+// full page instead of stopping wherever its entries did. Height only binds
+// when the bill is too tall even at full width (a landscape sheet, a long
+// itemised tab); a roll has no bottom to fill and stretches nothing.
+//
+// Three callers, one formula, because they are three pictures of the same
+// sheet: the moment one of them fits differently, the previews are lying about
+// one of the other two.
+function fitBillToSheet(availWidth, availHeight, naturalWidth, naturalHeight, continuous) {
+  const fitWidth = availWidth / naturalWidth;
+  const fitHeight = !continuous && naturalHeight > 0 ? availHeight / naturalHeight : Infinity;
+  const scale = Math.min(fitWidth, fitHeight, 1);
+  const slack = !continuous && naturalHeight > 0 ? availHeight / scale - naturalHeight : 0;
+  return { scale, stayHeight: STAY_BASE_HEIGHT + (slack > 24 ? slack : 0) };
+}
+
+const DEFAULT_PAPER = 'a4';
+
+const paperById = (id) => PAPER_SIZES.find((p) => p.id === id) ?? PAPER_SIZES[0];
 
 // Money that arrives this way leaves a reference the property reconciles
 // against its settlement statement; cash doesn't. Mirrors ONLINE_METHODS on
@@ -162,6 +283,150 @@ function billMatchesSearch(inv, query) {
   if (!query) return true;
   return [inv.invoiceNumber, inv.guestName, inv.roomNumber, inv.tableLabel, inv.guestPhone].some(
     (field) => field && String(field).toLowerCase().includes(query)
+  );
+}
+
+// The bill drawn on the sheet it will print on.
+//
+// Not a styled box around the document: the paper is drawn at its real aspect
+// ratio and the bill is scaled into it by the same fit the PDF uses, so what
+// the desk sees is the proportion of ink to paper they will actually get. A
+// bill that overflows its sheet on screen is a bill that would have overflowed
+// on paper.
+//
+// The document itself is never re-laid-out — it renders at its natural width
+// and is shrunk with a transform. Restyling it per paper would mean the
+// preview and the printed sheet disagreed about line breaks, which is the one
+// thing a preview exists to rule out.
+function PaperPreview({ paper, invoice, width, billHeight, lang }) {
+  const [pw, ph] = paper.pt;
+  // Every sheet is drawn at one scale, not each fitted to the same box. Drawn
+  // to a common width they all come out the same size, and A4, A5 and A6 —
+  // whose proportions are nearly identical by design — became three
+  // indistinguishable thumbnails. Sizing them against the widest stock is what
+  // makes an A6 look like the slip it is, and shows the thing the desk is
+  // actually choosing between: how much paper the same bill covers.
+  const pxPerPt = width / WIDEST_PAPER_PT;
+  const sheetWidth = pw * pxPerPt;
+  const sheetHeight = ph * pxPerPt;
+
+  // Same margin rule as the PDF: proportional on the small stocks, capped at
+  // 24pt on the large ones, so the preview's white border is the real one.
+  const marginPt = paper.continuous ? ROLL_MARGIN : Math.min(24, pw * 0.04);
+  const inset = marginPt * pxPerPt;
+
+  // The bill renders at its natural CSS width and is scaled to the space inside
+  // the margins — down only, never up, and fitted on both dimensions exactly as
+  // buildBillPdfBlob does. Fitting on width alone would have shown the bill
+  // clipped at the foot of a landscape sheet when the PDF in fact shrinks it to
+  // fit: a preview that disagrees with the file it is previewing is worse than
+  // no preview.
+  //
+  // A roll is the one exception — its height is cut to the bill, so there is no
+  // height for the fit to be constrained by.
+  const availableWidth = sheetWidth - inset * 2;
+  const availableHeight = sheetHeight - inset * 2;
+  const naturalWidth = BILL_PDF_WIDTH;
+  const naturalHeight = billHeight || naturalWidth * 1.3;
+  // The same fit and fill as the print dialog and the PDF, so the thumbnail is
+  // a picture of the sheet that will actually come out.
+  const { scale, stayHeight } = fitBillToSheet(
+    availableWidth,
+    availableHeight,
+    naturalWidth,
+    naturalHeight,
+    paper.continuous
+  );
+
+  return (
+    <div className="paper-preview">
+      <div
+        className={`paper-preview__sheet${paper.continuous ? ' paper-preview__sheet--roll' : ''}`}
+        style={{ width: sheetWidth, height: sheetHeight }}
+      >
+        <div
+          className="paper-preview__ink"
+          style={{
+            top: inset,
+            left: inset,
+            width: naturalWidth,
+            '--memo-stay-h': `${Math.round(stayHeight)}px`,
+            transform: `scale(${scale})`,
+            // Scaled from its own top-left so the bill sits against the
+            // margin, not floating from the middle of the sheet.
+            transformOrigin: 'top left',
+            // The scale above already fits the bill inside the sheet, so this
+            // only guards the case where the natural height was still being
+            // measured on the first paint.
+            maxHeight: paper.continuous ? 'none' : availableHeight / scale,
+          }}
+        >
+          <BillDocument invoice={invoice} lang={lang} />
+        </div>
+      </div>
+      <div className="paper-preview__caption">
+        {paper.label} · {paper.hint}
+      </div>
+    </div>
+  );
+}
+
+// The six stocks side by side, each a clickable sheet. One component because
+// it now hangs in two places — the issued bill's detail modal, and the issue
+// form while the bill is still being put together — and the two must offer
+// the same choice the same way.
+// The compact dropdown form of the same choice. One component for the same
+// reason as the grid below: it appears beside the Print button and inside the
+// issue form's paper fold, and the two must always list the same stocks.
+function PaperSelect({ value, onChange }) {
+  return (
+    <label className="billing-panel__paper">
+      <span className="billing-panel__paper-label">Paper</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Paper size for printing and PDF"
+      >
+        {PAPER_SIZES.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.label} · {p.hint}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// English or Marathi masthead. A dropdown rather than a flag toggle so the
+// control names both states — a lone "मराठी" button reads as decoration to
+// staff who don't know it is a switch.
+function BillLangSelect({ value, onChange }) {
+  return (
+    <label className="billing-panel__paper">
+      <span className="billing-panel__paper-label">Language</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Bill masthead language">
+        <option value="en">English</option>
+        <option value="mr">मराठी</option>
+      </select>
+    </label>
+  );
+}
+
+function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
+  return (
+    <div className="paper-preview__grid">
+      {PAPER_SIZES.map((p) => (
+        <button
+          type="button"
+          key={p.id}
+          className={`paper-preview__choice${p.id === value ? ' paper-preview__choice--on' : ''}`}
+          onClick={() => onChange(p.id)}
+          aria-pressed={p.id === value}
+        >
+          <PaperPreview paper={p} invoice={invoice} width={PAPER_PREVIEW_WIDTH} billHeight={billHeight} lang={lang} />
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -364,6 +629,7 @@ export default function Billing({ lodge }) {
     setDetailStay(null);
     setDetailStayError('');
     setPreviewOpen(false);
+    setIssuePaperOpen(false);
     setAppliedTarget(0);
   };
 
@@ -411,12 +677,20 @@ export default function Billing({ lodge }) {
   // over the top. Without this the preview would show "Balance due" in full on
   // a bill about to be marked paid.
   const collecting = collectedAmount.trim() !== '';
-  const documentPreview = preview?.document && {
-    ...preview.document,
-    balanceCollected: collecting ? Number(collectedAmount) || 0 : 0,
-    balancePaymentMethod: collecting ? paymentMethod || null : null,
-    balanceReference: collecting && needsPaymentReference(paymentMethod) ? paymentReference.trim() : null,
-  };
+  // Memoised so its identity only moves when its inputs do: the paper fold's
+  // measuring effect keys off this object, and a fresh one per render would
+  // re-measure the offscreen copy — a forced reflow — on every keystroke in
+  // the modal.
+  const documentPreview = useMemo(
+    () =>
+      preview?.document && {
+        ...preview.document,
+        balanceCollected: collecting ? Number(collectedAmount) || 0 : 0,
+        balancePaymentMethod: collecting ? paymentMethod || null : null,
+        balanceReference: collecting && needsPaymentReference(paymentMethod) ? paymentReference.trim() : null,
+      },
+    [preview, collecting, collectedAmount, paymentMethod, paymentReference]
+  );
 
   // Everything on the bill before tax — a discount comes off what was sold,
   // never off the tax the government is owed, so this is what a percentage is
@@ -544,6 +818,101 @@ export default function Billing({ lodge }) {
   const billPreviewRef = useRef(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  // The stock this bill goes out on. Held per-session rather than saved: a
+  // desk prints on what is in the tray today, and the tray is what changes.
+  const [paperSize, setPaperSize] = useState(DEFAULT_PAPER);
+  // Which language the masthead prints in. Session state like the paper —
+  // the house that bills in Marathi bills in Marathi all day.
+  const [billLang, setBillLang] = useState('en');
+  // Rendering six full bills is six full documents in the DOM. Kept shut until
+  // asked for, the way the issue-form preview is.
+  const [paperPreviewsOpen, setPaperPreviewsOpen] = useState(false);
+  // The same fold on the issue form, so the sheet is chosen while the bill is
+  // being put together rather than after it exists. Its thumbnails need the
+  // draft bill's natural height, measured off an offscreen copy of the
+  // preview document — the issued bill's copy doesn't exist yet.
+  const [issuePaperOpen, setIssuePaperOpen] = useState(false);
+  const [issueBillHeight, setIssueBillHeight] = useState(0);
+  const issueMeasureRef = useRef(null);
+  // The bill's natural height at BILL_PDF_WIDTH, measured off the offscreen
+  // capture copy — which is already laid out at exactly that width for the PDF.
+  // The previews need it to fit the document to a sheet the way the PDF does;
+  // until it is known they fall back to a nominal A4-ish ratio, which is only
+  // ever on screen for the first paint.
+  const [billHeight, setBillHeight] = useState(0);
+
+  // Print on the chosen stock: write the @page rule, mark <html> so the
+  // stylesheet's per-paper rules apply, print, then undo both.
+  //
+  // window.print() blocks until the dialog closes in the browsers this runs on,
+  // so tearing down straight after is safe. Both removals sit in a finally
+  // regardless — a stranded rule would silently repaper every later print in
+  // the app, which is a bug nobody would think to look here for.
+  const handlePrint = () => {
+    const paper = paperById(paperSize);
+
+    // What the sheet can hold, in CSS pixels. @page margins are in real units,
+    // so the printable area is the paper less its margins converted at 96dpi —
+    // the ratio the browser itself lays print CSS out at.
+    const [pwPt, phPt] = paper.pt;
+    const marginPt = mmToPt(paper.margin);
+    const pageWidthPx = ptToPx(pwPt - marginPt * 2);
+    const pageHeightPx = ptToPx(phPt - marginPt * 2);
+
+    // The bill as it actually measures, from the offscreen copy — laid out at
+    // BILL_PDF_WIDTH and never restyled, so it is the one honest measurement
+    // of the document. The visible copy is inside a modal whose width varies.
+    const node = billRef.current;
+    const naturalWidth = node?.offsetWidth || BILL_PDF_WIDTH;
+    const naturalHeight = node?.offsetHeight || 0;
+
+    const { scale, stayHeight } = fitBillToSheet(
+      pageWidthPx,
+      pageHeightPx,
+      naturalWidth,
+      naturalHeight,
+      paper.continuous
+    );
+
+    const style = document.createElement('style');
+    style.media = 'print';
+    style.textContent =
+      `@page { size: ${paper.page}; margin: ${paper.margin}; }
+` +
+      // Width is divided back out by the scale so the form still fills the
+      // sheet edge to edge after shrinking — scaling alone would leave a
+      // proportional strip of white down the right-hand side.
+      `.bill-print-target { --bill-print-scale: ${scale}; width: ${100 / scale}%; ` +
+      // The same variable the stay block is sized by everywhere — the
+      // thumbnails set it per sheet, this sets it for the sheet being printed.
+      `--memo-stay-h: ${Math.round(stayHeight)}px; }`;
+
+    document.head.appendChild(style);
+    try {
+      window.print();
+    } finally {
+      style.remove();
+    }
+  };
+
+  // Measured when the previews are opened rather than on every render: the
+  // node is offscreen and fixed-width, so its height only changes when the
+  // bill itself does — and reading offsetHeight in a layout effect on each
+  // pass would be a forced reflow for a number that did not move.
+  useEffect(() => {
+    if (!paperPreviewsOpen) return;
+    const node = billRef.current;
+    if (node) setBillHeight(node.offsetHeight);
+  }, [paperPreviewsOpen, detailInvoice]);
+
+  // Its twin on the issue form, reading the offscreen copy of the draft. The
+  // draft re-prices as the form changes — discount, overstay, collection — so
+  // the height follows the preview document, not just the fold opening.
+  useEffect(() => {
+    if (!issuePaperOpen) return;
+    const node = issueMeasureRef.current;
+    if (node) setIssueBillHeight(node.offsetHeight);
+  }, [issuePaperOpen, documentPreview]);
 
   const buildBillPdfBlob = async () => {
     // html-to-image, not html2canvas — the difference is who paints the text.
@@ -570,30 +939,81 @@ export default function Billing({ lodge }) {
     // Inter still loading would be laid out in one font and painted in another.
     await document.fonts.ready;
 
-    const canvas = await toCanvas(node, {
-      // Three device pixels per CSS pixel. The text is rasterised, not
-      // embedded, so resolution is all that stands between the reader and
-      // visibly soft 9px captions.
-      pixelRatio: 3,
-      backgroundColor: '#ffffff',
-      // Screen furniture with no meaning on paper: a clipped box can crop a
-      // border, a shadow becomes a grey smear down the edge of the sheet, and
-      // rounded corners read as a web card. Applied to the capture clone only.
-      style: { overflow: 'visible', boxShadow: 'none', borderRadius: '0' },
-    });
+    // The capture is stretched to the chosen sheet before it is rasterised,
+    // the same way the print dialog and the thumbnails fill theirs — the stay
+    // block takes whatever height the fitted bill leaves on the page. Without
+    // this the file was the odd one out: the printed sheet ran to its foot
+    // while the PDF of the same bill stopped halfway down.
+    //
+    // Measured before the variable is set, then restored after the capture so
+    // the copy stays an honest measurement for everything else that reads it.
+    const paper = paperById(paperSize);
+    const capturedWidth = node.offsetWidth;
+    const capturedHeight = node.offsetHeight;
+    if (!paper.continuous) {
+      const [pwPt, phPt] = paper.pt;
+      // The PDF page's own margin rule, below — proportional on small stocks.
+      const marginPt = Math.min(24, pwPt * 0.04);
+      const { stayHeight } = fitBillToSheet(
+        ptToPx(pwPt - marginPt * 2),
+        ptToPx(phPt - marginPt * 2),
+        capturedWidth,
+        capturedHeight,
+        false
+      );
+      node.style.setProperty('--memo-stay-h', `${Math.round(stayHeight)}px`);
+    }
+
+    let canvas;
+    try {
+      canvas = await toCanvas(node, {
+        // Three device pixels per CSS pixel. The text is rasterised, not
+        // embedded, so resolution is all that stands between the reader and
+        // visibly soft 9px captions.
+        pixelRatio: CAPTURE_PIXEL_RATIO,
+        backgroundColor: '#ffffff',
+        // Screen furniture with no meaning on paper: a clipped box can crop a
+        // border, a shadow becomes a grey smear down the edge of the sheet, and
+        // rounded corners read as a web card. Applied to the capture clone only.
+        style: { overflow: 'visible', boxShadow: 'none', borderRadius: '0' },
+      });
+    } finally {
+      node.style.removeProperty('--memo-stay-h');
+    }
     const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+
+    // A roll is cut to length, not folded to a page. Its height is whatever
+    // the bill came to, so the sheet is measured from the capture rather than
+    // guessed: a fixed length would either cut a long bill off or spit out a
+    // foot of blank paper after a short one, and on a receipt printer that
+    // waste is per bill.
+    const rollWidth = Array.isArray(paper.format) && paper.continuous ? paper.format[0] : null;
+    const format = rollWidth
+      ? [rollWidth, Math.max(120, (rollWidth - ROLL_MARGIN * 2) * (canvas.height / canvas.width) + ROLL_MARGIN * 2)]
+      : paper.format;
+
+    const pdf = new jsPDF({ unit: 'pt', format });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 24;
+    // Scaled to the sheet. A flat 24pt margin is a tenth of an A6's width and
+    // would leave the bill printing in the middle of it, so the smaller stocks
+    // get a margin proportional to the page instead of a fixed one.
+    const margin = rollWidth ? ROLL_MARGIN : Math.min(24, pageWidth * 0.04);
 
     // A bill is a single receipt, not a flowing document — scale it down to
     // whichever dimension is tighter so it always lands on one page, rather
     // than printing it at full width and letting the tail spill onto a
     // near-blank second page.
+    //
+    // Never scaled *up*: a small bill blown up to fill a Letter sheet is a
+    // 30px masthead and a memo that reads as a poster. It sits at its natural
+    // size, centred, and the paper simply has room to spare.
     const maxWidth = pageWidth - margin * 2;
     const maxHeight = pageHeight - margin * 2;
-    const scale = Math.min(maxWidth / canvas.width, maxHeight / canvas.height);
+    // The capture is at pixelRatio 3, so its natural size on paper is a third
+    // of its pixel count converted from 96dpi CSS pixels to points.
+    const naturalScale = (72 / 96) / CAPTURE_PIXEL_RATIO;
+    const scale = Math.min(maxWidth / canvas.width, maxHeight / canvas.height, naturalScale);
     const imgWidth = canvas.width * scale;
     const imgHeight = canvas.height * scale;
     const x = (pageWidth - imgWidth) / 2;
@@ -1335,7 +1755,63 @@ export default function Billing({ lodge }) {
                         <p className="billing-panel__hint">
                           The number and date are stamped on when it is issued.
                         </p>
-                        <BillDocument invoice={documentPreview} />
+                        {/* Marked as the print target too: staff do print
+                            from the issue form to check a bill before
+                            committing to it. */}
+                        <div className="bill-print-target">
+                          <BillDocument invoice={documentPreview} lang={billLang} />
+                        </div>
+                      </>
+                    )}
+                  </details>
+                )}
+
+                {/* The sheet is chosen here, while the bill is still being put
+                    together — by the time the issued bill's own modal opens,
+                    the desk already has the paper in the tray. The choice is
+                    one piece of state, so whatever is picked here is what
+                    Print and the PDF use afterwards. */}
+                {preview.document && (
+                  <details
+                    className="form-section--collapsible billing-panel__paper-previews"
+                    onToggle={(e) => setIssuePaperOpen(e.currentTarget.open)}
+                  >
+                    <summary>
+                      Paper size
+                      <span className="billing-panel__paper-current">{paperById(paperSize).label}</span>
+                    </summary>
+                    {issuePaperOpen && (
+                      <>
+                        <p className="billing-panel__hint">
+                          How this bill sits on each sheet. The pick carries through to Print and the PDF once
+                          the bill is issued.
+                        </p>
+                        {/* The same choice twice on purpose: the dropdown for
+                            a desk that already knows its stock, the sheets
+                            below for one deciding by eye. */}
+                        <div className="billing-panel__print-options">
+                          <PaperSelect value={paperSize} onChange={setPaperSize} />
+                <BillLangSelect value={billLang} onChange={setBillLang} />
+                          <BillLangSelect value={billLang} onChange={setBillLang} />
+                        </div>
+                        <PaperSizeGrid
+                          invoice={documentPreview}
+                          billHeight={issueBillHeight}
+                          value={paperSize}
+                          onChange={setPaperSize}
+                          lang={billLang}
+                        />
+                        {/* What the thumbnails measure from: the draft at the
+                            same fixed width the PDF captures at. Offscreen —
+                            the copies on screen are inside modals whose width
+                            varies with the viewport. */}
+                        <div
+                          className="billing-panel__pdf-source"
+                          style={{ width: BILL_PDF_WIDTH }}
+                          aria-hidden="true"
+                        >
+                          <BillDocument ref={issueMeasureRef} invoice={documentPreview} lang={billLang} />
+                        </div>
                       </>
                     )}
                   </details>
@@ -1378,7 +1854,42 @@ export default function Billing({ lodge }) {
               </span>
             </div>
 
-            <BillDocument ref={billPreviewRef} invoice={detailInvoice} />
+            {/* The bill at full size, and the ref the PDF capture measures to
+                size its offscreen copy. It has to stay unscaled: offsetWidth
+                on a transformed node reports the drawn width, and the capture
+                would be laid out to a figure the document never used. */}
+            {/* The one copy that prints. The wrapper carries the marker the
+                print stylesheet keys off — the modal holds other copies of the
+                same document (the PDF source, the paper thumbnails) and only
+                this one is the bill. */}
+            <div className="bill-print-target">
+              <BillDocument ref={billPreviewRef} invoice={detailInvoice} lang={billLang} />
+            </div>
+
+            {/* The same bill on each stock it can be printed on, drawn to the
+                real proportions of the sheet. The picker below chooses one; a
+                desk deciding between them needs to see the choice, not read
+                two sets of millimetres and imagine it. */}
+            <details
+              className="form-section--collapsible billing-panel__paper-previews"
+              onToggle={(e) => setPaperPreviewsOpen(e.currentTarget.open)}
+            >
+              <summary>Preview on each paper size</summary>
+              {paperPreviewsOpen && (
+                <>
+                  <p className="billing-panel__hint">
+                    How the bill sits on each sheet. Selecting one here sets the paper for Print and the PDF.
+                  </p>
+                  <PaperSizeGrid
+                    invoice={detailInvoice}
+                    billHeight={billHeight}
+                    value={paperSize}
+                    onChange={setPaperSize}
+                    lang={billLang}
+                  />
+                </>
+              )}
+            </details>
 
             {/* What the PDF is rasterised from: the same document again, parked
                 offscreen and sized by buildBillPdfBlob to the width of the
@@ -1396,7 +1907,7 @@ export default function Billing({ lodge }) {
               style={{ width: BILL_PDF_WIDTH }}
               aria-hidden="true"
             >
-              <BillDocument ref={billRef} invoice={detailInvoice} />
+              <BillDocument ref={billRef} invoice={detailInvoice} lang={billLang} />
             </div>
 
             {detailInvoice.status === 'VOID' && (
@@ -1420,7 +1931,13 @@ export default function Billing({ lodge }) {
                 >
                   Void this bill
                 </button>
-                <button type="button" className="btn-secondary" onClick={() => window.print()}>
+                {/* Beside the two buttons it governs, because it governs both
+                    — printing and the download have to agree about the sheet,
+                    and a control parked elsewhere reads as belonging to
+                    whichever one is nearer. */}
+                <PaperSelect value={paperSize} onChange={setPaperSize} />
+                <BillLangSelect value={billLang} onChange={setBillLang} />
+                <button type="button" className="btn-secondary" onClick={handlePrint}>
                   Print
                 </button>
                 <button type="button" className="btn-accent" onClick={handleSharePdf} disabled={pdfBusy}>

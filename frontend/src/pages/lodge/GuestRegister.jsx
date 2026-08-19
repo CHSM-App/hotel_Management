@@ -944,7 +944,9 @@ export default function GuestRegister() {
                   become a second opinion on what a guest was charged. */}
               {!detailError && detailBooking && showBill && (
                 <div className="guest-register__bill">
-                  <BillDocument invoice={invoice} />
+                  <div className="bill-print-target">
+                    <BillDocument invoice={invoice} />
+                  </div>
                 </div>
               )}
 
