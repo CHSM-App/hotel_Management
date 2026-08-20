@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiPatch, ApiError } from '../../lib/api';
+import { apiPatch, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { copyText } from '../../lib/clipboard';
 import './ProfileMenu.css';
@@ -27,7 +27,7 @@ function Fact({ label, value }) {
   );
 }
 
-const initialPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
+const initialPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', otp: '' };
 
 export default function ProfileMenu({ user, lodge, onSignOut }) {
   const token = getSession()?.token;
@@ -40,6 +40,12 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [linkCopied, setLinkCopied] = useState('');
+  // Which half of the password change is on screen. "details" collects the
+  // passwords, "code" collects the one-time code that authorises the change.
+  const [passwordStep, setPasswordStep] = useState('details');
+  // Masked destination the server reports, e.g. "+91 ******3210", so the user
+  // can tell which phone to look at without it being readable over a shoulder.
+  const [codeSentTo, setCodeSentTo] = useState('');
 
   const closeMenu = () => {
     setOpen(false);
@@ -47,6 +53,8 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     setForm(initialPasswordForm);
     setError('');
     setSuccess(false);
+    setPasswordStep('details');
+    setCodeSentTo('');
   };
 
   const toggleMenu = () => {
@@ -76,20 +84,48 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     };
   }, [open]);
 
+  // Both passwords are validated here, before any code is sent. Sending one and
+  // then rejecting the form would spend a real WhatsApp message — and the user's
+  // patience — on a mistake the browser could see on its own.
+  const validateNewPassword = () => {
+    if (!form.currentPassword) return 'Enter your current password.';
+    if (form.newPassword.length < 8) return 'New password must be at least 8 characters.';
+    if (form.newPassword !== form.confirmPassword) return 'New password and confirmation don’t match.';
+    return null;
+  };
+
+  const requestCode = async () => {
+    setError('');
+    const invalid = validateNewPassword();
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await apiPost('/me/password/otp', { currentPassword: form.currentPassword }, { token });
+      setCodeSentTo(res?.phone || '');
+      setPasswordStep('code');
+      setForm((f) => ({ ...f, otp: '' }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send the code.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendCode = async (e) => {
+    e.preventDefault();
+    await requestCode();
+  };
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!form.currentPassword) {
-      setError('Enter your current password.');
-      return;
-    }
-    if (form.newPassword.length < 8) {
-      setError('New password must be at least 8 characters.');
-      return;
-    }
-    if (form.newPassword !== form.confirmPassword) {
-      setError('New password and confirmation don’t match.');
+    if (!/^d{6}$/.test(form.otp.trim())) {
+      setError('Enter the 6-digit code sent to your phone.');
       return;
     }
 
@@ -97,12 +133,18 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     try {
       await apiPatch(
         '/me/password',
-        { currentPassword: form.currentPassword, newPassword: form.newPassword },
+        {
+          currentPassword: form.currentPassword,
+          newPassword: form.newPassword,
+          otp: form.otp.trim(),
+        },
         { token }
       );
       setSuccess(true);
       setForm(initialPasswordForm);
       setShowChangePassword(false);
+      setPasswordStep('details');
+      setCodeSentTo('');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not change your password.');
     } finally {
@@ -229,53 +271,107 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
               Change password
             </button>
           ) : (
-            <form onSubmit={handleChangePassword} className="profile-menu__password-form">
+            <form
+              onSubmit={passwordStep === 'details' ? handleSendCode : handleChangePassword}
+              className="profile-menu__password-form"
+            >
               {error && <div className="form-banner form-banner--error profile-menu__banner">{error}</div>}
-              <div className="field">
-                <label htmlFor="profileCurrentPassword">Current password</label>
-                <input
-                  id="profileCurrentPassword"
-                  type="password"
-                  autoComplete="current-password"
-                  value={form.currentPassword}
-                  onChange={(e) => setForm((f) => ({ ...f, currentPassword: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="profileNewPassword">New password</label>
-                <input
-                  id="profileNewPassword"
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.newPassword}
-                  onChange={(e) => setForm((f) => ({ ...f, newPassword: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="profileConfirmPassword">Confirm new password</label>
-                <input
-                  id="profileConfirmPassword"
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.confirmPassword}
-                  onChange={(e) => setForm((f) => ({ ...f, confirmPassword: e.target.value }))}
-                />
-              </div>
+
+              {passwordStep === 'details' ? (
+                <>
+                  <div className="field">
+                    <label htmlFor="profileCurrentPassword">Current password</label>
+                    <input
+                      id="profileCurrentPassword"
+                      type="password"
+                      autoComplete="current-password"
+                      value={form.currentPassword}
+                      onChange={(e) => setForm((f) => ({ ...f, currentPassword: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="profileNewPassword">New password</label>
+                    <input
+                      id="profileNewPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.newPassword}
+                      onChange={(e) => setForm((f) => ({ ...f, newPassword: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="profileConfirmPassword">Confirm new password</label>
+                    <input
+                      id="profileConfirmPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.confirmPassword}
+                      onChange={(e) => setForm((f) => ({ ...f, confirmPassword: e.target.value }))}
+                    />
+                  </div>
+                  <p className="profile-menu__hint">
+                    We’ll send a 6-digit code to your registered WhatsApp number to confirm this change.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="profile-menu__hint">
+                    {codeSentTo
+                      ? `Enter the 6-digit code sent to ${codeSentTo}.`
+                      : 'Enter the 6-digit code sent to your WhatsApp number.'}
+                  </p>
+                  <div className="field">
+                    <label htmlFor="profileOtp">Verification code</label>
+                    <input
+                      id="profileOtp"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={form.otp}
+                      onChange={(e) => setForm((f) => ({ ...f, otp: e.target.value.replace(/D/g, '') }))}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="profile-menu__link-button"
+                    onClick={requestCode}
+                    disabled={submitting}
+                  >
+                    Resend code
+                  </button>
+                </>
+              )}
+
               <div className="profile-menu__form-actions">
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => {
+                    if (passwordStep === 'code') {
+                      // Back to the passwords rather than out of the flow: the
+                      // code stays valid, so a mistyped new password does not
+                      // cost another message.
+                      setPasswordStep('details');
+                      setError('');
+                      return;
+                    }
                     setShowChangePassword(false);
                     setForm(initialPasswordForm);
                     setError('');
                   }}
                   disabled={submitting}
                 >
-                  Cancel
+                  {passwordStep === 'code' ? 'Back' : 'Cancel'}
                 </button>
                 <button className="btn-accent" type="submit" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save'}
+                  {submitting
+                    ? passwordStep === 'details'
+                      ? 'Sending…'
+                      : 'Saving…'
+                    : passwordStep === 'details'
+                      ? 'Send code'
+                      : 'Verify & save'}
                 </button>
               </div>
             </form>

@@ -149,6 +149,10 @@ test('every service either filters by lodge or is excused by name', () => {
       'me/me.service.js',
       "Scoped by the caller's own user id from the JWT; the lodge follows from that row, so a lodge filter would be redundant.",
     ],
+    [
+      'me/otp.service.js',
+      'Issues and burns password-change codes keyed on the user id from the JWT. dbo.otp_store has no lodge_id on purpose: a code belongs to one account, and scoping it to a lodge as well would add a second key that could only ever agree or be a bug.',
+    ],
   ]);
 
   const present = new Set();

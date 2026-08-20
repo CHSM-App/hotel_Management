@@ -118,9 +118,29 @@ const adminLoginAttemptLimiter = createRateLimiter({
   countWhen: (res) => res.statusCode === 401,
 });
 
+// Guards the "send me a password-change code" endpoint. Unlike the two limiters
+// above this charges for *successes*, because a success is the expensive event:
+// each one sends a real WhatsApp message that the property pays for and a staff
+// member has to read. Failures are already covered — a wrong current password
+// there is the same guessing this file throttles at the login door.
+//
+// Six in fifteen minutes is generous for one person changing their password,
+// including a couple of "it did not arrive, resend" rounds, and far short of
+// anything worth using as a way to spam a number. Keyed on the source address
+// like the rest of this file, which for a property means the whole front desk
+// shares the budget — acceptable here, since changing a password is rare and
+// nothing time-critical depends on it.
+const otpSendLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  message: 'Too many code requests. Please wait a few minutes and try again.',
+  countWhen: (res) => res.statusCode < 400,
+});
+
 module.exports = {
   createRateLimiter,
   pinAttemptLimiter,
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
+  otpSendLimiter,
 };

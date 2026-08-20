@@ -667,6 +667,9 @@ lodge-os/
 
 ```
 POST   /auth/login
+GET    /me                              profile + lodge + effective permissions
+POST   /me/password/otp                 { currentPassword } -> WhatsApp code
+PATCH  /me/password                     { currentPassword, newPassword, otp }
 GET    /rooms?floor=&status=
 GET    /rooms/availability?from=&to=&categoryId=
 PATCH  /rooms/:id/housekeeping

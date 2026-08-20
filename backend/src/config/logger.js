@@ -50,6 +50,15 @@ const REDACT_PATHS = [
   '*.pin',
   '*.food_pin',
 
+  // The one-time code that authorises a password change. It arrives in a
+  // request body and is stored hashed, so the log is the one place it could
+  // otherwise survive in clear — next to the account it belongs to.
+  'req.body.otp',
+  'otp',
+  'otp_hash',
+  '*.otp',
+  '*.otp_hash',
+
   // Driver internals that carry query text and bound parameter values. This is
   // the specific leak described above.
   'err.precedingErrors',

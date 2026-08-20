@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { authenticate, requireLodgeUser } = require('../../middleware/authenticate');
-const { getMeHandler, changePasswordHandler } = require('./me.controller');
+const { otpSendLimiter } = require('../../middleware/rateLimit');
+const { getMeHandler, sendPasswordOtpHandler, changePasswordHandler } = require('./me.controller');
 
 const router = Router();
 
@@ -9,6 +10,12 @@ const router = Router();
 const staff = requireLodgeUser;
 
 router.get('/', authenticate, staff, getMeHandler);
+
+// Changing a password is two requests, not one: this sends a code to the
+// account's own phone, and the PATCH below spends it. Splitting them is what
+// makes the code a second factor — a session alone can no longer change the
+// password it is signed in with. See me.service.js.
+router.post('/password/otp', authenticate, staff, otpSendLimiter, sendPasswordOtpHandler);
 router.patch('/password', authenticate, staff, changePasswordHandler);
 
 module.exports = router;

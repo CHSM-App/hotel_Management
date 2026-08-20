@@ -893,6 +893,40 @@ CREATE TABLE dbo.login_attempts (
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_login_attempts_last_failed')
     CREATE INDEX ix_login_attempts_last_failed ON dbo.login_attempts (last_failed_at);
 
+-- One-time codes sent over WhatsApp, currently for confirming a password change.
+-- Changing a password can lock the rightful owner out of a property, and a
+-- stolen session was previously enough to do it. The code moves that check from
+-- "something the browser has" to "something the person has".
+--
+-- The code is stored as a bcrypt hash, expires, and is burned on use. attempts
+-- caps guessing: six digits is only strong while the guesser cannot spend a
+-- million tries, and this one is already authenticated. user_id binds the code
+-- to the account that asked for it, so it cannot be redeemed against another.
+-- See migrations/003_otp_store.sql for the full reasoning.
+IF OBJECT_ID('dbo.otp_store', 'U') IS NULL
+CREATE TABLE dbo.otp_store (
+    id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id      BIGINT NOT NULL REFERENCES dbo.users(id),
+    -- Normalised to E.164 digits (919876543210). Kept alongside user_id so the
+    -- trail still says where a code went after the user's phone is later edited.
+    phone        NVARCHAR(20) NOT NULL,
+    otp_hash     NVARCHAR(255) NOT NULL,
+    purpose      NVARCHAR(30) NOT NULL
+        CONSTRAINT ck_otp_store_purpose CHECK (purpose IN ('password_change')),
+    attempts     INT NOT NULL DEFAULT 0,
+    expires_at   DATETIMEOFFSET NOT NULL,
+    used         BIT NOT NULL DEFAULT 0,
+    created_at   DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+-- Every read is "the newest live code for this account and purpose".
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_otp_store_user_purpose')
+    CREATE INDEX ix_otp_store_user_purpose ON dbo.otp_store (user_id, purpose, created_at DESC);
+
+-- Supports the opportunistic sweep of spent and expired rows.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_otp_store_expires_at')
+    CREATE INDEX ix_otp_store_expires_at ON dbo.otp_store (expires_at);
+
 -- How a guest's own phone follows their order to the pass. Replaces looking a
 -- status up by (room number, order number), which was itself a "is room 12
 -- ordering food right now?" oracle on an unauthenticated endpoint. Random and

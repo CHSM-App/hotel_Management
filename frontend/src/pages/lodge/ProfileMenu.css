@@ -262,6 +262,38 @@
   margin-bottom: 12px;
 }
 
+/* Explains the code step before it happens, and names the destination once it
+   has. Muted because it is guidance, not an error. */
+.profile-menu__hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted, #5b6670);
+}
+
+/* "Resend code" — an action, but a secondary one that should not compete with
+   the two buttons in the action row below it. */
+.profile-menu__link-button {
+  align-self: flex-start;
+  margin-bottom: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #b45309);
+  cursor: pointer;
+}
+
+.profile-menu__link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.profile-menu__link-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 @media (max-width: 640px) {
   /* The dropdown is anchored to the avatar at the right edge of the topbar,
      so on a narrow screen it has to be capped to the viewport (minus the

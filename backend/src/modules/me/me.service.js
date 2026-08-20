@@ -2,6 +2,11 @@ const bcrypt = require('bcryptjs');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const rolesService = require('../roles/roles.service');
+const whatsapp = require('../../config/whatsapp');
+const { logger } = require('../../config/logger');
+const { issueOtp, verifyAndConsumeOtp } = require('./otp.service');
+
+const PASSWORD_CHANGE = 'password_change';
 
 async function getMe(userId) {
   const pool = await getPool();
@@ -65,16 +70,17 @@ async function getMe(userId) {
   };
 }
 
-// Self-service password change — the only way a temp password (see
-// must_reset_password) or a forgotten one gets replaced today, since there's
-// no admin "reset user password" flow yet.
-async function changePassword(userId, currentPassword, newPassword) {
+// Loads the account and checks the password it was given, for both halves of
+// the change flow below. Both halves must prove the current password: the send
+// step so a code is never delivered on someone else's say-so, and the change
+// step so a code intercepted in transit is still not enough on its own.
+async function assertCurrentPassword(userId, currentPassword) {
   const pool = await getPool();
 
   const result = await pool
     .request()
     .input('userId', sql.BigInt, userId)
-    .query('SELECT password_hash FROM dbo.users WHERE id = @userId');
+    .query('SELECT id, name, phone, password_hash FROM dbo.users WHERE id = @userId');
   const row = result.recordset[0];
   if (!row) {
     throw new ApiError('Account not found.', 404);
@@ -84,7 +90,66 @@ async function changePassword(userId, currentPassword, newPassword) {
   if (!matches) {
     throw new ApiError('Current password is incorrect.', 401);
   }
+  return row;
+}
 
+// Step 1 of the password change: send a one-time code to the account's own
+// phone. Changing a password is what locks the rightful owner out of a
+// property, and reception terminals stay signed in on a shared counter — so the
+// current password alone, which anyone standing at that counter already has,
+// is not enough to authorise it.
+//
+// Returns the masked destination so the UI can say where the code went without
+// printing a staff member's full number on a screen in a public lobby.
+async function sendPasswordChangeOtp(userId, currentPassword) {
+  const user = await assertCurrentPassword(userId, currentPassword);
+
+  const phone = whatsapp.normalisePhone(user.phone);
+  if (!phone) {
+    throw new ApiError('No usable phone number is on file for this account. Ask the owner to update it.', 422);
+  }
+  // Checked before the code is generated: a code written to the database and
+  // never delivered would leave the user waiting for a message that is not
+  // coming, with no way to tell that from a slow one.
+  if (!whatsapp.isConfigured()) {
+    throw new ApiError('WhatsApp is not configured on this server, so codes cannot be sent.', 503);
+  }
+
+  const { otp, expiresAt } = await issueOtp({ userId, phone, purpose: PASSWORD_CHANGE });
+
+  try {
+    await whatsapp.sendOtp(phone, otp);
+  } catch (err) {
+    // The provider's reason goes to the log, not to the response: it can name
+    // the destination number and the template, and the caller can do nothing
+    // with it either way. The stored code is left behind for the next sweep.
+    logger.error({ err, userId }, 'WhatsApp OTP send failed');
+    throw new ApiError('Could not send the code right now. Please try again in a moment.', 502);
+  }
+
+  return { phone: maskPhone(phone), expiresAt };
+}
+
+// 919876543210 -> +91 ******3210. Enough for the right person to recognise
+// their own number and not enough for anyone else to learn it.
+function maskPhone(normalised) {
+  const digits = String(normalised);
+  const last4 = digits.slice(-4);
+  return `+${digits.slice(0, 2)} ${'*'.repeat(Math.max(0, digits.length - 6))}${last4}`;
+}
+
+// Step 2: the change itself. The current password is re-checked here rather
+// than trusted from step 1, because the two are separate requests and nothing
+// carries between them except the code.
+async function changePassword(userId, currentPassword, newPassword, otp) {
+  await assertCurrentPassword(userId, currentPassword);
+
+  const { valid, reason } = await verifyAndConsumeOtp({ userId, otp, purpose: PASSWORD_CHANGE });
+  if (!valid) {
+    throw new ApiError(reason, 400);
+  }
+
+  const pool = await getPool();
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await pool
     .request()
@@ -93,4 +158,4 @@ async function changePassword(userId, currentPassword, newPassword) {
     .query('UPDATE dbo.users SET password_hash = @passwordHash, must_reset_password = 0 WHERE id = @userId');
 }
 
-module.exports = { getMe, changePassword };
+module.exports = { getMe, changePassword, sendPasswordChangeOtp };
