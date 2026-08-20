@@ -124,7 +124,7 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     e.preventDefault();
     setError('');
 
-    if (!/^d{6}$/.test(form.otp.trim())) {
+    if (!/^\d{6}$/.test(form.otp.trim())) {
       setError('Enter the 6-digit code sent to your phone.');
       return;
     }
@@ -329,7 +329,7 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
                       autoComplete="one-time-code"
                       maxLength={6}
                       value={form.otp}
-                      onChange={(e) => setForm((f) => ({ ...f, otp: e.target.value.replace(/D/g, '') }))}
+                      onChange={(e) => setForm((f) => ({ ...f, otp: e.target.value.replace(/\D/g, '') }))}
                     />
                   </div>
                   <button

@@ -1,8 +1,23 @@
--- One-time codes sent over WhatsApp, currently for confirming a password change.
+-- otp_store
+--
+-- One table per migration, in foreign-key dependency order: this file is
+-- 32 of 32 that together build the database from nothing. The number is
+-- the order, so these must be applied in sequence — which the engine does.
+--
+-- Split out of the single baseline that preceded it; the SQL is unchanged and
+-- was verified against SQL Server by building it into a scratch schema and
+-- comparing the result to src/config/schema.sql.
+--
+-- Guarded, so applying this to a database that already has the table is a
+-- no-op rather than an error.
+--
+-- Remember: the same change must also land in src/config/schema.sql.
+--
+-- ---------------------------------------------------------------------------
 --
 -- Changing a password is the one self-service action that can lock the rightful
--- owner out of a property, and until now a stolen session was enough to do it:
--- the current password was the only check, and anyone who walked up to an
+-- owner out of a property, and until this existed a stolen session was enough to
+-- do it: the current password was the only check, and anyone who walked up to an
 -- unlocked reception terminal already had one. Requiring a code delivered to the
 -- account's own phone moves that from "something the browser has" to "something
 -- the person has".
@@ -24,13 +39,21 @@
 -- and cannot be redeemed against another — even if two accounts somehow shared
 -- a number.
 
+-- One-time codes sent over WhatsApp, currently for confirming a password change.
+-- Changing a password can lock the rightful owner out of a property, and a
+-- stolen session was previously enough to do it. The code moves that check from
+-- "something the browser has" to "something the person has".
+--
+-- Stored as a bcrypt hash, expires, and burned on use. attempts caps guessing:
+-- six digits is only strong while the guesser cannot spend a million tries, and
+-- this one is already authenticated. user_id binds the code to the account that
+-- asked for it. Mirrors migration 003.
 IF OBJECT_ID('dbo.otp_store', 'U') IS NULL
 CREATE TABLE dbo.otp_store (
     id           BIGINT IDENTITY(1,1) PRIMARY KEY,
     user_id      BIGINT NOT NULL REFERENCES dbo.users(id),
-    -- The number the code was actually sent to, normalised to E.164 digits
-    -- (919876543210). Kept alongside user_id so the audit trail still says where
-    -- a code went after the user's phone is later edited.
+    -- Normalised to E.164 digits (919876543210). Kept alongside user_id so the
+    -- trail still says where a code went after the user's phone is later edited.
     phone        NVARCHAR(20) NOT NULL,
     otp_hash     NVARCHAR(255) NOT NULL,
     purpose      NVARCHAR(30) NOT NULL
@@ -42,17 +65,12 @@ CREATE TABLE dbo.otp_store (
 );
 GO
 
--- Every read is "the newest live code for this account and purpose", which is
--- this index exactly. Without it the lookup scans a table that only ever grows
--- between sweeps.
+-- Every read is "the newest live code for this account and purpose".
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_otp_store_user_purpose')
     CREATE INDEX ix_otp_store_user_purpose ON dbo.otp_store (user_id, purpose, created_at DESC);
 GO
 
--- Spent and expired rows are swept opportunistically by the application (see
--- src/modules/me/otp.service.js) rather than by a scheduled job: this backend
--- has no cron dependency, and the sweep is cheap enough to ride along with the
--- next code that gets issued.
+-- Supports the opportunistic sweep of spent and expired rows.
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_otp_store_expires_at')
     CREATE INDEX ix_otp_store_expires_at ON dbo.otp_store (expires_at);
 GO

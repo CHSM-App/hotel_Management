@@ -53,4 +53,39 @@ const voidInvoiceSchema = z.object({
   reason: z.string({ error: 'Enter a reason for voiding this bill.' }).trim().min(1, 'Enter a reason for voiding this bill.'),
 });
 
-module.exports = { issueInvoiceSchema, voidInvoiceSchema };
+// The advance a guest hands over when the booking is taken, and the receipt
+// written for it. Unlike the advance recorded on the booking form — which is a
+// note on a record — this issues a numbered money document, so the amount and
+// the payment type are both required outright: there is no such thing as a
+// receipt for an unspecified sum.
+const advanceReceiptSchema = z
+  .object({
+    amountReceived: z.coerce
+      .number({ error: 'Enter the advance received from the guest.' })
+      .positive('An advance receipt needs an amount above zero.'),
+    paymentMethod: z.enum(PAYMENT_METHODS, { error: 'Choose how the advance was paid.' }),
+    // Same rule as everywhere else money changes hands here: UPI and card leave
+    // a number on both sides and it gets recorded, cash leaves none.
+    paymentReference: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z.string().trim().max(64, 'That transaction number looks too long — check it.').optional()
+    ),
+  })
+  .refine((data) => requiresReference(data.paymentMethod, data.paymentReference), {
+    message: REFERENCE_REQUIRED,
+    path: ['paymentReference'],
+  });
+
+const voidAdvanceReceiptSchema = z.object({
+  reason: z
+    .string({ error: 'Enter a reason for voiding this receipt.' })
+    .trim()
+    .min(1, 'Enter a reason for voiding this receipt.'),
+});
+
+module.exports = {
+  issueInvoiceSchema,
+  voidInvoiceSchema,
+  advanceReceiptSchema,
+  voidAdvanceReceiptSchema,
+};

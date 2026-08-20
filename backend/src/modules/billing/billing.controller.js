@@ -1,5 +1,11 @@
-const { issueInvoiceSchema, voidInvoiceSchema } = require('./billing.schema');
+const {
+  issueInvoiceSchema,
+  voidInvoiceSchema,
+  advanceReceiptSchema,
+  voidAdvanceReceiptSchema,
+} = require('./billing.schema');
 const billingService = require('./billing.service');
+const advanceReceiptsService = require('./advanceReceipts.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
 async function listBillableBookingsHandler(req, res, next) {
@@ -134,6 +140,95 @@ async function voidInvoiceHandler(req, res, next) {
   }
 }
 
+// Advance receipts — the document handed to a guest who pays before the stay.
+
+// The receipt as it will print, before the number is burned. A preview is the
+// only way the desk can check the figures against what the guest is handing
+// over without committing to a document.
+async function previewAdvanceReceiptHandler(req, res, next) {
+  try {
+    const parsed = advanceReceiptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const receipt = await advanceReceiptsService.previewAdvanceReceipt(
+      req.user.lodgeId,
+      Number(req.params.bookingId),
+      parsed.data
+    );
+    res.json({ receipt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function issueAdvanceReceiptHandler(req, res, next) {
+  try {
+    const parsed = advanceReceiptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const receipt = await advanceReceiptsService.issueAdvanceReceipt(
+      req.user.lodgeId,
+      req.user.sub,
+      Number(req.params.bookingId),
+      parsed.data
+    );
+    res.status(201).json({ receipt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Every receipt this property has written, for the bills list — which shows
+// advance receipts and final bills together, because both are money taken.
+async function listAllAdvanceReceiptsHandler(req, res, next) {
+  try {
+    const receipts = await advanceReceiptsService.listAdvanceReceipts(req.user.lodgeId);
+    res.json({ receipts });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listAdvanceReceiptsHandler(req, res, next) {
+  try {
+    const receipts = await advanceReceiptsService.listAdvanceReceiptsForBooking(
+      req.user.lodgeId,
+      Number(req.params.bookingId)
+    );
+    res.json({ receipts });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAdvanceReceiptHandler(req, res, next) {
+  try {
+    const receipt = await advanceReceiptsService.getAdvanceReceipt(req.user.lodgeId, Number(req.params.id));
+    res.json({ receipt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function voidAdvanceReceiptHandler(req, res, next) {
+  try {
+    const parsed = voidAdvanceReceiptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const receipt = await advanceReceiptsService.voidAdvanceReceipt(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parsed.data.reason
+    );
+    res.json({ receipt });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listBillableBookingsHandler,
   listOpenFoodTabsHandler,
@@ -144,4 +239,10 @@ module.exports = {
   listInvoicesHandler,
   getInvoiceHandler,
   voidInvoiceHandler,
+  previewAdvanceReceiptHandler,
+  issueAdvanceReceiptHandler,
+  listAllAdvanceReceiptsHandler,
+  listAdvanceReceiptsHandler,
+  getAdvanceReceiptHandler,
+  voidAdvanceReceiptHandler,
 };

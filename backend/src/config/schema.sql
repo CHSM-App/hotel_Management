@@ -496,6 +496,70 @@ CREATE TABLE dbo.invoices (
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_booking_active' AND object_id = OBJECT_ID('dbo.invoices'))
 CREATE UNIQUE INDEX uq_invoices_booking_active ON dbo.invoices(booking_id) WHERE status = 'ISSUED';
 
+-- The receipt handed to a guest who pays an advance when the booking is taken.
+-- Under GST an advance against a supply is a Receipt Voucher (Rule 50) — not an
+-- invoice: it acknowledges money received against a stay that has not happened
+-- yet, and the tax invoice cut at checkout is a separate document reporting the
+-- whole stay.
+--
+-- Its own table rather than a row in dbo.invoices, because the filtered unique
+-- index there allows one ISSUED invoice per booking and an advance receipt is
+-- not that invoice — a booking can have both, and (part payments) more than one
+-- receipt.
+--
+-- Amounts are GST-inclusive, like every price in this system: amount_received is
+-- what the guest actually handed over, and cgst/sgst are the tax already inside
+-- it, extracted by billing.service.js's taxWithin. That is what keeps the final
+-- bill's arithmetic untouched — it subtracts the same inclusive advance from an
+-- inclusive total, so nobody is taxed twice.
+IF OBJECT_ID('dbo.advance_receipts', 'U') IS NULL
+CREATE TABLE dbo.advance_receipts (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    booking_id          BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    receipt_number      NVARCHAR(50) NOT NULL,
+    -- RECEIPT_VOUCHER where the lodge is GST registered and the stay is
+    -- taxable, ADVANCE_RECEIPT where there is no tax to state. The document
+    -- prints its own title from this.
+    document_type       NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_advance_receipts_document_type
+        CHECK (document_type IN ('RECEIPT_VOUCHER', 'ADVANCE_RECEIPT')),
+    billing_side        NVARCHAR(10) NOT NULL
+        CONSTRAINT ck_advance_receipts_billing_side CHECK (billing_side IN ('GST', 'NON_GST')),
+    -- What the guest handed over, tax inside.
+    amount_received     DECIMAL(10,2) NOT NULL,
+    -- The tax sitting inside amount_received, and the rate it was taken at.
+    -- Snapshotted rather than re-derived: a later rate change must not move a
+    -- figure on a document already in a guest's hand.
+    cgst_amount         DECIMAL(10,2) NOT NULL CONSTRAINT df_advance_receipts_cgst DEFAULT 0,
+    sgst_amount         DECIMAL(10,2) NOT NULL CONSTRAINT df_advance_receipts_sgst DEFAULT 0,
+    rate_percent        DECIMAL(5,2) NOT NULL CONSTRAINT df_advance_receipts_rate DEFAULT 0,
+    -- The stay this was taken against, frozen for the same reason: the receipt
+    -- states the balance due, and an extended booking must not silently restate
+    -- a receipt already issued.
+    stay_total          DECIMAL(10,2) NOT NULL,
+    payment_method      NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_advance_receipts_payment_method
+        CHECK (payment_method IN ('CASH', 'UPI', 'CARD')),
+    payment_reference   NVARCHAR(64) NULL,
+    status              NVARCHAR(10) NOT NULL CONSTRAINT df_advance_receipts_status DEFAULT 'ISSUED'
+        CONSTRAINT ck_advance_receipts_status CHECK (status IN ('ISSUED', 'VOID')),
+    void_reason         NVARCHAR(200) NULL,
+    voided_at           DATETIMEOFFSET NULL,
+    created_by          BIGINT NULL REFERENCES dbo.users(id),
+    created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+-- A receipt number is a money document's identity: unique per lodge even across
+-- a void, so a voided receipt's number is never reissued.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_advance_receipts_number' AND object_id = OBJECT_ID('dbo.advance_receipts'))
+CREATE UNIQUE INDEX uq_advance_receipts_number ON dbo.advance_receipts(lodge_id, receipt_number);
+
+-- "What has this booking been given?" — asked by the booking detail screen on
+-- every open, and by the issue path to stop a second receipt for the same money.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_advance_receipts_booking' AND object_id = OBJECT_ID('dbo.advance_receipts'))
+CREATE INDEX ix_advance_receipts_booking ON dbo.advance_receipts(booking_id, status);
+
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
 -- and, when its role_key matches a built-in, overrides it. That's what lets an
@@ -902,7 +966,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_login_attempts_last_fa
 -- caps guessing: six digits is only strong while the guesser cannot spend a
 -- million tries, and this one is already authenticated. user_id binds the code
 -- to the account that asked for it, so it cannot be redeemed against another.
--- See migrations/003_otp_store.sql for the full reasoning.
+-- See migrations/035_otp_store.sql for the full reasoning.
 IF OBJECT_ID('dbo.otp_store', 'U') IS NULL
 CREATE TABLE dbo.otp_store (
     id           BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -1387,3 +1451,17 @@ IF COL_LENGTH('dbo.bookings', 'advance_reference') IS NULL
 
 IF COL_LENGTH('dbo.invoices', 'balance_reference') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD balance_reference NVARCHAR(64) NULL');
+
+-- ---------------------------------------------------------------------------
+-- The advance-receipt number series
+-- ---------------------------------------------------------------------------
+-- Advance receipts run on their own sequence so the tax-invoice numbering stays
+-- gapless — an advance taken today and a bill cut next week must not interleave
+-- in one series. Widening the CHECK is the whole change; the allocator in
+-- billing.service.js already takes the series type as a parameter.
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_invoice_series_type')
+ALTER TABLE dbo.invoice_series DROP CONSTRAINT ck_invoice_series_type;
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_invoice_series_type')
+ALTER TABLE dbo.invoice_series ADD CONSTRAINT ck_invoice_series_type
+    CHECK (series_type IN ('GST', 'NON_GST', 'ADVANCE'));

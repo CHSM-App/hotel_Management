@@ -6,7 +6,7 @@ const { getPool, sql } = require('../../config/connection');
 //
 // The shape follows the college-admission backend's services/otpService.js —
 // hash the code, expire it, invalidate the previous one, burn on use — with the
-// differences described in migrations/003_otp_store.sql: codes are bound to a
+// differences described in migrations/035_otp_store.sql: codes are bound to a
 // user id rather than a typed-in phone, and guesses are counted.
 
 const OTP_TTL_MS = 10 * 60 * 1000;

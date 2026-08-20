@@ -5,11 +5,29 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
+import AdvanceReceiptModal from './AdvanceReceiptModal';
 import StayDetails from './StayDetails';
 import './forms.css';
 import './chartSections.css';
 import './stayDetails.css';
 import './Billing.css';
+
+// The paper, the fit maths and the print/PDF plumbing — shared with the advance
+// receipt, which prints on the same stock out of the same tray. See billPaper.js
+// for why they cannot be two implementations.
+import {
+  BILL_PDF_WIDTH,
+  PAPER_SIZES,
+  PAPER_PREVIEW_WIDTH,
+  WIDEST_PAPER_PT,
+  ROLL_MARGIN,
+  fitBillToSheet,
+  DEFAULT_PAPER,
+  paperById,
+  buildDocumentPdfBlob,
+  printDocumentOnPaper,
+  shareOrDownloadPdf,
+} from './billPaper';
 
 // How overdue the guest was, in words. Duplicated from the server's own
 // lateLabel rather than shipped down with the preview, because it is four
@@ -22,132 +40,7 @@ function lateLabel(minutes) {
   return mins === 0 ? `${hours}h late` : `${hours}h ${mins}m late`;
 }
 
-// Fallback width for the PDF capture, in CSS pixels — roughly an A4 content
-// column at 96dpi. Normally the capture copy is sized to the visible preview at
-// download time, so the file shows exactly the layout the user was looking at;
-// this only decides it if that preview couldn't be measured.
-const BILL_PDF_WIDTH = 760;
 
-// The stock a bill can be printed on. One table drives both outputs: the
-// browser's own print dialog, via a class on <html> that picks an @page rule
-// (see BillDocument.css), and the downloaded PDF, via the jsPDF format.
-//
-// They have to come from the same row. A desk that picks A5, prints it, then
-// downloads the same bill as an A4 PDF has been given two different documents
-// and no reason to expect it.
-//
-// `format` is what jsPDF takes: a named size it knows, or [width, height] in
-// points for one it doesn't. A roll has no page height, so it gets a nominal
-// long sheet — the bill is scaled to fit whichever dimension is tighter, and
-// on a roll that is always the width.
-//
-// `page` is the CSS `size`/`margin` pair for the browser's own print dialog.
-// It cannot live in the stylesheet: @page is only legal at the top level, so
-// it can't be nested under a class, and it is resolved before the cascade
-// reaches any element, so it can't read a custom property either. The rule is
-// therefore written into a <style> tag at print time and taken out again after.
-// `pt` is the sheet in points, the same unit jsPDF works in. It is stated here
-// even where `format` is a name jsPDF already knows, because the on-screen
-// preview needs the proportions to draw the paper — and a second table of
-// dimensions is a second thing to get out of step with this one.
-const PAPER_SIZES = [
-  { id: 'a4', label: 'A4', hint: '210 × 297 mm', format: 'a4', page: 'A4', margin: '12mm', pt: [595.28, 841.89] },
-  { id: 'a5', label: 'A5', hint: '148 × 210 mm', format: 'a5', page: 'A5', margin: '8mm', pt: [419.53, 595.28] },
-  { id: 'a6', label: 'A6', hint: '105 × 148 mm', format: 'a6', page: 'A6', margin: '5mm', pt: [297.64, 419.53] },
-  {
-    id: 'letter',
-    label: 'Letter',
-    hint: '8.5 × 11 in',
-    format: 'letter',
-    page: 'letter',
-    margin: '12mm',
-    pt: [612, 792],
-  },
-  {
-    id: 'half-letter',
-    label: 'Half Letter',
-    hint: '8.5 × 5.5 in',
-    format: [612, 396],
-    page: '8.5in 5.5in',
-    margin: '8mm',
-    pt: [612, 396],
-  },
-  {
-    id: 'thermal-80',
-    label: '80mm roll',
-    hint: 'thermal receipt',
-    // Width only — the height in the PDF is measured from the bill itself.
-    // 226.77pt is 80mm. The second figure is a placeholder jsPDF never sees.
-    format: [226.77, 850],
-    continuous: true,
-    // Height auto: a roll has no page to break against, and pinning one would
-    // cut the memo off at whatever length was guessed.
-    page: '80mm auto',
-    margin: '3mm',
-    // The preview draws a roll as a tall strip rather than a sheet — there is
-    // no page height to be faithful to, so this is only how much of the roll
-    // to show before it runs off the bottom.
-    pt: [226.77, 560],
-  },
-];
-
-// Margin on a roll, in points (~3mm) — matching the @page margin above, so the
-// printed slip and the downloaded one have the same edge.
-const ROLL_MARGIN = 8.5;
-
-// Device pixels per CSS pixel in the capture. Named because the PDF fit maths
-// has to divide it back out to find the bill's natural size on paper.
-const CAPTURE_PIXEL_RATIO = 3;
-
-// How wide a sheet is drawn in the paper picker, in CSS pixels. Wide enough
-// that the memo's own structure is legible at a glance — masthead, ruled
-// block, money column — without six of them filling the modal.
-const PAPER_PREVIEW_WIDTH = 190;
-
-// The widest stock on offer, in points. Every preview is drawn against this so
-// the sheets keep their sizes relative to each other.
-const WIDEST_PAPER_PT = Math.max(...PAPER_SIZES.map((p) => p.pt[0]));
-
-// The @page margins are written as CSS lengths; the fit maths needs them as
-// numbers. Only mm and in appear in PAPER_SIZES, and an unrecognised unit
-// falls back to no margin rather than throwing mid-print.
-function mmToPt(value) {
-  const m = /^([\d.]+)(mm|in)$/.exec(String(value).trim());
-  if (!m) return 0;
-  const n = Number(m[1]);
-  return m[2] === 'in' ? n * 72 : (n * 72) / 25.4;
-}
-
-// Print CSS is laid out at 96 CSS pixels to the inch, whatever the printer's
-// own resolution — so a point converts at 96/72.
-const ptToPx = (pt) => (pt * 96) / 72;
-
-// The stay block's own height before any sheet-filling stretch is added — the
-// open space the printed form leaves under the entries. Kept in step with the
-// .memo__stay rule in BillDocument.css.
-const STAY_BASE_HEIGHT = 130;
-
-// How a bill lands on a sheet, answered once for all three outputs — the print
-// dialog, the PDF, and each thumbnail. Width decides the scale, and the height
-// left under the fitted bill goes to the open stay block, so the form runs the
-// full page instead of stopping wherever its entries did. Height only binds
-// when the bill is too tall even at full width (a landscape sheet, a long
-// itemised tab); a roll has no bottom to fill and stretches nothing.
-//
-// Three callers, one formula, because they are three pictures of the same
-// sheet: the moment one of them fits differently, the previews are lying about
-// one of the other two.
-function fitBillToSheet(availWidth, availHeight, naturalWidth, naturalHeight, continuous) {
-  const fitWidth = availWidth / naturalWidth;
-  const fitHeight = !continuous && naturalHeight > 0 ? availHeight / naturalHeight : Infinity;
-  const scale = Math.min(fitWidth, fitHeight, 1);
-  const slack = !continuous && naturalHeight > 0 ? availHeight / scale - naturalHeight : 0;
-  return { scale, stayHeight: STAY_BASE_HEIGHT + (slack > 24 ? slack : 0) };
-}
-
-const DEFAULT_PAPER = 'a4';
-
-const paperById = (id) => PAPER_SIZES.find((p) => p.id === id) ?? PAPER_SIZES[0];
 
 // Money that arrives this way leaves a reference the property reconciles
 // against its settlement statement; cash doesn't. Mirrors ONLINE_METHODS on
@@ -159,6 +52,10 @@ const DOCUMENT_LABEL = {
   TAX_INVOICE: 'Tax invoice',
   BILL_OF_SUPPLY: 'Bill of supply',
   CASH_RECEIPT: 'Cash receipt',
+  // The two an advance receipt can be. Rule 50 names the taxable one; the other
+  // is a plain acknowledgement, issued where there is no tax to state.
+  RECEIPT_VOUCHER: 'Receipt voucher',
+  ADVANCE_RECEIPT: 'Advance receipt',
 };
 
 // Colour suffix per document type, so the tag styling stays in the stylesheet
@@ -167,6 +64,8 @@ const DOCUMENT_TAG = {
   TAX_INVOICE: 'tax',
   BILL_OF_SUPPLY: 'supply',
   CASH_RECEIPT: 'cash',
+  RECEIPT_VOUCHER: 'advance',
+  ADVANCE_RECEIPT: 'advance',
 };
 
 // A bill differs on two axes and the list has to show both: what was sold, and
@@ -176,9 +75,11 @@ const SOURCE_LABEL = {
   ROOM: 'Room',
   ROOM_FOOD: 'Room + food',
   TABLE: 'Table',
+  ADVANCE: 'Advance',
 };
 
 function billSource(inv) {
+  if (inv.kind === 'ADVANCE') return 'ADVANCE';
   if (inv.kind === 'FOOD') return 'TABLE';
   // A stay whose guest ordered to the room is neither a plain stay bill nor a
   // food bill — it carries two taxed blocks, and staff reconciling the kitchen
@@ -186,15 +87,51 @@ function billSource(inv) {
   return inv.foodSubtotal > 0 ? 'ROOM_FOOD' : 'ROOM';
 }
 
+// An advance receipt, restated in the shape the bills list reads.
+//
+// The list, its search, its date range and its filters all speak one document
+// shape. Rather than teach each of them that some rows are receipts — four
+// places to get wrong, and a fifth the next time something is added — a receipt
+// is mapped onto that shape once, here.
+//
+// `kind: 'ADVANCE'` is what everything downstream keys off, and the id is
+// prefixed because an invoice and a receipt can both be row 7: React keys and
+// the open-detail lookup would otherwise collide and show the wrong document.
+//
+// totalAmount is the money actually taken, which is what the list column means
+// on every other row — for a receipt that is the advance, not the stay total.
+function asDocument(receipt) {
+  return {
+    ...receipt,
+    kind: 'ADVANCE',
+    rowKey: `adv-${receipt.id}`,
+    // The number the list shows and reception searches by.
+    invoiceNumber: receipt.receiptNumber,
+    totalAmount: receipt.amountReceived,
+    // Read by billSource above and by the row's own markup; a receipt carries
+    // no food, and saying so explicitly keeps the shared helpers honest.
+    foodSubtotal: 0,
+  };
+}
+
 function tagClass(key) {
   return key.toLowerCase().replace(/_/g, '-');
 }
 
-// Filtering is by document type only — that is the split staff hand over to an
-// accountant. What was sold stays visible as a tag on every row, but it is not
-// something the list needs to be narrowed down to.
+// What the list can be narrowed down to. What was sold stays visible as a tag
+// on every row, but it is not something the list needs to be filtered by.
+//
+// "Advance receipts" and "Final bills" lead, because they answer different
+// questions: what has been collected against stays not yet finished, versus
+// what has been billed.
+//
+// Tax invoices have no chip of their own. On a GST-registered property they are
+// very nearly the whole of "Final bills", so the two chips would pick out the
+// same rows and the pair would read as a distinction where there isn't one —
+// the document type is still tagged on every row for the cases that differ.
 const BILL_FILTERS = [
-  { key: 'TAX_INVOICE', label: 'Tax invoice', match: (i) => i.documentType === 'TAX_INVOICE' },
+  { key: 'ADVANCE', label: 'Advance receipts', match: (i) => i.kind === 'ADVANCE' },
+  { key: 'FINAL', label: 'Final bills', match: (i) => i.kind !== 'ADVANCE' },
   { key: 'CASH_RECEIPT', label: 'Cash receipt', match: (i) => i.documentType === 'CASH_RECEIPT' },
 ];
 
@@ -430,7 +367,7 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
   );
 }
 
-export default function Billing({ lodge }) {
+export default function Billing({ lodge, billNowBookingId = null }) {
   const session = getSession();
   const token = session?.token;
 
@@ -454,6 +391,11 @@ export default function Billing({ lodge }) {
   const [foodTabsError, setFoodTabsError] = useState('');
   const [invoices, setInvoices] = useState(() => readCache('/billing/invoices'));
   const [invoicesError, setInvoicesError] = useState('');
+  // Advance receipts share the bills list with invoices — both are money taken,
+  // and a month's takings that showed only invoices would understate what the
+  // property actually collected. Held apart in state and merged for display, so
+  // a failure to load one kind still shows the other.
+  const [receipts, setReceipts] = useState(() => readCache('/billing/advance-receipts'));
   const [billFilter, setBillFilter] = useState('ALL');
   const [billSearch, setBillSearch] = useState('');
   // One range is the whole date filter. The month picker, the presets and the
@@ -493,10 +435,20 @@ export default function Billing({ lodge }) {
       .catch((err) => setInvoicesError(err instanceof ApiError ? err.message : 'Could not load bills.'));
   };
 
+  // Swallowed rather than banner-ed: receipts are one part of the list, and a
+  // property that has never issued one still wants its bills. The list simply
+  // shows what loaded.
+  const loadReceipts = () => {
+    apiGet('/billing/advance-receipts', { token })
+      .then((data) => setReceipts(writeCache('/billing/advance-receipts', data.receipts)))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     loadQueue();
     loadFoodTabs();
     loadInvoices();
+    loadReceipts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -504,6 +456,7 @@ export default function Billing({ lodge }) {
     loadQueue();
     loadFoodTabs();
     loadInvoices();
+    loadReceipts();
   };
 
   // The three ways the bills list narrows: what kind of document it is, when it
@@ -543,13 +496,29 @@ export default function Billing({ lodge }) {
     setBillTo('');
   };
 
+  // Everything the bills list shows: invoices and advance receipts as one set of
+  // documents, newest first. Sorted after merging rather than concatenated —
+  // each list arrives sorted on its own, and appending one to the other would
+  // put every receipt below every bill regardless of date.
+  //
+  // Null only while nothing has loaded at all; once either kind is in hand the
+  // list renders what it has, so a receipts fetch that failed doesn't hide the
+  // bills.
+  const documents =
+    invoices || receipts
+      ? [...(invoices ?? []), ...(receipts ?? []).map(asDocument)].sort((a, b) =>
+          String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))
+        )
+      : null;
+
   // Only the types this property actually issues get a chip — a property that
   // isn't GST registered only ever writes cash receipts, and should not be
-  // offered a "Tax invoice" filter that matches nothing.
-  const billFilters = invoices
+  // offered a "Tax invoice" filter that matches nothing. Same rule retires the
+  // advance/final split on a property that has only ever issued one of them.
+  const billFilters = documents
     ? BILL_FILTERS.map((f) => ({
         ...f,
-        count: invoices.filter((i) => f.match(i) && matchesDate(i) && matchesSearch(i)).length,
+        count: documents.filter((i) => f.match(i) && matchesDate(i) && matchesSearch(i)).length,
       })).filter((f) => f.count > 0)
     : [];
   // Looked up rather than trusted: voiding the last bill of a type empties its
@@ -557,8 +526,8 @@ export default function Billing({ lodge }) {
   const activeFilter = billFilters.find((f) => f.key === billFilter) ?? null;
 
   const visibleInvoices =
-    invoices &&
-    invoices.filter((i) => (!activeFilter || activeFilter.match(i)) && matchesDate(i) && matchesSearch(i));
+    documents &&
+    documents.filter((i) => (!activeFilter || activeFilter.match(i)) && matchesDate(i) && matchesSearch(i));
   const billsFiltered = Boolean(billQuery) || Boolean(billFrom) || Boolean(billTo) || activeFilter != null;
 
   const clearBillFilters = () => {
@@ -572,7 +541,15 @@ export default function Billing({ lodge }) {
   // capture are identical; only the endpoints and the header differ, so
   // `billTarget` carries which is being billed.
   //   { kind: 'STAY', bookingId }  |  { kind: 'FOOD', tableId, label }
-  const [billTarget, setBillTarget] = useState(null);
+  //
+  // A stay handed straight over by a checkout opens its bill on mount: the
+  // guest is at the desk about to pay, so reception shouldn't have to find them
+  // again in the queue they were just added to. Every other value openBilling()
+  // resets is already at that same initial state here, so seeding the target is
+  // the whole of it. Closing the bill leaves them on the queue as usual.
+  const [billTarget, setBillTarget] = useState(
+    billNowBookingId != null ? { kind: 'STAY', bookingId: billNowBookingId } : null
+  );
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
 
@@ -797,9 +774,21 @@ export default function Billing({ lodge }) {
   const [voidSubmitting, setVoidSubmitting] = useState(false);
 
   const detailInvoice = invoices?.find((i) => i.id === detailInvoiceId);
+  // An advance receipt opened from the list. It gets the receipt modal rather
+  // than the bill modal below: the two documents are voided differently, print
+  // from different components, and a receipt has no food tab or balance to
+  // collect. One modal serving both would be a pile of conditionals over two
+  // documents that only share a shape by coincidence.
+  const [detailReceipt, setDetailReceipt] = useState(null);
 
-  const openDetail = (invoiceId) => {
-    setDetailInvoiceId(invoiceId);
+  // The list holds both kinds, so the row hands over the document itself rather
+  // than an id — ids collide across the two tables.
+  const openDetail = (doc) => {
+    if (doc.kind === 'ADVANCE') {
+      setDetailReceipt(doc);
+      return;
+    }
+    setDetailInvoiceId(doc.id);
     setShowVoidForm(false);
     setVoidReason('');
     setVoidError('');
@@ -841,59 +830,11 @@ export default function Billing({ lodge }) {
   // ever on screen for the first paint.
   const [billHeight, setBillHeight] = useState(0);
 
-  // Print on the chosen stock: write the @page rule, mark <html> so the
-  // stylesheet's per-paper rules apply, print, then undo both.
-  //
-  // window.print() blocks until the dialog closes in the browsers this runs on,
-  // so tearing down straight after is safe. Both removals sit in a finally
-  // regardless — a stranded rule would silently repaper every later print in
-  // the app, which is a bug nobody would think to look here for.
-  const handlePrint = () => {
-    const paper = paperById(paperSize);
-
-    // What the sheet can hold, in CSS pixels. @page margins are in real units,
-    // so the printable area is the paper less its margins converted at 96dpi —
-    // the ratio the browser itself lays print CSS out at.
-    const [pwPt, phPt] = paper.pt;
-    const marginPt = mmToPt(paper.margin);
-    const pageWidthPx = ptToPx(pwPt - marginPt * 2);
-    const pageHeightPx = ptToPx(phPt - marginPt * 2);
-
-    // The bill as it actually measures, from the offscreen copy — laid out at
-    // BILL_PDF_WIDTH and never restyled, so it is the one honest measurement
-    // of the document. The visible copy is inside a modal whose width varies.
-    const node = billRef.current;
-    const naturalWidth = node?.offsetWidth || BILL_PDF_WIDTH;
-    const naturalHeight = node?.offsetHeight || 0;
-
-    const { scale, stayHeight } = fitBillToSheet(
-      pageWidthPx,
-      pageHeightPx,
-      naturalWidth,
-      naturalHeight,
-      paper.continuous
-    );
-
-    const style = document.createElement('style');
-    style.media = 'print';
-    style.textContent =
-      `@page { size: ${paper.page}; margin: ${paper.margin}; }
-` +
-      // Width is divided back out by the scale so the form still fills the
-      // sheet edge to edge after shrinking — scaling alone would leave a
-      // proportional strip of white down the right-hand side.
-      `.bill-print-target { --bill-print-scale: ${scale}; width: ${100 / scale}%; ` +
-      // The same variable the stay block is sized by everywhere — the
-      // thumbnails set it per sheet, this sets it for the sheet being printed.
-      `--memo-stay-h: ${Math.round(stayHeight)}px; }`;
-
-    document.head.appendChild(style);
-    try {
-      window.print();
-    } finally {
-      style.remove();
-    }
-  };
+  // Print on the chosen stock. The measurement comes off the offscreen copy —
+  // laid out at a fixed width and never restyled, so it is the one honest
+  // measurement of the document; the visible copy sits in a modal whose width
+  // varies.
+  const handlePrint = () => printDocumentOnPaper(billRef.current, paperSize);
 
   // Measured when the previews are opened rather than on every render: the
   // node is offscreen and fixed-width, so its height only changes when the
@@ -914,135 +855,22 @@ export default function Billing({ lodge }) {
     if (node) setIssueBillHeight(node.offsetHeight);
   }, [issuePaperOpen, documentPreview]);
 
-  const buildBillPdfBlob = async () => {
-    // html-to-image, not html2canvas — the difference is who paints the text.
-    // html2canvas re-draws every glyph itself with its own baseline arithmetic,
-    // which is known to sit text a few pixels below where the browser put it,
-    // and to mis-advance tracked or tabular-figure runs. html-to-image
-    // serialises the DOM into an SVG foreignObject and hands it back to the
-    // browser to rasterise: the engine that painted the preview paints the
-    // file, so the PDF cannot disagree with the screen about where a line of
-    // text sits. It also means tabular figures and letter-spacing survive
-    // capture, which under html2canvas they did not.
-    const [{ jsPDF }, { toCanvas }] = await Promise.all([import('jspdf'), import('html-to-image')]);
-
-    // Captured from the offscreen copy, laid out at the same width as the bill
-    // the user is looking at — identical width means identical wrapping means
-    // identical alignment. The copy exists so the visible bill is never
-    // restyled mid-download, and so shadows and scroll clipping never reach
-    // the sheet.
-    const node = billRef.current;
-    const shownWidth = billPreviewRef.current?.offsetWidth;
-    node.parentElement.style.width = `${shownWidth || BILL_PDF_WIDTH}px`;
-
-    // The webfonts must be resolved before capture: a capture raced against
-    // Inter still loading would be laid out in one font and painted in another.
-    await document.fonts.ready;
-
-    // The capture is stretched to the chosen sheet before it is rasterised,
-    // the same way the print dialog and the thumbnails fill theirs — the stay
-    // block takes whatever height the fitted bill leaves on the page. Without
-    // this the file was the odd one out: the printed sheet ran to its foot
-    // while the PDF of the same bill stopped halfway down.
-    //
-    // Measured before the variable is set, then restored after the capture so
-    // the copy stays an honest measurement for everything else that reads it.
-    const paper = paperById(paperSize);
-    const capturedWidth = node.offsetWidth;
-    const capturedHeight = node.offsetHeight;
-    if (!paper.continuous) {
-      const [pwPt, phPt] = paper.pt;
-      // The PDF page's own margin rule, below — proportional on small stocks.
-      const marginPt = Math.min(24, pwPt * 0.04);
-      const { stayHeight } = fitBillToSheet(
-        ptToPx(pwPt - marginPt * 2),
-        ptToPx(phPt - marginPt * 2),
-        capturedWidth,
-        capturedHeight,
-        false
-      );
-      node.style.setProperty('--memo-stay-h', `${Math.round(stayHeight)}px`);
-    }
-
-    let canvas;
-    try {
-      canvas = await toCanvas(node, {
-        // Three device pixels per CSS pixel. The text is rasterised, not
-        // embedded, so resolution is all that stands between the reader and
-        // visibly soft 9px captions.
-        pixelRatio: CAPTURE_PIXEL_RATIO,
-        backgroundColor: '#ffffff',
-        // Screen furniture with no meaning on paper: a clipped box can crop a
-        // border, a shadow becomes a grey smear down the edge of the sheet, and
-        // rounded corners read as a web card. Applied to the capture clone only.
-        style: { overflow: 'visible', boxShadow: 'none', borderRadius: '0' },
-      });
-    } finally {
-      node.style.removeProperty('--memo-stay-h');
-    }
-    const imgData = canvas.toDataURL('image/png');
-
-    // A roll is cut to length, not folded to a page. Its height is whatever
-    // the bill came to, so the sheet is measured from the capture rather than
-    // guessed: a fixed length would either cut a long bill off or spit out a
-    // foot of blank paper after a short one, and on a receipt printer that
-    // waste is per bill.
-    const rollWidth = Array.isArray(paper.format) && paper.continuous ? paper.format[0] : null;
-    const format = rollWidth
-      ? [rollWidth, Math.max(120, (rollWidth - ROLL_MARGIN * 2) * (canvas.height / canvas.width) + ROLL_MARGIN * 2)]
-      : paper.format;
-
-    const pdf = new jsPDF({ unit: 'pt', format });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    // Scaled to the sheet. A flat 24pt margin is a tenth of an A6's width and
-    // would leave the bill printing in the middle of it, so the smaller stocks
-    // get a margin proportional to the page instead of a fixed one.
-    const margin = rollWidth ? ROLL_MARGIN : Math.min(24, pageWidth * 0.04);
-
-    // A bill is a single receipt, not a flowing document — scale it down to
-    // whichever dimension is tighter so it always lands on one page, rather
-    // than printing it at full width and letting the tail spill onto a
-    // near-blank second page.
-    //
-    // Never scaled *up*: a small bill blown up to fill a Letter sheet is a
-    // 30px masthead and a memo that reads as a poster. It sits at its natural
-    // size, centred, and the paper simply has room to spare.
-    const maxWidth = pageWidth - margin * 2;
-    const maxHeight = pageHeight - margin * 2;
-    // The capture is at pixelRatio 3, so its natural size on paper is a third
-    // of its pixel count converted from 96dpi CSS pixels to points.
-    const naturalScale = (72 / 96) / CAPTURE_PIXEL_RATIO;
-    const scale = Math.min(maxWidth / canvas.width, maxHeight / canvas.height, naturalScale);
-    const imgWidth = canvas.width * scale;
-    const imgHeight = canvas.height * scale;
-    const x = (pageWidth - imgWidth) / 2;
-
-    pdf.addImage(imgData, 'PNG', x, margin, imgWidth, imgHeight);
-    return pdf.output('blob');
-  };
+  const buildBillPdfBlob = () =>
+    buildDocumentPdfBlob(billRef.current, {
+      paperSize,
+      // The width the user is actually looking at, so the offscreen copy wraps
+      // its text identically and the file matches the preview line for line.
+      shownWidth: billPreviewRef.current?.offsetWidth,
+    });
 
   const handleSharePdf = async () => {
     setPdfError('');
     setPdfBusy(true);
     try {
       const blob = await buildBillPdfBlob();
-      const filename = `${detailInvoice.invoiceNumber.replace(/[\\/]/g, '-')}.pdf`;
-      const file = new File([blob], filename, { type: 'application/pdf' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename });
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      }
+      await shareOrDownloadPdf(blob, `${detailInvoice.invoiceNumber.replace(/[\\/]/g, '-')}.pdf`);
     } catch (err) {
+      // An aborted share sheet is the user changing their mind, not a failure.
       if (err?.name !== 'AbortError') {
         setPdfError('Could not generate the bill PDF.');
       }
@@ -1180,11 +1008,11 @@ export default function Billing({ lodge }) {
           </div>
 
           {invoicesError && <div className="form-banner form-banner--error">{invoicesError}</div>}
-          {!invoicesError && !invoices && <div className="dash-state">Loading…</div>}
-          {!invoicesError && invoices && invoices.length === 0 && (
+          {!invoicesError && !documents && <div className="dash-state">Loading…</div>}
+          {!invoicesError && documents && documents.length === 0 && (
             <div className="dash-state">No bills issued yet.</div>
           )}
-          {!invoicesError && invoices && invoices.length > 0 && (
+          {!invoicesError && documents && documents.length > 0 && (
             <>
               {/* The dates a bill was issued between, with the shortcuts for the
                   common answers underneath. Search sits alongside for the one
@@ -1247,7 +1075,7 @@ export default function Billing({ lodge }) {
 
                 {billsFiltered && (
                   <span className="billing-panel__bill-count">
-                    {visibleInvoices.length} of {invoices.length}
+                    {visibleInvoices.length} of {documents.length}
                     <button type="button" className="billing-panel__bill-clear" onClick={clearBillFilters}>
                       Clear
                     </button>
@@ -1302,7 +1130,7 @@ export default function Billing({ lodge }) {
                         other chip — "All 42" above a list of six would be
                         describing a list nobody is looking at. */}
                     <span className="billing-panel__filter-count">
-                      {invoices.filter((i) => matchesDate(i) && matchesSearch(i)).length}
+                      {documents.filter((i) => matchesDate(i) && matchesSearch(i)).length}
                     </span>
                   </button>
                   {billFilters.map((f) => (
@@ -1341,8 +1169,8 @@ export default function Billing({ lodge }) {
                       className={`chart-row billing-panel__invoice-row billing-panel__invoice-row--${tagClass(source)}${
                         inv.status === 'VOID' ? ' billing-panel__invoice-row--void' : ''
                       }`}
-                      key={inv.id}
-                      onClick={() => openDetail(inv.id)}
+                      key={inv.rowKey ?? inv.id}
+                      onClick={() => openDetail(inv)}
                     >
                       <span className="chart-row__name">
                         <span className="billing-panel__invoice-id">
@@ -1358,6 +1186,11 @@ export default function Billing({ lodge }) {
                             ? inv.tableLabel || 'Counter'
                             : `${inv.guestName} · ${inv.roomNumber}`}
                           {inv.createdAt && ` · ${formatBillDate(inv.createdAt)}`}
+                          {/* Why anybody looks a receipt up again: what is
+                              still to come on the stay it was taken against. */}
+                          {inv.kind === 'ADVANCE' &&
+                            inv.balanceDue > 0 &&
+                            ` · ${formatPrice(inv.balanceDue)} due`}
                         </span>
                       </span>
                       <span className="billing-panel__queue-actions">
@@ -1833,6 +1666,20 @@ export default function Billing({ lodge }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* An advance receipt opened from the list: reprint, share, or void. No
+          booking is passed, so it opens straight on the document with no form —
+          the money was taken when the booking was made. */}
+      {detailReceipt && (
+        <AdvanceReceiptModal
+          initialReceipt={detailReceipt}
+          onClose={() => setDetailReceipt(null)}
+          onVoided={() => {
+            loadReceipts();
+            loadQueue();
+          }}
+        />
       )}
 
       {detailInvoiceId && detailInvoice && (

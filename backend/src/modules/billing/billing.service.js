@@ -1409,6 +1409,15 @@ module.exports = {
   // that reads one way on the booking screen and another on its invoice is a
   // dispute waiting to happen.
   roomChargeLines,
+  // The tax primitives, exported for the advance-receipt module. A receipt
+  // voucher states the tax inside an advance, and it has to be the same tax the
+  // final bill will report on the same money — computed by the same code, from
+  // the same slabs, or the two documents disagree about a single stay.
+  taxWithin,
+  round2,
+  getGstSlabs,
+  ratePercentFor,
+  nightlyAmounts,
   listBillableBookings,
   previewBill,
   issueInvoice,

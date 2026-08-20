@@ -225,10 +225,58 @@ function summarySheet(report) {
     [bold('Bills included'), text(billingSideOption(report.billingSide).label)],
     [bold('Generated'), text(formatDateTime(report.generatedAt || Date.now()))],
     [],
-    sectionRow('SUMMARY'),
-    [bold('Total bookings'), count(summary.totalBookings)],
+    // Money first, same order as the PDF, so the two read alike.
+    sectionRow('MONEY RECEIVED'),
+    [bold('Advances'), money(summary.advanceCollected)],
+    [bold('Final payments'), money(summary.balanceCollected)],
+    [bold('Total received'), money(summary.totalCollected)],
+    [
+      text(
+        'Counted on the day the money came in — an advance on its booking date, a final payment on its bill date. ' +
+          'Cancelled stays are excluded from every figure in this report.'
+      ),
+    ],
+    [],
+    headerRow(['Mode', 'Advances', 'Final payments', 'Total']),
   ];
 
+  for (const mode of PAYMENT_MODES) {
+    const t = summary.byPaymentMode[mode];
+    rows.push([bold(PAYMENT_MODE_LABEL[mode]), money(t.advance), money(t.balance), money(t.total)]);
+  }
+  rows.push([
+    bold('Total received'),
+    { ...money(summary.advanceCollected), fontWeight: 'bold' },
+    { ...money(summary.balanceCollected), fontWeight: 'bold' },
+    { ...money(summary.totalCollected), fontWeight: 'bold' },
+  ]);
+
+  // Which stay the money was for — see the PDF's copy of this table.
+  const stayPeriods = summary.collections?.byStayPeriod;
+  if (stayPeriods) {
+    rows.push([]);
+    rows.push(headerRow(['Money received was for', 'Advances', 'Final payments', 'Total']));
+    for (const [key, label] of [
+      ['EARLIER', 'Stays before this period'],
+      ['THIS', 'Stays in this period'],
+      ['LATER', 'Stays after this period'],
+    ]) {
+      const t = stayPeriods[key];
+      rows.push([bold(label), money(t.advance), money(t.balance), money(t.total)]);
+    }
+    rows.push([
+      bold('Total received'),
+      { ...money(summary.advanceCollected), fontWeight: 'bold' },
+      { ...money(summary.balanceCollected), fontWeight: 'bold' },
+      { ...money(summary.totalCollected), fontWeight: 'bold' },
+    ]);
+  }
+
+  // Stay counts and values. The advance and balance attached to these stays are
+  // the register sheet's own columns, and are not repeated here.
+  rows.push([]);
+  rows.push(sectionRow('STAYS CHECKING IN THIS PERIOD'));
+  rows.push([bold('Total bookings'), count(summary.totalBookings)]);
   for (const [status, label] of Object.entries(BOOKING_STATUS_LABEL)) {
     rows.push([bold(label), count(summary.byStatus[status] || 0)]);
   }
@@ -236,21 +284,12 @@ function summarySheet(report) {
   rows.push([bold('Booked value'), money(summary.bookedValue)]);
   rows.push([bold('Bills issued'), count(summary.billedCount)]);
   rows.push([bold('Billed amount'), money(summary.billedAmount)]);
-  rows.push([bold('Total collected'), money(summary.totalCollected)]);
-
-  rows.push([]);
-  rows.push(sectionRow('PAYMENTS BY MODE'));
-  rows.push(headerRow(['Mode', 'Advance', 'Balance', 'Total']));
-  for (const mode of PAYMENT_MODES) {
-    const t = summary.byPaymentMode[mode];
-    rows.push([bold(PAYMENT_MODE_LABEL[mode]), money(t.advance), money(t.balance), money(t.total)]);
+  if (summary.cancelled?.count) {
+    rows.push([]);
+    rows.push([bold('Cancelled bookings'), count(summary.cancelled.count)]);
+    rows.push([bold('— value not counted'), money(summary.cancelled.bookedValue)]);
+    rows.push([bold('— advances not counted'), money(summary.cancelled.advanceHeld)]);
   }
-  rows.push([
-    bold('Total collected'),
-    { ...money(summary.advanceCollected), fontWeight: 'bold' },
-    { ...money(summary.balanceCollected), fontWeight: 'bold' },
-    { ...money(summary.totalCollected), fontWeight: 'bold' },
-  ]);
 
   rows.push([]);
   rows.push(sectionRow('TAX — ISSUED BILLS ONLY'));
@@ -351,7 +390,10 @@ const COLUMNS = [
 const TOTALS_BY_COLUMN = (summary, tax) => ({
   'Bill no.': 'Total',
   Nights: summary.roomNights,
-  Advance: formatAmount(summary.advanceCollected),
+  // Foots the Advance column of the rows above it, so it must be the advance
+  // attached to these stays — not the period's cash-basis advance total, which
+  // covers a different set of bookings entirely.
+  Advance: formatAmount(summary.stayAdvance),
   Subtotal: formatAmount(tax.taxableValue),
   CGST: formatAmount(tax.cgstAmount),
   SGST: formatAmount(tax.sgstAmount),
@@ -409,6 +451,17 @@ function createLayout(pdf, runningHead) {
       pdf.line(MARGIN, y, right, y);
       y += 13;
       pdf.setFont('helvetica', 'normal');
+    },
+    // A line of explanation under a heading. Used where a section is counted on
+    // a different basis to the one above it and would otherwise read as a
+    // discrepancy — the reader has to be told, on the page, which is which.
+    note(text) {
+      const lines = pdf.splitTextToSize(text, CONTENT_WIDTH);
+      layout.ensure(lines.length * 9 + 6);
+      pdf.setFont('helvetica', 'italic').setFontSize(7).setTextColor(MUTED);
+      pdf.text(lines, MARGIN, y);
+      y += lines.length * 9 + 6;
+      pdf.setFont('helvetica', 'normal').setTextColor(INK);
     },
     // Label-above-value tiles. The summary is a handful of short facts, and a
     // full table around them would be all frame and no content.
@@ -519,30 +572,72 @@ export async function downloadBookingReportPdf(report) {
   pdf.line(MARGIN, y, layout.right, y);
   layout.y = y + 20;
 
-  layout.heading('Summary');
-  layout.tiles([
-    ['Bookings', summary.totalBookings],
-    ['Room nights', summary.roomNights],
-    ['Booked value', formatAmount(summary.bookedValue)],
-    ['Bills issued', summary.billedCount],
-    ['Billed amount', formatAmount(summary.billedAmount)],
-    ['Total collected', formatAmount(summary.totalCollected)],
-  ]);
-  layout.tiles([
-    ...Object.entries(BOOKING_STATUS_LABEL).map(([status, label]) => [
-      label,
-      summary.byStatus[status] || 0,
-    ]),
-    ['Advance collected', formatAmount(summary.advanceCollected)],
-    ['Balance collected', formatAmount(summary.balanceCollected)],
-  ]);
+  // Money you received, first and on its own — it is the number an owner opens
+  // the report for. One line of plain English says what dates it counts on; the
+  // detail of why lives in the mode table's own columns, not in a paragraph.
+  layout.heading('Money received');
+  layout.tiles(
+    [
+      ['Advances', formatAmount(summary.advanceCollected)],
+      ['Final payments', formatAmount(summary.balanceCollected)],
+      ['Total received', formatAmount(summary.totalCollected)],
+    ],
+    3
+  );
+  layout.note(
+    'Counted on the day the money came in — an advance on its booking date, a final payment on its ' +
+      'bill date. Cancelled stays are excluded' +
+      (summary.cancelled?.advanceHeld
+        ? `, including ${formatAmount(summary.cancelled.advanceHeld)} of advances taken on ` +
+          `${summary.cancelled.count} cancelled ${summary.cancelled.count === 1 ? 'booking' : 'bookings'}` +
+          ' — refunds are not tracked, so that money is not reported as income here.'
+        : '.')
+  );
 
-  layout.heading('Payments by mode');
+  // Which stay each rupee was for. An owner reading a single advances figure
+  // cannot tell how much of it is this month's business and how much is money
+  // held for stays that have not happened yet — the two behave completely
+  // differently at month end, and the gap between them is what reads as a
+  // mismatch against the stay figures below.
+  const stayPeriods = summary.collections?.byStayPeriod;
+  if (stayPeriods) {
+    const periodRow = (key, label) => [
+      label,
+      formatAmount(stayPeriods[key].advance),
+      formatAmount(stayPeriods[key].balance),
+      formatAmount(stayPeriods[key].total),
+      '',
+    ];
+    layout.table({
+      columns: [
+        { label: 'Money received was for', width: 200 },
+        { label: 'Advances', width: 120, align: 'right' },
+        { label: 'Final payments', width: 120, align: 'right' },
+        { label: 'Total', width: 120, align: 'right' },
+        { label: '', width: 192 },
+      ],
+      rows: [
+        periodRow('EARLIER', 'Stays before this period'),
+        periodRow('THIS', 'Stays in this period'),
+        periodRow('LATER', 'Stays after this period'),
+      ],
+      totals: [
+        'Total received',
+        formatAmount(summary.advanceCollected),
+        formatAmount(summary.balanceCollected),
+        formatAmount(summary.totalCollected),
+        '',
+      ],
+      fontSize: 8,
+      rowHeight: 14,
+    });
+  }
+
   layout.table({
     columns: [
       { label: 'Mode', width: 160 },
-      { label: 'Advance', width: 130, align: 'right' },
-      { label: 'Balance on checkout', width: 130, align: 'right' },
+      { label: 'Advances', width: 130, align: 'right' },
+      { label: 'Final payments', width: 130, align: 'right' },
       { label: 'Total', width: 130, align: 'right' },
       { label: '', width: 232 },
     ],
@@ -554,7 +649,7 @@ export async function downloadBookingReportPdf(report) {
       '',
     ]),
     totals: [
-      'Total collected',
+      'Total received',
       formatAmount(summary.advanceCollected),
       formatAmount(summary.balanceCollected),
       formatAmount(summary.totalCollected),
@@ -563,6 +658,39 @@ export async function downloadBookingReportPdf(report) {
     fontSize: 8,
     rowHeight: 14,
   });
+
+  // The stays themselves — counts and what they were worth. The advance and
+  // balance attached to them are deliberately not repeated here: they are the
+  // register's own columns, footed at the bottom of it, and a second copy under
+  // a heading that means something subtly different is what made this confusing.
+  layout.heading('Stays checking in this period');
+  layout.tiles([
+    ['Bookings', summary.totalBookings],
+    ...Object.entries(BOOKING_STATUS_LABEL).map(([status, label]) => [
+      label,
+      summary.byStatus[status] || 0,
+    ]),
+    ['Room nights', summary.roomNights],
+  ]);
+  layout.tiles(
+    [
+      ['Booked value', formatAmount(summary.bookedValue)],
+      ['Bills issued', summary.billedCount],
+      ['Billed amount', formatAmount(summary.billedAmount)],
+    ],
+    3
+  );
+  // The cancelled count above is a count, not money — so the value they would
+  // have brought in is named here explicitly. Otherwise "Cancelled 3" sits next
+  // to a booked value that quietly does not include them.
+  if (summary.cancelled?.count) {
+    layout.note(
+      `Booked value excludes ${summary.cancelled.count} cancelled ` +
+        `${summary.cancelled.count === 1 ? 'booking' : 'bookings'} worth ` +
+        `${formatAmount(summary.cancelled.bookedValue)}. Cancelled stays are counted above but ` +
+        'contribute no money to this report.'
+    );
+  }
 
   layout.heading('Tax charged — issued bills only');
   layout.table({
@@ -602,6 +730,12 @@ export async function downloadBookingReportPdf(report) {
   // filed, and it should not begin three rows above a page break.
   layout.newPage();
   layout.heading(`Booking register — ${report.bookings.length} bookings`);
+  if (summary.cancelled?.count) {
+    layout.note(
+      'Cancelled bookings are listed for the record with their money columns left blank — they are ' +
+        'excluded from every total in this report.'
+    );
+  }
 
   if (report.bookings.length === 0) {
     pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(MUTED);
@@ -610,24 +744,33 @@ export async function downloadBookingReportPdf(report) {
   } else {
     layout.table({
       columns: COLUMNS,
-      rows: report.bookings.map((b) => [
-        b.invoiceNumber || '—',
-        b.guestName,
-        b.roomNumber,
-        formatDate(b.checkInDate),
-        formatActualStamp(b.actualCheckInAt, b.checkInDate),
-        formatDate(b.checkOutDate),
-        formatActualStamp(b.actualCheckOutAt, b.checkOutDate),
-        b.nights,
-        b.numGuests,
-        BOOKING_STATUS_LABEL[b.status] || b.status,
-        b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
-        b.advanceAmount && b.advancePaymentMethod ? PAYMENT_MODE_LABEL[b.advancePaymentMethod] : '—',
-        formatAmount(b.subtotal),
-        formatAmount(b.cgstAmount),
-        formatAmount(b.sgstAmount),
-        formatAmount(b.billedAmount != null ? b.billedAmount : b.totalPrice),
-      ]),
+      // A cancelled stay is listed — an owner wants to see it happened — but
+      // carries no money on its row. Its nights and its advance are excluded
+      // from every total in this report, so printing them in the columns would
+      // leave an Advance column that visibly does not add up to its own total.
+      rows: report.bookings.map((b) => {
+        const isCancelled = b.status === 'CANCELLED';
+        return [
+          b.invoiceNumber || '—',
+          b.guestName,
+          b.roomNumber,
+          formatDate(b.checkInDate),
+          formatActualStamp(b.actualCheckInAt, b.checkInDate),
+          formatDate(b.checkOutDate),
+          formatActualStamp(b.actualCheckOutAt, b.checkOutDate),
+          isCancelled ? '—' : b.nights,
+          b.numGuests,
+          BOOKING_STATUS_LABEL[b.status] || b.status,
+          !isCancelled && b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
+          !isCancelled && b.advanceAmount && b.advancePaymentMethod
+            ? PAYMENT_MODE_LABEL[b.advancePaymentMethod]
+            : '—',
+          isCancelled ? '—' : formatAmount(b.subtotal),
+          isCancelled ? '—' : formatAmount(b.cgstAmount),
+          isCancelled ? '—' : formatAmount(b.sgstAmount),
+          isCancelled ? '—' : formatAmount(b.billedAmount != null ? b.billedAmount : b.totalPrice),
+        ];
+      }),
       // Only the columns that legitimately sum are totalled — nights and the
       // money columns add up, a column of phone numbers does not. Keyed by
       // label and projected through COLUMNS so adding or reordering a column

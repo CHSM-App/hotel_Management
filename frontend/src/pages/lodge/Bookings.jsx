@@ -14,6 +14,7 @@ import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import StayDetails from './StayDetails';
+import AdvanceReceiptModal from './AdvanceReceiptModal';
 import { VEHICLE_TYPE_LABEL, describeParty, formatDateLong, idProofLabel } from './stayFormat';
 import './forms.css';
 import './chartSections.css';
@@ -1083,6 +1084,12 @@ export default function Bookings({ onCheckedOut }) {
   // Booking detail modal
   const [selectedBookingId, setSelectedBookingId] = useState(null);
   const [bookingDetail, setBookingDetail] = useState(null);
+  // The advance-receipt modal, and every receipt already written against the
+  // open booking. The list is loaded with the booking rather than when the
+  // modal opens, because the detail screen shows a count on the button — the
+  // desk needs to know a receipt exists before deciding to issue one.
+  const [showAdvanceReceipt, setShowAdvanceReceipt] = useState(false);
+  const [advanceReceipts, setAdvanceReceipts] = useState([]);
   const [detailError, setDetailError] = useState('');
   const [showCheckInForm, setShowCheckInForm] = useState(false);
   const initialCheckInForm = {
@@ -1190,6 +1197,8 @@ export default function Bookings({ onCheckedOut }) {
     setCheckInForm(initialCheckInForm);
     setActionError('');
     setIdProofError('');
+    setShowAdvanceReceipt(false);
+    setAdvanceReceipts([]);
   };
 
   // Who is actually standing at the desk: the primary guest, whoever was named
@@ -1272,8 +1281,24 @@ export default function Bookings({ onCheckedOut }) {
     apiGet(`/bookings/${selectedBookingId}`, { token })
       .then((data) => setBookingDetail(data.booking))
       .catch((err) => setDetailError(err instanceof ApiError ? err.message : 'Could not load this booking.'));
+    // Receipts are a side note on the stay, so a failure here is swallowed: it
+    // must not replace the booking on screen with an error banner. The worst
+    // case is a button that doesn't show a count.
+    apiGet(`/billing/bookings/${selectedBookingId}/advance-receipts`, { token })
+      .then((data) => setAdvanceReceipts(data.receipts))
+      .catch(() => setAdvanceReceipts([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBookingId]);
+
+  // After a receipt is issued the booking holds more advance than the copy on
+  // screen says, and the chart behind it is showing the old figure too.
+  const handleReceiptIssued = (receipt) => {
+    setAdvanceReceipts((list) => [receipt, ...list]);
+    apiGet(`/bookings/${selectedBookingId}`, { token })
+      .then((data) => setBookingDetail(data.booking))
+      .catch(() => {});
+    loadTapeChart();
+  };
 
   // A guest who mistypes their PIN five times locks their own room out of
   // ordering for fifteen minutes, then rings the desk about it. Reception
@@ -1398,11 +1423,15 @@ export default function Bookings({ onCheckedOut }) {
     setActionError('');
     setActionSubmitting(true);
     try {
+      const billed = selectedBookingId;
       await apiPatch(`/bookings/${selectedBookingId}/check-out`, { lateCharge }, { token });
       setLateCheckout(null);
       setSelectedBookingId(null);
       loadTapeChart();
-      onCheckedOut?.();
+      // Hand the stay straight to billing: a guest standing at the desk is
+      // about to be billed, so reception should not have to find them again
+      // in the queue they were just added to.
+      onCheckedOut?.(billed);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not check out this guest.');
     } finally {
@@ -2499,6 +2528,31 @@ export default function Bookings({ onCheckedOut }) {
 
                 {actionError && <div className="form-banner form-banner--error">{actionError}</div>}
 
+                {/* The receipt for money taken before the bill exists. Its own
+                    row above the status actions, because it applies to a
+                    reservation and to a guest already in the room alike —
+                    an advance is taken at either point — while the rows below
+                    are each about moving the stay to its next state.
+
+                    Not offered once the stay is billed or cancelled: the final
+                    invoice already accounts for every advance, and a cancelled
+                    booking has no stay to hold money against. */}
+                {!showCheckInForm &&
+                  bookingDetail.status !== 'CANCELLED' &&
+                  bookingDetail.status !== 'CHECKED_OUT' && (
+                    <div className="bookings-panel__actions">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setShowAdvanceReceipt(true)}
+                        disabled={actionSubmitting}
+                      >
+                        Advance receipt
+                        {advanceReceipts.length > 0 && ` (${advanceReceipts.length})`}
+                      </button>
+                    </div>
+                  )}
+
                 {bookingDetail.status === 'BOOKED' && !showCheckInForm && (
                   <>
                     {!canCheckInNow && (
@@ -2817,6 +2871,18 @@ export default function Bookings({ onCheckedOut }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* Stacked above the booking detail rather than replacing it: issuing a
+          receipt is a step inside looking at a stay, and the desk goes straight
+          back to it afterwards. */}
+      {showAdvanceReceipt && bookingDetail && (
+        <AdvanceReceiptModal
+          booking={bookingDetail}
+          existingReceipts={advanceReceipts}
+          onClose={() => setShowAdvanceReceipt(false)}
+          onIssued={handleReceiptIssued}
+        />
       )}
 
       {lateCheckout && (

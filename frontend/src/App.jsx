@@ -10,6 +10,7 @@ import OrderPage from './pages/public/OrderPage';
 import NotFound from './pages/NotFound';
 import RequireStaff from './components/RequireStaff';
 import RequireLodgeAuth from './components/RequireLodgeAuth';
+import RedirectIfAuthed from './components/RedirectIfAuthed';
 
 function App() {
   return (
@@ -29,8 +30,17 @@ function App() {
         <Route path="/order/t/:token" element={<OrderPage mode="table" />} />
         <Route path="/order/:slug" element={<OrderPage mode="lodge" />} />
 
-        {/* Lodge owner / reception / kitchen sign-in. */}
-        <Route path="/login" element={<Login />} />
+        {/* Lodge owner / reception / kitchen sign-in. Wrapped so Back from the
+            dashboard cannot land on a sign-in form the user has already
+            satisfied — it bounces straight back to /dashboard. */}
+        <Route
+          path="/login"
+          element={
+            <RedirectIfAuthed to="/dashboard">
+              <Login />
+            </RedirectIfAuthed>
+          }
+        />
         <Route
           path="/dashboard"
           element={
@@ -41,7 +51,14 @@ function App() {
         />
 
         {/* Staff-only, all unlisted below. Not linked from any nav — reached by direct URL. */}
-        <Route path="/vtadmin" element={<AdminLogin />} />
+        <Route
+          path="/vtadmin"
+          element={
+            <RedirectIfAuthed to="/vt-internal/dashboard" when="staff">
+              <AdminLogin />
+            </RedirectIfAuthed>
+          }
+        />
         <Route
           path="/vt-internal/dashboard"
           element={

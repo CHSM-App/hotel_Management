@@ -109,6 +109,10 @@ export default function OwnerDashboard() {
   // first render, so which section is even reachable isn't known here. The
   // landing choice is made below, once the permissions are in.
   const [activeSection, setActiveSection] = useState(null);
+  // Set when a checkout hands a stay to billing, which reads it as it mounts to
+  // open that bill straight away. Cleared on any sidebar move, so coming back to
+  // billing later lands on the plain queue rather than reopening an old bill.
+  const [billNowBookingId, setBillNowBookingId] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -190,7 +194,10 @@ export default function OwnerDashboard() {
                       type="button"
                       className="dash-sidebar__item"
                       aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
-                      onClick={() => setActiveSection(feature.key)}
+                      onClick={() => {
+                        setBillNowBookingId(null);
+                        setActiveSection(feature.key);
+                      }}
                     >
                       <Icon name={feature.icon} />
                       {feature.title}
@@ -232,10 +239,17 @@ export default function OwnerDashboard() {
               {activeFeature && activeFeature.key === 'rooms' && <RoomsAndRates />}
 
               {activeFeature && activeFeature.key === 'bookings' && (
-                <Bookings onCheckedOut={() => setActiveSection('billing')} />
+                <Bookings
+                  onCheckedOut={(bookingId) => {
+                    setBillNowBookingId(bookingId ?? null);
+                    setActiveSection('billing');
+                  }}
+                />
               )}
 
-              {activeFeature && activeFeature.key === 'billing' && <Billing lodge={me.lodge} />}
+              {activeFeature && activeFeature.key === 'billing' && (
+                <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} />
+              )}
 
               {activeFeature && activeFeature.key === 'guests' && <GuestRegister />}
 

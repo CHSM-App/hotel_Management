@@ -91,6 +91,14 @@
   color: #7a5b12;
 }
 
+/* Money taken before the stay, so it reads as its own thing rather than as a
+   quieter tax invoice — teal sits clear of the green invoices and the amber
+   cash receipts it shares the list with. */
+.bill-tag--advance {
+  background: #dcf0f2;
+  color: #0f5b63;
+}
+
 .bill-tag--void {
   background: var(--danger-bg);
   color: var(--danger);
@@ -105,8 +113,11 @@
   flex: none;
 }
 
-.bill-tag__dot--tax-invoice { background: #1f7a4d; }
 .bill-tag__dot--cash-receipt { background: #c79512; }
+.bill-tag__dot--advance { background: #10808c; }
+/* The coarse split, and the one the eye should land on first: everything that
+   is not an advance is a bill closing a stay. */
+.bill-tag__dot--final { background: var(--brand); }
 
 /* --- narrowing the bills list ------------------------------------------- */
 
@@ -333,6 +344,10 @@
 
 .billing-panel__invoice-row--table {
   border-left-color: var(--accent);
+}
+
+.billing-panel__invoice-row--advance {
+  border-left-color: #10808c;
 }
 
 /* A voided bill stays in the list for the audit trail, but reads as struck

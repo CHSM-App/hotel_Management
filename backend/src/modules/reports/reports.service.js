@@ -22,6 +22,121 @@ function datesInRange(fromDate, toDate) {
   return dates;
 }
 
+const BOOKING_STATUSES = ['BOOKED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'];
+// Mirrors ck_bookings_payment_method / ck_invoices_payment_method.
+const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD'];
+
+// Money actually taken in the period, on a cash basis — which is a different
+// question to the booking register's, and needs its own two queries.
+//
+// The register lists stays by check-in date. Collections cannot use that date:
+// an advance taken in September for an October stay is September's money, and
+// keying it to check-in reports it a month late. So each half is dated by when
+// it moved. An advance is always taken at booking time (there is no later
+// top-up), which is what makes bookings.created_at a faithful payment date and
+// what lets this work without a payment-date column. A balance moves when the
+// bill is issued, so it is dated by the invoice.
+//
+// The two halves therefore cover different sets of bookings, and neither need
+// match the register on screen — that is the point of a cash-basis figure, and
+// the report labels it as such rather than pretending it reconciles.
+async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
+  const byPaymentMode = Object.fromEntries(
+    [...PAYMENT_METHODS, 'UNRECORDED'].map((m) => [m, { advance: 0, balance: 0, total: 0 }])
+  );
+  const add = (method, kind, amount) => {
+    if (!amount) return;
+    const key = PAYMENT_METHODS.includes(method) ? method : 'UNRECORDED';
+    byPaymentMode[key][kind] = round2(byPaymentMode[key][kind] + amount);
+    byPaymentMode[key].total = round2(byPaymentMode[key].total + amount);
+  };
+
+  // Cancelled stays are excluded from both halves. Whether an advance on one was
+  // refunded is not recorded anywhere, so counting it as income would overstate
+  // takings on exactly the stays that produced none. The report says so on the
+  // page rather than leaving an owner to wonder why a cancelled booking's
+  // advance is missing from the totals.
+  const advances = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT b.advance_amount, b.advance_payment_method,
+             CASE
+               WHEN b.check_in_date < @fromDate THEN 'EARLIER'
+               WHEN b.check_in_date > @toDate THEN 'LATER'
+               ELSE 'THIS'
+             END AS stay_period
+      FROM dbo.bookings b
+      WHERE b.lodge_id = @lodgeId
+        AND b.status <> 'CANCELLED'
+        AND b.advance_amount > 0
+        AND CAST(b.created_at AS DATE) BETWEEN @fromDate AND @toDate
+    `);
+
+  const balances = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT i.balance_collected, i.balance_payment_method,
+             CASE
+               WHEN b.check_in_date < @fromDate THEN 'EARLIER'
+               WHEN b.check_in_date > @toDate THEN 'LATER'
+               ELSE 'THIS'
+             END AS stay_period
+      FROM dbo.invoices i
+      JOIN dbo.bookings b ON b.id = i.booking_id
+      WHERE i.lodge_id = @lodgeId
+        AND i.status = 'ISSUED'
+        AND b.status <> 'CANCELLED'
+        AND i.balance_collected > 0
+        AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
+    `);
+
+  // Each payment is also filed by *which* stay it was for, relative to the
+  // period being reported. That is the breakdown that answers "how much of
+  // this month's takings is for this month, and how much is for later" —
+  // without it a single advances figure hides money that is really next
+  // month's business, which is exactly what looks like a mismatch.
+  const bucket = () => ({ advance: 0, balance: 0, total: 0, count: 0 });
+  const byStayPeriod = { EARLIER: bucket(), THIS: bucket(), LATER: bucket() };
+  const file = (row, kind, amount) => {
+    const b = byStayPeriod[row.stay_period] || byStayPeriod.THIS;
+    b[kind] = round2(b[kind] + amount);
+    b.total = round2(b.total + amount);
+    b.count += 1;
+  };
+
+  let advanceCollected = 0;
+  for (const row of advances.recordset) {
+    const amount = Number(row.advance_amount);
+    advanceCollected = round2(advanceCollected + amount);
+    add(row.advance_payment_method, 'advance', amount);
+    file(row, 'advance', amount);
+  }
+
+  let balanceCollected = 0;
+  for (const row of balances.recordset) {
+    const amount = Number(row.balance_collected);
+    balanceCollected = round2(balanceCollected + amount);
+    add(row.balance_payment_method, 'balance', amount);
+    file(row, 'balance', amount);
+  }
+
+  return {
+    advanceCollected,
+    advanceCount: advances.recordset.length,
+    balanceCollected,
+    balanceCount: balances.recordset.length,
+    totalCollected: round2(advanceCollected + balanceCollected),
+    byPaymentMode,
+    byStayPeriod,
+  };
+}
+
 // Occupied nights only count stays that actually happened — CHECKED_IN
 // (in progress) or CHECKED_OUT (completed). A BOOKED reservation that
 // never arrived, or a CANCELLED one, never occupied the room.
@@ -147,10 +262,6 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
   return { fromDate, toDate, totals, byDocumentType, invoices };
 }
 
-const BOOKING_STATUSES = ['BOOKED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'];
-// Mirrors ck_bookings_payment_method / ck_invoices_payment_method.
-const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD'];
-
 // A booking belongs to the period it *arrives* in — check_in_date inside the
 // range — not every period its stay touches. That's the only reading under
 // which a stay is counted once and the twelve monthly reports for a year add
@@ -256,9 +367,10 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   }));
 
   const byStatus = Object.fromEntries(BOOKING_STATUSES.map((s) => [s, 0]));
-  const byPaymentMode = Object.fromEntries(
-    [...PAYMENT_METHODS, 'UNRECORDED'].map((m) => [m, { advance: 0, balance: 0, total: 0 }])
-  );
+  // What cancelled stays would have added, kept aside rather than discarded so
+  // the report can name the figure it is leaving out. A number an owner can see
+  // and dismiss is very different from one that silently went missing.
+  const cancelled = { count: 0, bookedValue: 0, advanceHeld: 0 };
   const summary = {
     totalBookings: bookings.length,
     roomNights: 0,
@@ -268,8 +380,13 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     bookedValue: 0,
     billedAmount: 0,
     billedCount: 0,
-    advanceCollected: 0,
-    balanceCollected: 0,
+    // Money attached to the stays listed in this register — i.e. keyed to
+    // check-in date, so an advance for one of these stays may well have been
+    // taken in an earlier period. These reconcile with the rows on the page.
+    // What was actually banked in the period is `collections` below, which is
+    // dated by when each payment moved and deliberately does not match these.
+    stayAdvance: 0,
+    stayBalance: 0,
   };
   const tax = {
     roomSubtotal: 0,
@@ -284,32 +401,24 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     totalAmount: 0,
   };
 
-  // A payment with no method recorded still moved money, so it is bucketed
-  // rather than dropped — a silent omission would make the mode breakdown
-  // disagree with the totals above it.
-  const addPayment = (method, kind, amount) => {
-    if (!amount) return;
-    const key = PAYMENT_METHODS.includes(method) ? method : 'UNRECORDED';
-    byPaymentMode[key][kind] = round2(byPaymentMode[key][kind] + amount);
-    byPaymentMode[key].total = round2(byPaymentMode[key].total + amount);
-  };
-
   for (const booking of bookings) {
     if (byStatus[booking.status] === undefined) byStatus[booking.status] = 0;
     byStatus[booking.status] += 1;
 
-    if (booking.status !== 'CANCELLED') {
+    if (booking.status === 'CANCELLED') {
+      cancelled.count += 1;
+      cancelled.bookedValue = round2(cancelled.bookedValue + booking.totalPrice);
+      cancelled.advanceHeld = round2(cancelled.advanceHeld + booking.advanceAmount);
+    } else {
       summary.roomNights += booking.nights;
       summary.bookedValue = round2(summary.bookedValue + booking.totalPrice);
-      summary.advanceCollected = round2(summary.advanceCollected + booking.advanceAmount);
-      addPayment(booking.advancePaymentMethod, 'advance', booking.advanceAmount);
+      summary.stayAdvance = round2(summary.stayAdvance + booking.advanceAmount);
     }
 
     if (booking.billedAmount != null) {
       summary.billedCount += 1;
       summary.billedAmount = round2(summary.billedAmount + booking.billedAmount);
-      summary.balanceCollected = round2(summary.balanceCollected + (booking.balanceCollected || 0));
-      addPayment(booking.balancePaymentMethod, 'balance', booking.balanceCollected || 0);
+      summary.stayBalance = round2(summary.stayBalance + (booking.balanceCollected || 0));
 
       tax.roomSubtotal = round2(tax.roomSubtotal + (booking.roomSubtotal || 0));
       tax.foodSubtotal = round2(tax.foodSubtotal + (booking.foodSubtotal || 0));
@@ -324,7 +433,17 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     }
   }
 
-  summary.totalCollected = round2(summary.advanceCollected + summary.balanceCollected);
+  summary.stayTotal = round2(summary.stayAdvance + summary.stayBalance);
+  summary.cancelled = cancelled;
+
+  // Cash basis, dated by when the money moved rather than by check-in. This is
+  // the answer to "what did we take this month"; the stay* figures above answer
+  // "what is attached to the stays on this page". They are not expected to
+  // agree, and the report prints them under separate headings for that reason.
+  const collections = await getCollectionsInPeriod(pool, lodgeId, fromDate, toDate);
+  summary.advanceCollected = collections.advanceCollected;
+  summary.balanceCollected = collections.balanceCollected;
+  summary.totalCollected = collections.totalCollected;
   // The taxable value the period's CGST/SGST was charged on — derived here so
   // the register's subtotal column and the tax table's total cannot drift.
   tax.taxableValue = round2(tax.roomSubtotal + tax.foodSubtotal);
@@ -339,7 +458,15 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     // columns entirely rather than printing a column of zeroes.
     servesFood: Boolean(lodgeResult.recordset[0]?.serves_food),
     gstin: lodgeResult.recordset[0]?.is_gst_registered ? lodgeResult.recordset[0]?.gstin || null : null,
-    summary: { ...summary, byStatus, byPaymentMode, tax },
+    summary: {
+      ...summary,
+      byStatus,
+      // The mode breakdown belongs to the collections figures it is printed
+      // under, so it is dated on the same cash basis and adds up to them.
+      byPaymentMode: collections.byPaymentMode,
+      collections,
+      tax,
+    },
     bookings,
   };
 }
