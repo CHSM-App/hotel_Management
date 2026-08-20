@@ -8,9 +8,10 @@ const { uploadDir } = require('../config/uploadRoot');
 // authenticated route — a room card showing several thumbnails would
 // otherwise mean a separate authenticated fetch per image.
 //
-// Still under UPLOAD_ROOT rather than in-tree: not because they're sensitive,
-// but because a deploy that silently empties every property's room gallery is
-// its own kind of outage. See config/uploadRoot.js.
+// They share the upload root with the ID proofs — backend/uploads/room-images —
+// and are exposed by mounting only that one sub-directory statically in app.js,
+// which is what keeps the sibling id-proofs folder unreachable by URL.
+// See config/uploadRoot.js.
 const UPLOAD_DIR = uploadDir('room-images');
 
 const ALLOWED_MIME_EXT = {

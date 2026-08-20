@@ -1,5 +1,3 @@
-const { assertUploadRootConfigured } = require('./uploadRoot');
-
 // Fails the boot when the environment can't support a working app.
 //
 // The failure this prevents is the quiet one. Without JWT_SECRET the process
@@ -64,12 +62,6 @@ function validateEnv() {
           'Without it the rate limiters see the proxy address instead of real clients.'
       );
     }
-  }
-
-  try {
-    assertUploadRootConfigured();
-  } catch (err) {
-    problems.push(err.message);
   }
 
   if (problems.length > 0) {

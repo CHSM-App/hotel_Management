@@ -33,6 +33,24 @@ const server = app.listen(port, () => {
   logger.info({ port }, 'API listening');
 });
 
+// A failed bind arrives as an 'error' event, not a thrown exception. Without a
+// listener Node re-throws it as an uncaughtException, which the handler at the
+// bottom of this file turns into server.close() on a server that never opened -
+// so the callback never fires and the real reason is buried under a shutdown
+// that cannot complete.
+//
+// It matters most under IIS/iisnode, where `port` is not a number but a named
+// pipe supplied by the host. EACCES or EADDRINUSE on that pipe is a hosting
+// misconfiguration, and the operator sees only a blank 500 unless the reason is
+// written somewhere first.
+server.on('error', (err) => {
+  logger.fatal({ err, port }, 'Could not bind - the server is not accepting requests');
+  // Same reasoning as the env check above: this is an operator-facing message on
+  // a process that is about to die, and it has to survive without a log reader.
+  console.error(`\nFailed to listen on ${port}: ${err.message}\n`);
+  process.exit(1);
+});
+
 // Schema drift check — advisory, after the port is bound. A database that is
 // behind the code is worth a loud log line at every boot, but not a refusal to
 // start: the app already tolerates the database being down entirely at boot

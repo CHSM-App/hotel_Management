@@ -7,9 +7,11 @@ const { uploadDir } = require('../config/uploadRoot');
 // live outside any statically-served directory — access goes through the
 // authenticated /bookings/:id/id-proof route instead of a public URL.
 //
-// The directory sits under UPLOAD_ROOT, which in production points outside the
-// deployed tree: these are KYC records the property must retain, and the deploy
-// overwrites everything inside backend/. See config/uploadRoot.js.
+// The directory sits under the upload root — backend/uploads/ by default, the
+// same in-tree rooting the college-admission backend uses. These are KYC
+// records the property must retain, so the folder is excluded from git rather
+// than deployed, and it is the one part of backend/ that must be backed up and
+// never wiped by a deploy. See config/uploadRoot.js.
 const UPLOAD_DIR = uploadDir('id-proofs');
 
 const ALLOWED_MIME_EXT = {

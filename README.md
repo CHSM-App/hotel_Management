@@ -730,6 +730,66 @@ POST   /public/v1/enquiries
 
 ---
 
+## Deploying (Plesk for Windows / IIS)
+
+`.github/workflows/deploy.yml` builds the SPA into `backend/src/public`, then
+force-pushes the contents of `backend/` to the **`backend`** branch. That branch
+is the deploy artifact and the site pulls from it.
+
+**The deploy does not install anything.** `backend/.gitignore` excludes
+`node_modules/`, `.env` and `uploads/`, so all three live on the server and
+survive the force push. A fresh site therefore needs the manual steps below
+once — miss any of them and the node process exits at startup, which IIS
+reports as `HTTP 500` with an empty body on *every* URL.
+
+1. **Install dependencies on the server**, in the site root next to `app.js`:
+
+   ```
+   npm ci --omit=dev
+   ```
+
+   Nothing in CI does this, and it must be repeated whenever
+   `package-lock.json` changes.
+
+2. **Create `.env`** in that same directory (`app.js` and `src/server.js` are
+   pinned to it — `src/server.js` resolves it relative to its own location, not
+   the working directory, because IIS makes no promise about cwd). Copy
+   `.env.example` and fill it in.
+
+3. **Set the production variables.** With `NODE_ENV=production`, `validateEnv()`
+   refuses to boot unless `ALLOWED_ORIGINS` and `TRUST_PROXY` are set, on top of
+   the `DB_*` and `JWT_SECRET` values. Under IIS, `TRUST_PROXY=1`.
+   `.env.example` documents each one.
+
+4. **Grant write access to `backend/uploads/`.** Uploads are rooted in-tree by
+   default — `backend/uploads/{id-proofs,room-images,menu-images}` — the same
+   way the college-admission backend uses `BackEnd/uploads/students`. The
+   application pool identity needs Modify rights on the site root; the app
+   creates the sub-folders itself at require time and cannot start if that
+   throws. Set `UPLOAD_ROOT` only to move them onto another volume.
+
+   The folder is gitignored, so a deploy by pull or checkout leaves it alone.
+   **Never deploy with `git clean -xdf` or delete-then-copy, and back this
+   directory up** — guest ID proofs are KYC records the property must retain.
+
+5. **Check the Node version.** `web.config` pins
+   `nodeProcessCommandLine="C:\Program Files\nodejs\node.exe"`; the dependency
+   tree needs Node 20.19 or newer (see `.nvmrc`).
+
+### When it returns 500 on every URL
+
+A blank 500 from IIS means the node process never produced a response — it is
+not an application error, and no Express error handler ran. Set
+`devErrorsEnabled="true"` in `web.config` and request any URL: iisnode then
+returns the startup failure and the tail of stderr in the response body, which
+names the missing variable, module or path directly. `loggingEnabled="true"`
+also writes stdout/stderr to an `iisnode` folder beside `app.js`.
+
+Turn `devErrorsEnabled` back to `false` afterwards — it exposes stack traces and
+server paths publicly.
+
+---
+
 ## Traps
 
 1. Recomputing old bookings' prices. Snapshot at creation, read forever.

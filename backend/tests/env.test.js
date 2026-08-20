@@ -80,13 +80,12 @@ test('reports every problem at once, not just the first', () => {
   });
 });
 
-test('production additionally requires UPLOAD_ROOT, ALLOWED_ORIGINS and TRUST_PROXY', () => {
+test('production additionally requires ALLOWED_ORIGINS and TRUST_PROXY', () => {
   withEnv({ ...VALID_DEV, NODE_ENV: 'production' }, (validateEnv) => {
     try {
       validateEnv();
       assert.fail('expected validateEnv to throw');
     } catch (err) {
-      assert.match(err.message, /UPLOAD_ROOT/);
       assert.match(err.message, /ALLOWED_ORIGINS/);
       assert.match(err.message, /TRUST_PROXY/);
     }
@@ -98,7 +97,6 @@ test('accepts a complete production environment', () => {
     {
       ...VALID_DEV,
       NODE_ENV: 'production',
-      UPLOAD_ROOT: path.join(require('os').tmpdir(), 'lms-test-uploads'),
       ALLOWED_ORIGINS: 'https://hotel.example.com',
       TRUST_PROXY: '1',
     },
@@ -106,9 +104,12 @@ test('accepts a complete production environment', () => {
   );
 });
 
-test('UPLOAD_ROOT in production must be set — uploads inside the deploy are destroyed', () => {
-  // The specific regression guarded here: without UPLOAD_ROOT, guest ID proofs
-  // are written inside the directory the deploy replaces.
+test('UPLOAD_ROOT is optional in production — it defaults to backend/uploads', () => {
+  // Uploads are rooted in-tree by default, the same way the college-admission
+  // backend roots BackEnd/uploads/students. An unset UPLOAD_ROOT is a working
+  // default rather than a misconfiguration, so it must not block the boot: a
+  // process that exits here is invisible behind IIS, which reports it only as a
+  // blank 500 on every URL.
   withEnv(
     {
       ...VALID_DEV,
@@ -116,8 +117,22 @@ test('UPLOAD_ROOT in production must be set — uploads inside the deploy are de
       ALLOWED_ORIGINS: 'https://hotel.example.com',
       TRUST_PROXY: '1',
     },
-    (validateEnv) => {
-      assert.throws(validateEnv, /UPLOAD_ROOT must be set in production/);
-    }
+    (validateEnv) => assert.doesNotThrow(validateEnv)
   );
+});
+
+test('the default upload root resolves inside backend/, not src/public', () => {
+  const prev = process.env.UPLOAD_ROOT;
+  delete process.env.UPLOAD_ROOT;
+  delete require.cache[require.resolve('../src/config/uploadRoot')];
+  try {
+    const { UPLOAD_ROOT } = require('../src/config/uploadRoot');
+    assert.strictEqual(UPLOAD_ROOT, path.join(__dirname, '..', 'uploads'));
+    // Anything under src/public is served statically; ID proofs must never be.
+    assert.ok(!UPLOAD_ROOT.includes(path.join('src', 'public')));
+  } finally {
+    if (prev === undefined) delete process.env.UPLOAD_ROOT;
+    else process.env.UPLOAD_ROOT = prev;
+    delete require.cache[require.resolve('../src/config/uploadRoot')];
+  }
 });
