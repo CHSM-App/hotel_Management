@@ -3,8 +3,8 @@ import { clearSession, getSession } from './auth';
 // In production the backend serves this SPA, so VITE_API_URL is set to '' (empty)
 // and requests go same-origin (/auth, /rooms, …). Only fall back to the local dev
 // server when the var is entirely unset — an explicit '' must stay empty.
-// export const API_BASE = 'https://lodge.vengurlatech.com';
-export const API_BASE = 'http://192.168.1.3:5000';
+export const API_BASE = 'https://hotel.vengurlatech.com';
+// export const API_BASE = 'http://192.168.1.8:5000';
 
 // `field`, when the server sent one, names the form input the message is about,
 // so a form can show it under that field and put the cursor there rather than
