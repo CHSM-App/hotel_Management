@@ -293,7 +293,10 @@ async function loadBookingForBilling(lodgeId, bookingId) {
              l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
-             l.city AS lodge_city, l.state AS lodge_state
+             l.city AS lodge_city, l.state AS lodge_state,
+             (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
+              FROM dbo.advance_receipts ar
+              WHERE ar.booking_id = b.id AND ar.status = 'ISSUED') AS advance_receipt_numbers
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -605,6 +608,7 @@ async function previewBill(
     includeLateCheckout,
     lateCheckoutMinutes: booking.late_checkout_minutes ?? null,
     advancePaid: booking.advance_amount != null ? Number(booking.advance_amount) : 0,
+    advanceReceiptNumbers: booking.advance_receipt_numbers || null,
     isGstRegistered: !!booking.is_gst_registered,
     gstin: booking.gstin,
     foodOrders,
@@ -770,7 +774,7 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       await new sql.Request(transaction)
         .input('lodgeId', sql.BigInt, lodgeId)
         .input('seriesType', sql.NVarChar, seriesType)
-        .input('prefix', sql.NVarChar, seriesType === 'GST' ? 'INV-' : 'RCT-')
+        .input('prefix', sql.NVarChar, '')
         .query('INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number) VALUES (@lodgeId, @seriesType, @prefix, 1)');
     }
 
@@ -930,6 +934,9 @@ function mapInvoice(row) {
     roundOff: Number(row.round_off),
     totalAmount: Number(row.total_amount),
     advancePaid: Number(row.advance_paid),
+    // The receipt(s) that advance was taken against, cited on the printed bill
+    // so the deduction is traceable to paper the guest already holds.
+    advanceReceiptNumbers: row.advance_receipt_numbers || null,
     balanceCollected: Number(row.balance_collected),
     balancePaymentMethod: row.balance_payment_method,
     // The UPI/card transaction number for what was collected. NULL on cash and
@@ -1047,7 +1054,10 @@ async function getInvoice(lodgeId, invoiceId) {
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
-             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
+             (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
+              FROM dbo.advance_receipts ar
+              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1078,7 +1088,10 @@ async function listInvoices(lodgeId) {
              r.room_number, c.name AS category_name,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
-             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
+             (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
+              FROM dbo.advance_receipts ar
+              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1334,7 +1347,7 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
       await new sql.Request(transaction)
         .input('lodgeId', sql.BigInt, lodgeId)
         .input('seriesType', sql.NVarChar, seriesType)
-        .input('prefix', sql.NVarChar, seriesType === 'GST' ? 'INV-' : 'RCT-')
+        .input('prefix', sql.NVarChar, '')
         .query('INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number) VALUES (@lodgeId, @seriesType, @prefix, 1)');
     }
 

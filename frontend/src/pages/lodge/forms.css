@@ -182,7 +182,7 @@
 
 .btn-secondary:hover {
   color: var(--brand);
-  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  box-shadow: var(--shadow-raised-hover);
 }
 
 .btn-secondary:active {
@@ -304,7 +304,7 @@
 
 .toggle-group button {
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   padding: 9px 16px;
@@ -318,4 +318,50 @@
   background: var(--brand);
   color: #ffffff;
   box-shadow: var(--shadow-raised);
+}
+
+/* A field in error gets a red edge, not just red text underneath. The message
+   says what is wrong; the border says which of six boxes on the line it is
+   about, which on a party row is the harder question.
+   
+   Driven by :has() rather than a class on each input, so it covers every panel
+   that already renders .field__error — there is no second place to remember to
+   mark up. */
+.field:has(> .field__error) input,
+.field:has(> .field__error) select,
+.field input[aria-invalid='true'],
+.field select[aria-invalid='true'] {
+  border-color: var(--danger);
+  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+}
+
+/* The agreed price for this stay. Same shape as the count box beside it, a
+   little wider because it holds rupees rather than a single digit. Only the
+   count carries margin-left:auto — with both pushed right they would separate,
+   and the two belong together as one "how many at what price". */
+.checkbox-chip input.checkbox-chip__price {
+  width: 72px;
+  height: auto;
+  min-height: 0;
+  margin-left: auto;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: right;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* When both boxes are present the count keeps them adjacent instead of each
+   claiming the free space. */
+.checkbox-chip input.checkbox-chip__qty + .checkbox-chip__price {
+  margin-left: 4px;
+}
+
+.field:has(> .field__error) input:focus-visible,
+.field:has(> .field__error) select:focus-visible,
+.field input[aria-invalid='true']:focus-visible,
+.field select[aria-invalid='true']:focus-visible {
+  border-color: var(--danger);
 }

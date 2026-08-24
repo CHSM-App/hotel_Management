@@ -10,6 +10,8 @@ const {
   listInvoicesHandler,
   getInvoiceHandler,
   voidInvoiceHandler,
+  getSeriesHandler,
+  updateSeriesHandler,
   previewAdvanceReceiptHandler,
   issueAdvanceReceiptHandler,
   listAllAdvanceReceiptsHandler,
@@ -48,5 +50,11 @@ router.post('/advance-receipts/:id/void', authenticate, staff, voidAdvanceReceip
 router.get('/invoices', authenticate, staff, listInvoicesHandler);
 router.get('/invoices/:id', authenticate, staff, getInvoiceHandler);
 router.post('/invoices/:id/void', authenticate, staff, voidInvoiceHandler);
+
+// The serials printed on bills and advance receipts. Behind billing.manage like
+// everything else here: whoever cuts the bills is who decides what they are
+// numbered, and it is not a separate job.
+router.get('/series', authenticate, staff, getSeriesHandler);
+router.patch('/series/:series', authenticate, staff, updateSeriesHandler);
 
 module.exports = router;

@@ -282,7 +282,13 @@ async function previewAdvanceReceipt(lodgeId, bookingId, input) {
 // Writes the receipt and burns a number for it in one transaction — the number
 // and the row commit together or neither does, which is what keeps the series
 // gapless.
-async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
+// `alreadyOnBooking` is for the receipt that is raised automatically the
+// moment an advance is taken, rather than from the billing screen afterwards.
+// In that case the booking's own INSERT/UPDATE has already recorded the money,
+// so adding it again here would double every advance the property ever takes —
+// the update below accumulates rather than replaces, deliberately, because a
+// second instalment is more money in and not a correction of the first.
+async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyOnBooking = false } = {}) {
   const pool = await getPool();
   const slabs = await getGstSlabs(pool);
 
@@ -313,16 +319,17 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
       .input('reference', sql.NVarChar, input.paymentReference ?? null)
       .query(`
         UPDATE dbo.bookings
-        SET advance_amount = ISNULL(advance_amount, 0) + @amount,
+        SET ${alreadyOnBooking ? '' : 'advance_amount = ISNULL(advance_amount, 0) + @amount,'}
             advance_payment_method = @method,
             advance_reference = COALESCE(@reference, advance_reference)
         WHERE id = @bookingId AND lodge_id = @lodgeId
       `);
 
     // The advance series, created on first use the way the invoice series is.
-    // ADV- rather than RCT-, which the non-GST bill side already uses — two
-    // different documents sharing a prefix is two documents nobody can tell
-    // apart on a bank statement.
+    // Its own run rather than sharing the bill series: an advance taken today
+    // and a bill cut next week must not interleave, or the tax-invoice
+    // numbering develops gaps an auditor will ask about. No prefix — the serial
+    // the owner set is the whole number (see billing/series.service.js).
     const seriesResult = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
       .query("SELECT id FROM dbo.invoice_series WHERE lodge_id = @lodgeId AND series_type = 'ADVANCE'");
@@ -330,7 +337,7 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
       await new sql.Request(transaction)
         .input('lodgeId', sql.BigInt, lodgeId)
         .query(`INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number)
-                VALUES (@lodgeId, 'ADVANCE', 'ADV-', 1)`);
+                VALUES (@lodgeId, 'ADVANCE', N'', 1)`);
     }
 
     // Atomic allocate-and-bump, never SELECT MAX()+1: two desks taking an

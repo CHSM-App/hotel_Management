@@ -48,6 +48,25 @@
      raised and pressed reads as movement. */
   --shadow-pressed: inset 2px 2px 5px var(--neu-dark), inset -2px -2px 5px var(--neu-light);
 
+  /* The hover partner to --shadow-raised: the same light source, thrown a
+     little further. Three call sites had this exact pair inlined before it had
+     a name; a control that lifts on hover should lift by the same amount
+     everywhere, which is exactly the thing a literal can't promise. */
+  --shadow-raised-hover: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+
+  /* One duration for every state change in the system. Neumorphism reads as a
+     physical surface, and a surface that snaps between states reads as a
+     redraw instead of as movement — the travel is the whole signal. */
+  --neu-transition: box-shadow 200ms ease, color 200ms ease, background-color 200ms ease;
+
+  /* The escape hatch for the places a real inset shadow cannot be drawn. A
+     <tr> under `border-collapse: collapse` generates no box, so a box-shadow on
+     it is silently dropped by every engine — and the app's tables are all
+     collapsed. This is the flat stand-in for --shadow-pressed: dark enough to
+     read as a recess against --neu-base, light enough to leave text contrast
+     untouched. Use it on hovered table rows, and nowhere a shadow would work. */
+  --neu-sunken: #e2e6ec;
+
   --ink: #16212e;
   --text: #46525c;
   --text-muted: #5b6670;
@@ -129,6 +148,18 @@
     border: none;
     border-radius: var(--radius-tile);
     box-shadow: var(--shadow-raised);
+    transition: var(--neu-transition);
+  }
+
+  /* Only when it is actually a control. A .neu-raised div is a lifted surface
+     and shouldn't answer the pointer; the same class on a button is a thing you
+     press, and gets the full travel. */
+  .neu-raised:is(button, a, summary, label, [role='button']):hover {
+    box-shadow: var(--shadow-raised-hover);
+  }
+
+  .neu-raised:is(button, a, summary, label, [role='button']):active {
+    box-shadow: var(--shadow-pressed);
   }
 
   .neu-inset {
@@ -231,5 +262,22 @@ textarea {
   select,
   textarea {
     font-size: 16px !important;
+  }
+}
+
+/* --- reduced motion -------------------------------------------------------
+   Every state change in this system is a shadow moving, which is exactly the
+   kind of animation vestibular-sensitive users ask to be spared. Killed here
+   once rather than guarded at each of the ~100 transitions, and scoped to
+   duration rather than to the properties themselves — the pressed and hovered
+   shadows still apply, they just arrive immediately instead of travelling. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

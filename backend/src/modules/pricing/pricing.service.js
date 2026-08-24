@@ -87,22 +87,49 @@ function normalizeSelections(selections) {
     const rawQuantity = typeof selection === 'object' && selection !== null ? selection.quantity : 1;
     const quantity = Number(rawQuantity ?? 1);
     if (!Number.isFinite(quantity) || quantity < 1) continue;
+    // What reception agreed for THIS booking, when they overrode it. Undefined
+    // means "whatever the lodge charges", which is every extra that was not
+    // haggled over. Zero is kept — a free extra is a real thing to give away.
+    const rawPrice =
+      typeof selection === 'object' && selection !== null ? selection.agreedAmount : undefined;
+    // Trimmed before the emptiness test, because Number('   ') is 0 — a box
+    // holding only spaces would otherwise make the extra free rather than
+    // falling back to the lodge price.
+    const hasPrice = rawPrice != null && String(rawPrice).trim() !== '';
+    const agreedValue = hasPrice ? Number(rawPrice) : NaN;
+    const agreed =
+      hasPrice && Number.isFinite(agreedValue) && agreedValue >= 0 ? round2(agreedValue) : undefined;
+
     // The same id arriving twice is the desk asking for more of it, not a
-    // duplicate to discard — chargeIds=3,3 is two extra beds.
-    byId.set(id, (byId.get(id) || 0) + Math.floor(quantity));
+    // duplicate to discard — chargeIds=3,3 is two extra beds. The last agreed
+    // price wins, because the two halves describe one line.
+    const prev = byId.get(id);
+    byId.set(id, {
+      quantity: (prev ? prev.quantity : 0) + Math.floor(quantity),
+      agreedAmount: agreed !== undefined ? agreed : prev && prev.agreedAmount,
+    });
   }
-  return Array.from(byId, ([id, quantity]) => ({ id, quantity }));
+  return Array.from(byId, ([id, v]) => ({ id, quantity: v.quantity, agreedAmount: v.agreedAmount }));
 }
 
 // Accepts the query-string form used by /price-quote and /simulate:
-// "3,5:2" is one of charge 3 and two of charge 5.
+// "3,5:2" is one of charge 3 and two of charge 5, and "5:2@80" is two of
+// charge 5 at an agreed ₹80 each. The price is suffixed rather than given its
+// own parameter so one string still describes the whole extras list.
 function parseChargeSelections(raw) {
   return normalizeSelections(
     String(raw || '')
       .split(',')
       .map((part) => {
-        const [id, quantity] = part.split(':');
-        return { id: Number(String(id).trim()), quantity: quantity == null ? 1 : Number(quantity) };
+        const [spec, price] = String(part).split('@');
+        const [id, quantity] = spec.split(':');
+        return {
+          id: Number(String(id).trim()),
+          quantity: quantity == null ? 1 : Number(quantity),
+          // Left undefined when absent, which normalizeSelections reads as
+          // "charge whatever the lodge charges".
+          agreedAmount: price == null || price.trim() === '' ? undefined : Number(price),
+        };
       })
   );
 }
@@ -120,12 +147,18 @@ async function loadCharges(pool, lodgeId, selections) {
       WHERE lodge_id = @lodgeId AND is_active = 1
     `);
 
-  const quantityById = new Map(wanted.map((s) => [s.id, s.quantity]));
+  const selectionById = new Map(wanted.map((s) => [s.id, s]));
   return chargesResult.recordset
-    .filter((row) => quantityById.has(Number(row.id)))
+    .filter((row) => selectionById.has(Number(row.id)))
     .map((row) => {
-      const quantity = quantityById.get(Number(row.id));
+      const selection = selectionById.get(Number(row.id));
+      const quantity = selection.quantity;
       const unitAmount = Number(row.charge_per_night);
+      // What reception agreed for the whole line, per night. Replaces rate ×
+      // count rather than standing in for the rate: "₹100 for the extra beds"
+      // cannot be expressed as a per-bed figure when three of them divide it
+      // into 33.33, which multiplies back to 99.99.
+      const agreedAmount = selection.agreedAmount;
       return {
         id: Number(row.id),
         name: row.name,
@@ -134,7 +167,8 @@ async function loadCharges(pool, lodgeId, selections) {
         isCounter: !!row.is_counter,
         quantity,
         unitAmount,
-        amount: round2(unitAmount * quantity),
+        agreedAmount,
+        amount: agreedAmount !== undefined ? round2(agreedAmount) : round2(unitAmount * quantity),
       };
     });
 }
@@ -176,6 +210,12 @@ function seasonLabel(season) {
 // which the booking form can't do but the query-string form (chargeIds=3,3)
 // can — better an odd-looking line than a quantity silently off the bill.
 function chargeLabel(charge) {
+  // An agreed line prints no rate: there isn't one. Showing "3 × ₹33.33" beside
+  // an agreed ₹100 invites the guest to multiply it back and find a paisa
+  // missing, which is the arithmetic this model exists to avoid.
+  if (charge.agreedAmount !== undefined) {
+    return charge.quantity > 1 ? `${charge.name} × ${charge.quantity}` : charge.name;
+  }
   return charge.isCounter || charge.quantity > 1
     ? `${charge.name} ${charge.quantity} × ${money(charge.unitAmount)}`
     : `${charge.name} ${money(charge.unitAmount)}`;
@@ -198,7 +238,14 @@ function priceNight(room, seasons, charges, dateStr, basePriceOverride = null) {
   // adjustment, flat — a ₹500 AC charge stays ₹500 during a +25% festival,
   // it never compounds with the season percentage.
   for (const charge of charges) {
-    lines.push({ label: chargeLabel(charge), amount: charge.amount });
+    // chargeId and quantity ride along so the booking form can offer this
+    // line as an editable total — a label alone cannot say which extra it is.
+    lines.push({
+      label: chargeLabel(charge),
+      amount: charge.amount,
+      chargeId: charge.id,
+      quantity: charge.quantity,
+    });
     subtotal += charge.amount;
   }
 
@@ -238,18 +285,22 @@ async function simulateRange(lodgeId, roomId, checkInDate, checkOutDate, chargeS
   // so a season that only covers the tail of the stay still reads above the
   // extras instead of wherever the first night happened to put it.
   const totals = new Map();
-  for (const label of [
-    baseLabel(room, basePriceOverride),
-    ...seasons.map(seasonLabel),
-    ...charges.map(chargeLabel),
-  ]) {
+  for (const label of [baseLabel(room, basePriceOverride), ...seasons.map(seasonLabel)]) {
     if (!totals.has(label)) totals.set(label, { label, amount: 0, nights: 0 });
+  }
+  for (const charge of charges) {
+    const label = chargeLabel(charge);
+    if (!totals.has(label)) {
+      totals.set(label, { label, amount: 0, nights: 0, chargeId: charge.id, quantity: charge.quantity });
+    }
   }
 
   let total = 0;
   for (const night of nights) {
     for (const line of night.lines) {
-      const prev = totals.get(line.label) || { label: line.label, amount: 0, nights: 0 };
+      const prev =
+        totals.get(line.label) ||
+        { label: line.label, amount: 0, nights: 0, chargeId: line.chargeId, quantity: line.quantity };
       prev.amount = round2(prev.amount + line.amount);
       prev.nights += 1;
       totals.set(line.label, prev);

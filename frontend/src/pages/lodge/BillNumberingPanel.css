@@ -1,0 +1,96 @@
+/* Bill numbering settings. Two cards side by side on a desk, stacked on a
+   phone — reception sets this once, so it does not need to be dense. */
+
+.numbering__head {
+  margin-bottom: 1.25rem;
+}
+
+.numbering__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.numbering__subtitle {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted, #6b7280);
+}
+
+.numbering__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+}
+
+.numbering__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.1rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.numbering__card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.numbering__card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.numbering__card-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--muted, #6b7280);
+}
+
+/* The number the next document will actually carry. Shown large because it is
+   the thing the owner is really setting — the input below is just how they
+   change it. */
+.numbering__current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  background: var(--surface-sunk, #f5f6f8);
+}
+
+.numbering__current-label {
+  font-size: 0.8rem;
+  color: var(--muted, #6b7280);
+}
+
+.numbering__current-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.numbering__field {
+  margin: 0;
+}
+
+.numbering__error {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--danger, #b3261e);
+}
+
+.numbering__saved {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--success, #1e6b4f);
+}

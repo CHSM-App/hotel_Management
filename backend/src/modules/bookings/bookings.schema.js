@@ -4,7 +4,59 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dateField = (message) => z.string({ error: message }).regex(DATE_RE, message);
 
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
+
+const TEN_DIGITS = /^\d{10}$/;
+const MOBILE_MESSAGE = 'Enter a 10-digit mobile number.';
+
+// Takes what a desk actually types and keeps the ten digits that matter.
+//
+// Spaces and hyphens go, because "98765 43210" is how the number is read aloud
+// and written on a slip. A +91 or a leading 0 goes too: both are ways of saying
+// the same subscriber, and rejecting them would have staff retyping a number
+// they had already entered correctly.
+//
+// Stored bare, so a guest looked up by phone matches whatever form the desk
+// typed it in the second time.
+function normaliseMobile(value) {
+  if (typeof value !== 'string') return value;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
+// The primary guest's number, which the stay cannot be taken without: it is how
+// the property reaches whoever is in the room.
+const requiredMobileField = () =>
+  z.preprocess(
+    normaliseMobile,
+    z.string({ error: 'Enter the guest phone number.' }).regex(TEN_DIGITS, MOBILE_MESSAGE)
+  );
+
+// Everyone else on the booking. Blank stays blank — a second adult's number is
+// useful, not required — but anything typed has to be a real one.
+const optionalMobileField = () =>
+  z.preprocess(
+    (value) => {
+      const digits = normaliseMobile(value);
+      return digits === '' || digits == null ? undefined : digits;
+    },
+    z.string().regex(TEN_DIGITS, MOBILE_MESSAGE).optional()
+  );
 const VEHICLE_TYPES = ['TWO_WHEELER', 'FOUR_WHEELER', 'TRAVELLER', 'BUS'];
+// The ID number read off the card, accepted instead of a scan of it. An
+// untouched input posts '', which means "not given" rather than an empty ID,
+// so it normalises to undefined and the COALESCE writes leave what's on file.
+//
+// Length only — no per-type format check. See the note in schema.sql: the
+// number is a convenience for a desk without a scanner, and rejecting a
+// legitimate passport because it doesn't look like an Aadhaar would push staff
+// back to entering nothing at all.
+const idProofNumberField = () =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().trim().max(50, 'That ID number looks too long — check it.').optional()
+  );
 
 // A vehicle is its plate plus what it is — the type is what turns a list of
 // numbers into a parking answer, so it's required whenever a plate is given.
@@ -20,8 +72,9 @@ const bookingVehicleSchema = z.object({
 // adding a late arrival) keep booking adults, as they always did.
 const bookingGuestSchema = z.object({
   name: z.string().trim().min(1, 'Enter a name for each additional guest.').max(200),
-  phone: z.string().trim().max(20).optional().default(''),
+  phone: optionalMobileField(),
   idProofType: z.enum(ID_PROOF_TYPES).optional(),
+  idProofNumber: idProofNumberField(),
   isChild: z.boolean().optional().default(false),
 });
 
@@ -41,6 +94,15 @@ const chargeSelectionSchema = z.preprocess(
       .max(999, 'That count looks wrong — check the number.')
       .optional()
       .default(1),
+    // What reception agreed this extra costs per night, for the whole line
+    // rather than per unit. Absent means "charge the lodge price times the
+    // count". 0 is allowed — a free extra is a real thing to give away — but
+    // negative would credit the guest against the room.
+    agreedAmount: z.coerce
+      .number()
+      .min(0, 'An extra cannot cost less than nothing.')
+      .max(999999, 'That price looks wrong — check the number.')
+      .optional(),
   })
 );
 
@@ -84,6 +146,7 @@ function requiresReference(method, reference) {
 
 const REFERENCE_REQUIRED = 'Enter the transaction number for a UPI or card payment.';
 
+
 // idProofType is optional here — a walk-in guest provides ID proof on the
 // spot (enforced by the controller requiring a matching file upload), but a
 // pre-reservation only needs the primary guest's name and phone to hold the
@@ -94,10 +157,11 @@ const createBookingSchema = z
     checkInDate: dateField('Choose a check-in date.'),
     checkOutDate: dateField('Choose a check-out date.'),
     guestName: z.string({ error: 'Enter the guest name.' }).trim().min(1, 'Enter the guest name.'),
-    guestPhone: z.string({ error: 'Enter the guest phone number.' }).trim().min(1, 'Enter the guest phone number.'),
+    guestPhone: requiredMobileField(),
     numGuests: z.coerce.number().int().positive().optional().default(1),
     discountAmount: discountAmountField(),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
+    idProofNumber: idProofNumberField(),
     // A returning guest picked off the name suggestions: the stay whose ID
     // document should be carried onto this one, so reception doesn't ask for a
     // card the property already holds a copy of. The document is copied
@@ -140,6 +204,7 @@ const checkInSchema = z
     advancePaymentMethod: z.enum(PAYMENT_METHODS).optional(),
     advanceReference: paymentReferenceField(),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
+    idProofNumber: idProofNumberField(),
     guests: z.array(bookingGuestSchema).optional().default([]),
     vehicles: z.array(bookingVehicleSchema).optional().default([]),
   })
@@ -159,8 +224,9 @@ const checkInSchema = z
 const editBookingGuestSchema = z.object({
   id: z.coerce.number().int().positive().optional(),
   name: z.string().trim().min(1, 'Enter a name for each additional guest.').max(200),
-  phone: z.string().trim().max(20).optional().default(''),
+  phone: optionalMobileField(),
   idProofType: z.enum(ID_PROOF_TYPES).optional(),
+  idProofNumber: idProofNumberField(),
   isChild: z.boolean().optional().default(false),
 });
 
@@ -191,7 +257,7 @@ const updateBookingSchema = z
     roomId: z.coerce.number().int().positive('Choose a valid room.').optional(),
     numGuests: z.coerce.number().int().positive('Enter a guest count greater than 0.').optional(),
     guestName: z.string().trim().min(1, 'Enter the guest name.').optional(),
-    guestPhone: z.string().trim().min(1, 'Enter the guest phone number.').optional(),
+    guestPhone: requiredMobileField().optional(),
     switchableCharges: z.array(chargeSelectionSchema).optional(),
     guests: z.array(editBookingGuestSchema).optional(),
     vehicles: z.array(bookingVehicleSchema).optional(),
@@ -202,6 +268,7 @@ const updateBookingSchema = z
     advancePaymentMethod: clearableField(z.enum(PAYMENT_METHODS)),
     advanceReference: clearableField(z.string().trim().max(64, 'That transaction number looks too long — check it.')),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
+    idProofNumber: idProofNumberField(),
   })
   .refine((data) => (data.advanceAmount == null) === (data.advancePaymentMethod == null), {
     message: 'Choose a payment method for the advance amount.',

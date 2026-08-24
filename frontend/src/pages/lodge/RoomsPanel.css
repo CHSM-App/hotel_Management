@@ -32,11 +32,12 @@
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--border);
+  /* The extrusion is the edge. A 1px rule on top of it drew the card twice. */
+  border: none;
   border-radius: var(--radius-card, 12px);
   overflow: hidden;
   box-shadow: var(--shadow-card);
-  transition: box-shadow 180ms ease, transform 180ms ease;
+  transition: box-shadow 200ms ease, transform 200ms ease;
 }
 
 .room-card:hover {
@@ -455,5 +456,81 @@
     width: 40px;
     height: 40px;
     font-size: 24px;
+  }
+}
+
+/* Beds: one row per type, size beside count.
+   Grid rather than flex so the size select keeps a real width — sharing a
+   third of a three-column row left it collapsed to a bare chevron. The beds
+   field now spans its own full-width row (see the markup), and the columns
+   below are sized so the count and the remove button never squeeze the select.
+   Rows stack on a phone, where the three side by side are each too narrow. */
+.field--beds {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.bed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Without a remove button the third column would sit empty and the count would
+   drift left of the rows that have one. */
+.bed-row--single {
+  grid-template-columns: minmax(0, 1fr) 5.5rem;
+}
+
+.bed-row select,
+.bed-row__count {
+  width: 100%;
+  min-width: 0;
+}
+
+.bed-row__remove {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted, #6b7280);
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+}
+
+.bed-row__remove:hover {
+  color: var(--danger, #b3261e);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.bed-row__remove:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+.bed-add {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0.15rem 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--accent, #2f4858);
+}
+
+.bed-add:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .bed-row,
+  .bed-row--single {
+    grid-template-columns: minmax(0, 1fr) 4.5rem 2.25rem;
   }
 }

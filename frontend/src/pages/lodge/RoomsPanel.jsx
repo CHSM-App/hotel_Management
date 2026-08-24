@@ -12,6 +12,12 @@ const MAX_ROOM_IMAGES = 6;
 const ROOM_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp';
 
 const bedSizeLabel = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
+
+function bedSummary(room) {
+  const beds = room.beds && room.beds.length > 0 ? room.beds : room.bedSize ? [{ size: room.bedSize, count: 1 }] : [];
+  if (beds.length === 0) return null;
+  return beds.map((b) => `${b.count} ${bedSizeLabel[b.size] || b.size}`).join(' + ');
+}
 const bathroomTypeLabel = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
 
 const initialForm = {
@@ -21,7 +27,7 @@ const initialForm = {
   rangeEnd: '',
   categoryId: '',
   floor: '',
-  bedSize: '',
+  beds: [{ size: '', count: '1' }],
   bathroomType: '',
   maxOccupancy: '',
   description: '',
@@ -67,6 +73,13 @@ export default function RoomsPanel() {
   const [deleteModalError, setDeleteModalError] = useState('');
   const [deleteModalBusy, setDeleteModalBusy] = useState(false);
   const [existingImages, setExistingImages] = useState([]);
+  // Photos whose file did not load. A room_images row can outlive its file —
+  // an upload lost to a deploy, a half-finished delete — and the browser's
+  // broken-image glyph is the worst possible answer: it reads as the app being
+  // broken rather than the photo being gone. Remembering the failures lets the
+  // card fall back to the placeholder it already has for a room with no photos.
+  const [brokenPhotos, setBrokenPhotos] = useState(() => new Set());
+
   const [lightbox, setLightbox] = useState(null);
 
   const openLightbox = (images, index) => setLightbox({ images, index });
@@ -127,7 +140,10 @@ export default function RoomsPanel() {
       rangeEnd: '',
       categoryId: String(room.category.id),
       floor: room.floor || '',
-      bedSize: room.bedSize || '',
+      beds:
+        room.beds && room.beds.length > 0
+          ? room.beds.map((b) => ({ size: b.size, count: String(b.count) }))
+          : [{ size: room.bedSize || '', count: '1' }],
       bathroomType: room.bathroomType || '',
       maxOccupancy: room.maxOccupancy != null ? String(room.maxOccupancy) : '',
       description: room.description || '',
@@ -229,8 +245,12 @@ export default function RoomsPanel() {
       setFormError('Enter the floor.');
       return;
     }
-    if (!form.bedSize) {
-      setFormError('Choose a bed size.');
+    if (form.beds.length === 0 || form.beds.some((b) => !b.size)) {
+      setFormError('Choose a size for every bed.');
+      return;
+    }
+    if (form.beds.some((b) => !b.count || Number(b.count) < 1)) {
+      setFormError('Each bed needs a count of 1 or more.');
       return;
     }
     if (!form.bathroomType) {
@@ -247,7 +267,10 @@ export default function RoomsPanel() {
       const formData = new FormData();
       formData.append('categoryId', String(Number(form.categoryId)));
       formData.append('floor', form.floor.trim());
-      formData.append('bedSize', form.bedSize);
+      formData.append(
+        'beds',
+        JSON.stringify(form.beds.map((b) => ({ size: b.size, count: Number(b.count) })))
+      );
       formData.append('bathroomType', form.bathroomType);
       formData.append('maxOccupancy', String(Number(form.maxOccupancy)));
       formData.append('description', form.description.trim());
@@ -315,7 +338,7 @@ export default function RoomsPanel() {
           {rooms.map((room) => (
             <div className="room-card" key={room.id}>
               <div className="room-card__cover">
-                {room.images.length > 0 ? (
+                {room.images.length > 0 && !brokenPhotos.has(room.images[0].filename) ? (
                   <button
                     type="button"
                     className="room-card__cover-btn"
@@ -326,6 +349,9 @@ export default function RoomsPanel() {
                       src={`${API_BASE}/room-images/${room.images[0].filename}`}
                       alt={`Room ${room.roomNumber}`}
                       className="room-card__cover-img"
+                      onError={() =>
+                        setBrokenPhotos((prev) => new Set(prev).add(room.images[0].filename))
+                      }
                     />
                   </button>
                 ) : (
@@ -352,7 +378,7 @@ export default function RoomsPanel() {
                 {(room.floor || room.bedSize || room.bathroomType || room.maxOccupancy) && (
                   <div className="room-card__chips">
                     {room.floor && <span className="room-card__chip">Floor {room.floor}</span>}
-                    {room.bedSize && <span className="room-card__chip">{bedSizeLabel[room.bedSize]} bed</span>}
+                    {bedSummary(room) && <span className="room-card__chip">{bedSummary(room)}</span>}
                     {room.bathroomType && (
                       <span className="room-card__chip">{bathroomTypeLabel[room.bathroomType]}</span>
                     )}
@@ -470,8 +496,7 @@ export default function RoomsPanel() {
 
               <div className="form-section">
                 <div className="form-section__title">Room details</div>
-
-                <div className="field-row field-row--triple">
+                <div className="field-row">
                   <div className="field">
                     <label htmlFor="floor">Floor</label>
                     <input
@@ -480,21 +505,6 @@ export default function RoomsPanel() {
                       onChange={(e) => setForm((f) => ({ ...f, floor: e.target.value }))}
                       placeholder="1"
                     />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="bedSize">Bed size</label>
-                    <select
-                      id="bedSize"
-                      value={form.bedSize}
-                      onChange={(e) => setForm((f) => ({ ...f, bedSize: e.target.value }))}
-                    >
-                      <option value="">Choose one</option>
-                      {BED_SIZES.map((size) => (
-                        <option key={size} value={size}>
-                          {bedSizeLabel[size]}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                   <div className="field">
                     <label htmlFor="bathroomType">Bathroom</label>
@@ -512,6 +522,69 @@ export default function RoomsPanel() {
                     </select>
                   </div>
                 </div>
+                  <div className="field field--beds">
+                    <label htmlFor="bed-size-0">Beds</label>
+                    {/* One row per bed type, because a family room is a double
+                        and two singles — storing whichever one the desk picked
+                        first was losing the other half of the room. */}
+                    {form.beds.map((bed, i) => (
+                      <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`} key={i}>
+                        <select
+                          id={`bed-size-${i}`}
+                          value={bed.size}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
+                            }))
+                          }
+                        >
+                          <option value="">Choose one</option>
+                          {BED_SIZES.map((size) => (
+                            <option key={size} value={size}>
+                              {bedSizeLabel[size]}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="1"
+                          className="bed-row__count"
+                          aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
+                          value={bed.count}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
+                            }))
+                          }
+                        />
+                        {/* The last row has no remove button: a room with no
+                            beds is not a room, and the server rejects it. */}
+                        {form.beds.length > 1 && (
+                          <button
+                            type="button"
+                            className="bed-row__remove"
+                            aria-label="Remove this bed"
+                            onClick={() =>
+                              setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                            }
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="bed-add"
+                      onClick={() =>
+                        setForm((f) => ({ ...f, beds: [...f.beds, { size: '', count: '1' }] }))
+                      }
+                    >
+                      + Add another bed
+                    </button>
+                  </div>
 
                 <div className="field">
                   <label htmlFor="maxOccupancy">Max occupancy</label>

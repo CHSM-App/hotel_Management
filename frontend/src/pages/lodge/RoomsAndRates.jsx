@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useUrlState } from '../../lib/urlState';
 import RoomsPanel from './RoomsPanel';
 import PriceChartPanel from './PriceChartPanel';
 import PriceSimulatorPanel from './PriceSimulatorPanel';
@@ -15,7 +15,7 @@ const TABS = [
 ];
 
 export default function RoomsAndRates() {
-  const [tab, setTab] = useState('rooms');
+  const [tab, setTab] = useUrlState('tab', 'rooms');
 
   return (
     <div>

@@ -16,6 +16,14 @@ import './BillDocument.css';
 // no charge lines — the stay is named, not itemised — and the money column ends
 // at "Balance Due" instead of "Net Payment".
 
+// The methods dbo.advance_receipts actually stores. The printed pad also has
+// NEFT and Cheque boxes; they are omitted rather than shown permanently blank.
+const PAY_METHODS = [
+  { key: 'CASH', label: 'Cash' },
+  { key: 'UPI', label: 'UPI' },
+  { key: 'CARD', label: 'Card' },
+];
+
 const DOCUMENT_LABEL = {
   // Rule 50 names this document. A guest may well hand it to their own
   // accountant, so it is titled the way the rule titles it rather than as
@@ -29,7 +37,6 @@ const DOCUMENT_LABEL = {
 const STRINGS_EN = {
   doc: DOCUMENT_LABEL,
   mob: 'Mob.',
-  gstin: 'GSTIN No.',
   no: 'No.-',
   date: 'Date -',
   onIssue: 'allocated on issue',
@@ -44,6 +51,12 @@ const STRINGS_EN = {
   from: 'From',
   to: 'To',
   receivedFrom: 'Received with thanks from',
+  sumOfRupees: 'the sum of Rupees',
+  by: 'by',
+  txnNo: 'Txn No.',
+  againstBill: 'against full/part payment of our Bill No.',
+  dated: 'Dated',
+  pay: { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' },
   towards: 'Towards advance against the stay described below',
   paidBy: 'Paid by',
   placeOfSupply: 'Place of Supply',
@@ -73,15 +86,19 @@ const STRINGS = {
   en: STRINGS_EN,
   mr: {
     ...STRINGS_EN,
+    sumOfRupees: 'रक्कम रुपये',
+    by: 'द्वारे',
+    txnNo: 'व्यवहार क्र.',
+    againstBill: 'आमच्या बिल क्र. च्या पूर्ण/अंशतः भरण्यापोटी',
+    dated: 'दिनांक',
+    pay: { CASH: 'रोख', UPI: 'यूपीआय', CARD: 'कार्ड' },
     // Standard GST Marathi terms, matching how BillDocument handles its own
     // masthead: Devanagari head, English body.
     doc: { RECEIPT_VOUCHER: 'पावती व्हाउचर', ADVANCE_RECEIPT: 'आगाऊ रक्कम पावती' },
     mob: 'मो.',
-    gstin: 'जीएसटीआयएन क्र.',
   },
 };
 
-const SAC_ACCOMMODATION = '996311';
 
 function formatDate(value) {
   if (!value) return '';
@@ -99,26 +116,6 @@ function placeOfSupply(receipt) {
 
 function Filled({ children, narrow }) {
   return <span className={`bill-doc__filled${narrow ? ' bill-doc__filled--narrow' : ''}`}>{children || ' '}</span>;
-}
-
-// One row of the money column, ruling rupees and paise apart so the paise land
-// under each other however wide the rupees run. Declared outside the component
-// for the same reason BillDocument's twin is: a component defined in a render
-// body is a new type every render, and React remounts the column each time.
-function Money({ label, value, strong, rule }) {
-  const n = Number(value) || 0;
-  const sign = n < 0 ? '-' : '';
-  const abs = Math.abs(n);
-  const paiseTotal = Math.round(abs * 100);
-  const whole = Math.floor(paiseTotal / 100);
-  const paise = paiseTotal % 100;
-  return (
-    <tr className={`memo__money${strong ? ' memo__money--strong' : ''}${rule ? ' memo__money--rule' : ''}`}>
-      <td className="memo__money-label">{label}</td>
-      <td className="memo__rs">{`${sign}${whole.toLocaleString('en-IN')}`}</td>
-      <td className="memo__ps">{String(paise).padStart(2, '0')}</td>
-    </tr>
-  );
 }
 
 function nightsOf(receipt) {
@@ -144,16 +141,21 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   const kindLabel = T.doc[receipt.documentType] || T.doc.ADVANCE_RECEIPT;
 
   const supplyPlace = isGst ? placeOfSupply(receipt) : null;
-  // Only where tax was actually taken. A nil-rated stay has a rate of 0 and
-  // prints no tax lines rather than two rows of zeroes.
-  const hasTax = receipt.cgstAmount > 0 || receipt.sgstAmount > 0;
+
+  // The pad writes "Room No. 205 dt. 20th August 2026" on the line under the
+  // guest's name. Same information, same place.
+  const stayLine = [
+    receipt.roomNumber ? `${T.roomNo} ${receipt.roomNumber}` : null,
+    formatDate(receipt.checkInDate) ? `dt. ${formatDate(receipt.checkInDate)}` : null,
+    nights ? `(${nights} ${T.days})` : null,
+    receipt.numGuests ? `${T.persons} ${receipt.numGuests}` : null,
+  ]
+    .filter(Boolean)
+    .join('  ');
 
   const advanceWhole = Math.floor(Math.round(receipt.amountReceived * 100) / 100);
   const advancePaise = Math.round(receipt.amountReceived * 100) % 100;
 
-  // The trail the guest's own statement carries, stated beside the method so a
-  // payment queried months later is answerable. Cash has none and prints none.
-  const paymentLine = [receipt.paymentMethod, receipt.paymentReference].filter(Boolean).join(' · ');
 
   return (
     <div className="bill-doc memo" ref={ref}>
@@ -183,11 +185,6 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
           ? lodgeAddress
           : [lodgeAddress, receipt.lodgeCity, receipt.lodgeState].filter(Boolean).join(', ')}
       </div>
-      {isGst && receipt.gstin && (
-        <div className="memo__gstin">
-          {T.gstin} {receipt.gstin}
-        </div>
-      )}
 
       {/* Blank on a preview, and truthfully so: the number is allocated at issue
           to keep the series gapless, and the date is the date it is issued on.
@@ -211,112 +208,62 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
         <Filled narrow>{receipt.guestPhone}</Filled>
       </div>
 
-      <div className="memo__row memo__row--split">
-        <span className="memo__label">{T.roomNo}</span>
-        <Filled narrow>
-          {receipt.roomNumber
-            ? `${receipt.roomNumber}${receipt.categoryName ? ` (${receipt.categoryName})` : ''}`
-            : null}
-        </Filled>
-        <span className="memo__label">{T.persons}</span>
-        <Filled narrow>{receipt.numGuests}</Filled>
+      {/* The paper this replaces runs: received from — the sum of Rupees — by
+          [method] — against Bill No. Kept in that order because the property's
+          printed book already reads that way and staff fill it top to bottom.
+          The stay is named on the "received from" continuation line, as on the
+          pad, rather than itemised: nothing has been supplied yet. */}
+      <div className="memo__row">
+        <Filled>{stayLine}</Filled>
       </div>
 
-      {/* The body. Same two-column shape as the bill — what it is for on the
-          left, what it came to on the right — but the left states the stay the
-          money is against rather than itemising charges. Nothing has been
-          supplied yet, so there is nothing to itemise. */}
-      <table className="memo__body">
-        <colgroup>
-          <col />
-          <col className="memo__col-rs" />
-          <col className="memo__col-ps" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th aria-hidden="true" />
-            <th className="memo__rs">{T.rs}</th>
-            <th className="memo__ps">{T.ps}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="memo__stay">
-              <div className="memo__stay-line">
-                <span className="memo__label">{T.towards}</span>
-              </div>
-              <div className="memo__stay-line">
-                <span className="memo__label">{T.forStay}</span>
-                <Filled narrow>{nights}</Filled>
-                <span className="memo__label">{T.days}</span>
-              </div>
-              <div className="memo__stay-line">
-                <span className="memo__label">{T.from}</span>
-                <Filled narrow>{formatDate(receipt.checkInDate)}</Filled>
-                <span className="memo__label">{T.to}</span>
-                <Filled narrow>{formatDate(receipt.checkOutDate)}</Filled>
-              </div>
-              <div className="memo__stay-line">
-                <span className="memo__label">{T.paidBy}</span>
-                <Filled narrow>{paymentLine}</Filled>
-              </div>
-              {/* Both required on a taxable document, and both constant for this
-                  business — but a document that omits them is defective whether
-                  or not the answer was ever in doubt. */}
-              {supplyPlace && (
-                <div className="memo__stay-line memo__stay-line--fine">
-                  <span className="memo__label">{T.placeOfSupply}</span>
-                  <Filled narrow>{supplyPlace}</Filled>
-                  <span className="memo__label">{T.reverseCharge}</span>
-                  <Filled narrow>{T.noWord}</Filled>
-                </div>
-              )}
-              {isGst && (
-                <div className="memo__stay-line memo__stay-line--fine">
-                  <span className="memo__label">SAC</span>
-                  <Filled narrow>{SAC_ACCOMMODATION}</Filled>
-                </div>
-              )}
-            </td>
-            <td className="memo__rs memo__rs--lead">{advanceWhole.toLocaleString('en-IN')}</td>
-            <td className="memo__ps memo__ps--lead">{String(advancePaise).padStart(2, '0')}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* The money column. Prices here are GST-inclusive, so the tax lines are
-          the tax already sitting inside the advance rather than anything added
-          to it: taxable value + CGST + SGST = the advance received, and the
-          column adds up on the page exactly as the bill's does. */}
-      <table className="memo__totals">
-        <colgroup>
-          <col />
-          <col className="memo__col-rs" />
-          <col className="memo__col-ps" />
-        </colgroup>
-        <tbody>
-          {hasTax && <Money label={T.taxableValue} value={receipt.taxableValue} rule />}
-          {receipt.cgstAmount > 0 && (
-            <Money label={`CGST ${receipt.cgstRatePercent} %`} value={receipt.cgstAmount} />
-          )}
-          {receipt.sgstAmount > 0 && (
-            <Money label={`SGST ${receipt.sgstRatePercent} %`} value={receipt.sgstAmount} />
-          )}
-          <Money label={T.advanceReceived} value={receipt.amountReceived} strong rule />
-          {/* What the receipt is really for, from the guest's side: how much of
-              the stay is now covered, and what is still to come. Stated as it
-              stood when the receipt was written — the stay can be extended
-              later, and this paper must not silently restate itself. */}
-          <Money label={T.stayTotal} value={receipt.stayTotal} />
-          <Money label={T.lessAdvance} value={-receipt.amountReceived} />
-          <Money label={T.balanceDue} value={receipt.balanceDue} strong rule />
-        </tbody>
-      </table>
-
-      <div className="memo__row memo__row--words">
-        <span className="memo__label">{T.inwords}</span>
+      <div className="memo__row">
+        <span className="memo__label">{T.sumOfRupees}</span>
         <Filled>{T.words(receipt.amountReceived)}</Filled>
-        <span className="memo__label">)</span>
+      </div>
+
+      {/* Ticked boxes rather than a typed word, matching the pad. Only the three
+          methods the system actually records — a NEFT box that can never be
+          ticked is dead ink. */}
+      <div className="memo__row memo__pay">
+        <span className="memo__label">{T.by}</span>
+        {PAY_METHODS.map(({ key, label }) => (
+          <span key={key} className="memo__tick">
+            <span className={`memo__box${receipt.paymentMethod === key ? ' memo__box--on' : ''}`} />
+            {T.pay[key] || label}
+          </span>
+        ))}
+        <span className="memo__label">{T.txnNo}</span>
+        <Filled narrow>{receipt.paymentReference}</Filled>
+      </div>
+
+      {/* Blank when the receipt is written, exactly as on the pad — the bill it
+          settles does not exist yet. Filled in later by hand, or read off the
+          final bill, which now cites this receipt number in return. */}
+      <div className="memo__row">
+        <span className="memo__label">{T.againstBill}</span>
+        <Filled narrow>{null}</Filled>
+        <span className="memo__label">{T.dated}</span>
+        <Filled narrow>{null}</Filled>
+      </div>
+
+      {isGst && (
+        <div className="memo__row memo__row--fine">
+          <span className="memo__label">{T.placeOfSupply}</span>
+          <Filled narrow>{supplyPlace}</Filled>
+          <span className="memo__label">{T.reverseCharge}</span>
+          <Filled narrow>{T.noWord}</Filled>
+        </div>
+      )}
+
+      {/* The boxed figure, bottom-left on the pad. It is what the eye goes to
+          and what a guest photographs, so it is the one number set large. */}
+      <div className="memo__amountbox">
+        <span className="memo__amountbox-rs">₹</span>
+        <span className="memo__amountbox-fig">
+          {advanceWhole.toLocaleString('en-IN')}
+          {advancePaise ? `.${String(advancePaise).padStart(2, '0')}` : '/-'}
+        </span>
       </div>
 
       <div className="memo__foot">

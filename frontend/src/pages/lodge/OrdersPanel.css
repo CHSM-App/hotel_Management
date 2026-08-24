@@ -37,22 +37,33 @@
   padding: 0 16px;
   border: none;
   background: transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   font: inherit;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
 .orders-tab:hover {
   color: var(--ink);
 }
 
+/* The selected tab is the one thing in the well that has risen out of it, so
+   it extrudes while its neighbours stay flush with the groove they sit in.
+   The old flat 1px drop shadow read as a card lying on top of the strip rather
+   than as part of the same piece of material. */
 .orders-tab--on {
   background: var(--surface);
   color: var(--brand);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1);
+  box-shadow: var(--shadow-raised);
+}
+
+/* An unselected tab dips under the finger; the selected one has nowhere left
+   to go, so it only deepens. */
+.orders-tab:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .orders-group {
@@ -234,11 +245,20 @@ label.order-card__item {
      without the text shifting relative to the rows above it. */
   padding: 7px 6px;
   margin: 0 -6px;
-  border-radius: 6px;
+  border-radius: 8px;
+  transition: var(--neu-transition);
 }
 
+/* A row of dishes is a dense stack, so the hover is a shallow groove rather
+   than an extrusion — lifting each row as the thumb crosses it would set the
+   whole ticket rippling. The white wash this replaces was the one place in the
+   panel where depth came from a lighter fill instead of from the light source. */
 label.order-card__item:hover {
-  background: rgba(255, 255, 255, 0.65);
+  box-shadow: var(--shadow-pressed);
+}
+
+label.order-card__item:active {
+  box-shadow: var(--shadow-inset);
 }
 
 label.order-card__item:has(.order-card__tick:disabled) {
@@ -387,15 +407,29 @@ label.order-card__item:has(.order-card__tick:disabled) {
   font-weight: 700;
   line-height: 1.2;
   cursor: pointer;
+  /* A filled button can't take the standard extrusion — a white highlight over
+     navy reads as a rim, not as light — so the dark half of the pair is tinted
+     to the fill and only the up-left highlight stays white, against the page it
+     sits on. Same construction as .btn-cta and the auth submit. */
+  box-shadow: 5px 5px 12px rgba(20, 39, 68, 0.28), -5px -5px 12px var(--neu-light);
+  transition: var(--neu-transition);
 }
 
 .order-btn:hover {
   background: var(--brand-ink);
+  box-shadow: 7px 7px 16px rgba(20, 39, 68, 0.32), -7px -7px 16px var(--neu-light);
 }
 
+.order-btn:active {
+  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+}
+
+/* Flat, because a disabled control shouldn't look pressable. */
 .order-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* Opaque rather than transparent so it keeps its shape against a tint, and
@@ -407,16 +441,25 @@ label.order-card__item:has(.order-card__tick:disabled) {
   flex: 0 0 auto;
   min-width: 0;
   padding: 10px 20px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--card-edge);
+  background: var(--surface);
+  border: none;
   color: var(--text-muted);
   font-weight: 600;
+  /* The quiet option next to the solid primary: same material as the page,
+     lifted a little less than the button beside it. */
+  box-shadow: var(--shadow-raised);
 }
 
+/* Colour alone carries the warning — the extrusion stays neutral, so "cancel"
+   reads as dangerous without also becoming the loudest shape in the row. */
 .order-btn--cancel:hover {
   background: var(--danger-bg);
-  border-color: var(--danger);
   color: var(--danger);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.order-btn--cancel:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 /* ------------------------------------------------------------- the history */
@@ -441,7 +484,7 @@ label.order-card__item:has(.order-card__tick:disabled) {
 
 .order-history__date input {
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--surface);
   padding: 9px 12px;
   font: inherit;
@@ -471,14 +514,23 @@ label.order-card__item:has(.order-card__tick:disabled) {
 }
 
 .history-chip:hover {
-  border-color: var(--brand);
   color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
 }
 
+.history-chip:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* A selected filter is a chip that has been pushed in and stayed there, so it
+   keeps the pressed shadow rather than the raised one — the row then reads at a
+   glance as "these two are down, the rest are up". */
 .history-chip--on {
   background: var(--brand);
   border-color: var(--brand);
   color: #ffffff;
+  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
 }
 
 /* The day in three numbers, before any of the rows. Whoever opens this at
@@ -691,7 +743,7 @@ label.order-card__item:has(.order-card__tick:disabled) {
   max-width: 46%;
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--paper);
   padding: 10px 12px;
   font-family: inherit;
@@ -845,18 +897,24 @@ label.order-card__item:has(.order-card__tick:disabled) {
   flex-shrink: 0;
   width: 26px;
   height: 26px;
-  border: 1px solid var(--border);
+  border: none;
   background: var(--surface);
   color: var(--text-muted);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
 }
 
 .counter-summary__remove:hover {
-  border-color: var(--danger);
   color: var(--danger);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.counter-summary__remove:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .counter-foot {

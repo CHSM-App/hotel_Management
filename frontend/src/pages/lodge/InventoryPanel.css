@@ -110,17 +110,26 @@
   cursor: pointer;
   font: inherit;
   font-size: 0.82rem;
+  transition: var(--neu-transition);
 }
 
 .inv-stat--btn:hover {
-  border-color: var(--brand);
   color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
 }
 
+.inv-stat--btn:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* An applied filter stays held down — same construction as the chips on the
+   orders and register panels, so "on" means one thing across the app. */
 .inv-stat--on {
   background: var(--brand);
   border-color: var(--brand);
   color: #fff;
+  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
 }
 
 .inv-stat--bad {
@@ -425,6 +434,7 @@
   text-align: left;
   cursor: pointer;
   font: inherit;
+  transition: var(--neu-transition);
 }
 
 .inv-mode__option strong {
@@ -439,7 +449,12 @@
 }
 
 .inv-mode__option:hover {
-  border-color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+/* The chosen mode already sits pressed, so it is left out of the press. */
+.inv-mode__option:active:not(.inv-mode__option--on) {
+  box-shadow: var(--shadow-pressed);
 }
 
 .inv-mode__option--on {
@@ -472,16 +487,23 @@
   font-size: 0.85rem;
   color: var(--text);
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
 .inv-scopes__tab:hover {
-  border-color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.inv-scopes__tab:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .inv-scopes__tab--on {
   background: var(--brand);
   border-color: var(--brand);
   color: #fff;
+  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
 }
 
 .inv-scopes__count {
@@ -533,7 +555,7 @@
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--surface);
   font: inherit;
   color: var(--ink);
@@ -550,7 +572,7 @@
   width: 96px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--surface);
   font: inherit;
   color: var(--ink);

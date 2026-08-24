@@ -218,10 +218,20 @@
   font-weight: 500;
   color: var(--text);
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
+/* A menu row dips rather than lifts: these sit inside the dropdown's own
+   raised panel, and a second extrusion within it reads as a card floating on a
+   card. The old rule painted --paper over --surface, which have been the same
+   colour since the tokens were unified — the row under the pointer never
+   actually changed. */
 .profile-menu__action:hover {
-  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+}
+
+.profile-menu__action:active {
+  box-shadow: var(--shadow-inset);
 }
 
 .profile-menu__action--danger {

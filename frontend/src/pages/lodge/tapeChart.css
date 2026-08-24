@@ -68,10 +68,13 @@
   align-items: center;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 999px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  /* The stepper is one raised pill holding two arrows, so it takes the app's
+     extrusion rather than the flat 1px drop it had, which at 4% opacity was
+     invisible against the page anyway. */
+  box-shadow: var(--shadow-raised);
 }
 
 .tape-nav__arrow {
@@ -84,12 +87,17 @@
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: var(--neu-transition);
 }
 
+/* Carved into the pill it sits in, rather than raised out of it. */
 .tape-nav__arrow:hover {
-  background: var(--paper);
   color: var(--ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.tape-nav__arrow:active {
+  box-shadow: var(--shadow-inset);
 }
 
 .tape-nav__label {

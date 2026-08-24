@@ -3,9 +3,12 @@ const fs = require('fs/promises');
 const path = require('path');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { parseBeds } = require('../rooms/rooms.service');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
 const billingService = require('../billing/billing.service');
+const advanceReceiptsService = require('../billing/advanceReceipts.service');
+const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
 const lateCheckout = require('./lateCheckout');
 
@@ -120,7 +123,15 @@ async function priceStay(
     // What the stay is built from, before the concession. The concession is
     // reported on its own rather than folded in as another line, because it
     // isn't one: the desk needs to see the number it is being taken off.
-    charges: quote.lines.map((line) => ({ label: line.label, amount: line.amount })),
+    // chargeId and quantity ride along on the extras lines so the booking form
+    // can offer that line as an editable total. Absent on the room and season
+    // lines, which is what marks them read-only — they are priced elsewhere.
+    charges: quote.lines.map((line) => ({
+      label: line.label,
+      amount: line.amount,
+      chargeId: line.chargeId,
+      quantity: line.quantity,
+    })),
     grossTotal,
     discountAmount: discount,
     totalPrice: round2(grossTotal - discount),
@@ -154,10 +165,67 @@ async function replaceBookingCharges(transaction, bookingId, selections) {
       .input('bookingId', sql.BigInt, bookingId)
       .input('chargeId', sql.BigInt, selection.id)
       .input('quantity', sql.Int, selection.quantity)
+      // Snapshotted, not joined live: a later change to the lodge's price must
+      // not reprice a stay that has already been billed.
+      .input('agreedAmount', sql.Decimal(10, 2), selection.agreedAmount ?? null)
       .query(`
-        INSERT INTO dbo.booking_switchable_charges (booking_id, charge_id, quantity)
-        VALUES (@bookingId, @chargeId, @quantity)
+        INSERT INTO dbo.booking_switchable_charges (booking_id, charge_id, quantity, agreed_amount)
+        VALUES (@bookingId, @chargeId, @quantity, @agreedAmount)
       `);
+  }
+}
+
+// An advance is a part-payment of the stay, so it cannot exceed it. Taking
+// more is a data-entry slip — a stray zero — and one that would otherwise
+// travel a long way before anyone noticed: the receipt would print a negative
+// balance due, and the final bill a negative net payment.
+//
+// It also has to be caught here rather than left to the receipt. The receipt is
+// raised automatically now and cannot fail the booking that triggered it, so an
+// over-large advance would save quietly and simply leave no receipt behind.
+function assertAdvanceWithinTotal(advanceAmount, stayTotal, alreadyHeld = 0) {
+  const amount = Number(advanceAmount);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  const held = round2(Number(alreadyHeld) || 0);
+  if (round2(held + amount) <= round2(Number(stayTotal))) return;
+  throw new ApiError(
+    held > 0
+      ? `That would take the advance past the stay total of ₹${round2(stayTotal)} — ₹${held} is already held.`
+      : `An advance can’t be more than the stay total of ₹${round2(stayTotal)}.`,
+    400
+  );
+}
+
+// Money taken at the desk gets its receipt then and there, without anyone
+// pressing anything. The desk has already typed the amount, the method and the
+// reference into the booking form — which is everything an advance receipt
+// needs — so asking for a second, separate "issue" click adds a step and no
+// information. (The stay bill is different and keeps its step: what the guest
+// hands over at checkout is not known until checkout.)
+//
+// Deliberately after the booking's own transaction has committed, and
+// deliberately unable to fail it. A receipt that cannot be raised — a numbering
+// row that will not lock, a slab table mid-edit — must not undo a booking that
+// is otherwise good and a guest who is standing at the desk. It is logged and
+// the desk can raise it by hand from the stay.
+async function autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input) {
+  const amount = Number(input.advanceAmount);
+  if (!Number.isFinite(amount) || amount <= 0 || !input.advancePaymentMethod) return;
+  try {
+    await advanceReceiptsService.issueAdvanceReceipt(
+      lodgeId,
+      userId,
+      bookingId,
+      {
+        amountReceived: amount,
+        paymentMethod: input.advancePaymentMethod,
+        paymentReference: input.advanceReference ?? undefined,
+      },
+      // The booking row already holds this advance — see the note on the flag.
+      { alreadyOnBooking: true }
+    );
+  } catch (err) {
+    logger.error({ err, bookingId, lodgeId }, 'Could not auto-issue the advance receipt');
   }
 }
 
@@ -280,7 +348,7 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
     .query(`
-      SELECT r.id, r.room_number, r.floor, r.bed_size, r.bathroom_type, r.max_occupancy, r.description,
+      SELECT r.id, r.room_number, r.floor, r.bed_size, r.beds, r.bathroom_type, r.max_occupancy, r.description,
              c.name AS category_name, c.base_price AS category_base_price
       FROM dbo.rooms r
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -302,6 +370,7 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
       roomNumber: row.room_number,
       floor: row.floor,
       bedSize: row.bed_size,
+      beds: parseBeds(row),
       bathroomType: row.bathroom_type,
       maxOccupancy: row.max_occupancy,
       description: row.description,
@@ -338,7 +407,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
     .query(`
-      SELECT r.id, r.room_number, r.floor, r.bed_size, r.bathroom_type, r.max_occupancy, r.description,
+      SELECT r.id, r.room_number, r.floor, r.bed_size, r.beds, r.bathroom_type, r.max_occupancy, r.description,
              c.name AS category_name, c.base_price AS category_base_price
       FROM dbo.rooms r
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -366,6 +435,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
       roomNumber: row.room_number,
       floor: row.floor,
       bedSize: row.bed_size,
+      beds: parseBeds(row),
       bathroomType: row.bathroom_type,
       maxOccupancy: row.max_occupancy,
       description: row.description,
@@ -392,6 +462,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
 
   const result = await request.query(`
     SELECT b.id, b.guest_name, b.guest_phone, b.num_guests, b.id_proof_type, b.id_proof_document,
+           b.id_proof_number,
            b.check_in_date, b.check_out_date, b.status, b.total_price,
            b.actual_check_in_at, b.actual_check_out_at,
            r.room_number, c.name AS category_name,
@@ -416,6 +487,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
     idProofType: row.id_proof_type,
+    idProofNumber: row.id_proof_number ?? null,
     hasIdProofDocument: !!row.id_proof_document,
     vehicleNumbers: row.vehicle_numbers ? row.vehicle_numbers.split(', ') : [],
     roomNumber: row.room_number,
@@ -527,6 +599,7 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
     idProofType: row.id_proof_type,
+    idProofNumber: row.id_proof_number ?? null,
     hasIdProofDocument: !!row.id_proof_document,
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
@@ -561,12 +634,17 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     nights: nightlyLines(row),
     lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
     lateCheckoutMinutes: row.late_checkout_minutes ?? null,
-    // chargePerNight is the price of one; quantity is how many the guest took,
-    // so the nightly cost of this extra is the two multiplied.
+    // chargePerNight is what this booking is actually charged for one — the
+    // price reception agreed, falling back to the lodge's for extras nobody
+    // haggled over. lodgeChargePerNight is the list price beside it, so the
+    // form can show what was given away without re-deriving it.
     switchableCharges: charges.map((c) => ({
       id: c.id,
       name: c.name,
       chargePerNight: Number(c.charge_per_night),
+      // What the whole line costs per night when reception agreed a figure —
+      // null when nobody haggled, and the count times the rate applies.
+      agreedAmount: c.agreed_amount == null ? null : Number(c.agreed_amount),
       quantity: Number(c.quantity ?? 1),
     })),
     guests: guests.map((g) => ({
@@ -574,6 +652,7 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
       name: g.guest_name,
       phone: g.guest_phone,
       idProofType: g.id_proof_type,
+      idProofNumber: g.id_proof_number ?? null,
       hasIdProofDocument: !!g.id_proof_document,
       isChild: !!g.is_child,
     })),
@@ -648,7 +727,7 @@ async function searchGuests(lodgeId, query) {
     .input('q', sql.NVarChar, likeContains(term))
     .query(`
       WITH matches AS (
-        SELECT id, guest_name, guest_phone, id_proof_type, id_proof_document, check_in_date
+        SELECT id, guest_name, guest_phone, id_proof_type, id_proof_number, id_proof_document, check_in_date
         FROM dbo.bookings
         WHERE lodge_id = @lodgeId
           -- A cancelled booking is not evidence anybody ever stayed, and its
@@ -678,7 +757,7 @@ async function searchGuests(lodgeId, query) {
         WHERE rn = 1
         ORDER BY last_stay DESC
       )
-      SELECT r.id, r.guest_name, r.guest_phone, r.id_proof_type, r.id_proof_document,
+      SELECT r.id, r.guest_name, r.guest_phone, r.id_proof_type, r.id_proof_number, r.id_proof_document,
              r.stay_count, r.last_stay, r.rn
       FROM ranked r
       JOIN people p ON p.guest_name = r.guest_name AND p.guest_phone = r.guest_phone
@@ -717,6 +796,11 @@ async function searchGuests(lodgeId, query) {
         break;
       }
     }
+    // Type and number are read off ONE stay, never mixed. They describe the
+    // same card, and a row that pairs "Aadhaar" with the number off a passport
+    // is worse than a blank field — it looks checked.
+    const idSource = hasDocument ? chosen : stays[0];
+
     suggestions.push({
       // The stay this suggestion was read off — quoted back on save as the
       // booking to copy the ID document from.
@@ -725,7 +809,11 @@ async function searchGuests(lodgeId, query) {
       phone: chosen.guest_phone,
       // Read off the stay whose document is being offered, so the type named
       // in the form is the type of the card that will actually be attached.
-      idProofType: hasDocument ? chosen.id_proof_type : stays[0].id_proof_type,
+      idProofType: idSource.id_proof_type,
+      // Unlike the document, the number can come back down and be shown: it is
+      // what reception would otherwise copy off the card by hand, and a guest
+      // who has stayed before should not be asked to read it out again.
+      idProofNumber: idSource.id_proof_number ?? null,
       // The document itself never leaves the server here; the form only needs
       // to know there is one, so it can say so instead of asking again.
       hasIdProofDocument: hasDocument,
@@ -837,7 +925,7 @@ async function getBooking(lodgeId, bookingId) {
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT sc.id, sc.name, sc.charge_per_night, bsc.quantity
+      SELECT sc.id, sc.name, sc.charge_per_night, bsc.quantity, bsc.agreed_amount
       FROM dbo.booking_switchable_charges bsc
       JOIN dbo.switchable_charges sc ON sc.id = bsc.charge_id
       WHERE bsc.booking_id = @bookingId
@@ -847,7 +935,7 @@ async function getBooking(lodgeId, bookingId) {
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT id, guest_name, guest_phone, id_proof_type, id_proof_document, is_child
+      SELECT id, guest_name, guest_phone, id_proof_type, id_proof_number, id_proof_document, is_child
       FROM dbo.booking_guests
       WHERE booking_id = @bookingId
       ORDER BY id ASC
@@ -944,6 +1032,10 @@ async function createBooking(lodgeId, userId, input) {
     throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);
   }
 
+  // Against what is actually payable, not the gross: a stay discounted to ₹900
+  // cannot take ₹1,000 up front.
+  assertAdvanceWithinTotal(input.advanceAmount, totalPrice);
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
   try {
@@ -966,6 +1058,7 @@ async function createBooking(lodgeId, userId, input) {
       .input('guestPhone', sql.NVarChar, input.guestPhone)
       .input('numGuests', sql.Int, input.numGuests)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
+      .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .input('checkInDate', sql.Date, input.checkInDate)
       .input('checkOutDate', sql.Date, input.checkOutDate)
@@ -978,12 +1071,12 @@ async function createBooking(lodgeId, userId, input) {
       .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
       .query(`
         INSERT INTO dbo.bookings
-          (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_document,
+          (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_number, id_proof_document,
            check_in_date, check_out_date, total_price, discount_amount, nightly_breakdown, created_by,
            advance_amount, advance_payment_method, advance_reference)
         OUTPUT inserted.id
         VALUES
-          (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofDocument,
+          (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofNumber, @idProofDocument,
            @checkInDate, @checkOutDate, @totalPrice, @discountAmount, @nightlyBreakdown, @createdBy,
            @advanceAmount, @advancePaymentMethod, @advanceReference)
       `);
@@ -995,6 +1088,9 @@ async function createBooking(lodgeId, userId, input) {
     await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicles);
 
     await transaction.commit();
+
+    await autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input);
+
     return { id: bookingId };
   } catch (err) {
     await transaction.rollback();
@@ -1012,11 +1108,12 @@ async function insertGuestsAndVehicles(transaction, bookingId, guests, vehicles)
       .input('guestName', sql.NVarChar, guest.name)
       .input('guestPhone', sql.NVarChar, guest.phone)
       .input('idProofType', sql.NVarChar, guest.idProofType)
+      .input('idProofNumber', sql.NVarChar, guest.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, guest.idProofDocument)
       .input('isChild', sql.Bit, guest.isChild ? 1 : 0)
       .query(`
-        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_document, is_child)
-        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofDocument, @isChild)
+        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_number, id_proof_document, is_child)
+        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofNumber, @idProofDocument, @isChild)
       `);
   }
 
@@ -1054,12 +1151,14 @@ async function replaceBookingGuests(transaction, bookingId, guests, existingGues
         .input('guestName', sql.NVarChar, guest.name)
         .input('guestPhone', sql.NVarChar, guest.phone)
         .input('idProofType', sql.NVarChar, guest.idProofType)
+        .input('idProofNumber', sql.NVarChar, guest.idProofNumber ?? null)
         .input('idProofDocument', sql.NVarChar, guest.idProofDocument)
         .input('isChild', sql.Bit, guest.isChild ? 1 : 0)
         .query(`
           UPDATE dbo.booking_guests
           SET guest_name = @guestName, guest_phone = @guestPhone,
               id_proof_type = COALESCE(@idProofType, id_proof_type),
+              id_proof_number = COALESCE(@idProofNumber, id_proof_number),
               id_proof_document = COALESCE(@idProofDocument, id_proof_document),
               is_child = @isChild
           WHERE id = @id AND booking_id = @bookingId
@@ -1072,11 +1171,12 @@ async function replaceBookingGuests(transaction, bookingId, guests, existingGues
       .input('guestName', sql.NVarChar, guest.name)
       .input('guestPhone', sql.NVarChar, guest.phone)
       .input('idProofType', sql.NVarChar, guest.idProofType)
+      .input('idProofNumber', sql.NVarChar, guest.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, guest.idProofDocument)
       .input('isChild', sql.Bit, guest.isChild ? 1 : 0)
       .query(`
-        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_document, is_child)
-        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofDocument, @isChild)
+        INSERT INTO dbo.booking_guests (booking_id, guest_name, guest_phone, id_proof_type, id_proof_number, id_proof_document, is_child)
+        VALUES (@bookingId, @guestName, @guestPhone, @idProofType, @idProofNumber, @idProofDocument, @isChild)
       `);
   }
 
@@ -1108,7 +1208,7 @@ async function replaceBookingVehicles(transaction, bookingId, vehicles) {
   }
 }
 
-async function checkIn(lodgeId, bookingId, input) {
+async function checkIn(lodgeId, bookingId, input, userId = null) {
   const pool = await getPool();
 
   const bookingResult = await pool
@@ -1117,6 +1217,7 @@ async function checkIn(lodgeId, bookingId, input) {
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT b.num_guests, b.id_proof_type, b.check_in_date,
+             b.total_price, b.advance_amount,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.lodges l ON l.id = b.lodge_id
@@ -1162,6 +1263,10 @@ async function checkIn(lodgeId, bookingId, input) {
     newNumGuests = Math.max(bookingRow.num_guests, existingCount + input.guests.length + 1);
   }
 
+  // check-in ADDS to whatever was already taken, so the two are weighed
+  // together — ₹500 at booking and ₹600 at the door is ₹1,100 against the stay.
+  assertAdvanceWithinTotal(input.advanceAmount, bookingRow.total_price, bookingRow.advance_amount);
+
   const takesRoomOrders = !!bookingRow.serves_food && !!bookingRow.food_room_service;
 
   const transaction = new sql.Transaction(pool);
@@ -1174,6 +1279,7 @@ async function checkIn(lodgeId, bookingId, input) {
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
       .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
+      .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .input('numGuests', sql.Int, newNumGuests)
       // Only where a guest could actually use one. A rooms-only property has
@@ -1192,6 +1298,7 @@ async function checkIn(lodgeId, bookingId, input) {
             advance_payment_method = COALESCE(@advancePaymentMethod, advance_payment_method),
             advance_reference = COALESCE(@advanceReference, advance_reference),
             id_proof_type = COALESCE(@idProofType, id_proof_type),
+            id_proof_number = COALESCE(@idProofNumber, id_proof_number),
             id_proof_document = COALESCE(@idProofDocument, id_proof_document)
         OUTPUT inserted.id
         WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'BOOKED'
@@ -1207,6 +1314,11 @@ async function checkIn(lodgeId, bookingId, input) {
     await transaction.rollback();
     throw err;
   }
+
+  // A deposit taken at the door gets its receipt the same way one taken at
+  // booking does. checkIn adds to whatever advance was already on the stay, so
+  // this receipts the instalment just taken rather than the running total.
+  await autoIssueAdvanceReceipt(lodgeId, userId ?? null, bookingId, input);
 
   return getBooking(lodgeId, bookingId);
 }
@@ -1342,7 +1454,7 @@ async function checkOut(lodgeId, bookingId, { lateCharge = 0 } = {}) {
 // extend, only extras can still be corrected. check-in date is never
 // editable here; changing when a stay started is a cancel-and-rebook, not
 // an edit.
-async function updateBooking(lodgeId, bookingId, input) {
+async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const pool = await getPool();
 
   const bookingResult = await pool
@@ -1351,7 +1463,7 @@ async function updateBooking(lodgeId, bookingId, input) {
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT room_id, check_in_date, check_out_date, status, num_guests, guest_name, guest_phone,
-             base_price_override, discount_amount
+             base_price_override, discount_amount, advance_amount
       FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId
     `);
   const bookingRow = bookingResult.recordset[0];
@@ -1442,10 +1554,13 @@ async function updateBooking(lodgeId, bookingId, input) {
     const currentChargesResult = await pool
       .request()
       .input('bookingId', sql.BigInt, bookingId)
-      .query('SELECT charge_id, quantity FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
+      .query('SELECT charge_id, quantity, agreed_amount FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
     switchableCharges = currentChargesResult.recordset.map((r) => ({
       id: Number(r.charge_id),
       quantity: Number(r.quantity),
+      // Carried forward so an edit that does not touch the extras cannot
+      // silently reprice them to the lodge's current rate.
+      agreedAmount: r.agreed_amount == null ? undefined : Number(r.agreed_amount),
     }));
   } else {
     switchableCharges = pricingService.normalizeSelections(input.switchableCharges);
@@ -1478,6 +1593,13 @@ async function updateBooking(lodgeId, bookingId, input) {
 
   if (round2(requestedDiscount) > discountAmount) {
     throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);
+  }
+
+  // An edit SETS the advance rather than adding to it, so what is typed is
+  // weighed against the stay on its own — and against the re-priced total,
+  // since the same save may have shortened the stay or taken a discount off it.
+  if (input.advanceAmount != null) {
+    assertAdvanceWithinTotal(input.advanceAmount, totalPrice);
   }
 
   const transaction = new sql.Transaction(pool);
@@ -1529,6 +1651,7 @@ async function updateBooking(lodgeId, bookingId, input) {
       // cleared — a stay that has one on file must not be editable back into
       // one that doesn't.
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
+      .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .query(`
         UPDATE dbo.bookings
@@ -1542,6 +1665,7 @@ async function updateBooking(lodgeId, bookingId, input) {
             advance_reference =
               CASE WHEN @setAdvance = 1 THEN @advanceReference ELSE advance_reference END,
             id_proof_type = COALESCE(@idProofType, id_proof_type),
+            id_proof_number = COALESCE(@idProofNumber, id_proof_number),
             id_proof_document = COALESCE(@idProofDocument, id_proof_document)
         WHERE id = @bookingId
       `);
@@ -1558,6 +1682,26 @@ async function updateBooking(lodgeId, bookingId, input) {
   } catch (err) {
     await transaction.rollback();
     throw err;
+  }
+
+  // An edit SETS the advance rather than adding to it — it is a correction of
+  // the record — so only the part that is new money gets a receipt. Raising one
+  // for the whole figure would receipt the original deposit twice, and raising
+  // none would leave a second instalment with no document at all now that
+  // receipts are no longer issued by hand.
+  //
+  // A reduction raises nothing: money going back out is a void against the
+  // receipt that brought it in, not a new receipt for a negative amount.
+  if (input.advanceAmount != null) {
+    const before = Number(bookingRow.advance_amount) || 0;
+    const added = round2(Number(input.advanceAmount) - before);
+    if (added > 0) {
+      await autoIssueAdvanceReceipt(lodgeId, userId, bookingId, {
+        advanceAmount: added,
+        advancePaymentMethod: input.advancePaymentMethod,
+        advanceReference: input.advanceReference,
+      });
+    }
   }
 
   return getBooking(lodgeId, bookingId);
@@ -1582,6 +1726,7 @@ async function cancelBooking(lodgeId, bookingId) {
 }
 
 module.exports = {
+  idProofExists,
   priceStay,
   listAvailableRooms,
   listAvailableRoomsForBooking,

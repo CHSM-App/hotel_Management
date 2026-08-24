@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { useUrlState } from '../../lib/urlState';
+import BillNumberingPanel from './BillNumberingPanel';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
+import DownloadIcon from '../../components/DownloadIcon';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import StayDetails from './StayDetails';
 import './forms.css';
@@ -367,7 +370,17 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
   );
 }
 
-export default function Billing({ lodge, billNowBookingId = null }) {
+// modalOnly renders the bill modal and nothing else — no sub-tabs, no queue,
+// no bills list. It is how another screen (the bookings tab, after a checkout)
+// opens a bill without navigating here and without wrapping this page in an
+// overlay of its own: the modal is already a self-contained full-viewport
+// dialog that closes itself, so it needs no chrome around it.
+//
+// onClose lets the owner of that decision unmount this again. Without it,
+// closing the modal would leave an invisible Billing mounted forever and a
+// second attempt at the same booking would be a no-op — the parent's state
+// would already hold that id, so nothing would re-render.
+export default function Billing({ lodge, billNowBookingId = null, modalOnly = false, onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -382,9 +395,16 @@ export default function Billing({ lodge, billNowBookingId = null }) {
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
     ...(billsTables ? [{ key: 'tables', label: 'Tables to bill' }] : []),
     { key: 'bills', label: 'Bills' },
+    // Last, and deliberately not first: numbering is set once at setup and
+    // then left alone, while the other tabs are used every day.
+    { key: 'numbering', label: 'Numbering' },
   ];
 
-  const [tab, setTab] = useState(billsStays ? 'ready' : billsTables ? 'tables' : 'bills');
+  // The landing tab depends on what this login can bill, so it is worked out
+  // first and handed to the hook as the fallback — a URL with no tab lands
+  // exactly where it did before.
+  const defaultTab = billsStays ? 'ready' : billsTables ? 'tables' : 'bills';
+  const [tab, setTab] = useUrlState('tab', defaultTab);
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   const [queueError, setQueueError] = useState('');
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
@@ -613,6 +633,8 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   const closeBilling = () => {
     if (submitting) return;
     setBillTarget(null);
+    // In modalOnly there is nothing left to look at once the modal is gone.
+    onClose?.();
   };
 
   // "counter" rather than an id — the till tab has no table row behind it.
@@ -734,7 +756,7 @@ export default function Billing({ lodge, billNowBookingId = null }) {
 
     setSubmitting(true);
     try {
-      await apiPost(
+      const data = await apiPost(
         path,
         {
           billingSide,
@@ -757,6 +779,11 @@ export default function Billing({ lodge, billNowBookingId = null }) {
         },
         { token }
       );
+      // Straight to the document. The bill exists, the guest is at the desk,
+      // and the next thing anyone does with it is print it — closing back to a
+      // queue and making them find it again is a step with one answer.
+      setJustIssued(data.invoice);
+      setDetailInvoiceId(data.invoice.id);
       setBillTarget(null);
       refreshAll();
     } catch (err) {
@@ -768,12 +795,22 @@ export default function Billing({ lodge, billNowBookingId = null }) {
 
   // Invoice detail / void modal
   const [detailInvoiceId, setDetailInvoiceId] = useState(null);
+  // The bill just written, held so it can be shown the instant it exists.
+  // refreshAll() re-fetches the lists in the background, and the detail modal
+  // reads from those — so without this the document would blink in a moment
+  // later, or not at all on the screen that has no lists to refresh.
+  const [justIssued, setJustIssued] = useState(null);
   const [showVoidForm, setShowVoidForm] = useState(false);
   const [voidReason, setVoidReason] = useState('');
   const [voidError, setVoidError] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
 
-  const detailInvoice = invoices?.find((i) => i.id === detailInvoiceId);
+  // The list first — it carries whatever a void has since done to the bill —
+  // falling back to the copy returned by the issue itself, which is the only
+  // source on a screen with no lists behind it.
+  const detailInvoice =
+    invoices?.find((i) => i.id === detailInvoiceId) ??
+    (justIssued?.id === detailInvoiceId ? justIssued : null);
   // An advance receipt opened from the list. It gets the receipt modal rather
   // than the bill modal below: the two documents are voided differently, print
   // from different components, and a receipt has no food tab or balance to
@@ -798,6 +835,11 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   const closeDetail = () => {
     if (voidSubmitting) return;
     setDetailInvoiceId(null);
+    setJustIssued(null);
+    // Opened over another tab there is nothing behind this to fall back to —
+    // the queue and the bills list are not rendered — so closing the document
+    // is closing the screen.
+    if (modalOnly) onClose?.();
   };
 
   // Bill PDF share/download
@@ -899,7 +941,12 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   };
 
   return (
-    <div className="billing-panel">
+    <div className={modalOnly ? 'billing-panel billing-panel--modal-only' : 'billing-panel'}>
+      {/* Everything that makes this a page. In modalOnly none of it is
+          wanted — see the note on the props. A fragment because the page is a
+          run of siblings, not one element. */}
+      {!modalOnly && (
+        <>
       <div className="billing-panel__subtabs">
         {tabs.map((t) => (
           <button
@@ -919,6 +966,8 @@ export default function Billing({ lodge, billNowBookingId = null }) {
           </button>
         ))}
       </div>
+
+      {tab === 'numbering' && <BillNumberingPanel />}
 
       {tab === 'tables' && (
         <div className="chart-section">
@@ -1209,9 +1258,29 @@ export default function Billing({ lodge, billNowBookingId = null }) {
         </div>
       )}
 
-      {billTarget && (
-        <div className="glass-backdrop billing-panel__backdrop" onClick={closeBilling}>
-          <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
+        </>
+      )}
+
+      {/* One modal, two steps: take the payment, then hand over the document.
+          These were two dialogs, and issuing closed the first before opening the
+          second — which read as the screen throwing the desk out and starting
+          again, with the booking panel flashing up in between.
+          The backdrop closes whichever step is showing, so a click outside
+          always means the same thing. */}
+      {(billTarget || (detailInvoiceId && detailInvoice)) && (
+        <div
+          className="glass-backdrop billing-panel__backdrop"
+          onClick={billTarget ? closeBilling : closeDetail}
+        >
+          <div
+            className="glass-panel billing-panel__modal billing-steps"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* key, so React remounts on the change of step rather than
+                reconciling one into the other — without it the pane swaps its
+                contents in place and the slide never plays. */}
+            {billTarget ? (
+              <div className="billing-steps__pane" key="collect">
             <h3>Issue bill</h3>
 
             {previewError && <div className="form-banner form-banner--error">{previewError}</div>}
@@ -1664,27 +1733,9 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                 </div>
               </form>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* An advance receipt opened from the list: reprint, share, or void. No
-          booking is passed, so it opens straight on the document with no form —
-          the money was taken when the booking was made. */}
-      {detailReceipt && (
-        <AdvanceReceiptModal
-          initialReceipt={detailReceipt}
-          onClose={() => setDetailReceipt(null)}
-          onVoided={() => {
-            loadReceipts();
-            loadQueue();
-          }}
-        />
-      )}
-
-      {detailInvoiceId && detailInvoice && (
-        <div className="glass-backdrop billing-panel__backdrop" onClick={closeDetail}>
-          <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
+              </div>
+            ) : (
+              <div className="billing-steps__pane" key="issued">
             <div className="billing-panel__detail-header">
               <h3>{detailInvoice.invoiceNumber}</h3>
               {/* Both tags, in the same colours as the list row that opened
@@ -1705,6 +1756,55 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                 size its offscreen copy. It has to stay unscaled: offsetWidth
                 on a transformed node reports the drawn width, and the capture
                 would be laid out to a figure the document never used. */}
+            {/* Above the bill, not below it. The document is a full sheet of
+                paper — with the actions underneath, printing meant scrolling
+                past the whole thing to reach the button, every time. What the
+                desk does here is act on the bill, so the actions sit where the
+                eye already is when the modal opens.
+
+                Paper and language ride with Print and the download because they
+                govern both: the two have to agree about the sheet. */}
+            {detailInvoice.status === 'ISSUED' && !showVoidForm && (
+              <div className="bill-actions">
+                <div className="bill-actions__sheet">
+                  <PaperSelect value={paperSize} onChange={setPaperSize} />
+                  <BillLangSelect value={billLang} onChange={setBillLang} />
+                </div>
+                <div className="bill-actions__buttons">
+                  {/* An explicit way out. Backdrop-click alone is fine when this
+                      sits over the bills list, but the desk reaches it straight
+                      from a checkout now, with nothing behind it to click back
+                      to. */}
+                  <button type="button" className="btn-secondary" onClick={closeDetail}>
+                    Done
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={handlePrint}>
+                    Print
+                  </button>
+                  <button
+                  type="button"
+                  className="btn-accent bill-actions__icon-btn"
+                  onClick={handleSharePdf}
+                  disabled={pdfBusy}
+                  aria-label={pdfBusy ? 'Preparing the PDF' : 'Share or download this bill as a PDF'}
+                  title={pdfBusy ? 'Preparing…' : 'Share / Download PDF'}
+                >
+                  <DownloadIcon />
+                </button>
+                  {/* Last, and a link rather than a button: voiding is the one
+                      irreversible thing on this screen and must not read as a
+                      peer of Print. */}
+                  <button
+                    type="button"
+                    className="billing-panel__danger-link"
+                    onClick={() => setShowVoidForm(true)}
+                  >
+                    Void this bill
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* The one copy that prints. The wrapper carries the marker the
                 print stylesheet keys off — the modal holds other copies of the
                 same document (the PDF source, the paper thumbnails) and only
@@ -1769,30 +1869,6 @@ export default function Billing({ lodge, billNowBookingId = null }) {
             {voidError && <div className="form-banner form-banner--error">{voidError}</div>}
             {pdfError && <div className="form-banner form-banner--error">{pdfError}</div>}
 
-            {detailInvoice.status === 'ISSUED' && !showVoidForm && (
-              <div className="billing-panel__actions">
-                <button
-                  type="button"
-                  className="billing-panel__danger-link"
-                  onClick={() => setShowVoidForm(true)}
-                >
-                  Void this bill
-                </button>
-                {/* Beside the two buttons it governs, because it governs both
-                    — printing and the download have to agree about the sheet,
-                    and a control parked elsewhere reads as belonging to
-                    whichever one is nearer. */}
-                <PaperSelect value={paperSize} onChange={setPaperSize} />
-                <BillLangSelect value={billLang} onChange={setBillLang} />
-                <button type="button" className="btn-secondary" onClick={handlePrint}>
-                  Print
-                </button>
-                <button type="button" className="btn-accent" onClick={handleSharePdf} disabled={pdfBusy}>
-                  {pdfBusy ? 'Preparing…' : 'Share / Download PDF'}
-                </button>
-              </div>
-            )}
-
             {detailInvoice.status === 'ISSUED' && showVoidForm && (
               <form onSubmit={handleVoid} className="form-section">
                 <div className="form-section__title">Reason for voiding</div>
@@ -1819,9 +1895,26 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                 </div>
               </form>
             )}
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* An advance receipt opened from the list: reprint, share, or void. No
+          booking is passed, so it opens straight on the document with no form —
+          the money was taken when the booking was made. */}
+      {detailReceipt && (
+        <AdvanceReceiptModal
+          initialReceipt={detailReceipt}
+          onClose={() => setDetailReceipt(null)}
+          onVoided={() => {
+            loadReceipts();
+            loadQueue();
+          }}
+        />
+      )}
+
     </div>
   );
 }

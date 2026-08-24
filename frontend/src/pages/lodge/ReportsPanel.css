@@ -66,40 +66,6 @@
   gap: 10px;
 }
 
-/* Segmented control: one visible group, so the three choices read as
-   mutually exclusive rather than as three independent buttons. */
-.reports-panel__side-picker {
-  display: inline-flex;
-  margin-top: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.reports-panel__side-option {
-  background: transparent;
-  border: none;
-  border-right: 1px solid var(--border);
-  padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.reports-panel__side-option:last-child {
-  border-right: none;
-}
-
-.reports-panel__side-option:hover {
-  color: var(--text);
-}
-
-.reports-panel__side-option[aria-pressed='true'] {
-  background: var(--brand);
-  color: #fff;
-}
-
 .reports-panel__muted {
   font-size: 12px;
   color: var(--text-muted);
@@ -185,4 +151,18 @@
   .reports-panel__stat-value {
     font-size: 18px;
   }
+}
+
+/* The report PDF, shown in the browser's own viewer before it is saved. Tall
+   enough to read a landscape A4 page without scrolling the panel underneath it,
+   and it is the real file rather than an HTML impression — so what is on screen
+   and what gets filed cannot drift apart. */
+.reports-panel__preview {
+  width: 100%;
+  height: 70vh;
+  min-height: 420px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
 }

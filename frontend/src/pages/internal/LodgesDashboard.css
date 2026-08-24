@@ -235,7 +235,7 @@
 /* Hover can't change the fill any more — it's the same colour as the row it
    sits in — so the lift is the hover state. */
 .btn-view:hover {
-  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  box-shadow: var(--shadow-raised-hover);
 }
 
 .btn-view:active {

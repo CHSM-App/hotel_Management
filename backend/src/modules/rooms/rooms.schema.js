@@ -1,11 +1,42 @@
 const { z } = require('zod');
 
+const BED_SIZES = ['SINGLE', 'DOUBLE', 'QUEEN', 'KING'];
+
+// The room's beds, as a list rather than one enum: a family room is a double
+// and two singles, and picking one of the three to store loses the room.
+//
+// Arrives as a JSON string because the room form is multipart (it carries photo
+// uploads), and every text field in a multipart body is a string. Parsed here so
+// a malformed value fails validation with a message rather than throwing inside
+// the service.
+const bedsSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value; // falls through to the array check below, which rejects it
+    }
+  },
+  z
+    .array(
+      z.object({
+        size: z.enum(BED_SIZES, { error: 'Choose a bed size.' }),
+        // Capped because it is typed by hand next to a delete button — 40 beds
+        // in one room is a slipped keystroke, not a dormitory.
+        count: z.coerce.number().int().min(1, 'A bed count must be at least 1.').max(20, 'That is too many beds for one room.'),
+      })
+    )
+    .min(1, 'Add at least one bed.')
+    .max(10, 'Add at most 10 bed types to a room.')
+);
+
 const createRoomSchema = z
   .object({
     categoryId: z.coerce.number().int().positive('Choose a category.'),
     switchableChargeIds: z.array(z.coerce.number().int().positive()).optional().default([]),
     floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
-    bedSize: z.enum(['SINGLE', 'DOUBLE', 'QUEEN', 'KING'], { error: 'Choose a bed size.' }),
+    beds: bedsSchema,
     bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
     maxOccupancy: z.coerce.number().int().positive('Enter a max occupancy greater than 0.'),
     description: z.string().trim().max(200, 'Keep the description under 200 characters.').optional().default(''),
@@ -46,7 +77,7 @@ const updateRoomSchema = z.object({
   categoryId: z.coerce.number().int().positive('Choose a category.'),
   switchableChargeIds: z.array(z.coerce.number().int().positive()).optional(),
   floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
-  bedSize: z.enum(['SINGLE', 'DOUBLE', 'QUEEN', 'KING'], { error: 'Choose a bed size.' }),
+  beds: bedsSchema,
   bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
   maxOccupancy: z.coerce.number().int().positive('Enter a max occupancy greater than 0.'),
   description: z.string().trim().max(200, 'Keep the description under 200 characters.').optional().default(''),

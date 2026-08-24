@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
+import { useUrlState } from '../../lib/urlState';
 import { clearSession, getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
@@ -108,7 +109,7 @@ export default function OwnerDashboard() {
   // Left null until the user picks a section — /me hasn't answered yet on the
   // first render, so which section is even reachable isn't known here. The
   // landing choice is made below, once the permissions are in.
-  const [activeSection, setActiveSection] = useState(null);
+  const [activeSection, setActiveSection] = useUrlState('section');
   // Set when a checkout hands a stay to billing, which reads it as it mounts to
   // open that bill straight away. Cleared on any sidebar move, so coming back to
   // billing later lands on the plain queue rather than reopening an old bill.
@@ -240,15 +241,33 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'bookings' && (
                 <Bookings
-                  onCheckedOut={(bookingId) => {
-                    setBillNowBookingId(bookingId ?? null);
-                    setActiveSection('billing');
-                  }}
+                  // Opens billing OVER this tab instead of navigating to it.
+                  // Checkout used to call setActiveSection('billing'), which
+                  // threw reception out of the screen they were working in at
+                  // the exact moment a guest was standing at the desk — and
+                  // left them to find their way back afterwards.
+                  onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)}
                 />
               )}
 
               {activeFeature && activeFeature.key === 'billing' && (
                 <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} />
+              )}
+
+              {/* The bill for a stay, opened over whatever tab asked for it
+                  instead of navigating to billing. Just the modal — it is
+                  already a full-viewport dialog that closes itself, so putting
+                  a panel and a scroll container around it only gave it a
+                  stacking context to fight.
+                  Not while the billing section is itself open: there the same
+                  modal is already reachable from the queue. */}
+              {billNowBookingId != null && activeFeature?.key !== 'billing' && (
+                <Billing
+                  lodge={me.lodge}
+                  billNowBookingId={billNowBookingId}
+                  modalOnly
+                  onClose={() => setBillNowBookingId(null)}
+                />
               )}
 
               {activeFeature && activeFeature.key === 'guests' && <GuestRegister />}
