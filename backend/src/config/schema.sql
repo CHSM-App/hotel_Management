@@ -571,6 +571,69 @@ CREATE UNIQUE INDEX uq_advance_receipts_number ON dbo.advance_receipts(lodge_id,
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_advance_receipts_booking' AND object_id = OBJECT_ID('dbo.advance_receipts'))
 CREATE INDEX ix_advance_receipts_booking ON dbo.advance_receipts(booking_id, status);
 
+-- How a settlement was actually tendered, one row per method.
+--
+-- A guest often hands over money in two ways — some cash, the rest by UPI or
+-- card. Both money documents record exactly one method
+-- (invoices.balance_payment_method, advance_receipts.payment_method), so the
+-- desk had to pick one and the other half was filed under a method it never
+-- used. That misstates the takings by mode and prints something untrue on the
+-- guest's own bill.
+--
+-- One table serves both documents: a payment is the same fact whichever
+-- document acknowledges it, and a second table would be a second set of
+-- constraints to keep in step.
+--
+-- IMPORTANT: these lines only ever *split* a total, never carry one.
+-- bookings.advance_amount is written by five different paths — booking create,
+-- check-in, an edit that can set any value or clear it, receipt issue, and a
+-- void that floors it to NULL — so a report summing these lines instead of
+-- reading that column would invent or lose money the first time a booking was
+-- corrected. getCollectionsInPeriod reads totals as it always has and uses
+-- these lines only to apportion them.
+--
+-- Nothing historical is backfilled. A document with no lines reads as a single
+-- line built from its own scalar columns, which is what every bill and receipt
+-- issued before this table existed actually is.
+IF OBJECT_ID('dbo.payment_lines', 'U') IS NULL
+CREATE TABLE dbo.payment_lines (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    -- Exactly one parent, enforced below. No booking_id: reachable through
+    -- either parent, and a denormalised copy is a third thing to keep in step
+    -- when a receipt is voided.
+    invoice_id          BIGINT NULL REFERENCES dbo.invoices(id),
+    advance_receipt_id  BIGINT NULL REFERENCES dbo.advance_receipts(id),
+    method              NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_payment_lines_method CHECK (method IN ('CASH', 'UPI', 'CARD')),
+    -- Strictly positive. A zero line is not a payment; a negative one is a
+    -- refund, which is a void against the document rather than a line on it.
+    amount              DECIMAL(10,2) NOT NULL
+        CONSTRAINT ck_payment_lines_amount CHECK (amount > 0),
+    -- Same rule as everywhere money changes hands here: UPI and card leave a
+    -- number on both sides and it is recorded, cash leaves none.
+    reference           NVARCHAR(64) NULL,
+    -- Insertion order is entry order is print order, so there is no sort
+    -- column. Deliberately NOT a payment date: the collections report dates
+    -- money by booking/invoice creation, and a real payment date here would
+    -- invite changing that proxy — which moves figures in periods already
+    -- reconciled. That is its own decision.
+    created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    -- A line belongs to a bill or to an advance receipt, never both and never
+    -- neither. Written as a sum rather than an OR pair so "exactly one" is
+    -- stated once instead of as two clauses that can drift apart.
+    CONSTRAINT ck_payment_lines_parent CHECK (
+        (CASE WHEN invoice_id IS NULL THEN 0 ELSE 1 END)
+      + (CASE WHEN advance_receipt_id IS NULL THEN 0 ELSE 1 END) = 1)
+);
+
+-- Both reads are "the lines of this one document", one index per parent.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_lines_invoice' AND object_id = OBJECT_ID('dbo.payment_lines'))
+CREATE INDEX ix_payment_lines_invoice ON dbo.payment_lines(invoice_id) WHERE invoice_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_lines_receipt' AND object_id = OBJECT_ID('dbo.payment_lines'))
+CREATE INDEX ix_payment_lines_receipt ON dbo.payment_lines(advance_receipt_id) WHERE advance_receipt_id IS NOT NULL;
+
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
 -- and, when its role_key matches a built-in, overrides it. That's what lets an

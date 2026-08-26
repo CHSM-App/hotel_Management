@@ -53,6 +53,9 @@
   --tape-tile-h: 22px;
   --tape-row-h: 32px;
   --tape-room-col: 124px;
+  /* The gutter held clear on the right of every chart. Matches the inset the
+     card's own header uses, so the two line up. */
+  --tape-tail: 18px;
 }
 
 /* ---------- month stepper ---------- */
@@ -276,29 +279,25 @@
 .tape-chart-scroll {
   overflow: auto;
   max-height: 58vh;
-  padding-bottom: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: #c8d0d8 transparent;
+  /* The scrolling area stops short of the card's edge, so there is always a
+     gutter there — not only once the chart has been scrolled to its end. A
+     trailing column inside the grid could not do this: it sits at the far end
+     of the content, which is exactly where nobody is looking. */
+  margin-right: var(--tape-tail);
+  /* Scrolled, but without a bar sitting under every card — one per category was
+     five of them down the page, and the chart is wheeled and trackpadded far
+     more than the bar is ever grabbed. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .tape-chart-scroll::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.tape-chart-scroll::-webkit-scrollbar-thumb {
-  background: #c8d0d8;
-  border: 3px solid var(--surface);
-  border-radius: 999px;
-}
-
-.tape-chart-scroll::-webkit-scrollbar-thumb:hover {
-  background: #aab4bf;
+  display: none;
 }
 
 .tape-month {
   /* --tape-cols is set on the element by the component — the number of day
-     columns is however long the month being shown is. */
+     columns is however long the window being shown is. */
   min-width: max-content;
 }
 
@@ -850,4 +849,66 @@
   .tape-chart-scroll {
     max-height: 62vh;
   }
+}
+
+/* A past vacant night is a button now — a stay can be recorded against it
+   after the fact. It keeps its muted look, because an empty night that has
+   gone is a fact first and an offer second, but it has to answer the pointer
+   like something that can be pressed. */
+.tape-tile--past {
+  cursor: pointer;
+}
+/* ---------------------------------------------------------------------------
+   The month boundary
+   ---------------------------------------------------------------------------
+   The chart is a rolling 30-day window, so it almost always straddles one. The
+   line is drawn on the first column of the new month and runs the height of the
+   chart, through the date row and every tile under it — a mark on the header
+   alone reads as decoration, not as a division. */
+
+/* The partition between two months, one element per boundary — a window that
+   has been scrolled out to three months crosses three of them.
+
+   Drawn inside the header and inside every row, spanning that row's full
+   height, rather than marked on the tiles. A tile is 22px inside a 32px row, so
+   a per-tile mark left a 10px gap under every one of them and the partition
+   read as a dashed column. Nor as a border on the tile: with border-box
+   everywhere that eats 2px of the tile's own box and squares its corner,
+   leaving the first box of the month narrower and sharper than its neighbours.
+
+   Inside the row rather than over the whole grid so the sticky room column,
+   which sits at z-index 2, keeps painting above it — the room numbers have to
+   stay readable however far the chart is scrolled. */
+/* The header is NOT listed here. It is already position: sticky with top:22px,
+   which makes it a positioned element in its own right — absolute children
+   resolve against it either way. Setting it to relative would keep that top and
+   shove the whole header 22px down onto the first room row. */
+.tape-month__row {
+  position: relative;
+}
+
+.tape-month__divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* The column boundary is exactly the room column plus N tiles. Half the line
+     sits either side of it, so the 3px gutter between tiles is left showing the
+     same 0.5px on each side — centred by construction, not by a nudge. */
+  left: calc(var(--tape-room-col) + var(--tape-edge-col) * var(--tape-tile) - 0.5px);
+  /* 1px is as narrow as a line renders reliably — below that a browser on a
+     non-retina screen either rounds it back up or drops it altogether. So the
+     weight comes off the colour instead: a paler line reads finer than a dark
+     one of the same width, and it still carries at a glance. */
+  width: 1px;
+  /* Above a lifted tile (1) and below the room column (2). */
+  z-index: 1;
+  background: var(--tape-month-edge, #b6c2cf);
+  /* Every tile under it is a button; this must not swallow the click. */
+  pointer-events: none;
+}
+
+/* The two months in the band, told apart without reading either caption. */
+.tape-month__band-month--alt {
+  background: var(--tape-month-band-alt, rgba(100, 116, 139, 0.1));
+  color: var(--ink);
 }

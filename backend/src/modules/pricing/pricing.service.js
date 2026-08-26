@@ -225,7 +225,7 @@ function chargeLabel(charge) {
 function priceNight(room, seasons, charges, dateStr, basePriceOverride = null) {
   const lines = [];
   let subtotal = basePriceOf(room, basePriceOverride);
-  lines.push({ label: baseLabel(room, basePriceOverride), amount: subtotal });
+  lines.push({ label: baseLabel(room, basePriceOverride), amount: subtotal, isBase: true });
 
   for (const season of seasons) {
     if (dateStr < season.startDate || dateStr > season.endDate) continue;
@@ -285,8 +285,9 @@ async function simulateRange(lodgeId, roomId, checkInDate, checkOutDate, chargeS
   // so a season that only covers the tail of the stay still reads above the
   // extras instead of wherever the first night happened to put it.
   const totals = new Map();
-  for (const label of [baseLabel(room, basePriceOverride), ...seasons.map(seasonLabel)]) {
-    if (!totals.has(label)) totals.set(label, { label, amount: 0, nights: 0 });
+  const base = baseLabel(room, basePriceOverride);
+  for (const label of [base, ...seasons.map(seasonLabel)]) {
+    if (!totals.has(label)) totals.set(label, { label, amount: 0, nights: 0, isBase: label === base });
   }
   for (const charge of charges) {
     const label = chargeLabel(charge);
@@ -300,7 +301,14 @@ async function simulateRange(lodgeId, roomId, checkInDate, checkOutDate, chargeS
     for (const line of night.lines) {
       const prev =
         totals.get(line.label) ||
-        { label: line.label, amount: 0, nights: 0, chargeId: line.chargeId, quantity: line.quantity };
+        {
+          label: line.label,
+          amount: 0,
+          nights: 0,
+          isBase: line.isBase,
+          chargeId: line.chargeId,
+          quantity: line.quantity,
+        };
       prev.amount = round2(prev.amount + line.amount);
       prev.nights += 1;
       totals.set(line.label, prev);

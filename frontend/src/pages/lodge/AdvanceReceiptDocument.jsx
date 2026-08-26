@@ -140,6 +140,24 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   const lodgeAddress = (mr && receipt.lodgeAddressMr) || receipt.lodgeAddress;
   const kindLabel = T.doc[receipt.documentType] || T.doc.ADVANCE_RECEIPT;
 
+  // How this advance arrived. Always a list: a receipt taken before split
+  // payments existed, or one paid a single way, reads as a one-line split
+  // synthesised from its own scalar columns, so there is one rendering path
+  // here rather than two.
+  const paymentLines = receipt.paymentLines?.length
+    ? receipt.paymentLines
+    : [{ method: receipt.paymentMethod, amount: receipt.amountReceived, reference: receipt.paymentReference }];
+  const split = paymentLines.length > 1;
+  const paidBy = new Set(paymentLines.map((line) => line.method));
+  // "Cash 600 · UPI 400 · Txn No. UTR123" — the amounts the ticks cannot show,
+  // and every reference that came with them.
+  const splitSummary = [
+    ...paymentLines.map((line) => `${T.pay[line.method] || line.method} ${line.amount}`),
+    ...paymentLines
+      .filter((line) => line.reference)
+      .map((line) => `${T.txnNo} ${line.reference}`),
+  ].join(' · ');
+
   const supplyPlace = isGst ? placeOfSupply(receipt) : null;
 
   // The pad writes "Room No. 205 dt. 20th August 2026" on the line under the
@@ -224,17 +242,31 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
 
       {/* Ticked boxes rather than a typed word, matching the pad. Only the three
           methods the system actually records — a NEFT box that can never be
-          ticked is dead ink. */}
+          ticked is dead ink.
+
+          An advance handed over part cash, part UPI ticks both, which reads at a
+          glance as exactly that. It stays ONE receipt: one number, one total,
+          several ways it arrived — splitting it into two would burn two serials
+          on a single handover. */}
       <div className="memo__row memo__pay">
         <span className="memo__label">{T.by}</span>
         {PAY_METHODS.map(({ key, label }) => (
           <span key={key} className="memo__tick">
-            <span className={`memo__box${receipt.paymentMethod === key ? ' memo__box--on' : ''}`} />
+            <span className={`memo__box${paidBy.has(key) ? ' memo__box--on' : ''}`} />
             {T.pay[key] || label}
           </span>
         ))}
-        <span className="memo__label">{T.txnNo}</span>
-        <Filled narrow>{receipt.paymentReference}</Filled>
+        {/* Two ticks say which methods but not how much of each, so a split
+            spells it out. Uses the same translated words as the boxes, so
+            neither language needs a new string. */}
+        {split ? (
+          <Filled>{splitSummary}</Filled>
+        ) : (
+          <>
+            <span className="memo__label">{T.txnNo}</span>
+            <Filled narrow>{receipt.paymentReference}</Filled>
+          </>
+        )}
       </div>
 
       {/* Blank when the receipt is written, exactly as on the pad — the bill it

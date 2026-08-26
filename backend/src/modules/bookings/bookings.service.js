@@ -7,6 +7,7 @@ const { parseBeds } = require('../rooms/rooms.service');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
 const billingService = require('../billing/billing.service');
+const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
 const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
@@ -80,9 +81,10 @@ function spreadConcession(nights, grossTotal, discount) {
 
 // The stay is priced by the same code the price simulator runs, so the demo
 // price a guest was quoted is provably the price the booking charges.
-// basePriceOverride is the rate a stay was booked at before concessions
-// replaced it — no longer settable, still honoured for the bookings that carry
-// one so editing one of them doesn't silently re-price it at rack rate.
+// basePriceOverride is the nightly rate reception agreed for this stay, where
+// it is not the category's own. Seasons still apply on top of it, and the
+// extras are still added flat after that — it replaces the starting rate, not
+// the whole night. NULL means the category price, which is most stays.
 //
 // The concession is clamped rather than rejected because this also serves the
 // live quote, which is read while somebody is still typing into the box: a
@@ -123,12 +125,17 @@ async function priceStay(
     // What the stay is built from, before the concession. The concession is
     // reported on its own rather than folded in as another line, because it
     // isn't one: the desk needs to see the number it is being taken off.
-    // chargeId and quantity ride along on the extras lines so the booking form
-    // can offer that line as an editable total. Absent on the room and season
-    // lines, which is what marks them read-only — they are priced elsewhere.
+    // chargeId and quantity ride along on the extras lines, and isBase on the
+    // room line, so the booking form can offer either as an editable total. A
+    // season line carries neither and stays read-only: it is a percentage of
+    // the rate above it, so it follows on its own.
+    //
+    // isBase is a flag rather than a label match on purpose — the label carries
+    // the price, so it changes the moment reception negotiates one.
     charges: quote.lines.map((line) => ({
       label: line.label,
       amount: line.amount,
+      isBase: Boolean(line.isBase),
       chargeId: line.chargeId,
       quantity: line.quantity,
     })),
@@ -220,6 +227,10 @@ async function autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input) {
         amountReceived: amount,
         paymentMethod: input.advancePaymentMethod,
         paymentReference: input.advanceReference ?? undefined,
+        // Only on a real split. One line is what issueAdvanceReceipt already
+        // synthesises from the method above, so sending it changes nothing
+        // except the number of code paths that got here.
+        ...(input.advanceLines?.length > 1 ? { paymentLines: input.advanceLines } : {}),
       },
       // The booking row already holds this advance — see the note on the flag.
       { alreadyOnBooking: true }
@@ -619,14 +630,22 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     // uses, so the stay reads identically on both. Empty for bookings taken
     // before the snapshot existed; the screen falls back to the total alone.
     roomCharges: billingService.roomChargeLines(row),
-    // NULL for a stay priced at the category's own rate, which is now every
-    // new booking — only stays predating concessions carry a negotiated rate.
+    // The nightly rate agreed for this stay, or NULL where it is the
+    // category's own — which is most of them.
     basePriceOverride: row.base_price_override != null ? Number(row.base_price_override) : null,
     status: row.status,
     actualCheckInAt: row.actual_check_in_at,
     actualCheckOutAt: row.actual_check_out_at,
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : null,
+    // The first tender, kept as it always was. A stay whose advance arrived two
+    // ways still has one method here, which is why advancePaymentLines exists.
     advancePaymentMethod: row.advance_payment_method,
+    // Every way the advance actually arrived, with what came in by each.
+    //
+    // Only getBooking pays for the query behind it, so a booking mapped from a
+    // list endpoint has none — the screens fall back to advancePaymentMethod
+    // above, which is what they showed before any of this existed.
+    advancePaymentLines: extra.advancePaymentLines ?? null,
     // The UPI/card transaction number, for reconciling the property's
     // settlement statement against what the desk says it took. NULL on cash,
     // which leaves no such trail.
@@ -982,7 +1001,36 @@ async function getBooking(lodgeId, bookingId) {
 
   const availableSwitchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
 
+  // How the advance on this stay actually arrived, one entry per method.
+  //
+  // Grouped, so an advance taken across two receipts by the same method reads
+  // as one figure. Ordered by the first line entered, which is the order the
+  // desk keyed them and the order the receipt prints them.
+  const advanceLines = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT pl.method, SUM(pl.amount) AS amount
+      FROM dbo.payment_lines pl
+      JOIN dbo.advance_receipts ar ON ar.id = pl.advance_receipt_id
+      WHERE pl.lodge_id = @lodgeId AND ar.lodge_id = @lodgeId
+        AND ar.booking_id = @bookingId AND ar.status = 'ISSUED'
+      GROUP BY pl.method
+      ORDER BY MIN(pl.id)
+    `);
+
   return mapBooking(row, chargesResult.recordset, guestsResult.recordset, vehiclesResult.recordset, {
+    // Always populated, so the screen has one shape to render. An advance taken
+    // before payment lines existed, or one paid a single way, comes back as a
+    // single entry built from the booking's own advance_payment_method — which
+    // is also where any money the lines do not account for goes, because that
+    // column is the only record of how it arrived.
+    advancePaymentLines: splitAcross(
+      Number(row.advance_amount) || 0,
+      advanceLines.recordset.map((r) => ({ method: r.method, amount: Number(r.amount) })),
+      row.advance_payment_method
+    ),
     takesRoomOrders,
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
     invoice,
@@ -1021,7 +1069,7 @@ async function createBooking(lodgeId, userId, input) {
     input.checkInDate,
     input.checkOutDate,
     switchableCharges,
-    null,
+    input.basePriceOverride ?? null,
     requestedDiscount
   );
 
@@ -1069,16 +1117,17 @@ async function createBooking(lodgeId, userId, input) {
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
       .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
+      .input('basePriceOverride', sql.Decimal(10, 2), input.basePriceOverride ?? null)
       .query(`
         INSERT INTO dbo.bookings
           (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_number, id_proof_document,
            check_in_date, check_out_date, total_price, discount_amount, nightly_breakdown, created_by,
-           advance_amount, advance_payment_method, advance_reference)
+           advance_amount, advance_payment_method, advance_reference, base_price_override)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofNumber, @idProofDocument,
            @checkInDate, @checkOutDate, @totalPrice, @discountAmount, @nightlyBreakdown, @createdBy,
-           @advanceAmount, @advancePaymentMethod, @advanceReference)
+           @advanceAmount, @advancePaymentMethod, @advanceReference, @basePriceOverride)
       `);
 
     const bookingId = insertResult.recordset[0].id;
@@ -1575,11 +1624,13 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       ? Number(bookingRow.discount_amount ?? 0)
       : input.discountAmount;
 
-  // Never settable any more, only carried: a stay booked at a negotiated
-  // nightly rate before concessions existed keeps pricing at that rate when
-  // its dates or extras are edited.
-  const legacyBasePriceOverride =
+  // Absent leaves the agreed rate as it is — a save that only moves the dates
+  // must not quietly re-price the stay at rack rate. Blank arrives as null and
+  // puts it back on the category's own price.
+  const storedBaseRate =
     bookingRow.base_price_override != null ? Number(bookingRow.base_price_override) : null;
+  const newBaseRate =
+    input.basePriceOverride !== undefined ? input.basePriceOverride : storedBaseRate;
 
   const { nights, totalPrice, discountAmount, grossTotal } = await priceStay(
     lodgeId,
@@ -1587,7 +1638,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     checkInDate,
     newCheckOutDate,
     switchableCharges,
-    legacyBasePriceOverride,
+    newBaseRate,
     requestedDiscount
   );
 
@@ -1643,6 +1694,11 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       // The advance is set to what was typed, not added to — an edit corrects
       // the record. Sending nothing leaves it alone; sending null clears it,
       // which is how a deposit keyed against the wrong stay is taken back off.
+      // Same absent/blank rule as the advance below, and for the same reason:
+      // '' has to mean "back to the category price", which is different from
+      // not sending the field at all.
+      .input('setBaseRate', sql.Bit, input.basePriceOverride !== undefined ? 1 : 0)
+      .input('basePriceOverride', sql.Decimal(10, 2), input.basePriceOverride ?? null)
       .input('setAdvance', sql.Bit, input.advanceAmount !== undefined ? 1 : 0)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
@@ -1659,6 +1715,8 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
             guest_name = @guestName, guest_phone = @guestPhone,
             total_price = @totalPrice, discount_amount = @discountAmount,
             nightly_breakdown = @nightlyBreakdown,
+            base_price_override =
+              CASE WHEN @setBaseRate = 1 THEN @basePriceOverride ELSE base_price_override END,
             advance_amount = CASE WHEN @setAdvance = 1 THEN @advanceAmount ELSE advance_amount END,
             advance_payment_method =
               CASE WHEN @setAdvance = 1 THEN @advancePaymentMethod ELSE advance_payment_method END,

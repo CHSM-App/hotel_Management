@@ -12,6 +12,14 @@ import {
   shareOrDownloadPdf,
 } from './billPaper';
 import { formatPrice } from './priceFormat';
+import PaymentLines from './PaymentLines';
+import {
+  emptyPaymentLine,
+  needsPaymentReference,
+  paymentLinesError,
+  sumLines,
+  toPaymentLines,
+} from './paymentSplit';
 import './forms.css';
 import './Billing.css';
 
@@ -86,7 +94,19 @@ export default function AdvanceReceiptModal({
   // Taking another advance. Blank rather than pre-filled with the booking's
   // figure: that number is money already taken, and offering it again is how a
   // desk accidentally doubles a deposit.
-  const [form, setForm] = useState({ amountReceived: '', paymentMethod: '', paymentReference: '' });
+  const [form, setForm] = useState({ amountReceived: '' });
+  // An advance handed over part cash, part UPI is still ONE receipt: one
+  // number, one total, several ways it arrived.
+  const [payLines, setPayLines] = useState([emptyPaymentLine()]);
+
+  // Same rule as the booking form: what was received is however much the rows
+  // add up to, so there is no separate Amount box to keep in agreement with
+  // them. Blank rather than "0" when nothing has been entered, so the existing
+  // "enter the amount received" check still fires on an empty form.
+  const updatePayLines = (next) => {
+    setPayLines(next);
+    setForm((f) => ({ ...f, amountReceived: sumLines(next) > 0 ? String(sumLines(next)) : '' }));
+  };
   const [taking, setTaking] = useState(false);
   const [showTakeForm, setShowTakeForm] = useState(false);
 
@@ -182,9 +202,6 @@ export default function AdvanceReceiptModal({
     }
   };
 
-  const ONLINE = ['UPI', 'CARD'];
-  const needsReference = ONLINE.includes(form.paymentMethod);
-
   // Records the money AND raises its receipt, in one call. The server adds the
   // amount to the booking rather than replacing it, refuses to take the total
   // past what the stay costs, and refuses outright on a cancelled booking.
@@ -195,12 +212,15 @@ export default function AdvanceReceiptModal({
       setError('Enter the amount received from the guest.');
       return;
     }
-    if (!form.paymentMethod) {
-      setError('Choose how the advance was paid.');
-      return;
-    }
-    if (needsReference && form.paymentReference.trim() === '') {
-      setError('Enter the transaction number for a UPI or card payment.');
+    // Covers the single-payment case unchanged — one line with no method is
+    // still "choose how this was paid" — and every line of a split besides.
+    const lineProblem = paymentLinesError(payLines);
+    if (lineProblem) {
+      setError(
+        payLines.length === 1 && !payLines[0].method
+          ? 'Choose how the advance was paid.'
+          : lineProblem
+      );
       return;
     }
 
@@ -211,14 +231,18 @@ export default function AdvanceReceiptModal({
         `/billing/bookings/${booking.id}/advance-receipt`,
         {
           amountReceived: amount,
-          paymentMethod: form.paymentMethod,
+          paymentMethod: payLines[0].method,
           // Dropped on cash: a reference typed before switching to cash would
           // otherwise file a transaction number against money that never had one.
-          ...(needsReference ? { paymentReference: form.paymentReference.trim() } : {}),
+          ...(needsPaymentReference(payLines[0].method)
+            ? { paymentReference: payLines[0].reference.trim() }
+            : {}),
+          ...(payLines.length > 1 ? { paymentLines: toPaymentLines(payLines) } : {}),
         },
         { token }
       );
-      setForm({ amountReceived: '', paymentMethod: '', paymentReference: '' });
+      setForm({ amountReceived: '' });
+      setPayLines([emptyPaymentLine()]);
       setShowTakeForm(false);
       // Straight onto the new receipt — it is what the guest is waiting for.
       setReceipt(data.receipt);
@@ -307,48 +331,21 @@ export default function AdvanceReceiptModal({
         {canTakeMore && showTakeForm && (
           <form onSubmit={takeAdvance} className="form-section">
             <div className="form-section__title">Advance received now</div>
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="takeAdvanceAmount">Amount</label>
-                <input
-                  id="takeAdvanceAmount"
-                  type="number"
-                  min="1"
-                  max={remaining}
-                  step="1"
-                  inputMode="numeric"
-                  autoFocus
-                  value={form.amountReceived}
-                  onChange={(e) => setForm((f) => ({ ...f, amountReceived: e.target.value }))}
-                />
-                <p className="bookings-panel__hint">Up to {formatPrice(remaining)} still to pay.</p>
-              </div>
-              <div className="field">
-                <label htmlFor="takeAdvanceMethod">Payment type</label>
-                <select
-                  id="takeAdvanceMethod"
-                  value={form.paymentMethod}
-                  onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-                >
-                  <option value="">Choose one</option>
-                  <option value="CASH">Cash</option>
-                  <option value="UPI">UPI</option>
-                  <option value="CARD">Card</option>
-                </select>
-              </div>
-            </div>
-
-            {needsReference && (
-              <div className="field">
-                <label htmlFor="takeAdvanceReference">Transaction number</label>
-                <input
-                  id="takeAdvanceReference"
-                  value={form.paymentReference}
-                  onChange={(e) => setForm((f) => ({ ...f, paymentReference: e.target.value }))}
-                  placeholder={form.paymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
-                />
-              </div>
-            )}
+            {/* The Amount box is handed to the editor rather than placed
+                beside it: it keeps its spot next to the payment type on an
+                ordinary advance, and moves above the list once the payment
+                splits. Still one receipt either way — splitting how the money
+                arrived must not burn a second serial on a single handover. */}
+            <PaymentLines
+              lines={payLines}
+              onChange={updatePayLines}
+              idPrefix="takeAdvance"
+            >
+              {/* The ceiling still has to be stated — the server refuses an
+                  advance that would take the stay past its own total, and the
+                  desk should know before it types, not after. */}
+              <p className="bookings-panel__hint">Up to {formatPrice(remaining)} still to pay.</p>
+            </PaymentLines>
 
             <div className="billing-panel__actions">
               <button

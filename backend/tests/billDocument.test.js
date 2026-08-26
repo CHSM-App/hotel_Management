@@ -106,3 +106,100 @@ test('the arithmetic holds for every way a stay gets paid', () => {
   // Paise survive the subtraction rather than drifting.
   assert.deepStrictEqual(bill(1428.58, 200), { lessAdvance: 200, netPayment: 1228.58 });
 });
+
+// ---------------------------------------------------------------------------
+// Split payments
+// ---------------------------------------------------------------------------
+//
+// A guest settling part in cash and the rest by UPI gets a row per method under
+// Net Payment. The risk is not that the rows fail to appear — it is that they
+// appear on bills that have no split, or that somebody folds them into the
+// arithmetic above and restates a figure the guest is meant to read off.
+
+test('the payment rows print only when the payment was actually split', () => {
+  const src = source();
+  assert.ok(
+    src.includes('invoice.paymentLines?.length > 1 &&'),
+    'the per-method rows are no longer gated on there being more than one — every '
+      + 'bill would print a duplicate "Cash 1,500" row under its own net payment'
+  );
+});
+
+test('a payment row is a breakdown, never another total', () => {
+  const src = source();
+  const block = src.slice(src.indexOf('invoice.paymentLines?.length > 1 &&'));
+  const rows = block.slice(0, block.indexOf('</tbody>'));
+  assert.ok(rows.includes('value={line.amount}'), 'the rows stopped rendering their own amount');
+  // strong and rule are what mark a figure as a total on this paper. A
+  // breakdown carrying either reads as one more sum to be checked.
+  assert.ok(!/\bstrong\b/.test(rows), 'a payment row is being printed as a total');
+  assert.ok(!/\brule\b/.test(rows), 'a payment row is drawing a total rule under itself');
+});
+
+test('the split never enters the net payment arithmetic', () => {
+  // The declaration itself, not the file: the rows render a few lines below
+  // the netPayment element in the JSX, so anything looser than this matches
+  // the markup and fails on correct code.
+  const decl = source().match(/const netPayment = .*/)[0];
+  assert.ok(
+    !decl.includes('paymentLines'),
+    'paymentLines is being folded into netPayment — it describes how the money '
+      + 'arrived, never how much'
+  );
+});
+
+// The receipt is the other half of the same change: two ticks read instantly as
+// "part cash, part UPI", where one method name in a box does not.
+test('the advance receipt ticks every method the money arrived by', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'frontend', 'src', 'pages', 'lodge', 'AdvanceReceiptDocument.jsx'),
+    'utf8'
+  );
+  assert.ok(
+    src.includes('paidBy.has(key)'),
+    'the tick is back to a single equality against receipt.paymentMethod, so a '
+      + 'split advance prints as though it arrived one way'
+  );
+  // Every receipt ever issued predates payment lines and has none. Without the
+  // fallback they would all print with no method ticked at all.
+  assert.ok(
+    src.includes('receipt.paymentLines?.length'),
+    'the one-line fallback is gone — existing receipts would print untouched boxes'
+  );
+});
+
+// The split printed the first method twice: "CASH" as the Net Payment
+// decoration, then "Cash 1,000" as the first row directly beneath it — the same
+// payment said twice, one of the two without its amount.
+test('a split names each method once, not twice', () => {
+  const src = source();
+  assert.ok(
+    src.includes('!(invoice.paymentLines?.length > 1) &&'),
+    'the Net Payment method decoration is unconditional again, so a split repeats its first method'
+  );
+});
+
+// A single payment still prints exactly as it always did — the decoration is
+// the only thing that names the method there, since no rows are rendered.
+test('a single payment keeps its method beside the net payment', () => {
+  const src = source();
+  const decoration = src.slice(src.indexOf('!(invoice.paymentLines?.length > 1) &&'));
+  assert.ok(
+    decoration.includes('invoice.balancePaymentMethod') && decoration.includes('invoice.balanceReference'),
+    'the single-payment decoration lost the method or the reference it prints'
+  );
+});
+
+// An unlabelled string of digits under a UPI row is not answerable months
+// later. The bill needs its own copy of the word — STRINGS_MR here overrides
+// only the masthead, so the English one is what both languages print.
+test('a payment row says what its reference is', () => {
+  const src = source();
+  assert.match(src, /txnNo: '[^']+'/, 'the bill has no name for a transaction number');
+  const block = src.slice(src.indexOf('invoice.paymentLines?.length > 1 &&'));
+  const rows = block.slice(0, block.indexOf('</tbody>'));
+  assert.ok(
+    rows.includes('{T.txnNo} {line.reference}'),
+    'the reference prints bare, with nothing saying what the number is'
+  );
+});

@@ -1,6 +1,7 @@
 import BillDocument from './BillDocument';
 import './stayDetails.css';
 import { formatPrice } from './priceFormat';
+import { describeAdvance } from './paymentSplit';
 import {
   VEHICLE_TYPE_LABEL,
   describeParty,
@@ -223,7 +224,7 @@ export default function StayDetails({
                   {formatPrice(booking.advanceAmount)}
                   <span className="bookings-panel__muted">
                     {' · '}
-                    {booking.advancePaymentMethod}
+                    {describeAdvance(booking.advancePaymentLines, booking.advancePaymentMethod)}
                   </span>
                 </span>
               </div>
@@ -311,7 +312,7 @@ export default function StayDetails({
                 Advance already paid
                 <span className="bookings-panel__muted">
                   {' · '}
-                  {booking.advancePaymentMethod}
+                  {describeAdvance(booking.advancePaymentLines, booking.advancePaymentMethod)}
                   {booking.advanceReference ? ` · ${booking.advanceReference}` : ''}
                 </span>
               </span>

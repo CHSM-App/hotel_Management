@@ -51,8 +51,11 @@ const STRINGS_EN = {
   miscTag: 'Misc',
   roundOff: 'Round off',
   grandTotal: 'GRAND TOTAL',
+  // Printed only when the guest paid in more than one way, one row each.
+  pay: { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' },
   lessAdvance: 'Less Advance if any',
   recNo: 'Rec. No.',
+  txnNo: 'Txn No.',
   netPayment: 'Net Payment',
   inwords: '(Inwords Rupees',
   words: amountInWords,
@@ -1048,18 +1051,50 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                 {/* Beside the net payment, not the advance: balance_payment_method
                     describes the money being handed over now. The reference is
                     what the guest's own UPI or card statement carries, and is
-                    what makes a disputed payment answerable months later. */}
-                {(invoice.balanceReference || invoice.balancePaymentMethod) && (
-                  <span className="memo__ref">
-                    {[invoice.balancePaymentMethod, invoice.balanceReference].filter(Boolean).join(' ')}
-                  </span>
-                )}
+                    what makes a disputed payment answerable months later.
+
+                    Dropped entirely on a split. The rows underneath name every
+                    method that was used and what came in by each, so repeating
+                    the first one here printed "CASH" with "Cash 1,000" directly
+                    beneath it — the same payment, said twice, one of the two
+                    without its amount. */}
+                {!(invoice.paymentLines?.length > 1) &&
+                  (invoice.balanceReference || invoice.balancePaymentMethod) && (
+                    <span className="memo__ref">
+                      {[invoice.balancePaymentMethod, invoice.balanceReference].filter(Boolean).join(' ')}
+                    </span>
+                  )}
               </>
             }
             value={netPayment}
             strong
             rule
           />
+          {/* How that payment was actually made up, when it was made up of more
+              than one thing. Gated on > 1 deliberately: with a single method the
+              decoration on the Net Payment label above already says it, and
+              rendering unconditionally would put a duplicate "Cash 1,500" row
+              under it on every bill the property prints.
+
+              Not strong and not ruled — these are a breakdown of the figure
+              above, not another total to be read off the page. */}
+          {invoice.paymentLines?.length > 1 &&
+            invoice.paymentLines.map((line, index) => (
+              <Money
+                key={index}
+                label={
+                  <>
+                    {T.pay?.[line.method] ?? line.method}
+                    {line.reference && (
+                      <span className="memo__ref">
+                        {T.txnNo} {line.reference}
+                      </span>
+                    )}
+                  </>
+                }
+                value={line.amount}
+              />
+            ))}
         </tbody>
       </table>
 

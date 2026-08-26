@@ -1,9 +1,39 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
+// The one normaliser turning 'however this request expressed its payment' into
+// the list of lines to store. Lives with the other payment rules in bookings.
+const { paymentLinesOf } = require('../bookings/bookings.schema');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+// How a document was tendered, always as a list.
+//
+// A document written before dbo.payment_lines existed has no rows there, and
+// neither does one paid by a single method through a client that still sends
+// the old flat fields. Both are read as a one-line split built from the
+// document's own summary columns, so every consumer — the printed bill, the
+// receipt, the screen — has exactly one shape to handle instead of two.
+function readPaymentLines(json, fallbackMethod, fallbackAmount, fallbackReference) {
+  if (json) {
+    try {
+      const rows = JSON.parse(json);
+      if (Array.isArray(rows) && rows.length > 0) {
+        return rows.map((r) => ({
+          method: r.method,
+          amount: Number(r.amount),
+          reference: r.reference ?? null,
+        }));
+      }
+    } catch {
+      // A malformed payload must not take the bill down with it: the summary
+      // columns below still describe the payment well enough to print.
+    }
+  }
+  if (!fallbackMethod || !(Number(fallbackAmount) > 0)) return [];
+  return [{ method: fallbackMethod, amount: Number(fallbackAmount), reference: fallbackReference ?? null }];
 }
 
 // Every price in this system is what the guest hands over — GST is already
@@ -743,6 +773,11 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
   const includeLateCheckout = input.includeLateCheckout !== false;
   const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
 
+  // Resolved once, before anything is written: a body may describe its payment
+  // as lines or as the older single method, and everything below wants the one
+  // shape.
+  const paymentLines = paymentLinesOf(input, input.collectedAmount ?? 0);
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
@@ -803,8 +838,11 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       .input('totalAmount', sql.Decimal(10, 2), breakdown.totalAmount)
       .input('advancePaid', sql.Decimal(10, 2), advancePaid)
       .input('balanceCollected', sql.Decimal(10, 2), input.collectedAmount ?? 0)
-      .input('balancePaymentMethod', sql.NVarChar, input.paymentMethod ?? null)
-      .input('balanceReference', sql.NVarChar, input.paymentReference ?? null)
+      // A summary of the lines, not a rival to them: the first tender. Kept so
+      // every existing reader — the register, the printed bill, the legacy
+      // report path — keeps working untouched.
+      .input('balancePaymentMethod', sql.NVarChar, paymentLines[0]?.method ?? null)
+      .input('balanceReference', sql.NVarChar, paymentLines[0]?.reference ?? null)
       .input('foodSubtotal', sql.Decimal(10, 2), breakdown.foodSubtotal)
       .input('foodCgstAmount', sql.Decimal(10, 2), breakdown.foodCgstAmount)
       .input('foodSgstAmount', sql.Decimal(10, 2), breakdown.foodSgstAmount)
@@ -828,6 +866,8 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
 
     const invoiceId = inserted.recordset[0].id;
 
+    await insertPaymentLines(transaction, lodgeId, { invoiceId }, paymentLines);
+
     // Stamping the orders is what stops them being billed twice — a later
     // "close table" or reissue skips anything already carrying an invoice_id.
     if (foodOrders.length > 0) {
@@ -844,6 +884,33 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
   } catch (err) {
     await transaction.rollback();
     throw err;
+  }
+}
+
+// Writes how a settlement was tendered, one row per method.
+//
+// Takes the open transaction so the lines land with the document or not at all:
+// a bill that exists while the record of how it was paid does not is worse than
+// no bill, because the takings look settled and nothing says by what.
+//
+// A single-method payment gets one row, the same as a split gets two. That
+// uniformity is the point — every reader then has one shape to handle, and the
+// scalar columns on the document stay as a compatible summary rather than a
+// second source of truth.
+async function insertPaymentLines(transaction, lodgeId, parent, lines) {
+  for (const line of lines) {
+    await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('invoiceId', sql.BigInt, parent.invoiceId ?? null)
+      .input('receiptId', sql.BigInt, parent.advanceReceiptId ?? null)
+      .input('method', sql.NVarChar, line.method)
+      .input('amount', sql.Decimal(10, 2), line.amount)
+      .input('reference', sql.NVarChar, line.reference ?? null)
+      .query(`
+        INSERT INTO dbo.payment_lines
+          (lodge_id, invoice_id, advance_receipt_id, method, amount, reference)
+        VALUES (@lodgeId, @invoiceId, @receiptId, @method, @amount, @reference)
+      `);
   }
 }
 
@@ -942,6 +1009,14 @@ function mapInvoice(row) {
     // The UPI/card transaction number for what was collected. NULL on cash and
     // on every bill issued before this was recorded.
     balanceReference: row.balance_reference ?? null,
+    // Every way the balance was tendered. One entry on a single-method bill,
+    // several on a split — see readPaymentLines.
+    paymentLines: readPaymentLines(
+      row.payment_lines,
+      row.balance_payment_method,
+      row.balance_collected,
+      row.balance_reference
+    ),
     status: row.status,
     voidReason: row.void_reason,
     voidedAt: row.voided_at,
@@ -1037,6 +1112,9 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
     balanceCollected: 0,
     balancePaymentMethod: null,
     balanceReference: null,
+    // Mirrors the issued shape so one component renders preview and bill alike.
+    // Empty rather than absent: the screen overlays what the desk has typed.
+    paymentLines: [],
     voidReason: null,
   };
 }
@@ -1057,7 +1135,12 @@ async function getInvoice(lodgeId, invoiceId) {
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
-              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers
+              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers,
+             (SELECT pl.method, pl.amount, pl.reference
+              FROM dbo.payment_lines pl
+              WHERE pl.invoice_id = i.id
+              ORDER BY pl.id
+              FOR JSON PATH) AS payment_lines
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1091,7 +1174,12 @@ async function listInvoices(lodgeId) {
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
-              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers
+              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers,
+             (SELECT pl.method, pl.amount, pl.reference
+              FROM dbo.payment_lines pl
+              WHERE pl.invoice_id = i.id
+              ORDER BY pl.id
+              FOR JSON PATH) AS payment_lines
       FROM dbo.invoices i
       -- LEFT, because a restaurant bill has no stay behind it. An inner join
       -- here silently hid every food-only invoice from the list and the detail.
@@ -1325,6 +1413,10 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
   const lodge = await loadLodgeForBilling(pool, lodgeId);
   const billingSide = lodge.is_gst_registered ? input.billingSide || 'GST' : 'NON_GST';
 
+  // Same resolution as the stay bill: a table settles part cash, part UPI just
+  // as a room does.
+  const paymentLines = paymentLinesOf(input, input.collectedAmount ?? 0);
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
@@ -1376,8 +1468,11 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
       .input('roundOff', sql.Decimal(10, 2), breakdown.roundOff)
       .input('totalAmount', sql.Decimal(10, 2), breakdown.totalAmount)
       .input('balanceCollected', sql.Decimal(10, 2), input.collectedAmount ?? 0)
-      .input('balancePaymentMethod', sql.NVarChar, input.paymentMethod ?? null)
-      .input('balanceReference', sql.NVarChar, input.paymentReference ?? null)
+      // A summary of the lines, not a rival to them: the first tender. Kept so
+      // every existing reader — the register, the printed bill, the legacy
+      // report path — keeps working untouched.
+      .input('balancePaymentMethod', sql.NVarChar, paymentLines[0]?.method ?? null)
+      .input('balanceReference', sql.NVarChar, paymentLines[0]?.reference ?? null)
       .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
       .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
       .input('createdBy', sql.BigInt, userId ?? null)
@@ -1401,6 +1496,8 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
 
     const invoiceId = inserted.recordset[0].id;
 
+    await insertPaymentLines(transaction, lodgeId, { invoiceId }, paymentLines);
+
     const stampRequest = new sql.Request(transaction).input('invoiceId', sql.BigInt, invoiceId);
     orders.forEach((o, i) => stampRequest.input(`fo${i}`, sql.BigInt, o.id));
     await stampRequest.query(`
@@ -1417,6 +1514,10 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
 }
 
 module.exports = {
+  readPaymentLines,
+  // Shared with advanceReceipts.service.js: a receipt records how it was
+  // tendered exactly as a bill does.
+  insertPaymentLines,
   // Exported so the guest register and the booking detail can itemise a stay
   // with the same labels and the same aggregation the bill will use. A stay
   // that reads one way on the booking screen and another on its invoice is a

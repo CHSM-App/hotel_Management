@@ -38,12 +38,32 @@ test('the automatic path does not add the advance a second time', () => {
 });
 
 test('both branches of the UPDATE are valid SQL', () => {
-  const render = (alreadyOnBooking) => `
-        UPDATE dbo.bookings
-        SET ${alreadyOnBooking ? '' : 'advance_amount = ISNULL(advance_amount, 0) + @amount,'}
-            advance_payment_method = @method,
-            advance_reference = COALESCE(@reference, advance_reference)
-        WHERE id = @bookingId AND lodge_id = @lodgeId`;
+  // Extracted from the source, not copied into the test.
+  //
+  // This used to be a hand-written duplicate of the query, and it went stale
+  // the first time the real one changed: the source moved to
+  // COALESCE(@method, advance_payment_method) and this file happily kept
+  // asserting against its own `= @method`, green the whole way. A copy of the
+  // thing under test is not a test of it.
+  //
+  // Anchored on the conditional itself rather than on "UPDATE dbo.bookings",
+  // because the void path has one of those too.
+  const template = receipts.match(
+    /UPDATE dbo\.bookings\s+SET \$\{alreadyOnBooking[\s\S]*?WHERE id = @bookingId AND lodge_id = @lodgeId/
+  );
+  assert.ok(template, 'the conditional advance UPDATE has moved — re-point this test at it');
+
+  const render = (alreadyOnBooking) =>
+    template[0].replace(
+      /\$\{alreadyOnBooking \? '' : '([^']*)'\}/,
+      alreadyOnBooking ? '' : '$1'
+    );
+
+  // The substitution has to have actually happened, or every assertion below
+  // passes against an unrendered template.
+  for (const flag of [false, true]) {
+    assert.ok(!render(flag).includes('${'), `branch ${flag} left an unrendered placeholder`);
+  }
 
   for (const flag of [false, true]) {
     const flat = render(flag).replace(/\s+/g, ' ').trim();

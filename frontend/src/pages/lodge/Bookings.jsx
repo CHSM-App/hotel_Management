@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   apiGet,
   apiPost,
@@ -15,6 +15,15 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import StayDetails from './StayDetails';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
+import PaymentLines from './PaymentLines';
+import {
+  emptyPaymentLine,
+  needsPaymentReference,
+  paymentFieldId,
+  paymentLinesError,
+  sumLines,
+  toPaymentLines,
+} from './paymentSplit';
 import { VEHICLE_TYPE_LABEL, describeParty, formatDateLong, idProofLabel } from './stayFormat';
 import './forms.css';
 import './chartSections.css';
@@ -22,12 +31,32 @@ import './tapeChart.css';
 import './Bookings.css';
 
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
-// Money that arrives this way leaves a reference the property can reconcile
-// against its settlement statement; cash doesn't, so asking for one there
-// would be asking staff to invent a number. Mirrors ONLINE_METHODS on the
-// server, which is what actually enforces it.
-const ONLINE_PAYMENT_METHODS = ['UPI', 'CARD'];
-const needsPaymentReference = (method) => ONLINE_PAYMENT_METHODS.includes(method);
+// A deposit is handed over part cash, part UPI as often as a final bill is —
+// arguably more, since "I've got 300 cash, rest on UPI" is the normal shape of
+// one. This wires the booking and check-in forms to the same editor the bill
+// and the receipt modal use.
+//
+// advancePaymentMethod and advanceReference stay exactly as they were and go on
+// meaning "the first tender", so the section badge, the FormData, the edit seed
+// and the just-booked summary all keep reading them untouched. Both are written
+// in the same update as the lines, so the two can never drift apart.
+const setAdvanceLines = (setForm) => (next) =>
+  setForm((f) => ({
+    ...f,
+    advanceLines: next,
+    advancePaymentMethod: next[0].method,
+    advanceReference: next[0].reference,
+    // The advance total is the sum of its rows, never a figure typed beside
+    // them. Written into advanceAmount rather than derived at the point of use
+    // so every existing reader — the section badge, the "advance can't exceed
+    // the stay" check, the FormData, the just-booked summary — goes on reading
+    // the one field it always read.
+    //
+    // Blank, not "0", when nothing has been entered: hasAdvanceAmount tests
+    // this field for emptiness to decide whether an advance was taken at all,
+    // and a zero would make every booking look like it came with one.
+    advanceAmount: sumLines(next) > 0 ? String(sumLines(next)) : '',
+  }));
 
 // What to send as the advance's transaction number. Dropped when the method is
 // cash: switching UPI → Cash after typing a reference would otherwise file a
@@ -99,6 +128,21 @@ function formatDateHead(dateStr) {
 // The month or months the columns belong to, named in full across the date
 // header. A rolling window usually straddles two, and a band naming only the
 // first would mislabel the second half of its own columns.
+// The chart is a rolling 30-day window, so it almost always straddles a month
+// boundary. Split into runs of days so each month can name itself over its own
+// columns instead of the pair sharing one "AUGUST – SEPTEMBER" caption that
+// says nothing about where one ends and the other starts.
+function monthRuns(dates) {
+  const runs = [];
+  for (const date of dates) {
+    const key = date.slice(0, 7);
+    const last = runs[runs.length - 1];
+    if (last && last.key === key) last.days += 1;
+    else runs.push({ key, days: 1, first: date });
+  }
+  return runs;
+}
+
 function formatMonthBand(fromStr, toStr) {
   const opts = { month: 'long', year: 'numeric', timeZone: 'UTC' };
   const from = new Date(`${fromStr}T00:00:00Z`);
@@ -120,6 +164,13 @@ function formatMonthBand(fromStr, toStr) {
 // Four days of history is enough to see who is still in house and to correct
 // something taken yesterday; the remaining twenty-six are what is for sale.
 const WINDOW_DAYS = 30;
+// The chart opens on WINDOW_DAYS and grows by another WINDOW_DAYS each time the
+// desk scrolls near its right edge. Capped because every growth refetches the
+// whole range, and nobody plans half a year of nights by scrolling.
+const MAX_WINDOW_DAYS = 180;
+// How close to the end counts as "at the end". A little over three columns, so
+// the next month is already loading by the time it is scrolled to.
+const GROW_WITHIN_PX = 90;
 const WINDOW_PAST_DAYS = 4;
 
 const windowStartFor = (dateStr) => addDays(dateStr, -WINDOW_PAST_DAYS);
@@ -345,8 +396,11 @@ function discountParam(value) {
 // Read-only: nothing sets a negotiated nightly rate any more, but a booking
 // made before concessions replaced it still prices against one, so its edit
 // quote has to ask for the same rate the save will use.
-function legacyRateParam(booking) {
-  return booking?.basePriceOverride ? `&basePriceOverride=${booking.basePriceOverride}` : '';
+function rateParam(basePriceOverride) {
+  const rate = Number(basePriceOverride);
+  return basePriceOverride !== '' && Number.isFinite(rate) && rate > 0
+    ? `&basePriceOverride=${rate}`
+    : '';
 }
 
 const initialBookingForm = {
@@ -372,10 +426,16 @@ const initialBookingForm = {
   // total is however many names reception actually types in.
   adults: [{ ...emptyGuest }],
   children: [],
+  // The nightly rate reception agreed for this stay, blank where it is the
+  // category's own — which is most stays. Held as the per-night figure because
+  // that is what the booking stores; the box on screen shows it across the
+  // whole stay, which is a view of it and not a second way to price.
+  basePriceOverride: '',
   advanceAmount: '',
+  advanceLines: [emptyPaymentLine()],
   advancePaymentMethod: '',
   // The UPI/card transaction number. Blank on cash, which leaves no trail to
-  // record — see ONLINE_PAYMENT_METHODS.
+  // record — see needsPaymentReference.
   advanceReference: '',
   vehicles: [],
 };
@@ -466,14 +526,27 @@ export default function Bookings({ onBillStay }) {
   const [drafts, setDrafts] = useState(() => readCache('/bookings/drafts') ?? []);
   const [showDrafts, setShowDrafts] = useState(false);
 
+  // How many nights the chart is currently showing. Starts a page wide and
+  // grows as the desk scrolls forward into it; back to a page whenever the
+  // window is moved, so stepping never lands on a six-month chart.
+  const [windowDays, setWindowDays] = useState(WINDOW_DAYS);
+
   const dates = useMemo(
-    () => Array.from({ length: WINDOW_DAYS }, (_, i) => addDays(month, i)),
-    [month]
+    () => Array.from({ length: windowDays }, (_, i) => addDays(month, i)),
+    [month, windowDays]
+  );
+
+  // Every column where a new month starts. More than one once the window has
+  // grown past a couple of months, which is why the partition is drawn per
+  // boundary rather than as a single line the grid knows about.
+  const monthEdges = useMemo(
+    () => dates.reduce((cols, d, i) => (i > 0 && d.slice(8, 10) === '01' ? [...cols, i] : cols), []),
+    [dates]
   );
 
   const rangeStart = month;
   // Exclusive, as before — the fetch asks for the night after the last column.
-  const rangeEnd = useMemo(() => addDays(month, WINDOW_DAYS), [month]);
+  const rangeEnd = useMemo(() => addDays(month, windowDays), [month, windowDays]);
 
   const tapeKey = `/bookings/tape-chart?startDate=${rangeStart}&endDate=${rangeEnd}`;
 
@@ -513,16 +586,127 @@ export default function Bookings({ onBillStay }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Each category is its own scroller, so they are kept in step: scrolling
+  // Deluxe into September while Standard sat in August would put two different
+  // fortnights one above the other under headers that both claim otherwise.
+  const scrollers = useRef(new Set());
+  const syncing = useRef(false);
+  // Where the chart was a moment ago, so a scroll can be told which way it
+  // went. Reaching the left edge only means "show me earlier nights" if the
+  // desk was heading that way — scrolling right off a chart that starts at 0
+  // passes through the same few pixels and must not be read as the same thing.
+  const lastLeft = useRef(0);
+  // The width of the grid just before earlier nights were prepended. Columns
+  // added on the left push everything right while scrollLeft stays put, so the
+  // view would lurch backwards; this is what it is put back by.
+  const prepending = useRef(null);
+
+  const onChartScroll = (e) => {
+    // The pointer is no longer over whatever the card is describing.
+    setHoverTile(null);
+    const el = e.currentTarget;
+    const wentLeft = el.scrollLeft < lastLeft.current;
+    lastLeft.current = el.scrollLeft;
+
+    if (!syncing.current) {
+      syncing.current = true;
+      for (const other of scrollers.current) {
+        if (other !== el && other.scrollLeft !== el.scrollLeft) other.scrollLeft = el.scrollLeft;
+      }
+      // Released a frame later. Assigning scrollLeft fires scroll on the cards
+      // just moved, and without this each of them would sync everyone back.
+      requestAnimationFrame(() => {
+        syncing.current = false;
+      });
+    }
+
+    if (windowDays >= MAX_WINDOW_DAYS) return;
+
+    // Near the end, and there is more to show: another page of nights.
+    if (el.scrollWidth - el.scrollLeft - el.clientWidth < GROW_WITHIN_PX) {
+      setWindowDays((days) => Math.min(days + WINDOW_DAYS, MAX_WINDOW_DAYS));
+      return;
+    }
+
+    // And the same going back, for a stay being entered after the fact.
+    if (wentLeft && el.scrollLeft < GROW_WITHIN_PX) growPast(el);
+  };
+
+  // Earlier nights, prepended. The window start moves back by exactly what the
+  // length gains, so the far end of the chart stays where it was and only the
+  // near end grows.
+  const growPast = (el) => {
+    if (prepending.current != null || windowDays >= MAX_WINDOW_DAYS) return;
+    prepending.current = el.scrollWidth;
+    setMonth((start) => addDays(start, -WINDOW_DAYS));
+    setWindowDays((days) => Math.min(days + WINDOW_DAYS, MAX_WINDOW_DAYS));
+  };
+
+  // Once the chart is scrolled hard left there is nothing left to scroll, so no
+  // scroll event ever fires and the handler above never hears the desk asking
+  // for earlier nights. A wheel still fires against the stop — it is the only
+  // signal there is that they are pushing at it.
+  const onChartWheel = (e) => {
+    const el = e.currentTarget;
+    const backwards = e.deltaX < 0 || (e.shiftKey && e.deltaY < 0);
+    if (el.scrollLeft <= 0 && backwards) growPast(el);
+  };
+
+  // Put the view back where it was looking after earlier nights are prepended.
+  //
+  // Before paint, not after: the columns are already in the DOM by now, and
+  // correcting the offset a frame later would show one frame of the chart
+  // jumped a month backwards.
+  useLayoutEffect(() => {
+    const before = prepending.current;
+    if (before == null) return;
+    prepending.current = null;
+    for (const el of scrollers.current) {
+      const added = el.scrollWidth - before;
+      if (added > 0) el.scrollLeft += added;
+    }
+  }, [month, windowDays]);
+
+  // Grow until the chart at least fills its card.
+  //
+  // Without this the window never grows on a wide screen: 30 columns fit with
+  // room to spare, so there is nothing to scroll into, so the scroll handler
+  // that would have asked for more never runs. It also answers the empty strip
+  // that was left to the right of the last column — that space is nights, and
+  // it should be showing them.
+  //
+  // Deferred a frame so the measurement happens after paint, and so this is
+  // never a setState taken synchronously out of an effect. It settles: each
+  // pass adds a page of nights, and stops as soon as the grid overflows the
+  // card or the window hits its cap.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      for (const el of scrollers.current) {
+        if (el.scrollWidth - el.clientWidth < GROW_WITHIN_PX) {
+          setWindowDays((days) => Math.min(days + WINDOW_DAYS, MAX_WINDOW_DAYS));
+          return;
+        }
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+    // categorySections is declared further down and would be in its temporal
+    // dead zone here; tapeData is what brings the cards into existence anyway,
+    // so measuring when it lands is the same moment.
+  }, [windowDays, tapeData]);
+
   // Moving the window unmounts the tile the pointer is on, and an unmounted
   // tile never fires its mouseleave — so the card is dismissed with the move.
   const goToMonth = (windowStart) => {
     setHoverTile(null);
     setMonth(windowStart);
+    // Back to a page. Stepping is for jumping somewhere else, and it would be
+    // a poor jump that landed on however far the last one had been scrolled.
+    setWindowDays(WINDOW_DAYS);
   };
 
   // A whole window at a time, so stepping forward shows thirty nights nobody
   // has looked at rather than re-showing twenty-six of them.
-  const stepWindow = (n) => goToMonth(addDays(month, n * WINDOW_DAYS));
+  const stepWindow = (n) => goToMonth(addDays(month, n * windowDays));
 
   // Rooms are shown category by category rather than in one long list, so the
   // desk can see at a glance which grade of room is still sellable. Insertion
@@ -730,8 +914,18 @@ export default function Bookings({ onBillStay }) {
   // Every route into the form goes through here, so there is one place that
   // remembers what it was handed and one definition of "unchanged".
   const beginForm = (mode, form) => {
-    setBookingForm(form);
-    setOpenedAs(formFingerprint(form));
+    // A draft parked before split advances existed carries no advanceLines, and
+    // so does any older shape that finds its way in here. The editor reads
+    // lines[0] unconditionally, so it is normalised at this one funnel rather
+    // than at the three call sites — new booking, restored draft and edit all
+    // come through here.
+    const seeded = {
+      ...form,
+      advanceLines: form.advanceLines?.length ? form.advanceLines : [emptyPaymentLine()],
+    };
+    setBookingForm(seeded);
+    setBaseTotal(null);
+    setOpenedAs(formFingerprint(seeded));
     setClosePrompt(null);
     setFormError('');
     setFieldError(null);
@@ -942,7 +1136,7 @@ export default function Bookings({ onBillStay }) {
     // amount that is no longer in the box.
     let current = true;
     apiGet(
-      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${legacyRateParam(editTarget)}${discount}`,
+      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${rateParam(bookingForm.basePriceOverride)}${discount}`,
       { token }
     )
       .then((data) => {
@@ -980,6 +1174,7 @@ export default function Bookings({ onBillStay }) {
     bookingForm.checkInDate,
     bookingForm.checkOutDate,
     bookingForm.switchableCharges,
+    bookingForm.basePriceOverride,
     bookingForm.discountAmount,
     bookingForm.discountPercent,
     bookingForm.discountSource,
@@ -1007,6 +1202,29 @@ export default function Bookings({ onBillStay }) {
   // reformatted itself mid-number would be unusable. Cleared when the extra is
   // switched off, so it cannot outlive the line it belongs to.
   const [chargeTotals, setChargeTotals] = useState({});
+
+  // The same for the room line. Held apart from the quote for the same reason
+  // the extras are: every keystroke refetches it, and a box that reformatted
+  // itself mid-number would be unusable. null means untouched — show whatever
+  // the quote says.
+  const [baseTotal, setBaseTotal] = useState(null);
+
+  // The line shows the room across the whole stay, so the nightly rate is the
+  // typed total divided by the nights. Divided by nights alone — seasons and
+  // extras are their own lines and are not in this figure, so the division is
+  // exact rather than an apportionment.
+  const setRoomTotal = (value) => {
+    setBaseTotal(value);
+    const nights = Math.max(1, quote?.nights?.length || 1);
+    const total = Number(value);
+    setBookingForm((f) => ({
+      ...f,
+      basePriceOverride:
+        String(value).trim() === '' || !Number.isFinite(total) || total <= 0
+          ? ''
+          : String(Math.round((total / nights) * 100) / 100),
+    }));
+  };
 
   // The line shows the extra across the whole stay, so the per-night unit price
   // is the typed total divided by how many of them for how many nights. Sent as
@@ -1081,13 +1299,6 @@ export default function Bookings({ onBillStay }) {
 
     if (!validRange) {
       failOn('checkOutDate', 'Check-out date must be after check-in date.');
-      return;
-    }
-    // The chart won't offer a past night and the date field won't accept one,
-    // but a typed date reaches neither guard — and a booking backdated past
-    // check-in would be a stay nobody can ever check in to.
-    if (isPastCheckIn) {
-      failOn('checkInDate', 'Check-in can’t be a past date — a night that has gone can’t be booked.');
       return;
     }
     // Belt-and-braces: the UI already hides Walk-in for a future date, but
@@ -1168,14 +1379,21 @@ export default function Bookings({ onBillStay }) {
     // stay discounted to ₹900 cannot take ₹1,000 up front.
     if (hasAdvanceAmount && quote && Number(bookingForm.advanceAmount) > quote.totalPrice) {
       failOn(
-        'newBookingAdvanceAmount',
+        paymentFieldId('newBookingAdvance', 'Amount'),
         `An advance can’t be more than the stay total of ${formatPrice(quote.totalPrice)}.`
       );
       return;
     }
     if (hasAdvanceAmount && !bookingForm.advancePaymentMethod) {
-      failOn('newBookingAdvancePaymentMethod', 'Choose a payment method for the advance amount.');
+      failOn(paymentFieldId('newBookingAdvance', 'Method'), 'Choose a payment method for the advance amount.');
       return;
+    }
+    if (hasAdvanceAmount && bookingForm.advanceLines.length > 1) {
+      const problem = paymentLinesError(bookingForm.advanceLines);
+      if (problem) {
+        failOn(paymentFieldId('newBookingAdvance', 'Amount'), problem);
+        return;
+      }
     }
     if (
       hasAdvanceAmount &&
@@ -1183,7 +1401,7 @@ export default function Bookings({ onBillStay }) {
       bookingForm.advanceReference.trim() === ''
     ) {
       failOn(
-        'newBookingAdvanceReference',
+        paymentFieldId('newBookingAdvance', 'Reference'),
         'Enter the transaction number for the advance paid by UPI or card.'
       );
       return;
@@ -1283,6 +1501,7 @@ export default function Bookings({ onBillStay }) {
           'discountAmount',
           bookingForm.discountAmount === '' ? '0' : String(Number(bookingForm.discountAmount))
         );
+        formData.append('basePriceOverride', bookingForm.basePriceOverride);
         formData.append('advanceAmount', hasAdvanceAmount ? String(Number(bookingForm.advanceAmount)) : '');
         formData.append('advancePaymentMethod', hasAdvanceAmount ? bookingForm.advancePaymentMethod : '');
         formData.append(
@@ -1306,6 +1525,9 @@ export default function Bookings({ onBillStay }) {
         formData.append('roomId', String(Number(bookingForm.roomId)));
         formData.append('checkInDate', bookingForm.checkInDate);
         formData.append('checkOutDate', bookingForm.checkOutDate);
+        if (bookingForm.basePriceOverride !== '') {
+          formData.append('basePriceOverride', bookingForm.basePriceOverride);
+        }
         if (bookingForm.discountAmount !== '') {
           formData.append('discountAmount', String(Number(bookingForm.discountAmount)));
         }
@@ -1314,6 +1536,12 @@ export default function Bookings({ onBillStay }) {
           formData.append('advancePaymentMethod', bookingForm.advancePaymentMethod);
           const reference = advanceReferenceOf(bookingForm);
           if (reference) formData.append('advanceReference', reference);
+          if (bookingForm.advanceLines.length > 1) {
+            formData.append(
+              'advanceLines',
+              JSON.stringify(toPaymentLines(bookingForm.advanceLines))
+            );
+          }
         }
 
         const created = await apiPostForm('/bookings', formData, { token });
@@ -1373,6 +1601,7 @@ export default function Bookings({ onBillStay }) {
   const [showCheckInForm, setShowCheckInForm] = useState(false);
   const initialCheckInForm = {
     advanceAmount: '',
+    advanceLines: [emptyPaymentLine()],
     advancePaymentMethod: '',
     advanceReference: '',
     idProofType: '',
@@ -1471,7 +1700,16 @@ export default function Bookings({ onBillStay }) {
       ],
       children: bookingDetail.guests.filter((g) => g.isChild).map(partyRowOf),
       vehicles: bookingDetail.vehicles.map((v) => ({ number: v.number, type: v.type ?? '' })),
+      basePriceOverride:
+        bookingDetail.basePriceOverride != null ? String(bookingDetail.basePriceOverride) : '',
       advanceAmount: bookingDetail.advanceAmount != null ? String(bookingDetail.advanceAmount) : '',
+      advanceLines: [
+        {
+          method: bookingDetail.advancePaymentMethod ?? '',
+          amount: '',
+          reference: bookingDetail.advanceReference ?? '',
+        },
+      ],
       advancePaymentMethod: bookingDetail.advancePaymentMethod ?? '',
       advanceReference: bookingDetail.advanceReference ?? '',
     };
@@ -1631,6 +1869,13 @@ export default function Bookings({ onBillStay }) {
       setActionError('Enter the transaction number for the advance paid by UPI or card.');
       return;
     }
+    if (hasAmount && checkInForm.advanceLines.length > 1) {
+      const problem = paymentLinesError(checkInForm.advanceLines);
+      if (problem) {
+        setActionError(problem);
+        return;
+      }
+    }
     if (hasAmount && !checkInForm.advancePaymentMethod) {
       setActionError('Choose a payment method for the advance amount.');
       return;
@@ -1673,6 +1918,12 @@ export default function Bookings({ onBillStay }) {
         formData.append('advancePaymentMethod', checkInForm.advancePaymentMethod);
         const reference = advanceReferenceOf(checkInForm);
         if (reference) formData.append('advanceReference', reference);
+        if (checkInForm.advanceLines.length > 1) {
+          formData.append(
+            'advanceLines',
+            JSON.stringify(toPaymentLines(checkInForm.advanceLines))
+          );
+        }
       }
       if (checkInForm.idProofType) formData.append('idProofType', checkInForm.idProofType);
       if (checkInForm.idProofNumber.trim()) formData.append('idProofNumber', checkInForm.idProofNumber.trim());
@@ -1790,6 +2041,11 @@ export default function Bookings({ onBillStay }) {
   // here and repeated at the top of every category's own calendar. The hovered
   // date lights up in every one of them, which is what makes it possible to
   // read the same night across categories without counting columns.
+  const renderMonthDividers = () =>
+    monthEdges.map((col) => (
+      <span key={col} className="tape-month__divider" style={{ '--tape-edge-col': col }} />
+    ));
+
   const renderDateHead = () => (
     <>
       {/* The month these columns are the days of. Named on every category's own
@@ -1797,9 +2053,19 @@ export default function Bookings({ onBillStay }) {
           month its day numbers belong to without a look back at the stepper. */}
       <div className="tape-month__band">
         <div className="tape-month__band-corner" />
-        <div className="tape-month__band-month" style={{ gridColumn: `span ${dates.length}` }}>
-          <span>{formatMonthBand(month, addDays(month, WINDOW_DAYS - 1))}</span>
-        </div>
+        {monthRuns(dates).map((run, i) => (
+          <div
+            key={run.key}
+            // Alternating, so two months side by side are told apart at a
+            // glance rather than by reading both captions.
+            className={`tape-month__band-month${i % 2 ? ' tape-month__band-month--alt' : ''}`}
+            style={{ gridColumn: `span ${run.days}` }}
+          >
+            {/* Both ends the same date: formatMonthBand collapses a range that
+                starts and finishes in one month to that month's name. */}
+            <span>{formatMonthBand(run.first, run.first)}</span>
+          </div>
+        ))}
       </div>
       <div className="tape-month__head">
         <div className="tape-month__corner">Room</div>
@@ -1816,6 +2082,7 @@ export default function Bookings({ onBillStay }) {
             </div>
           );
         })}
+        {renderMonthDividers()}
       </div>
     </>
   );
@@ -1861,21 +2128,26 @@ export default function Bookings({ onBillStay }) {
             );
           }
 
-          // A night that has already gone. Nothing can be sold into it, so it
-          // isn't a button at all — a room that stood empty last Tuesday is a
-          // fact, not an offer. It still answers on hover, which is the whole
-          // reason to keep looking at a month that has happened.
+          // A night that has already gone, with nothing recorded against it.
+          // Still a button: it cannot be *sold* now, but it can be *recorded* —
+          // a stay taken on paper over the weekend, or one being entered after
+          // the fact, has to be enterable against the night it actually
+          // happened on. It stays visually muted, because an empty past night
+          // is a fact first and an offer second.
           if (!booking && past) {
             const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             return (
-              <div
+              <button
                 key={d}
+                type="button"
                 className={classes.join(' ')}
-                role="img"
-                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)}`}
+                onClick={() => openNewBooking(room.id, d)}
                 onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
                 onMouseLeave={() => setHoverTile(null)}
+                onBlur={() => setHoverTile(null)}
+                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)} — record a stay`}
               />
             );
           }
@@ -1937,6 +2209,7 @@ export default function Bookings({ onBillStay }) {
             />
           );
         })}
+        {renderMonthDividers()}
       </div>
     );
   };
@@ -2058,7 +2331,19 @@ export default function Bookings({ onBillStay }) {
                     <span className="tape-month-card__meter-value">{stats.percent}% sold</span>
                   </div>
                 </div>
-                <div className="tape-chart-scroll" onScroll={() => setHoverTile(null)}>
+                <div
+                  className="tape-chart-scroll"
+                  // Registered so the other cards can be moved with this one.
+                  // The cleanup is what keeps dead nodes out of the set when a
+                  // category stops being rendered.
+                  ref={(el) => {
+                    if (!el) return undefined;
+                    scrollers.current.add(el);
+                    return () => scrollers.current.delete(el);
+                  }}
+                  onScroll={onChartScroll}
+                  onWheel={onChartWheel}
+                >
                   {/* The column track is built here because the number of
                       columns is the length of the month — February and August
                       don't hold the same count, and every row lines up with
@@ -2325,10 +2610,11 @@ export default function Bookings({ onBillStay }) {
                       id="checkInDate"
                       type="date"
                       value={bookingForm.checkInDate}
-                      // Today at the earliest — a night that has passed can't
-                      // be sold. Left off an edit, whose field is disabled and
-                      // whose date is often legitimately in the past.
-                      min={editing ? undefined : today}
+                      // No floor. A past night cannot be *sold*, but it can be
+                      // recorded: a stay taken on paper over the weekend, or one
+                      // the desk is entering after the fact, is a real booking
+                      // that happened and the register has to be able to hold
+                      // it. The warning below says which case this is.
                       // Never editable on an existing stay: changing when one
                       // started is a cancel and rebook, not an edit.
                       disabled={editing}
@@ -2338,19 +2624,28 @@ export default function Bookings({ onBillStay }) {
                         setBookingForm((f) => ({
                           ...f,
                           checkInDate,
-                          bookingType: checkInDate > today ? 'RESERVATION' : f.bookingType,
+                          // A future date can only be a reservation. A past one
+                          // can only be a stay that already started, so it is
+                          // recorded as a walk-in and checks itself in on save —
+                          // which is what "this happened" means.
+                          bookingType:
+                            checkInDate > today
+                              ? 'RESERVATION'
+                              : checkInDate < today
+                                ? 'WALK_IN'
+                                : f.bookingType,
                         }));
                       }}
                     />
-                    {/* A past check-in is flagged as it is typed rather than
-                        only on submit, so it stays a live warning — it just
-                        sits under the date it is about now, instead of in a
-                        banner further down the form. */}
+                    {/* Flagged as it is typed, and deliberately not an error:
+                        a backdated stay is allowed, it is just rarely what
+                        someone means to type. Saying so under the date keeps
+                        the slip visible without standing in the way of the desk
+                        that meant it. */}
                     {fieldErr('checkInDate') ||
                       (isPastCheckIn && (
-                        <p className="field__error">
-                          Check-in is in the past. A night that has gone can’t be booked — pick
-                          today or later.
+                        <p className="bookings-panel__note">
+                          Backdated — this records a stay that has already begun.
                         </p>
                       ))}
                   </div>
@@ -2516,12 +2811,16 @@ export default function Bookings({ onBillStay }) {
                           {charge.label}
                           {quote.nights.length > 1 ? ` (${quote.nights.length} nights)` : ''}
                         </span>
-                        {/* Extras are editable here rather than beside the
-                            tick: this is where the money is read, and reception
+                        {/* Editable where the money is read, because reception
                             negotiates a total ("call it 350") far more often
-                            than a per-night rate. The room line and any season
-                            uplift stay fixed — those are priced elsewhere. */}
-                        {charge.chargeId ? (
+                            than a per-night rate. The room line takes the same
+                            box: the rate it names is the one the stay is priced
+                            at, and a stay sold at a rate nobody can type is a
+                            stay argued about at the desk.
+
+                            A season uplift stays fixed — it is a percentage of
+                            the rate above it, so it follows on its own. */}
+                        {charge.isBase ? (
                           <input
                             className="sim-result__amount-input"
                             type="number"
@@ -2529,6 +2828,19 @@ export default function Bookings({ onBillStay }) {
                             step="1"
                             inputMode="decimal"
                             aria-label={`Total for ${charge.label}`}
+                            onFocus={(e) => e.target.select()}
+                            value={baseTotal ?? String(charge.amount)}
+                            onChange={(e) => setRoomTotal(e.target.value)}
+                          />
+                        ) : charge.chargeId ? (
+                          <input
+                            className="sim-result__amount-input"
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="decimal"
+                            aria-label={`Total for ${charge.label}`}
+                            onFocus={(e) => e.target.select()}
                             value={chargeTotals[charge.chargeId] ?? String(charge.amount)}
                             onChange={(e) => setChargeTotal(charge, e.target.value)}
                           />
@@ -2598,54 +2910,30 @@ export default function Bookings({ onBillStay }) {
                     <span className="form-section__badge">{formatPrice(Number(bookingForm.advanceAmount))}</span>
                   )}
                 </summary>
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="newBookingAdvanceAmount">Amount</label>
-                    <input
-                      id="newBookingAdvanceAmount"
-                      type="number"
-                      min="0"
-                      value={bookingForm.advanceAmount}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, advanceAmount: e.target.value }))}
-                      aria-invalid={invalid('newBookingAdvanceAmount')}
-                    />
-                    {fieldErr('newBookingAdvanceAmount')}
-                  </div>
-                  <div className="field">
-                    <label htmlFor="newBookingAdvancePaymentMethod">Payment type</label>
-                    <select
-                      id="newBookingAdvancePaymentMethod"
-                      value={bookingForm.advancePaymentMethod}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, advancePaymentMethod: e.target.value }))}
-                      aria-invalid={invalid('newBookingAdvancePaymentMethod')}
-                    >
-                      <option value="">Choose one</option>
-                      <option value="CASH">Cash</option>
-                      <option value="UPI">UPI</option>
-                      <option value="CARD">Card</option>
-                    </select>
-                    {fieldErr('newBookingAdvancePaymentMethod')}
-                  </div>
-                </div>
-                {/* Only for money that left a trail. Asking for a reference
-                    against cash would be asking for one to be invented. */}
-                {needsPaymentReference(bookingForm.advancePaymentMethod) && (
-                  <div className="field">
-                    <label htmlFor="newBookingAdvanceReference">Transaction number</label>
-                    <input
-                      id="newBookingAdvanceReference"
-                      value={bookingForm.advanceReference}
-                      maxLength={64}
-                      placeholder={bookingForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, advanceReference: e.target.value }))}
-                      aria-invalid={invalid('newBookingAdvanceReference')}
-                    />
-                    {fieldErr('newBookingAdvanceReference')}
-                    <p className="bookings-panel__hint">
-                      What the settlement statement will be matched against at month end.
-                    </p>
-                  </div>
-                )}
+                {/* maxLines 1 on an edit, which hides the add button and
+                    leaves the field exactly as it was. An edit SETS the advance
+                    rather than adding to it, so only the difference is
+                    receipted — and a list of lines describing the whole figure
+                    cannot describe that difference. Splits are taken on the way
+                    in, or from the receipt modal afterwards. */}
+                {/* No separate Amount box: the advance is however much these
+                    rows add up to. maxLines 1 on an edit hides the add button,
+                    because an edit SETS the advance rather than adding to it and
+                    only the difference is receipted — a list describing the whole
+                    figure cannot describe that difference. */}
+                <PaymentLines
+                  lines={bookingForm.advanceLines}
+                  onChange={setAdvanceLines(setBookingForm)}
+                  idPrefix="newBookingAdvance"
+                  maxLines={editing ? 1 : 5}
+                  error={
+                    <>
+                      {fieldErr(paymentFieldId('newBookingAdvance', 'Amount'))}
+                      {fieldErr(paymentFieldId('newBookingAdvance', 'Method'))}
+                      {fieldErr(paymentFieldId('newBookingAdvance', 'Reference'))}
+                    </>
+                  }
+                />
               </details>
 
               <details className="form-section form-section--collapsible" open>
@@ -2962,47 +3250,11 @@ export default function Bookings({ onBillStay }) {
                     )}
 
                     <div className="form-section__title">Advance payment (optional)</div>
-                    <div className="field-row">
-                      <div className="field">
-                        <label htmlFor="advanceAmount">Amount</label>
-                        <input
-                          id="advanceAmount"
-                          type="number"
-                          min="0"
-                          value={checkInForm.advanceAmount}
-                          onChange={(e) => setCheckInForm((f) => ({ ...f, advanceAmount: e.target.value }))}
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="advancePaymentMethod">Payment type</label>
-                        <select
-                          id="advancePaymentMethod"
-                          value={checkInForm.advancePaymentMethod}
-                          onChange={(e) =>
-                            setCheckInForm((f) => ({ ...f, advancePaymentMethod: e.target.value }))
-                          }
-                        >
-                          <option value="">Choose one</option>
-                          <option value="CASH">Cash</option>
-                          <option value="UPI">UPI</option>
-                          <option value="CARD">Card</option>
-                        </select>
-                      </div>
-                    </div>
-                    {needsPaymentReference(checkInForm.advancePaymentMethod) && (
-                      <div className="field">
-                        <label htmlFor="checkInAdvanceReference">Transaction number</label>
-                        <input
-                          id="checkInAdvanceReference"
-                          value={checkInForm.advanceReference}
-                          maxLength={64}
-                          placeholder={
-                            checkInForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'
-                          }
-                          onChange={(e) => setCheckInForm((f) => ({ ...f, advanceReference: e.target.value }))}
-                        />
-                      </div>
-                    )}
+                    <PaymentLines
+                      lines={checkInForm.advanceLines}
+                      onChange={setAdvanceLines(setCheckInForm)}
+                      idPrefix="checkInAdvance"
+                    />
 
                     <div className="form-section__title">Add guest details (optional)</div>
                     <p className="bookings-panel__hint">

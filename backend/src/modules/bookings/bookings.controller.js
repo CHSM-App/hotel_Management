@@ -205,6 +205,7 @@ async function createBookingHandler(req, res, next) {
     body.switchableCharges = parseJsonArrayField(body.switchableCharges ?? body.switchableChargeIds);
     body.vehicles = parseJsonArrayField(body.vehicles);
     body.guests = parseJsonArrayField(body.guests);
+    body.advanceLines = parseJsonArrayField(body.advanceLines);
 
     const parsed = createBookingSchema.safeParse(body);
     if (!parsed.success) {
@@ -310,6 +311,7 @@ async function checkInHandler(req, res, next) {
     const body = { ...req.body };
     body.guests = parseJsonArrayField(body.guests);
     body.vehicles = parseJsonArrayField(body.vehicles);
+    body.advanceLines = parseJsonArrayField(body.advanceLines);
 
     const parsed = checkInSchema.safeParse(body);
     if (!parsed.success) {

@@ -146,6 +146,68 @@ function requiresReference(method, reference) {
 
 const REFERENCE_REQUIRED = 'Enter the transaction number for a UPI or card payment.';
 
+// ---------------------------------------------------------------------------
+// Split payments
+// ---------------------------------------------------------------------------
+
+// One way money arrived. A guest settling a bill often hands over some cash and
+// pays the rest by UPI or card, and every money document here used to record a
+// single method — so the other half was filed under a method it never used.
+//
+// Each line carries its own reference because each is its own payment: two
+// cards are two approval codes, and a cash line has none. Same rule as the
+// single-method fields, applied per line.
+const paymentLineSchema = z
+  .object({
+    method: z.enum(PAYMENT_METHODS, { error: 'Choose how this part was paid.' }),
+    amount: z.coerce
+      .number({ error: 'Enter the amount for each payment.' })
+      .positive('Each payment must be more than zero.'),
+    reference: paymentReferenceField(),
+  })
+  .refine((line) => requiresReference(line.method, line.reference), {
+    message: REFERENCE_REQUIRED,
+    path: ['reference'],
+  });
+
+// Five is a typo guard rather than a policy — nobody settles a room in six
+// tenders, and an unbounded array is a way to write megabytes into a request.
+const paymentLinesField = () => z.array(paymentLineSchema).max(5, 'That is too many payments for one settlement.').optional();
+
+// Whether a set of lines settles exactly the amount they are meant to.
+//
+// Compared in paise, never as floats: 600 + 900.10 is 1500.0999999999999 in
+// binary floating point, and a settlement refused for a rounding artefact is
+// worse than one that adds up.
+function paymentLinesSettle(lines, total) {
+  const paise = (n) => Math.round(Number(n) * 100);
+  return lines.reduce((sum, line) => sum + paise(line.amount), 0) === paise(total);
+}
+
+const PAYMENT_LINES_MISMATCH = 'The payments must add up to the amount collected.';
+
+// The one place a caller turns "however this request expressed the payment"
+// into the list of lines to store. Every writer goes through it, including
+// autoIssueAdvanceReceipt, which is not an HTTP caller at all.
+//
+// A request may send lines, or the older single method/reference pair, or
+// nothing at all when no money changed hands. The single pair becomes a
+// one-line split, which is what makes every document — including every one
+// issued before this existed — readable through one code path.
+function paymentLinesOf(input, total) {
+  if (Array.isArray(input.paymentLines) && input.paymentLines.length > 0) {
+    return input.paymentLines.map((line) => ({
+      method: line.method,
+      amount: Number(line.amount),
+      reference: line.reference ?? null,
+    }));
+  }
+  if (!input.paymentMethod || !(Number(total) > 0)) return [];
+  return [
+    { method: input.paymentMethod, amount: Number(total), reference: input.paymentReference ?? null },
+  ];
+}
+
 
 // idProofType is optional here — a walk-in guest provides ID proof on the
 // spot (enforced by the controller requiring a matching file upload), but a
@@ -170,6 +232,18 @@ const createBookingSchema = z
     advanceAmount: z.coerce.number().nonnegative().optional(),
     advancePaymentMethod: z.enum(PAYMENT_METHODS).optional(),
     advanceReference: paymentReferenceField(),
+    // Part cash, part UPI — the usual shape of a deposit. advancePaymentMethod
+    // above stays required and stays the first tender, so the booking row and
+    // the register keep a single method to show; these say what really arrived.
+    advanceLines: paymentLinesField(),
+    // The nightly rate reception agreed for this stay, where it is not the
+    // category's own. Positive or absent — a zero or negative rate is a
+    // mis-key, and the pricing engine ignores one rather than selling a room
+    // for nothing.
+    basePriceOverride: z.coerce
+      .number({ error: 'Enter the room rate as a number.' })
+      .positive('A room rate has to be more than zero.')
+      .optional(),
     guests: z.array(bookingGuestSchema).optional().default([]),
     vehicles: z.array(bookingVehicleSchema).optional().default([]),
     switchableCharges: z.array(chargeSelectionSchema).optional().default([]),
@@ -189,7 +263,11 @@ const createBookingSchema = z
   .refine((data) => requiresReference(data.advancePaymentMethod, data.advanceReference), {
     message: REFERENCE_REQUIRED,
     path: ['advanceReference'],
-  });
+  })
+  .refine(
+    (data) => !data.advanceLines?.length || paymentLinesSettle(data.advanceLines, data.advanceAmount),
+    { message: PAYMENT_LINES_MISMATCH, path: ['advanceLines'] }
+  );
 
 // Check-in is also where staff fill in guest/vehicle details that weren't
 // available at booking time (a pre-booked stay might arrive with a vehicle
@@ -203,6 +281,10 @@ const checkInSchema = z
     advanceAmount: z.coerce.number().nonnegative().optional(),
     advancePaymentMethod: z.enum(PAYMENT_METHODS).optional(),
     advanceReference: paymentReferenceField(),
+    // Part cash, part UPI — the usual shape of a deposit. advancePaymentMethod
+    // above stays required and stays the first tender, so the booking row and
+    // the register keep a single method to show; these say what really arrived.
+    advanceLines: paymentLinesField(),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
     guests: z.array(bookingGuestSchema).optional().default([]),
@@ -215,7 +297,11 @@ const checkInSchema = z
   .refine((data) => requiresReference(data.advancePaymentMethod, data.advanceReference), {
     message: REFERENCE_REQUIRED,
     path: ['advanceReference'],
-  });
+  })
+  .refine(
+    (data) => !data.advanceLines?.length || paymentLinesSettle(data.advanceLines, data.advanceAmount),
+    { message: PAYMENT_LINES_MISMATCH, path: ['advanceLines'] }
+  );
 
 // An edit sends the whole party back, not a list of changes — so an existing
 // guest has to say which row they are, or a save would delete and re-create
@@ -267,6 +353,13 @@ const updateBookingSchema = z
     advanceAmount: clearableField(z.coerce.number().nonnegative('An advance can’t be negative.')),
     advancePaymentMethod: clearableField(z.enum(PAYMENT_METHODS)),
     advanceReference: clearableField(z.string().trim().max(64, 'That transaction number looks too long — check it.')),
+    // Same two-way rule as the advance: absent leaves the agreed rate alone,
+    // blank puts the stay back on the category's own price.
+    basePriceOverride: clearableField(
+      z.coerce
+        .number({ error: 'Enter the room rate as a number.' })
+        .positive('A room rate has to be more than zero.')
+    ),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
   })
@@ -318,6 +411,11 @@ module.exports = {
   ONLINE_METHODS,
   requiresReference,
   REFERENCE_REQUIRED,
+  paymentLineSchema,
+  paymentLinesField,
+  paymentLinesSettle,
+  paymentLinesOf,
+  PAYMENT_LINES_MISMATCH,
   ID_PROOF_TYPES,
   VEHICLE_TYPES,
   createBookingSchema,

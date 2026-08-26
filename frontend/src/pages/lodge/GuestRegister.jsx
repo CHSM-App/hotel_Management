@@ -3,6 +3,7 @@ import { apiGet, apiGetBlob, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
@@ -1173,7 +1174,10 @@ export default function GuestRegister() {
                             Advance already paid
                             <span className="guest-register__muted">
                               {' · '}
-                              {detailBooking.advancePaymentMethod}
+                              {describeAdvance(
+                                detailBooking.advancePaymentLines,
+                                detailBooking.advancePaymentMethod
+                              )}
                             </span>
                           </span>
                           <span>− {formatPrice(detailBooking.advanceAmount)}</span>
