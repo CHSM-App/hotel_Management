@@ -46,8 +46,8 @@
    than something your thumb lands on. */
 .confirm-dialog__danger {
   margin-left: auto;
-  background: none;
-  border: 1px solid var(--danger);
+  background: var(--surface);
+  border: none;
   border-radius: var(--radius-tile);
   padding: 11px 18px;
   min-height: 42px;
@@ -56,19 +56,32 @@
   font-weight: 600;
   color: var(--danger);
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
 }
 
+/* Still only committing to the fill on the way in — the point of the outlined
+   resting state was that the destructive answer shouldn't look like the button
+   your thumb is already heading for. The extrusion turns danger-tinted at the
+   same moment, so the fill doesn't arrive sitting on a neutral grey shadow. */
 .confirm-dialog__danger:hover:not(:disabled) {
   background: var(--danger);
   color: #fff;
+  box-shadow: 5px 5px 12px rgba(122, 31, 31, 0.32), -5px -5px 12px var(--neu-light);
 }
 
+.confirm-dialog__danger:active:not(:disabled) {
+  box-shadow: inset 3px 3px 7px rgba(60, 12, 12, 0.45),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+}
+
+/* Flat: a disabled control shouldn't look pressable. */
 .confirm-dialog__danger:disabled,
 .confirm-dialog .btn-secondary:disabled,
 .confirm-dialog .btn-accent:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 @media (max-width: 480px) {

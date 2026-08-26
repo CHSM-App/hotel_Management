@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useUrlState } from '../../lib/urlState';
 import MenuPanel from './MenuPanel';
 import RecipesPanel from './RecipesPanel';
 import InventoryPanel from './InventoryPanel';
@@ -8,7 +8,7 @@ import FoodSettingsPanel from './FoodSettingsPanel';
 import './RoomsAndRates.css';
 
 export default function FoodSetup({ lodge, onLodgeChange }) {
-  const [tab, setTab] = useState('menu');
+  const [tab, setTab] = useUrlState('tab', 'menu');
   // Settings can switch table service on mid-session, and the tab strip has to
   // follow without a reload — so it reads the live lodge object, not the one
   // this component mounted with.

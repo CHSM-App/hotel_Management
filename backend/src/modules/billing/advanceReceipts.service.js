@@ -7,7 +7,10 @@ const {
   getGstSlabs,
   ratePercentFor,
   nightlyAmounts,
+  insertPaymentLines,
+  readPaymentLines,
 } = require('./billing.service');
+const { paymentLinesOf } = require('../bookings/bookings.schema');
 
 // The receipt a guest is handed when they pay an advance at the time of
 // booking. Under GST that document is a Receipt Voucher (Rule 50): money taken
@@ -120,6 +123,15 @@ function mapReceipt(row) {
     balanceDue: round2(stayTotal - amountReceived),
     paymentMethod: row.payment_method,
     paymentReference: row.payment_reference ?? null,
+    // Every way this advance was handed over. A receipt taken before split
+    // payments existed reads as a single line built from the two fields above,
+    // so the printed receipt has one shape to render rather than two.
+    paymentLines: readPaymentLines(
+      row.payment_lines,
+      row.payment_method,
+      row.amount_received,
+      row.payment_reference
+    ),
     status: row.status,
     voidReason: row.void_reason ?? null,
     voidedAt: row.voided_at ?? null,
@@ -154,6 +166,11 @@ const RECEIPT_SELECT = `
          ar.amount_received, ar.cgst_amount, ar.sgst_amount, ar.rate_percent, ar.stay_total,
          ar.payment_method, ar.payment_reference, ar.status, ar.void_reason, ar.voided_at,
          ar.created_at,
+         (SELECT pl.method, pl.amount, pl.reference
+          FROM dbo.payment_lines pl
+          WHERE pl.advance_receipt_id = ar.id
+          ORDER BY pl.id
+          FOR JSON PATH) AS payment_lines,
          b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
          r.room_number, c.name AS category_name,
          l.is_gst_registered, l.gstin, l.checkin_mode, l.check_out_time,
@@ -282,7 +299,13 @@ async function previewAdvanceReceipt(lodgeId, bookingId, input) {
 // Writes the receipt and burns a number for it in one transaction — the number
 // and the row commit together or neither does, which is what keeps the series
 // gapless.
-async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
+// `alreadyOnBooking` is for the receipt that is raised automatically the
+// moment an advance is taken, rather than from the billing screen afterwards.
+// In that case the booking's own INSERT/UPDATE has already recorded the money,
+// so adding it again here would double every advance the property ever takes —
+// the update below accumulates rather than replaces, deliberately, because a
+// second instalment is more money in and not a correction of the first.
+async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyOnBooking = false } = {}) {
   const pool = await getPool();
   const slabs = await getGstSlabs(pool);
 
@@ -298,6 +321,13 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
 
     const preview = buildReceiptPreview(booking, slabs, input);
 
+    // However the request described its payment, this is the list to store.
+    const paymentLines = paymentLinesOf(input, preview.amountReceived);
+    const isSplit = paymentLines.length > 1;
+    // What the booking already held before this receipt. Only meaningful when
+    // this call is adding money; see the note on the UPDATE below.
+    const heldBefore = Number(booking.advance_amount) || 0;
+
     // The advance is money the property is now holding, so the booking has to
     // carry it too — that is the figure the final bill reads as "Less Advance",
     // and a receipt whose amount the bill never sees would hand the guest a
@@ -309,20 +339,36 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
       .input('bookingId', sql.BigInt, bookingId)
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('amount', sql.Decimal(10, 2), preview.amountReceived)
-      .input('method', sql.NVarChar, input.paymentMethod)
-      .input('reference', sql.NVarChar, input.paymentReference ?? null)
+      // NULL when this is a split landing on a booking that already held an
+      // advance — and the COALESCE below then leaves the column alone.
+      //
+      // This is load-bearing, and the reason is not obvious. The collections
+      // report attributes advance money by reading bookings.advance_amount and
+      // apportioning it across this booking's payment lines, giving whatever is
+      // left over to advance_payment_method. That remainder is money taken
+      // before payment lines existed, and this column is the only record of how
+      // it arrived. Overwriting it here would reattribute that older money to a
+      // method it never used — and because the report dates advances by
+      // bookings.created_at, it would do so inside a month somebody has already
+      // reconciled.
+      //
+      // A split on a booking with nothing held before has no such remainder, so
+      // the first line is a safe summary there.
+      .input('method', sql.NVarChar, isSplit && heldBefore > 0 ? null : paymentLines[0]?.method ?? null)
+      .input('reference', sql.NVarChar, paymentLines[0]?.reference ?? null)
       .query(`
         UPDATE dbo.bookings
-        SET advance_amount = ISNULL(advance_amount, 0) + @amount,
-            advance_payment_method = @method,
+        SET ${alreadyOnBooking ? '' : 'advance_amount = ISNULL(advance_amount, 0) + @amount,'}
+            advance_payment_method = COALESCE(@method, advance_payment_method),
             advance_reference = COALESCE(@reference, advance_reference)
         WHERE id = @bookingId AND lodge_id = @lodgeId
       `);
 
     // The advance series, created on first use the way the invoice series is.
-    // ADV- rather than RCT-, which the non-GST bill side already uses — two
-    // different documents sharing a prefix is two documents nobody can tell
-    // apart on a bank statement.
+    // Its own run rather than sharing the bill series: an advance taken today
+    // and a bill cut next week must not interleave, or the tax-invoice
+    // numbering develops gaps an auditor will ask about. No prefix — the serial
+    // the owner set is the whole number (see billing/series.service.js).
     const seriesResult = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
       .query("SELECT id FROM dbo.invoice_series WHERE lodge_id = @lodgeId AND series_type = 'ADVANCE'");
@@ -330,7 +376,7 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
       await new sql.Request(transaction)
         .input('lodgeId', sql.BigInt, lodgeId)
         .query(`INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number)
-                VALUES (@lodgeId, 'ADVANCE', 'ADV-', 1)`);
+                VALUES (@lodgeId, 'ADVANCE', N'', 1)`);
     }
 
     // Atomic allocate-and-bump, never SELECT MAX()+1: two desks taking an
@@ -357,7 +403,9 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
       .input('sgstAmount', sql.Decimal(10, 2), preview.sgstAmount)
       .input('ratePercent', sql.Decimal(5, 2), round2(preview.cgstRatePercent + preview.sgstRatePercent))
       .input('stayTotal', sql.Decimal(10, 2), preview.stayTotal)
-      .input('paymentMethod', sql.NVarChar, input.paymentMethod)
+      // The receipt's own summary of its lines — the column is NOT NULL, so a
+      // split still has to name one, and the first tender is the honest choice.
+      .input('paymentMethod', sql.NVarChar, paymentLines[0]?.method ?? input.paymentMethod)
       .input('paymentReference', sql.NVarChar, input.paymentReference ?? null)
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
@@ -372,8 +420,12 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input) {
            @createdBy)
       `);
 
+    const receiptId = inserted.recordset[0].id;
+
+    await insertPaymentLines(transaction, lodgeId, { advanceReceiptId: receiptId }, paymentLines);
+
     await transaction.commit();
-    return getAdvanceReceipt(lodgeId, inserted.recordset[0].id);
+    return getAdvanceReceipt(lodgeId, receiptId);
   } catch (err) {
     await transaction.rollback();
     throw err;

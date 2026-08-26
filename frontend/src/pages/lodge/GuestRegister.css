@@ -94,11 +94,22 @@
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
+/* It lives inside the search field's well, so it presses further in rather than
+   rising out — a control that extruded from inside a groove would read as
+   sitting on top of the input instead of in it.
+
+   The old rule swapped the background to --paper, which has been the same value
+   as --surface since the surface tokens were unified: nothing moved on hover. */
 .guest-register__search-clear:hover {
-  background: var(--paper);
   color: var(--ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.guest-register__search-clear:active {
+  box-shadow: var(--shadow-inset);
 }
 
 .guest-register__toolbar-bottom {
@@ -132,20 +143,31 @@
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
+  transition: var(--neu-transition);
 }
 
 .guest-register__preset:last-child {
   border-right: none;
 }
 
+/* One segment of a single choice, so it dips under the pointer rather than
+   lifting away from the three it is joined to. */
 .guest-register__preset:hover {
   color: var(--ink);
-  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
 }
 
+.guest-register__preset:active {
+  box-shadow: var(--shadow-inset);
+}
+
+/* The chosen range stays visibly held down, and keeps its fill: four segments
+   at the same value need more than a shadow to say which one is live. */
 .guest-register__preset[aria-pressed='true'] {
   background: var(--brand);
   color: #ffffff;
+  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
 }
 
 .guest-register__status-filters {
@@ -171,18 +193,27 @@
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 150ms ease, color 150ms ease;
+  transition: var(--neu-transition);
 }
 
 .guest-register__status-chip:hover {
-  border-color: var(--brand);
   color: var(--ink);
+  box-shadow: var(--shadow-raised-hover);
 }
 
+.guest-register__status-chip:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* An applied cut is a chip left pushed in. The tint stays — several can be on
+   at once, and a row of grooves alone is harder to count than a row of tints —
+   but the depth is now what says "on", so the state survives at a glance across
+   a desk as well as up close. */
 .guest-register__status-chip[aria-pressed='true'] {
   border-color: var(--brand);
   background: #eef4f2;
   color: var(--brand-ink);
+  box-shadow: var(--shadow-pressed);
 }
 
 .guest-register__status-count {
@@ -341,9 +372,17 @@
 }
 
 .guest-register__refresh:hover:not(:disabled) {
-  background: var(--paper);
-  border-color: var(--brand);
   color: var(--brand-ink);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.guest-register__refresh:active:not(:disabled) {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* Nothing to press while it is already refreshing. */
+.guest-register__refresh:disabled {
+  box-shadow: none;
 }
 
 .guest-register__refresh:disabled {
@@ -374,8 +413,15 @@
 /* The record opens from the button on the end of the row, so the row itself
    isn't clickable — the hover tint only keeps the eye on one line while a long
    range is read across. */
+/* The old rule set the background to --paper, which is the same value as the
+   table's --surface, so the row a desk was pointing at looked exactly like the
+   rest of them — the hover did nothing at all.
+
+   Painted with --neu-sunken rather than a pressed shadow because .dash-table is
+   `border-collapse: collapse`, and a collapsed <tr> generates no box for a
+   box-shadow to attach to. The tint is the flat stand-in for that groove. */
 .guest-register__table tbody tr:hover {
-  background: var(--paper);
+  background: var(--neu-sunken);
 }
 
 /* Guests still in the building are the rows a desk acts on; a left edge marks
@@ -556,12 +602,15 @@
   cursor: pointer;
   padding: 4px 12px;
   white-space: nowrap;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: var(--neu-transition);
 }
 
 .guest-register__view-btn:hover {
-  background: var(--paper);
-  border-color: var(--accent);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.guest-register__view-btn:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 /* Tapping it dials. Underlined rather than only coloured, so it reads as
@@ -580,8 +629,8 @@
 }
 
 .guest-register__view-details-btn {
-  background: none;
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: none;
   color: var(--brand-ink);
   border-radius: 8px;
   font-size: 12px;
@@ -589,11 +638,16 @@
   cursor: pointer;
   padding: 6px 12px;
   white-space: nowrap;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
 }
 
 .guest-register__view-details-btn:hover {
-  background: var(--paper);
-  border-color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.guest-register__view-details-btn:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .guest-register__backdrop {
@@ -677,13 +731,18 @@
   border-radius: 8px;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
+  transition: var(--neu-transition);
 }
 
+/* A close button in a header sits flush with it until pointed at, then dips —
+   an extrusion here would compete with the record title beside it. */
 .guest-register__record-close:hover {
-  background: var(--paper);
-  border-color: var(--border);
   color: var(--ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.guest-register__record-close:active {
+  box-shadow: var(--shadow-inset);
 }
 
 .guest-register__record-body {
@@ -703,15 +762,19 @@
   background: var(--paper);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
-  border-radius: 9px;
+  border-radius: 10px;
   color: var(--ink);
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: var(--neu-transition);
 }
 
 .guest-register__record-back:hover {
-  background: var(--surface);
-  border-color: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.guest-register__record-back:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 /* A darker bed than the record behind it: an ID scan is usually a pale
@@ -887,11 +950,16 @@
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: border-color 150ms ease;
+  transition: var(--neu-transition);
 }
 
 .guest-register__bill-link:hover {
-  border-color: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.guest-register__bill-link:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .guest-register__bill-link-go {

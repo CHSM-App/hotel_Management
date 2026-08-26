@@ -19,10 +19,11 @@ export const PAYMENT_MODE_LABEL = {
 
 const PAYMENT_MODES = ['CASH', 'UPI', 'CARD', 'UNRECORDED'];
 
-// Which side of the book a report covers. Two downloads of the same month can
-// hold completely different rows, so the choice is stamped on the document and
-// into the filename — otherwise they are indistinguishable once saved.
-export const BILLING_SIDE_OPTIONS = [
+// Which side of the book a report covers, kept because the server still
+// answers with one and the document is stamped accordingly. No longer offered
+// as a choice on the reports page: every report covers every bill, so this
+// resolves to "All" unless something starts asking for otherwise again.
+const BILLING_SIDE_OPTIONS = [
   { key: 'ALL', label: 'All bills', short: 'All' },
   { key: 'GST', label: 'GST bills only', short: 'GST' },
   { key: 'NON_GST', label: 'Non-GST bills only', short: 'Non-GST' },
@@ -540,7 +541,11 @@ function createLayout(pdf, runningHead) {
   return layout;
 }
 
-export async function downloadBookingReportPdf(report) {
+// Builds the report and hands back the file itself. Split out from the
+// download so a preview shows the ACTUAL document rather than an HTML
+// impression of it — two renderers for one report is how a preview starts
+// quietly disagreeing with the file people file away.
+export async function buildBookingReportPdf(report) {
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -789,5 +794,9 @@ export async function downloadBookingReportPdf(report) {
     pdf.text(`Page ${page} of ${pageCount}`, layout.right, pageHeight - MARGIN + 6, { align: 'right' });
   }
 
-  triggerDownload(pdf.output('blob'), reportFilename(report, 'pdf'));
+  return pdf.output('blob');
+}
+
+export async function downloadBookingReportPdf(report) {
+  triggerDownload(await buildBookingReportPdf(report), reportFilename(report, 'pdf'));
 }

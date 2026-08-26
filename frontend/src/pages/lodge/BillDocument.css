@@ -1067,3 +1067,65 @@
    measured for the fit, and stacked a smaller font on top of the scale so an
    A6 slip printed at ~4px. If a stock ever needs its own layout, it needs its
    own measured fit, not a class that restyles this one behind its back. */
+
+/* ---------------------------------------------------------------------------
+   Advance receipt — the pad's own furniture
+   ---------------------------------------------------------------------------
+   Matches the property's pre-printed book: ticked payment boxes on one line,
+   and the amount boxed bottom-left. Lives here rather than in its own file for
+   the reason the receipt already reuses this stylesheet — two sheets drift, and
+   the receipt and the bill have to keep looking like one property's paper. */
+
+.memo__pay {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.memo__tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  white-space: nowrap;
+}
+
+.memo__box {
+  width: 0.72em;
+  height: 0.72em;
+  border: 1px solid currentColor;
+  display: inline-block;
+  position: relative;
+}
+
+/* A drawn tick rather than a filled square: the pad is ticked by hand in pen,
+   and a solid block reads as "crossed out" instead of "chosen". */
+.memo__box--on::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  top: -12%;
+  width: 34%;
+  height: 78%;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(40deg);
+}
+
+.memo__amountbox {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid currentColor;
+  font-variant-numeric: tabular-nums;
+}
+
+.memo__amountbox-rs {
+  font-size: 1rem;
+}
+
+.memo__amountbox-fig {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}

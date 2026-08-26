@@ -4,6 +4,19 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+// BigInt keys arrive as number or string depending on the driver's mood, so
+// they are stringified on both sides of the Map.
+function linesByParent(result) {
+  const map = new Map();
+  for (const row of result.recordset) {
+    const key = String(row.parent_id);
+    const list = map.get(key) ?? [];
+    list.push({ method: row.method, amount: Number(row.amount) });
+    map.set(key, list);
+  }
+  return map;
+}
+
 function toIsoDate(d) {
   if (typeof d === 'string') return d.slice(0, 10);
   return d.toISOString().slice(0, 10);
@@ -20,6 +33,39 @@ function datesInRange(fromDate, toDate) {
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return dates;
+}
+
+// Attributes one payment across the ways it arrived.
+//
+// The amount is the authority, never the lines. It comes from
+// bookings.advance_amount or invoices.balance_collected — the columns this
+// report has always summed — and the parts returned here add up to it exactly
+// whatever the lines say. That is the whole guarantee that adding split
+// payments cannot move a total in a month somebody has already reconciled.
+//
+// Lines are therefore clamped rather than trusted. bookings.advance_amount has
+// five writers (booking create, check-in top-up, an edit that sets an arbitrary
+// value, receipt issue, and a void that floors it to NULL), so a booking can
+// genuinely hold less than its issued receipts add up to — three do right now.
+// A JOIN that assumed sum(lines) === amount would be a money bug waiting on the
+// first booking edit.
+//
+// Whatever the lines do not cover goes to the fallback method. That remainder
+// is money taken before payment lines existed, and the scalar column is the
+// only record of how it arrived — which is exactly why issueAdvanceReceipt
+// refuses to overwrite that column on a split.
+function splitAcross(amount, lines, fallbackMethod) {
+  const parts = [];
+  let left = amount;
+  for (const line of lines ?? []) {
+    const take = Math.min(Number(line.amount), left);
+    if (take > 0) {
+      parts.push({ method: line.method, amount: round2(take) });
+      left = round2(left - take);
+    }
+  }
+  if (left > 0) parts.push({ method: fallbackMethod, amount: left });
+  return parts;
 }
 
 const BOOKING_STATUSES = ['BOOKED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'];
@@ -62,7 +108,7 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT b.advance_amount, b.advance_payment_method,
+      SELECT b.id, b.advance_amount, b.advance_payment_method,
              CASE
                WHEN b.check_in_date < @fromDate THEN 'EARLIER'
                WHEN b.check_in_date > @toDate THEN 'LATER'
@@ -81,7 +127,7 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT i.balance_collected, i.balance_payment_method,
+      SELECT i.id, i.balance_collected, i.balance_payment_method,
              CASE
                WHEN b.check_in_date < @fromDate THEN 'EARLIER'
                WHEN b.check_in_date > @toDate THEN 'LATER'
@@ -95,6 +141,59 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
         AND i.balance_collected > 0
         AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
     `);
+
+  // The lines behind those two figures, over exactly the same filtered sets —
+  // separate queries rather than a JOIN so no booking or invoice row is
+  // multiplied, which would inflate advanceCount, balanceCount and byStayPeriod.
+  //
+  // Grouped by method, so two cards on one bill report as one CARD figure.
+  // Ordered by the first line's id, so the clamp above spends the earliest
+  // tender first and gives the same answer every run.
+  const advanceLines = linesByParent(
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('fromDate', sql.Date, fromDate)
+      .input('toDate', sql.Date, toDate)
+      .query(`
+        SELECT ar.booking_id AS parent_id, pl.method, SUM(pl.amount) AS amount
+        FROM dbo.payment_lines pl
+        JOIN dbo.advance_receipts ar ON ar.id = pl.advance_receipt_id
+        JOIN dbo.bookings b ON b.id = ar.booking_id
+        WHERE pl.lodge_id = @lodgeId
+          AND ar.lodge_id = @lodgeId
+          AND b.lodge_id = @lodgeId
+          AND ar.status = 'ISSUED'
+          AND b.status <> 'CANCELLED'
+          AND b.advance_amount > 0
+          AND CAST(b.created_at AS DATE) BETWEEN @fromDate AND @toDate
+        GROUP BY ar.booking_id, pl.method
+        ORDER BY ar.booking_id, MIN(pl.id)
+      `)
+  );
+
+  const balanceLines = linesByParent(
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('fromDate', sql.Date, fromDate)
+      .input('toDate', sql.Date, toDate)
+      .query(`
+        SELECT pl.invoice_id AS parent_id, pl.method, SUM(pl.amount) AS amount
+        FROM dbo.payment_lines pl
+        JOIN dbo.invoices i ON i.id = pl.invoice_id
+        JOIN dbo.bookings b ON b.id = i.booking_id
+        WHERE pl.lodge_id = @lodgeId
+          AND i.lodge_id = @lodgeId
+          AND b.lodge_id = @lodgeId
+          AND i.status = 'ISSUED'
+          AND b.status <> 'CANCELLED'
+          AND i.balance_collected > 0
+          AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
+        GROUP BY pl.invoice_id, pl.method
+        ORDER BY pl.invoice_id, MIN(pl.id)
+      `)
+  );
 
   // Each payment is also filed by *which* stay it was for, relative to the
   // period being reported. That is the breakdown that answers "how much of
@@ -114,7 +213,9 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   for (const row of advances.recordset) {
     const amount = Number(row.advance_amount);
     advanceCollected = round2(advanceCollected + amount);
-    add(row.advance_payment_method, 'advance', amount);
+    for (const part of splitAcross(amount, advanceLines.get(String(row.id)), row.advance_payment_method)) {
+      add(part.method, 'advance', part.amount);
+    }
     file(row, 'advance', amount);
   }
 
@@ -122,7 +223,9 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   for (const row of balances.recordset) {
     const amount = Number(row.balance_collected);
     balanceCollected = round2(balanceCollected + amount);
-    add(row.balance_payment_method, 'balance', amount);
+    for (const part of splitAcross(amount, balanceLines.get(String(row.id)), row.balance_payment_method)) {
+      add(part.method, 'balance', part.amount);
+    }
     file(row, 'balance', amount);
   }
 
@@ -471,4 +574,4 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   };
 }
 
-module.exports = { getOccupancyReport, getGstSummary, getBookingsReport };
+module.exports = { getOccupancyReport, getGstSummary, getBookingsReport, splitAcross };

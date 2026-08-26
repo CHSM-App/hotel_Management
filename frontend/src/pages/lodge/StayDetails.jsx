@@ -1,6 +1,7 @@
 import BillDocument from './BillDocument';
 import './stayDetails.css';
 import { formatPrice } from './priceFormat';
+import { describeAdvance } from './paymentSplit';
 import {
   VEHICLE_TYPE_LABEL,
   describeParty,
@@ -223,7 +224,7 @@ export default function StayDetails({
                   {formatPrice(booking.advanceAmount)}
                   <span className="bookings-panel__muted">
                     {' · '}
-                    {booking.advancePaymentMethod}
+                    {describeAdvance(booking.advancePaymentLines, booking.advancePaymentMethod)}
                   </span>
                 </span>
               </div>
@@ -269,11 +270,11 @@ export default function StayDetails({
           to — and a stay crossing a season shows that in its lines. */}
       <div className="form-section">
         <div className="form-section__title">
-          <span className="form-section__num">5</span>Charges &amp; concession
+          <span className="form-section__num">5</span>Charges &amp; discount
         </div>
         <div className="sim-result">
           {/* What those nightly figures are made of — the base rate,
-              any season on top, each extra, the concession — summed
+              any season on top, each extra, the discount — summed
               across the nights each one applied to. Read from the
               booking's own snapshot, so it says what was charged even
               if a season or an extra has been re-priced since. A
@@ -311,7 +312,7 @@ export default function StayDetails({
                 Advance already paid
                 <span className="bookings-panel__muted">
                   {' · '}
-                  {booking.advancePaymentMethod}
+                  {describeAdvance(booking.advancePaymentLines, booking.advancePaymentMethod)}
                   {booking.advanceReference ? ` · ${booking.advanceReference}` : ''}
                 </span>
               </span>

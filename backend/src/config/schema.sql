@@ -405,15 +405,26 @@ END
 IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'base_price_override') IS NULL
     ALTER TABLE dbo.bookings ADD base_price_override DECIMAL(10,2) NULL;
 
--- id_proof_document — the guest's ID proof is now uploaded (image or PDF)
--- and stored on disk under uploads/id-proofs, referenced here by filename;
--- id_proof_number (a typed-in number) is retired. No DEFAULT/CHECK on
--- id_proof_number, so a plain DROP COLUMN is safe, same as fixed_price above.
+-- id_proof_document — the guest's ID proof is uploaded (image or PDF) and
+-- stored on disk under uploads/id-proofs, referenced here by filename.
 IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'id_proof_document') IS NULL
     ALTER TABLE dbo.bookings ADD id_proof_document NVARCHAR(255) NULL;
 
-IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'id_proof_number') IS NOT NULL
-    ALTER TABLE dbo.bookings DROP COLUMN id_proof_number;
+-- id_proof_number — was retired in favour of the upload, and is back as an
+-- *alternative* to it rather than a replacement for it. A desk that can read a
+-- number off a card but has no scanner to hand can still register the guest,
+-- which is what the upload-only rule made impossible. Either satisfies the
+-- "this guest identified themselves" requirement; neither is required when the
+-- other is present. See the guards in bookings.controller.js.
+--
+-- Deliberately not validated per ID type: an Aadhaar is 12 digits and a
+-- passport is not, and a desk mistyping one is a correction, not a security
+-- boundary — the document upload is what carries evidential weight.
+IF OBJECT_ID('dbo.bookings', 'U') IS NOT NULL AND COL_LENGTH('dbo.bookings', 'id_proof_number') IS NULL
+    ALTER TABLE dbo.bookings ADD id_proof_number NVARCHAR(50) NULL;
+
+IF OBJECT_ID('dbo.booking_guests', 'U') IS NOT NULL AND COL_LENGTH('dbo.booking_guests', 'id_proof_number') IS NULL
+    ALTER TABLE dbo.booking_guests ADD id_proof_number NVARCHAR(50) NULL;
 
 -- The returning-guest suggestions offered while a name is being typed into the
 -- booking form, which run a debounced query per keystroke against one lodge's
@@ -559,6 +570,69 @@ CREATE UNIQUE INDEX uq_advance_receipts_number ON dbo.advance_receipts(lodge_id,
 -- every open, and by the issue path to stop a second receipt for the same money.
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_advance_receipts_booking' AND object_id = OBJECT_ID('dbo.advance_receipts'))
 CREATE INDEX ix_advance_receipts_booking ON dbo.advance_receipts(booking_id, status);
+
+-- How a settlement was actually tendered, one row per method.
+--
+-- A guest often hands over money in two ways — some cash, the rest by UPI or
+-- card. Both money documents record exactly one method
+-- (invoices.balance_payment_method, advance_receipts.payment_method), so the
+-- desk had to pick one and the other half was filed under a method it never
+-- used. That misstates the takings by mode and prints something untrue on the
+-- guest's own bill.
+--
+-- One table serves both documents: a payment is the same fact whichever
+-- document acknowledges it, and a second table would be a second set of
+-- constraints to keep in step.
+--
+-- IMPORTANT: these lines only ever *split* a total, never carry one.
+-- bookings.advance_amount is written by five different paths — booking create,
+-- check-in, an edit that can set any value or clear it, receipt issue, and a
+-- void that floors it to NULL — so a report summing these lines instead of
+-- reading that column would invent or lose money the first time a booking was
+-- corrected. getCollectionsInPeriod reads totals as it always has and uses
+-- these lines only to apportion them.
+--
+-- Nothing historical is backfilled. A document with no lines reads as a single
+-- line built from its own scalar columns, which is what every bill and receipt
+-- issued before this table existed actually is.
+IF OBJECT_ID('dbo.payment_lines', 'U') IS NULL
+CREATE TABLE dbo.payment_lines (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    -- Exactly one parent, enforced below. No booking_id: reachable through
+    -- either parent, and a denormalised copy is a third thing to keep in step
+    -- when a receipt is voided.
+    invoice_id          BIGINT NULL REFERENCES dbo.invoices(id),
+    advance_receipt_id  BIGINT NULL REFERENCES dbo.advance_receipts(id),
+    method              NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_payment_lines_method CHECK (method IN ('CASH', 'UPI', 'CARD')),
+    -- Strictly positive. A zero line is not a payment; a negative one is a
+    -- refund, which is a void against the document rather than a line on it.
+    amount              DECIMAL(10,2) NOT NULL
+        CONSTRAINT ck_payment_lines_amount CHECK (amount > 0),
+    -- Same rule as everywhere money changes hands here: UPI and card leave a
+    -- number on both sides and it is recorded, cash leaves none.
+    reference           NVARCHAR(64) NULL,
+    -- Insertion order is entry order is print order, so there is no sort
+    -- column. Deliberately NOT a payment date: the collections report dates
+    -- money by booking/invoice creation, and a real payment date here would
+    -- invite changing that proxy — which moves figures in periods already
+    -- reconciled. That is its own decision.
+    created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    -- A line belongs to a bill or to an advance receipt, never both and never
+    -- neither. Written as a sum rather than an OR pair so "exactly one" is
+    -- stated once instead of as two clauses that can drift apart.
+    CONSTRAINT ck_payment_lines_parent CHECK (
+        (CASE WHEN invoice_id IS NULL THEN 0 ELSE 1 END)
+      + (CASE WHEN advance_receipt_id IS NULL THEN 0 ELSE 1 END) = 1)
+);
+
+-- Both reads are "the lines of this one document", one index per parent.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_lines_invoice' AND object_id = OBJECT_ID('dbo.payment_lines'))
+CREATE INDEX ix_payment_lines_invoice ON dbo.payment_lines(invoice_id) WHERE invoice_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_lines_receipt' AND object_id = OBJECT_ID('dbo.payment_lines'))
+CREATE INDEX ix_payment_lines_receipt ON dbo.payment_lines(advance_receipt_id) WHERE advance_receipt_id IS NOT NULL;
 
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
@@ -1465,3 +1539,78 @@ ALTER TABLE dbo.invoice_series DROP CONSTRAINT ck_invoice_series_type;
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_invoice_series_type')
 ALTER TABLE dbo.invoice_series ADD CONSTRAINT ck_invoice_series_type
     CHECK (series_type IN ('GST', 'NON_GST', 'ADVANCE'));
+
+-- ---------------------------------------------------------------------------
+-- Owner-chosen document serials, with no prefix
+-- ---------------------------------------------------------------------------
+-- Bills used to go out as "INV-1" / "RCT-1" / "ADV-1", a prefix the code chose.
+-- Properties number their bills to match the books they already keep, so the
+-- prefix is empty by default and the starting serial is the owner's to set
+-- (see billing/series.service.js).
+--
+-- Numbers already issued are never rewritten: invoice_number and receipt_number
+-- hold the string that was printed and handed to a guest.
+UPDATE dbo.invoice_series SET prefix = N'' WHERE prefix <> N'';
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.default_constraints WHERE name = 'df_invoice_series_prefix'
+)
+BEGIN
+    DECLARE @df_prefix SYSNAME;
+    SELECT @df_prefix = name FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('dbo.invoice_series')
+      AND COL_NAME(parent_object_id, parent_column_id) = 'prefix';
+    IF @df_prefix IS NOT NULL
+        EXEC('ALTER TABLE dbo.invoice_series DROP CONSTRAINT ' + @df_prefix);
+    ALTER TABLE dbo.invoice_series
+        ADD CONSTRAINT df_invoice_series_prefix DEFAULT N'' FOR prefix;
+END;
+
+-- Nothing previously stopped two documents sharing a number — the only unique
+-- index on dbo.invoices is uq_invoices_booking_active, which limits a booking
+-- to one active invoice and says nothing about the number. Survivable while the
+-- counter was untouchable; not once the serial can be set by hand.
+--
+-- Scoped per lodge, and covering VOID rows as well as ISSUED: a voided number
+-- is spent, and GST expects the void to stay visible in the series rather than
+-- the number being handed to a different guest.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_lodge_number' AND object_id = OBJECT_ID('dbo.invoices'))
+    CREATE UNIQUE INDEX uq_invoices_lodge_number ON dbo.invoices(lodge_id, invoice_number);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_advance_receipts_lodge_number' AND object_id = OBJECT_ID('dbo.advance_receipts'))
+    CREATE UNIQUE INDEX uq_advance_receipts_lodge_number ON dbo.advance_receipts(lodge_id, receipt_number);
+
+-- ---------------------------------------------------------------------------
+-- Several beds in one room
+-- ---------------------------------------------------------------------------
+-- bed_size holds one enum, so a family room with a double and two singles could
+-- only record whichever the desk picked. The full list lives here as JSON;
+-- bed_size stays, derived from the first entry, because the public room-type
+-- page, the booking chip, the price simulator and the room card all read it.
+IF COL_LENGTH('dbo.rooms', 'beds') IS NULL
+    EXEC('ALTER TABLE dbo.rooms ADD beds NVARCHAR(MAX) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_rooms_beds_json')
+    EXEC('ALTER TABLE dbo.rooms ADD CONSTRAINT ck_rooms_beds_json
+          CHECK (beds IS NULL OR ISJSON(beds) = 1)');
+
+UPDATE dbo.rooms
+SET beds = '[{"size":"' + bed_size + '","count":1}]'
+WHERE beds IS NULL AND bed_size IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- What an extra was agreed to cost on this booking, per night
+-- ---------------------------------------------------------------------------
+-- Extras were costed by joining live to switchable_charges.charge_per_night, so
+-- reception could not negotiate one and — silently — raising a lodge price
+-- repriced every booking ever taken, printed bills included.
+--
+-- The amount is for the whole line per night, not per unit: the desk agrees
+-- "₹100 for the extra beds", and 100 split three ways is 33.33, which
+-- multiplies back to 99.99 and leaves a stray paisa on the bill.
+IF COL_LENGTH('dbo.booking_switchable_charges', 'agreed_amount') IS NULL
+    EXEC('ALTER TABLE dbo.booking_switchable_charges ADD agreed_amount DECIMAL(10,2) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_booking_switchable_charges_agreed_amount')
+    EXEC('ALTER TABLE dbo.booking_switchable_charges ADD CONSTRAINT ck_booking_switchable_charges_agreed_amount
+          CHECK (agreed_amount IS NULL OR agreed_amount >= 0)');

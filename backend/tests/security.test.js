@@ -85,3 +85,17 @@ test('unknown API paths return JSON, not the SPA shell', async () => {
   const res = await request(app).get('/auth/does-not-exist').expect(404);
   assert.strictEqual(res.body.success, false);
 });
+
+test('the page may frame a file it built itself, but nothing remote', async () => {
+  // The reports panel previews its PDF in an iframe on a blob: URL. With
+  // frame-src 'none' that is refused by the browser and the preview shows
+  // blank, with the reason only visible in the console.
+  const csp = (await probe().expect(200)).headers['content-security-policy'];
+  assert.match(csp, /frame-src[^;]*blob:/, 'the PDF preview iframe would be blocked');
+  assert.ok(
+    !/frame-src[^;]*https?:/.test(csp),
+    'frame-src must not allow remote origins — this is for self-built files only'
+  );
+  // Being framed is a separate question and stays refused.
+  assert.match(csp, /frame-ancestors 'none'/);
+});

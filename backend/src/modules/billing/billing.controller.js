@@ -6,6 +6,7 @@ const {
 } = require('./billing.schema');
 const billingService = require('./billing.service');
 const advanceReceiptsService = require('./advanceReceipts.service');
+const seriesService = require('./series.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
 async function listBillableBookingsHandler(req, res, next) {
@@ -229,6 +230,32 @@ async function voidAdvanceReceiptHandler(req, res, next) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Document serials
+// ---------------------------------------------------------------------------
+
+async function getSeriesHandler(req, res, next) {
+  try {
+    res.json(await seriesService.listSeries(req.user.lodgeId));
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateSeriesHandler(req, res, next) {
+  try {
+    const series = String(req.params.series || '').toUpperCase();
+    // Number(), not parseInt(): "12abc" should be rejected outright rather than
+    // silently becoming 12 on a field that decides what a tax document is
+    // numbered. The service enforces the integer and range rules.
+    const nextNumber = Number(req.body?.nextNumber);
+    const updated = await seriesService.updateSeries(req.user.lodgeId, series, nextNumber);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listBillableBookingsHandler,
   listOpenFoodTabsHandler,
@@ -245,4 +272,6 @@ module.exports = {
   listAdvanceReceiptsHandler,
   getAdvanceReceiptHandler,
   voidAdvanceReceiptHandler,
+  getSeriesHandler,
+  updateSeriesHandler,
 };

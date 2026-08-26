@@ -14,6 +14,10 @@ const pricingService = require('../pricing/pricing.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 
+// One sentence for both doors, because they are the same requirement asked at
+// different moments, and two wordings would read as two different rules.
+const IDENTIFY_MSG = 'Upload the guest’s ID proof (image or PDF), or enter the ID number.';
+
 // "3,5:2" — one of charge 3, two of charge 5. A bare id keeps meaning one,
 // which is every link and bookmark that predates counts.
 const parseChargeIds = pricingService.parseChargeSelections;
@@ -180,6 +184,7 @@ function attachGuestFiles(guests, files) {
     name: guest.name,
     phone: guest.phone || null,
     idProofType: guest.idProofType || null,
+    idProofNumber: guest.idProofNumber || null,
     idProofDocument: guestFileByIndex.get(index) || null,
     isChild: Boolean(guest.isChild),
   }));
@@ -200,6 +205,7 @@ async function createBookingHandler(req, res, next) {
     body.switchableCharges = parseJsonArrayField(body.switchableCharges ?? body.switchableChargeIds);
     body.vehicles = parseJsonArrayField(body.vehicles);
     body.guests = parseJsonArrayField(body.guests);
+    body.advanceLines = parseJsonArrayField(body.advanceLines);
 
     const parsed = createBookingSchema.safeParse(body);
     if (!parsed.success) {
@@ -228,12 +234,14 @@ async function createBookingHandler(req, res, next) {
       );
     }
 
-    // A walk-in booking claims its ID proof type up front, so the document
-    // must arrive with it — either uploaded now or carried from a previous
-    // stay. A pre-reservation omits idProofType entirely and defers both to
-    // check-in.
-    if (parsed.data.idProofType && !primaryFile && !carriedIdProof) {
-      throw new ApiError('Upload the guest’s ID proof (image or PDF).', 400);
+    // A walk-in booking claims its ID proof type up front, so proof of it must
+    // arrive with it: a document — uploaded now or carried from a previous stay
+    // — or the number read off the card. Either satisfies this; the type on its
+    // own does not, because "AADHAAR" with nothing after it records that staff
+    // opened the dropdown, not that they saw an ID. A pre-reservation omits
+    // idProofType entirely and defers all of it to check-in.
+    if (parsed.data.idProofType && !primaryFile && !carriedIdProof && !parsed.data.idProofNumber) {
+      throw new ApiError(IDENTIFY_MSG, 400);
     }
 
     const result = await bookingsService.createBooking(req.user.lodgeId, req.user.sub, {
@@ -248,10 +256,34 @@ async function createBookingHandler(req, res, next) {
   }
 }
 
+// The row says a document is on file and the disk disagrees. Worth its own
+// sentence rather than a bare "Not found": the booking is fine, the guest is
+// fine, and what reception has to do — ask for the card again — is not
+// something "Not found" tells them.
+//
+// The likeliest cause is a deploy that replaced backend/ with UPLOAD_ROOT
+// unset, which is what config/uploadRoot.js refuses to boot without in
+// production. Left as a 404 because the file genuinely is not there.
+const ID_PROOF_GONE = 'That ID proof is no longer on file — please ask the guest for it again.';
+
+// sendFile's own error path is avoided rather than handled: it raises an
+// http-errors 404 whose message is the raw ENOENT, absolute path included, and
+// a route should not depend on the error handler to keep that off the screen.
+async function sendIdProof(res, filename) {
+  if (!(await bookingsService.idProofExists(filename))) {
+    throw new ApiError(ID_PROOF_GONE, 404);
+  }
+  // basename, not the stored string: the filename comes out of the database,
+  // and joining it unexamined is how "../.." reaches somewhere it should not.
+  // The upload middleware writes UUID names, so this can only ever be a no-op
+  // — which is the point of it being here anyway.
+  res.sendFile(path.join(UPLOAD_DIR, path.basename(filename)));
+}
+
 async function getIdProofHandler(req, res, next) {
   try {
     const filename = await bookingsService.getIdProofFilename(req.user.lodgeId, Number(req.params.id));
-    res.sendFile(path.join(UPLOAD_DIR, filename));
+    await sendIdProof(res, filename);
   } catch (err) {
     next(err);
   }
@@ -264,7 +296,7 @@ async function getGuestIdProofHandler(req, res, next) {
       Number(req.params.id),
       Number(req.params.guestId)
     );
-    res.sendFile(path.join(UPLOAD_DIR, filename));
+    await sendIdProof(res, filename);
   } catch (err) {
     next(err);
   }
@@ -279,6 +311,7 @@ async function checkInHandler(req, res, next) {
     const body = { ...req.body };
     body.guests = parseJsonArrayField(body.guests);
     body.vehicles = parseJsonArrayField(body.vehicles);
+    body.advanceLines = parseJsonArrayField(body.advanceLines);
 
     const parsed = checkInSchema.safeParse(body);
     if (!parsed.success) {
@@ -286,15 +319,15 @@ async function checkInHandler(req, res, next) {
     }
 
     const primaryFile = files.find((file) => file.fieldname === 'idProofDocument');
-    if (parsed.data.idProofType && !primaryFile) {
-      throw new ApiError('Upload the guest’s ID proof (image or PDF).', 400);
+    if (parsed.data.idProofType && !primaryFile && !parsed.data.idProofNumber) {
+      throw new ApiError(IDENTIFY_MSG, 400);
     }
 
     const booking = await bookingsService.checkIn(req.user.lodgeId, Number(req.params.id), {
       ...parsed.data,
       idProofDocument: primaryFile ? primaryFile.filename : null,
       guests: attachGuestFiles(parsed.data.guests, files),
-    });
+    }, req.user.sub);
     res.json({ booking });
   } catch (err) {
     cleanupUploads();
@@ -337,7 +370,7 @@ async function updateBookingHandler(req, res, next) {
       // Only when the party was sent at all — attachGuestFiles maps by
       // position, and mapping an absent list would turn it into an empty one.
       guests: parsed.data.guests && attachGuestFiles(parsed.data.guests, files),
-    });
+    }, req.user.sub);
     res.json({ booking });
   } catch (err) {
     cleanupUploads();

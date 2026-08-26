@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { useUrlState } from '../../lib/urlState';
+import BillNumberingPanel from './BillNumberingPanel';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
+import DownloadIcon from '../../components/DownloadIcon';
+import PaymentLines from './PaymentLines';
+import {
+  needsPaymentReference,
+  paymentLinesError,
+  sumLines,
+  toPaymentLines,
+} from './paymentSplit';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import StayDetails from './StayDetails';
 import './forms.css';
@@ -41,12 +51,6 @@ function lateLabel(minutes) {
 }
 
 
-
-// Money that arrives this way leaves a reference the property reconciles
-// against its settlement statement; cash doesn't. Mirrors ONLINE_METHODS on
-// the server, which is what actually enforces it.
-const ONLINE_PAYMENT_METHODS = ['UPI', 'CARD'];
-const needsPaymentReference = (method) => ONLINE_PAYMENT_METHODS.includes(method);
 
 const DOCUMENT_LABEL = {
   TAX_INVOICE: 'Tax invoice',
@@ -367,7 +371,17 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
   );
 }
 
-export default function Billing({ lodge, billNowBookingId = null }) {
+// modalOnly renders the bill modal and nothing else — no sub-tabs, no queue,
+// no bills list. It is how another screen (the bookings tab, after a checkout)
+// opens a bill without navigating here and without wrapping this page in an
+// overlay of its own: the modal is already a self-contained full-viewport
+// dialog that closes itself, so it needs no chrome around it.
+//
+// onClose lets the owner of that decision unmount this again. Without it,
+// closing the modal would leave an invisible Billing mounted forever and a
+// second attempt at the same booking would be a no-op — the parent's state
+// would already hold that id, so nothing would re-render.
+export default function Billing({ lodge, billNowBookingId = null, modalOnly = false, onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -382,9 +396,16 @@ export default function Billing({ lodge, billNowBookingId = null }) {
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
     ...(billsTables ? [{ key: 'tables', label: 'Tables to bill' }] : []),
     { key: 'bills', label: 'Bills' },
+    // Last, and deliberately not first: numbering is set once at setup and
+    // then left alone, while the other tabs are used every day.
+    { key: 'numbering', label: 'Numbering' },
   ];
 
-  const [tab, setTab] = useState(billsStays ? 'ready' : billsTables ? 'tables' : 'bills');
+  // The landing tab depends on what this login can bill, so it is worked out
+  // first and handed to the hook as the fallback — a URL with no tab lands
+  // exactly where it did before.
+  const defaultTab = billsStays ? 'ready' : billsTables ? 'tables' : 'bills';
+  const [tab, setTab] = useUrlState('tab', defaultTab);
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   const [queueError, setQueueError] = useState('');
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
@@ -573,10 +594,27 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   };
 
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [collectedAmount, setCollectedAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
-  const [paymentReference, setPaymentReference] = useState('');
+  // How the guest is paying, as a list — one row per way the money came in.
+  // null until the desk touches it, which is what lets an untouched bill show
+  // the balance due; see payLines below.
+  const [payLinesInput, setPayLinesInput] = useState(null);
+
   const [issueError, setIssueError] = useState('');
+  // Which input the message belongs under, when it belongs under one. A bill
+  // has three things that can be missing and they are in three different boxes;
+  // one banner for all of them says something is wrong but not where.
+  const [issueField, setIssueField] = useState(null);
+
+  // Named to read like an assignment at the call site: fail the amount, fail
+  // the method. Anything with no field behind it — a refusal from the server —
+  // passes null and falls back to the banner above the buttons.
+  const failIssue = (message, field = null) => {
+    setIssueError(message);
+    setIssueField(field);
+  };
+
+  const issueFieldError = (field) =>
+    issueError && issueField === field ? <p className="field__error">{issueError}</p> : null;
   const [submitting, setSubmitting] = useState(false);
   // Whether the overstay charge reception agreed at the desk lands on this
   // bill. Starts as "yes" — it was already agreed with the guest — and the
@@ -587,45 +625,41 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   // is ever sent — a percentage and an amount that disagree have no right
   // answer, and money is the half that gets collected.
 
-  // The amount the preview on screen was actually built for. Lags the box by a
-  // beat: the server re-derives the whole document for a discount, since taking
-  // money off can move a night into a lower GST band and change the round off.
-
-  // What the preview on screen was built for. Lags the collected box by a beat.
-  const [appliedTarget, setAppliedTarget] = useState(0);
-
   const openBilling = (target) => {
     setBillTarget(target);
     setPreview(null);
     setPreviewError('');
-    setCollectedAmount('');
-    setPaymentMethod('');
-    setPaymentReference('');
+    setPayLinesInput(null);
     setIssueError('');
     setIncludeLateCheckout(true);
     setDetailStay(null);
     setDetailStayError('');
     setPreviewOpen(false);
     setIssuePaperOpen(false);
-    setAppliedTarget(0);
   };
 
   const closeBilling = () => {
     if (submitting) return;
     setBillTarget(null);
+    // In modalOnly there is nothing left to look at once the modal is gone.
+    onClose?.();
   };
 
   // "counter" rather than an id — the till tab has no table row behind it.
   const foodTabPath = (tableId) => (tableId == null ? 'counter' : tableId);
 
-  // The late charge and the discount are both in the path rather than
-  // subtracted here on the client: taking money off can move the stay into a
-  // lower GST band and change the round off, so the server re-derives the whole
-  // document instead.
+  // The late charge is in the path rather than subtracted here on the client:
+  // adding it can move the stay into a higher GST band and change the round
+  // off, so the server re-derives the whole document instead.
+  //
+  // What the desk collects is deliberately NOT in here. The balance due is what
+  // the stay costs, and a figure typed into "Balance collected" must not change
+  // it — a total that moved while money was being counted is a total nobody can
+  // check the till against.
   const previewPath = billTarget
     ? billTarget.kind === 'STAY'
-      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}&targetTotal=${appliedTarget}`
-      : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview?targetTotal=${appliedTarget}`
+      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}`
+      : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
     : null;
 
   useEffect(() => {
@@ -644,6 +678,29 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   // A table bill has no advance — nobody pays a deposit to sit down.
   const advancePaid = preview?.advancePaid ?? 0;
   const balanceDue = activeAmounts ? round2(activeAmounts.totalAmount - advancePaid) : 0;
+
+  // The desk collects exactly what is due on almost every bill, so the first
+  // row starts there rather than empty and only the method is left to pick.
+  //
+  // Derived rather than seeded from an effect: the balance is only known once
+  // the preview lands, and writing it into state from an effect would re-render
+  // the modal an extra time on every open for a value that can just be
+  // computed. Once anything is typed, payLinesInput takes over for good —
+  // clearing a row still means "collect nothing" there.
+  const payLines =
+    payLinesInput ?? [{ method: '', amount: balanceDue > 0 ? String(balanceDue) : '', reference: '' }];
+
+  // There is no Amount box any more: what the guest handed over is however much
+  // the rows add up to. Kept as a string because everything downstream — the
+  // "was anything collected" test, the preview overlay, the POST — was written
+  // against the box's own value and reads exactly as it did.
+  const collectedTotal = sumLines(payLines);
+  const collectedAmount = collectedTotal > 0 ? String(collectedTotal) : '';
+
+  // The first tender, which is what the invoice's own scalar columns record and
+  // what the printed bill decorates its Net Payment line with.
+  const paymentMethod = payLines[0].method;
+  const paymentReference = payLines[0].reference;
 
   function round2(n) {
     return Math.round(n * 100) / 100;
@@ -665,65 +722,67 @@ export default function Billing({ lodge, billNowBookingId = null }) {
         balanceCollected: collecting ? Number(collectedAmount) || 0 : 0,
         balancePaymentMethod: collecting ? paymentMethod || null : null,
         balanceReference: collecting && needsPaymentReference(paymentMethod) ? paymentReference.trim() : null,
+        paymentLines: collecting && payLines.length > 1 ? toPaymentLines(payLines) : [],
       },
-    [preview, collecting, collectedAmount, paymentMethod, paymentReference]
+    [preview, collecting, collectedAmount, payLines, paymentMethod, paymentReference]
   );
 
-  // Everything on the bill before tax — a discount comes off what was sold,
-  // never off the tax the government is owed, so this is what a percentage is
-  // a percentage of.
-  const discountBase = preview?.discountBase ?? 0;
-  // What the solver actually reached. Often not the exact figure typed — the
-  // total steps at every GST band boundary and rounds to the rupee.
-  const targetAchieved = preview?.targetAchieved ?? null;
-
-  // The desk types what it took from the guest; the discount is whatever makes
-  // the bill land there. That is the decision as it is actually made at a
-  // counter — "he gave me 1500" — rather than a discount worked out first and
-  // a total that falls out of it.
+  // What the desk has actually recorded, against what the stay costs.
   //
-  // Solved server-side, before tax, because a discount shown on an invoice has
-  // to come off the taxable value: GST is due on what the guest actually paid.
-  const typedCollected = collectedAmount.trim() === '' ? 0 : Number(collectedAmount);
+  // Compared in paise rather than as floats: 600 + 900.10 is 1500.0999999999999
+  // in binary floating point, and a settlement refused for a rounding artefact
+  // is worse than one that adds up.
+  const paise = (n) => Math.round(Number(n) * 100);
+  const collectedShort = round2(balanceDue - (Number(collectedAmount) || 0));
+  const collectedMatches = paise(collectedAmount || 0) === paise(balanceDue);
 
-  // True while the box says one thing and the bill below still shows another.
-  // Issuing is blocked for that beat rather than quietly writing the bill the
-  // desk was looking at a moment ago.
-  const discountSettling =
-    !Number.isFinite(typedCollected) || round2(typedCollected) !== appliedTarget;
-
-  useEffect(() => {
-    const next = !Number.isFinite(typedCollected) || typedCollected < 0 ? 0 : round2(typedCollected);
-    if (next === appliedTarget) return undefined;
-    const timer = setTimeout(() => setAppliedTarget(next), 350);
-    return () => clearTimeout(timer);
-  }, [typedCollected, appliedTarget]);
+  // The bill cannot be issued until the two agree. Said in the direction the
+  // desk has to act in — how much is still missing, or how much too much has
+  // been entered — rather than restating both figures and leaving the
+  // subtraction to whoever is standing at the counter.
+  const collectedProblem = collectedMatches
+    ? null
+    : collectedShort > 0
+      ? `${formatPrice(collectedShort)} of the balance is still unaccounted for.`
+      : `That is ${formatPrice(-collectedShort)} more than the balance due.`;
 
   const handleIssue = async (e) => {
     e.preventDefault();
-    setIssueError('');
+    failIssue('');
 
     // A bill is written when the guest settles — the property extends no
     // credit, so there is no such thing as an issued bill with nothing
     // collected against it. Enforced on the server too; this is only so the
     // desk is told before the request goes out.
     if (collectedAmount.trim() === '') {
-      setIssueError('Enter the amount collected from the guest.');
+      failIssue('Enter the amount collected from the guest.', 'collectedAmount');
       return;
     }
     const collected = Number(collectedAmount);
     if (!Number.isFinite(collected) || collected < 0) {
-      setIssueError('Enter a valid amount collected.');
+      failIssue('Enter a valid amount collected.', 'collectedAmount');
       return;
     }
     // Zero has no payment type because no payment happened — the only way to
     // get here is an advance that already covered the whole stay.
-    if (collected > 0 && !paymentMethod) {
-      setIssueError('Choose a payment type for the amount collected.');
-      return;
+    if (collected > 0) {
+      // Covers the single-payment case unchanged — one row with no method is
+      // still "choose a payment type" — and every row of a split besides.
+      const lineProblem = paymentLinesError(payLines);
+      if (lineProblem) {
+        failIssue(
+          payLines.length === 1 && !paymentMethod
+            ? 'Choose a payment type for the amount collected.'
+            : lineProblem,
+          'paymentLines'
+        );
+        return;
+      }
     }
-    if (collected > 0 && needsPaymentReference(paymentMethod) && paymentReference.trim() === '') {
-      setIssueError('Enter the transaction number for a UPI or card payment.');
+    // Checked here as well as on screen: the message below the rows is what the
+    // desk reads, this is what actually stops the bill.
+    if (collectedProblem) {
+      failIssue(collectedProblem, 'paymentLines');
       return;
     }
 
@@ -734,7 +793,7 @@ export default function Billing({ lodge, billNowBookingId = null }) {
 
     setSubmitting(true);
     try {
-      await apiPost(
+      const data = await apiPost(
         path,
         {
           billingSide,
@@ -754,13 +813,19 @@ export default function Billing({ lodge, billNowBookingId = null }) {
           ...(collected > 0 && needsPaymentReference(paymentMethod)
             ? { paymentReference: paymentReference.trim() }
             : {}),
+          ...(collected > 0 && payLines.length > 1 ? { paymentLines: toPaymentLines(payLines) } : {}),
         },
         { token }
       );
+      // Straight to the document. The bill exists, the guest is at the desk,
+      // and the next thing anyone does with it is print it — closing back to a
+      // queue and making them find it again is a step with one answer.
+      setJustIssued(data.invoice);
+      setDetailInvoiceId(data.invoice.id);
       setBillTarget(null);
       refreshAll();
     } catch (err) {
-      setIssueError(err instanceof ApiError ? err.message : 'Could not issue this bill.');
+      failIssue(err instanceof ApiError ? err.message : 'Could not issue this bill.');
     } finally {
       setSubmitting(false);
     }
@@ -768,12 +833,22 @@ export default function Billing({ lodge, billNowBookingId = null }) {
 
   // Invoice detail / void modal
   const [detailInvoiceId, setDetailInvoiceId] = useState(null);
+  // The bill just written, held so it can be shown the instant it exists.
+  // refreshAll() re-fetches the lists in the background, and the detail modal
+  // reads from those — so without this the document would blink in a moment
+  // later, or not at all on the screen that has no lists to refresh.
+  const [justIssued, setJustIssued] = useState(null);
   const [showVoidForm, setShowVoidForm] = useState(false);
   const [voidReason, setVoidReason] = useState('');
   const [voidError, setVoidError] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
 
-  const detailInvoice = invoices?.find((i) => i.id === detailInvoiceId);
+  // The list first — it carries whatever a void has since done to the bill —
+  // falling back to the copy returned by the issue itself, which is the only
+  // source on a screen with no lists behind it.
+  const detailInvoice =
+    invoices?.find((i) => i.id === detailInvoiceId) ??
+    (justIssued?.id === detailInvoiceId ? justIssued : null);
   // An advance receipt opened from the list. It gets the receipt modal rather
   // than the bill modal below: the two documents are voided differently, print
   // from different components, and a receipt has no food tab or balance to
@@ -798,6 +873,11 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   const closeDetail = () => {
     if (voidSubmitting) return;
     setDetailInvoiceId(null);
+    setJustIssued(null);
+    // Opened over another tab there is nothing behind this to fall back to —
+    // the queue and the bills list are not rendered — so closing the document
+    // is closing the screen.
+    if (modalOnly) onClose?.();
   };
 
   // Bill PDF share/download
@@ -899,7 +979,12 @@ export default function Billing({ lodge, billNowBookingId = null }) {
   };
 
   return (
-    <div className="billing-panel">
+    <div className={modalOnly ? 'billing-panel billing-panel--modal-only' : 'billing-panel'}>
+      {/* Everything that makes this a page. In modalOnly none of it is
+          wanted — see the note on the props. A fragment because the page is a
+          run of siblings, not one element. */}
+      {!modalOnly && (
+        <>
       <div className="billing-panel__subtabs">
         {tabs.map((t) => (
           <button
@@ -919,6 +1004,8 @@ export default function Billing({ lodge, billNowBookingId = null }) {
           </button>
         ))}
       </div>
+
+      {tab === 'numbering' && <BillNumberingPanel />}
 
       {tab === 'tables' && (
         <div className="chart-section">
@@ -1209,9 +1296,29 @@ export default function Billing({ lodge, billNowBookingId = null }) {
         </div>
       )}
 
-      {billTarget && (
-        <div className="glass-backdrop billing-panel__backdrop" onClick={closeBilling}>
-          <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
+        </>
+      )}
+
+      {/* One modal, two steps: take the payment, then hand over the document.
+          These were two dialogs, and issuing closed the first before opening the
+          second — which read as the screen throwing the desk out and starting
+          again, with the booking panel flashing up in between.
+          The backdrop closes whichever step is showing, so a click outside
+          always means the same thing. */}
+      {(billTarget || (detailInvoiceId && detailInvoice)) && (
+        <div
+          className="glass-backdrop billing-panel__backdrop"
+          onClick={billTarget ? closeBilling : closeDetail}
+        >
+          <div
+            className="glass-panel billing-panel__modal billing-steps"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* key, so React remounts on the change of step rather than
+                reconciling one into the other — without it the pane swaps its
+                contents in place and the slide never plays. */}
+            {billTarget ? (
+              <div className="billing-steps__pane" key="collect">
             <h3>Issue bill</h3>
 
             {previewError && <div className="form-banner form-banner--error">{previewError}</div>}
@@ -1219,7 +1326,6 @@ export default function Billing({ lodge, billNowBookingId = null }) {
 
             {!previewError && preview && (
               <form onSubmit={handleIssue} noValidate>
-                {issueError && <div className="form-banner form-banner--error">{issueError}</div>}
                 {preview.alreadyInvoiced && (
                   <div className="form-banner form-banner--info">
                     This booking already has an issued bill. Void it first to reissue.
@@ -1499,75 +1605,26 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                     "he gave me 1500" and arithmetic. */}
                 <div className="form-section">
                   <div className="form-section__title">Balance collected</div>
-                  <div className="field-row">
-                    <div className="field">
-                      <label htmlFor="collectedAmount">Amount</label>
-                      <input
-                        id="collectedAmount"
-                        type="number"
-                        min="0"
-                        placeholder={balanceDue ? String(balanceDue) : '0'}
-                        value={collectedAmount}
-                        onChange={(e) => setCollectedAmount(e.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="paymentMethod">Payment type</label>
-                      <select
-                        id="paymentMethod"
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
-                      >
-                        <option value="">Choose one</option>
-                        <option value="CASH">Cash</option>
-                        <option value="UPI">UPI</option>
-                        <option value="CARD">Card</option>
-                      </select>
-                    </div>
-                  </div>
-                  {/* Only for money that left a trail — what the settlement
-                      statement gets matched against at month end. */}
-                  {needsPaymentReference(paymentMethod) && (
-                    <div className="field">
-                      <label htmlFor="paymentReference">Transaction number</label>
-                      <input
-                        id="paymentReference"
-                        value={paymentReference}
-                        maxLength={64}
-                        placeholder={paymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
-                        onChange={(e) => setPaymentReference(e.target.value)}
-                      />
-                    </div>
-                  )}
+                  {/* No Amount box: what the guest handed over is however much
+                      these rows add up to. The discount the bill has to give up
+                      to land on that figure is still solved server-side — see
+                      the target effect, which waits for the rows to be complete
+                      before moving it. */}
+                  <PaymentLines
+                    lines={payLines}
+                    onChange={setPayLinesInput}
+                    idPrefix="bill"
+                    error={
+                      <>
+                        {issueFieldError('collectedAmount')}
+                        {issueFieldError('paymentLines')}
+                        {collectedProblem && !issueError && (
+                          <p className="field__error">{collectedProblem}</p>
+                        )}
+                      </>
+                    }
+                  />
                 </div>
-
-                {/* Not typed — worked out. The desk said what it took; this is
-                    what the bill had to give up to get there, taken off before
-                    tax so GST is charged on what the guest actually paid.
-                    Shown in both readings because a guest asks for one and an
-                    owner asks for the other. */}
-                {activeAmounts && activeAmounts.discountAmount > 0 && (
-                  <div className="form-section">
-                    <div className="form-section__title">Discount applied</div>
-                    <div className="detail-facts">
-                      <div className="detail-fact">
-                        <span className="detail-fact__label">Amount</span>
-                        <span className="detail-fact__value">
-                          {formatPrice(activeAmounts.discountAmount)}
-                        </span>
-                      </div>
-                      <div className="detail-fact">
-                        <span className="detail-fact__label">Percent</span>
-                        <span className="detail-fact__value">{activeAmounts.discountPercent}%</span>
-                      </div>
-                    </div>
-                    <p className="billing-panel__hint">
-                      {targetAchieved != null && round2(typedCollected) !== targetAchieved
-                        ? `Nearest reachable is ${formatPrice(targetAchieved)} — GST bands each night and the total rounds to the rupee.`
-                        : `Taken off ${formatPrice(discountBase)} before tax, so GST is charged on what the guest actually pays.`}
-                    </p>
-                  </div>
-                )}
 
                 {/* Last on the form, because everything above it changes what
                     prints — the discount, whether the overstay is billed, what
@@ -1650,6 +1707,15 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                   </details>
                 )}
 
+                {/* Only what has no single input behind it — a refusal from
+                    the server, mostly. Anything about a box the desk can fix is
+                    printed under that box instead: this form is long, and a
+                    message down here about a field several sections up is a
+                    message about something off-screen. */}
+                {issueError && !issueField && (
+                  <div className="form-banner form-banner--error">{issueError}</div>
+                )}
+
                 <div className="billing-panel__actions">
                   <button type="button" className="btn-secondary" onClick={closeBilling} disabled={submitting}>
                     Cancel
@@ -1657,34 +1723,16 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                   <button
                     className="btn-accent"
                     type="submit"
-                    disabled={submitting || preview.alreadyInvoiced || discountSettling}
+                    disabled={submitting || preview.alreadyInvoiced || Boolean(collectedProblem)}
                   >
-                    {submitting ? 'Issuing…' : discountSettling ? 'Recalculating…' : 'Issue bill'}
+                    {submitting ? 'Issuing…' : 'Issue bill'}
                   </button>
                 </div>
               </form>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* An advance receipt opened from the list: reprint, share, or void. No
-          booking is passed, so it opens straight on the document with no form —
-          the money was taken when the booking was made. */}
-      {detailReceipt && (
-        <AdvanceReceiptModal
-          initialReceipt={detailReceipt}
-          onClose={() => setDetailReceipt(null)}
-          onVoided={() => {
-            loadReceipts();
-            loadQueue();
-          }}
-        />
-      )}
-
-      {detailInvoiceId && detailInvoice && (
-        <div className="glass-backdrop billing-panel__backdrop" onClick={closeDetail}>
-          <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
+              </div>
+            ) : (
+              <div className="billing-steps__pane" key="issued">
             <div className="billing-panel__detail-header">
               <h3>{detailInvoice.invoiceNumber}</h3>
               {/* Both tags, in the same colours as the list row that opened
@@ -1705,6 +1753,55 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                 size its offscreen copy. It has to stay unscaled: offsetWidth
                 on a transformed node reports the drawn width, and the capture
                 would be laid out to a figure the document never used. */}
+            {/* Above the bill, not below it. The document is a full sheet of
+                paper — with the actions underneath, printing meant scrolling
+                past the whole thing to reach the button, every time. What the
+                desk does here is act on the bill, so the actions sit where the
+                eye already is when the modal opens.
+
+                Paper and language ride with Print and the download because they
+                govern both: the two have to agree about the sheet. */}
+            {detailInvoice.status === 'ISSUED' && !showVoidForm && (
+              <div className="bill-actions">
+                <div className="bill-actions__sheet">
+                  <PaperSelect value={paperSize} onChange={setPaperSize} />
+                  <BillLangSelect value={billLang} onChange={setBillLang} />
+                </div>
+                <div className="bill-actions__buttons">
+                  {/* An explicit way out. Backdrop-click alone is fine when this
+                      sits over the bills list, but the desk reaches it straight
+                      from a checkout now, with nothing behind it to click back
+                      to. */}
+                  <button type="button" className="btn-secondary" onClick={closeDetail}>
+                    Done
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={handlePrint}>
+                    Print
+                  </button>
+                  <button
+                  type="button"
+                  className="btn-accent bill-actions__icon-btn"
+                  onClick={handleSharePdf}
+                  disabled={pdfBusy}
+                  aria-label={pdfBusy ? 'Preparing the PDF' : 'Share or download this bill as a PDF'}
+                  title={pdfBusy ? 'Preparing…' : 'Share / Download PDF'}
+                >
+                  <DownloadIcon />
+                </button>
+                  {/* Last, and a link rather than a button: voiding is the one
+                      irreversible thing on this screen and must not read as a
+                      peer of Print. */}
+                  <button
+                    type="button"
+                    className="billing-panel__danger-link"
+                    onClick={() => setShowVoidForm(true)}
+                  >
+                    Void this bill
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* The one copy that prints. The wrapper carries the marker the
                 print stylesheet keys off — the modal holds other copies of the
                 same document (the PDF source, the paper thumbnails) and only
@@ -1769,30 +1866,6 @@ export default function Billing({ lodge, billNowBookingId = null }) {
             {voidError && <div className="form-banner form-banner--error">{voidError}</div>}
             {pdfError && <div className="form-banner form-banner--error">{pdfError}</div>}
 
-            {detailInvoice.status === 'ISSUED' && !showVoidForm && (
-              <div className="billing-panel__actions">
-                <button
-                  type="button"
-                  className="billing-panel__danger-link"
-                  onClick={() => setShowVoidForm(true)}
-                >
-                  Void this bill
-                </button>
-                {/* Beside the two buttons it governs, because it governs both
-                    — printing and the download have to agree about the sheet,
-                    and a control parked elsewhere reads as belonging to
-                    whichever one is nearer. */}
-                <PaperSelect value={paperSize} onChange={setPaperSize} />
-                <BillLangSelect value={billLang} onChange={setBillLang} />
-                <button type="button" className="btn-secondary" onClick={handlePrint}>
-                  Print
-                </button>
-                <button type="button" className="btn-accent" onClick={handleSharePdf} disabled={pdfBusy}>
-                  {pdfBusy ? 'Preparing…' : 'Share / Download PDF'}
-                </button>
-              </div>
-            )}
-
             {detailInvoice.status === 'ISSUED' && showVoidForm && (
               <form onSubmit={handleVoid} className="form-section">
                 <div className="form-section__title">Reason for voiding</div>
@@ -1819,9 +1892,26 @@ export default function Billing({ lodge, billNowBookingId = null }) {
                 </div>
               </form>
             )}
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* An advance receipt opened from the list: reprint, share, or void. No
+          booking is passed, so it opens straight on the document with no form —
+          the money was taken when the booking was made. */}
+      {detailReceipt && (
+        <AdvanceReceiptModal
+          initialReceipt={detailReceipt}
+          onClose={() => setDetailReceipt(null)}
+          onVoided={() => {
+            loadReceipts();
+            loadQueue();
+          }}
+        />
+      )}
+
     </div>
   );
 }

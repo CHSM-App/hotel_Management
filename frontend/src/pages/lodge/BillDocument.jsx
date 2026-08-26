@@ -51,7 +51,11 @@ const STRINGS_EN = {
   miscTag: 'Misc',
   roundOff: 'Round off',
   grandTotal: 'GRAND TOTAL',
+  // Printed only when the guest paid in more than one way, one row each.
+  pay: { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' },
   lessAdvance: 'Less Advance if any',
+  recNo: 'Rec. No.',
+  txnNo: 'Txn No.',
   netPayment: 'Net Payment',
   inwords: '(Inwords Rupees',
   words: amountInWords,
@@ -544,7 +548,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
           </div>
           {invoice.advancePaid > 0 && (
             <div className="bill-doc__totals-line">
-              <span>Advance</span>
+              <span>Advance{invoice.advanceReceiptNumbers ? ` (Rec. No. ${invoice.advanceReceiptNumbers})` : ''}</span>
               <span className="bill-doc__amt">{amt(invoice.advancePaid)}</span>
             </div>
           )}
@@ -764,11 +768,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
       : []),
   ];
 
-  // Everything already against the bill. The memo has one "Less Advance if any"
-  // rule; where money arrived in two goes it still nets to one figure, with the
-  // method named beside it.
-  const paidAlready = round2(invoice.advancePaid + invoice.balanceCollected);
-  const netPayment = round2(invoice.totalAmount - paidAlready);
+  // "Less Advance if any" means what it says: money taken BEFORE this bill was
+  // cut. balance_collected is the opposite — it is the payment this bill is
+  // asking for, handed over at the desk as it is printed.
+  //
+  // Adding the two together and calling the result an advance made every bill
+  // wrong in two ways at once: a guest who left no deposit still saw "Less
+  // Advance 1,500", and because the sum always equals the total, Net Payment
+  // printed 0.00 on every bill ever issued — the one figure the guest is meant
+  // to read off it.
+  const netPayment = round2(invoice.totalAmount - invoice.advancePaid);
 
   const stayFrom = [formatDate(invoice.actualCheckInAt || invoice.checkInDate), formatTime(invoice.actualCheckInAt)];
   const stayTo = [formatDate(invoice.actualCheckOutAt || invoice.checkOutDate), formatTime(invoice.actualCheckOutAt)];
@@ -779,8 +788,20 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
       ? T.checkout24
       : T.checkoutBy(clockLabel(invoice.checkOutTime) || '11:00 AM');
 
-  const grossWhole = Math.floor(Math.round(invoice.totalAmount * 100) / 100);
-  const grossPaise = Math.round(invoice.totalAmount * 100) % 100;
+  // The figure at the head of the Rs./Ps. column, against the stay block.
+  //
+  // The taxable value, NOT the grand total. It is the first entry in a column
+  // that then adds CGST and SGST to reach GRAND TOTAL, so putting the inclusive
+  // figure here made the column contradict itself: it read 1,300 at the top,
+  // 1,238.10 against its own TOTAL AMOUNT two rules below, and 1,300 again at
+  // the bottom — the tax appearing to be added to a number that already held it.
+  //
+  // Deliberately the same expression the TOTAL AMOUNT line uses, so the two can
+  // never drift: this is that line, written once at the top of the column where
+  // the printed memo puts it.
+  const leadAmount = round2(roomTaxable + foodTaxable);
+  const grossWhole = Math.floor(Math.round(leadAmount * 100) / 100);
+  const grossPaise = Math.round(leadAmount * 100) % 100;
 
   return (
     <div className="bill-doc memo" ref={ref}>
@@ -1013,25 +1034,67 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           )}
           {invoice.roundOff !== 0 && <Money label={T.roundOff} value={invoice.roundOff} />}
           <Money label={T.grandTotal} value={invoice.totalAmount} strong rule />
-          {paidAlready > 0 && (
+          {invoice.advancePaid > 0 && (
             <Money
               label={
-                <>
-                  {T.lessAdvance}
-                  {/* The reference the guest's own UPI or card statement
-                      carries. What makes a disputed payment answerable months
-                      later, so it rides on the rule beside it. */}
-                  {(invoice.balanceReference || invoice.balancePaymentMethod) && (
+                invoice.advanceReceiptNumbers
+                  ? `${T.lessAdvance} (${T.recNo} ${invoice.advanceReceiptNumbers})`
+                  : T.lessAdvance
+              }
+              value={invoice.advancePaid}
+            />
+          )}
+          <Money
+            label={
+              <>
+                {T.netPayment}
+                {/* Beside the net payment, not the advance: balance_payment_method
+                    describes the money being handed over now. The reference is
+                    what the guest's own UPI or card statement carries, and is
+                    what makes a disputed payment answerable months later.
+
+                    Dropped entirely on a split. The rows underneath name every
+                    method that was used and what came in by each, so repeating
+                    the first one here printed "CASH" with "Cash 1,000" directly
+                    beneath it — the same payment, said twice, one of the two
+                    without its amount. */}
+                {!(invoice.paymentLines?.length > 1) &&
+                  (invoice.balanceReference || invoice.balancePaymentMethod) && (
                     <span className="memo__ref">
                       {[invoice.balancePaymentMethod, invoice.balanceReference].filter(Boolean).join(' ')}
                     </span>
                   )}
-                </>
-              }
-              value={paidAlready}
-            />
-          )}
-          <Money label={T.netPayment} value={netPayment} strong rule />
+              </>
+            }
+            value={netPayment}
+            strong
+            rule
+          />
+          {/* How that payment was actually made up, when it was made up of more
+              than one thing. Gated on > 1 deliberately: with a single method the
+              decoration on the Net Payment label above already says it, and
+              rendering unconditionally would put a duplicate "Cash 1,500" row
+              under it on every bill the property prints.
+
+              Not strong and not ruled — these are a breakdown of the figure
+              above, not another total to be read off the page. */}
+          {invoice.paymentLines?.length > 1 &&
+            invoice.paymentLines.map((line, index) => (
+              <Money
+                key={index}
+                label={
+                  <>
+                    {T.pay?.[line.method] ?? line.method}
+                    {line.reference && (
+                      <span className="memo__ref">
+                        {T.txnNo} {line.reference}
+                      </span>
+                    )}
+                  </>
+                }
+                value={line.amount}
+              />
+            ))}
         </tbody>
       </table>
 

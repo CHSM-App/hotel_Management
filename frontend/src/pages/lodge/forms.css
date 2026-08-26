@@ -11,7 +11,10 @@
 }
 
 .field input,
-.field select {
+.field select,
+.pay-lines__row select,
+.pay-lines__row input,
+.pay-lines__ref {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--border);
@@ -25,7 +28,10 @@
 /* The well deepens on focus rather than swapping to a flat outline, so the
    active field still belongs to the same material as the rest of the form. */
 .field input:focus-visible,
-.field select:focus-visible {
+.field select:focus-visible,
+.pay-lines__row select:focus-visible,
+.pay-lines__row input:focus-visible,
+.pay-lines__ref:focus-visible {
   border-color: var(--focus);
   box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
 }
@@ -182,7 +188,7 @@
 
 .btn-secondary:hover {
   color: var(--brand);
-  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  box-shadow: var(--shadow-raised-hover);
 }
 
 .btn-secondary:active {
@@ -304,7 +310,7 @@
 
 .toggle-group button {
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   padding: 9px 16px;
@@ -318,4 +324,134 @@
   background: var(--brand);
   color: #ffffff;
   box-shadow: var(--shadow-raised);
+}
+
+/* A field in error gets a red edge, not just red text underneath. The message
+   says what is wrong; the border says which of six boxes on the line it is
+   about, which on a party row is the harder question.
+   
+   Driven by :has() rather than a class on each input, so it covers every panel
+   that already renders .field__error — there is no second place to remember to
+   mark up. */
+.field:has(> .field__error) input,
+.field:has(> .field__error) select,
+.field input[aria-invalid='true'],
+.field select[aria-invalid='true'] {
+  border-color: var(--danger);
+  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+}
+
+/* The agreed price for this stay. Same shape as the count box beside it, a
+   little wider because it holds rupees rather than a single digit. Only the
+   count carries margin-left:auto — with both pushed right they would separate,
+   and the two belong together as one "how many at what price". */
+.checkbox-chip input.checkbox-chip__price {
+  width: 72px;
+  height: auto;
+  min-height: 0;
+  margin-left: auto;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: right;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* When both boxes are present the count keeps them adjacent instead of each
+   claiming the free space. */
+.checkbox-chip input.checkbox-chip__qty + .checkbox-chip__price {
+  margin-left: 4px;
+}
+
+.field:has(> .field__error) input:focus-visible,
+.field:has(> .field__error) select:focus-visible,
+.field input[aria-invalid='true']:focus-visible,
+.field select[aria-invalid='true']:focus-visible {
+  border-color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------------
+   Split payments
+   ---------------------------------------------------------------------------
+   A guest often settles part in cash and the rest by UPI or card. One line is
+   just the payment-type field as it always was; from two lines up, the rows
+   below carry a method, its share, and a way to drop it again. */
+
+.pay-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pay-lines__line {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Method takes the room, the amount is a figure, the bin is an icon. */
+.pay-lines__row {
+  display: grid;
+  grid-template-columns: 1fr 110px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+/* The worked-out last row. Greyed so it reads as an answer rather than an
+   empty box somebody forgot to fill in. */
+.pay-lines__row .pay-lines__derived {
+  background: var(--surface-muted, rgba(0, 0, 0, 0.04));
+  color: var(--muted-ink, #6b7280);
+  cursor: default;
+}
+
+.pay-lines__remove {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--danger, #b42318);
+  cursor: pointer;
+}
+
+.pay-lines__remove:hover {
+  border-color: var(--danger, #b42318);
+}
+
+.pay-lines__add {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--brand-ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 10px 14px;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  /* The bin stays on the row — dropping it below the amount on a phone puts a
+     delete control under a number it does not belong to. */
+  .pay-lines__row {
+    grid-template-columns: 1fr 88px auto;
+    gap: 8px;
+  }
+}
+
+/* Dead on a single payment: kept for the layout, not for use. */
+.pay-lines__remove:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.pay-lines__remove:disabled:hover {
+  border-color: var(--border);
 }

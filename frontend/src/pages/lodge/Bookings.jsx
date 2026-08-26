@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   apiGet,
   apiPost,
@@ -15,6 +15,15 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import StayDetails from './StayDetails';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
+import PaymentLines from './PaymentLines';
+import {
+  emptyPaymentLine,
+  needsPaymentReference,
+  paymentFieldId,
+  paymentLinesError,
+  sumLines,
+  toPaymentLines,
+} from './paymentSplit';
 import { VEHICLE_TYPE_LABEL, describeParty, formatDateLong, idProofLabel } from './stayFormat';
 import './forms.css';
 import './chartSections.css';
@@ -22,12 +31,32 @@ import './tapeChart.css';
 import './Bookings.css';
 
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
-// Money that arrives this way leaves a reference the property can reconcile
-// against its settlement statement; cash doesn't, so asking for one there
-// would be asking staff to invent a number. Mirrors ONLINE_METHODS on the
-// server, which is what actually enforces it.
-const ONLINE_PAYMENT_METHODS = ['UPI', 'CARD'];
-const needsPaymentReference = (method) => ONLINE_PAYMENT_METHODS.includes(method);
+// A deposit is handed over part cash, part UPI as often as a final bill is —
+// arguably more, since "I've got 300 cash, rest on UPI" is the normal shape of
+// one. This wires the booking and check-in forms to the same editor the bill
+// and the receipt modal use.
+//
+// advancePaymentMethod and advanceReference stay exactly as they were and go on
+// meaning "the first tender", so the section badge, the FormData, the edit seed
+// and the just-booked summary all keep reading them untouched. Both are written
+// in the same update as the lines, so the two can never drift apart.
+const setAdvanceLines = (setForm) => (next) =>
+  setForm((f) => ({
+    ...f,
+    advanceLines: next,
+    advancePaymentMethod: next[0].method,
+    advanceReference: next[0].reference,
+    // The advance total is the sum of its rows, never a figure typed beside
+    // them. Written into advanceAmount rather than derived at the point of use
+    // so every existing reader — the section badge, the "advance can't exceed
+    // the stay" check, the FormData, the just-booked summary — goes on reading
+    // the one field it always read.
+    //
+    // Blank, not "0", when nothing has been entered: hasAdvanceAmount tests
+    // this field for emptiness to decide whether an advance was taken at all,
+    // and a zero would make every booking look like it came with one.
+    advanceAmount: sumLines(next) > 0 ? String(sumLines(next)) : '',
+  }));
 
 // What to send as the advance's transaction number. Dropped when the method is
 // cash: switching UPI → Cash after typing a reference would otherwise file a
@@ -51,6 +80,18 @@ const TOOLTIP_DOT = { BOOKED: 'booked', CHECKED_IN: 'checked-in', CHECKED_OUT: '
 // room held for a date still to come.
 const TILE_STATUS_LABEL = { ...STATUS_LABEL, BOOKED: 'Reserved' };
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
+
+function bedSummary(room) {
+  if (!room) return null;
+  const beds =
+    room.beds && room.beds.length > 0
+      ? room.beds
+      : room.bedSize
+        ? [{ size: room.bedSize, count: 1 }]
+        : [];
+  if (beds.length === 0) return null;
+  return beds.map((b) => `${b.count} ${BED_SIZE_LABEL[b.size] || b.size}`).join(' + ');
+}
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
 // Today by the IST calendar, which is the only "today" this app has: every
 // lodge on it is in India, and UTC lags IST by up to 5.5 hours — a plain
@@ -84,36 +125,69 @@ function formatDateHead(dateStr) {
 
 // The chart is anchored to a whole calendar month, so every date that drives
 // it is normalised to the 1st before anything else looks at it.
-function monthStartOf(dateStr) {
-  return `${dateStr.slice(0, 7)}-01`;
+// The month or months the columns belong to, named in full across the date
+// header. A rolling window usually straddles two, and a band naming only the
+// first would mislabel the second half of its own columns.
+// The chart is a rolling 30-day window, so it almost always straddles a month
+// boundary. Split into runs of days so each month can name itself over its own
+// columns instead of the pair sharing one "AUGUST – SEPTEMBER" caption that
+// says nothing about where one ends and the other starts.
+function monthRuns(dates) {
+  const runs = [];
+  for (const date of dates) {
+    const key = date.slice(0, 7);
+    const last = runs[runs.length - 1];
+    if (last && last.key === key) last.days += 1;
+    else runs.push({ key, days: 1, first: date });
+  }
+  return runs;
 }
 
-// The month the columns belong to, named in full across the date header.
-function formatMonthBand(monthStart) {
-  const d = new Date(`${monthStart}T00:00:00Z`);
-  return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-}
-
-function addMonths(monthStart, n) {
-  const d = new Date(`${monthStart}T00:00:00Z`);
-  // Setting the day to 1 in the same call keeps a 31st from rolling into the
-  // month after the one being asked for.
-  d.setUTCMonth(d.getUTCMonth() + n, 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function daysInMonth(monthStart) {
-  const d = new Date(`${monthStart}T00:00:00Z`);
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+function formatMonthBand(fromStr, toStr) {
+  const opts = { month: 'long', year: 'numeric', timeZone: 'UTC' };
+  const from = new Date(`${fromStr}T00:00:00Z`);
+  const to = new Date(`${toStr}T00:00:00Z`);
+  const a = from.toLocaleDateString('en-IN', opts);
+  const b = to.toLocaleDateString('en-IN', opts);
+  return a === b ? a : `${a} – ${b}`;
 }
 
 // The stepper's label, split in two so the month name carries the emphasis and
 // the year sits back from it — the year is the part nobody is actually reading.
-function formatViewLabel(monthStart) {
-  const d = new Date(`${monthStart}T00:00:00Z`);
+// The chart is a rolling window, not a calendar month.
+//
+// A month starting at the 1st spends its first three weeks showing nights that
+// have already been slept — on the 23rd, five sixths of the grid was history
+// and the rooms actually being sold were squeezed against the right edge. The
+// desk sells forward, so the window looks forward.
+//
+// Four days of history is enough to see who is still in house and to correct
+// something taken yesterday; the remaining twenty-six are what is for sale.
+const WINDOW_DAYS = 30;
+// The chart opens on WINDOW_DAYS and grows by another WINDOW_DAYS each time the
+// desk scrolls near its right edge. Capped because every growth refetches the
+// whole range, and nobody plans half a year of nights by scrolling.
+const MAX_WINDOW_DAYS = 180;
+// How close to the end counts as "at the end". A little over three columns, so
+// the next month is already loading by the time it is scrolled to.
+const GROW_WITHIN_PX = 90;
+const WINDOW_PAST_DAYS = 4;
+
+const windowStartFor = (dateStr) => addDays(dateStr, -WINDOW_PAST_DAYS);
+
+// "23 Aug – 21 Sep" and the year beneath, or just the month when the window
+// happens to sit inside one.
+function formatViewLabel(windowStart) {
+  const end = addDays(windowStart, WINDOW_DAYS - 1);
+  const from = new Date(`${windowStart}T00:00:00Z`);
+  const to = new Date(`${end}T00:00:00Z`);
+  const day = (d) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const sameYear = from.getUTCFullYear() === to.getUTCFullYear();
   return {
-    primary: d.toLocaleDateString('en-IN', { month: 'long', timeZone: 'UTC' }),
-    secondary: String(d.getUTCFullYear()),
+    primary: `${day(from)} – ${day(to)}`,
+    secondary: sameYear
+      ? String(from.getUTCFullYear())
+      : `${from.getUTCFullYear()} – ${to.getUTCFullYear()}`,
   };
 }
 
@@ -129,15 +203,55 @@ function nightsOf(booking) {
   return Math.max(0, daysBetween(booking.checkInDate, booking.checkOutDate));
 }
 
-const emptyGuest = { name: '', phone: '', idProofType: '', idProofFile: null };
+// The two directions of the same sum, kept together so they cannot drift.
+//
+// Rupees round to whole numbers — the amount field is whole rupees and an
+// invoice is settled in them. Percent keeps two decimals, which is what makes
+// ₹100 off ₹1,300 expressible at all (7.69%) rather than collapsing to 8%.
+const amountFromPercent = (percent, total) => String(Math.round((total * percent) / 100));
+const percentFromAmount = (amount, total) =>
+  total > 0 ? String(Math.round((amount / total) * 10000) / 100) : '';
+
+// Blank, nonsense and out-of-range all mean "this box is not driving anything".
+const usableNumber = (raw, max) => {
+  if (raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
+};
+
+const TEN_DIGITS = /^\d{10}$/;
+const MOBILE_MESSAGE = 'Enter a 10-digit mobile number.';
+
+// Mirrors normaliseMobile in bookings.schema.js. Duplicated rather than shared
+// because the two live either side of the wire, but they must agree: a form
+// that accepts what the server rejects is a round trip spent on a red banner.
+function mobileDigits(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
+const isMobile = (value) => TEN_DIGITS.test(mobileDigits(value));
+
+// What the input is allowed to become as it is typed into. Letters and symbols
+// never reach the field, so the rule is visible at the keystroke rather than
+// held back until save.
+//
+// Normalised before the cut, not after: slicing the raw digits of
+// "+91 98765 43210" to ten would keep "9198765432" — a different number that
+// happens to be the right length, which is the worst kind of wrong.
+const typedMobile = (value) => mobileDigits(value).slice(0, 10);
+
+const emptyGuest = { name: '', phone: '', idProofType: '', idProofNumber: '', idProofFile: null };
 // Children are the same row minus the phone — a child travelling with the
 // party has no number of their own to reach them on.
-const emptyChild = { name: '', idProofType: '', idProofFile: null };
+const emptyChild = { name: '', idProofType: '', idProofNumber: '', idProofFile: null };
 // A late arrival taken at check-in. One row for adults and children alike,
 // because the desk is typing a name off an ID card and doesn't want two
 // differently-shaped forms to choose between first — which of the two it is
 // rides on the row instead. Adult unless said otherwise: most are.
-const emptyCheckInGuest = { name: '', phone: '', idProofType: '', idProofFile: null, isChild: false };
+const emptyCheckInGuest = { name: '', phone: '', idProofType: '', idProofNumber: '', idProofFile: null, isChild: false };
 // Type starts unset so reception picks what actually pulled up rather than
 // accepting whichever option happened to be listed first.
 const emptyVehicle = { number: '', type: '' };
@@ -195,6 +309,12 @@ function vehicleRowError(vehicles) {
   return '';
 }
 
+// An extra is carried as { id, quantity, agreedAmount }: the checkbox owns
+// whether it's on the booking at all, the count owns how many, and agreedAmount
+// is what reception agreed the whole line costs per night. Blank means "charge
+// what the lodge charges times the count" — the common case, and what every
+// extra did before the total was editable.
+//
 // An extra is carried as { id, quantity }: the checkbox owns whether it's on
 // the booking at all, the count beside it owns how many. quantity is held as
 // typed so the field can be cleared mid-edit, and read back through
@@ -204,30 +324,66 @@ function selectionCount(value) {
   return Number.isFinite(count) && count >= 1 ? count : 1;
 }
 
+// Blank or nonsense means "no override" rather than free — a cleared box while
+// typing must not silently zero the line. Zero typed on purpose is kept.
+function selectionAgreed(value) {
+  if (value == null || String(value).trim() === '') return undefined;
+  const price = Number(value);
+  return Number.isFinite(price) && price >= 0 ? price : undefined;
+}
+
+// Extras ids reach this screen from two different payloads: available-rooms
+// returns dbo.switchable_charges.id as the driver hands it over, while the
+// price quote passes it through Number(). A BIGINT that arrives as a string on
+// one route and a number on the other makes === false, and then the selection
+// helpers quietly match nothing.
+//
+// That is what broke the editable extras total: the quantity box worked because
+// it is called with the room payload's id — the same value the form stored —
+// while the price box is called with the quote's, and never found its line.
+// Compared numerically here so it cannot matter which payload an id came from.
+function sameCharge(a, b) {
+  return Number(a) === Number(b);
+}
+
 function toggleSelection(selections, chargeId) {
-  return selections.some((c) => c.id === chargeId)
+  return selections.some((c) => sameCharge(c.id, chargeId))
     ? selections.filter((c) => c.id !== chargeId)
-    : [...selections, { id: chargeId, quantity: '1' }];
+    : [...selections, { id: chargeId, quantity: '1', agreedAmount: '' }];
 }
 
 function withQuantity(selections, chargeId, quantity) {
-  return selections.map((c) => (c.id === chargeId ? { ...c, quantity } : c));
+  return selections.map((c) => (sameCharge(c.id, chargeId) ? { ...c, quantity } : c));
+}
+
+function withAgreedAmount(selections, chargeId, agreedAmount) {
+  return selections.map((c) => (sameCharge(c.id, chargeId) ? { ...c, agreedAmount } : c));
 }
 
 function selectionOf(selections, chargeId) {
-  return selections.find((c) => c.id === chargeId);
+  return selections.find((c) => sameCharge(c.id, chargeId));
 }
 
 // "7:3,8" — the id alone when there's just one of it, so the common case reads
 // the same as it always did.
 function chargesParam(selections) {
   return selections
-    .map((c) => (selectionCount(c.quantity) > 1 ? `${c.id}:${selectionCount(c.quantity)}` : String(c.id)))
+    .map((c) => {
+      const count = selectionCount(c.quantity);
+      const price = selectionAgreed(c.agreedAmount);
+      const base = count > 1 ? `${c.id}:${count}` : String(c.id);
+      return price === undefined ? base : `${base}@${price}`;
+    })
     .join(',');
 }
 
 function chargesPayload(selections) {
-  return selections.map((c) => ({ id: c.id, quantity: selectionCount(c.quantity) }));
+  return selections.map((c) => {
+    const price = selectionAgreed(c.agreedAmount);
+    return price === undefined
+      ? { id: c.id, quantity: selectionCount(c.quantity) }
+      : { id: c.id, quantity: selectionCount(c.quantity), agreedAmount: price };
+  });
 }
 
 // A blank or nonsense concession simply isn't sent, so the quote shows the
@@ -240,8 +396,11 @@ function discountParam(value) {
 // Read-only: nothing sets a negotiated nightly rate any more, but a booking
 // made before concessions replaced it still prices against one, so its edit
 // quote has to ask for the same rate the save will use.
-function legacyRateParam(booking) {
-  return booking?.basePriceOverride ? `&basePriceOverride=${booking.basePriceOverride}` : '';
+function rateParam(basePriceOverride) {
+  const rate = Number(basePriceOverride);
+  return basePriceOverride !== '' && Number.isFinite(rate) && rate > 0
+    ? `&basePriceOverride=${rate}`
+    : '';
 }
 
 const initialBookingForm = {
@@ -253,14 +412,30 @@ const initialBookingForm = {
   // Blank means "charge the full quote" — reception only fills this in when
   // they've agreed to knock something off, once, at the end.
   discountAmount: '',
+  // The percent box, which is UI-only. discountAmount stays the single value
+  // that is quoted, validated and sent — percent is a way of filling it in,
+  // not a second kind of discount the rest of the system has to know about.
+  // The invoice derives its own percentage from the amount anyway
+  // (billing.service.js), so storing one here would be a second copy free to
+  // disagree with it.
+  discountPercent: '',
+  // Which box the desk typed into. Never rendered — it exists so that only the
+  // derived box is ever rewritten. See the setters.
+  discountSource: '',
   // The party is the guest count — adults[0] is the primary guest, and the
   // total is however many names reception actually types in.
   adults: [{ ...emptyGuest }],
   children: [],
+  // The nightly rate reception agreed for this stay, blank where it is the
+  // category's own — which is most stays. Held as the per-night figure because
+  // that is what the booking stores; the box on screen shows it across the
+  // whole stay, which is a view of it and not a second way to price.
+  basePriceOverride: '',
   advanceAmount: '',
+  advanceLines: [emptyPaymentLine()],
   advancePaymentMethod: '',
   // The UPI/card transaction number. Blank on cash, which leaves no trail to
-  // record — see ONLINE_PAYMENT_METHODS.
+  // record — see needsPaymentReference.
   advanceReference: '',
   vehicles: [],
 };
@@ -327,7 +502,7 @@ function hasFormContent(form) {
   );
 }
 
-export default function Bookings({ onCheckedOut }) {
+export default function Bookings({ onBillStay }) {
   const session = getSession();
   const token = session?.token;
 
@@ -340,7 +515,7 @@ export default function Bookings({ onCheckedOut }) {
   // opens on the month today falls in. The arrows step a month at a time, so
   // every view of the chart is a page of the same calendar rather than a
   // window that has drifted off it.
-  const [month, setMonth] = useState(() => monthStartOf(todayIso()));
+  const [month, setMonth] = useState(() => windowStartFor(todayIso()));
   const [tapeData, setTapeData] = useState(null);
   const [tapeError, setTapeError] = useState('');
   // The tile that's under the pointer right now, with the screen position to
@@ -351,13 +526,27 @@ export default function Bookings({ onCheckedOut }) {
   const [drafts, setDrafts] = useState(() => readCache('/bookings/drafts') ?? []);
   const [showDrafts, setShowDrafts] = useState(false);
 
+  // How many nights the chart is currently showing. Starts a page wide and
+  // grows as the desk scrolls forward into it; back to a page whenever the
+  // window is moved, so stepping never lands on a six-month chart.
+  const [windowDays, setWindowDays] = useState(WINDOW_DAYS);
+
   const dates = useMemo(
-    () => Array.from({ length: daysInMonth(month) }, (_, i) => addDays(month, i)),
-    [month]
+    () => Array.from({ length: windowDays }, (_, i) => addDays(month, i)),
+    [month, windowDays]
+  );
+
+  // Every column where a new month starts. More than one once the window has
+  // grown past a couple of months, which is why the partition is drawn per
+  // boundary rather than as a single line the grid knows about.
+  const monthEdges = useMemo(
+    () => dates.reduce((cols, d, i) => (i > 0 && d.slice(8, 10) === '01' ? [...cols, i] : cols), []),
+    [dates]
   );
 
   const rangeStart = month;
-  const rangeEnd = useMemo(() => addMonths(month, 1), [month]);
+  // Exclusive, as before — the fetch asks for the night after the last column.
+  const rangeEnd = useMemo(() => addDays(month, windowDays), [month, windowDays]);
 
   const tapeKey = `/bookings/tape-chart?startDate=${rangeStart}&endDate=${rangeEnd}`;
 
@@ -397,12 +586,127 @@ export default function Bookings({ onCheckedOut }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Changing the month unmounts the tile the pointer is on, and an unmounted
-  // tile never fires its mouseleave — so the card is dismissed with the move.
-  const goToMonth = (monthStart) => {
+  // Each category is its own scroller, so they are kept in step: scrolling
+  // Deluxe into September while Standard sat in August would put two different
+  // fortnights one above the other under headers that both claim otherwise.
+  const scrollers = useRef(new Set());
+  const syncing = useRef(false);
+  // Where the chart was a moment ago, so a scroll can be told which way it
+  // went. Reaching the left edge only means "show me earlier nights" if the
+  // desk was heading that way — scrolling right off a chart that starts at 0
+  // passes through the same few pixels and must not be read as the same thing.
+  const lastLeft = useRef(0);
+  // The width of the grid just before earlier nights were prepended. Columns
+  // added on the left push everything right while scrollLeft stays put, so the
+  // view would lurch backwards; this is what it is put back by.
+  const prepending = useRef(null);
+
+  const onChartScroll = (e) => {
+    // The pointer is no longer over whatever the card is describing.
     setHoverTile(null);
-    setMonth(monthStart);
+    const el = e.currentTarget;
+    const wentLeft = el.scrollLeft < lastLeft.current;
+    lastLeft.current = el.scrollLeft;
+
+    if (!syncing.current) {
+      syncing.current = true;
+      for (const other of scrollers.current) {
+        if (other !== el && other.scrollLeft !== el.scrollLeft) other.scrollLeft = el.scrollLeft;
+      }
+      // Released a frame later. Assigning scrollLeft fires scroll on the cards
+      // just moved, and without this each of them would sync everyone back.
+      requestAnimationFrame(() => {
+        syncing.current = false;
+      });
+    }
+
+    if (windowDays >= MAX_WINDOW_DAYS) return;
+
+    // Near the end, and there is more to show: another page of nights.
+    if (el.scrollWidth - el.scrollLeft - el.clientWidth < GROW_WITHIN_PX) {
+      setWindowDays((days) => Math.min(days + WINDOW_DAYS, MAX_WINDOW_DAYS));
+      return;
+    }
+
+    // And the same going back, for a stay being entered after the fact.
+    if (wentLeft && el.scrollLeft < GROW_WITHIN_PX) growPast(el);
   };
+
+  // Earlier nights, prepended. The window start moves back by exactly what the
+  // length gains, so the far end of the chart stays where it was and only the
+  // near end grows.
+  const growPast = (el) => {
+    if (prepending.current != null || windowDays >= MAX_WINDOW_DAYS) return;
+    prepending.current = el.scrollWidth;
+    setMonth((start) => addDays(start, -WINDOW_DAYS));
+    setWindowDays((days) => Math.min(days + WINDOW_DAYS, MAX_WINDOW_DAYS));
+  };
+
+  // Once the chart is scrolled hard left there is nothing left to scroll, so no
+  // scroll event ever fires and the handler above never hears the desk asking
+  // for earlier nights. A wheel still fires against the stop — it is the only
+  // signal there is that they are pushing at it.
+  const onChartWheel = (e) => {
+    const el = e.currentTarget;
+    const backwards = e.deltaX < 0 || (e.shiftKey && e.deltaY < 0);
+    if (el.scrollLeft <= 0 && backwards) growPast(el);
+  };
+
+  // Put the view back where it was looking after earlier nights are prepended.
+  //
+  // Before paint, not after: the columns are already in the DOM by now, and
+  // correcting the offset a frame later would show one frame of the chart
+  // jumped a month backwards.
+  useLayoutEffect(() => {
+    const before = prepending.current;
+    if (before == null) return;
+    prepending.current = null;
+    for (const el of scrollers.current) {
+      const added = el.scrollWidth - before;
+      if (added > 0) el.scrollLeft += added;
+    }
+  }, [month, windowDays]);
+
+  // Grow until the chart at least fills its card.
+  //
+  // Without this the window never grows on a wide screen: 30 columns fit with
+  // room to spare, so there is nothing to scroll into, so the scroll handler
+  // that would have asked for more never runs. It also answers the empty strip
+  // that was left to the right of the last column — that space is nights, and
+  // it should be showing them.
+  //
+  // Deferred a frame so the measurement happens after paint, and so this is
+  // never a setState taken synchronously out of an effect. It settles: each
+  // pass adds a page of nights, and stops as soon as the grid overflows the
+  // card or the window hits its cap.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      for (const el of scrollers.current) {
+        if (el.scrollWidth - el.clientWidth < GROW_WITHIN_PX) {
+          setWindowDays((days) => Math.min(days + WINDOW_DAYS, MAX_WINDOW_DAYS));
+          return;
+        }
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+    // categorySections is declared further down and would be in its temporal
+    // dead zone here; tapeData is what brings the cards into existence anyway,
+    // so measuring when it lands is the same moment.
+  }, [windowDays, tapeData]);
+
+  // Moving the window unmounts the tile the pointer is on, and an unmounted
+  // tile never fires its mouseleave — so the card is dismissed with the move.
+  const goToMonth = (windowStart) => {
+    setHoverTile(null);
+    setMonth(windowStart);
+    // Back to a page. Stepping is for jumping somewhere else, and it would be
+    // a poor jump that landed on however far the last one had been scrolled.
+    setWindowDays(WINDOW_DAYS);
+  };
+
+  // A whole window at a time, so stepping forward shows thirty nights nobody
+  // has looked at rather than re-showing twenty-six of them.
+  const stepWindow = (n) => goToMonth(addDays(month, n * windowDays));
 
   // Rooms are shown category by category rather than in one long list, so the
   // desk can see at a glance which grade of room is still sellable. Insertion
@@ -521,6 +825,55 @@ export default function Bookings({ onCheckedOut }) {
   // picker with no explanation at all.
   const [roomTakenNote, setRoomTakenNote] = useState('');
   const [quote, setQuote] = useState(null);
+
+  // Percent entry writes through to discountAmount rather than living beside
+  // it. Everything downstream — the live quote, the over-the-total check, what
+  // is actually POSTed — already reads discountAmount, so keeping that the one
+  // real value means percent mode needs no changes anywhere else, and there is
+  // no way for the two to drift apart.
+  //
+  // Rounded to whole rupees: the amount field is whole rupees, an invoice is
+  // settled in them, and 12.5% of ₹1,300 is not a number anyone wants to read
+  // off a bill.
+  // Each box fills the other. discountSource records which one was typed into,
+  // and is never shown — it exists so that only the *derived* box is ever
+  // rewritten.
+  //
+  // Without it the pair fights itself. Type ₹101 against a ₹20,000 total: the
+  // percent rounds to 0.51, and recomputing the amount back from 0.51% gives
+  // ₹102, so the figure changes under the cursor. Rewriting only the box that
+  // was not typed into makes the round trip impossible.
+  const setDiscountPercent = (raw) => {
+    setBookingForm((f) => {
+      const pct = usableNumber(raw, 100);
+      return {
+        ...f,
+        discountSource: 'PERCENT',
+        discountPercent: raw,
+        // A percentage of nothing is nothing: with no quote there is no total
+        // to take it off, and writing a stale amount would quietly survive a
+        // later room change.
+        discountAmount: pct !== null && quote ? amountFromPercent(pct, quote.grossTotal) : '',
+      };
+    });
+  };
+
+  const setDiscountAmount = (raw) => {
+    setBookingForm((f) => {
+      const amount = usableNumber(raw, Number.MAX_SAFE_INTEGER);
+      return {
+        ...f,
+        discountSource: 'AMOUNT',
+        discountAmount: raw,
+        discountPercent: amount !== null && quote ? percentFromAmount(amount, quote.grossTotal) : '',
+      };
+    });
+  };
+
+  // Switching mode clears the other box rather than converting between them.
+  // Carrying a figure across reads as the app having agreed to a discount
+  // nobody typed, and the two fields disagreeing on screen is worse than an
+  // empty one.
   // The banner is for failures with no one field behind them — a rejected save,
   // a dropped connection. Anything a single input caused belongs under that
   // input instead, as { id, message } naming the control to sit beneath.
@@ -561,8 +914,18 @@ export default function Bookings({ onCheckedOut }) {
   // Every route into the form goes through here, so there is one place that
   // remembers what it was handed and one definition of "unchanged".
   const beginForm = (mode, form) => {
-    setBookingForm(form);
-    setOpenedAs(formFingerprint(form));
+    // A draft parked before split advances existed carries no advanceLines, and
+    // so does any older shape that finds its way in here. The editor reads
+    // lines[0] unconditionally, so it is normalised at this one funnel rather
+    // than at the three call sites — new booking, restored draft and edit all
+    // come through here.
+    const seeded = {
+      ...form,
+      advanceLines: form.advanceLines?.length ? form.advanceLines : [emptyPaymentLine()],
+    };
+    setBookingForm(seeded);
+    setBaseTotal(null);
+    setOpenedAs(formFingerprint(seeded));
     setClosePrompt(null);
     setFormError('');
     setFieldError(null);
@@ -750,7 +1113,7 @@ export default function Bookings({ onCheckedOut }) {
         setBookingForm((f) =>
           f.roomId && data.rooms.some((r) => String(r.id) === f.roomId)
             ? f
-            : { ...f, roomId: '', switchableCharges: [], discountAmount: '' }
+            : { ...f, roomId: '', switchableCharges: [], discountAmount: '', discountPercent: '', discountSource: '' }
         );
       })
       .catch((err) => {
@@ -768,15 +1131,38 @@ export default function Bookings({ onCheckedOut }) {
     }
     const chargeIds = chargesParam(bookingForm.switchableCharges);
     const discount = discountParam(bookingForm.discountAmount);
-    // Typing a concession fires a quote per keystroke, so a slower earlier
+    // Typing a discount fires a quote per keystroke, so a slower earlier
     // reply must not land on top of a newer one and show a total for an
     // amount that is no longer in the box.
     let current = true;
     apiGet(
-      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${legacyRateParam(editTarget)}${discount}`,
+      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${rateParam(bookingForm.basePriceOverride)}${discount}`,
       { token }
     )
-      .then((data) => current && setQuote(data))
+      .then((data) => {
+        if (!current) return;
+        setQuote(data);
+        // Adding an extra moves the stay total without clearing the discount,
+        // so whichever box is derived has to be redrawn against the new total —
+        // otherwise "10%" stays pinned to the rupee figure of the old one, or a
+        // fixed ₹100 goes on claiming a share it no longer is.
+        //
+        // Done here rather than in an effect watching the quote, because this is
+        // the moment the total actually changes. grossTotal is the figure BEFORE
+        // anything is knocked off, so re-deriving from it cannot feed back into
+        // the request that produced it.
+        if (bookingForm.discountSource === 'PERCENT') {
+          const pct = usableNumber(bookingForm.discountPercent, 100);
+          if (pct === null) return;
+          const next = amountFromPercent(pct, data.grossTotal);
+          setBookingForm((f) => (f.discountAmount === next ? f : { ...f, discountAmount: next }));
+        } else if (bookingForm.discountSource === 'AMOUNT') {
+          const amount = usableNumber(bookingForm.discountAmount, Number.MAX_SAFE_INTEGER);
+          if (amount === null) return;
+          const next = percentFromAmount(amount, data.grossTotal);
+          setBookingForm((f) => (f.discountPercent === next ? f : { ...f, discountPercent: next }));
+        }
+      })
       .catch(() => current && setQuote(null));
     return () => {
       current = false;
@@ -788,7 +1174,10 @@ export default function Bookings({ onCheckedOut }) {
     bookingForm.checkInDate,
     bookingForm.checkOutDate,
     bookingForm.switchableCharges,
+    bookingForm.basePriceOverride,
     bookingForm.discountAmount,
+    bookingForm.discountPercent,
+    bookingForm.discountSource,
   ]);
 
   const selectedRoom = availableRooms?.find((r) => String(r.id) === bookingForm.roomId);
@@ -796,11 +1185,75 @@ export default function Bookings({ onCheckedOut }) {
   const overOccupancy = Boolean(selectedRoom?.maxOccupancy && numGuests > selectedRoom.maxOccupancy);
 
   const toggleCharge = (chargeId) => {
+    setChargeTotals((t) => {
+      const next = { ...t };
+      delete next[chargeId];
+      return next;
+    });
     setBookingForm((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
   };
 
   const setChargeQuantity = (chargeId, quantity) => {
     setBookingForm((f) => ({ ...f, switchableCharges: withQuantity(f.switchableCharges, chargeId, quantity) }));
+  };
+
+  // What the desk typed into an extras line, keyed by charge. Held separately
+  // from the quote because every keystroke refetches it, and a box that
+  // reformatted itself mid-number would be unusable. Cleared when the extra is
+  // switched off, so it cannot outlive the line it belongs to.
+  const [chargeTotals, setChargeTotals] = useState({});
+
+  // The same for the room line. Held apart from the quote for the same reason
+  // the extras are: every keystroke refetches it, and a box that reformatted
+  // itself mid-number would be unusable. null means untouched — show whatever
+  // the quote says.
+  const [baseTotal, setBaseTotal] = useState(null);
+
+  // The line shows the room across the whole stay, so the nightly rate is the
+  // typed total divided by the nights. Divided by nights alone — seasons and
+  // extras are their own lines and are not in this figure, so the division is
+  // exact rather than an apportionment.
+  const setRoomTotal = (value) => {
+    setBaseTotal(value);
+    const nights = Math.max(1, quote?.nights?.length || 1);
+    const total = Number(value);
+    setBookingForm((f) => ({
+      ...f,
+      basePriceOverride:
+        String(value).trim() === '' || !Number.isFinite(total) || total <= 0
+          ? ''
+          : String(Math.round((total / nights) * 100) / 100),
+    }));
+  };
+
+  // The line shows the extra across the whole stay, so the per-night unit price
+  // is the typed total divided by how many of them for how many nights. Sent as
+  // agreedAmount because that is what the booking stores — a total is a view of it,
+  // not a second way to price.
+  const setChargeTotal = (charge, value) => {
+    setChargeTotals((t) => ({ ...t, [charge.chargeId]: value }));
+
+    // Divided by nights alone — never by the count. The agreed figure is what
+    // the whole line costs, so three beds at an agreed ₹100 is ₹100, not three
+    // times ₹33.33. Dividing by the count is what put ₹1,399.99 on a stay the
+    // desk had agreed at ₹1,400.
+    const nights = quote?.nights?.length || 1;
+    const per = Math.max(1, nights);
+
+    const total = Number(value);
+    setChargeAgreed(
+      charge.chargeId,
+      String(value).trim() === '' || !Number.isFinite(total) || total < 0
+        ? ''
+        : String(Math.round((total / per) * 100) / 100)
+    );
+  };
+
+  const setChargeAgreed = (chargeId, agreedAmount) => {
+    setBookingForm((f) => ({
+      ...f,
+      switchableCharges: withAgreedAmount(f.switchableCharges, chargeId, agreedAmount),
+    }));
   };
 
   // Adults and children are both plain repeating rows; the only asymmetries
@@ -848,13 +1301,6 @@ export default function Bookings({ onCheckedOut }) {
       failOn('checkOutDate', 'Check-out date must be after check-in date.');
       return;
     }
-    // The chart won't offer a past night and the date field won't accept one,
-    // but a typed date reaches neither guard — and a booking backdated past
-    // check-in would be a stay nobody can ever check in to.
-    if (isPastCheckIn) {
-      failOn('checkInDate', 'Check-in can’t be a past date — a night that has gone can’t be booked.');
-      return;
-    }
     // Belt-and-braces: the UI already hides Walk-in for a future date, but
     // a walk-in for a date that hasn't arrived would try to check itself in
     // immediately after creating the booking — and the backend's check-in
@@ -872,13 +1318,13 @@ export default function Bookings({ onCheckedOut }) {
       return;
     }
     if (bookingForm.discountAmount !== '' && !(Number(bookingForm.discountAmount) >= 0)) {
-      failOn('discountAmount', 'Enter a concession of 0 or more, or leave it blank for no concession.');
+      failOn('discountAmount', 'Enter a discount of 0 or more, or leave it blank for no discount.');
       return;
     }
     if (quote && Number(bookingForm.discountAmount || 0) > quote.grossTotal) {
       failOn(
         'discountAmount',
-        `The concession can’t be more than the stay total of ${formatPrice(quote.grossTotal)}.`
+        `The discount can’t be more than the stay total of ${formatPrice(quote.grossTotal)}.`
       );
       return;
     }
@@ -892,6 +1338,19 @@ export default function Bookings({ onCheckedOut }) {
       failOn('newAdultPhone-0', 'Enter the guest phone number.');
       return;
     }
+    if (!isMobile(primary.phone)) {
+      failOn('newAdultPhone-0', MOBILE_MESSAGE);
+      return;
+    }
+    // Everyone else may leave it blank, but not half-filled — a number that is
+    // nearly right is worse than none, because it looks reachable.
+    const badPhone = bookingForm.adults.findIndex(
+      (g, i) => i > 0 && g.phone.trim() !== '' && !isMobile(g.phone)
+    );
+    if (badPhone !== -1) {
+      failOn(`newAdultPhone-${badPhone}`, MOBILE_MESSAGE);
+      return;
+    }
     // A walk-in guest is here now, so their ID proof is captured immediately;
     // a pre-reservation defers it to whenever they actually check in. An edit
     // asks for neither — the stay already has whatever it has.
@@ -900,18 +1359,41 @@ export default function Bookings({ onCheckedOut }) {
         failOn('newAdultIdProofType-0', 'Choose the ID proof type.');
         return;
       }
-      // A returning guest whose card is already on file has satisfied this —
-      // the server copies that document onto this booking. Asking for it again
-      // is asking for something the property already has.
-      if (!primary.idProofFile && !primary.fromBookingId) {
-        failOn('newAdultIdProofFile-0', 'Upload the guest’s ID proof (image or PDF).');
+      // Three ways to satisfy this, all equivalent: a file attached now, a
+      // document already on file from a previous stay (the server copies it
+      // over), or the number read straight off the card. The last is what lets
+      // a desk with no scanner finish a walk-in — which the upload-only rule
+      // made impossible.
+      if (!primary.idProofFile && !primary.fromBookingId && !primary.idProofNumber.trim()) {
+        failOn('newAdultIdProofNumber-0', 'Upload the guest’s ID proof, or enter the ID number.');
         return;
       }
     }
     const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
-    if (hasAdvanceAmount && !bookingForm.advancePaymentMethod) {
-      failOn('newBookingAdvancePaymentMethod', 'Choose a payment method for the advance amount.');
+    // An advance is a part-payment of the stay, so it cannot exceed it. Said
+    // here as well as on the server because the figure it is measured against
+    // is already on screen — the desk should be told while looking at both
+    // numbers, not after a round trip.
+    //
+    // Against quote.totalPrice, the payable figure, rather than the gross: a
+    // stay discounted to ₹900 cannot take ₹1,000 up front.
+    if (hasAdvanceAmount && quote && Number(bookingForm.advanceAmount) > quote.totalPrice) {
+      failOn(
+        paymentFieldId('newBookingAdvance', 'Amount'),
+        `An advance can’t be more than the stay total of ${formatPrice(quote.totalPrice)}.`
+      );
       return;
+    }
+    if (hasAdvanceAmount && !bookingForm.advancePaymentMethod) {
+      failOn(paymentFieldId('newBookingAdvance', 'Method'), 'Choose a payment method for the advance amount.');
+      return;
+    }
+    if (hasAdvanceAmount && bookingForm.advanceLines.length > 1) {
+      const problem = paymentLinesError(bookingForm.advanceLines);
+      if (problem) {
+        failOn(paymentFieldId('newBookingAdvance', 'Amount'), problem);
+        return;
+      }
     }
     if (
       hasAdvanceAmount &&
@@ -919,7 +1401,7 @@ export default function Bookings({ onCheckedOut }) {
       bookingForm.advanceReference.trim() === ''
     ) {
       failOn(
-        'newBookingAdvanceReference',
+        paymentFieldId('newBookingAdvance', 'Reference'),
         'Enter the transaction number for the advance paid by UPI or card.'
       );
       return;
@@ -981,6 +1463,7 @@ export default function Bookings({ onCheckedOut }) {
       formData.append('numGuests', String(numGuests));
       formData.append('switchableCharges', JSON.stringify(chargesPayload(bookingForm.switchableCharges)));
       if (primary.idProofType) formData.append('idProofType', primary.idProofType);
+      if (primary.idProofNumber.trim()) formData.append('idProofNumber', primary.idProofNumber.trim());
       if (primary.idProofFile) formData.append('idProofDocument', primary.idProofFile);
       // A returning guest picked off the suggestions, with no new file attached:
       // the server copies their document across from the stay named here. Only
@@ -1002,6 +1485,7 @@ export default function Bookings({ onCheckedOut }) {
             phone: g.phone.trim(),
             isChild: g.isChild,
             ...(g.idProofType ? { idProofType: g.idProofType } : {}),
+            ...(g.idProofNumber?.trim() ? { idProofNumber: g.idProofNumber.trim() } : {}),
           }))
         )
       );
@@ -1017,6 +1501,7 @@ export default function Bookings({ onCheckedOut }) {
           'discountAmount',
           bookingForm.discountAmount === '' ? '0' : String(Number(bookingForm.discountAmount))
         );
+        formData.append('basePriceOverride', bookingForm.basePriceOverride);
         formData.append('advanceAmount', hasAdvanceAmount ? String(Number(bookingForm.advanceAmount)) : '');
         formData.append('advancePaymentMethod', hasAdvanceAmount ? bookingForm.advancePaymentMethod : '');
         formData.append(
@@ -1040,6 +1525,9 @@ export default function Bookings({ onCheckedOut }) {
         formData.append('roomId', String(Number(bookingForm.roomId)));
         formData.append('checkInDate', bookingForm.checkInDate);
         formData.append('checkOutDate', bookingForm.checkOutDate);
+        if (bookingForm.basePriceOverride !== '') {
+          formData.append('basePriceOverride', bookingForm.basePriceOverride);
+        }
         if (bookingForm.discountAmount !== '') {
           formData.append('discountAmount', String(Number(bookingForm.discountAmount)));
         }
@@ -1048,6 +1536,12 @@ export default function Bookings({ onCheckedOut }) {
           formData.append('advancePaymentMethod', bookingForm.advancePaymentMethod);
           const reference = advanceReferenceOf(bookingForm);
           if (reference) formData.append('advanceReference', reference);
+          if (bookingForm.advanceLines.length > 1) {
+            formData.append(
+              'advanceLines',
+              JSON.stringify(toPaymentLines(bookingForm.advanceLines))
+            );
+          }
         }
 
         const created = await apiPostForm('/bookings', formData, { token });
@@ -1061,6 +1555,14 @@ export default function Bookings({ onCheckedOut }) {
           await apiDelete(`/bookings/drafts/${draftId}`, { token }).catch(() => {});
           loadDrafts();
         }
+
+        setJustBooked({
+          id: created.id,
+          guestName: bookingForm.adults[0]?.name?.trim() || 'Guest',
+          roomNumber: selectedRoom?.roomNumber ?? null,
+          advanceAmount: Number(bookingForm.advanceAmount) || 0,
+          advanceMethod: bookingForm.advancePaymentMethod || null,
+        });
       }
 
       setFormMode(null);
@@ -1088,15 +1590,22 @@ export default function Bookings({ onCheckedOut }) {
   // open booking. The list is loaded with the booking rather than when the
   // modal opens, because the detail screen shows a count on the button — the
   // desk needs to know a receipt exists before deciding to issue one.
+  // The booking that has just been saved, held only long enough to say so and
+  // to offer the receipt for whatever was paid against it. Read off the form
+  // rather than the response, because the reset below is about to wipe the form
+  // and the two agree on everything this needs.
+  const [justBooked, setJustBooked] = useState(null);
   const [showAdvanceReceipt, setShowAdvanceReceipt] = useState(false);
   const [advanceReceipts, setAdvanceReceipts] = useState([]);
   const [detailError, setDetailError] = useState('');
   const [showCheckInForm, setShowCheckInForm] = useState(false);
   const initialCheckInForm = {
     advanceAmount: '',
+    advanceLines: [emptyPaymentLine()],
     advancePaymentMethod: '',
     advanceReference: '',
     idProofType: '',
+    idProofNumber: '',
     idProofFile: null,
     guests: [],
     vehicles: [],
@@ -1136,6 +1645,10 @@ export default function Bookings({ onCheckedOut }) {
     name: guest.name,
     phone: guest.phone ?? '',
     idProofType: guest.idProofType ?? '',
+    // Comes back down, unlike the document: staff have to be able to see and
+    // correct a digit they mistyped, and a number is not the sensitive artefact
+    // the scan of the card is.
+    idProofNumber: guest.idProofNumber ?? '',
     idProofFile: null,
     hasDocument: guest.hasIdProofDocument,
   });
@@ -1152,10 +1665,24 @@ export default function Bookings({ onCheckedOut }) {
       checkInDate: bookingDetail.checkInDate,
       checkOutDate: bookingDetail.checkOutDate,
       roomId: String(bookingDetail.roomId),
-      switchableCharges: bookingDetail.switchableCharges.map((c) => ({ id: c.id, quantity: String(c.quantity ?? 1) })),
+      // The agreed price is only prefilled when it differs from the lodge's,
+      // so an extra nobody haggled over reopens with an empty box — and stays
+      // on the lodge price if that price later changes.
+      switchableCharges: bookingDetail.switchableCharges.map((c) => ({
+        id: c.id,
+        quantity: String(c.quantity ?? 1),
+        // Only set when reception actually agreed a figure, so an extra
+        // nobody haggled over reopens with an empty box and stays on the lodge
+        // price even if that price has changed since.
+        agreedAmount: c.agreedAmount != null ? String(c.agreedAmount) : '',
+      })),
       // Blank here means nothing was ever knocked off this stay, and clearing
       // the box is how a concession gets taken back.
       discountAmount: bookingDetail.discountAmount ? String(bookingDetail.discountAmount) : '',
+      // Only the amount is stored, so an edit opens with the amount driving
+      // and the percent derived from it once the first quote lands.
+      discountPercent: '',
+      discountSource: bookingDetail.discountAmount ? 'AMOUNT' : '',
       // adults[0] is the primary guest, who lives on the booking itself rather
       // than in the guests table — so no id, and saving them writes back to
       // guestName/guestPhone/idProofType. Everyone else is a row.
@@ -1165,6 +1692,7 @@ export default function Bookings({ onCheckedOut }) {
           name: bookingDetail.guestName,
           phone: bookingDetail.guestPhone,
           idProofType: bookingDetail.idProofType ?? '',
+          idProofNumber: bookingDetail.idProofNumber ?? '',
           idProofFile: null,
           hasDocument: bookingDetail.hasIdProofDocument,
         },
@@ -1172,7 +1700,16 @@ export default function Bookings({ onCheckedOut }) {
       ],
       children: bookingDetail.guests.filter((g) => g.isChild).map(partyRowOf),
       vehicles: bookingDetail.vehicles.map((v) => ({ number: v.number, type: v.type ?? '' })),
+      basePriceOverride:
+        bookingDetail.basePriceOverride != null ? String(bookingDetail.basePriceOverride) : '',
       advanceAmount: bookingDetail.advanceAmount != null ? String(bookingDetail.advanceAmount) : '',
+      advanceLines: [
+        {
+          method: bookingDetail.advancePaymentMethod ?? '',
+          amount: '',
+          reference: bookingDetail.advanceReference ?? '',
+        },
+      ],
       advancePaymentMethod: bookingDetail.advancePaymentMethod ?? '',
       advanceReference: bookingDetail.advanceReference ?? '',
     };
@@ -1199,6 +1736,7 @@ export default function Bookings({ onCheckedOut }) {
     setIdProofError('');
     setShowAdvanceReceipt(false);
     setAdvanceReceipts([]);
+    setJustBooked(null);
   };
 
   // Who is actually standing at the desk: the primary guest, whoever was named
@@ -1292,12 +1830,13 @@ export default function Bookings({ onCheckedOut }) {
 
   // After a receipt is issued the booking holds more advance than the copy on
   // screen says, and the chart behind it is showing the old figure too.
-  const handleReceiptIssued = (receipt) => {
-    setAdvanceReceipts((list) => [receipt, ...list]);
-    apiGet(`/bookings/${selectedBookingId}`, { token })
-      .then((data) => setBookingDetail(data.booking))
-      .catch(() => {});
-    loadTapeChart();
+  // Opens the receipt for a stay the desk is not currently looking at — the
+  // one just created. Selecting it is what loads the booking and its existing
+  // receipts; the modal renders once that lands, which is a beat later.
+  const openAdvanceReceiptFor = (bookingId) => {
+    setJustBooked(null);
+    setSelectedBookingId(bookingId);
+    setShowAdvanceReceipt(true);
   };
 
   // A guest who mistypes their PIN five times locks their own room out of
@@ -1330,6 +1869,13 @@ export default function Bookings({ onCheckedOut }) {
       setActionError('Enter the transaction number for the advance paid by UPI or card.');
       return;
     }
+    if (hasAmount && checkInForm.advanceLines.length > 1) {
+      const problem = paymentLinesError(checkInForm.advanceLines);
+      if (problem) {
+        setActionError(problem);
+        return;
+      }
+    }
     if (hasAmount && !checkInForm.advancePaymentMethod) {
       setActionError('Choose a payment method for the advance amount.');
       return;
@@ -1338,8 +1884,11 @@ export default function Bookings({ onCheckedOut }) {
       setActionError('Choose the ID proof type.');
       return;
     }
-    if (needsIdProofAtCheckIn && !checkInForm.idProofFile) {
-      setActionError('Upload the guest’s ID proof (image or PDF).');
+    // Either identifies the guest, the same as at booking — and the same as
+    // the server's own guard, which this was quietly stricter than: a desk with
+    // the card in hand and no scanner could not complete a check-in at all.
+    if (needsIdProofAtCheckIn && !checkInForm.idProofFile && !checkInForm.idProofNumber.trim()) {
+      setActionError('Upload the guest’s ID proof, or enter the ID number.');
       return;
     }
     if (checkInForm.idProofFile && checkInForm.idProofFile.size > ID_PROOF_MAX_BYTES) {
@@ -1369,8 +1918,15 @@ export default function Bookings({ onCheckedOut }) {
         formData.append('advancePaymentMethod', checkInForm.advancePaymentMethod);
         const reference = advanceReferenceOf(checkInForm);
         if (reference) formData.append('advanceReference', reference);
+        if (checkInForm.advanceLines.length > 1) {
+          formData.append(
+            'advanceLines',
+            JSON.stringify(toPaymentLines(checkInForm.advanceLines))
+          );
+        }
       }
       if (checkInForm.idProofType) formData.append('idProofType', checkInForm.idProofType);
+      if (checkInForm.idProofNumber.trim()) formData.append('idProofNumber', checkInForm.idProofNumber.trim());
       if (checkInForm.idProofFile) formData.append('idProofDocument', checkInForm.idProofFile);
       formData.append('vehicles', JSON.stringify(checkInVehicles));
       formData.append(
@@ -1381,6 +1937,7 @@ export default function Bookings({ onCheckedOut }) {
             phone: g.phone.trim(),
             isChild: g.isChild,
             ...(g.idProofType ? { idProofType: g.idProofType } : {}),
+            ...(g.idProofNumber?.trim() ? { idProofNumber: g.idProofNumber.trim() } : {}),
           }))
         )
       );
@@ -1425,13 +1982,21 @@ export default function Bookings({ onCheckedOut }) {
     try {
       const billed = selectedBookingId;
       await apiPatch(`/bookings/${selectedBookingId}/check-out`, { lateCharge }, { token });
+
+      // Everything this screen was showing goes, and the bill takes its place.
+      //
+      // Keeping the stay panel open behind the bill was the mistake: two modals
+      // stacked, the one underneath describing a stay that had already ended.
+      // The desk is not going back to it — the stay is over and the next act is
+      // taking the money — so it closes rather than waiting behind.
+      //
+      // Both cleared in the same handler, so React commits them together and
+      // the bill appears in the frame the panel leaves: one dialog giving way
+      // to the next rather than a second one landing on top.
       setLateCheckout(null);
       setSelectedBookingId(null);
       loadTapeChart();
-      // Hand the stay straight to billing: a guest standing at the desk is
-      // about to be billed, so reception should not have to find them again
-      // in the queue they were just added to.
-      onCheckedOut?.(billed);
+      onBillStay?.(billed);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not check out this guest.');
     } finally {
@@ -1476,6 +2041,11 @@ export default function Bookings({ onCheckedOut }) {
   // here and repeated at the top of every category's own calendar. The hovered
   // date lights up in every one of them, which is what makes it possible to
   // read the same night across categories without counting columns.
+  const renderMonthDividers = () =>
+    monthEdges.map((col) => (
+      <span key={col} className="tape-month__divider" style={{ '--tape-edge-col': col }} />
+    ));
+
   const renderDateHead = () => (
     <>
       {/* The month these columns are the days of. Named on every category's own
@@ -1483,9 +2053,19 @@ export default function Bookings({ onCheckedOut }) {
           month its day numbers belong to without a look back at the stepper. */}
       <div className="tape-month__band">
         <div className="tape-month__band-corner" />
-        <div className="tape-month__band-month" style={{ gridColumn: `span ${dates.length}` }}>
-          <span>{formatMonthBand(month)}</span>
-        </div>
+        {monthRuns(dates).map((run, i) => (
+          <div
+            key={run.key}
+            // Alternating, so two months side by side are told apart at a
+            // glance rather than by reading both captions.
+            className={`tape-month__band-month${i % 2 ? ' tape-month__band-month--alt' : ''}`}
+            style={{ gridColumn: `span ${run.days}` }}
+          >
+            {/* Both ends the same date: formatMonthBand collapses a range that
+                starts and finishes in one month to that month's name. */}
+            <span>{formatMonthBand(run.first, run.first)}</span>
+          </div>
+        ))}
       </div>
       <div className="tape-month__head">
         <div className="tape-month__corner">Room</div>
@@ -1502,6 +2082,7 @@ export default function Bookings({ onCheckedOut }) {
             </div>
           );
         })}
+        {renderMonthDividers()}
       </div>
     </>
   );
@@ -1547,21 +2128,26 @@ export default function Bookings({ onCheckedOut }) {
             );
           }
 
-          // A night that has already gone. Nothing can be sold into it, so it
-          // isn't a button at all — a room that stood empty last Tuesday is a
-          // fact, not an offer. It still answers on hover, which is the whole
-          // reason to keep looking at a month that has happened.
+          // A night that has already gone, with nothing recorded against it.
+          // Still a button: it cannot be *sold* now, but it can be *recorded* —
+          // a stay taken on paper over the weekend, or one being entered after
+          // the fact, has to be enterable against the night it actually
+          // happened on. It stays visually muted, because an empty past night
+          // is a fact first and an offer second.
           if (!booking && past) {
             const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             return (
-              <div
+              <button
                 key={d}
+                type="button"
                 className={classes.join(' ')}
-                role="img"
-                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)}`}
+                onClick={() => openNewBooking(room.id, d)}
                 onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
                 onMouseLeave={() => setHoverTile(null)}
+                onBlur={() => setHoverTile(null)}
+                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)} — record a stay`}
               />
             );
           }
@@ -1623,6 +2209,7 @@ export default function Bookings({ onCheckedOut }) {
             />
           );
         })}
+        {renderMonthDividers()}
       </div>
     );
   };
@@ -1637,8 +2224,8 @@ export default function Bookings({ onCheckedOut }) {
             <button
               type="button"
               className="tape-nav__arrow"
-              aria-label="Previous month"
-              onClick={() => goToMonth(addMonths(month, -1))}
+              aria-label="Previous 30 days"
+              onClick={() => stepWindow(-1)}
             >
               ‹
             </button>
@@ -1649,8 +2236,8 @@ export default function Bookings({ onCheckedOut }) {
             <button
               type="button"
               className="tape-nav__arrow"
-              aria-label="Next month"
-              onClick={() => goToMonth(addMonths(month, 1))}
+              aria-label="Next 30 days"
+              onClick={() => stepWindow(1)}
             >
               ›
             </button>
@@ -1744,7 +2331,19 @@ export default function Bookings({ onCheckedOut }) {
                     <span className="tape-month-card__meter-value">{stats.percent}% sold</span>
                   </div>
                 </div>
-                <div className="tape-chart-scroll" onScroll={() => setHoverTile(null)}>
+                <div
+                  className="tape-chart-scroll"
+                  // Registered so the other cards can be moved with this one.
+                  // The cleanup is what keeps dead nodes out of the set when a
+                  // category stops being rendered.
+                  ref={(el) => {
+                    if (!el) return undefined;
+                    scrollers.current.add(el);
+                    return () => scrollers.current.delete(el);
+                  }}
+                  onScroll={onChartScroll}
+                  onWheel={onChartWheel}
+                >
                   {/* The column track is built here because the number of
                       columns is the length of the month — February and August
                       don't hold the same count, and every row lines up with
@@ -2011,10 +2610,11 @@ export default function Bookings({ onCheckedOut }) {
                       id="checkInDate"
                       type="date"
                       value={bookingForm.checkInDate}
-                      // Today at the earliest — a night that has passed can't
-                      // be sold. Left off an edit, whose field is disabled and
-                      // whose date is often legitimately in the past.
-                      min={editing ? undefined : today}
+                      // No floor. A past night cannot be *sold*, but it can be
+                      // recorded: a stay taken on paper over the weekend, or one
+                      // the desk is entering after the fact, is a real booking
+                      // that happened and the register has to be able to hold
+                      // it. The warning below says which case this is.
                       // Never editable on an existing stay: changing when one
                       // started is a cancel and rebook, not an edit.
                       disabled={editing}
@@ -2024,19 +2624,28 @@ export default function Bookings({ onCheckedOut }) {
                         setBookingForm((f) => ({
                           ...f,
                           checkInDate,
-                          bookingType: checkInDate > today ? 'RESERVATION' : f.bookingType,
+                          // A future date can only be a reservation. A past one
+                          // can only be a stay that already started, so it is
+                          // recorded as a walk-in and checks itself in on save —
+                          // which is what "this happened" means.
+                          bookingType:
+                            checkInDate > today
+                              ? 'RESERVATION'
+                              : checkInDate < today
+                                ? 'WALK_IN'
+                                : f.bookingType,
                         }));
                       }}
                     />
-                    {/* A past check-in is flagged as it is typed rather than
-                        only on submit, so it stays a live warning — it just
-                        sits under the date it is about now, instead of in a
-                        banner further down the form. */}
+                    {/* Flagged as it is typed, and deliberately not an error:
+                        a backdated stay is allowed, it is just rarely what
+                        someone means to type. Saying so under the date keeps
+                        the slip visible without standing in the way of the desk
+                        that meant it. */}
                     {fieldErr('checkInDate') ||
                       (isPastCheckIn && (
-                        <p className="field__error">
-                          Check-in is in the past. A night that has gone can’t be booked — pick
-                          today or later.
+                        <p className="bookings-panel__note">
+                          Backdated — this records a stay that has already begun.
                         </p>
                       ))}
                   </div>
@@ -2088,6 +2697,8 @@ export default function Bookings({ onCheckedOut }) {
                             // room's total; picking a different one is a fresh
                             // negotiation.
                             discountAmount: '',
+                            discountPercent: '',
+                            discountSource: '',
                           }));
                         }}
                         disabled={!availableRooms || !canEditStay}
@@ -2128,8 +2739,13 @@ export default function Bookings({ onCheckedOut }) {
                         {formatPrice(selectedRoom.categoryBasePrice)}/night
                       </span>
                       <span className="booking-form__chip">{selectedRoom.categoryName}</span>
-                      {selectedRoom.bedSize && (
-                        <span className="booking-form__chip">{BED_SIZE_LABEL[selectedRoom.bedSize]} bed</span>
+                      {/* One chip, not one per bed: the row already carries
+                          rate, category, bathroom and occupancy, and a family
+                          room added three more chips that pushed the rest onto
+                          a second line. Falls back to the legacy single value
+                          for rooms saved before beds existed, as the server does. */}
+                      {bedSummary(selectedRoom) && (
+                        <span className="booking-form__chip">{bedSummary(selectedRoom)}</span>
                       )}
                       {selectedRoom.bathroomType && (
                         <span className="booking-form__chip">
@@ -2185,7 +2801,7 @@ export default function Bookings({ onCheckedOut }) {
                 )}
 
                 {/* What the stay costs, before anything is knocked off it.
-                    The concession is settled at the end of the form, against
+                    The discount is settled at the end of the form, against
                     this figure. */}
                 {quote && (
                   <div className="sim-result">
@@ -2195,7 +2811,42 @@ export default function Bookings({ onCheckedOut }) {
                           {charge.label}
                           {quote.nights.length > 1 ? ` (${quote.nights.length} nights)` : ''}
                         </span>
-                        <span>{formatPrice(charge.amount)}</span>
+                        {/* Editable where the money is read, because reception
+                            negotiates a total ("call it 350") far more often
+                            than a per-night rate. The room line takes the same
+                            box: the rate it names is the one the stay is priced
+                            at, and a stay sold at a rate nobody can type is a
+                            stay argued about at the desk.
+
+                            A season uplift stays fixed — it is a percentage of
+                            the rate above it, so it follows on its own. */}
+                        {charge.isBase ? (
+                          <input
+                            className="sim-result__amount-input"
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="decimal"
+                            aria-label={`Total for ${charge.label}`}
+                            onFocus={(e) => e.target.select()}
+                            value={baseTotal ?? String(charge.amount)}
+                            onChange={(e) => setRoomTotal(e.target.value)}
+                          />
+                        ) : charge.chargeId ? (
+                          <input
+                            className="sim-result__amount-input"
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="decimal"
+                            aria-label={`Total for ${charge.label}`}
+                            onFocus={(e) => e.target.select()}
+                            value={chargeTotals[charge.chargeId] ?? String(charge.amount)}
+                            onChange={(e) => setChargeTotal(charge, e.target.value)}
+                          />
+                        ) : (
+                          <span>{formatPrice(charge.amount)}</span>
+                        )}
                       </div>
                     ))}
                     <div className="sim-result__total">
@@ -2259,52 +2910,30 @@ export default function Bookings({ onCheckedOut }) {
                     <span className="form-section__badge">{formatPrice(Number(bookingForm.advanceAmount))}</span>
                   )}
                 </summary>
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="newBookingAdvanceAmount">Amount</label>
-                    <input
-                      id="newBookingAdvanceAmount"
-                      type="number"
-                      min="0"
-                      value={bookingForm.advanceAmount}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, advanceAmount: e.target.value }))}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="newBookingAdvancePaymentMethod">Payment type</label>
-                    <select
-                      id="newBookingAdvancePaymentMethod"
-                      value={bookingForm.advancePaymentMethod}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, advancePaymentMethod: e.target.value }))}
-                      aria-invalid={invalid('newBookingAdvancePaymentMethod')}
-                    >
-                      <option value="">Choose one</option>
-                      <option value="CASH">Cash</option>
-                      <option value="UPI">UPI</option>
-                      <option value="CARD">Card</option>
-                    </select>
-                    {fieldErr('newBookingAdvancePaymentMethod')}
-                  </div>
-                </div>
-                {/* Only for money that left a trail. Asking for a reference
-                    against cash would be asking for one to be invented. */}
-                {needsPaymentReference(bookingForm.advancePaymentMethod) && (
-                  <div className="field">
-                    <label htmlFor="newBookingAdvanceReference">Transaction number</label>
-                    <input
-                      id="newBookingAdvanceReference"
-                      value={bookingForm.advanceReference}
-                      maxLength={64}
-                      placeholder={bookingForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, advanceReference: e.target.value }))}
-                      aria-invalid={invalid('newBookingAdvanceReference')}
-                    />
-                    {fieldErr('newBookingAdvanceReference')}
-                    <p className="bookings-panel__hint">
-                      What the settlement statement will be matched against at month end.
-                    </p>
-                  </div>
-                )}
+                {/* maxLines 1 on an edit, which hides the add button and
+                    leaves the field exactly as it was. An edit SETS the advance
+                    rather than adding to it, so only the difference is
+                    receipted — and a list of lines describing the whole figure
+                    cannot describe that difference. Splits are taken on the way
+                    in, or from the receipt modal afterwards. */}
+                {/* No separate Amount box: the advance is however much these
+                    rows add up to. maxLines 1 on an edit hides the add button,
+                    because an edit SETS the advance rather than adding to it and
+                    only the difference is receipted — a list describing the whole
+                    figure cannot describe that difference. */}
+                <PaymentLines
+                  lines={bookingForm.advanceLines}
+                  onChange={setAdvanceLines(setBookingForm)}
+                  idPrefix="newBookingAdvance"
+                  maxLines={editing ? 1 : 5}
+                  error={
+                    <>
+                      {fieldErr(paymentFieldId('newBookingAdvance', 'Amount'))}
+                      {fieldErr(paymentFieldId('newBookingAdvance', 'Method'))}
+                      {fieldErr(paymentFieldId('newBookingAdvance', 'Reference'))}
+                    </>
+                  }
+                />
               </details>
 
               <details className="form-section form-section--collapsible" open>
@@ -2332,32 +2961,55 @@ export default function Bookings({ onCheckedOut }) {
                   know what they are haggling about. One number, once. */}
               <div className="form-section">
                 <div className="form-section__title">
-                  <span className="form-section__num">5</span>Concession
+                  <span className="form-section__num">5</span>Discount
                 </div>
-                <div className="field">
-                  <label htmlFor="discountAmount">Amount off the total (optional)</label>
-                  <input
-                    id="discountAmount"
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="numeric"
-                    placeholder="0"
-                    value={bookingForm.discountAmount}
-                    onChange={(e) => setBookingForm((f) => ({ ...f, discountAmount: e.target.value }))}
-                    disabled={!quote}
-                    aria-invalid={invalid('discountAmount')}
-                  />
-                  {fieldErr('discountAmount')}
-                  <p className="bookings-panel__hint">
-                    {quote
-                      ? 'Leave blank to charge the full stay total.'
-                      : 'Pick dates and a room first — there is nothing to knock off yet.'}
-                  </p>
+                {/* Both boxes, always. Whichever the desk types into fills the
+                    other's job — a percentage writes the rupee figure beside it,
+                    and a rupee figure clears the percentage. Only the amount is
+                    ever sent. */}
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="discountAmount">Amount off (₹)</label>
+                    <input
+                      id="discountAmount"
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={bookingForm.discountAmount}
+                      onChange={(e) => setDiscountAmount(e.target.value)}
+                      disabled={!quote}
+                      aria-invalid={invalid('discountAmount')}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="discountPercent">Or percent off (%)</label>
+                    <input
+                      id="discountPercent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={bookingForm.discountPercent}
+                      onChange={(e) => setDiscountPercent(e.target.value)}
+                      disabled={!quote}
+                    />
+                  </div>
                 </div>
+                {fieldErr('discountAmount')}
+                <p className="bookings-panel__hint">
+                  {!quote
+                    ? 'Pick dates and a room first — there is nothing to knock off yet.'
+                    : bookingForm.discountPercent && bookingForm.discountAmount
+                      ? `${bookingForm.discountPercent}% of ${formatPrice(quote.grossTotal)} — ${formatPrice(Number(bookingForm.discountAmount))} off.`
+                      : 'Fill either box and the other follows — leave both blank to charge the full stay total.'}
+                </p>
 
                 {/* Both halves beside the box being typed into: the section
-                    above scrolls out of reach, and a concession can only be
+                    above scrolls out of reach, and a discount can only be
                     checked against what it came off. */}
                 {quote && (
                   <div className="sim-result">
@@ -2369,7 +3021,7 @@ export default function Bookings({ onCheckedOut }) {
                     </div>
                     {quote.discountAmount > 0 && (
                       <div className="sim-result__line">
-                        <span>Concession</span>
+                        <span>Discount</span>
                         <span>-{formatPrice(quote.discountAmount)}</span>
                       </div>
                     )}
@@ -2473,7 +3125,11 @@ export default function Bookings({ onCheckedOut }) {
         </div>
       )}
 
-      {selectedBookingId && (
+      {/* Stood down while the late-checkout question is on screen. That is a
+          step of this same job, not a separate dialog, and stacking the two put
+          a panel describing the stay behind a panel asking what to charge for
+          it. Cancelling the question brings this straight back. */}
+      {selectedBookingId && !lateCheckout && (
         <div
           // Dismissable by backdrop while it is only being read, but not once
           // the check-in form is open on top of it — that form has typed-in
@@ -2537,52 +3193,10 @@ export default function Bookings({ onCheckedOut }) {
                     Not offered once the stay is billed or cancelled: the final
                     invoice already accounts for every advance, and a cancelled
                     booking has no stay to hold money against. */}
-                {!showCheckInForm &&
-                  bookingDetail.status !== 'CANCELLED' &&
-                  bookingDetail.status !== 'CHECKED_OUT' && (
-                    <div className="bookings-panel__actions">
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setShowAdvanceReceipt(true)}
-                        disabled={actionSubmitting}
-                      >
-                        Advance receipt
-                        {advanceReceipts.length > 0 && ` (${advanceReceipts.length})`}
-                      </button>
-                    </div>
-                  )}
-
-                {bookingDetail.status === 'BOOKED' && !showCheckInForm && (
-                  <>
-                    {!canCheckInNow && (
-                      <p className="bookings-panel__hint">
-                        Reserved for {formatDateLong(bookingDetail.checkInDate)} — check-in opens on that date.
-                      </p>
-                    )}
-                    <div className="bookings-panel__actions">
-                      <button
-                        type="button"
-                        className="bookings-panel__danger-link"
-                        onClick={handleCancel}
-                        disabled={actionSubmitting}
-                      >
-                        Cancel booking
-                      </button>
-                      <button type="button" className="btn-secondary" onClick={openEditBooking} disabled={actionSubmitting}>
-                        Edit booking
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-accent"
-                        onClick={() => setShowCheckInForm(true)}
-                        disabled={actionSubmitting || !canCheckInNow}
-                        title={canCheckInNow ? undefined : 'Check-in opens on the reserved date.'}
-                      >
-                        Check in
-                      </button>
-                    </div>
-                  </>
+                {bookingDetail.status === 'BOOKED' && !showCheckInForm && !canCheckInNow && (
+                  <p className="bookings-panel__hint">
+                    Reserved for {formatDateLong(bookingDetail.checkInDate)} — check-in opens on that date.
+                  </p>
                 )}
 
                 {bookingDetail.status === 'BOOKED' && showCheckInForm && (
@@ -2610,6 +3224,16 @@ export default function Bookings({ onCheckedOut }) {
                             </select>
                           </div>
                           <div className="field">
+                            <label htmlFor="checkInIdProofNumber">ID number</label>
+                            <input
+                              id="checkInIdProofNumber"
+                              value={checkInForm.idProofNumber}
+                              onChange={(e) =>
+                                setCheckInForm((f) => ({ ...f, idProofNumber: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="field">
                             <label htmlFor="checkInIdProofFile">ID proof document</label>
                             <input
                               id="checkInIdProofFile"
@@ -2626,47 +3250,11 @@ export default function Bookings({ onCheckedOut }) {
                     )}
 
                     <div className="form-section__title">Advance payment (optional)</div>
-                    <div className="field-row">
-                      <div className="field">
-                        <label htmlFor="advanceAmount">Amount</label>
-                        <input
-                          id="advanceAmount"
-                          type="number"
-                          min="0"
-                          value={checkInForm.advanceAmount}
-                          onChange={(e) => setCheckInForm((f) => ({ ...f, advanceAmount: e.target.value }))}
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="advancePaymentMethod">Payment type</label>
-                        <select
-                          id="advancePaymentMethod"
-                          value={checkInForm.advancePaymentMethod}
-                          onChange={(e) =>
-                            setCheckInForm((f) => ({ ...f, advancePaymentMethod: e.target.value }))
-                          }
-                        >
-                          <option value="">Choose one</option>
-                          <option value="CASH">Cash</option>
-                          <option value="UPI">UPI</option>
-                          <option value="CARD">Card</option>
-                        </select>
-                      </div>
-                    </div>
-                    {needsPaymentReference(checkInForm.advancePaymentMethod) && (
-                      <div className="field">
-                        <label htmlFor="checkInAdvanceReference">Transaction number</label>
-                        <input
-                          id="checkInAdvanceReference"
-                          value={checkInForm.advanceReference}
-                          maxLength={64}
-                          placeholder={
-                            checkInForm.advancePaymentMethod === 'UPI' ? 'UPI reference / UTR' : 'Approval code'
-                          }
-                          onChange={(e) => setCheckInForm((f) => ({ ...f, advanceReference: e.target.value }))}
-                        />
-                      </div>
-                    )}
+                    <PaymentLines
+                      lines={checkInForm.advanceLines}
+                      onChange={setAdvanceLines(setCheckInForm)}
+                      idPrefix="checkInAdvance"
+                    />
 
                     <div className="form-section__title">Add guest details (optional)</div>
                     <p className="bookings-panel__hint">
@@ -2724,7 +3312,12 @@ export default function Bookings({ onCheckedOut }) {
                               <input
                                 id={`checkInGuestPhone-${index}`}
                                 value={guest.phone}
-                                onChange={(e) => updateCheckInGuest(index, { phone: e.target.value })}
+                                onChange={(e) => updateCheckInGuest(index, { phone: typedMobile(e.target.value) })}
+                                type="tel"
+                                inputMode="numeric"
+                                autoComplete="tel"
+                                maxLength={10}
+                                placeholder="10-digit mobile"
                               />
                             </div>
                             <div className="field">
@@ -2741,6 +3334,16 @@ export default function Bookings({ onCheckedOut }) {
                                   </option>
                                 ))}
                               </select>
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`checkInGuestIdProofNumber-${index}`}>
+                                ID number (optional)
+                              </label>
+                              <input
+                                id={`checkInGuestIdProofNumber-${index}`}
+                                value={guest.idProofNumber}
+                                onChange={(e) => updateCheckInGuest(index, { idProofNumber: e.target.value })}
+                              />
                             </div>
                             <div className="field">
                               <label htmlFor={`checkInGuestIdProofFile-${index}`}>
@@ -2824,25 +3427,51 @@ export default function Bookings({ onCheckedOut }) {
                   </form>
                 )}
 
-                {bookingDetail.status === 'CHECKED_IN' && (
-                  <div className="bookings-panel__actions">
-                    <button type="button" className="btn-secondary" onClick={openEditBooking} disabled={actionSubmitting}>
-                      Edit booking
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-accent"
-                      onClick={openCheckOut}
-                      disabled={actionSubmitting}
-                    >
-                      {actionSubmitting ? 'Checking out…' : 'Check out'}
-                    </button>
-                  </div>
-                )}
+                {/* One row for everything the desk can do to this stay.
+                    These were three stacked rows — the advance receipt on its
+                    own line, the state actions on the next, and Close below a
+                    rule of its own — which read as three unrelated groups and
+                    took three lines to say what fits on one.
 
-                {bookingDetail.status === 'CHECKED_OUT' && (
-                  <div className="bookings-panel__actions">
-                    {canEditBooking ? (
+                    Ordered left to right by how far each takes the stay:
+                    reversing it, then correcting it, then moving it on. Close
+                    is last because leaving is not one of them.
+
+                    Hidden behind the check-in form, which has its own Back. */}
+                {!showCheckInForm && (
+                  <div className="bookings-panel__actions bookings-panel__actions--footer">
+                    {bookingDetail.status === 'BOOKED' && (
+                      <button
+                        type="button"
+                        className="bookings-panel__danger-link"
+                        onClick={handleCancel}
+                        disabled={actionSubmitting}
+                      >
+                        Cancel booking
+                      </button>
+                    )}
+
+                    {/* An advance can be taken while a stay is reserved or in
+                        house. Not once it is billed or cancelled: the invoice
+                        already accounts for every advance, and a cancelled
+                        booking has no stay to hold money against. */}
+                    {bookingDetail.status !== 'CANCELLED' && bookingDetail.status !== 'CHECKED_OUT' && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setShowAdvanceReceipt(true)}
+                        disabled={actionSubmitting}
+                      >
+                        Advance receipt
+                        {advanceReceipts.length > 0 && ` (${advanceReceipts.length})`}
+                      </button>
+                    )}
+
+                    {bookingDetail.status === 'CHECKED_OUT' && !canEditBooking && (
+                      <span className="bookings-panel__hint">This stay has been billed — extras are locked.</span>
+                    )}
+
+                    {canEditBooking && bookingDetail.status !== 'CANCELLED' && (
                       <button
                         type="button"
                         className="btn-secondary"
@@ -2851,17 +3480,51 @@ export default function Bookings({ onCheckedOut }) {
                       >
                         Edit booking
                       </button>
-                    ) : (
-                      <span className="bookings-panel__hint">This stay has been billed — extras are locked.</span>
                     )}
-                  </div>
-                )}
 
-                {/* Always present, whatever the stay's status — the panels
-                    above vary by it, and none of them is a way out. Hidden
-                    only behind the check-in form, which has its own Back. */}
-                {!showCheckInForm && (
-                  <div className="bookings-panel__actions bookings-panel__actions--close">
+                    {bookingDetail.status === 'BOOKED' && (
+                      <button
+                        type="button"
+                        className="btn-accent"
+                        // Deliberately NOT disabled on a future stay. A disabled
+                        // button answers a click with nothing at all: reception
+                        // pressed Check in, the form did not open, and the
+                        // screen said nothing about why. The title only appears
+                        // on hover, which a touch screen never does — and
+                        // browsers suppress tooltips on disabled controls
+                        // anyway.
+                        //
+                        // So the click is allowed through and refused out loud.
+                        // The server refuses it too, with the same rule; this is
+                        // the half that reaches the desk without a round trip.
+                        onClick={() => {
+                          if (!canCheckInNow) {
+                            setActionError(
+                              `This stay is reserved for ${formatDateLong(bookingDetail.checkInDate)} — check-in opens on that date.`
+                            );
+                            return;
+                          }
+                          setActionError('');
+                          setShowCheckInForm(true);
+                        }}
+                        disabled={actionSubmitting}
+                        title={canCheckInNow ? undefined : 'Check-in opens on the reserved date.'}
+                      >
+                        Check in
+                      </button>
+                    )}
+
+                    {bookingDetail.status === 'CHECKED_IN' && (
+                      <button
+                        type="button"
+                        className="btn-accent"
+                        onClick={openCheckOut}
+                        disabled={actionSubmitting}
+                      >
+                        {actionSubmitting ? 'Checking out…' : 'Check out'}
+                      </button>
+                    )}
+
                     <button type="button" className="btn-secondary" onClick={closeDetail}>
                       Close
                     </button>
@@ -2881,8 +3544,86 @@ export default function Bookings({ onCheckedOut }) {
           booking={bookingDetail}
           existingReceipts={advanceReceipts}
           onClose={() => setShowAdvanceReceipt(false)}
-          onIssued={handleReceiptIssued}
+          // A further advance changes both the receipt list and the booking's
+          // own figure, and the panel behind this modal shows the second. Both
+          // are re-read so the desk does not close this and find the old number
+          // still sitting under "Advance payment".
+          onTaken={(receipt) => {
+            setAdvanceReceipts((list) => [receipt, ...list]);
+            apiGet(`/bookings/${selectedBookingId}`, { token })
+              .then((data) => setBookingDetail(data.booking))
+              .catch(() => {});
+            loadTapeChart();
+          }}
         />
+      )}
+
+      {/* Said the moment the booking exists, rather than leaving the desk to
+          infer it from the chart redrawing. It carries the one thing that has
+          to happen next when money changed hands: the receipt for it. Reception
+          used to have to find the stay again and open it from the detail panel,
+          with a guest waiting for a slip. */}
+      {justBooked && (
+        <div className="glass-backdrop bookings-panel__backdrop" onClick={() => setJustBooked(null)}>
+          <div
+            className="glass-panel bookings-panel__modal booking-saved"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bookingSavedTitle"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* The crest: a tick that draws itself over a curve, in the app's
+                own navy rather than the celebratory green this pattern usually
+                arrives in — a booking is routine work, and a screen that cheers
+                every time gets tuned out by the third one of the morning.
+                aria-hidden because the heading below already says it saved;
+                a screen reader reading "tick, wave" adds nothing. */}
+            <div className="booking-saved__crest" aria-hidden="true">
+              <svg className="booking-saved__wave" viewBox="0 0 320 64" preserveAspectRatio="none">
+                <path d="M0,30 C58,60 116,6 176,22 C236,38 288,54 320,28 L320,64 L0,64 Z" />
+              </svg>
+              <span className="booking-saved__badge">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path
+                    className="booking-saved__tick"
+                    d="M9.5 16.5 L14 21 L22.5 11.5"
+                    stroke="currentColor"
+                    strokeWidth="2.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+
+            <h3 id="bookingSavedTitle">Booking saved</h3>
+            <p className="booking-saved__lead">
+              <strong>{justBooked.guestName}</strong>
+              {justBooked.roomNumber ? ` is booked into room ${justBooked.roomNumber}.` : ' is booked.'}
+            </p>
+
+            {justBooked.advanceAmount > 0 ? (
+              <p className="booking-saved__advance">
+                Advance of <strong>{formatPrice(justBooked.advanceAmount)}</strong>
+                {justBooked.advanceMethod ? ` by ${justBooked.advanceMethod.toLowerCase()}` : ''} taken — its
+                receipt has been issued automatically.
+              </p>
+            ) : (
+              <p className="bookings-panel__hint">No advance was taken, so there is nothing to receipt yet.</p>
+            )}
+
+            <div className="bookings-panel__actions">
+              {justBooked.advanceAmount > 0 && (
+                <button type="button" className="btn-accent" onClick={() => openAdvanceReceiptFor(justBooked.id)}>
+                  Print advance receipt
+                </button>
+              )}
+              <button type="button" className="btn-secondary" onClick={() => setJustBooked(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {lateCheckout && (
@@ -3051,6 +3792,26 @@ function GuestNameField({ id, value, token, onChange, onPick }) {
 // fieldErr renders the message for one input's id, or nothing — the party rows
 // are where "enter a name for this adult" has to appear, and only the form
 // knows which row failed.
+// Drawn here rather than pulled from public/icons.svg — that sprite is the
+// unused Vite starter set (github, discord, bluesky) and has no trash glyph.
+// One shape used twice in this file doesn't earn a sprite of its own.
+const TrashIcon = () => (
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5" />
+  </svg>
+);
+
 function PartyEditor({
   adults,
   children,
@@ -3062,6 +3823,31 @@ function PartyEditor({
   guestLookupToken,
   fieldErr,
 }) {
+  // Adding a row and then having to click into it is two actions for one
+  // intention. The new row's name field takes the cursor instead, so the desk
+  // carries straight on typing.
+  //
+  // The id is parked on a ref and acted on after the render that creates the
+  // row: at the moment the button is pressed the input does not exist yet, so
+  // there is nothing to focus. The effect has no dependency list because it has
+  // to run after every render — it is a no-op unless something asked for focus,
+  // and it clears the request as it consumes it, so a later unrelated render
+  // cannot steal the cursor back.
+  const focusAfterAdd = useRef(null);
+
+  useEffect(() => {
+    const id = focusAfterAdd.current;
+    if (!id) return;
+    focusAfterAdd.current = null;
+    document.getElementById(id)?.focus();
+  });
+
+  const addRow = (kind, blank) => {
+    const nextIndex = (kind === 'adults' ? adults : children).length;
+    focusAfterAdd.current = `${idPrefix}${kind === 'adults' ? 'Adult' : 'Child'}Name-${nextIndex}`;
+    onAdd(kind, blank);
+  };
+
   const idTypeOptions = ID_PROOF_TYPES.map((t) => (
     <option key={t} value={t}>
       {idProofLabel(t)}
@@ -3072,7 +3858,21 @@ function PartyEditor({
   // document were missing and get one uploaded again on top of it.
   const onFile = (person) =>
     person.hasDocument && !person.idProofFile ? (
-      <span className="bookings-panel__muted"> · on file</span>
+      <span className="on-file">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M4 12.5 9.5 18 20 6.5" />
+        </svg>
+        On file
+      </span>
     ) : null;
 
   return (
@@ -3085,9 +3885,6 @@ function PartyEditor({
           Adults
           <span className="booking-form__subhead-count">{adults.length}</span>
         </span>
-        <button type="button" className="booking-form__add-inline" onClick={() => onAdd('adults', emptyGuest)}>
-          + Add adult
-        </button>
       </div>
       <div className="bookings-panel__repeat-list">
         {adults.map((adult, index) => {
@@ -3107,13 +3904,23 @@ function PartyEditor({
                       // Typing over a name that was picked drops the carried
                       // document with it — what's on file belongs to the guest
                       // who was chosen, not to whoever is being typed now.
-                      onUpdate('adults', index, { name, fromBookingId: null, hasDocument: false })
+                      onUpdate('adults', index, {
+                        name,
+                        fromBookingId: null,
+                        hasDocument: false,
+                        // The number came off the guest who was picked, same as
+                        // the document did. Typing a different name over it has
+                        // to drop both, or the new guest inherits the old one's
+                        // ID.
+                        idProofNumber: '',
+                      })
                     }
                     onPick={(guest) =>
                       onUpdate('adults', index, {
                         name: guest.name,
                         phone: guest.phone,
                         idProofType: guest.idProofType ?? '',
+                        idProofNumber: guest.idProofNumber ?? '',
                         // Not the document itself — only the stay to copy it
                         // from, which the server resolves on save.
                         fromBookingId: guest.hasIdProofDocument ? guest.bookingId : null,
@@ -3137,7 +3944,12 @@ function PartyEditor({
                 <input
                   id={`${idPrefix}AdultPhone-${index}`}
                   value={adult.phone}
-                  onChange={(e) => onUpdate('adults', index, { phone: e.target.value })}
+                  onChange={(e) => onUpdate('adults', index, { phone: typedMobile(e.target.value) })}
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={10}
+                  placeholder="10-digit mobile"
                 />
                 {fieldErr(`${idPrefix}AdultPhone-${index}`)}
               </div>
@@ -3156,9 +3968,17 @@ function PartyEditor({
                 {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
               <div className="field">
+                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>ID number</label>
+                <input
+                  id={`${idPrefix}AdultIdProofNumber-${index}`}
+                  value={adult.idProofNumber}
+                  onChange={(e) => onUpdate('adults', index, { idProofNumber: e.target.value })}
+                />
+                {fieldErr(`${idPrefix}AdultIdProofNumber-${index}`)}
+              </div>
+              <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
                   Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
-                  {onFile(adult)}
                 </label>
                 <input
                   id={`${idPrefix}AdultIdProofFile-${index}`}
@@ -3166,6 +3986,7 @@ function PartyEditor({
                   accept={ID_PROOF_ACCEPT}
                   onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
                 />
+                {onFile(adult)}
                 {fieldErr(`${idPrefix}AdultIdProofFile-${index}`)}
               </div>
               {/* The primary guest is the booking itself — there's no booking
@@ -3177,8 +3998,14 @@ function PartyEditor({
                   type="button"
                   className="bookings-panel__row-remove-btn"
                   onClick={() => onRemove('adults', index)}
+                  // The label went when the text did. Without it this is an
+                  // unnamed button to a screen reader, and a mystery glyph to
+                  // anyone hovering — on a row of six adults, "which one does
+                  // this delete" is a question the name has to answer.
+                  aria-label={`Remove adult ${index + 1}`}
+                  title="Remove this adult"
                 >
-                  Remove
+                  <TrashIcon />
                 </button>
               )}
             </div>
@@ -3186,26 +4013,36 @@ function PartyEditor({
         })}
       </div>
 
-      {/* Said in full rather than left to the "· on file" note beside the
-          Document field: reception has just picked a returning guest and is
-          about to look for the upload box, and this is the sentence that stops
-          them asking for a card the property already holds. */}
-      {adults[0]?.fromBookingId && !adults[0].idProofFile && (
-        <p className="bookings-panel__hint">
-          {idProofLabel(adults[0].idProofType) || 'The ID proof'} from this guest’s previous stay
-          will be attached to this booking — no need to ask for it again. Attaching a file below
-          replaces it.
-        </p>
-      )}
+      {/* Under the rows rather than up in the heading. The desk fills a row
+          and the next thing it wants is another one — with the button above the
+          list, adding a fourth adult meant scrolling back past the three
+          already filled in. */}
+      <div className="booking-form__add-row">
+        <button
+          type="button"
+          className="booking-form__add-inline booking-form__add-below"
+          onClick={() => addRow('adults', emptyGuest)}
+        >
+          + Add adult
+        </button>
+
+        {/* Beside the button rather than on a line of its own. The tick on the
+            row is what catches the eye; this only adds the part the tick cannot
+            say — that the document carries onto this booking — and a whole line
+            to itself gave that more weight than it needs. */}
+        {adults[0]?.fromBookingId && !adults[0].idProofFile && (
+          <p className="bookings-panel__note">
+            {idProofLabel(adults[0].idProofType) || 'ID proof'} from this guest’s last stay carries
+            over. Attach a file to replace it.
+          </p>
+        )}
+      </div>
 
       <div className="booking-form__subhead">
         <span className="booking-form__subhead-label">
           Children
           <span className="booking-form__subhead-count">{children.length}</span>
         </span>
-        <button type="button" className="booking-form__add-inline" onClick={() => onAdd('children', emptyChild)}>
-          + Add child
-        </button>
       </div>
       {children.length > 0 && (
         <div className="bookings-panel__repeat-list">
@@ -3235,9 +4072,16 @@ function PartyEditor({
                 </select>
               </div>
               <div className="field">
+                <label htmlFor={`${idPrefix}ChildIdProofNumber-${index}`}>ID number (optional)</label>
+                <input
+                  id={`${idPrefix}ChildIdProofNumber-${index}`}
+                  value={child.idProofNumber}
+                  onChange={(e) => onUpdate('children', index, { idProofNumber: e.target.value })}
+                />
+              </div>
+              <div className="field">
                 <label htmlFor={`${idPrefix}ChildIdProofFile-${index}`}>
                   Document (optional)
-                  {onFile(child)}
                 </label>
                 <input
                   id={`${idPrefix}ChildIdProofFile-${index}`}
@@ -3245,20 +4089,31 @@ function PartyEditor({
                   accept={ID_PROOF_ACCEPT}
                   onChange={(e) => onUpdate('children', index, { idProofFile: e.target.files[0] || null })}
                 />
+                {onFile(child)}
                 {fieldErr(`${idPrefix}ChildIdProofFile-${index}`)}
               </div>
               <button
                 type="button"
                 className="bookings-panel__row-remove-btn"
                 onClick={() => onRemove('children', index)}
+                aria-label={`Remove child ${index + 1}`}
+                title="Remove this child"
               >
-                Remove
+                <TrashIcon />
               </button>
             </div>
           ))}
         </div>
       )}
+      <button
+        type="button"
+        className="booking-form__add-inline booking-form__add-below"
+        onClick={() => addRow('children', emptyChild)}
+      >
+        + Add child
+      </button>
       <p className="bookings-panel__hint">
+        Either an ID number or a document identifies a guest — one is enough, both is better.
         Documents accept an image (JPG/PNG/WEBP) or PDF, up to 5MB. An uploaded document replaces what
         is on file; removing the guest is what takes one off a booking.
       </p>

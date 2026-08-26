@@ -17,13 +17,17 @@
   line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
+/* Open and hovered look the same on purpose: both mean "this row's menu is the
+   one you are working with". Pressed rather than raised because the ⋮ lives
+   inside a table row, and 30 of these extruding down a column would read as a
+   strip of buttons rather than as one affordance per row. */
 .rowmenu__trigger:hover,
 .rowmenu__trigger[aria-expanded='true'] {
-  border-color: var(--border);
-  background: var(--paper);
   color: var(--ink);
+  box-shadow: var(--shadow-pressed);
 }
 
 .rowmenu__trigger:focus-visible {
@@ -56,7 +60,7 @@
   text-align: left;
   padding: 9px 11px;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   font-family: var(--sans);
   font-size: 14px;
@@ -64,10 +68,15 @@
   cursor: pointer;
   white-space: nowrap;
   min-height: 0;
+  transition: var(--neu-transition);
 }
 
 .rowmenu__pop button:hover {
-  background: var(--paper);
+  box-shadow: var(--shadow-pressed);
+}
+
+.rowmenu__pop button:active {
+  box-shadow: var(--shadow-inset);
 }
 
 /* On a phone this ⋮ is the only way into rename, restock and delete, and 30px

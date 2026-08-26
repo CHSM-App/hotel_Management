@@ -127,6 +127,16 @@
   min-height: 42px;
 }
 
+/* Save and Cancel share one grid cell, so the row keeps the same number of
+   children whether or not it is editing — a fourth child used to wrap onto an
+   implicit second row and Save came out full-width underneath. Save is first:
+   it is the action being confirmed, and Cancel is the way out of it. */
+.inline-add-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .inline-add-form__row button {
   white-space: nowrap;
   padding: 0 16px;

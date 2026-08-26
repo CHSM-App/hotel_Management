@@ -1,6 +1,27 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 
+// bed_size is the legacy single-value column. It is kept in step with beds[0]
+// because the public room-type page, the booking chip, the price simulator and
+// the room card all still read it — deriving it here is what let those four go
+// untouched. Never set on its own.
+function primaryBedSize(beds) {
+  return beds && beds.length > 0 ? beds[0].size : null;
+}
+
+// Rooms added before the beds column read as a one-entry list, so callers get
+// the same shape for every room and need no "old row" branch.
+function parseBeds(row) {
+  if (row.beds) {
+    try {
+      return JSON.parse(row.beds);
+    } catch {
+      // A hand-edited row. The single-value column is still trustworthy.
+    }
+  }
+  return row.bed_size ? [{ size: row.bed_size, count: 1 }] : [];
+}
+
 function computePrice(categoryBasePrice) {
   return Number(categoryBasePrice);
 }
@@ -12,7 +33,7 @@ async function listRooms(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT r.id, r.room_number, r.floor, r.bed_size, r.bathroom_type, r.max_occupancy, r.description,
+      SELECT r.id, r.room_number, r.floor, r.bed_size, r.beds, r.bathroom_type, r.max_occupancy, r.description,
              r.is_active, r.created_at,
              c.id AS category_id, c.name AS category_name, c.base_price AS category_base_price
       FROM dbo.rooms r
@@ -62,6 +83,7 @@ async function listRooms(lodgeId) {
     roomNumber: row.room_number,
     floor: row.floor,
     bedSize: row.bed_size,
+    beds: parseBeds(row),
     bathroomType: row.bathroom_type,
     maxOccupancy: row.max_occupancy,
     description: row.description,
@@ -131,16 +153,17 @@ async function createRooms(lodgeId, input) {
         .input('roomNumber', sql.NVarChar, roomNumber)
         .input('categoryId', sql.BigInt, input.categoryId)
         .input('floor', sql.NVarChar, input.floor || null)
-        .input('bedSize', sql.NVarChar, input.bedSize ?? null)
+        .input('bedSize', sql.NVarChar, primaryBedSize(input.beds))
+        .input('beds', sql.NVarChar, JSON.stringify(input.beds))
         .input('bathroomType', sql.NVarChar, input.bathroomType ?? null)
         .input('maxOccupancy', sql.Int, input.maxOccupancy)
         .input('description', sql.NVarChar, input.description || null)
         .query(`
           INSERT INTO dbo.rooms
-            (lodge_id, room_number, category_id, floor, bed_size, bathroom_type, max_occupancy, description)
+            (lodge_id, room_number, category_id, floor, bed_size, beds, bathroom_type, max_occupancy, description)
           OUTPUT inserted.id
           VALUES
-            (@lodgeId, @roomNumber, @categoryId, @floor, @bedSize, @bathroomType, @maxOccupancy, @description)
+            (@lodgeId, @roomNumber, @categoryId, @floor, @bedSize, @beds, @bathroomType, @maxOccupancy, @description)
         `);
 
       const roomId = result.recordset[0].id;
@@ -214,14 +237,15 @@ async function updateRoom(lodgeId, roomId, input) {
       .input('roomNumber', sql.NVarChar, input.roomNumber)
       .input('categoryId', sql.BigInt, input.categoryId)
       .input('floor', sql.NVarChar, input.floor || null)
-      .input('bedSize', sql.NVarChar, input.bedSize)
+      .input('bedSize', sql.NVarChar, primaryBedSize(input.beds))
+      .input('beds', sql.NVarChar, JSON.stringify(input.beds))
       .input('bathroomType', sql.NVarChar, input.bathroomType)
       .input('maxOccupancy', sql.Int, input.maxOccupancy)
       .input('description', sql.NVarChar, input.description || null)
       .query(`
         UPDATE dbo.rooms
         SET room_number = @roomNumber, category_id = @categoryId, floor = @floor,
-            bed_size = @bedSize, bathroom_type = @bathroomType, max_occupancy = @maxOccupancy,
+            bed_size = @bedSize, beds = @beds, bathroom_type = @bathroomType, max_occupancy = @maxOccupancy,
             description = @description
         WHERE id = @roomId
       `);
@@ -388,6 +412,8 @@ async function deleteRoomImage(lodgeId, roomId, imageId) {
 }
 
 module.exports = {
+  // Shared with bookings, which lists the same rooms on the booking form.
+  parseBeds,
   listRooms,
   createRooms,
   updateRoom,

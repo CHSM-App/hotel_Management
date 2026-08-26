@@ -91,7 +91,10 @@ app.use(
         // Nothing may embed this app — the clickjacking defence, and the
         // modern replacement for X-Frame-Options.
         frameAncestors: ["'none'"],
-        frameSrc: ["'none'"],
+        // blob: so a report PDF built in the browser can be previewed in an
+        // iframe before it is saved. Still no remote frames — this allows the
+        // page to show a file it made itself, not to embed anyone else's.
+        frameSrc: ["'self'", 'blob:'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
@@ -167,11 +170,19 @@ app.get('/health', async (req, res) => {
     await pool.request().query('SELECT 1');
     res.json({ ok: true, database: 'up' });
   } catch (err) {
-    // 503 rather than 500: this is "not ready to serve", which is a state a load
-    // balancer knows how to act on. The message is the driver's, not a stack —
-    // whoever is reading this at 2am needs the reason, and nothing here is
-    // sensitive that the connection log doesn't already print.
-    res.status(503).json({ ok: false, database: 'down', error: err.message });
+    // The reason goes to the log, not to the caller. This route has no auth in
+    // front of it — it is meant to be reachable by an uptime monitor — so
+    // anyone at all could read what came back, and a tedious connection failure
+    // names the database host, the port and often the login it tried. That is a
+    // free map of the back end handed to whoever asks.
+    //
+    // Nothing is lost by logging it instead: the operator reading this at 2am
+    // has the log, and the monitor only needs to know it is down.
+    req.log?.error({ err }, 'Health check failed — database unreachable');
+
+    // 503 rather than 500: "not ready to serve" is a state a load balancer
+    // knows how to act on.
+    res.status(503).json({ ok: false, database: 'down' });
   }
 });
 

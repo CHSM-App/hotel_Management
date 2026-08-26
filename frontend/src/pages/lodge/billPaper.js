@@ -131,7 +131,11 @@ export function fitBillToSheet(availWidth, availHeight, naturalWidth, naturalHei
   return { scale, stayHeight: STAY_BASE_HEIGHT + (slack > 24 ? slack : 0) };
 }
 
-export const DEFAULT_PAPER = 'a4';
+// A6 — the slip size a desk actually prints on. A4 was the safe default for a
+// browser print dialog, but it means every receipt and bill comes out as a
+// quarter-filled sheet that someone then folds. The picker still offers A4 for
+// the occasions that want it.
+export const DEFAULT_PAPER = 'a6';
 
 export const paperById = (id) => PAPER_SIZES.find((p) => p.id === id) ?? PAPER_SIZES[0];
 

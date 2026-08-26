@@ -160,7 +160,7 @@
   min-height: 38px;
   padding: 8px 10px;
   font-size: 14px;
-  border-radius: 7px;
+  border-radius: 8px;
 }
 
 .booking-form .field-row {
@@ -300,13 +300,33 @@
   padding: 8px 12px 10px;
   border: 1px solid transparent;
   box-shadow: var(--shadow-inset);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--paper);
 }
 
 .booking-form .sim-result__line {
   font-size: 12.5px;
   padding: 3px 0;
+}
+
+/* An extras total, edited in place. Deliberately looks like the figure it
+   replaces — right-aligned, same size — with only a hairline border to say it
+   can be typed in. A full input chrome here would turn a quiet summary into a
+   form and pull the eye off the stay total underneath. */
+.booking-form .sim-result__amount-input {
+  width: 78px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: right;
+}
+
+.booking-form .sim-result__amount-input:focus {
+  border-color: var(--brand);
+  outline: none;
 }
 
 .booking-form .sim-result__total {
@@ -372,22 +392,30 @@
   letter-spacing: normal;
 }
 
+/* Filled rather than the dashed ghost it was. Adding the second guest is the
+   most-used control in this form and it read as disabled placeholder chrome
+   next to the real fields, so people hunted for it. */
 .booking-form__add-inline {
-  background: none;
-  border: 1px dashed var(--border);
+  background: var(--brand);
+  border: 1px solid var(--brand);
   border-radius: 999px;
-  color: var(--brand-ink);
-  font-size: 11.5px;
+  color: #fff;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  padding: 5px 11px;
+  padding: 7px 14px;
   white-space: nowrap;
+  box-shadow: var(--shadow-raised);
 }
 
 .booking-form__add-inline:hover {
-  border-style: solid;
-  border-color: var(--brand);
-  background: #eef4f2;
+  background: var(--brand-ink);
+  border-color: var(--brand-ink);
+}
+
+.booking-form__add-inline:focus-visible {
+  outline: 2px solid var(--brand-ink);
+  outline-offset: 2px;
 }
 
 /* Advance payment and vehicles side by side: both are usually left shut,
@@ -408,7 +436,7 @@
   margin-top: 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
 }
 
 .booking-form__optional .bookings-panel__add-btn {
@@ -510,23 +538,23 @@
   margin-bottom: 0;
 }
 
-/* One guest, one line: name / mobile / ID type / document, with the remove
-   button riding along at the end so the row stays scannable down the column
-   of names. Children drop the mobile column. */
+/* One guest, one line: name / mobile / ID type / ID number / document, with
+   the remove button riding along at the end so the row stays scannable down
+   the column of names. Children drop the mobile column. */
 .bookings-panel__party-row {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 1.3fr auto;
+  grid-template-columns: 1.1fr 0.9fr 0.9fr 1fr 1.2fr auto;
   align-items: end;
   gap: 8px 10px;
   padding: 10px 12px;
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--surface);
 }
 
 .bookings-panel__party-row--child {
-  grid-template-columns: 1.2fr 1fr 1.3fr auto;
+  grid-template-columns: 1.1fr 0.9fr 1fr 1.2fr auto;
 }
 
 .bookings-panel__party-row .field {
@@ -571,10 +599,12 @@
   margin: 0;
   padding: 4px;
   list-style: none;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: none;
+  border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.16);
+  /* A popover over the page, so it takes the app's elevation rather than a
+     flat drop — it is the same material as what's behind it, lifted off it. */
+  box-shadow: var(--shadow-elevated);
 }
 
 .guest-typeahead__option {
@@ -585,7 +615,7 @@
   width: 100%;
   padding: 7px 9px;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   text-align: left;
   cursor: pointer;
@@ -619,23 +649,27 @@
   font-weight: 600;
 }
 
+/* Icon-only, so it is sized as a square target rather than by its text.
+   Width is pinned to match: an auto-width grid column that used to hold
+   "Remove" would otherwise collapse to the glyph and pull the row's fields
+   sideways compared to the primary guest's spacer above it. */
 .bookings-panel__row-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--danger);
-  font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
-  padding: 0 14px;
+  padding: 0;
+  width: 44px;
   min-height: 44px;
-  white-space: nowrap;
 }
 
 .booking-form .bookings-panel__row-remove-btn {
+  width: 38px;
   min-height: 38px;
-  padding: 0 11px;
-  font-size: 12px;
 }
 
 .booking-form .bookings-panel__row-remove-btn:hover {
@@ -644,9 +678,11 @@
 }
 
 /* Holds the remove column open for the primary guest's row, so its fields
-   line up with every row below it. */
+   line up with every row below it. Matches the icon button's width, not the
+   old label's. */
 .bookings-panel__row-spacer {
   display: block;
+  width: 38px;
 }
 
 .bookings-panel__vehicle-row {
@@ -747,7 +783,9 @@
     padding: 10px 12px;
   }
 
+  /* Square again at the touch size, not a 38px-wide 44px-tall sliver. */
   .booking-form .bookings-panel__row-remove-btn {
+    width: 44px;
     min-height: 44px;
   }
 
@@ -915,7 +953,7 @@
   background: var(--paper);
   border: 1px solid transparent;
   box-shadow: var(--shadow-inset);
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 16px;
   font-size: 13px;
@@ -966,10 +1004,18 @@
   cursor: pointer;
 }
 
+/* Dips into the modal header instead of lifting off it — and actually changes,
+   which the old background swap to --surface did not: the header is already
+   that colour. */
 .booking-form__close:hover:not(:disabled),
 .bookings-panel__close:hover:not(:disabled) {
-  background: var(--surface);
   color: var(--ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.booking-form__close:active:not(:disabled),
+.bookings-panel__close:active:not(:disabled) {
+  box-shadow: var(--shadow-inset);
 }
 
 .booking-form__close:disabled,
@@ -1088,7 +1134,7 @@
   padding: 20px 22px;
   border-radius: var(--radius-card);
   background: var(--surface);
-  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.22);
+  box-shadow: var(--shadow-elevated);
 }
 
 .booking-form__confirm-card h4 {
@@ -1123,8 +1169,309 @@
 /* The detail modal's own way out, below whatever action panel its status
    happens to show. Ruled off so it reads as leaving the record rather than as
    one more thing to do to it. */
-.bookings-panel__actions--close {
+/* The one row of actions at the foot of a stay. Keeps the rule that used
+ to separate a lone Close button, because it still marks where reading the
+ stay ends and acting on it begins — there is just one row under it now
+ rather than three. */
+.bookings-panel__actions--footer {
+  flex-wrap: wrap;
   margin-top: 4px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+
+/* Every button the same height, so a row mixing a danger link, two secondary
+   buttons and an accent one reads as one group. */
+.bookings-panel__actions--footer > button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+/* The locked-extras note is a sentence, not a control: pushed to the left so
+   it does not sit between two buttons pretending to be one. */
+.bookings-panel__actions--footer > .bookings-panel__hint {
+  margin: 0 auto 0 0;
+}
+
+/* ------------------------------------------------ errors inside a row */
+
+/* The party row bottom-aligns its fields so the inputs sit on one line
+   whatever their labels do. An error message under one input made that cell
+   taller, and bottom-alignment then pushed the *other* five inputs down to
+   meet it — one blank name and the row came apart.
+   
+   Taking the message out of flow fixes it at the source: the cell keeps the
+   height it had, so nothing moves. The row grows a little at the bottom to
+   make room for the message it is now overlapping. */
+.bookings-panel__party-row .field {
+  position: relative;
+}
+
+/* Out of flow, exactly like the error message below it and for the same
+   reason: the row bottom-aligns its cells so the inputs sit on one line, and
+   anything that adds height under one input lifts that input above its
+   neighbours. The tick reports on the row without moving it. */
+.bookings-panel__party-row .on-file {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 3px;
+}
+
+/* Room for the tick to sit in, since it no longer occupies any of its own.
+   It and a field error never appear together — the tick only shows when no
+   file has been attached, and the error only when one has — so one allowance
+   covers both. */
+.bookings-panel__party-row:has(.on-file) {
+  padding-bottom: 30px;
+}
+
+/* The add button and the note that explains a carried document, on one line.
+   The note wraps under the button on a narrow screen rather than squeezing it. */
+.booking-form__add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.booking-form__add-row .bookings-panel__note {
+  margin: 0;
+  flex: 1 1 220px;
+}
+
+.bookings-panel__party-row .field__error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.bookings-panel__party-row:has(.field__error) {
+  padding-bottom: 34px;
+}
+
+/* ---------------------------------------------------- booking saved dialog */
+
+/* Narrower than the form it replaces: it says one thing and offers one action,
+   and a modal the width of the form just closed reads as though there were
+   more to fill in. */
+.booking-saved {
+  max-width: 420px;
+  text-align: center;
+  animation: booking-saved-rise 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Pulls out to the modal's own 28px padding so the curve meets the sides, then
+   pushes the content back down under it. */
+.booking-saved__crest {
+  position: relative;
+  margin: -28px -28px 0;
+  /* Rounded here rather than clipping the panel: the dialog is max-height 90vh
+     with its own scroll, and hiding overflow to shape this would cut the
+     content off on a short screen. */
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  padding-top: 34px;
+  height: 128px;
+  background: linear-gradient(160deg, var(--brand) 0%, var(--brand-ink) 100%);
+}
+
+/* The curve the badge sits on. Drawn as an SVG rather than a border-radius
+   trick so the sweep is a real shape and does not flatten at narrow widths. */
+.booking-saved__wave {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px; /* -1px: at some zoom levels a hairline of the gradient shows */
+  width: 100%;
+  height: 42px;
+  display: block;
+}
+
+.booking-saved__wave path {
+  fill: var(--surface);
+}
+
+.booking-saved__badge {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--brand);
+  /* The success tick is a disc of the same material pushed out of the card. */
+  box-shadow: var(--shadow-card);
+  animation: booking-saved-pop 460ms cubic-bezier(0.34, 1.56, 0.64, 1) 80ms both;
+}
+
+.booking-saved__badge svg {
+  width: 32px;
+  height: 32px;
+}
+
+/* The tick draws itself. dasharray is the path length rounded up, so the line
+   starts fully hidden and is walked on. */
+.booking-saved__tick {
+  /* 20 is the path's own length (19.112) rounded up, so the line is exactly
+     hidden at the start and the draw fills the whole duration. A larger figure
+     leaves the tick finished early and the animation idling. */
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: booking-saved-tick 380ms cubic-bezier(0.65, 0, 0.35, 1) 300ms forwards;
+}
+
+.booking-saved h3 {
+  margin: 18px 0 8px;
+  animation: booking-saved-fade-up 340ms ease-out 200ms both;
+}
+
+.booking-saved__lead {
+  margin: 0 0 14px;
+  font-size: 14.5px;
+  color: var(--ink);
+  animation: booking-saved-fade-up 340ms ease-out 260ms both;
+}
+
+/* The advance line, set apart so the amount is read before the button under it
+   is pressed. */
+.booking-saved__advance {
+  margin: 0 0 18px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--neu-base);
+  box-shadow: var(--shadow-inset);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  animation: booking-saved-fade-up 340ms ease-out 320ms both;
+}
+
+.booking-saved .bookings-panel__hint {
+  animation: booking-saved-fade-up 340ms ease-out 320ms both;
+}
+
+.booking-saved .bookings-panel__actions {
+  justify-content: center;
+  animation: booking-saved-fade-up 340ms ease-out 380ms both;
+}
+
+@keyframes booking-saved-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes booking-saved-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes booking-saved-tick {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes booking-saved-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Motion here is decoration on a confirmation. Anyone who has asked the OS for
+   less of it still gets the dialog, complete and instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .booking-saved,
+  .booking-saved__badge,
+  .booking-saved h3,
+  .booking-saved__lead,
+  .booking-saved__advance,
+  .booking-saved .bookings-panel__hint,
+  .booking-saved .bookings-panel__actions {
+    animation: none;
+  }
+
+  .booking-saved__tick {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The late-checkout question is a step of the checkout, not a dialog of its
+   own, so it arrives the way the billing steps do — sliding in from the right
+   as the stay panel it replaces stands down. */
+.late-modal {
+  animation: billing-step-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .late-modal {
+    animation: none;
+  }
+}
+
+/* The add buttons sit under the list they extend, so filling a row and adding
+   the next is one downward movement rather than a scroll back to the heading.
+   Left-aligned and on their own line: in the sub-heading they were pinned right
+   against the count, and under a list that reads as belonging to the last row. */
+.booking-form__add-below {
+  display: inline-flex;
+  margin: 10px 0 4px;
+}
+
+/* ------------------------------------------ document already held on file */
+
+/* A tick under the file input rather than a grey aside in the label. The label
+   names the field; whether the property already holds this guest's card is a
+   fact about the guest, and sitting inside the label it read as part of the
+   field name and went unnoticed. */
+.on-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-success, #1a7f4b);
+}
+
+.on-file svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* The footnote under the party list. Smaller than a hint and set quieter: the
+   tick on the row is what carries the signal now, and this only has to add the
+   part the tick cannot say. */
+.bookings-panel__note {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }

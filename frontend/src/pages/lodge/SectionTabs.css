@@ -41,7 +41,7 @@
 
 .tabstrip__tab:hover {
   color: var(--brand);
-  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  box-shadow: var(--shadow-raised-hover);
 }
 
 /* The extrusion can't be trusted to carry focus on its own here — these chips

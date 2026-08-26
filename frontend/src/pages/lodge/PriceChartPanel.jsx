@@ -406,20 +406,22 @@ export default function PriceChartPanel() {
               onChange={(e) => setCategoryForm((f) => ({ ...f, basePrice: e.target.value }))}
               placeholder="Base price ₹"
             />
-            {editingCategoryId && (
-              <button type="button" className="btn-secondary" onClick={cancelEditCategory} disabled={categorySubmitting}>
-                Cancel
+            <div className="inline-add-form__actions">
+              <button className="btn-accent" type="submit" disabled={categorySubmitting}>
+                {editingCategoryId
+                  ? categorySubmitting
+                    ? 'Saving…'
+                    : 'Save'
+                  : categorySubmitting
+                    ? 'Adding…'
+                    : 'Add'}
               </button>
-            )}
-            <button className="btn-accent" type="submit" disabled={categorySubmitting}>
-              {editingCategoryId
-                ? categorySubmitting
-                  ? 'Saving…'
-                  : 'Save'
-                : categorySubmitting
-                  ? 'Adding…'
-                  : 'Add'}
-            </button>
+              {editingCategoryId && (
+                <button type="button" className="btn-secondary" onClick={cancelEditCategory} disabled={categorySubmitting}>
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </ChartSection>
@@ -470,20 +472,22 @@ export default function PriceChartPanel() {
               onChange={(e) => setChargeForm((f) => ({ ...f, chargePerNight: e.target.value }))}
               placeholder="Amount ₹/night"
             />
-            {editingChargeId && (
-              <button type="button" className="btn-secondary" onClick={cancelEditCharge} disabled={chargeSubmitting}>
-                Cancel
+            <div className="inline-add-form__actions">
+              <button className="btn-accent" type="submit" disabled={chargeSubmitting}>
+                {editingChargeId
+                  ? chargeSubmitting
+                    ? 'Saving…'
+                    : 'Save'
+                  : chargeSubmitting
+                    ? 'Adding…'
+                    : 'Add'}
               </button>
-            )}
-            <button className="btn-accent" type="submit" disabled={chargeSubmitting}>
-              {editingChargeId
-                ? chargeSubmitting
-                  ? 'Saving…'
-                  : 'Save'
-                : chargeSubmitting
-                  ? 'Adding…'
-                  : 'Add'}
-            </button>
+              {editingChargeId && (
+                <button type="button" className="btn-secondary" onClick={cancelEditCharge} disabled={chargeSubmitting}>
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </ChartSection>
@@ -567,20 +571,22 @@ export default function PriceChartPanel() {
               onChange={(e) => setSeasonForm((f) => ({ ...f, adjustmentPercent: e.target.value }))}
               placeholder="+% "
             />
-            {editingSeasonId && (
-              <button type="button" className="btn-secondary" onClick={cancelEditSeason} disabled={seasonSubmitting}>
-                Cancel
+            <div className="inline-add-form__actions">
+              <button className="btn-accent" type="submit" disabled={seasonSubmitting}>
+                {editingSeasonId
+                  ? seasonSubmitting
+                    ? 'Saving…'
+                    : 'Save'
+                  : seasonSubmitting
+                    ? 'Adding…'
+                    : 'Add'}
               </button>
-            )}
-            <button className="btn-accent" type="submit" disabled={seasonSubmitting}>
-              {editingSeasonId
-                ? seasonSubmitting
-                  ? 'Saving…'
-                  : 'Save'
-                : seasonSubmitting
-                  ? 'Adding…'
-                  : 'Add'}
-            </button>
+              {editingSeasonId && (
+                <button type="button" className="btn-secondary" onClick={cancelEditSeason} disabled={seasonSubmitting}>
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </ChartSection>

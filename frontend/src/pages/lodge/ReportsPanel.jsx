@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
+import { useUrlState } from '../../lib/urlState';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import {
-  BILLING_SIDE_OPTIONS,
   BOOKING_STATUS_LABEL,
   PAYMENT_MODE_LABEL,
   downloadBookingReportExcel,
+  buildBookingReportPdf,
   downloadBookingReportPdf,
   reportPeriodLabel,
   wholeMonthLabel,
@@ -71,7 +72,7 @@ export default function ReportsPanel() {
   const session = getSession();
   const token = session?.token;
 
-  const [tab, setTab] = useState('bookings');
+  const [tab, setTab] = useUrlState('tab', 'bookings');
   const [fromDate, setFromDate] = useState(startOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const validRange = Boolean(fromDate && toDate && toDate >= fromDate);
@@ -80,7 +81,6 @@ export default function ReportsPanel() {
   const [bookingsError, setBookingsError] = useState('');
   // Drives the fetch, not just the download — an owner should see on screen
   // exactly the rows the file will contain.
-  const [billingSide, setBillingSide] = useState('ALL');
   const [downloadBusy, setDownloadBusy] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [occupancy, setOccupancy] = useState(null);
@@ -105,7 +105,7 @@ export default function ReportsPanel() {
     setBookings(null);
     setBookingsError('');
     setDownloadError('');
-    apiGet(`/reports/bookings?fromDate=${fromDate}&toDate=${toDate}&billingSide=${billingSide}`, {
+    apiGet(`/reports/bookings?fromDate=${fromDate}&toDate=${toDate}`, {
       token,
     })
       .then((data) => setBookings(data))
@@ -113,7 +113,34 @@ export default function ReportsPanel() {
         setBookingsError(err instanceof ApiError ? err.message : 'Could not load the booking report.')
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromDate, toDate, billingSide]);
+  }, [fromDate, toDate]);
+
+  // The built PDF, held as an object URL so the browser's own viewer can show
+  // it. Previewing the real file rather than an HTML lookalike means what is on
+  // screen and what gets filed are the same bytes.
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewBusy, setPreviewBusy] = useState(false);
+
+  // An object URL pins its blob in memory until it is revoked, so the old one
+  // goes whenever it is replaced and when the panel unmounts.
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  const handlePreview = async () => {
+    if (!bookings) return;
+    if (previewUrl) {
+      setPreviewUrl('');
+      return;
+    }
+    setDownloadError('');
+    setPreviewBusy(true);
+    try {
+      setPreviewUrl(URL.createObjectURL(await buildBookingReportPdf(bookings)));
+    } catch {
+      setDownloadError('Could not build the PDF preview.');
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
 
   const handleDownload = async (format) => {
     if (!bookings) return;
@@ -259,25 +286,16 @@ export default function ReportsPanel() {
                     Excel has a Summary sheet and a Bookings sheet, with real numbers you can total.
                     PDF is print-ready for filing or sharing.
                   </p>
-                  <div
-                    className="reports-panel__side-picker"
-                    role="group"
-                    aria-label="Bills to include"
-                  >
-                    {BILLING_SIDE_OPTIONS.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        className="reports-panel__side-option"
-                        aria-pressed={billingSide === option.key}
-                        onClick={() => setBillingSide(option.key)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
                 <div className="reports-panel__download-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={previewBusy || Boolean(downloadBusy)}
+                    onClick={handlePreview}
+                  >
+                    {previewBusy ? 'Building…' : previewUrl ? 'Hide preview' : 'Preview PDF'}
+                  </button>
                   <button
                     type="button"
                     className="btn-secondary"
@@ -296,14 +314,19 @@ export default function ReportsPanel() {
                   </button>
                 </div>
                 {downloadError && <p className="reports-panel__hint">{downloadError}</p>}
+                {previewUrl && (
+                  <iframe
+                    className="reports-panel__preview"
+                    src={previewUrl}
+                    title="Booking report preview"
+                  />
+                )}
               </div>
 
               {bookings.bookings.length === 0 ? (
                 <div className="dash-card">
                   <div className="dash-state">
-                    {billingSide === 'ALL'
-                      ? 'No bookings arrived in this period.'
-                      : `No ${billingSide === 'GST' ? 'GST' : 'non-GST'} bills were issued in this period.`}
+                    No bookings arrived in this period.
                   </div>
                 </div>
               ) : (

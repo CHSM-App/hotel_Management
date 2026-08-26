@@ -59,7 +59,7 @@
 .menu-search input {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--surface);
   padding: 10px 12px 10px 34px;
   font-size: 14px;
@@ -111,11 +111,18 @@
 .menu-stat--btn {
   font-family: inherit;
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
 .menu-stat--btn:hover:not(:disabled) {
-  border-color: var(--danger);
   color: var(--danger);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+/* The filter is on while it is held down. */
+.menu-stat--btn:active:not(:disabled),
+.menu-stat--btn[aria-pressed='true'] {
+  box-shadow: var(--shadow-pressed);
 }
 
 .menu-stat--btn:disabled {
@@ -226,26 +233,35 @@
 
 .menu-section__actions button,
 .menu-item__actions button {
-  border: 1px solid var(--border);
+  border: none;
   background: var(--surface);
   color: var(--text);
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 6px 11px;
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   min-height: 34px;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
 }
 
 .menu-section__actions button:hover,
 .menu-item__actions button:hover {
-  border-color: var(--brand);
   color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
 }
 
+.menu-section__actions button:active,
+.menu-item__actions button:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* Colour alone carries the warning. The extrusion stays identical to the
+   buttons beside it, so "Delete" sits in the row rather than shouting over it —
+   and the !important is no longer needed now that nothing else sets an edge. */
 .menu-danger:hover {
-  border-color: var(--danger) !important;
   color: var(--danger) !important;
 }
 
@@ -318,8 +334,11 @@
   border-bottom: none;
 }
 
+/* A list row, not a card, so it sinks a little rather than lifting. The near-
+   white #fafbfc it replaces was brighter than the page, which read as a row
+   lighting up instead of as the pointer resting on it. */
 .menu-item:hover {
-  background: #fafbfc;
+  background: var(--neu-sunken);
 }
 
 .menu-item--out {
@@ -376,20 +395,23 @@
   gap: 10px;
 }
 
+/* Raised at rest rather than only on hover: a grid of flat bordered rectangles
+   was the last place in the panel where cards were separated by a drawn line
+   instead of by the light source. */
 .dish-card {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: none;
+  border-radius: 12px;
   /* The photo runs to the card's edges, so the padding lives inside. */
   overflow: hidden;
-  transition: box-shadow 150ms ease, border-color 150ms ease;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
 }
 
 .dish-card:hover {
-  border-color: transparent;
-  box-shadow: var(--shadow-raised);
+  box-shadow: var(--shadow-raised-hover);
 }
 
 .dish-card--out {
@@ -483,7 +505,7 @@
    pill that only commits to a colour on the way back in, since "Back in" is
    the good news. */
 .dish-card__toggle {
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 999px;
   background: var(--surface);
   padding: 4px 10px;
@@ -493,12 +515,17 @@
   color: var(--text-muted);
   white-space: nowrap;
   cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
 }
 
 .dish-card__toggle:hover {
-  border-color: var(--brand);
   color: var(--ink);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.dish-card__toggle:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .dish-card--out .dish-card__toggle {
@@ -606,11 +633,16 @@
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
 .menu-modal__close:hover:not(:disabled) {
-  border-color: var(--danger);
   color: var(--danger);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.menu-modal__close:active:not(:disabled) {
+  box-shadow: var(--shadow-pressed);
 }
 
 .menu-modal__body {
@@ -702,12 +734,13 @@
   box-shadow: var(--shadow-raised);
   background: var(--surface);
   color: var(--text);
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 10px 8px;
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   min-height: 44px;
+  transition: var(--neu-transition);
 }
 
 /* Kept in the layout and only made invisible: display:none or visibility:hidden
@@ -722,7 +755,13 @@
 }
 
 .menu-type__option:hover {
-  border-color: var(--brand);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+/* Selected already draws --shadow-pressed, so it is excluded here: a chosen
+   option that lifted under the pointer would read as being switched off. */
+.menu-type__option:active:not(.is-on) {
+  box-shadow: var(--shadow-pressed);
 }
 
 .menu-type__option.is-on {
@@ -757,17 +796,17 @@
   margin: 0;
   padding: 4px;
   list-style: none;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: none;
+  border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.16);
+  box-shadow: var(--shadow-elevated);
 }
 
 .menu-suggest__option {
   width: 100%;
   padding: 8px 10px;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   font-family: var(--sans);
   font-size: 13.5px;
@@ -917,10 +956,9 @@
   box-shadow: var(--shadow-raised);
 }
 
-.menu-preview__card:hover {
-  border-color: var(--border);
-  box-shadow: var(--shadow-raised);
-}
+/* The hover rule that was here set the same shadow the card already has, so it
+   did nothing — and it shouldn't: this is a live preview of how the dish will
+   look to a guest, not a control. Nothing to press, so nothing reacts. */
 
 /* --- dish photo ---------------------------------------------------------- */
 

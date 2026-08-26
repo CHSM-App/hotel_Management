@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
+import { useUrlState } from '../../lib/urlState';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import '../internal/LodgesDashboard.css';
@@ -19,7 +20,7 @@ const emptyRoleForm = { name: '', description: '', permissions: [] };
 export default function StaffAndRoles() {
   const token = getSession()?.token;
 
-  const [tab, setTab] = useState('staff');
+  const [tab, setTab] = useUrlState('tab', 'staff');
   const [staff, setStaff] = useState(() => readCache('/staff'));
   const [roles, setRoles] = useState(() => readCache('/roles'));
   const [catalog, setCatalog] = useState(() => readCache('/roles:permissions') ?? []);
