@@ -80,10 +80,17 @@ async function listAvailableRoomsForBookingHandler(req, res, next) {
     if (!DATE_RE.test(checkOutDate)) {
       throw new ApiError('Choose a valid check-out date.', 400);
     }
+    // Optional: an edit that is also moving the arrival asks against the range
+    // it is proposing, not the one on file. Omitted keeps the stored date.
+    const checkInDate = String(req.query.checkInDate || '');
+    if (checkInDate && !DATE_RE.test(checkInDate)) {
+      throw new ApiError('Choose a valid check-in date.', 400);
+    }
     const result = await bookingsService.listAvailableRoomsForBooking(
       req.user.lodgeId,
       Number(req.params.id),
-      checkOutDate
+      checkOutDate,
+      checkInDate || null
     );
     res.json(result);
   } catch (err) {

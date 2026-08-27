@@ -74,6 +74,11 @@ const STRINGS_EN = {
   // arrival, and the line that tells them so.
   adjustNote:
     'This advance is adjusted against the final bill for the stay named above. Please present this receipt at check-in.',
+  // The same line for a guest who paid the whole stay up front. "Adjusted
+  // against the final bill" is still true, but it invites the question of
+  // what is left to adjust; the answer is nothing, and the paper should say so.
+  adjustNoteFull:
+    'This payment settles the stay named above in full. Please present this receipt at check-in.',
   // A receipt voucher is not a tax invoice, and must not be mistaken for one —
   // input credit is claimed off the invoice, not off this.
   notInvoice: 'This is a receipt voucher for an advance, not a tax invoice.',
@@ -139,6 +144,10 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   const lodgeName = (mr && receipt.lodgeNameMr) || receipt.lodgeName;
   const lodgeAddress = (mr && receipt.lodgeAddressMr) || receipt.lodgeAddress;
   const kindLabel = T.doc[receipt.documentType] || T.doc.ADVANCE_RECEIPT;
+  // Read off the figures rather than sent as a flag: the server allows an
+  // advance equal to the stay, and a receipt for one is a receipt for the
+  // whole stay whatever the booking form called it.
+  const paidInFull = Number(receipt.balanceDue) <= 0.005;
 
   // How this advance arrived. Always a list: a receipt taken before split
   // payments existed, or one paid a single way, reads as a one-line split
@@ -300,7 +309,7 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
 
       <div className="memo__foot">
         <div className="memo__terms">
-          <div>{T.adjustNote}</div>
+          <div>{paidInFull ? T.adjustNoteFull : T.adjustNote}</div>
           {isGst && <div>{T.notInvoice}</div>}
           <div>{T.jurisdiction(receipt.lodgeCity || 'local')}</div>
           {/* A voided receipt still prints — it is reprinted from the record for

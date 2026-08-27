@@ -8,7 +8,7 @@ import {
   DEFAULT_PAPER,
   PAPER_SIZES,
   buildDocumentPdfBlob,
-  printDocumentOnPaper,
+  printPdfBlob,
   shareOrDownloadPdf,
 } from './billPaper';
 import { formatPrice } from './priceFormat';
@@ -181,9 +181,10 @@ export default function AdvanceReceiptModal({
     }
   };
 
-  const handlePrint = () => printDocumentOnPaper(captureRef.current, paperSize);
-
-  const handleSharePdf = async () => {
+  // Print and share build the same file the same way and differ only in what
+  // they do with it, so the building — and the busy state, and the one error
+  // message — lives here once.
+  const runPdfAction = async (deliver) => {
     setPdfError('');
     setPdfBusy(true);
     try {
@@ -191,7 +192,7 @@ export default function AdvanceReceiptModal({
         paperSize,
         shownWidth: previewRef.current?.offsetWidth,
       });
-      await shareOrDownloadPdf(blob, `${(shownReceipt.receiptNumber || 'advance-receipt').replace(/[\\/]/g, '-')}.pdf`);
+      await deliver(blob, `${(shownReceipt.receiptNumber || 'advance-receipt').replace(/[\\/]/g, '-')}.pdf`);
     } catch (err) {
       // An aborted share sheet is the user changing their mind, not a failure.
       if (err?.name !== 'AbortError') {
@@ -201,6 +202,13 @@ export default function AdvanceReceiptModal({
       setPdfBusy(false);
     }
   };
+
+  // Print is the PDF sent to the printer instead of to disk, so the printed
+  // receipt is the downloaded one — see printPdfBlob for why the page's own
+  // print stylesheet stopped being trusted with this.
+  const handlePrint = () => runPdfAction(printPdfBlob);
+
+  const handleSharePdf = () => runPdfAction(shareOrDownloadPdf);
 
   // Records the money AND raises its receipt, in one call. The server adds the
   // amount to the booking rather than replacing it, refuses to take the total
@@ -381,8 +389,14 @@ export default function AdvanceReceiptModal({
             )}
             <div className="bill-actions__buttons">
               {existing && (
-                <button type="button" className="btn-secondary" onClick={handlePrint}>
-                  Print
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handlePrint}
+                  disabled={pdfBusy}
+                  title={pdfBusy ? 'Preparing…' : 'Print this receipt'}
+                >
+                  {pdfBusy ? 'Preparing…' : 'Print'}
                 </button>
               )}
               {existing && (

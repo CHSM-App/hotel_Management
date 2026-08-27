@@ -4,6 +4,7 @@ import {
   needsPaymentReference,
   paymentFieldId,
 } from './paymentSplit';
+import { formatPrice } from './priceFormat';
 import './forms.css';
 
 const TrashIcon = () => (
@@ -35,8 +36,11 @@ const MethodOptions = () => (
   </>
 );
 
+// Says "optional" outright. The field is worth filling in — it is what the
+// settlement statement gets matched against — but the desk should not hold up
+// a guest hunting for a number the guest may not have to hand.
 const referencePlaceholder = (method) =>
-  method === 'UPI' ? 'UPI reference / UTR' : 'Approval code';
+  method === 'UPI' ? 'UPI reference / UTR (optional)' : 'Approval code (optional)';
 
 // How the money arrived: a method and an amount, once per way it came in.
 //
@@ -48,9 +52,34 @@ const referencePlaceholder = (method) =>
 // There is no separate total box anywhere — the amount is whatever these rows
 // add up to. Asking for it as well would be a figure to type that then has to
 // agree with them, and the desk would be the one keeping the two in step.
-export default function PaymentLines({ lines, onChange, idPrefix, maxLines = 5, error }) {
+// lockedTotal: the figure the rows must add up to, when there is one. A full
+// payment is a promise about the sum, so the last row is not typed but made up
+// to it — the remainder after the rows above — and the desk edits the split by
+// changing the earlier rows. Null on an advance, where the sum is whatever the
+// guest handed over.
+export default function PaymentLines({
+  lines,
+  onChange,
+  idPrefix,
+  maxLines = 5,
+  error,
+  required = false,
+  lockedTotal = null,
+}) {
   const id = (kind, index) => paymentFieldId(idPrefix, kind, index);
   const only = lines.length === 1;
+  const isRemainder = (index) => lockedTotal != null && index === lines.length - 1;
+
+  // A row carrying money but no method is the one thing on this editor that
+  // stops a bill, and left alone it does not look unfinished — the amount is
+  // usually filled in for the desk, so the row reads as done and "Choose one"
+  // reads as a label rather than as a blank. It gets marked here instead of
+  // waiting for the submit that fails.
+  //
+  // Only where a payment is actually required. An advance is optional, and a
+  // blank row on a booking form is not a mistake to be pointed at.
+  const unanswered = (line) =>
+    required && !line.method && Number(line.amount) > 0;
 
   const update = (index, patch) =>
     onChange(lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
@@ -65,6 +94,7 @@ export default function PaymentLines({ lines, onChange, idPrefix, maxLines = 5, 
             <div className="pay-lines__row">
               <select
                 id={id('Method', index)}
+                className={unanswered(line) ? 'pay-lines__method--needed' : undefined}
                 value={line.method}
                 onChange={(e) => update(index, { method: e.target.value })}
                 aria-label={`Payment type ${index + 1}`}
@@ -80,6 +110,15 @@ export default function PaymentLines({ lines, onChange, idPrefix, maxLines = 5, 
                 onFocus={(e) => e.target.select()}
                 value={line.amount}
                 aria-label={`Amount ${index + 1}`}
+                readOnly={isRemainder(index)}
+                className={isRemainder(index) ? 'pay-lines__amount--locked' : undefined}
+                title={
+                  isRemainder(index)
+                    ? only
+                      ? `The full stay total, ${formatPrice(lockedTotal)}.`
+                      : `Whatever is left of ${formatPrice(lockedTotal)} after the rows above.`
+                    : undefined
+                }
                 onChange={(e) => update(index, { amount: e.target.value })}
               />
               {/* Kept in place on a single payment rather than hidden, so the
@@ -112,6 +151,17 @@ export default function PaymentLines({ lines, onChange, idPrefix, maxLines = 5, 
           </div>
         ))}
       </div>
+      {/* Said once for the whole editor rather than once per row: on a split
+          every row is missing its method at first, and five copies of the same
+          sentence is noise. Not an error — nothing has failed yet — so it is
+          worded as the next thing to do. */}
+      {lines.some(unanswered) && (
+        <p className="pay-lines__needed">
+          {lines.length === 1
+            ? 'Choose how the guest paid to issue this bill.'
+            : 'Choose how each part was paid to issue this bill.'}
+        </p>
+      )}
       {error}
       {lines.length < maxLines && (
         <button

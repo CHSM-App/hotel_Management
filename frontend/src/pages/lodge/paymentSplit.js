@@ -9,8 +9,10 @@ import { formatPrice } from './priceFormat';
 // is however much they add up to. Nothing asks for the total separately.
 
 // Money that arrives this way leaves a reference the property reconciles
-// against its settlement statement; cash doesn't. Mirrors ONLINE_METHODS on the
-// server, which is what actually enforces it.
+// against its settlement statement; cash doesn't. So the transaction number is
+// offered on UPI and card and not on cash — but it is never required, because
+// the number is often not to hand while the guest is still at the desk.
+// Mirrors ONLINE_METHODS on the server.
 const ONLINE_PAYMENT_METHODS = ['UPI', 'CARD'];
 export const needsPaymentReference = (method) => ONLINE_PAYMENT_METHODS.includes(method);
 
@@ -61,9 +63,8 @@ export const linesComplete = (lines) =>
 export function paymentLinesError(lines) {
   for (const line of lines) {
     if (!line.method) return 'Choose how each part was paid.';
-    if (needsPaymentReference(line.method) && (line.reference ?? '').trim() === '') {
-      return 'Enter the transaction number for a UPI or card payment.';
-    }
+    // No check on the reference: it is recorded when known and left blank when
+    // it isn't, on every method.
     if (!(Number(line.amount) > 0)) return 'Each payment must be more than zero.';
   }
   return null;

@@ -125,9 +125,11 @@ const discountAmountField = () =>
   );
 
 // Money that arrived over UPI or a card leaves a reference on both sides —
-// the guest's app and the property's settlement statement — and reconciling
-// the two at month end is impossible without it. Cash leaves no such trail, so
-// asking for one there would be asking staff to invent a number.
+// the guest's app and the property's settlement statement — and recording it
+// is what makes month-end reconciliation possible. It is offered wherever such
+// money is taken, but never demanded: the number is often not to hand at the
+// moment of payment, and blocking the booking over it stops a guest at the
+// desk. Cash leaves no such trail, so it is not asked for there at all.
 const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD'];
 const ONLINE_METHODS = ['UPI', 'CARD'];
 
@@ -140,8 +142,12 @@ const paymentReferenceField = () =>
 // Applied wherever money is taken, so the rule reads the same at the desk and
 // at the till. Named for what it guards rather than for the fields, since the
 // two payment points call them different things.
-function requiresReference(method, reference) {
-  return !ONLINE_METHODS.includes(method) || Boolean(reference);
+//
+// Always satisfied: the reference is optional on every method. Kept as a
+// function, with its refines in place, so the rule stays in one place if the
+// property ever wants it back for UPI and card.
+function requiresReference() {
+  return true;
 }
 
 const REFERENCE_REQUIRED = 'Enter the transaction number for a UPI or card payment.';
@@ -339,6 +345,10 @@ const clearableField = (schema) =>
 const updateBookingSchema = z
   .object({
     discountAmount: discountAmountField(),
+    // Only a stay that hasn't started yet can be moved — see the guard in
+    // updateBooking. Once a guest is in the room, when they arrived is a fact,
+    // not a field.
+    checkInDate: dateField('Choose a valid check-in date.').optional(),
     checkOutDate: dateField('Choose a valid check-out date.').optional(),
     roomId: z.coerce.number().int().positive('Choose a valid room.').optional(),
     numGuests: z.coerce.number().int().positive('Enter a guest count greater than 0.').optional(),

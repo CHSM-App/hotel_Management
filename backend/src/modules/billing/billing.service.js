@@ -1529,6 +1529,9 @@ module.exports = {
   // the same slabs, or the two documents disagree about a single stay.
   taxWithin,
   round2,
+  // Shared with reports.service.js so the booking report states a bill's taxable
+  // value by the same apportionment the bill itself was printed with.
+  netOfDiscount,
   getGstSlabs,
   ratePercentFor,
   nightlyAmounts,

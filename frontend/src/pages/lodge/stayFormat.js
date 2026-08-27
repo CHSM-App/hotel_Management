@@ -17,6 +17,23 @@ export const STAY_STATUS_LABEL = {
   CANCELLED: 'Cancelled',
 };
 
+// The desk's words for the same four, used wherever a status is being *chosen*
+// rather than reported: the tape chart's legend and the register's filter chips.
+// "Reserved" is a room held for a date still to come, and "Stayed" is a guest
+// who has been and gone — which is how reception says it, and shorter to scan
+// down a row of chips than the record's own wording.
+//
+// A separate map rather than a rename of the one above, because that one is what
+// a badge on an individual stay reads, and those two jobs answer to different
+// things: a badge names the state a record is in, a chip names the pile you are
+// asking to see. Sharing one map would have a change to either drag the other
+// along with it.
+export const STAY_STATUS_CHIP_LABEL = {
+  ...STAY_STATUS_LABEL,
+  BOOKED: 'Reserved',
+  CHECKED_OUT: 'Stayed',
+};
+
 export function formatDateLong(dateStr) {
   const d = new Date(`${dateStr}T00:00:00Z`);
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });

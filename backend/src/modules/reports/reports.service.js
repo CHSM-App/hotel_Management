@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../../config/connection');
+const { netOfDiscount } = require('../billing/billing.service');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
@@ -37,18 +38,16 @@ function datesInRange(fromDate, toDate) {
 
 // Attributes one payment across the ways it arrived.
 //
-// The amount is the authority, never the lines. It comes from
-// bookings.advance_amount or invoices.balance_collected — the columns this
-// report has always summed — and the parts returned here add up to it exactly
-// whatever the lines say. That is the whole guarantee that adding split
+// The amount is the authority, never the lines. It comes from the money column
+// this report has always summed — and the parts returned here add up to it
+// exactly whatever the lines say. That is the whole guarantee that adding split
 // payments cannot move a total in a month somebody has already reconciled.
 //
 // Lines are therefore clamped rather than trusted. bookings.advance_amount has
-// five writers (booking create, check-in top-up, an edit that sets an arbitrary
-// value, receipt issue, and a void that floors it to NULL), so a booking can
-// genuinely hold less than its issued receipts add up to — three do right now.
-// A JOIN that assumed sum(lines) === amount would be a money bug waiting on the
-// first booking edit.
+// five writers (booking create, a receipt top-up, an edit that sets an
+// arbitrary value, receipt issue, and a void that reduces it), so a booking can
+// genuinely hold less than its issued receipts add up to. A JOIN that assumed
+// sum(lines) === amount would be a money bug waiting on the first booking edit.
 //
 // Whatever the lines do not cover goes to the fallback method. That remainder
 // is money taken before payment lines existed, and the scalar column is the
@@ -71,21 +70,93 @@ function splitAcross(amount, lines, fallbackMethod) {
 const BOOKING_STATUSES = ['BOOKED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'];
 // Mirrors ck_bookings_payment_method / ck_invoices_payment_method.
 const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD'];
+// Mirrors ck_invoices_document_type.
+const DOCUMENT_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY', 'CASH_RECEIPT'];
+
+// Two payments are combined per method — two cards on one bill report as one
+// CARD figure — and returned in a stable order so a document reads the same
+// on every run.
+function mergeTenders(parts) {
+  const byMethod = new Map();
+  for (const part of parts) {
+    const key = PAYMENT_METHODS.includes(part.method) ? part.method : 'UNRECORDED';
+    byMethod.set(key, round2((byMethod.get(key) ?? 0) + part.amount));
+  }
+  return [...PAYMENT_METHODS, 'UNRECORDED']
+    .filter((m) => byMethod.has(m))
+    .map((method) => ({ method, amount: byMethod.get(method) }));
+}
+
+// The figures a bill states, derived from its stored columns exactly the way
+// the printed document derives them — so the register row and the bill in the
+// guest's hand can never disagree.
+//
+// Every price in this system is GST-inclusive. room_subtotal and food_subtotal
+// are the gross (what was sold, tax inside, before any discount); the discount
+// is stored once for the whole bill and was apportioned across the two supplies
+// when the tax was computed. The taxable value is therefore what is left of the
+// discounted gross once the tax inside it comes out — never the gross itself,
+// which would overstate the taxable value by exactly the tax.
+//
+// The identity every reader can check on the page:
+//   gross − discount = net;  net − CGST − SGST = taxable;
+//   taxable + CGST + SGST + round off = billed total.
+function billFigures(row) {
+  const roomGross = Number(row.room_subtotal);
+  const foodGross = Number(row.food_subtotal ?? 0);
+  const roomCgst = Number(row.cgst_amount ?? 0);
+  const roomSgst = Number(row.sgst_amount ?? 0);
+  const foodCgst = Number(row.food_cgst_amount ?? 0);
+  const foodSgst = Number(row.food_sgst_amount ?? 0);
+  const discountAmount = Number(row.discount_amount ?? 0);
+  const grossAmount = round2(roomGross + foodGross);
+  const [roomNetOfDiscount, foodNetOfDiscount] = netOfDiscount(
+    [roomGross, foodGross],
+    discountAmount,
+    grossAmount
+  );
+  const roomTaxable = round2(roomNetOfDiscount - roomCgst - roomSgst);
+  const foodTaxable = round2(foodNetOfDiscount - foodCgst - foodSgst);
+  return {
+    grossAmount,
+    roomGross,
+    foodGross,
+    discountAmount,
+    netAmount: round2(grossAmount - discountAmount),
+    lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
+    roomTaxable,
+    foodTaxable,
+    taxableValue: round2(roomTaxable + foodTaxable),
+    roomCgst,
+    roomSgst,
+    foodCgst,
+    foodSgst,
+    cgstAmount: round2(roomCgst + foodCgst),
+    sgstAmount: round2(roomSgst + foodSgst),
+    totalTax: round2(roomCgst + foodCgst + roomSgst + foodSgst),
+    roundOff: Number(row.round_off ?? 0),
+    billedAmount: Number(row.total_amount),
+  };
+}
 
 // Money actually taken in the period, on a cash basis — which is a different
-// question to the booking register's, and needs its own two queries.
+// question to the booking register's, and needs its own queries.
 //
 // The register lists stays by check-in date. Collections cannot use that date:
 // an advance taken in September for an October stay is September's money, and
-// keying it to check-in reports it a month late. So each half is dated by when
-// it moved. An advance is always taken at booking time (there is no later
-// top-up), which is what makes bookings.created_at a faithful payment date and
-// what lets this work without a payment-date column. A balance moves when the
-// bill is issued, so it is dated by the invoice.
+// keying it to check-in reports it a month late. So each payment is dated by
+// when it moved:
 //
-// The two halves therefore cover different sets of bookings, and neither need
-// match the register on screen — that is the point of a cash-basis figure, and
-// the report labels it as such rather than pretending it reconciles.
+//   - an advance by the receipt that acknowledged it. A booking can take more
+//     than one (a top-up before arrival), each on its own date, so the booking's
+//     single advance_amount cannot date them. Money on a booking that no receipt
+//     covers — advances taken before receipts existed — falls back to the
+//     booking's creation date, the only date there is for it;
+//   - a balance by the bill it was settled on.
+//
+// The two halves cover different sets of bookings, and neither need match the
+// register on screen — that is the point of a cash-basis figure, and the report
+// labels it as such rather than pretending it reconciles.
 async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   const byPaymentMode = Object.fromEntries(
     [...PAYMENT_METHODS, 'UNRECORDED'].map((m) => [m, { advance: 0, balance: 0, total: 0 }])
@@ -97,102 +168,97 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     byPaymentMode[key].total = round2(byPaymentMode[key].total + amount);
   };
 
-  // Cancelled stays are excluded from both halves. Whether an advance on one was
+  const period = (request) =>
+    request
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('fromDate', sql.Date, fromDate)
+      .input('toDate', sql.Date, toDate);
+
+  // Cancelled stays are excluded from every half. Whether an advance on one was
   // refunded is not recorded anywhere, so counting it as income would overstate
   // takings on exactly the stays that produced none. The report says so on the
   // page rather than leaving an owner to wonder why a cancelled booking's
   // advance is missing from the totals.
-  const advances = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('fromDate', sql.Date, fromDate)
-    .input('toDate', sql.Date, toDate)
-    .query(`
-      SELECT b.id, b.advance_amount, b.advance_payment_method,
-             CASE
-               WHEN b.check_in_date < @fromDate THEN 'EARLIER'
-               WHEN b.check_in_date > @toDate THEN 'LATER'
-               ELSE 'THIS'
-             END AS stay_period
-      FROM dbo.bookings b
-      WHERE b.lodge_id = @lodgeId
-        AND b.status <> 'CANCELLED'
-        AND b.advance_amount > 0
-        AND CAST(b.created_at AS DATE) BETWEEN @fromDate AND @toDate
-    `);
+  const stayPeriodCase = `
+    CASE
+      WHEN b.check_in_date < @fromDate THEN 'EARLIER'
+      WHEN b.check_in_date > @toDate THEN 'LATER'
+      ELSE 'THIS'
+    END AS stay_period`;
 
-  const balances = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('fromDate', sql.Date, fromDate)
-    .input('toDate', sql.Date, toDate)
-    .query(`
-      SELECT i.id, i.balance_collected, i.balance_payment_method,
-             CASE
-               WHEN b.check_in_date < @fromDate THEN 'EARLIER'
-               WHEN b.check_in_date > @toDate THEN 'LATER'
-               ELSE 'THIS'
-             END AS stay_period
-      FROM dbo.invoices i
-      JOIN dbo.bookings b ON b.id = i.booking_id
-      WHERE i.lodge_id = @lodgeId
-        AND i.status = 'ISSUED'
-        AND b.status <> 'CANCELLED'
-        AND i.balance_collected > 0
-        AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
-    `);
+  const receipts = await period(pool.request()).query(`
+    SELECT ar.id, ar.amount_received, ar.payment_method, ${stayPeriodCase}
+    FROM dbo.advance_receipts ar
+    JOIN dbo.bookings b ON b.id = ar.booking_id
+    WHERE ar.lodge_id = @lodgeId
+      AND ar.status = 'ISSUED'
+      AND b.status <> 'CANCELLED'
+      AND ar.amount_received > 0
+      AND CAST(ar.created_at AS DATE) BETWEEN @fromDate AND @toDate
+  `);
 
-  // The lines behind those two figures, over exactly the same filtered sets —
-  // separate queries rather than a JOIN so no booking or invoice row is
-  // multiplied, which would inflate advanceCount, balanceCount and byStayPeriod.
-  //
-  // Grouped by method, so two cards on one bill report as one CARD figure.
-  // Ordered by the first line's id, so the clamp above spends the earliest
-  // tender first and gives the same answer every run.
-  const advanceLines = linesByParent(
-    await pool
-      .request()
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .input('fromDate', sql.Date, fromDate)
-      .input('toDate', sql.Date, toDate)
-      .query(`
-        SELECT ar.booking_id AS parent_id, pl.method, SUM(pl.amount) AS amount
-        FROM dbo.payment_lines pl
-        JOIN dbo.advance_receipts ar ON ar.id = pl.advance_receipt_id
-        JOIN dbo.bookings b ON b.id = ar.booking_id
-        WHERE pl.lodge_id = @lodgeId
-          AND ar.lodge_id = @lodgeId
-          AND b.lodge_id = @lodgeId
-          AND ar.status = 'ISSUED'
-          AND b.status <> 'CANCELLED'
-          AND b.advance_amount > 0
-          AND CAST(b.created_at AS DATE) BETWEEN @fromDate AND @toDate
-        GROUP BY ar.booking_id, pl.method
-        ORDER BY ar.booking_id, MIN(pl.id)
-      `)
+  // Advance money on a booking that its issued receipts do not account for.
+  // Dated by the booking, because nothing else dates it.
+  const unreceipted = await period(pool.request()).query(`
+    SELECT b.id, b.advance_amount - ISNULL(r.total, 0) AS remainder, b.advance_payment_method,
+           ${stayPeriodCase}
+    FROM dbo.bookings b
+    OUTER APPLY (
+      SELECT SUM(amount_received) AS total
+      FROM dbo.advance_receipts
+      WHERE booking_id = b.id AND status = 'ISSUED'
+    ) r
+    WHERE b.lodge_id = @lodgeId
+      AND b.status <> 'CANCELLED'
+      AND b.advance_amount > ISNULL(r.total, 0)
+      AND CAST(b.created_at AS DATE) BETWEEN @fromDate AND @toDate
+  `);
+
+  const balances = await period(pool.request()).query(`
+    SELECT i.id, i.balance_collected, i.balance_payment_method, ${stayPeriodCase}
+    FROM dbo.invoices i
+    JOIN dbo.bookings b ON b.id = i.booking_id
+    WHERE i.lodge_id = @lodgeId
+      AND i.status = 'ISSUED'
+      AND b.status <> 'CANCELLED'
+      AND i.balance_collected > 0
+      AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
+  `);
+
+  // The lines behind those figures, over exactly the same filtered sets —
+  // separate queries rather than a JOIN so no receipt or invoice row is
+  // multiplied. Grouped by method, ordered by the first line's id, so the
+  // clamp in splitAcross spends the earliest tender first every run.
+  const receiptLines = linesByParent(
+    await period(pool.request()).query(`
+      SELECT pl.advance_receipt_id AS parent_id, pl.method, SUM(pl.amount) AS amount
+      FROM dbo.payment_lines pl
+      JOIN dbo.advance_receipts ar ON ar.id = pl.advance_receipt_id
+      JOIN dbo.bookings b ON b.id = ar.booking_id
+      WHERE pl.lodge_id = @lodgeId
+        AND ar.lodge_id = @lodgeId
+        AND ar.status = 'ISSUED'
+        AND b.status <> 'CANCELLED'
+        AND CAST(ar.created_at AS DATE) BETWEEN @fromDate AND @toDate
+      GROUP BY pl.advance_receipt_id, pl.method
+      ORDER BY pl.advance_receipt_id, MIN(pl.id)
+    `)
   );
 
   const balanceLines = linesByParent(
-    await pool
-      .request()
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .input('fromDate', sql.Date, fromDate)
-      .input('toDate', sql.Date, toDate)
-      .query(`
-        SELECT pl.invoice_id AS parent_id, pl.method, SUM(pl.amount) AS amount
-        FROM dbo.payment_lines pl
-        JOIN dbo.invoices i ON i.id = pl.invoice_id
-        JOIN dbo.bookings b ON b.id = i.booking_id
-        WHERE pl.lodge_id = @lodgeId
-          AND i.lodge_id = @lodgeId
-          AND b.lodge_id = @lodgeId
-          AND i.status = 'ISSUED'
-          AND b.status <> 'CANCELLED'
-          AND i.balance_collected > 0
-          AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
-        GROUP BY pl.invoice_id, pl.method
-        ORDER BY pl.invoice_id, MIN(pl.id)
-      `)
+    await period(pool.request()).query(`
+      SELECT pl.invoice_id AS parent_id, pl.method, SUM(pl.amount) AS amount
+      FROM dbo.payment_lines pl
+      JOIN dbo.invoices i ON i.id = pl.invoice_id
+      JOIN dbo.bookings b ON b.id = i.booking_id
+      WHERE pl.lodge_id = @lodgeId
+        AND i.lodge_id = @lodgeId
+        AND i.status = 'ISSUED'
+        AND b.status <> 'CANCELLED'
+        AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
+      GROUP BY pl.invoice_id, pl.method
+      ORDER BY pl.invoice_id, MIN(pl.id)
+    `)
   );
 
   // Each payment is also filed by *which* stay it was for, relative to the
@@ -210,12 +276,21 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   };
 
   let advanceCollected = 0;
-  for (const row of advances.recordset) {
-    const amount = Number(row.advance_amount);
+  let advanceCount = 0;
+  for (const row of receipts.recordset) {
+    const amount = Number(row.amount_received);
     advanceCollected = round2(advanceCollected + amount);
-    for (const part of splitAcross(amount, advanceLines.get(String(row.id)), row.advance_payment_method)) {
+    advanceCount += 1;
+    for (const part of splitAcross(amount, receiptLines.get(String(row.id)), row.payment_method)) {
       add(part.method, 'advance', part.amount);
     }
+    file(row, 'advance', amount);
+  }
+  for (const row of unreceipted.recordset) {
+    const amount = round2(Number(row.remainder));
+    advanceCollected = round2(advanceCollected + amount);
+    advanceCount += 1;
+    add(row.advance_payment_method, 'advance', amount);
     file(row, 'advance', amount);
   }
 
@@ -231,13 +306,50 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
 
   return {
     advanceCollected,
-    advanceCount: advances.recordset.length,
+    advanceCount,
     balanceCollected,
     balanceCount: balances.recordset.length,
     totalCollected: round2(advanceCollected + balanceCollected),
     byPaymentMode,
     byStayPeriod,
   };
+}
+
+// How each stay in the register was paid — every tender behind its advance and
+// its balance, so a split payment reads as "Cash 2,000 + UPI 3,000" on the row
+// rather than as the first tender alone.
+async function getTendersForBookings(pool, lodgeId, bookingIds) {
+  if (bookingIds.length === 0) return { advance: new Map(), balance: new Map() };
+  const withIds = (request) => {
+    request.input('lodgeId', sql.BigInt, lodgeId);
+    bookingIds.forEach((id, i) => request.input(`b${i}`, sql.BigInt, id));
+    return request;
+  };
+  const list = bookingIds.map((_, i) => `@b${i}`).join(', ');
+
+  const advance = linesByParent(
+    await withIds(pool.request()).query(`
+      SELECT ar.booking_id AS parent_id, pl.method, SUM(pl.amount) AS amount
+      FROM dbo.payment_lines pl
+      JOIN dbo.advance_receipts ar ON ar.id = pl.advance_receipt_id
+      WHERE pl.lodge_id = @lodgeId AND ar.lodge_id = @lodgeId
+        AND ar.status = 'ISSUED' AND ar.booking_id IN (${list})
+      GROUP BY ar.booking_id, pl.method
+      ORDER BY ar.booking_id, MIN(pl.id)
+    `)
+  );
+  const balance = linesByParent(
+    await withIds(pool.request()).query(`
+      SELECT i.booking_id AS parent_id, pl.method, SUM(pl.amount) AS amount
+      FROM dbo.payment_lines pl
+      JOIN dbo.invoices i ON i.id = pl.invoice_id
+      WHERE pl.lodge_id = @lodgeId AND i.lodge_id = @lodgeId
+        AND i.status = 'ISSUED' AND i.booking_id IN (${list})
+      GROUP BY i.booking_id, pl.method
+      ORDER BY i.booking_id, MIN(pl.id)
+    `)
+  );
+  return { advance, balance };
 }
 
 // Occupied nights only count stays that actually happened — CHECKED_IN
@@ -365,6 +477,39 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
   return { fromDate, toDate, totals, byDocumentType, invoices };
 }
 
+// The bill-level totals the report foots: one set for every issued bill in the
+// register, and one per document type so a tax invoice's figures are never
+// blended with a cash receipt's.
+function emptyBillTotals() {
+  return {
+    count: 0,
+    grossAmount: 0,
+    discountAmount: 0,
+    netAmount: 0,
+    roomTaxable: 0,
+    foodTaxable: 0,
+    taxableValue: 0,
+    roomCgst: 0,
+    roomSgst: 0,
+    foodCgst: 0,
+    foodSgst: 0,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    totalTax: 0,
+    roundOff: 0,
+    totalAmount: 0,
+  };
+}
+
+function addBill(totals, figures) {
+  totals.count += 1;
+  for (const key of Object.keys(totals)) {
+    if (key === 'count') continue;
+    const source = key === 'totalAmount' ? figures.billedAmount : figures[key];
+    totals[key] = round2(totals[key] + (source || 0));
+  }
+}
+
 // A booking belongs to the period it *arrives* in — check_in_date inside the
 // range — not every period its stay touches. That's the only reading under
 // which a stay is counted once and the twelve monthly reports for a year add
@@ -398,17 +543,20 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
              b.actual_check_in_at, b.actual_check_out_at,
              b.total_price, b.advance_amount, b.advance_payment_method, b.created_at,
              r.room_number, c.name AS category_name,
-             i.invoice_number, i.document_type, i.billing_side,
+             i.invoice_number, i.document_type, i.billing_side, i.created_at AS invoice_created_at,
              i.room_subtotal, i.food_subtotal,
              i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
-             i.round_off, i.total_amount AS invoice_total,
+             i.late_checkout_charge, i.discount_amount,
+             i.round_off, i.total_amount,
              i.advance_paid, i.balance_collected, i.balance_payment_method
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
       OUTER APPLY (
-        SELECT TOP 1 invoice_number, document_type, billing_side, room_subtotal, food_subtotal,
-               cgst_amount, sgst_amount, food_cgst_amount, food_sgst_amount, round_off,
+        SELECT TOP 1 invoice_number, document_type, billing_side, created_at,
+               room_subtotal, food_subtotal,
+               cgst_amount, sgst_amount, food_cgst_amount, food_sgst_amount,
+               late_checkout_charge, discount_amount, round_off,
                total_amount, advance_paid, balance_collected, balance_payment_method
         FROM dbo.invoices
         WHERE booking_id = b.id AND status = 'ISSUED'
@@ -420,54 +568,84 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       ORDER BY b.check_in_date ASC, r.room_number ASC
     `);
 
-  const bookings = result.recordset.map((row) => ({
-    id: row.id,
-    guestName: row.guest_name,
-    guestPhone: row.guest_phone,
-    numGuests: row.num_guests,
-    roomNumber: row.room_number,
-    categoryName: row.category_name,
-    checkInDate: toIsoDate(row.check_in_date),
-    checkOutDate: toIsoDate(row.check_out_date),
-    nights: row.nights,
-    status: row.status,
-    // When the guest actually arrived and left, as against the dates the stay
-    // was booked for. Null until it happens — a BOOKED reservation has neither,
-    // and a late checkout can land these on a different date to the booked one.
-    actualCheckInAt: row.actual_check_in_at || null,
-    actualCheckOutAt: row.actual_check_out_at || null,
-    totalPrice: Number(row.total_price),
-    advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : 0,
-    advancePaymentMethod: row.advance_payment_method || null,
-    invoiceNumber: row.invoice_number || null,
-    documentType: row.document_type || null,
-    billingSide: row.billing_side || null,
-    roomSubtotal: row.room_subtotal != null ? Number(row.room_subtotal) : null,
-    foodSubtotal: row.food_subtotal != null ? Number(row.food_subtotal) : null,
-    // What the bill was taxed on, before CGST/SGST were added — rooms and food
-    // together, since both are taxable supplies on the same document.
-    subtotal:
-      row.invoice_number != null
-        ? round2(Number(row.room_subtotal || 0) + Number(row.food_subtotal || 0))
+  const tenders = await getTendersForBookings(
+    pool,
+    lodgeId,
+    result.recordset.map((row) => row.id)
+  );
+
+  const bookings = result.recordset.map((row) => {
+    const billed = row.invoice_number != null;
+    const figures = billed ? billFigures(row) : null;
+    const advanceAmount = row.advance_amount != null ? Number(row.advance_amount) : 0;
+    const balanceCollected = billed ? Number(row.balance_collected ?? 0) : null;
+    return {
+      id: row.id,
+      guestName: row.guest_name,
+      guestPhone: row.guest_phone,
+      numGuests: row.num_guests,
+      roomNumber: row.room_number,
+      categoryName: row.category_name,
+      checkInDate: toIsoDate(row.check_in_date),
+      checkOutDate: toIsoDate(row.check_out_date),
+      nights: row.nights,
+      status: row.status,
+      // When the guest actually arrived and left, as against the dates the stay
+      // was booked for. Null until it happens — a BOOKED reservation has neither,
+      // and a late checkout can land these on a different date to the booked one.
+      actualCheckInAt: row.actual_check_in_at || null,
+      actualCheckOutAt: row.actual_check_out_at || null,
+      totalPrice: Number(row.total_price),
+      // Money the property holds against this stay, and how it arrived — every
+      // tender, so a split advance is not misreported as its first tender.
+      advanceAmount,
+      advancePaymentMethod: row.advance_payment_method || null,
+      advanceTenders: mergeTenders(
+        splitAcross(advanceAmount, tenders.advance.get(String(row.id)), row.advance_payment_method)
+      ),
+      invoiceNumber: row.invoice_number || null,
+      documentType: row.document_type || null,
+      billingSide: row.billing_side || null,
+      invoiceDate: row.invoice_created_at || null,
+      // The bill's own figures — null on every one of them until a bill exists.
+      // See billFigures for the identity that ties them together.
+      grossAmount: figures?.grossAmount ?? null,
+      roomGross: figures?.roomGross ?? null,
+      foodGross: figures?.foodGross ?? null,
+      discountAmount: figures?.discountAmount ?? null,
+      netAmount: figures?.netAmount ?? null,
+      lateCheckoutCharge: figures?.lateCheckoutCharge ?? null,
+      roomTaxable: figures?.roomTaxable ?? null,
+      foodTaxable: figures?.foodTaxable ?? null,
+      taxableValue: figures?.taxableValue ?? null,
+      roomCgst: figures?.roomCgst ?? null,
+      roomSgst: figures?.roomSgst ?? null,
+      foodCgst: figures?.foodCgst ?? null,
+      foodSgst: figures?.foodSgst ?? null,
+      cgstAmount: figures?.cgstAmount ?? null,
+      sgstAmount: figures?.sgstAmount ?? null,
+      totalTax: figures?.totalTax ?? null,
+      roundOff: figures?.roundOff ?? null,
+      billedAmount: figures?.billedAmount ?? null,
+      // What the bill deducted as advance and what was collected on it. The
+      // advance deducted is the booking's advance as it stood at issue; a
+      // receipt raised after the bill would leave it behind, so the register
+      // shows the booking's figure and the bill's separately.
+      advancePaid: billed ? Number(row.advance_paid ?? 0) : null,
+      balanceCollected,
+      balancePaymentMethod: row.balance_payment_method || null,
+      balanceTenders: billed
+        ? mergeTenders(
+            splitAcross(balanceCollected, tenders.balance.get(String(row.id)), row.balance_payment_method)
+          )
+        : [],
+      // Left unpaid after the bill's own deductions — 0 on a settled bill.
+      balanceDue: billed
+        ? round2(figures.billedAmount - Number(row.advance_paid ?? 0) - balanceCollected)
         : null,
-    // Room and food are taxed on separate SACs at separate rates. The report
-    // shows what the guest was actually charged — the two added together — but
-    // keeps the halves so the tax summary can break them out for filing.
-    roomCgst: row.cgst_amount != null ? Number(row.cgst_amount) : null,
-    roomSgst: row.sgst_amount != null ? Number(row.sgst_amount) : null,
-    foodCgst: row.food_cgst_amount != null ? Number(row.food_cgst_amount) : null,
-    foodSgst: row.food_sgst_amount != null ? Number(row.food_sgst_amount) : null,
-    cgstAmount:
-      row.invoice_number != null ? round2(Number(row.cgst_amount || 0) + Number(row.food_cgst_amount || 0)) : null,
-    sgstAmount:
-      row.invoice_number != null ? round2(Number(row.sgst_amount || 0) + Number(row.food_sgst_amount || 0)) : null,
-    roundOff: row.round_off != null ? Number(row.round_off) : null,
-    billedAmount: row.invoice_total != null ? Number(row.invoice_total) : null,
-    advancePaid: row.advance_paid != null ? Number(row.advance_paid) : null,
-    balanceCollected: row.balance_collected != null ? Number(row.balance_collected) : null,
-    balancePaymentMethod: row.balance_payment_method || null,
-    createdAt: row.created_at,
-  }));
+      createdAt: row.created_at,
+    };
+  });
 
   const byStatus = Object.fromEntries(BOOKING_STATUSES.map((s) => [s, 0]));
   // What cancelled stays would have added, kept aside rather than discarded so
@@ -476,11 +654,14 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   const cancelled = { count: 0, bookedValue: 0, advanceHeld: 0 };
   const summary = {
     totalBookings: bookings.length,
+    activeBookings: 0,
     roomNights: 0,
     // What the stays were priced at, versus what an issued bill actually
     // charged. They diverge whenever a bill is still pending, so an owner
     // reading only one of the two would draw the wrong conclusion.
     bookedValue: 0,
+    unbilledCount: 0,
+    unbilledValue: 0,
     billedAmount: 0,
     billedCount: 0,
     // Money attached to the stays listed in this register — i.e. keyed to
@@ -490,19 +671,10 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     // dated by when each payment moved and deliberately does not match these.
     stayAdvance: 0,
     stayBalance: 0,
+    stayBalanceDue: 0,
   };
-  const tax = {
-    roomSubtotal: 0,
-    foodSubtotal: 0,
-    roomCgst: 0,
-    roomSgst: 0,
-    foodCgst: 0,
-    foodSgst: 0,
-    cgstAmount: 0,
-    sgstAmount: 0,
-    roundOff: 0,
-    totalAmount: 0,
-  };
+  const bills = emptyBillTotals();
+  const byDocumentType = Object.fromEntries(DOCUMENT_TYPES.map((t) => [t, emptyBillTotals()]));
 
   for (const booking of bookings) {
     if (byStatus[booking.status] === undefined) byStatus[booking.status] = 0;
@@ -512,28 +684,27 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       cancelled.count += 1;
       cancelled.bookedValue = round2(cancelled.bookedValue + booking.totalPrice);
       cancelled.advanceHeld = round2(cancelled.advanceHeld + booking.advanceAmount);
-    } else {
-      summary.roomNights += booking.nights;
-      summary.bookedValue = round2(summary.bookedValue + booking.totalPrice);
-      summary.stayAdvance = round2(summary.stayAdvance + booking.advanceAmount);
+      continue;
     }
 
-    if (booking.billedAmount != null) {
-      summary.billedCount += 1;
-      summary.billedAmount = round2(summary.billedAmount + booking.billedAmount);
-      summary.stayBalance = round2(summary.stayBalance + (booking.balanceCollected || 0));
+    summary.activeBookings += 1;
+    summary.roomNights += booking.nights;
+    summary.bookedValue = round2(summary.bookedValue + booking.totalPrice);
+    summary.stayAdvance = round2(summary.stayAdvance + booking.advanceAmount);
 
-      tax.roomSubtotal = round2(tax.roomSubtotal + (booking.roomSubtotal || 0));
-      tax.foodSubtotal = round2(tax.foodSubtotal + (booking.foodSubtotal || 0));
-      tax.roomCgst = round2(tax.roomCgst + (booking.roomCgst || 0));
-      tax.roomSgst = round2(tax.roomSgst + (booking.roomSgst || 0));
-      tax.foodCgst = round2(tax.foodCgst + (booking.foodCgst || 0));
-      tax.foodSgst = round2(tax.foodSgst + (booking.foodSgst || 0));
-      tax.cgstAmount = round2(tax.cgstAmount + booking.cgstAmount);
-      tax.sgstAmount = round2(tax.sgstAmount + booking.sgstAmount);
-      tax.roundOff = round2(tax.roundOff + (booking.roundOff || 0));
-      tax.totalAmount = round2(tax.totalAmount + booking.billedAmount);
+    if (booking.billedAmount == null) {
+      summary.unbilledCount += 1;
+      summary.unbilledValue = round2(summary.unbilledValue + booking.totalPrice);
+      continue;
     }
+
+    summary.billedCount += 1;
+    summary.billedAmount = round2(summary.billedAmount + booking.billedAmount);
+    summary.stayBalance = round2(summary.stayBalance + booking.balanceCollected);
+    summary.stayBalanceDue = round2(summary.stayBalanceDue + booking.balanceDue);
+    addBill(bills, booking);
+    if (!byDocumentType[booking.documentType]) byDocumentType[booking.documentType] = emptyBillTotals();
+    addBill(byDocumentType[booking.documentType], booking);
   }
 
   summary.stayTotal = round2(summary.stayAdvance + summary.stayBalance);
@@ -547,9 +718,6 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   summary.advanceCollected = collections.advanceCollected;
   summary.balanceCollected = collections.balanceCollected;
   summary.totalCollected = collections.totalCollected;
-  // The taxable value the period's CGST/SGST was charged on — derived here so
-  // the register's subtotal column and the tax table's total cannot drift.
-  tax.taxableValue = round2(tax.roomSubtotal + tax.foodSubtotal);
 
   return {
     fromDate,
@@ -568,10 +736,27 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       // under, so it is dated on the same cash basis and adds up to them.
       byPaymentMode: collections.byPaymentMode,
       collections,
-      tax,
+      // Every issued bill in the register, footed; and the same split by the
+      // kind of document, which is what a return is filled in from.
+      bills,
+      byDocumentType,
+      // Kept under its old name for readers that still look here. Same figures
+      // as `bills`, plus the aliases they used.
+      tax: {
+        ...bills,
+        roomSubtotal: bills.roomTaxable,
+        foodSubtotal: bills.foodTaxable,
+      },
     },
     bookings,
   };
 }
 
-module.exports = { getOccupancyReport, getGstSummary, getBookingsReport, splitAcross };
+module.exports = {
+  getOccupancyReport,
+  getGstSummary,
+  getBookingsReport,
+  splitAcross,
+  billFigures,
+  mergeTenders,
+};

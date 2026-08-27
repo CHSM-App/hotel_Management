@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { clearSession, getSession } from '../../lib/auth';
@@ -109,11 +109,35 @@ export default function OwnerDashboard() {
   // Left null until the user picks a section — /me hasn't answered yet on the
   // first render, so which section is even reachable isn't known here. The
   // landing choice is made below, once the permissions are in.
-  const [activeSection, setActiveSection] = useUrlState('section');
+  // Read-only here: every move that sets the section also has to clear the
+  // register's status cut, so both are written together through setSearchParams
+  // below rather than through this setter.
+  const [activeSection] = useUrlState('section');
   // Set when a checkout hands a stay to billing, which reads it as it mounts to
   // open that bill straight away. Cleared on any sidebar move, so coming back to
   // billing later lands on the plain queue rather than reopening an old bill.
   const [billNowBookingId, setBillNowBookingId] = useState(null);
+
+  // The tape chart's legend following a colour into the register's cut of it.
+  //
+  // Both keys are written in one go rather than through the two useUrlState
+  // setters: each of those replaces the URL from the params it captured on this
+  // render, so calling them in sequence would have the second overwrite the
+  // first and land on the register with no status chosen.
+  const [, setSearchParams] = useSearchParams();
+  const showRegisterWithStatus = (status) => {
+    setBillNowBookingId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'guests');
+        if (status) updated.set('status', status);
+        else updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
 
   useEffect(() => {
     let ignore = false;
@@ -197,7 +221,19 @@ export default function OwnerDashboard() {
                       aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
                       onClick={() => {
                         setBillNowBookingId(null);
-                        setActiveSection(feature.key);
+                        // Cleared for the same reason billNowBookingId is: the
+                        // status cut belongs to the register, and reaching it
+                        // from the sidebar means asking for the whole list
+                        // rather than resuming a cut the legend made earlier.
+                        setSearchParams(
+                          (prev) => {
+                            const updated = new URLSearchParams(prev);
+                            updated.set('section', feature.key);
+                            updated.delete('status');
+                            return updated;
+                          },
+                          { replace: true }
+                        );
                       }}
                     >
                       <Icon name={feature.icon} />
@@ -247,6 +283,7 @@ export default function OwnerDashboard() {
                   // the exact moment a guest was standing at the desk — and
                   // left them to find their way back afterwards.
                   onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)}
+                  onShowRegister={showRegisterWithStatus}
                 />
               )}
 

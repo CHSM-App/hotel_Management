@@ -116,3 +116,52 @@ test('the stay bill still requires the payment to be entered', () => {
     'collectedAmount is no longer required — a bill could now be issued with no payment recorded against it'
   );
 });
+
+// The guard on the receipt has to know which path it is on. Raised
+// automatically, the booking row already holds the advance being receipted, so
+// "already held" must be read net of it — or the guard adds the amount twice
+// and refuses a receipt to any advance over half the stay, and to every stay
+// paid in full. The booking survives (that is the point of the automatic path
+// being unable to fail it), which is what made this silent: no error, just no
+// receipt to print.
+const RECEIPTS_SRC = path.join(__dirname, '..', 'src', 'modules', 'billing', 'advanceReceipts.service.js');
+const receiptsSrc = fs.readFileSync(RECEIPTS_SRC, 'utf8');
+
+test('the automatic path tells the guard the advance is already on the row', () => {
+  assert.match(
+    receiptsSrc,
+    /buildReceiptPreview\(booking, slabs, input, \{ alreadyOnBooking \}\)/,
+    'issueAdvanceReceipt stopped passing alreadyOnBooking to the guard'
+  );
+  assert.match(
+    receiptsSrc,
+    /const alreadyHeld = heldBefore\(booking, amount, alreadyOnBooking\)/,
+    'the guard no longer reads the held figure net of the amount on the automatic path'
+  );
+  // The manual preview must keep reading the raw row: nothing has been added
+  // to it yet, so nothing is to be netted out.
+  assert.match(receiptsSrc, /return buildReceiptPreview\(booking, slabs, input\);/, 'the manual preview changed shape');
+});
+
+test('what counts as already held, on each path', () => {
+  const round2 = (n) => Math.round(n * 100) / 100;
+  // Reproduced from the service so the arithmetic is exercised.
+  const heldBefore = (onRow, amount, alreadyOnBooking) =>
+    alreadyOnBooking ? Math.max(0, round2(round2(onRow) - amount)) : round2(onRow);
+  const refused = (onRow, amount, stayTotal, alreadyOnBooking) =>
+    round2(heldBefore(onRow, amount, alreadyOnBooking) + amount) > stayTotal;
+
+  // A stay paid in full at booking: the row holds 4,500, the receipt is for
+  // 4,500. Held before it: nothing. Allowed.
+  assert.strictEqual(refused(4500, 4500, 4500, true), false, 'a full payment is refused its receipt');
+  // More than half the stay, taken at booking — the case that was failing.
+  assert.strictEqual(refused(3000, 3000, 4500, true), false, 'a large advance is refused its receipt');
+  // A second instalment at check-in: 1,000 was held, 2,000 more just went on
+  // the row. Held before this one is 1,000; 3,000 in all, within 4,500.
+  assert.strictEqual(refused(3000, 2000, 4500, true), false, 'a second instalment is refused');
+  // The manual path adds money the row does not have yet, so it counts as-is:
+  // 3,000 held plus another 3,000 does pass 4,500 and must be refused.
+  assert.strictEqual(refused(3000, 3000, 4500, false), true, 'the manual path lost the cap');
+  // Never negative, whatever the row says.
+  assert.strictEqual(heldBefore(100, 300, true), 0);
+});

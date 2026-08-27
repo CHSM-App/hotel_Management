@@ -216,6 +216,56 @@
   box-shadow: var(--shadow-pressed);
 }
 
+/* The tape chart's swatch, on the chip that filters to that colour's stays.
+   Same 11px square and 3px radius the legend uses, so the two rows read as one
+   vocabulary rather than two that happen to share a palette.
+
+   Literal fallbacks for the same reason the status badges carry them: the
+   variables are declared in tapeChart.css, which only Bookings.jsx imports. */
+.guest-register__status-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: none;
+  display: inline-block;
+}
+
+.guest-register__status-swatch--booked {
+  background: var(--tape-booked, #c0392b);
+}
+
+.guest-register__status-swatch--checked-in {
+  background: var(--tape-checked-in, #2f6fb5);
+}
+
+.guest-register__status-swatch--checked-out {
+  background: var(--tape-checked-out, #8695a3);
+}
+
+/* No tile on the chart to borrow from — a cancelled stay holds no nights to
+   draw — so it takes the danger red its badge already uses in the list. */
+.guest-register__status-swatch--cancelled {
+  background: var(--danger, #c1121f);
+}
+
+.guest-register__status-swatch--draft {
+  background: var(--tape-draft, #f2c31d);
+}
+
+/* A chip whose cut is empty is still worth reading — "Cancelled 0" is an answer
+   — but its dot shouldn't claim the eye the way a colour with rows behind it
+   does. */
+.guest-register__status-chip--empty .guest-register__status-swatch {
+  opacity: 0.35;
+}
+
+/* Full strength once chosen, even with nothing behind it: the chip the desk is
+   currently filtered by is the one thing on the row that has to look definite,
+   and an empty result is the answer it is showing. */
+.guest-register__status-chip[aria-pressed='true'] .guest-register__status-swatch {
+  opacity: 1;
+}
+
 .guest-register__status-count {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -246,6 +296,16 @@
 
 .guest-register__clear-filters:hover {
   color: var(--accent-ink);
+}
+
+/* Nothing to clear yet. Kept in the flow rather than removed: the toolbar
+   divides its width between the children it has, so a button that comes and
+   goes moves the status chips sideways every time the first cut is made or
+   undone — and the chip the pointer is over is exactly the one that moves.
+   visibility, not display, because only the former still reserves the box. */
+.guest-register__clear-filters--idle {
+  visibility: hidden;
+  cursor: default;
 }
 
 /* ---- Summary strip ------------------------------------------------------ */
@@ -430,6 +490,69 @@
   box-shadow: inset 3px 0 0 0 var(--brand);
 }
 
+/* The Status column in the tape chart's colours, so a red row here and a red
+   tile there are recognisably the same state.
+
+   Not the flat tile fill, though: a tile carries no text and can afford full
+   saturation, while a badge has a word on it. So each badge is a wash of its
+   state's hue with the chart's own -deep shade for the text — the same colour,
+   at a weight you can read against.
+
+   Own classes rather than a redefinition of .badge--on and friends: those are
+   shared with the internal dashboard and the billing queue, where they mean
+   on/off rather than a booking status.
+
+   The var() fallbacks repeat the chart's values because the variables are
+   declared in tapeChart.css, which only Bookings.jsx imports. Today every
+   stylesheet lands in one bundle so they resolve, but the register does not own
+   that import — if the dashboard is ever code-split these badges would lose
+   their colour silently, and a literal second argument is cheaper than that
+   bug. */
+.guest-register__status-badge--booked {
+  background: #f7e3e0;
+  color: var(--tape-booked-deep, #a52f22);
+}
+
+.guest-register__status-badge--checked-in {
+  background: #e3edf8;
+  color: var(--tape-checked-in-deep, #245a96);
+}
+
+/* --text-muted rather than the chart's own --tape-checked-out-deep: that slate
+   is tuned for a solid tile with no text on it, and at 12px on this wash it
+   comes to 3.6:1 — under AA. The app's muted ink is the same slate family two
+   steps down and clears 5:1, so a finished stay still reads as the quiet one
+   without the word going soft. */
+.guest-register__status-badge--checked-out {
+  background: #eceff2;
+  color: var(--text-muted, #5b6670);
+}
+
+/* No tile on the chart — a cancelled stay holds no nights to draw — so it keeps
+   the register's own danger wash rather than inventing a fifth tape colour. It
+   reads as an exception, which is what it is. */
+.guest-register__status-badge--cancelled {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* The chart's yellow, deepened for text. --tape-draft is #f2c31d, a bright fill
+   chosen for tiles that carry no words; at 12px on a light wash it is
+   unreadable, so the badge keeps the hue and takes its ink from the darker end
+   of the same amber. */
+.guest-register__status-badge--draft {
+  background: #fbf0cf;
+  color: #7a5804;
+}
+
+/* A parked form is not a stay. It sits in the same table because it answers the
+   same question — who is coming, to which room — but the row is tinted so its
+   column of dashes reads as "not filled in yet" rather than as a stay whose
+   data went missing. */
+.guest-register__row--draft {
+  background: #fffdf5;
+}
+
 .guest-register__row-phone {
   color: var(--text-muted);
   text-decoration: underline;
@@ -459,6 +582,19 @@
   color: var(--text-muted);
   line-height: 1.35;
   margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* Names the co-guest the search actually matched, on a row booked under
+   someone else. Held quieter than the sub line it sits under: it explains the
+   result rather than describing the stay, and it is gone the moment the search
+   box is cleared. */
+.guest-register__cell-match {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin-top: 2px;
+  font-style: italic;
   white-space: nowrap;
 }
 
@@ -1208,6 +1344,14 @@
   .guest-register__toolbar-bottom {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* Stacked, each group owns its own full-width row, so nothing can be pushed
+     sideways by a button appearing below it — the reason for holding the space
+     on a wide screen doesn't apply. Taken out of the flow instead, so an idle
+     button doesn't leave a blank row under the chips. */
+  .guest-register__clear-filters--idle {
+    display: none;
   }
 
   .guest-register__presets {
