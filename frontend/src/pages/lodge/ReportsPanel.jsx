@@ -5,7 +5,8 @@ import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import {
   BOOKING_STATUS_LABEL,
-  PAYMENT_MODE_LABEL,
+  DOCUMENT_TYPE_LABEL,
+  tendersLabel,
   downloadBookingReportExcel,
   buildBookingReportPdf,
   downloadBookingReportPdf,
@@ -343,10 +344,13 @@ export default function ReportsPanel() {
                           <th>Nights</th>
                           <th>Status</th>
                           <th>Advance</th>
-                          <th>Subtotal</th>
+                          <th>Discount</th>
+                          <th>Taxable value</th>
                           <th>CGST</th>
                           <th>SGST</th>
-                          <th>Amount</th>
+                          <th>Round off</th>
+                          <th>Billed</th>
+                          <th>Balance</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -391,19 +395,46 @@ export default function ReportsPanel() {
                             </td>
                             <td>
                               {b.advanceAmount ? formatPrice(b.advanceAmount) : '—'}
-                              {Boolean(b.advanceAmount) && b.advancePaymentMethod && (
+                              {Boolean(b.advanceAmount) && b.advanceTenders?.length > 0 && (
                                 <>
                                   <br />
+                                  <span className="reports-panel__muted">{tendersLabel(b.advanceTenders)}</span>
+                                </>
+                              )}
+                            </td>
+                            <td>{b.discountAmount != null ? formatPrice(b.discountAmount) : '—'}</td>
+                            <td>{b.taxableValue != null ? formatPrice(b.taxableValue) : '—'}</td>
+                            <td>{b.cgstAmount != null ? formatPrice(b.cgstAmount) : '—'}</td>
+                            <td>{b.sgstAmount != null ? formatPrice(b.sgstAmount) : '—'}</td>
+                            <td>{b.roundOff != null ? formatPrice(b.roundOff) : '—'}</td>
+                            <td>
+                              {b.billedAmount != null ? (
+                                <>
+                                  {formatPrice(b.billedAmount)}
+                                  <br />
                                   <span className="reports-panel__muted">
-                                    {PAYMENT_MODE_LABEL[b.advancePaymentMethod]}
+                                    {DOCUMENT_TYPE_LABEL[b.documentType] || b.documentType}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  —
+                                  <br />
+                                  <span className="reports-panel__muted">
+                                    Not billed · booked {formatPrice(b.totalPrice)}
                                   </span>
                                 </>
                               )}
                             </td>
-                            <td>{b.subtotal != null ? formatPrice(b.subtotal) : '—'}</td>
-                            <td>{b.cgstAmount != null ? formatPrice(b.cgstAmount) : '—'}</td>
-                            <td>{b.sgstAmount != null ? formatPrice(b.sgstAmount) : '—'}</td>
-                            <td>{formatPrice(b.billedAmount != null ? b.billedAmount : b.totalPrice)}</td>
+                            <td>
+                              {b.balanceCollected ? formatPrice(b.balanceCollected) : '—'}
+                              {Boolean(b.balanceCollected) && b.balanceTenders?.length > 0 && (
+                                <>
+                                  <br />
+                                  <span className="reports-panel__muted">{tendersLabel(b.balanceTenders)}</span>
+                                </>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

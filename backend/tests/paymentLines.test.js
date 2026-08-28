@@ -102,7 +102,11 @@ test('the advance receipt applies the same sum rule to its own total', () => {
 // Per-line references
 // ---------------------------------------------------------------------------
 
-test('a UPI line still needs its transaction number', () => {
+// The number is worth having and is asked for on UPI and card, but it is not
+// a condition of taking the money: the guest's app is sometimes slow to show a
+// UTR, and a desk that cannot write the booking until it does is a desk that
+// makes the guest wait. It gets recorded when it is known.
+test('a UPI line may be filed without its transaction number', () => {
   const parsed = issueInvoiceSchema.safeParse(
     invoiceBody({
       paymentLines: [
@@ -111,12 +115,11 @@ test('a UPI line still needs its transaction number', () => {
       ],
     })
   );
-  assert.equal(parsed.success, false);
+  assert.ok(parsed.success, JSON.stringify(parsed.error?.issues));
 });
 
-// Today's rule for the single-method fields, unchanged: a reference is required
-// on UPI and card, and merely allowed on cash. Tightening it here would refuse
-// a cash line somebody annotated.
+// The other half of the same rule: a reference is allowed on every method, so
+// a cash line somebody annotated is not refused either.
 test('a cash line may carry a reference', () => {
   const parsed = issueInvoiceSchema.safeParse(
     invoiceBody({ paymentLines: [{ method: 'CASH', amount: 1000, reference: 'till 2' }] })

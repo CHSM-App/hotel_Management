@@ -49,6 +49,17 @@
      rather than as a different state colour. */
   --tape-draft-deep: #d4a70c;
 
+  /* The search marker. Violet on purpose: every other colour on this chart is
+     already spoken for by a booking state, and a highlight drawn in one of them
+     would read as "this stay is now checked in" rather than "this stay is what
+     you asked for". Violet is the only hue here that means nothing else, so it
+     can be laid over a red, a blue or a slate tile and still say one thing. */
+  --tape-hit: #7c3aed;
+  --tape-hit-soft: rgba(124, 58, 237, 0.18);
+  /* The tint behind the result count. Light enough to sit under violet text at
+     full contrast, strong enough to read as a filled chip rather than a smudge. */
+  --tape-hit-wash: rgba(124, 58, 237, 0.1);
+
   --tape-tile: 26px;
   --tape-tile-h: 22px;
   --tape-row-h: 32px;
@@ -147,6 +158,39 @@
   box-shadow: var(--shadow-raised);
   border-radius: 999px;
   background: var(--surface);
+}
+
+/* The three chips that lead into the Booking List. A button, not a span, so it
+   is reachable by keyboard and announced as the control it is — but wearing the
+   same chip as its two plain neighbours, because it is still the caption for the
+   colour beside it. Only the pointer and the lift on hover say it goes
+   somewhere. */
+.tape-legend__item--link {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.tape-legend__item--link:hover {
+  box-shadow: var(--shadow-raised-hover, var(--shadow-raised));
+  transform: translateY(-1px);
+}
+
+.tape-legend__item--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Nothing to lift on a device that cannot hover, and the transform only makes
+   the row jump under a thumb. */
+@media (hover: none) {
+  .tape-legend__item--link:hover {
+    box-shadow: var(--shadow-raised);
+    transform: none;
+  }
 }
 
 .tape-legend__hint {
@@ -911,4 +955,562 @@
 .tape-month__band-month--alt {
   background: var(--tape-month-band-alt, rgba(100, 116, 139, 0.1));
   color: var(--ink);
+}
+
+
+/* ---------- search ---------- */
+
+/* The strip above the chart: month stepper, search and actions on one line, the
+   legend and any result on the next.
+
+   It was three rows — toolbar, search bar, legend — each sparse across its own
+   line, costing about a hundred and seventy pixels before the first room. The
+   chart is the screen; everything here is the frame around it, and a frame that
+   deep on a laptop pushed a property of twenty-five rooms off the bottom.
+
+   Sticky because of what stepping through results does: it scrolls the page to
+   a room that may be forty rows down, and a stepper that travelled with the
+   page would be off screen the instant it did its job. Sticking the whole strip
+   rather than the search alone also keeps the legend and the month legible
+   against a chart scrolled far from its own header. */
+.tape-controls {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  /* The bleed and matching padding are what let the backdrop below span the
+     panel while the controls stay on the content margin. */
+  margin-inline: -4px;
+  margin-bottom: 10px;
+  padding: 6px 4px 2px;
+}
+
+/* Opaque only while stuck, so rows of tiles do not scroll through the text.
+   At the top of the page there is nothing behind it, and a permanent wash would
+   read as a band across the panel for no reason.
+
+   -1px top so the sliver a fractional scroll offset leaves above the element is
+   covered rather than flickering a row of tiles through it. */
+.tape-controls::before {
+  content: '';
+  position: absolute;
+  inset: -1px 0 0;
+  z-index: -1;
+  background: var(--neu-base, #eef1f6);
+  /* Fades out at the bottom instead of ending on a hard rule, so the chart
+     passes under it rather than being cut off by it. */
+  box-shadow: 0 6px 10px -6px rgba(16, 24, 40, 0.14);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+/* Set by the component once the strip has actually left the top of the page. */
+.tape-controls--stuck::before {
+  opacity: 1;
+}
+
+/* Both rows inside the strip are tightened: they used to carry 16px each, which
+   on three rows was most of the wasted depth. */
+.tape-controls .bookings-panel__toolbar {
+  margin-bottom: 8px;
+}
+
+.tape-controls .tape-legend {
+  /* The row now carries the search field as well as the chips, so it sets its
+     own height rather than being a line of 24px pills. */
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+/* The search field, sitting in the gap the month stepper and the actions leave
+   between them. Takes the slack so the row stays balanced at any width, but
+   never grows past a comfortable reading length — a search box the width of a
+   desk is not easier to type into. */
+.tape-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* First on the legend's row, wide enough to show the whole placeholder and
+     to give the result panel hanging under it room for a full name — the row
+     has slack to spare after the five chips, and this is what it is for. It
+     does not grow past that: a search box the width of a desk is no easier to
+     type into, and the chips should stay near the field they filter beside. */
+  flex: 0 1 360px;
+  min-width: 0;
+  /* Clears the chips it shares the row with. */
+  margin-right: 6px;
+}
+
+/* Built to the same recipe as the field on the Booking List: a carved
+   rectangular well with the icon inside it on the left and the clear button on
+   the right. The two screens ask the same question of the same records, so
+   asking it should look the same on both.
+
+   38px rather than the form default of 44: it shares a line with the 36px month
+   stepper, and the taller field set the height of the whole row. */
+.tape-search__box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.tape-search__input {
+  width: 100%;
+  min-width: 0;
+  /* Room for the icon and the clear button that sit over the two ends. */
+  padding: 9px 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  height: 38px;
+  box-shadow: var(--shadow-inset);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+/* The well deepens on focus rather than swapping to a flat outline, the same
+   way every other field in the app behaves. */
+.tape-search__input:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
+}
+
+/* Something was found: the field takes the soft edge of the violet the tiles
+   are marked in, so the control and the highlights read as one answer. The
+   full-strength hue is left to the tiles, which is where it does the work. */
+.tape-search--found .tape-search__input {
+  border-color: var(--tape-hit-soft);
+}
+
+.tape-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+/* The browser puts its own clear affordance on type=search. Suppressed, because
+   there is a clear button of this design over the right end of the field, and
+   two in one box is one too many. */
+.tape-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.tape-search__icon {
+  position: absolute;
+  left: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transition: color 0.16s ease;
+}
+
+.tape-search--found .tape-search__icon {
+  color: var(--tape-hit);
+}
+
+.tape-search__clear {
+  position: absolute;
+  right: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.tape-search__clear:hover {
+  color: var(--ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.tape-search__clear:active {
+  box-shadow: var(--shadow-inset);
+}
+
+/* ---------- the readout ---------- */
+
+/* The answer, hung directly under the field that asked the question.
+
+   It sat on the legend's line before, at the far end of the strip from the box:
+   the eye had to cross the whole toolbar to read the reply to what it had just
+   typed, and the guest name got whatever width the legend chips left over, so
+   "Aniket Mestry" arrived as "Aniket". Anchored to the field it gets the
+   field's full width, and the pair reads as one control — question above,
+   answer below.
+
+   Absolutely positioned, so it hangs over the chart instead of pushing it down.
+   The strip keeps its height whether or not a search is running, and the rows
+   below never jump as results come and go. */
+.tape-search__result {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  /* Starts at the field's width and grows past its right edge only as far as a
+     long name needs — the panel hangs over the chart, so the space is free,
+     and a name is worth more whole than clipped to fit a box. */
+  min-width: 100%;
+  width: max-content;
+  max-width: 460px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--tape-hit-soft);
+  background: var(--surface);
+  /* Lifted off the chart it covers, so it reads as a panel over the grid rather
+     than as another row of it. */
+  box-shadow: 0 8px 20px -6px rgba(16, 24, 40, 0.22), var(--shadow-raised);
+  animation: tape-result-in 0.14s ease-out;
+}
+
+/* Arrives from just under the field rather than fading in place, so the eye is
+   carried from what was typed down to what came back. */
+@keyframes tape-result-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tape-search__result {
+    animation: none;
+  }
+}
+
+/* The position within the results, as a fraction. It leads because it is the
+   number that changes when the desk steps, and a fraction says "there are more
+   of these" in a way a bare count never does. */
+.tape-search__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 7px;
+  background: var(--tape-hit-wash);
+  color: var(--tape-hit);
+  font-size: 12px;
+  font-weight: 600;
+  /* So the numbers do not shuffle sideways as the desk steps 9, 10, 11. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tape-search__count strong {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.tape-search__count-sep {
+  opacity: 0.5;
+  margin: 0 1px;
+}
+
+/* Who the arrows are parked on, and where. Two lines in the space of one, which
+   is what lets the name stay a name while still saying the room — the answer to
+   "which room is this guest in?" is both halves, and splitting them across two
+   lines costs nothing here that a single truncated line was not already
+   costing. */
+.tape-search__who {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.tape-search__who strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The room and the arrival date, under the name in the quiet voice: it is
+   context for the name, not a second thing to read. */
+.tape-search__where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* The phone and the ID number, under the room and date. A third line rather
+   than more text on the second: the room says where the stay is, and these say
+   who it belongs to — two different questions, and running them together made a
+   line too long to scan while stepping through matches.
+
+   Only what is on file shows, so a booking with no ID recorded gets a shorter
+   line rather than a gap where one should be. */
+.tape-search__ids {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.tape-search__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Numbers, so they line up rather than wobbling as the desk steps between
+     one guest and the next. */
+  font-variant-numeric: tabular-nums;
+}
+
+.tape-search__id svg {
+  flex: none;
+  opacity: 0.75;
+}
+
+/* Nothing matched. Muted and stated in words rather than shown as a red error:
+   an unfound guest is a normal outcome of a search, not something the desk did
+   wrong to get. */
+.tape-search__empty {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Built to match the month stepper — same pill, same round arrows — because
+   they are the same gesture applied to two different things, and two steppers
+   on one screen that looked different would be two controls to learn. */
+.tape-search__stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--neu-base, var(--surface));
+  box-shadow: var(--shadow-pressed);
+}
+
+.tape-search__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tape-hit);
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.tape-search__arrow:hover:not(:disabled) {
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.tape-search__arrow:active:not(:disabled) {
+  box-shadow: var(--shadow-inset);
+}
+
+/* One match: there is nowhere to step to. Dimmed rather than hidden, so the
+   panel does not change shape between a one-match search and a two-match one. */
+.tape-search__arrow:disabled {
+  color: var(--text-muted);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tape-search__arrow:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* Narrow enough that the field and the five chips can no longer share a line.
+   The search takes the full width and the chips wrap under it, which keeps the
+   order the row reads in — find first, then what the colours mean. */
+@media (max-width: 820px) {
+  .tape-search {
+    flex-basis: 100%;
+    margin-right: 0;
+  }
+}
+
+/* ---------- search hits on the chart ---------- */
+
+/* Every night of a matched stay. The tile keeps its status colour — a found
+   booking is still a booking, and recolouring it would cost the desk the one
+   thing the chart is for — and takes a violet rim over the top of it.
+   z-index because the ring is drawn outside the tile's own box and would
+   otherwise be clipped under the neighbouring night. */
+.tape-tile--hit {
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 0 0 2px var(--tape-hit-soft);
+}
+
+/* The stay the arrows are parked on, out of however many matched. A solid ring
+   rather than a deeper fill: the fill is the status, and a found stay is still
+   a booking that has to say whether it is reserved, in, or gone. */
+.tape-tile--hit-active {
+  z-index: 3;
+  box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+
+/* A radar ping in the stay's own colour.
+
+   Two rings sit over the found stay and expand outward from its edges, fading
+   as they go, on a loop. The tiles themselves never move — they keep their
+   places in the grid and their sizes — so nothing in the row reflows while it
+   is pinging.
+
+   The colour comes from --pulse-color, which each status sets to its own hue
+   below: a reserved stay pings red, a checked-in one blue, a finished one
+   slate. One rule, no class per colour, and the ping always agrees with the
+   tiles it is coming out of.
+
+   Drawn on the stay's first tile but stretched across the whole of it, using
+   --tape-hit-span (how many nights it runs). A ring per night would be six
+   overlapping rectangles crawling over each other; the stay reads as one block,
+   so one ring goes round the block. */
+.tape-tile--hit-anchor::before,
+.tape-tile--hit-anchor::after {
+  content: '';
+  position: absolute;
+  /* Over this tile and every night after it. The tiles carry 1.5px of margin
+     each side, which is why the span is measured in whole --tape-tile columns
+     and pulled back by the one margin at the far end. */
+  /* The stay's own box, before the ring starts travelling: this tile's top-left
+     and as wide as the nights it runs. The tiles carry 1.5px of margin each
+     side, which is why the width is whole --tape-tile columns less one margin
+     at the far end. */
+  top: 0;
+  left: 0;
+  height: var(--tape-tile-h);
+  width: calc(var(--tape-hit-span, 1) * var(--tape-tile) - 3px);
+  border-radius: 6px;
+  border: 2px solid var(--pulse-color, currentColor);
+  /* Never eats the click that opens the stay underneath. */
+  pointer-events: none;
+  animation: tape-ping 1.8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+
+/* The second ring follows the first by half a cycle, so there is always one
+   leaving as the other starts and the ping reads as continuous rather than as
+   a flash with a gap after it. */
+.tape-tile--hit-anchor::after {
+  animation-delay: 0.9s;
+}
+
+/* Grows by a fixed number of pixels rather than by a percentage.
+   scale() would spread the ring much further sideways than up — a stay is far
+   wider than it is tall — and at any size big enough to be seen above and
+   below, it would have crossed into the rooms either side of it. Insetting the
+   edges outward grows it evenly on all four sides, so the ping stays over its
+   own stay. */
+@keyframes tape-ping {
+  0% {
+    top: 0;
+    left: 0;
+    width: calc(var(--tape-hit-span, 1) * var(--tape-tile) - 3px);
+    height: var(--tape-tile-h);
+    opacity: 0.9;
+  }
+
+  100% {
+    top: -10px;
+    left: -10px;
+    width: calc(var(--tape-hit-span, 1) * var(--tape-tile) - 3px + 20px);
+    height: calc(var(--tape-tile-h) + 20px);
+    opacity: 0;
+  }
+}
+
+/* Each status hands the ping its own colour. These are the same hues the tiles
+   are filled with, so the ring that leaves a tile is the colour of the tile it
+   left. */
+.tape-tile--booked {
+  --pulse-color: var(--tape-booked);
+}
+
+.tape-tile--checked-in {
+  --pulse-color: var(--tape-checked-in);
+}
+
+.tape-tile--checked-out {
+  --pulse-color: var(--tape-checked-out);
+}
+
+.tape-tile--draft {
+  --pulse-color: var(--tape-draft);
+}
+
+/* Announces itself once when stepped onto, then settles. The ping keeps
+   looping; this is the ring on the tile itself blooming outward as the chart
+   arrives at the stay. */
+.tape-tile--hit-current {
+  animation: tape-hit-pulse 0.9s ease-out 1;
+}
+
+@keyframes tape-hit-pulse {
+  0% {
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 0 rgba(124, 58, 237, 0.5);
+  }
+
+  70% {
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 9px rgba(124, 58, 237, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(124, 58, 237, 0.35);
+  }
+}
+
+/* A ping is a way of pointing at something, and pointing has to be able to stop.
+   Where motion is unwelcome the found stay keeps its violet rim and one resting
+   ring in its own colour — the highlight survives, the movement does not. */
+@media (prefers-reduced-motion: reduce) {
+  .tape-tile--hit-current,
+  .tape-tile--hit-anchor::before,
+  .tape-tile--hit-anchor::after {
+    animation: none;
+  }
+
+  .tape-tile--hit-anchor::after {
+    display: none;
+  }
+
+  /* One resting ring, sitting just off the stay it marks. */
+  .tape-tile--hit-anchor::before {
+    top: -3px;
+    left: -3px;
+    width: calc(var(--tape-hit-span, 1) * var(--tape-tile) - 3px + 6px);
+    height: calc(var(--tape-tile-h) + 6px);
+    opacity: 0.85;
+  }
 }

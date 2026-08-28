@@ -91,7 +91,7 @@ export const FEATURES = [
   },
   {
     key: 'billing',
-    title: 'Billing & GST',
+    title: 'Billing & Invoices',
     description: 'Tax invoices, bills of supply, cash receipts and payments.',
     permission: 'billing.manage',
     // No capability gate: every property type sells something. A lodge bills
@@ -102,7 +102,7 @@ export const FEATURES = [
   },
   {
     key: 'guests',
-    title: 'Guest register',
+    title: 'Booking Details',
     description: 'Occupants, ID records and vehicle numbers.',
     permission: 'guests.view',
     capability: 'hasRooms',
@@ -146,7 +146,7 @@ export const FEATURES = [
   },
   {
     key: 'reports',
-    title: 'Reports',
+    title: 'Report & Analytics',
     description: 'Downloadable booking reports, occupancy and a GST filing summary.',
     permission: 'reports.view',
     capability: 'hasRooms',

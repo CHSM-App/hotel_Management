@@ -446,6 +446,37 @@
   }
 }
 
+/* A method still to be chosen on a row that already has money against it.
+   Drawn in the accent rather than in --danger: nothing has failed yet, and a
+   field that is red before the desk has done anything wrong trains people to
+   ignore red. It is the one control on the row that isn't answered, so it is
+   the one that gets the ring — the amount beside it is fine.
+
+   The tint is on the closed select only; an open menu is the browser's and the
+   options inside it are not in this state. */
+.pay-lines__row select.pay-lines__method--needed {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: var(--shadow-inset), 0 0 0 2px rgba(156, 43, 43, 0.16);
+}
+
+/* Focus still wins: once the desk is in the field, the ring says "you are
+   here" rather than continuing to say "look here". */
+.pay-lines__row select.pay-lines__method--needed:focus-visible {
+  border-color: var(--focus);
+  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
+}
+
+/* The sentence under the rows. Weighted like an error so it is read, coloured
+   like a prompt so it is not mistaken for one. */
+.pay-lines__needed {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
 /* Dead on a single payment: kept for the layout, not for use. */
 .pay-lines__remove:disabled {
   opacity: 0.3;
@@ -454,4 +485,14 @@
 
 .pay-lines__remove:disabled:hover {
   border-color: var(--border);
+}
+
+/* The made-up row of a full payment: shown, not typed. It is the remainder of
+   the stay total after the rows above, and the desk changes it by changing
+   them — so it reads as a figure rather than as a field waiting for one. */
+.pay-lines__row input[readonly].pay-lines__amount--locked {
+  color: var(--text-muted);
+  cursor: default;
+  box-shadow: none;
+  background: var(--neu-base, var(--surface));
 }

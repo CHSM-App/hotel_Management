@@ -284,14 +284,69 @@ export function printDocumentOnPaper(node, paperSize) {
   }
 }
 
-// Hands a finished PDF blob to the user: the OS share sheet where there is one
-// (a desk on a tablet messages the guest their receipt), a download otherwise.
-export async function shareOrDownloadPdf(blob, filename) {
-  const file = new File([blob], filename, { type: 'application/pdf' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title: filename });
-    return;
-  }
+
+// Prints a finished PDF, so what comes off the printer is the file the
+// download button would have saved — the same pixels on the same sheet.
+//
+// This replaces printing the page's own DOM through @page rules. That route
+// had two faults the desk kept meeting: the print dialog is free to ignore
+// the paper the app asked for, and when it did the form was laid out for one
+// sheet and dropped into the corner of another; and the modal holds several
+// copies of the document (the offscreen PDF source, a thumbnail per paper
+// size), every one of which the print stylesheet made visible, so a bill came
+// out as three pages of the same bill. A PDF has neither problem: it carries
+// its own page size, and there is exactly one of it.
+//
+// The blob is loaded into a hidden iframe and the iframe is asked to print —
+// Chrome and Edge route that to their PDF viewer, which prints the document at
+// its own size. The frame is kept until the dialog has closed: tearing it down
+// early cancels the print in some builds, and afterprint is not fired on the
+// frame's window in all of them, so a generous timer stands behind it.
+export function printPdfBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.title = 'Print';
+    frame.style.cssText =
+      'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      frame.remove();
+      URL.revokeObjectURL(url);
+    };
+
+    frame.onload = () => {
+      try {
+        const win = frame.contentWindow;
+        win.addEventListener('afterprint', () => setTimeout(cleanup, 500), { once: true });
+        win.focus();
+        win.print();
+        resolve();
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+      // Whatever the browser did with afterprint, the frame is not kept forever.
+      setTimeout(cleanup, 120000);
+    };
+    frame.onerror = () => {
+      cleanup();
+      reject(new Error('Could not load the PDF for printing.'));
+    };
+
+    frame.src = url;
+    document.body.appendChild(frame);
+  });
+}
+
+// Puts the file on the device. Always a download, never a share sheet: the
+// desk asking for a copy on the machine is not asking to be handed a list of
+// apps to send it to.
+export function downloadPdf(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -300,4 +355,23 @@ export async function shareOrDownloadPdf(blob, filename) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// Hands the file to another app — messaging the guest their bill, which is the
+// whole point of the control. Falls back to a download only where there is no
+// share sheet to open, so the action still does something rather than nothing.
+export async function sharePdf(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename });
+    return;
+  }
+  downloadPdf(blob, filename);
+}
+
+// The old single control's behaviour, kept for the advance receipt, which
+// still offers one button. Share where the device has a sheet, download where
+// it doesn't.
+export async function shareOrDownloadPdf(blob, filename) {
+  await sharePdf(blob, filename);
 }

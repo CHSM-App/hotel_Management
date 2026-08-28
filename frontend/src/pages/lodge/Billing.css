@@ -1038,27 +1038,44 @@
 
    One number to tune: --bill-preview-scale.
 
-   The negative margin reclaims the height the scale no longer occupies —
-   transform leaves the original box behind, and without it there would be a
-   band of dead space under the bill. Percentages here resolve against width,
-   and this document runs roughly 1.25x as tall as it is wide, hence the 125. */
-.billing-panel__modal .bill-print-target {
-  --bill-preview-scale: 0.82;
-  overflow: hidden;
-}
-
-.billing-panel__modal .bill-print-target > * {
-  transform: scale(var(--bill-preview-scale));
-  transform-origin: top center;
-  margin-bottom: calc((var(--bill-preview-scale) - 1) * 125%);
-}
-
-/* Narrow screens get the sheet back at full size: there is no width to spare,
-   the modal is already the whole viewport, and scrolling a bill on a phone is
-   what people expect to be doing anyway. */
-@media (max-width: 700px) {
+   The box is then given the height the scaled bill actually paints — the
+   measured height of the document times the scale. transform leaves the
+   original box behind, and something has to take the unused height back or
+   there is a band of dead space under the bill. It used to be taken back with
+   a negative margin sized as a percentage, and a percentage margin resolves
+   against *width*: it assumed the bill was 1.25x as tall as wide, and a memo
+   with its tax summary, declaration and signature rows is taller than that.
+   The margin then reclaimed too much, the box ended above the painted foot of
+   the bill, and overflow:hidden cut the signature row and the thank-you off —
+   out of reach of any scrolling, because the clipped part lay outside the box
+   altogether. The component measures the bill and writes --bill-preview-h;
+   until it has, the var is unset, the calc is invalid and height falls back
+   to auto — a moment of the unscaled box, never a clipped one. */
+/* Screen only. These size a scaled *preview*; the print stylesheet lays the
+   same element out for paper with its own transform and height:auto, and this
+   block's higher specificity would otherwise override that — pinning the box
+   to the preview's scaled height while the content printed at full size, and
+   clipping the foot of the bill on paper. */
+@media screen {
   .billing-panel__modal .bill-print-target {
-    --bill-preview-scale: 1;
+    --bill-preview-scale: 0.82;
+    box-sizing: content-box;
+    height: calc(var(--bill-preview-h) * var(--bill-preview-scale));
+    overflow: hidden;
+  }
+
+  .billing-panel__modal .bill-print-target > * {
+    transform: scale(var(--bill-preview-scale));
+    transform-origin: top center;
+  }
+
+  /* Narrow screens get the sheet back at full size: there is no width to spare,
+     the modal is already the whole viewport, and scrolling a bill on a phone is
+     what people expect to be doing anyway. */
+  @media (max-width: 700px) {
+    .billing-panel__modal .bill-print-target {
+      --bill-preview-scale: 1;
+    }
   }
 }
 
@@ -1116,8 +1133,8 @@
 }
 
 @media (max-width: 700px) {
-  /* Full width and stacked. A wrapped row of four otherwise breaks
-     two-and-two and reads as a group that has come apart. */
+  /* Full width and stacked. A wrapped row otherwise breaks into uneven
+     halves and reads as a group that has come apart. */
   .bill-actions,
   .bill-actions__sheet,
   .bill-actions__buttons {
@@ -1126,5 +1143,13 @@
 
   .bill-actions__buttons > button {
     flex: 1 1 auto;
+  }
+
+  /* Except the icon buttons, which stay square. Stretching a 44px glyph button
+     across a phone gives a wide slab with a small mark adrift in the middle,
+     and next to a stretched neighbour it stops reading as an icon control at
+     all. They keep their size and the labelled buttons take the rest. */
+  .bill-actions__buttons > button.bill-actions__icon-btn {
+    flex: 0 0 44px;
   }
 }

@@ -33,6 +33,15 @@ export default function StayDetails({
   // this off.
   showOutstanding = true,
 }) {
+  // Whether what was taken at booking was the whole stay. Read off the two
+  // figures rather than stored: the server allows an advance equal to the
+  // stay, and once it is, "advance" is the wrong word for it everywhere the
+  // desk reads this — there is nothing left to collect.
+  const paidInFull =
+    booking.advanceAmount != null &&
+    booking.totalPrice != null &&
+    Math.round(booking.advanceAmount * 100) >= Math.round(booking.totalPrice * 100);
+
   return (
     <div className="stay-details">
       <div className="form-section">
@@ -214,12 +223,13 @@ export default function StayDetails({
       <div className="booking-form__optional">
         <div className="form-section">
           <div className="form-section__title">
-            <span className="form-section__num">3</span>Advance payment
+            <span className="form-section__num">3</span>
+            {paidInFull ? 'Payment' : 'Advance payment'}
           </div>
           {booking.advanceAmount != null ? (
             <div className="detail-facts">
               <div className="detail-fact">
-                <span className="detail-fact__label">Taken</span>
+                <span className="detail-fact__label">{paidInFull ? 'Paid in full' : 'Taken'}</span>
                 <span className="detail-fact__value">
                   {formatPrice(booking.advanceAmount)}
                   <span className="bookings-panel__muted">
@@ -309,7 +319,7 @@ export default function StayDetails({
           {booking.advanceAmount != null && (
             <div className="sim-result__line">
               <span>
-                Advance already paid
+                {paidInFull ? 'Paid in full at booking' : 'Advance already paid'}
                 <span className="bookings-panel__muted">
                   {' · '}
                   {describeAdvance(booking.advancePaymentLines, booking.advancePaymentMethod)}

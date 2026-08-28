@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import BillNumberingPanel from './BillNumberingPanel';
@@ -8,6 +8,8 @@ import { formatPrice } from './priceFormat';
 import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
 import DownloadIcon from '../../components/DownloadIcon';
+import ShareIcon from '../../components/ShareIcon';
+import { buildWhatsAppLink, openExternal } from '../../lib/shareLinks';
 import PaymentLines from './PaymentLines';
 import {
   needsPaymentReference,
@@ -35,8 +37,8 @@ import {
   DEFAULT_PAPER,
   paperById,
   buildDocumentPdfBlob,
-  printDocumentOnPaper,
-  shareOrDownloadPdf,
+  printPdfBlob,
+  downloadPdf,
 } from './billPaper';
 
 // How overdue the guest was, in words. Duplicated from the server's own
@@ -239,6 +241,44 @@ function billMatchesSearch(inv, query) {
 // and is shrunk with a transform. Restyling it per paper would mean the
 // preview and the printed sheet disagreed about line breaks, which is the one
 // thing a preview exists to rule out.
+// The rendered height of a document node, kept current for as long as the
+// node exists.
+//
+// Watched rather than measured once. The thumbnails stretch the memo's open
+// stay block by exactly the slack between the bill's natural height and the
+// sheet, so the figure has to be right *and* current: read a moment too early
+// (before the webfonts settle, on the first paint) or left stale (the language
+// toggle re-wraps every line; the draft re-prices as the form changes) and the
+// stretched bill overshoots the sheet by the difference — which the sheet then
+// clips, taking the signature row and the thank-you off the bottom. An
+// observer reports every one of those changes; a one-shot effect keyed on the
+// props it happened to know about missed all of them.
+//
+// Returns a callback ref, because the node it watches is mounted and unmounted
+// with the fold it lives in — and the node itself, for the caller that needs
+// to hand the same copy to the PDF capture.
+//
+// The observer fires its first report on observe(), so nothing is read
+// synchronously here; a browser without it reads once, a frame after mount.
+function useMeasuredHeight() {
+  const [node, setNode] = useState(null);
+  const [height, setHeight] = useState(0);
+  const attach = useCallback((el) => setNode(el), []);
+
+  useEffect(() => {
+    if (!node) return undefined;
+    if (typeof ResizeObserver === 'undefined') {
+      const frame = requestAnimationFrame(() => setHeight(node.offsetHeight));
+      return () => cancelAnimationFrame(frame);
+    }
+    const observer = new ResizeObserver(() => setHeight(node.offsetHeight));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return [attach, height, node];
+}
+
 function PaperPreview({ paper, invoice, width, billHeight, lang }) {
   const [pw, ph] = paper.pt;
   // Every sheet is drawn at one scale, not each fitted to the same box. Drawn
@@ -268,7 +308,15 @@ function PaperPreview({ paper, invoice, width, billHeight, lang }) {
   const availableWidth = sheetWidth - inset * 2;
   const availableHeight = sheetHeight - inset * 2;
   const naturalWidth = BILL_PDF_WIDTH;
-  const naturalHeight = billHeight || naturalWidth * 1.3;
+  // Zero until the offscreen copy has been measured. fitBillToSheet treats an
+  // unknown height as unconstrained — width-fit only, no stretch — so the
+  // first paint shows the bill at its resting size rather than stretched
+  // against a guess. The guess it replaced (an A4-ish ratio) was shorter than
+  // a memo with its declaration and signature rows, and stretching against a
+  // too-short figure overshot the sheet by the difference: the foot of the
+  // bill was clipped off every thumbnail until something happened to
+  // re-measure it.
+  const naturalHeight = billHeight;
   // The same fit and fill as the print dialog and the PDF, so the thumbnail is
   // a picture of the sheet that will actually come out.
   const { scale, stayHeight } = fitBillToSheet(
@@ -678,6 +726,12 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // A table bill has no advance — nobody pays a deposit to sit down.
   const advancePaid = preview?.advancePaid ?? 0;
   const balanceDue = activeAmounts ? round2(activeAmounts.totalAmount - advancePaid) : 0;
+  // A stay paid in full up front. The bill still has to be issued — it is the
+  // tax document — but there is no money changing hands at the desk, so
+  // nothing about a payment is asked for: no amount, no method, no rows. The
+  // server draws the same line (a zero collection needs no payment lines).
+  // Compared in paise, like every other settlement figure on this form.
+  const nothingDue = Math.round(balanceDue * 100) <= 0;
 
   // The desk collects exactly what is due on almost every bill, so the first
   // row starts there rather than empty and only the method is left to pick.
@@ -710,7 +764,9 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // typed into the modal right now is the one thing it doesn't, so it is laid
   // over the top. Without this the preview would show "Balance due" in full on
   // a bill about to be marked paid.
-  const collecting = collectedAmount.trim() !== '';
+  // And never while nothing is due: a row typed before a discount settled the
+  // balance must not paint a collection onto a bill that has none.
+  const collecting = !nothingDue && collectedAmount.trim() !== '';
   // Memoised so its identity only moves when its inputs do: the paper fold's
   // measuring effect keys off this object, and a fresh one per render would
   // re-measure the offscreen copy — a forced reflow — on every keystroke in
@@ -740,7 +796,12 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // desk has to act in — how much is still missing, or how much too much has
   // been entered — rather than restating both figures and leaving the
   // subtraction to whoever is standing at the counter.
-  const collectedProblem = collectedMatches
+  //
+  // Never a problem when nothing is due. A row typed before a discount brought
+  // the balance to zero would otherwise read as an over-collection — with the
+  // message inside an editor that is no longer on screen, and the button dead
+  // for a reason nobody could see.
+  const collectedProblem = nothingDue || collectedMatches
     ? null
     : collectedShort > 0
       ? `${formatPrice(collectedShort)} of the balance is still unaccounted for.`
@@ -754,11 +815,15 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
     // credit, so there is no such thing as an issued bill with nothing
     // collected against it. Enforced on the server too; this is only so the
     // desk is told before the request goes out.
-    if (collectedAmount.trim() === '') {
+    //
+    // Unless nothing is due: an advance that already covered the stay leaves a
+    // bill to issue and no collection to record, and asking for one here was
+    // a form that could not be submitted without inventing a payment.
+    if (!nothingDue && collectedAmount.trim() === '') {
       failIssue('Enter the amount collected from the guest.', 'collectedAmount');
       return;
     }
-    const collected = Number(collectedAmount);
+    const collected = nothingDue ? 0 : Number(collectedAmount);
     if (!Number.isFinite(collected) || collected < 0) {
       failIssue('Enter a valid amount collected.', 'collectedAmount');
       return;
@@ -881,11 +946,18 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   };
 
   // Bill PDF share/download
-  const billRef = useRef(null);
   // The bill the user is actually looking at, measured at capture time so the
   // offscreen copy can be laid out at exactly the same width.
-  const billPreviewRef = useRef(null);
-  const [pdfBusy, setPdfBusy] = useState(false);
+  // The visible bill, measured. Its height sizes the scaled preview box (see
+  // .billing-panel__modal .bill-print-target); its width is what the PDF copy
+  // is laid out at, so the file wraps its text exactly as the screen does.
+  const [attachPreview, previewHeight, previewNode] = useMeasuredHeight();
+  // Its twin on the issue form, for the draft's preview.
+  const [attachIssuePreview, issuePreviewHeight] = useMeasuredHeight();
+  // Which PDF action is in flight - 'download', 'share', or null. Not a plain
+  // boolean: there are two buttons now and only the pressed one should say it
+  // is working.
+  const [pdfBusy, setPdfBusy] = useState(null);
   const [pdfError, setPdfError] = useState('');
   // The stock this bill goes out on. Held per-session rather than saved: a
   // desk prints on what is in the tray today, and the tray is what changes.
@@ -901,63 +973,82 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // draft bill's natural height, measured off an offscreen copy of the
   // preview document — the issued bill's copy doesn't exist yet.
   const [issuePaperOpen, setIssuePaperOpen] = useState(false);
-  const [issueBillHeight, setIssueBillHeight] = useState(0);
-  const issueMeasureRef = useRef(null);
-  // The bill's natural height at BILL_PDF_WIDTH, measured off the offscreen
-  // capture copy — which is already laid out at exactly that width for the PDF.
-  // The previews need it to fit the document to a sheet the way the PDF does;
-  // until it is known they fall back to a nominal A4-ish ratio, which is only
-  // ever on screen for the first paint.
-  const [billHeight, setBillHeight] = useState(0);
+  const [attachIssueMeasure, issueBillHeight] = useMeasuredHeight();
+  // The bill's natural height at BILL_PDF_WIDTH, read off the offscreen capture
+  // copy — which is already laid out at exactly that width for the PDF. The
+  // previews need it to fit the document to a sheet the way the PDF does. The
+  // PDF capture reads the same node.
+  const [attachBill, billHeight, billNode] = useMeasuredHeight();
 
-  // Print on the chosen stock. The measurement comes off the offscreen copy —
-  // laid out at a fixed width and never restyled, so it is the one honest
-  // measurement of the document; the visible copy sits in a modal whose width
-  // varies.
-  const handlePrint = () => printDocumentOnPaper(billRef.current, paperSize);
 
-  // Measured when the previews are opened rather than on every render: the
-  // node is offscreen and fixed-width, so its height only changes when the
-  // bill itself does — and reading offsetHeight in a layout effect on each
-  // pass would be a forced reflow for a number that did not move.
-  useEffect(() => {
-    if (!paperPreviewsOpen) return;
-    const node = billRef.current;
-    if (node) setBillHeight(node.offsetHeight);
-  }, [paperPreviewsOpen, detailInvoice]);
-
-  // Its twin on the issue form, reading the offscreen copy of the draft. The
-  // draft re-prices as the form changes — discount, overstay, collection — so
-  // the height follows the preview document, not just the fold opening.
-  useEffect(() => {
-    if (!issuePaperOpen) return;
-    const node = issueMeasureRef.current;
-    if (node) setIssueBillHeight(node.offsetHeight);
-  }, [issuePaperOpen, documentPreview]);
 
   const buildBillPdfBlob = () =>
-    buildDocumentPdfBlob(billRef.current, {
+    buildDocumentPdfBlob(billNode, {
       paperSize,
       // The width the user is actually looking at, so the offscreen copy wraps
       // its text identically and the file matches the preview line for line.
-      shownWidth: billPreviewRef.current?.offsetWidth,
+      shownWidth: previewNode?.offsetWidth,
     });
 
-  const handleSharePdf = async () => {
+  // Both controls build the same file the same way and differ only in what
+  // they do with it, so the building - and the busy state, and the one error
+  // message - lives here once. Which of the two is running is tracked so only
+  // the button that was pressed shows the wait; greying out both would suggest
+  // the other one had also been asked for.
+  const runPdfAction = async (kind, deliver) => {
     setPdfError('');
-    setPdfBusy(true);
+    setPdfBusy(kind);
     try {
       const blob = await buildBillPdfBlob();
-      await shareOrDownloadPdf(blob, `${detailInvoice.invoiceNumber.replace(/[\\/]/g, '-')}.pdf`);
+      await deliver(blob, `${detailInvoice.invoiceNumber.replace(/[\\/]/g, '-')}.pdf`);
     } catch (err) {
       // An aborted share sheet is the user changing their mind, not a failure.
       if (err?.name !== 'AbortError') {
         setPdfError('Could not generate the bill PDF.');
       }
     } finally {
-      setPdfBusy(false);
+      setPdfBusy(null);
     }
   };
+
+  const handleDownloadPdf = () => runPdfAction('download', downloadPdf);
+
+  // Print is the download, sent to the printer instead of to disk. Building
+  // the same file the same way is what makes the printed bill match the
+  // downloaded one line for line — see printPdfBlob for why the page's own
+  // print stylesheet stopped being trusted with this.
+  const handlePrint = () => runPdfAction('print', printPdfBlob);
+
+  // What the desk is sending, in the words they would use saying it aloud.
+  // The guest is named because a bill arriving from an unknown number with no
+  // greeting reads as a scam, which is exactly the message a property does not
+  // want to send along with its bill.
+  // Greeting first where the bill has a guest behind it. A restaurant bill has
+  // no booking and so no name — addressing that one to "null" is worse than
+  // opening without a greeting at all.
+  //
+  // Says nothing about an attachment. The desk attaches the PDF by hand after
+  // this opens, and a message promising a file that is not there yet is a
+  // promise the desk has to remember to keep.
+  const shareMessage = () =>
+    `${detailInvoice.guestName ? `${detailInvoice.guestName}, here` : 'Here'} is your bill ` +
+    `${detailInvoice.invoiceNumber}` +
+    `${detailInvoice.lodgeName ? ` from ${detailInvoice.lodgeName}` : ''}` +
+    ` for ${formatPrice(detailInvoice.totalAmount)}. Thank you for staying with us.`;
+
+  // Share means WhatsApp. It is the one channel this desk sends bills on, so
+  // the button goes straight there rather than asking which of several ways
+  // the guest would like it — the answer was the same every time.
+  //
+  // A browser cannot attach a local file to a wa.me link, so the PDF is saved
+  // first and the chat opens behind it for the desk to attach. Ordered that
+  // way deliberately: the file is on disk before the new tab takes focus, so
+  // it is already waiting in the attach dialog.
+  const handleShareWhatsApp = () =>
+    runPdfAction('share', async (blob, filename) => {
+      downloadPdf(blob, filename);
+      openExternal(buildWhatsAppLink(detailInvoice.guestPhone, shareMessage()));
+    });
 
   const handleVoid = async (e) => {
     e.preventDefault();
@@ -1604,16 +1695,42 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                     working out a discount first is the difference between
                     "he gave me 1500" and arithmetic. */}
                 <div className="form-section">
-                  <div className="form-section__title">Balance collected</div>
+                  {/* An instruction, not a heading. "Balance collected" sat
+                      directly under "Balance due" and read as a second figure
+                      the modal was reporting back — one more line of the
+                      summary above it — rather than as the one thing on this
+                      form the desk still has to answer. The rows below it went
+                      unnoticed until the bill was refused for them. */}
+                  <div className="form-section__title">Record how the guest paid</div>
+                  {/* Names the figure the rows have to reach. The amount is
+                      prefilled with it, so this is confirmation of what is
+                      being settled rather than a sum to work out — and when a
+                      discount moves the balance, it moves here too. */}
+                  <p className="billing-panel__hint billing-panel__collect-hint">
+                    {nothingDue
+                      ? 'The advance already covers this bill. Nothing is left to collect — issue it as it stands.'
+                      : `${formatPrice(balanceDue)} is due. Choose the payment type for each amount taken.`}
+                  </p>
                   {/* No Amount box: what the guest handed over is however much
                       these rows add up to. The discount the bill has to give up
                       to land on that figure is still solved server-side — see
                       the target effect, which waits for the rows to be complete
-                      before moving it. */}
+                      before moving it.
+
+                      No rows at all when nothing is due. They used to sit here
+                      empty, marked required, under a line saying there was
+                      nothing to collect — a form contradicting itself, and one
+                      that refused to submit until a payment was made up. */}
+                  {!nothingDue && (
                   <PaymentLines
                     lines={payLines}
                     onChange={setPayLinesInput}
                     idPrefix="bill"
+                    // A bill is written when the guest settles, so unlike an
+                    // advance there is no such thing as leaving this blank —
+                    // the rows say so on sight rather than at the failed
+                    // submit.
+                    required
                     error={
                       <>
                         {issueFieldError('collectedAmount')}
@@ -1624,6 +1741,7 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                       </>
                     }
                   />
+                  )}
                 </div>
 
                 {/* Last on the form, because everything above it changes what
@@ -1648,8 +1766,15 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                         {/* Marked as the print target too: staff do print
                             from the issue form to check a bill before
                             committing to it. */}
-                        <div className="bill-print-target">
-                          <BillDocument invoice={documentPreview} lang={billLang} />
+                        <div
+                          className="bill-print-target"
+                          style={
+                            issuePreviewHeight
+                              ? { '--bill-preview-h': `${issuePreviewHeight}px` }
+                              : undefined
+                          }
+                        >
+                          <BillDocument ref={attachIssuePreview} invoice={documentPreview} lang={billLang} />
                         </div>
                       </>
                     )}
@@ -1700,7 +1825,7 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                           style={{ width: BILL_PDF_WIDTH }}
                           aria-hidden="true"
                         >
-                          <BillDocument ref={issueMeasureRef} invoice={documentPreview} lang={billLang} />
+                          <BillDocument ref={attachIssueMeasure} invoice={documentPreview} lang={billLang} />
                         </div>
                       </>
                     )}
@@ -1775,19 +1900,57 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                   <button type="button" className="btn-secondary" onClick={closeDetail}>
                     Done
                   </button>
-                  <button type="button" className="btn-secondary" onClick={handlePrint}>
-                    Print
-                  </button>
                   <button
-                  type="button"
-                  className="btn-accent bill-actions__icon-btn"
-                  onClick={handleSharePdf}
-                  disabled={pdfBusy}
-                  aria-label={pdfBusy ? 'Preparing the PDF' : 'Share or download this bill as a PDF'}
-                  title={pdfBusy ? 'Preparing…' : 'Share / Download PDF'}
-                >
-                  <DownloadIcon />
-                </button>
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handlePrint}
+                    disabled={pdfBusy !== null}
+                    title={pdfBusy === 'print' ? 'Preparing…' : 'Print this bill'}
+                  >
+                    {pdfBusy === 'print' ? 'Preparing…' : 'Print'}
+                  </button>
+                  {/* Two actions, two buttons. The single control they
+                      replaced could only ever do one of them: it opened the
+                      OS share sheet where the device had one and downloaded
+                      where it didn't, so a tablet could not save the file and
+                      a desktop could not send it. The desk does both, often
+                      for the same bill.
+
+                      Download keeps the accent — it is the one that always
+                      finishes on its own. */}
+                  <button
+                    type="button"
+                    className="btn-accent bill-actions__icon-btn"
+                    onClick={handleDownloadPdf}
+                    disabled={pdfBusy !== null}
+                    aria-label={
+                      pdfBusy === 'download' ? 'Preparing the PDF' : 'Download this bill as a PDF'
+                    }
+                    title={pdfBusy === 'download' ? 'Preparing…' : 'Download PDF'}
+                  >
+                    <DownloadIcon />
+                  </button>
+                  {/* Share means WhatsApp — the one channel bills go out on
+                      here, so the button does it rather than asking. The PDF
+                      saves as the chat opens: a browser cannot attach a local
+                      file to a wa.me link, and the title says so rather than
+                      letting it be found out one unsent bill at a time. */}
+                  <button
+                    type="button"
+                    className="btn-secondary bill-actions__icon-btn"
+                    onClick={handleShareWhatsApp}
+                    disabled={pdfBusy !== null}
+                    aria-label={
+                      pdfBusy === 'share' ? 'Preparing the PDF' : 'Send this bill on WhatsApp'
+                    }
+                    title={
+                      pdfBusy === 'share'
+                        ? 'Preparing…'
+                        : 'Send on WhatsApp — the PDF downloads to attach'
+                    }
+                  >
+                    <ShareIcon />
+                  </button>
                   {/* Last, and a link rather than a button: voiding is the one
                       irreversible thing on this screen and must not read as a
                       peer of Print. */}
@@ -1806,8 +1969,14 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                 print stylesheet keys off — the modal holds other copies of the
                 same document (the PDF source, the paper thumbnails) and only
                 this one is the bill. */}
-            <div className="bill-print-target">
-              <BillDocument ref={billPreviewRef} invoice={detailInvoice} lang={billLang} />
+            <div
+              className="bill-print-target"
+              // The bill's own height, for the box it is scaled inside. Unset
+              // until measured, and the box then falls back to its natural
+              // (unscaled) height for that first frame rather than to a guess.
+              style={previewHeight ? { '--bill-preview-h': `${previewHeight}px` } : undefined}
+            >
+              <BillDocument ref={attachPreview} invoice={detailInvoice} lang={billLang} />
             </div>
 
             {/* The same bill on each stock it can be printed on, drawn to the
@@ -1851,7 +2020,7 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
               style={{ width: BILL_PDF_WIDTH }}
               aria-hidden="true"
             >
-              <BillDocument ref={billRef} invoice={detailInvoice} lang={billLang} />
+              <BillDocument ref={attachBill} invoice={detailInvoice} lang={billLang} />
             </div>
 
             {detailInvoice.status === 'VOID' && (

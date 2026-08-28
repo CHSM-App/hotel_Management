@@ -393,23 +393,36 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
   };
 }
 
-// Rooms a booking could move into for an edited check-out date — same
-// overlap rule as listAvailableRooms, but excludes the booking's own
-// occupancy so its current room still shows up as a valid choice (it isn't
-// "conflicting with itself").
-async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate) {
+// Rooms a booking could move into for an edited date range — same overlap
+// rule as listAvailableRooms, but excludes the booking's own occupancy so
+// its current room still shows up as a valid choice (it isn't "conflicting
+// with itself").
+//
+// requestedCheckInDate is the date the edit form currently has in its box,
+// which is not necessarily the one on file — a reservation being re-dated has
+// to be shown the rooms free over the range being *proposed*. Absent means the
+// edit isn't moving the arrival, so the stored date stands; a caller that
+// hasn't learned about re-dating keeps getting exactly what it got before.
+async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, requestedCheckInDate = null) {
   const pool = await getPool();
 
   const bookingResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
-    .query('SELECT check_in_date FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId');
+    .query('SELECT check_in_date, status FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId');
   const bookingRow = bookingResult.recordset[0];
   if (!bookingRow) {
     throw new ApiError('Booking not found.', 404);
   }
-  const checkInDate = toIsoDate(bookingRow.check_in_date);
+  const storedCheckInDate = toIsoDate(bookingRow.check_in_date);
+  // The same rule updateBooking enforces on save, applied here so the picker
+  // never offers rooms against a range the save would go on to refuse.
+  const checkInDate =
+    requestedCheckInDate && bookingRow.status === 'BOOKED' ? requestedCheckInDate : storedCheckInDate;
+  if (checkOutDate <= checkInDate) {
+    throw new ApiError('Check-out date must be after check-in date.', 400);
+  }
 
   const roomsResult = await pool
     .request()
@@ -479,6 +492,15 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
            r.room_number, c.name AS category_name,
            (SELECT STRING_AGG(bv.vehicle_number, ', ') FROM dbo.booking_vehicles bv WHERE bv.booking_id = b.id)
              AS vehicle_numbers,
+           -- The rest of the party. The register's search box has to find a
+           -- stay by anyone travelling on it, not only by whoever's name went
+           -- on the booking, so the co-guests come down with the row rather
+           -- than costing a trip per booking to ask who else is on it.
+           -- Aggregated on a control character for the same reason the chart
+           -- does it: a name carrying a comma would otherwise arrive as two
+           -- people.
+           (SELECT STRING_AGG(g.guest_name, CHAR(31)) FROM dbo.booking_guests g
+            WHERE g.booking_id = b.id) AS co_guest_names,
            i.invoice_number, i.total_amount AS invoice_total_amount
     FROM dbo.bookings b
     JOIN dbo.rooms r ON r.id = b.room_id
@@ -501,6 +523,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
     idProofNumber: row.id_proof_number ?? null,
     hasIdProofDocument: !!row.id_proof_document,
     vehicleNumbers: row.vehicle_numbers ? row.vehicle_numbers.split(', ') : [],
+    coGuestNames: row.co_guest_names ? row.co_guest_names.split('') : [],
     roomNumber: row.room_number,
     categoryName: row.category_name,
     checkInDate: toIsoDate(row.check_in_date),
@@ -543,11 +566,32 @@ async function getTapeChart(lodgeId, startDate, endDate) {
     .input('startDate', sql.Date, startDate)
     .input('endDate', sql.Date, endDate)
     .query(`
-      SELECT id, room_id, guest_name, guest_phone, check_in_date, check_out_date, status, total_price
-      FROM dbo.bookings
-      WHERE lodge_id = @lodgeId AND status IN ('BOOKED', 'CHECKED_IN', 'CHECKED_OUT')
-        AND check_in_date < @endDate AND check_out_date > @startDate
-      ORDER BY check_in_date ASC
+      SELECT b.id, b.room_id, b.guest_name, b.guest_phone, b.id_proof_number,
+             b.check_in_date, b.check_out_date, b.status, b.total_price,
+             -- What the chart's search box matches on beyond the primary guest.
+             -- Both are aggregated here rather than fetched per booking: the
+             -- chart already draws every stay in the window, and a second round
+             -- trip per tile to answer "is this the Sharma party?" would cost
+             -- far more than two joins do.
+             -- Aggregated with a control character rather than a comma or a
+             -- pipe: the client splits on this, and a guest whose name or ID
+             -- carries the separator would otherwise arrive as two people.
+             (SELECT STRING_AGG(g.guest_name, CHAR(31)) FROM dbo.booking_guests g
+              WHERE g.booking_id = b.id) AS co_guest_names,
+             (SELECT STRING_AGG(g.id_proof_number, CHAR(31)) FROM dbo.booking_guests g
+              WHERE g.booking_id = b.id AND g.id_proof_number IS NOT NULL) AS co_guest_id_numbers,
+             i.invoice_number
+      FROM dbo.bookings b
+      -- The issued bill, if the stay has been billed. OUTER APPLY rather than a
+      -- join so an unbilled stay still draws — most of the chart is unbilled.
+      OUTER APPLY (
+        SELECT TOP 1 invoice_number FROM dbo.invoices
+        WHERE booking_id = b.id AND status = 'ISSUED'
+        ORDER BY created_at DESC
+      ) i
+      WHERE b.lodge_id = @lodgeId AND b.status IN ('BOOKED', 'CHECKED_IN', 'CHECKED_OUT')
+        AND b.check_in_date < @endDate AND b.check_out_date > @startDate
+      ORDER BY b.check_in_date ASC
     `);
 
   // Kept apart from `bookings` rather than merged with a flag: a draft holds
@@ -570,6 +614,14 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       roomId: b.room_id,
       guestName: b.guest_name,
       guestPhone: b.guest_phone,
+      // The rest of what the stay can be looked up by on the chart. Names, not
+      // shown on any tile — the chart deliberately keeps guests off the grid —
+      // but searched, so typing a co-guest or a bill number finds the strip
+      // that guest is actually on.
+      idProofNumber: b.id_proof_number ?? null,
+      invoiceNumber: b.invoice_number ?? null,
+      coGuestNames: b.co_guest_names ? b.co_guest_names.split('\u001f') : [],
+      coGuestIdNumbers: b.co_guest_id_numbers ? b.co_guest_id_numbers.split('\u001f') : [],
       checkInDate: toIsoDate(b.check_in_date),
       checkOutDate: toIsoDate(b.check_out_date),
       status: b.status,
@@ -1500,9 +1552,11 @@ async function checkOut(lodgeId, bookingId, { lateCharge = 0 } = {}) {
 // matching billing's own "already invoiced" guard on issueInvoice. Room
 // and check-out date changes are further restricted to BOOKED/CHECKED_IN —
 // once a guest has actually checked out there's no "stay" left to move or
-// extend, only extras can still be corrected. check-in date is never
-// editable here; changing when a stay started is a cancel-and-rebook, not
-// an edit.
+// extend, only extras can still be corrected. The check-in date is narrower
+// still: only a booking that hasn't been checked in yet can be moved, because
+// once a guest is in the room the day they arrived is a recorded fact rather
+// than a plan. Re-dating a reservation is an ordinary desk correction; re-dating
+// a stay already under way is a cancel-and-rebook.
 async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const pool = await getPool();
 
@@ -1531,18 +1585,31 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     throw new ApiError('This booking already has an issued bill. Void it before editing.', 409);
   }
 
-  const checkInDate = toIsoDate(bookingRow.check_in_date);
+  const currentCheckInDate = toIsoDate(bookingRow.check_in_date);
   const currentCheckOutDate = toIsoDate(bookingRow.check_out_date);
-  const changingStayDetails = input.checkOutDate != null || input.roomId != null;
+  const changingStayDetails =
+    input.checkInDate != null || input.checkOutDate != null || input.roomId != null;
 
   if (changingStayDetails && bookingRow.status === 'CHECKED_OUT') {
     throw new ApiError('This stay is already checked out — only extras can still be edited.', 409);
   }
 
   const newRoomId = input.roomId ?? bookingRow.room_id;
+  const newCheckInDate = input.checkInDate ?? currentCheckInDate;
   const newCheckOutDate = input.checkOutDate ?? currentCheckOutDate;
 
-  if (newCheckOutDate <= checkInDate) {
+  // A guest standing in the room arrived on a particular day, and that day is
+  // now part of the record — the folio, the register and any receipt already
+  // raised all read from it. Sending the same date back is not a change, so a
+  // form that posts every field it shows keeps working on a checked-in stay.
+  if (newCheckInDate !== currentCheckInDate && bookingRow.status !== 'BOOKED') {
+    throw new ApiError(
+      'The guest has already checked in — the check-in date can’t be changed. Cancel and rebook instead.',
+      409
+    );
+  }
+
+  if (newCheckOutDate <= newCheckInDate) {
     throw new ApiError('Check-out date must be after check-in date.', 400);
   }
 
@@ -1559,14 +1626,17 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
 
   // Whether this edit can free or take a night. An edit that only corrects a
   // phone number moves no dates and needs no availability check at all.
-  const movingStay = newRoomId !== bookingRow.room_id || newCheckOutDate !== currentCheckOutDate;
+  const movingStay =
+    newRoomId !== bookingRow.room_id ||
+    newCheckInDate !== currentCheckInDate ||
+    newCheckOutDate !== currentCheckOutDate;
 
   // Pre-flight only — see the matching note in createBooking. The binding check
   // is inside the transaction below, because everything between here and there
   // (guest list, charges, pricing) is several round trips during which another
   // clerk can take the room.
   if (movingStay) {
-    const conflict = await hasOverlap(() => pool.request(), newRoomId, checkInDate, newCheckOutDate, bookingId);
+    const conflict = await hasOverlap(() => pool.request(), newRoomId, newCheckInDate, newCheckOutDate, bookingId);
     if (conflict) {
       throw new ApiError('That room is already booked for part of this date range.', 409);
     }
@@ -1635,7 +1705,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const { nights, totalPrice, discountAmount, grossTotal } = await priceStay(
     lodgeId,
     newRoomId,
-    checkInDate,
+    newCheckInDate,
     newCheckOutDate,
     switchableCharges,
     newBaseRate,
@@ -1669,7 +1739,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       const conflict = await hasOverlap(
         () => new sql.Request(transaction),
         newRoomId,
-        checkInDate,
+        newCheckInDate,
         newCheckOutDate,
         bookingId,
         { lock: true }
@@ -1684,6 +1754,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)
       .input('roomId', sql.BigInt, newRoomId)
+      .input('checkInDate', sql.Date, newCheckInDate)
       .input('checkOutDate', sql.Date, newCheckOutDate)
       .input('numGuests', sql.Int, newNumGuests)
       .input('guestName', sql.NVarChar, newGuestName)
@@ -1711,7 +1782,8 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .query(`
         UPDATE dbo.bookings
-        SET room_id = @roomId, check_out_date = @checkOutDate, num_guests = @numGuests,
+        SET room_id = @roomId, check_in_date = @checkInDate, check_out_date = @checkOutDate,
+            num_guests = @numGuests,
             guest_name = @guestName, guest_phone = @guestPhone,
             total_price = @totalPrice, discount_amount = @discountAmount,
             nightly_breakdown = @nightlyBreakdown,

@@ -1060,33 +1060,65 @@
   flex-wrap: wrap;
 }
 
+/* Built as a peer of .btn-accent beside it — same geometry, same weight, same
+   lift — so the two read as one pair of actions rather than a button and a
+   footnote. The colour is the only thing that differs, and it is the tape
+   chart's own draft yellow, which is what makes it findable on a page that is
+   otherwise red, blue and slate.
+
+   Dark ink rather than the white .btn-accent uses: white on #f2c31d measures
+   1.67:1, far under the 4.5 this text size needs. The yellow is a light hue and
+   has to be read against, not on top of — so the fill stays exactly the chart's
+   and the text goes dark. */
 .bookings-panel__draft-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  border: 1px dashed var(--brand);
-  border-radius: 999px;
-  background: var(--paper);
-  color: var(--brand-ink);
+  gap: 8px;
+  padding: 12px 18px;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--tape-draft, #f2c31d);
+  color: #3d2c00;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  /* The amber cast of .btn-accent's red-tinted shadow, so the lift belongs to
+     the button's own colour instead of floating on a neutral grey. */
+  box-shadow: 5px 5px 12px rgba(150, 112, 6, 0.28), -5px -5px 12px var(--neu-light);
+  transition: background 150ms ease, box-shadow 150ms ease;
 }
 
 .bookings-panel__draft-chip:hover {
-  background: #eef4f2;
+  background: var(--tape-draft-deep, #d4a70c);
+  box-shadow: 7px 7px 16px rgba(150, 112, 6, 0.32), -7px -7px 16px var(--neu-light);
 }
 
-/* Dashed border and a hollow dot on purpose: everything else on this screen
-   that carries a solid marker is a real, committed stay. */
-.bookings-panel__draft-chip-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 2px solid var(--brand);
+.bookings-panel__draft-chip:active {
+  box-shadow: inset 3px 3px 7px rgba(92, 68, 4, 0.45),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+}
+
+.bookings-panel__draft-chip svg {
+  flex: none;
+}
+
+/* Nothing parked. A filled yellow button shouting for attention when there is
+   nothing to attend to is worse than no button, so at zero it keeps its shape
+   and place but drops to the page's own surface — still findable, no longer
+   claiming the eye. Still live: it opens the panel that says what a draft is. */
+.bookings-panel__draft-chip--empty {
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-raised);
+}
+
+.bookings-panel__draft-chip--empty:hover {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-raised-hover);
 }
 
 
@@ -1474,4 +1506,17 @@
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--text-muted);
+}
+/* "Collect full payment now", above the payment rows. A chip like the extras
+   above it rather than a field: it is one choice, made once. */
+.booking-form__full-pay {
+  margin-bottom: 10px;
+}
+
+/* The badge a full payment earns. Green, not the badge's neutral, because
+   "paid in full" is the one state of this section that closes a question —
+   there is nothing left to collect at check-out. */
+.form-section__badge--full {
+  background: #e3f3e8;
+  color: #1d6b3a;
 }

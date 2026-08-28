@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiGetBlob, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
+import { useUrlState } from '../../lib/urlState';
+import { STAY_STATUS_CHIP_LABEL } from './stayFormat';
 import { formatPrice } from './priceFormat';
 import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
@@ -9,6 +11,11 @@ import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './GuestRegister.css';
 
+// The record's own wording, kept for the open guest record's header badge. The
+// list's Status column reads from STAY_STATUS_CHIP_LABEL instead, to match the
+// filter chips sitting directly above it — a column answering the cut you just
+// asked for should use the cut's words. An opened record is not answering a
+// filter, so it names the state the booking is in.
 const STATUS_LABEL = { BOOKED: 'Booked', CHECKED_IN: 'Checked in', CHECKED_OUT: 'Checked out', CANCELLED: 'Cancelled' };
 const VEHICLE_TYPE_LABEL = {
   TWO_WHEELER: 'Two wheeler',
@@ -17,14 +24,27 @@ const VEHICLE_TYPE_LABEL = {
   BUS: 'Bus',
 };
 
-// A cancelled stay reads as a problem, not as another finished one — the
-// register is scanned for exceptions as often as it's read row by row.
+// Coloured as the tape chart colours the same states, so a stay recognised by
+// its red tile on the chart is recognised by a red badge here. A cancelled stay
+// has no tile there and keeps the register's danger wash: it reads as a problem,
+// not as another finished one, and the register is scanned for exceptions as
+// often as it's read row by row.
 const STATUS_BADGE = {
-  BOOKED: 'badge--accent',
-  CHECKED_IN: 'badge--on',
-  CHECKED_OUT: 'badge--off',
-  CANCELLED: 'badge--inactive',
+  BOOKED: 'guest-register__status-badge--booked',
+  CHECKED_IN: 'guest-register__status-badge--checked-in',
+  CHECKED_OUT: 'guest-register__status-badge--checked-out',
+  CANCELLED: 'guest-register__status-badge--cancelled',
 };
+
+// A draft worth listing. Deliberately looser than the tape chart's own check:
+// that one guards the booking form it restores into, which crashes on a payload
+// saved against an older shape. The register only reads the scalar fields the
+// server lifted out of the payload and shows a dash where one is missing, so a
+// draft with an unreadable form is still a real parked row and still openable
+// from the chart. All that is required is an identity to key the row by.
+function listableDraft(draft) {
+  return Boolean(draft && draft.id != null);
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -59,13 +79,30 @@ const RANGE_PRESETS = [
   },
 ];
 
+// Worded as the tape chart's legend words them, so a colour followed from the
+// chart lands on a chip that says the same thing. All has no counterpart there —
+// the chart has no "everything" tile — and Cancelled never reaches it, since a
+// cancelled stay holds no nights to draw.
+// swatch is the dot the chip carries, in the tape chart's colour for that state
+// — the same swatch the chart's own legend shows, so the colour a desk learned
+// from the chart is the colour it picks a cut by here. 'ALL' has no dot: it is
+// not a state, it is the absence of a cut.
 const STATUS_FILTERS = [
   { key: 'ALL', label: 'All' },
-  { key: 'CHECKED_IN', label: 'In house' },
-  { key: 'BOOKED', label: 'Booked' },
-  { key: 'CHECKED_OUT', label: 'Checked out' },
-  { key: 'CANCELLED', label: 'Cancelled' },
+  { key: 'CHECKED_IN', label: STAY_STATUS_CHIP_LABEL.CHECKED_IN, swatch: 'checked-in' },
+  { key: 'BOOKED', label: STAY_STATUS_CHIP_LABEL.BOOKED, swatch: 'booked' },
+  { key: 'CHECKED_OUT', label: STAY_STATUS_CHIP_LABEL.CHECKED_OUT, swatch: 'checked-out' },
+  { key: 'CANCELLED', label: STAY_STATUS_CHIP_LABEL.CANCELLED, swatch: 'cancelled' },
 ];
+
+// Parked forms, kept out of STATUS_FILTERS because a draft is not a booking
+// status — it is a different kind of record, and the cuts above all divide the
+// same list of stays. Appended to the row only when there are drafts to show,
+// so a desk that never parks a form never sees a chip for them.
+//
+// Yellow, as the chart draws them: a draft is not a weaker booking but a
+// different thing, which is why the chart gives it a hue of its own.
+const DRAFT_FILTER = { key: 'DRAFT', label: 'Draft', swatch: 'draft' };
 
 function nightsBetween(fromStr, toStr) {
   const ms = new Date(`${toStr}T00:00:00Z`) - new Date(`${fromStr}T00:00:00Z`);
@@ -124,7 +161,22 @@ export default function GuestRegister() {
   const [fromDate, setFromDate] = useState(startOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  // In the query string rather than component state, so the cut can be linked
+  // to — the tape chart's legend points here with a status already chosen, and
+  // a refresh keeps it. 'ALL' is the fallback, so the plain register stays a
+  // clean /dashboard?section=guests with nothing appended.
+  const [statusParam, setStatusFilter] = useUrlState('status', 'ALL');
+  // A hand-edited or stale link must not leave the chips showing nothing
+  // selected while the list silently filters on a status that doesn't exist.
+  //
+  // DRAFT is checked alongside the statuses even though it isn't one of them:
+  // it is a real cut this screen offers, and leaving it out of the guard made
+  // choosing the Draft chip fall straight back to 'ALL' — the URL said DRAFT
+  // and the list showed every booking.
+  const statusFilter =
+    statusParam === DRAFT_FILTER.key || STATUS_FILTERS.some((s) => s.key === statusParam)
+      ? statusParam
+      : 'ALL';
   // Seeded from what this session already fetched for the range the page opens
   // on, so coming back paints the register immediately instead of showing a
   // loading state while a request crosses to the database. Changing the range
@@ -134,6 +186,13 @@ export default function GuestRegister() {
     readCache(`/bookings?fromDate=${startOfMonthIso()}&toDate=${todayIso()}`)
   );
   const [error, setError] = useState('');
+  // Parked booking forms, shown only under their own filter. Null means "no
+  // drafts to offer" — either none are parked, or this login can't read them:
+  // /bookings/drafts requires bookings.manage, while the register itself opens
+  // to guests.view, so a role with only the latter reaches this screen and is
+  // refused that list. That refusal is expected, not an error, so it is held
+  // apart from `error` and the Draft chip simply never appears.
+  const [drafts, setDrafts] = useState(() => readCache('/bookings/drafts'));
 
   // Bumped to ask for the same range again — a failed fetch retried from the
   // message that reported it, or the desk pulling the range fresh after a
@@ -172,6 +231,28 @@ export default function GuestRegister() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeKey]);
 
+  // Drafts are not filed under a date range — a parked form may name no dates at
+  // all — so they are fetched once per reload rather than per range, and the
+  // range filter is not applied to them.
+  useEffect(() => {
+    let active = true;
+    apiGet('/bookings/drafts', { token })
+      .then((data) => {
+        if (!active) return;
+        setDrafts(writeCache('/bookings/drafts', (data.drafts || []).filter(listableDraft)));
+      })
+      // Deliberately silent. The commonest cause is a role that can read the
+      // register but not the tape chart, for which "no drafts" is the correct
+      // answer rather than a failure worth a banner over the whole screen.
+      .catch(() => {
+        if (active) setDrafts(null);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadToken]);
+
   const query = search.trim().toLowerCase();
   // Searched first, filtered by status second — so the status chips can carry
   // how many rows each one holds within what's been searched for.
@@ -181,16 +262,51 @@ export default function GuestRegister() {
       b.guestName.toLowerCase().includes(query) ||
       b.roomNumber.toLowerCase().includes(query) ||
       (b.invoiceNumber || '').toLowerCase().includes(query) ||
-      (b.guestPhone || '').includes(query)
+      (b.guestPhone || '').includes(query) ||
+      // A party is booked under one name but the desk is as likely to be asked
+      // for anyone travelling on it — the person at the counter is not always
+      // the one the room was taken in. Matched field by field rather than on a
+      // joined string so a query cannot run off the end of one name into the
+      // start of the next.
+      (b.coGuestNames || []).some((n) => n.toLowerCase().includes(query))
     );
   });
 
-  const filtered = searched?.filter((b) => statusFilter === 'ALL' || b.status === statusFilter);
+  // The same query against the two fields a parked form is likely to be looked
+  // up by. A draft has no bill and often no phone, so there is less to match on
+  // than a booking offers.
+  const searchedDrafts = (drafts || []).filter((d) => {
+    if (!query) return true;
+    return (
+      (d.guestName || '').toLowerCase().includes(query) ||
+      (d.roomNumber || '').toLowerCase().includes(query)
+    );
+  });
+
+  // Drafts are their own cut rather than a status within the stays, so the
+  // booking list is emptied when that cut is chosen and vice versa. `filtered`
+  // stays exactly what it was for every other filter — the summary strip and
+  // the row table both read it, and neither can total a parked form.
+  const showingDrafts = statusFilter === DRAFT_FILTER.key;
+  const filtered = showingDrafts
+    ? []
+    : searched?.filter((b) => statusFilter === 'ALL' || b.status === statusFilter);
+  const filteredDrafts = showingDrafts ? searchedDrafts : [];
 
   const statusCounts = (searched || []).reduce((acc, b) => {
     acc[b.status] = (acc[b.status] || 0) + 1;
     return acc;
   }, {});
+  statusCounts[DRAFT_FILTER.key] = searchedDrafts.length;
+
+  // Appended only when there is something parked to look at — see DRAFT_FILTER.
+  //
+  // Also kept while that cut is the one showing, even after the last draft is
+  // finished or a link arrives before the drafts have loaded: a chip that
+  // vanished from under the current selection would leave the row with nothing
+  // pressed and the table showing drafts, with no way back but the browser.
+  const statusFilters =
+    drafts?.length || showingDrafts ? [...STATUS_FILTERS, DRAFT_FILTER] : STATUS_FILTERS;
 
   // Read off the rows on screen, so the strip always answers for the range and
   // filter the register is currently showing rather than for the whole month.
@@ -438,16 +554,31 @@ export default function GuestRegister() {
           </div>
 
           <div className="guest-register__status-filters" role="group" aria-label="Filter by status">
-            {STATUS_FILTERS.map((s) => {
+            {statusFilters.map((s) => {
+              // ALL counts stays only, not drafts — it is the whole of the list
+              // the other status chips cut up, and a parked form is not in it.
               const count = s.key === 'ALL' ? searched?.length : statusCounts[s.key];
               return (
                 <button
                   key={s.key}
                   type="button"
-                  className="guest-register__status-chip"
+                  className={`guest-register__status-chip${
+                    // Dimmed only once the rows are in — before that a count of
+                    // zero means "not loaded", not "none of these".
+                    bookings && s.swatch && !count ? ' guest-register__status-chip--empty' : ''
+                  }`}
                   aria-pressed={statusFilter === s.key}
                   onClick={() => setStatusFilter(s.key)}
                 >
+                  {/* Decorative: the chip says its status in words beside it,
+                      so the dot repeats rather than adds, and a screen reader
+                      reading it out would only be noise. */}
+                  {s.swatch && (
+                    <i
+                      aria-hidden="true"
+                      className={`guest-register__status-swatch guest-register__status-swatch--${s.swatch}`}
+                    />
+                  )}
                   {s.label}
                   {bookings && <span className="guest-register__status-count">{count || 0}</span>}
                 </button>
@@ -456,12 +587,26 @@ export default function GuestRegister() {
           </div>
 
           {/* One way back to the full list, so a desk that has narrowed the
-              register three times over never has to undo each one. */}
-          {filtersActive && (
-            <button type="button" className="guest-register__clear-filters" onClick={clearFilters}>
-              Clear filters
-            </button>
-          )}
+              register three times over never has to undo each one.
+
+              Always in the layout, hidden rather than unmounted while there is
+              nothing to clear. The toolbar is justify-content: space-between, so
+              mounting a third child on the first cut would re-divide the row and
+              slide the status chips left out from under the pointer that had
+              just chosen one. Holding its space keeps the chips still. */}
+          <button
+            type="button"
+            className={`guest-register__clear-filters${
+              filtersActive ? '' : ' guest-register__clear-filters--idle'
+            }`}
+            onClick={clearFilters}
+            // Inert while invisible, so it is not a tab stop and is not read
+            // out as an offer to clear filters that are not applied.
+            disabled={!filtersActive}
+            aria-hidden={!filtersActive}
+          >
+            Clear filters
+          </button>
         </div>
 
         {!validRange && (
@@ -471,8 +616,11 @@ export default function GuestRegister() {
         )}
       </div>
 
-      {/* What the range came to, before the rows are read one by one. */}
-      {!error && bookings && (
+      {/* What the range came to, before the rows are read one by one. Not while
+          the drafts cut is showing: every tile here totals stays — guests booked
+          in, money billed — and a parked form has none of it, so the strip would
+          read as four zeroes against rows that are plainly there. */}
+      {!error && bookings && !showingDrafts && (
         <div className="guest-register__stats">
           <div className="guest-register__stat">
             <span className="guest-register__stat-label">Stays</span>
@@ -548,7 +696,7 @@ export default function GuestRegister() {
 
       {/* Every empty state ends in the thing to do next, not just the news that
           there's nothing here. */}
-      {!error && bookings && filtered.length === 0 && (
+      {!error && bookings && filtered.length === 0 && filteredDrafts.length === 0 && (
         <div className="dash-card">
           <div className="dash-state guest-register__empty">
             <span className="guest-register__empty-icon" aria-hidden="true">
@@ -569,14 +717,23 @@ export default function GuestRegister() {
             <p className="guest-register__empty-title">
               {query
                 ? `No guest matching “${search.trim()}”`
-                : statusFilter !== 'ALL'
-                  ? 'No stays with this status'
-                  : 'No guests in these dates'}
+                : showingDrafts
+                  ? 'Nothing parked right now'
+                  : statusFilter !== 'ALL'
+                    ? 'No stays with this status'
+                    : 'No guests in these dates'}
             </p>
             <p>
-              {filtersActive
-                ? 'Try a different spelling, or widen the dates.'
-                : 'Nothing was recorded between these dates. Pick a wider range to look further back.'}
+              {/* Drafts aren't filed under the date range, so widening it would
+                  do nothing — the only thing that can be wrong here is the
+                  search. */}
+              {showingDrafts
+                ? query
+                  ? 'Try a different spelling — drafts are found by guest name or room.'
+                  : 'A booking form saved before it was finished will show up here.'
+                : filtersActive
+                  ? 'Try a different spelling, or widen the dates.'
+                  : 'Nothing was recorded between these dates. Pick a wider range to look further back.'}
             </p>
             <div className="guest-register__empty-actions">
               {query && (
@@ -603,20 +760,26 @@ export default function GuestRegister() {
         </div>
       )}
 
-      {!error && bookings && filtered.length > 0 && (
+      {!error && bookings && (filtered.length > 0 || filteredDrafts.length > 0) && (
         <div className="dash-card">
           <div className="guest-register__card-head">
             <div>
-              <h3 className="guest-register__card-title">Register</h3>
+              <h3 className="guest-register__card-title">{showingDrafts ? 'Drafts' : 'Register'}</h3>
               <p className="guest-register__card-sub">
-                {formatDateLong(fromDate)} to {formatDateLong(toDate)}
+                {/* Drafts are not filed under the range, so naming it here would
+                    claim a filter that isn't being applied to them. */}
+                {showingDrafts
+                  ? 'Booking forms saved before they were finished'
+                  : `${formatDateLong(fromDate)} to ${formatDateLong(toDate)}`}
               </p>
             </div>
             <div className="guest-register__card-tools">
               <span className="guest-register__card-count">
-                {filtered.length === bookings.length
-                  ? `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`
-                  : `${filtered.length} of ${bookings.length} entries`}
+                {showingDrafts
+                  ? `${filteredDrafts.length} ${filteredDrafts.length === 1 ? 'draft' : 'drafts'}`
+                  : filtered.length === bookings.length
+                    ? `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`
+                    : `${filtered.length} of ${bookings.length} entries`}
               </span>
               {/* Check-ins happen while this screen is open. */}
               <button
@@ -652,9 +815,9 @@ export default function GuestRegister() {
             <table className="dash-table guest-register__table">
               <thead>
                 <tr>
+                  <th>Room</th>
                   <th>Bill No</th>
                   <th>Guest</th>
-                  <th>Room</th>
                   <th>Came in</th>
                   <th>Left</th>
                   <th className="guest-register__col-amount">Amount</th>
@@ -664,6 +827,12 @@ export default function GuestRegister() {
               </thead>
               <tbody>
                 {filtered.map((b) => {
+                  // Why this row is in the results when the name on it is not
+                  // what was typed. Without it a co-guest hit reads as the
+                  // search having gone wrong.
+                  const matchedCoGuest = query
+                    ? (b.coGuestNames || []).find((n) => n.toLowerCase().includes(query))
+                    : null;
                   const cameIn = splitStamp(b.actualCheckInAt);
                   const left = splitStamp(b.actualCheckOutAt);
                   const nights = nightsBetween(b.checkInDate, b.checkOutDate);
@@ -674,6 +843,10 @@ export default function GuestRegister() {
                         b.status === 'CHECKED_IN' ? ' guest-register__row--in-house' : ''
                       }`}
                     >
+                      <td>
+                        <div className="guest-register__cell-main">{b.roomNumber}</div>
+                        <div className="guest-register__cell-sub">{b.categoryName}</div>
+                      </td>
                       <td>
                         {b.invoiceNumber ? (
                           <span className="guest-register__bill-no">{b.invoiceNumber}</span>
@@ -705,10 +878,11 @@ export default function GuestRegister() {
                           )}
                           {b.numGuests > 1 ? ` · ${b.numGuests} people` : ''}
                         </div>
-                      </td>
-                      <td>
-                        <div className="guest-register__cell-main">{b.roomNumber}</div>
-                        <div className="guest-register__cell-sub">{b.categoryName}</div>
+                        {matchedCoGuest && !b.guestName.toLowerCase().includes(query) && (
+                          <div className="guest-register__cell-match">
+                            with {matchedCoGuest}
+                          </div>
+                        )}
                       </td>
                       <td>
                         {cameIn ? (
@@ -745,8 +919,12 @@ export default function GuestRegister() {
                         <span className="guest-register__amount">{formatPrice(b.billAmount)}</span>
                       </td>
                       <td>
+                        {/* Worded as the filter chips above the list are, so the
+                            cut a desk asked for and the rows it got back say the
+                            same thing — "Reserved" filtered, "Reserved" in the
+                            column. */}
                         <span className={`badge ${STATUS_BADGE[b.status] || 'badge--off'}`}>
-                          {STATUS_LABEL[b.status]}
+                          {STAY_STATUS_CHIP_LABEL[b.status]}
                         </span>
                       </td>
                       <td className="dash-table__actions">
@@ -761,6 +939,76 @@ export default function GuestRegister() {
                     </tr>
                   );
                 })}
+
+                {/* A parked form, in the same eight columns. Most of them are
+                    facts a draft doesn't have yet — it has no bill, nobody has
+                    arrived or left, and there is no amount until a room and
+                    dates are settled — so they read as dashes rather than being
+                    filled with guesses. What a draft does carry is who it is
+                    for, which room was being considered, and the nights it
+                    named, and those sit where the eye already looks for them. */}
+                {filteredDrafts.map((d) => (
+                  <tr key={`draft-${d.id}`} className="guest-register__row guest-register__row--draft">
+                    <td>
+                      {d.roomNumber ? (
+                        <>
+                          <div className="guest-register__cell-main">{d.roomNumber}</div>
+                          <div className="guest-register__cell-sub">{d.categoryName}</div>
+                        </>
+                      ) : (
+                        <div className="guest-register__cell-main guest-register__muted">No room</div>
+                      )}
+                    </td>
+                    <td>
+                      <span className="guest-register__muted">—</span>
+                    </td>
+                    <td>
+                      <div className="guest-register__cell-main">
+                        {d.guestName || <span className="guest-register__muted">Unnamed guest</span>}
+                      </div>
+                      <div className="guest-register__cell-sub">
+                        {d.createdByName ? `Started by ${d.createdByName}` : 'Started at this desk'}
+                      </div>
+                    </td>
+                    {/* The nights the form named, in the two date columns they
+                        would eventually become — a draft has no arrival, only an
+                        intention, so they are labelled as planned. */}
+                    <td>
+                      {d.checkInDate ? (
+                        <>
+                          <div className="guest-register__cell-main">{formatDateShort(d.checkInDate)}</div>
+                          <div className="guest-register__cell-sub">planned</div>
+                        </>
+                      ) : (
+                        <span className="guest-register__muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {d.checkOutDate ? (
+                        <>
+                          <div className="guest-register__cell-main">{formatDateShort(d.checkOutDate)}</div>
+                          <div className="guest-register__cell-sub">planned</div>
+                        </>
+                      ) : (
+                        <span className="guest-register__muted">—</span>
+                      )}
+                    </td>
+                    <td className="guest-register__col-amount">
+                      <span className="guest-register__muted">—</span>
+                    </td>
+                    <td>
+                      <span className="badge guest-register__status-badge--draft">Draft</span>
+                    </td>
+                    <td className="dash-table__actions">
+                      {/* When it was last touched, rather than a button. A draft
+                          is finished on the tape chart, where the booking form
+                          it restores into lives — the register has no form to
+                          open it in, and a button that only moved the desk to
+                          another screen would read as one that opened it. */}
+                      <span className="guest-register__cell-sub">Saved {formatDateTime(d.updatedAt)}</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

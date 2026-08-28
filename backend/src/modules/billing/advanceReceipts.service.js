@@ -231,7 +231,21 @@ async function listAdvanceReceiptsForBooking(lodgeId, bookingId) {
 // Pure, given the booking and the slabs — so the preview and the issue path
 // compute the document exactly once between them, and what gets written is
 // provably what was shown.
-function buildReceiptPreview(booking, slabs, input) {
+// What the booking held before the advance this receipt is for.
+//
+// On the automatic path the booking's own INSERT/UPDATE has already recorded
+// the money, so the row's advance_amount *includes* this amount; counting it as
+// "already held" and then adding the amount again doubled every advance at the
+// guard. Anything over half the stay was refused a receipt it was entitled to,
+// and a stay paid in full — exactly the case a guest most wants paper for —
+// was refused every time. The booking survived by design, so the failure was a
+// log line and a desk with nothing to print.
+function heldBefore(booking, amount, alreadyOnBooking) {
+  const onRow = round2(Number(booking.advance_amount) || 0);
+  return alreadyOnBooking ? Math.max(0, round2(onRow - amount)) : onRow;
+}
+
+function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false } = {}) {
   const amount = round2(Number(input.amountReceived));
   if (!(amount > 0)) {
     throw new ApiError('An advance receipt needs an amount.', 400);
@@ -241,7 +255,7 @@ function buildReceiptPreview(booking, slabs, input) {
   // Held to the stay it is against. Taking more than the stay costs is a
   // data-entry slip, and one that would print a negative balance due on a
   // document handed to a guest.
-  const alreadyHeld = round2(Number(booking.advance_amount) || 0);
+  const alreadyHeld = heldBefore(booking, amount, alreadyOnBooking);
   if (round2(alreadyHeld + amount) > stayTotal) {
     throw new ApiError(
       alreadyHeld > 0
@@ -319,14 +333,14 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyO
       throw new ApiError('This booking was cancelled — no advance receipt can be issued against it.', 409);
     }
 
-    const preview = buildReceiptPreview(booking, slabs, input);
+    const preview = buildReceiptPreview(booking, slabs, input, { alreadyOnBooking });
 
     // However the request described its payment, this is the list to store.
     const paymentLines = paymentLinesOf(input, preview.amountReceived);
     const isSplit = paymentLines.length > 1;
-    // What the booking already held before this receipt. Only meaningful when
-    // this call is adding money; see the note on the UPDATE below.
-    const heldBefore = Number(booking.advance_amount) || 0;
+    // What the booking held before this receipt — net of this amount on the
+    // automatic path, where the row already carries it.
+    const heldBeforeThis = heldBefore(booking, preview.amountReceived, alreadyOnBooking);
 
     // The advance is money the property is now holding, so the booking has to
     // carry it too — that is the figure the final bill reads as "Less Advance",
@@ -354,7 +368,7 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyO
       //
       // A split on a booking with nothing held before has no such remainder, so
       // the first line is a safe summary there.
-      .input('method', sql.NVarChar, isSplit && heldBefore > 0 ? null : paymentLines[0]?.method ?? null)
+      .input('method', sql.NVarChar, isSplit && heldBeforeThis > 0 ? null : paymentLines[0]?.method ?? null)
       .input('reference', sql.NVarChar, paymentLines[0]?.reference ?? null)
       .query(`
         UPDATE dbo.bookings
