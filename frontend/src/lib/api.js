@@ -4,7 +4,7 @@ import { clearSession, getSession } from './auth';
 // and requests go same-origin (/auth, /rooms, …). Only fall back to the local dev
 // server when the var is entirely unset — an explicit '' must stay empty.
 // export const API_BASE = 'https://hotel.vengurlatech.com';
-export const API_BASE = 'http://192.168.1.5:8000';
+export const API_BASE = 'https://hotel.vengurlatech.com';
 
 // `field`, when the server sent one, names the form input the message is about,
 // so a form can show it under that field and put the cursor there rather than

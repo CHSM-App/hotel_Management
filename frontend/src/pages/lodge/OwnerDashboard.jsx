@@ -179,7 +179,22 @@ export default function OwnerDashboard() {
           <div className="dash-topbar__mark">{me?.lodge.name || 'Loading…'}</div>
         </div>
         <div className="dash-topbar__actions">
-          {me?.user && <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />}
+          {me?.user ? (
+            <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />
+          ) : (
+            // The profile menu is built from /me, so when that call fails there
+            // is no menu — and signing out lived only inside it. That left a
+            // dashboard nobody could use and nobody could leave, on a machine
+            // at a shared front desk, still holding a session. This is the way
+            // off it while there is nothing else to show.
+            <button
+              type="button"
+              className="dash-topbar__signout"
+              onClick={() => setConfirmSignOut(true)}
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </div>
 
