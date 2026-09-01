@@ -53,6 +53,8 @@ const stay = (over) => ({
   ...over,
 });
 
+
+
 const bookings = [
   stay({ id: 1 }),
   stay({ id: 2, status: 'BOOKED', invoiceNumber: null, documentType: null, actualCheckInAt: null, actualCheckOutAt: null, billedAmount: null, taxableValue: null, cgstAmount: null, sgstAmount: null, roundOff: null, discountAmount: null, advancePaid: null, balanceCollected: null, balanceTenders: [], balanceDue: null, guestName: 'Asha' }),
