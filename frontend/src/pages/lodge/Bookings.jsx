@@ -338,6 +338,24 @@ const usableNumber = (raw, max) => {
   return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
 };
 
+// The asterisk on a label the form won't submit without. Sighted readers get
+// the mark, screen readers get the word — an asterisk read aloud in the middle
+// of a label is noise, and title alone is never announced.
+//
+// Only ever on a field the submit-time checks in this file actually stop on, so
+// the mark stays worth believing. Where two fields satisfy one requirement
+// between them (an ID number *or* a scanned document), both are starred and
+// `label` names the other, because starring neither hides a real requirement
+// and starring one picks a winner the validation doesn't.
+function Req({ label = 'required' }) {
+  return (
+    <span className="field__req" title={label}>
+      <span aria-hidden="true">*</span>
+      <span className="field__req-text">{` (${label})`}</span>
+    </span>
+  );
+}
+
 const TEN_DIGITS = /^\d{10}$/;
 const MOBILE_MESSAGE = 'Enter a 10-digit mobile number.';
 
@@ -3135,7 +3153,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   </div>
                   <div className="field-row">
                   <div className="field">
-                    <label htmlFor="checkInDate">Check-in</label>
+                    <label htmlFor="checkInDate">
+                      Check-in<Req />
+                    </label>
                     <input
                       id="checkInDate"
                       type="date"
@@ -3195,7 +3215,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                       ))}
                   </div>
                   <div className="field">
-                    <label htmlFor="checkOutDate">Check-out</label>
+                    <label htmlFor="checkOutDate">
+                      Check-out<Req />
+                    </label>
                     <input
                       id="checkOutDate"
                       type="date"
@@ -3229,7 +3251,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                 {validRange && !availableRoomsError && (
                   <div className={selectedRoom ? 'field-row booking-form__room-row' : undefined}>
                     <div className="field">
-                      <label htmlFor="roomId">Available rooms</label>
+                      <label htmlFor="roomId">
+                        Available rooms<Req />
+                      </label>
                       <select
                         id="roomId"
                         value={bookingForm.roomId}
@@ -3717,7 +3741,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         </p>
                         <div className="field-row">
                           <div className="field">
-                            <label htmlFor="checkInIdProofType">ID proof type</label>
+                            <label htmlFor="checkInIdProofType">
+                              ID proof type<Req />
+                            </label>
                             <select
                               id="checkInIdProofType"
                               value={checkInForm.idProofType}
@@ -3732,7 +3758,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             </select>
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofNumber">ID number</label>
+                            <label htmlFor="checkInIdProofNumber">
+                              ID number
+                              <Req label="required, or ID proof document" />
+                            </label>
                             <input
                               id="checkInIdProofNumber"
                               value={checkInForm.idProofNumber}
@@ -3742,7 +3771,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             />
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofFile">ID proof document</label>
+                            <label htmlFor="checkInIdProofFile">
+                              ID proof document
+                              <Req label="required, or ID number" />
+                            </label>
                             <input
                               id="checkInIdProofFile"
                               type="file"
@@ -3792,7 +3824,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         {checkInForm.guests.map((guest, index) => (
                           <div className="bookings-panel__guest-row" key={index}>
                             <div className="field">
-                              <label htmlFor={`checkInGuestName-${index}`}>Name</label>
+                              <label htmlFor={`checkInGuestName-${index}`}>
+                                Name<Req />
+                              </label>
                               <input
                                 id={`checkInGuestName-${index}`}
                                 value={guest.name}
@@ -4431,8 +4465,12 @@ function PartyEditor({
           return (
             <div className="bookings-panel__party-row" key={adult.id ?? `new-${index}`}>
               <div className="field">
+                {/* Every adult on the booking needs a name — the extra rows are
+                    added by the desk, so an empty one is an unfinished row
+                    rather than an optional field. */}
                 <label htmlFor={`${idPrefix}AdultName-${index}`}>
                   {isPrimary ? 'Name (primary guest)' : 'Name'}
+                  <Req />
                 </label>
                 {isPrimary && guestLookupToken ? (
                   <GuestNameField
@@ -4479,6 +4517,7 @@ function PartyEditor({
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultPhone-${index}`}>
                   Mobile{isPrimary ? '' : ' (optional)'}
+                  {isPrimary && <Req />}
                 </label>
                 <input
                   id={`${idPrefix}AdultPhone-${index}`}
@@ -4495,6 +4534,7 @@ function PartyEditor({
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
                   ID type{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                  {isPrimary && !idProofOptional && <Req />}
                 </label>
                 <select
                   id={`${idPrefix}AdultIdProofType-${index}`}
@@ -4507,7 +4547,13 @@ function PartyEditor({
                 {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
               <div className="field">
-                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>ID number</label>
+                {/* Starred as a pair with Document below it: a walk-in needs one
+                    of the two, not both, so each says "or Document" rather than
+                    claiming on its own to be the field that must be filled. */}
+                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
+                  ID number
+                  {isPrimary && !idProofOptional && <Req label="required, or Document" />}
+                </label>
                 <input
                   id={`${idPrefix}AdultIdProofNumber-${index}`}
                   value={adult.idProofNumber}
@@ -4518,6 +4564,7 @@ function PartyEditor({
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
                   Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                  {isPrimary && !idProofOptional && <Req label="required, or ID number" />}
                 </label>
                 <input
                   id={`${idPrefix}AdultIdProofFile-${index}`}
@@ -4591,7 +4638,9 @@ function PartyEditor({
               key={child.id ?? `new-${index}`}
             >
               <div className="field">
-                <label htmlFor={`${idPrefix}ChildName-${index}`}>Name</label>
+                <label htmlFor={`${idPrefix}ChildName-${index}`}>
+                  Name<Req />
+                </label>
                 <input
                   id={`${idPrefix}ChildName-${index}`}
                   value={child.name}
