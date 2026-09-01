@@ -48,6 +48,12 @@ const PERMISSIONS = [
     description: 'Work the live order queue, take orders at the counter and mark items unavailable.',
     capability: 'servesFood',
   },
+  {
+    key: 'events.manage',
+    label: 'Events & functions',
+    description: 'Take hall and lawn bookings for functions, quote them, and set up venues and add-ons.',
+    capability: 'hasEvents',
+  },
 ];
 
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

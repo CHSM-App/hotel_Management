@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import LocationPicker from '../../components/LocationPicker';
+import { validateCoordinates } from '../../lib/coordinates';
 import {
   PROPERTY_TYPES,
   FOOD_SERVICE_STYLES,
@@ -15,6 +17,7 @@ import './LodgeRegistration.css';
 const CHECKIN_MODES = [
   { value: 'HOUR_24', label: '24-hour cycle (from check-in time)' },
   { value: 'NIGHT_BASED', label: 'Night-based (fixed checkout time)' },
+  { value: 'CYCLE', label: 'Fixed cycle (check-in / checkout times, whole nights)' },
 ];
 
 function slugify(name) {
@@ -33,6 +36,10 @@ const initialForm = {
   city: '',
   state: '',
   address: '',
+  // Where it is on a map. Strings like every other field; converted to
+  // numbers (or null) on submit.
+  latitude: '',
+  longitude: '',
   lodgeNameMr: '',
   addressMr: '',
   checkinMode: 'HOUR_24',
@@ -41,6 +48,8 @@ const initialForm = {
   // submit, so the payload the API receives is unchanged.
   propertyType: 'LODGE',
   foodServiceStyle: 'BOTH',
+  // A hall or lawn for functions, on top of whichever type is picked.
+  hasEvents: false,
   isGstRegistered: false,
   gstin: '',
   isSpecifiedPremises: false,
@@ -85,8 +94,8 @@ export default function LodgeRegistration() {
   );
 
   const capabilities = useMemo(
-    () => capabilitiesFor(form.propertyType, form.foodServiceStyle),
-    [form.propertyType, form.foodServiceStyle]
+    () => ({ ...capabilitiesFor(form.propertyType, form.foodServiceStyle), hasEvents: form.hasEvents }),
+    [form.propertyType, form.foodServiceStyle, form.hasEvents]
   );
 
   const includedFeatures = useMemo(() => featuresForCapabilities(capabilities), [capabilities]);
@@ -128,14 +137,21 @@ export default function LodgeRegistration() {
       setError('Set a temporary password for the first login.');
       return;
     }
+    const coords = validateCoordinates(form);
+    if (!coords.ok) {
+      setError(coords.message);
+      return;
+    }
 
     setSubmitting(true);
     try {
       const { propertyType, foodServiceStyle, ...rest } = form;
-      const caps = capabilitiesFor(propertyType, foodServiceStyle);
+      const caps = { ...capabilitiesFor(propertyType, foodServiceStyle), hasEvents: Boolean(rest.hasEvents) };
       const payload = {
         ...rest,
         ...caps,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         // The checkbox is hidden for types it can't apply to, but hiding a
         // control doesn't clear it — ticking it as a lodge with meals and then
         // switching to Restaurant would otherwise submit a stale true and tax
@@ -234,6 +250,19 @@ export default function LodgeRegistration() {
                 ))}
               </div>
 
+              {/* Orthogonal to the type above: a plain lodge with a lawn and a
+                  restaurant with a party hall both take functions. */}
+              <div className="checkbox-field">
+                <input id="hasEvents" type="checkbox" checked={form.hasEvents} onChange={update('hasEvents')} />
+                <div>
+                  <label htmlFor="hasEvents">Lets a hall, lawn or terrace for functions</label>
+                  <span className="checkbox-field__note">
+                    Adds the Events &amp; functions section: a function diary, quotes, date holds,
+                    advances and bills for birthdays, weddings and corporate events.
+                  </span>
+                </div>
+              </div>
+
               <div className="reg-note">
                 <span className="reg-note__icon" aria-hidden="true">
                   ⚠
@@ -321,6 +350,20 @@ export default function LodgeRegistration() {
               <div className="field">
                 <label htmlFor="address">Address</label>
                 <input id="address" value={form.address} onChange={update('address')} placeholder="Beach road, near jetty" />
+              </div>
+
+              {/* The pin, separate from the address: the address is what a
+                  bill prints, the pin is what a directions link opens. Optional
+                  at onboarding — staff can add it from the property's page
+                  later — but worth taking now while the owner is on the line. */}
+              <div className="field">
+                <label htmlFor="location-lat">Map location (optional)</label>
+                <LocationPicker
+                  idPrefix="location"
+                  latitude={form.latitude}
+                  longitude={form.longitude}
+                  onChange={(pos) => setForm((f) => ({ ...f, ...pos }))}
+                />
               </div>
 
               {/* Typed by the property, never transliterated — a guessed

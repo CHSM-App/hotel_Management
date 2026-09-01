@@ -154,7 +154,7 @@ function formatLateBy(minutes) {
   return mins === 0 ? `${hours} hours` : `${hours}h ${mins}m`;
 }
 
-export default function GuestRegister() {
+export default function GuestRegister({ onOpenDraft }) {
   const session = getSession();
   const token = session?.token;
 
@@ -1000,12 +1000,23 @@ export default function GuestRegister() {
                       <span className="badge guest-register__status-badge--draft">Draft</span>
                     </td>
                     <td className="dash-table__actions">
-                      {/* When it was last touched, rather than a button. A draft
-                          is finished on the tape chart, where the booking form
-                          it restores into lives — the register has no form to
-                          open it in, and a button that only moved the desk to
-                          another screen would read as one that opened it. */}
-                      <span className="guest-register__cell-sub">Saved {formatDateTime(d.updatedAt)}</span>
+                      {/* A draft is finished on the tape chart, where the booking
+                          form it restores into lives, so View hands it to that
+                          screen with the form already filled in. Only offered
+                          for a draft the form can actually restore — one saved
+                          against an older shape of the form shows when it was
+                          last touched instead, as before. */}
+                      {onOpenDraft && d.form?.adults?.length ? (
+                        <button
+                          type="button"
+                          className="guest-register__view-details-btn"
+                          onClick={() => onOpenDraft(d.id)}
+                        >
+                          View
+                        </button>
+                      ) : (
+                        <span className="guest-register__cell-sub">Saved {formatDateTime(d.updatedAt)}</span>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -58,6 +58,7 @@ const STRINGS_EN = {
   dated: 'Dated',
   pay: { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' },
   towards: 'Towards advance against the stay described below',
+  towardsEvent: 'Towards advance against the function described below',
   paidBy: 'Paid by',
   placeOfSupply: 'Place of Supply',
   reverseCharge: 'Reverse Charge',
@@ -74,6 +75,12 @@ const STRINGS_EN = {
   // arrival, and the line that tells them so.
   adjustNote:
     'This advance is adjusted against the final bill for the stay named above. Please present this receipt at check-in.',
+  // A function has no check-in desk to present anything at; the paper is the
+  // organiser's proof when the balance is settled on the day.
+  adjustNoteEvent:
+    'This advance is adjusted against the final bill for the function named above. Please keep this receipt for settlement.',
+  adjustNoteFullEvent:
+    'This payment settles the function named above in full. Please keep this receipt.',
   // The same line for a guest who paid the whole stay up front. "Adjusted
   // against the final bill" is still true, but it invites the question of
   // what is left to adjust; the answer is nothing, and the paper should say so.
@@ -170,8 +177,18 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   const supplyPlace = isGst ? placeOfSupply(receipt) : null;
 
   // The pad writes "Room No. 205 dt. 20th August 2026" on the line under the
-  // guest's name. Same information, same place.
-  const stayLine = [
+  // guest's name. Same information, same place. A function names its venue
+  // and its occasion there instead.
+  const isEvent = receipt.kind === 'EVENT';
+  const stayLine = isEvent
+    ? [
+        receipt.venueName,
+        receipt.eventTitle,
+        formatDate(receipt.eventStartAt) ? `dt. ${formatDate(receipt.eventStartAt)}` : null,
+      ]
+        .filter(Boolean)
+        .join('  ')
+    : [
     receipt.roomNumber ? `${T.roomNo} ${receipt.roomNumber}` : null,
     formatDate(receipt.checkInDate) ? `dt. ${formatDate(receipt.checkInDate)}` : null,
     nights ? `(${nights} ${T.days})` : null,
@@ -309,7 +326,7 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
 
       <div className="memo__foot">
         <div className="memo__terms">
-          <div>{paidInFull ? T.adjustNoteFull : T.adjustNote}</div>
+          <div>{isEvent ? (paidInFull ? T.adjustNoteFullEvent : T.adjustNoteEvent) : paidInFull ? T.adjustNoteFull : T.adjustNote}</div>
           {isGst && <div>{T.notInvoice}</div>}
           <div>{T.jurisdiction(receipt.lodgeCity || 'local')}</div>
           {/* A voided receipt still prints — it is reprinted from the record for

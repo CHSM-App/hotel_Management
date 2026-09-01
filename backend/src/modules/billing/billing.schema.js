@@ -46,6 +46,12 @@ const issueInvoiceSchema = z
       .nonnegative('A discount can’t be negative.')
       .optional()
       .default(0),
+    // Why, printed on the bill beside the amount ("Leaving early"). Dropped
+    // when there is no discount to explain.
+    discountReason: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().trim().max(100, 'Keep the discount reason under 100 characters.').optional()
+    ),
     // How the money actually arrived, when it arrived in more than one way.
     // Optional: a body sending the older single paymentMethod/paymentReference
     // pair is still valid and is read as a one-line split, so the desk's screen

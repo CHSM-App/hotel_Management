@@ -6,6 +6,7 @@ const { ApiError } = require('../../middleware/errorHandler');
 const { parseBeds } = require('../rooms/rooms.service');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
+const notifications = require('../notifications/bookingConfirmation');
 const billingService = require('../billing/billing.service');
 const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
@@ -1192,6 +1193,10 @@ async function createBooking(lodgeId, userId, input) {
 
     await autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input);
 
+    // Not awaited: the guest's confirmation is best-effort and the desk should
+    // not wait on the provider. The notifier never rejects — it logs.
+    void notifications.notifyStayBooked(lodgeId, bookingId);
+
     return { id: bookingId };
   } catch (err) {
     await transaction.rollback();
@@ -1436,7 +1441,7 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date()) {
     .query(`
       SELECT b.check_in_date, b.check_out_date, b.actual_check_in_at, b.status,
              b.total_price, b.nightly_breakdown, b.late_checkout_charge,
-             l.checkin_mode, l.check_out_time, l.late_grace_minutes,
+             l.checkin_mode, l.check_out_time, l.check_in_time, l.late_grace_minutes,
              l.late_half_day_percent, l.late_full_day_after_minutes, l.late_full_day_percent
       FROM dbo.bookings b
       JOIN dbo.lodges l ON l.id = b.lodge_id
@@ -1469,9 +1474,32 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date()) {
 
   const minutesLate = lateCheckout.overdueMinutes(deadline, at);
   const lastNightRate = lastNightlyRate(row);
-  const suggestion = lateCheckout.suggestLateCharge(policy, minutesLate, lastNightRate);
+  const plannedNights = lateCheckout.nightsBetween(checkInDate, checkOutDate);
+
+  // CYCLE prices the overstay in whole nights: how many checkout-time
+  // boundaries the stay actually crossed, against how many it was booked for.
+  // The other two modes keep their percentage bands. A CYCLE booking with no
+  // arrival on record can't be counted, so it falls back to the bands too.
+  const isCycle = row.checkin_mode === 'CYCLE' && row.actual_check_in_at;
+  const actualNights = isCycle
+    ? lateCheckout.cycleNights({
+        checkOutTime: toClockTime(row.check_out_time),
+        actualCheckInAt: row.actual_check_in_at,
+        at,
+        graceMinutes: row.late_grace_minutes,
+      })
+    : plannedNights;
+  const extraNights = Math.max(0, actualNights - plannedNights);
+  const suggestion = isCycle
+    ? lateCheckout.suggestCycleCharge(extraNights, lastNightRate)
+    : lateCheckout.suggestLateCharge(policy, minutesLate, lastNightRate);
 
   return {
+    plannedNights,
+    actualNights,
+    extraNights,
+    checkInTime: toClockTime(row.check_in_time),
+    checkOutTime: toClockTime(row.check_out_time),
     bookingId: Number(bookingId),
     status: row.status,
     checkinMode: row.checkin_mode,

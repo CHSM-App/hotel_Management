@@ -22,10 +22,12 @@ const menuRoutes = require('./modules/menu/menu.routes');
 const tablesRoutes = require('./modules/tables/tables.routes');
 const ordersRoutes = require('./modules/orders/orders.routes');
 const inventoryRoutes = require('./modules/inventory/inventory.routes');
+const eventsRoutes = require('./modules/events/events.routes');
 const publicRoutes = require('./modules/public/public.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
 const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('./middleware/menuImageUpload');
+const { UPLOAD_DIR: VENUE_IMAGE_DIR } = require('./middleware/venueImageUpload');
 
 const app = express();
 
@@ -79,12 +81,19 @@ app.use(
         // (chart bars, tape-chart offsets, print layout), and React writes
         // those as inline style attributes. 'unsafe-inline' for styles is a
         // far weaker concession than it would be for scripts.
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        // fonts.googleapis.com serves the stylesheet index.html links for
+        // Fraunces and Inter; the font files themselves come from
+        // fonts.gstatic.com (fontSrc). Without both the link is silently
+        // blocked and every page falls back to Georgia and the system sans.
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         // data: for the QR codes and the html-to-image/jsPDF canvases, which
         // are generated in the browser as data URIs. blob: for the same
         // pipeline when it hands back a Blob to download.
-        imgSrc: ["'self'", 'data:', 'blob:'],
-        fontSrc: ["'self'", 'data:'],
+        // OpenStreetMap tiles, for the map internal staff pick a property's
+        // location on. Images only: the map library itself is bundled, and
+        // no script or fetch goes to a third party.
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org'],
+        fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
         // Same-origin API only. Nothing in this app talks to a third party, so
         // anything that tries is either a bug or an exfiltration attempt.
         connectSrc: ["'self'"],
@@ -100,6 +109,15 @@ app.use(
         formAction: ["'self'"],
         // jsPDF and html-to-image build documents in workers/blobs.
         workerSrc: ["'self'", 'blob:'],
+        // Helmet adds upgrade-insecure-requests by default, which tells the
+        // browser to fetch every subresource over https. On a host that only
+        // speaks http — the LAN dev server, a first deploy before the
+        // certificate — that upgrades the bundle, the stylesheet and every
+        // uploaded photo into an SSL error, and the page renders as a blank
+        // or photo-less shell. Gated on the same flag as HSTS: both are
+        // "this site is reliably on HTTPS" statements, and neither is true
+        // until someone says so.
+        upgradeInsecureRequests: process.env.ENABLE_HSTS === 'true' ? [] : null,
       },
     },
     // HSTS tells browsers to refuse plain HTTP for this host. Only meaningful
@@ -151,6 +169,7 @@ app.use(
 app.use(express.json());
 app.use('/room-images', express.static(ROOM_IMAGE_DIR));
 app.use('/menu-images', express.static(MENU_IMAGE_DIR));
+app.use('/venue-images', express.static(VENUE_IMAGE_DIR));
 
 // Built frontend (Vite output lands in src/public via CI). Serves index.html,
 // assets/*, favicon, etc. Static files take precedence over the SPA fallback below.
@@ -221,6 +240,7 @@ const API_ROUTES = [
   ['/tables', tablesRoutes],
   ['/orders', ordersRoutes],
   ['/inventory', inventoryRoutes],
+  ['/events', eventsRoutes],
   ['/public', publicRoutes],
 ];
 
@@ -232,7 +252,7 @@ for (const [prefix, router] of API_ROUTES) {
 // static upload mounts and the health probes. They belong in the fallback
 // exclusion list for the same reason — a missing image should 404, not return
 // the SPA shell.
-const NON_ROUTER_API_PREFIXES = ['/room-images', '/menu-images', '/health'];
+const NON_ROUTER_API_PREFIXES = ['/room-images', '/menu-images', '/venue-images', '/health'];
 
 // '/internal/lodges' is mounted, but '/internal/anything-else' should also be
 // treated as API rather than handed to the SPA, so the first path segment is

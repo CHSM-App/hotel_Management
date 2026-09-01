@@ -119,6 +119,17 @@ export const FEATURES = [
     group: 'Front desk',
   },
   {
+    key: 'events',
+    title: 'Events & functions',
+    description: 'The function diary — enquiries, holds, quotes, advances and bills for halls and lawns.',
+    permission: 'events.manage',
+    // Its own bit rather than a property type: a rooms-only lodge with a
+    // lawn and a restaurant with a party hall are both real.
+    capability: 'hasEvents',
+    icon: 'party',
+    group: 'Front desk',
+  },
+  {
     key: 'rooms',
     title: 'Rooms & rates',
     description: 'Categories, booking extras and the price chart that computes every rate.',

@@ -1,0 +1,1060 @@
+/* Events & functions: the diary, the list, the setup cards and the two modals.
+   Shares .field/.form-section from forms.css, .dash-card/.badge from the
+   dashboard and .glass-panel/.glass-backdrop from index.css. */
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.events__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.events__toolbar select,
+.events__toolbar input {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 42px;
+  box-shadow: var(--shadow-inset);
+}
+
+.events__toolbar .btn-accent {
+  margin-left: auto;
+}
+
+.events__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.events__toggle input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  accent-color: var(--brand);
+}
+
+/* ------------------------------------------------------------------ diary */
+
+/* The diary borrows the tape chart's frame — stepper, legend, date header,
+   pinned first column — and only draws its own tiles. A room is sold whole
+   for a night; a hall can take a morning and an evening on the same day, so a
+   day is a cell holding one segment per function rather than one tile. */
+.events__toolbar .tape-nav {
+  gap: 12px;
+}
+
+/* The room chart caps each category at a fraction of the screen and scrolls
+   inside it, because a category can run to twenty rooms. A property has a
+   handful of venues, so the diary takes whatever height its rows need and
+   only ever scrolls sideways through the days. */
+.events .tape-chart-scroll {
+  max-height: none;
+  overflow-y: hidden;
+  overflow-x: auto;
+}
+
+/* A venue is a name, not a room number: the pinned column is wider and the
+   row taller than the room chart's, and the name stays on one line however
+   long it is — a second line inside a fixed-height row is what was letting
+   "Conference Room" spill onto the row beneath and push the last venue out of
+   the card. */
+.events .tape-month {
+  --tape-room-col: 168px;
+  --tape-row-h: 44px;
+}
+
+.events .tape-month__room {
+  padding-right: 10px;
+}
+
+.events .tape-month__room strong,
+.events .tape-month__room span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.events-tape__cell {
+  display: flex;
+  gap: 1px;
+  width: var(--tape-tile);
+  height: var(--tape-tile-h);
+}
+
+/* --seg is the status colour, set on the element. The same top-edge highlight
+   the room tiles carry, so the two charts read as one family. */
+.events-tape__seg {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background-color: var(--seg, var(--text-muted));
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.04));
+  transition: filter 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* A function's first and last day get the rounded ends; the days between fuse
+   into one bar, the way a stay does on the room chart. */
+.events-tape__seg--start {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+  margin-left: 2px;
+}
+
+.events-tape__seg--end {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  margin-right: 2px;
+}
+
+/* Hovering one day lifts every day of that function together. */
+.events-tape__seg--active {
+  filter: brightness(0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Cancelled and lapsed, when the desk asks to see them: hatched, so they read
+   as a record and not as a booking. */
+.events-tape__seg--cancelled,
+.events-tape__seg--expired {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0 3px, transparent 3px 6px);
+}
+
+.events-tape__seg:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Status badges reuse .badge from the dashboard and only add colour. */
+.events-badge--enquiry {
+  background: #e4edf9;
+  color: #2f5f9e;
+}
+
+.events-badge--tentative {
+  background: #fbf1e0;
+  color: #8a5a10;
+}
+
+.events-badge--confirmed {
+  background: #f9e4e1;
+  color: #a52f22;
+}
+
+.events-badge--settled {
+  background: #e9edf1;
+  color: #55636f;
+}
+
+.events-badge--cancelled,
+.events-badge--expired {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.events-holds {
+  padding: 16px 20px;
+}
+
+.events-holds h4 {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a5a10;
+  margin-bottom: 8px;
+}
+
+.events-holds__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.events-holds__row:last-child {
+  border-bottom: none;
+}
+
+.events-holds__when {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------- list */
+
+.events-list__row {
+  cursor: pointer;
+}
+
+.events-list__row:hover td {
+  background: var(--neu-sunken);
+}
+
+.events-list__sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.events-list__num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ setup */
+
+.events-setup {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.events-setup .inline-add-form__row {
+  grid-template-columns: 1.4fr 0.8fr 0.9fr auto;
+}
+
+.events-setup .inline-add-form__row--addons {
+  grid-template-columns: 1.4fr 0.9fr auto auto;
+}
+
+.events-setup__edit input[type='number'] {
+  width: 90px;
+}
+
+.events-setup__edit-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.events-setup__edit-row input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 38px;
+}
+
+.events-setup__edit-row input[type='text'] {
+  flex: 1 1 140px;
+}
+
+/* Venue photos. The Photos button sits in the row with the venue's fields —
+   one more column before Add — and opens the picker; the native file input
+   stays in the DOM for the click but is visually hidden ("Choose Files / No
+   file chosen" is not a control that belongs on this card). Once something is
+   chosen a strip of thumbnails appears under the row. */
+.events-setup .inline-add-form__row--photos {
+  grid-template-columns: 1.4fr 0.8fr 0.9fr auto auto;
+}
+
+.events-setup__photo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 12px 0 11px;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+}
+
+.events-setup__photo-btn:hover {
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.events-setup__photo-btn:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+.events-setup__photo-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.events-setup__photo-btn:disabled {
+  cursor: default;
+  box-shadow: var(--shadow-raised);
+  opacity: 0.6;
+}
+
+/* Full is not a fault — the button just says so, and stays legible. */
+.events-setup__photo-btn--full:disabled {
+  opacity: 1;
+  color: var(--text-muted);
+  box-shadow: var(--shadow-pressed);
+}
+
+.events-setup__photo-btn-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--neu-sunken);
+  border-radius: 999px;
+  padding: 2px 7px;
+  box-shadow: var(--shadow-pressed);
+}
+
+.events-setup__photo-btn--full .events-setup__photo-btn-count {
+  color: var(--accent);
+}
+
+/* In the edit row the button is one more flex child; the strip wraps onto its
+   own full-width line beneath. */
+.events-setup__edit-row .events-setup__photo-btn {
+  flex: 0 0 auto;
+}
+
+.events-setup__edit-row .events-setup__photo-strip {
+  flex-basis: 100%;
+}
+
+/* Present for the click handler, invisible on screen. */
+.events-setup__photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.events-setup__photo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius-tile);
+  background: var(--neu-sunken);
+  box-shadow: var(--shadow-inset);
+}
+
+.events-setup__photo {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.events-setup__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.events-setup__photo-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 150ms ease;
+}
+
+.events-setup__photo-remove:hover {
+  background: var(--danger);
+}
+
+.events-setup__photo-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.events-setup__photo-badge {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+/* The small square beside a venue's name in the list. */
+.events-setup__thumb {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 36px;
+  margin-right: 10px;
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+
+.events-setup__thumb img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+  box-shadow: var(--shadow-raised);
+}
+
+.events-setup__thumb-count {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  line-height: 1.4;
+}
+
+/* What the function is sold with beyond the hall. Each box only appears when
+   the property can supply the thing, and reveals its own fields when ticked. */
+.events-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 10px 12px;
+  margin: 4px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--neu-sunken, var(--surface));
+}
+
+.events-needs .events__toggle {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.events-detail__rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13.5px;
+}
+
+/* Extras noted on the day: one row per line, the price (or the box to set
+   it) on the right, and a quick-add row underneath. */
+.events-extras__reminder {
+  margin-bottom: 10px;
+}
+
+.events-extras__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.events-extras__row:last-of-type {
+  border-bottom: none;
+}
+
+.events-extras__what {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: var(--ink);
+}
+
+.events-extras__what small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.events-extras__price {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.events-extras__price input,
+.events-extras__add input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 38px;
+  font: inherit;
+}
+
+.events-extras__price input {
+  width: 110px;
+}
+
+.events-extras__add {
+  display: grid;
+  grid-template-columns: 1fr 72px 190px auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.events-extras__add .btn-accent {
+  min-height: 38px;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .events-extras__add {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .events-extras__add input:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ------------------------------------------------------------------ modal */
+
+.events-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.events-modal {
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 22px 24px;
+}
+
+.events-modal h3 {
+  margin-bottom: 4px;
+}
+
+.events-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.events-modal__close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.events-modal__sub {
+  font-size: 13.5px;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.events-modal__badges {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.events-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.events-modal__actions .btn-secondary,
+.events-modal__actions .btn-accent {
+  padding: 10px 14px;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.events-modal__actions .events-modal__spacer {
+  flex: 1;
+}
+
+.field textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+  box-shadow: var(--shadow-inset);
+}
+
+.field textarea:focus-visible {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.field__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Availability verdict under the date row. Green when clear, red naming the
+   clash — the desk should see this before they have typed the organiser. */
+.events-avail {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.events-avail--ok {
+  background: #e6f2ec;
+  color: #276749;
+}
+
+.events-avail--clash {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.events-avail--checking {
+  background: #f1efe9;
+  color: var(--text-muted);
+}
+
+/* An add-on chip is a checkbox chip with a count and an agreed amount tucked
+   on its right — same shape as extras on a booking. */
+.events-addons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+/* An add-on's name can be three words long, and the stay-extras chip lays
+   everything on one line — name, count and price fighting for 200px. Here the
+   chip is two rows: the box and the name on top, and once ticked the count
+   and the agreed amount underneath, indented under the name. Matched with the
+   element so it outranks `.field label.checkbox-chip`. */
+.events-addons label.checkbox-chip {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'box name name'
+    '. qty price';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+.events-addons .checkbox-chip > input[type='checkbox'] {
+  grid-area: box;
+}
+
+.events-addons .checkbox-chip > span {
+  grid-area: name;
+  min-width: 0;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.events-addons .checkbox-chip input.checkbox-chip__qty {
+  grid-area: qty;
+  justify-self: start;
+  width: 64px;
+  margin: 6px 0 0;
+}
+
+.events-addons .checkbox-chip input.checkbox-chip__price {
+  grid-area: price;
+  justify-self: end;
+  width: 104px;
+  margin: 6px 0 0;
+}
+
+.events-oneoff {
+  display: grid;
+  grid-template-columns: 1fr 100px auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.events-oneoff input {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 40px;
+}
+
+.events-oneoff button {
+  white-space: nowrap;
+}
+
+.events-quote {
+  margin-top: 6px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-inset);
+}
+
+.events-quote__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  padding: 4px 0;
+  color: var(--text);
+}
+
+.events-quote__line small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.events-quote__side {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 8px 0 2px;
+}
+
+.events-quote__line--sub {
+  border-top: 1px dashed var(--border);
+  margin-top: 6px;
+  padding-top: 8px;
+  font-weight: 600;
+}
+
+.events-quote__line--total {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.events-quote__line--due {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.events-quote__warn {
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #8a5a10;
+}
+
+/* The deposit section on a new enquiry: a collapsible like the booking
+   form's, shut until the desk has money in hand. */
+.events-modal .form-section--collapsible {
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.events-advance__hint {
+  margin: -4px 0 12px;
+}
+
+.events-modal__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.events-modal__footer .field {
+  margin: 0;
+  width: 110px;
+}
+
+.events-modal__footer .field input {
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.events-modal__footer .btn-secondary,
+.events-modal__footer .btn-accent {
+  padding: 10px 14px;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+/* ----------------------------------------------------------------- detail */
+
+.events-timeline {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0 16px;
+}
+
+.events-timeline__step {
+  flex: 1;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: #f1efe9;
+}
+
+.events-timeline__step--done {
+  background: #e4ebf5;
+  color: var(--brand-ink);
+}
+
+.events-timeline__step--current {
+  background: var(--brand);
+  color: #fff;
+}
+
+.events-detail__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.events-detail__card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-raised);
+}
+
+.events-detail__card--wide {
+  grid-column: 1 / -1;
+}
+
+.events-detail__card h4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+
+.events-detail__card h4 .chart-row__link-btn {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.events-detail__fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  padding: 4px 0;
+}
+
+.events-detail__fact span:first-child {
+  color: var(--text-muted);
+}
+
+.events-detail__fact input {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: right;
+}
+
+.events-detail__notes {
+  white-space: pre-wrap;
+  font-size: 13.5px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.events-detail__notes-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.events-detail__empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.events-detail__hold {
+  font-size: 13px;
+  font-weight: 600;
+  color: #8a5a10;
+}
+
+.events-detail__cancelled {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 13.5px;
+  margin-bottom: 12px;
+}
+
+.events-cancel {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-inset);
+}
+
+.events-cancel h4 {
+  font-family: var(--serif);
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: var(--danger);
+}
+
+.events-cancel .field {
+  margin-bottom: 10px;
+}
+
+.events-cancel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.events-detail__error {
+  margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .events-detail__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .events-setup .inline-add-form__row,
+  .events-setup .inline-add-form__row--addons,
+  .events-setup .inline-add-form__row--photos {
+    grid-template-columns: 1fr;
+  }
+
+  .events-setup__photo-btn {
+    justify-content: center;
+  }
+
+  .events-setup__photo {
+    width: 76px;
+    height: 76px;
+  }
+
+  .events__toolbar .btn-accent {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .events-modal__backdrop {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .events-modal {
+    max-width: none;
+    max-height: calc(100svh - 20px);
+    padding: 18px 14px;
+  }
+
+  .events-oneoff {
+    grid-template-columns: 1fr;
+  }
+
+  .events-timeline__step {
+    font-size: 10px;
+    padding: 5px 2px;
+  }
+}

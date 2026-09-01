@@ -9,6 +9,7 @@ import './CheckoutPolicyPanel.css';
 const MODE_LABEL = {
   HOUR_24: '24-hour stays',
   NIGHT_BASED: 'Night-based stays',
+  CYCLE: 'Fixed check-in / checkout cycle',
 };
 
 const MODE_NOTE = {
@@ -16,6 +17,8 @@ const MODE_NOTE = {
     'This property sells a 24-hour cycle, so a stay is due to end 24 hours per night after the guest actually checked in — arrive at 8pm for two nights and you are due out at 8pm two days later. Every guest gets their own deadline, so there is no property-wide checkout time to set.',
   NIGHT_BASED:
     'This property is night-based, so every stay is due to end at the checkout time below on the departure date, whatever time the guest arrived.',
+  CYCLE:
+    'This property sells a fixed cycle: rooms are ready from the check-in time and every stay is due out by the checkout time. Each time a stay runs past the checkout time it has started another night — a guest arriving at 2pm and leaving at noon the next day has stayed two nights, not one night plus a late fee.',
 };
 
 // How long "1h 30m" reads better than "90". Used for the two minute fields,
@@ -29,9 +32,25 @@ function hoursAndMinutes(minutes) {
 }
 
 // The policy read back as the three bands reception will actually be quoted.
+// A CYCLE property has only two: within grace, or a whole extra night.
 function previewSteps(policy) {
   const grace = Number(policy.lateGraceMinutes) || 0;
   const fullAfter = Number(policy.lateFullDayAfterMinutes) || 0;
+
+  if (policy.checkinMode === 'CYCLE') {
+    return [
+      {
+        tone: 'free',
+        when: grace === 0 ? 'Out by the checkout time' : `Up to ${hoursAndMinutes(grace)} past checkout`,
+        charge: 'No charge',
+      },
+      {
+        tone: 'full',
+        when: `Later than ${grace === 0 ? 'the checkout time' : `${hoursAndMinutes(grace)} past checkout`}`,
+        charge: 'One more night, at the last night’s rate',
+      },
+    ];
+  }
 
   return [
     {
@@ -87,6 +106,7 @@ export default function CheckoutPolicyPanel() {
         '/rooms/checkout-policy',
         {
           checkOutTime: policy.checkOutTime,
+          checkInTime: policy.checkInTime || undefined,
           lateGraceMinutes: Number(policy.lateGraceMinutes),
           lateHalfDayPercent: Number(policy.lateHalfDayPercent),
           lateFullDayAfterMinutes: Number(policy.lateFullDayAfterMinutes),
@@ -151,6 +171,33 @@ export default function CheckoutPolicyPanel() {
                 Arrival time + 24 hours per night booked
               </strong>
             </div>
+          ) : policy.checkinMode === 'CYCLE' ? (
+            <div className="field-row">
+              <div className="field checkout-policy__field--narrow">
+                <label htmlFor="checkInTime">Check-in from</label>
+                <input
+                  id="checkInTime"
+                  type="time"
+                  value={policy.checkInTime || '11:00'}
+                  onChange={(e) => update({ checkInTime: e.target.value })}
+                />
+                <p className="checkout-policy__hint">
+                  When rooms are ready. Quoted to the guest; it does not change the night count.
+                </p>
+              </div>
+              <div className="field checkout-policy__field--narrow">
+                <label htmlFor="checkOutTime">Checkout by</label>
+                <input
+                  id="checkOutTime"
+                  type="time"
+                  value={policy.checkOutTime}
+                  onChange={(e) => update({ checkOutTime: e.target.value })}
+                />
+                <p className="checkout-policy__hint">
+                  Every time a stay runs past this it has started another night.
+                </p>
+              </div>
+            </div>
           ) : (
             <div className="field checkout-policy__field--narrow">
               <label htmlFor="checkOutTime">Checkout time</label>
@@ -172,9 +219,9 @@ export default function CheckoutPolicyPanel() {
         <div>
           <h3 className="checkout-policy__section-title">Charging for a late checkout</h3>
           <p className="checkout-policy__note">
-            Reception is shown this as a suggestion when they check out a guest who has run past the
-            deadline — they can change it or waive it. Percentages are of the room&apos;s rate on its
-            last night, so a suite and a single scale on their own tariff.
+            {policy.checkinMode === 'CYCLE'
+              ? 'Reception is shown the extra nights as a suggestion when they check out a guest who has run past the checkout time — they can change the amount or waive it. Only the grace period applies here; the part-day bands are not used on a cycle property.'
+              : 'Reception is shown this as a suggestion when they check out a guest who has run past the deadline — they can change it or waive it. Percentages are of the room’s rate on its last night, so a suite and a single scale on their own tariff.'}
           </p>
         </div>
 
@@ -194,6 +241,7 @@ export default function CheckoutPolicyPanel() {
                 <span className="checkout-policy__unit">min</span>
               </span>
             </div>
+            {policy.checkinMode !== 'CYCLE' && (
             <div className="field">
               <label htmlFor="lateHalfDayPercent">Then charge</label>
               <span className="checkout-policy__input">
@@ -208,8 +256,10 @@ export default function CheckoutPolicyPanel() {
                 <span className="checkout-policy__unit">% night</span>
               </span>
             </div>
+            )}
           </div>
 
+          {policy.checkinMode !== 'CYCLE' && (
           <div className="field-row">
             <div className="field">
               <label htmlFor="lateFullDayAfterMinutes">Full-night charge kicks in after</label>
@@ -240,6 +290,7 @@ export default function CheckoutPolicyPanel() {
               </span>
             </div>
           </div>
+          )}
 
           <div className="checkout-policy__preview">
             <div className="checkout-policy__preview-title">What reception will be quoted</div>

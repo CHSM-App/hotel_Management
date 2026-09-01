@@ -223,11 +223,15 @@
    Literal fallbacks for the same reason the status badges carry them: the
    variables are declared in tapeChart.css, which only Bookings.jsx imports. */
 .guest-register__status-swatch {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
   flex: none;
   display: inline-block;
+  /* A thin ring under the colour, so a light or grey swatch (checked-out on a
+     grey chip, draft yellow on paper) still has an edge to read against the
+     chip's own background. */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
 .guest-register__status-swatch--booked {
@@ -239,7 +243,7 @@
 }
 
 .guest-register__status-swatch--checked-out {
-  background: var(--tape-checked-out, #8695a3);
+  background: var(--tape-checked-out-deep, #6f7e8c);
 }
 
 /* No tile on the chart to borrow from — a cancelled stay holds no nights to
@@ -249,22 +253,12 @@
 }
 
 .guest-register__status-swatch--draft {
-  background: var(--tape-draft, #f2c31d);
+  background: var(--tape-draft-deep, #d4a70c);
 }
 
-/* A chip whose cut is empty is still worth reading — "Cancelled 0" is an answer
-   — but its dot shouldn't claim the eye the way a colour with rows behind it
-   does. */
-.guest-register__status-chip--empty .guest-register__status-swatch {
-  opacity: 0.35;
-}
-
-/* Full strength once chosen, even with nothing behind it: the chip the desk is
-   currently filtered by is the one thing on the row that has to look definite,
-   and an empty result is the answer it is showing. */
-.guest-register__status-chip[aria-pressed='true'] .guest-register__status-swatch {
-  opacity: 1;
-}
+/* The swatch stays at full strength whether or not the cut has rows behind it:
+   the colour is the key to the chart's legend, and a faded key is one the desk
+   has to squint at. The count badge already says the cut is empty. */
 
 .guest-register__status-count {
   font-size: 11px;

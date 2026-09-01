@@ -49,14 +49,22 @@ async function getLodgePageHandler(req, res, next) {
     const hasValidRange =
       DATE_RE.test(checkInDate) && DATE_RE.test(checkOutDate) && checkOutDate > checkInDate;
 
-    const roomTypes = lodge.hasRooms
-      ? await publicService.listPublicRoomTypes(
-          lodge.id,
-          hasValidRange ? checkInDate : null,
-          hasValidRange ? checkOutDate : null
-        )
-      : [];
-    res.json({ lodge, roomTypes });
+    // Each part of the page is gated on what the property is: a rooms-only
+    // lodge sends no venues and no menu, so the page has nothing to hide, and
+    // the flags on `lodge` tell the client which sections to draw at all.
+    const [roomTypes, venues, addons, menu] = await Promise.all([
+      lodge.hasRooms
+        ? publicService.listPublicRoomTypes(
+            lodge.id,
+            hasValidRange ? checkInDate : null,
+            hasValidRange ? checkOutDate : null
+          )
+        : [],
+      lodge.hasEvents ? publicService.listPublicVenues(lodge.id) : [],
+      lodge.hasEvents ? publicService.listPublicAddons(lodge.id) : [],
+      lodge.servesFood ? publicService.getPublicMenu(lodge.id) : [],
+    ]);
+    res.json({ lodge, roomTypes, venues, addons, menu });
   } catch (err) {
     next(err);
   }

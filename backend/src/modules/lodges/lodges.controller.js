@@ -1,4 +1,4 @@
-const { createLodgeSchema } = require('./lodges.schema');
+const { createLodgeSchema, updateLodgeSchema } = require('./lodges.schema');
 const lodgesService = require('./lodges.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -41,4 +41,21 @@ async function getLodgeHandler(req, res, next) {
   }
 }
 
-module.exports = { createLodgeHandler, listLodgesHandler, getLodgeHandler };
+async function updateLodgeHandler(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new ApiError('Lodge not found.', 404);
+    }
+    const parsed = updateLodgeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const detail = await lodgesService.updateLodge(id, parsed.data);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { createLodgeHandler, listLodgesHandler, getLodgeHandler, updateLodgeHandler };

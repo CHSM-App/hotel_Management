@@ -20,7 +20,7 @@ async function getMe(userId) {
         l.id AS lodge_id, l.name AS lodge_name, l.slug, l.phone AS lodge_phone,
         l.whatsapp_number, l.address, l.city, l.state, l.checkin_mode,
         l.is_gst_registered, l.gstin, l.is_specified_premises,
-        l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service
+        l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events
       FROM dbo.users u
       JOIN dbo.lodges l ON l.id = u.lodge_id
       WHERE u.id = @userId
@@ -66,6 +66,7 @@ async function getMe(userId) {
       servesFood: !!row.serves_food,
       foodRoomService: !!row.food_room_service,
       foodTableService: !!row.food_table_service,
+      hasEvents: !!row.has_events,
     },
   };
 }

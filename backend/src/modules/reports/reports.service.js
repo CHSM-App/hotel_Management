@@ -441,9 +441,12 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     .query(`
       SELECT i.id, i.document_type, i.billing_side, i.invoice_number, i.room_subtotal,
              i.cgst_amount, i.sgst_amount, i.round_off, i.total_amount, i.created_at,
-             b.guest_name
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name
       FROM dbo.invoices i
-      JOIN dbo.bookings b ON b.id = i.booking_id
+      -- LEFT: a food bill has no stay and a function's bill has no booking row;
+      -- an inner join here dropped both from the filing summary.
+      LEFT JOIN dbo.bookings b ON b.id = i.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = i.event_booking_id
       WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED'
         AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
       ORDER BY i.created_at ASC

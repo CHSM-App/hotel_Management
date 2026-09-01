@@ -13,6 +13,7 @@ import ReportsPanel from './ReportsPanel';
 import StaffAndRoles from './StaffAndRoles';
 import FoodSetup from './FoodSetup';
 import OrdersPanel from './OrdersPanel';
+import Events from './Events';
 import ProfileMenu from './ProfileMenu';
 import '../internal/LodgesDashboard.css';
 import './OwnerDashboard.css';
@@ -63,6 +64,15 @@ const ICON_PATHS = {
   barChart: (
     <>
       <path d="M18 20V10M12 20V4M6 20v-6" />
+    </>
+  ),
+  party: (
+    <>
+      <path d="M5.8 11.3 2 22l10.7-3.8" />
+      <path d="M4 3h.01M22 8h.01M15 2h.01M22 20h.01" />
+      <path d="M22 2l-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10" />
+      <path d="M9 14.5 5.8 11.3l3.5 3.2Z" />
+      <path d="M12.2 7.8 16.2 11.8" />
     </>
   ),
 };
@@ -117,6 +127,16 @@ export default function OwnerDashboard() {
   // open that bill straight away. Cleared on any sidebar move, so coming back to
   // billing later lands on the plain queue rather than reopening an old bill.
   const [billNowBookingId, setBillNowBookingId] = useState(null);
+  // The same hand-over for a function: "Settle & bill" on an event opens its
+  // bill over the events section rather than sending the desk to billing.
+  const [billNowEventId, setBillNowEventId] = useState(null);
+  // Bumped when a function's bill modal closes, so the diary behind it
+  // re-reads: the bill settles the function, and a tile that stayed red
+  // after the paper was printed had the desk refreshing the page to see it.
+  const [eventsRefresh, setEventsRefresh] = useState(0);
+  // A settled function's bill, opened as the issued document rather than as
+  // a bill still to be written.
+  const [viewEventInvoiceId, setViewEventInvoiceId] = useState(null);
 
   // The tape chart's legend following a colour into the register's cut of it.
   //
@@ -127,12 +147,32 @@ export default function OwnerDashboard() {
   const [, setSearchParams] = useSearchParams();
   const showRegisterWithStatus = (status) => {
     setBillNowBookingId(null);
+    setBillNowEventId(null);
     setSearchParams(
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'guests');
         if (status) updated.set('status', status);
         else updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // The register's draft rows going the other way: a parked form is finished on
+  // the tape chart, where the booking form it restores into lives, so "View" on
+  // a draft moves the desk there and names the draft for Bookings to open as it
+  // mounts. Written with the section in one go, for the same reason as above.
+  const openDraftInChart = (draftId) => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'bookings');
+        updated.set('draft', String(draftId));
+        updated.delete('status');
         return updated;
       },
       { replace: true }
@@ -221,6 +261,7 @@ export default function OwnerDashboard() {
                       aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
                       onClick={() => {
                         setBillNowBookingId(null);
+    setBillNowEventId(null);
                         // Cleared for the same reason billNowBookingId is: the
                         // status cut belongs to the register, and reaching it
                         // from the sidebar means asking for the whole list
@@ -291,6 +332,44 @@ export default function OwnerDashboard() {
                 <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} />
               )}
 
+              {activeFeature && activeFeature.key === 'events' && (
+                <Events
+                  lodge={me.lodge}
+                  refreshKey={eventsRefresh}
+                  onBillEvent={(eventId) => setBillNowEventId(eventId ?? null)}
+                  onViewInvoice={(invoiceId) => setViewEventInvoiceId(invoiceId ?? null)}
+                />
+              )}
+
+              {/* A function's bill, opened over the events diary the same way a
+                  stay's bill opens over the tape chart. */}
+              {billNowEventId != null && (
+                <Billing
+                  lodge={me.lodge}
+                  billNowEventId={billNowEventId}
+                  modalOnly
+                  onClose={() => {
+                    setBillNowEventId(null);
+                    setEventsRefresh((k) => k + 1);
+                  }}
+                />
+              )}
+
+              {/* The issued bill of a settled function. Closing it bumps the
+                  diary too: a void from inside puts the function back to
+                  confirmed, and the tile has to follow. */}
+              {viewEventInvoiceId != null && (
+                <Billing
+                  lodge={me.lodge}
+                  viewInvoiceId={viewEventInvoiceId}
+                  modalOnly
+                  onClose={() => {
+                    setViewEventInvoiceId(null);
+                    setEventsRefresh((k) => k + 1);
+                  }}
+                />
+              )}
+
               {/* The bill for a stay, opened over whatever tab asked for it
                   instead of navigating to billing. Just the modal — it is
                   already a full-viewport dialog that closes itself, so putting
@@ -307,7 +386,9 @@ export default function OwnerDashboard() {
                 />
               )}
 
-              {activeFeature && activeFeature.key === 'guests' && <GuestRegister />}
+              {activeFeature && activeFeature.key === 'guests' && (
+                <GuestRegister onOpenDraft={openDraftInChart} />
+              )}
 
               {activeFeature && activeFeature.key === 'reports' && <ReportsPanel />}
 
@@ -323,7 +404,7 @@ export default function OwnerDashboard() {
               )}
 
               {activeFeature &&
-                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu'].includes(
+                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

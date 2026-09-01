@@ -6,6 +6,7 @@ const {
 } = require('./billing.schema');
 const billingService = require('./billing.service');
 const advanceReceiptsService = require('./advanceReceipts.service');
+const eventBillingService = require('./eventBilling.service');
 const seriesService = require('./series.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -34,6 +35,7 @@ async function previewBillHandler(req, res, next) {
       // checkout", so only the explicit string turns it off.
       includeLateCheckout: req.query.includeLateCheckout !== 'false',
       discountAmount: parseDiscount(req.query.discountAmount),
+      discountReason: typeof req.query.discountReason === 'string' ? req.query.discountReason.slice(0, 100) : null,
       // What the desk wants the guest to hand over. When set it wins: the
       // service solves for the discount that lands there and ignores any
       // discount sent alongside it.
@@ -58,6 +60,88 @@ async function issueInvoiceHandler(req, res, next) {
       parsed.data
     );
     res.status(201).json({ invoice });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Functions — the bill and the advance receipts against an event booking
+// ---------------------------------------------------------------------------
+
+async function previewEventBillHandler(req, res, next) {
+  try {
+    const preview = await eventBillingService.previewEventBill(req.user.lodgeId, Number(req.params.eventId), {
+      discountAmount: parseDiscount(req.query.discountAmount),
+      discountReason: typeof req.query.discountReason === 'string' ? req.query.discountReason.slice(0, 100) : null,
+      targetTotal: parseDiscount(req.query.targetTotal),
+    });
+    res.json(preview);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function issueEventInvoiceHandler(req, res, next) {
+  try {
+    const parsed = issueInvoiceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const invoice = await eventBillingService.issueEventInvoice(
+      req.user.lodgeId,
+      req.user.sub,
+      Number(req.params.eventId),
+      parsed.data
+    );
+    res.status(201).json({ invoice });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function previewEventAdvanceReceiptHandler(req, res, next) {
+  try {
+    const parsed = advanceReceiptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const receipt = await advanceReceiptsService.previewEventAdvanceReceipt(
+      req.user.lodgeId,
+      Number(req.params.eventId),
+      parsed.data
+    );
+    res.json({ receipt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function issueEventAdvanceReceiptHandler(req, res, next) {
+  try {
+    const parsed = advanceReceiptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const receipt = await advanceReceiptsService.issueEventAdvanceReceipt(
+      req.user.lodgeId,
+      req.user.sub,
+      Number(req.params.eventId),
+      parsed.data
+    );
+    res.status(201).json({ receipt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listEventAdvanceReceiptsHandler(req, res, next) {
+  try {
+    const receipts = await advanceReceiptsService.listAdvanceReceiptsForEvent(
+      req.user.lodgeId,
+      Number(req.params.eventId)
+    );
+    res.json({ receipts });
   } catch (err) {
     next(err);
   }
@@ -258,6 +342,11 @@ async function updateSeriesHandler(req, res, next) {
 
 module.exports = {
   listBillableBookingsHandler,
+  previewEventBillHandler,
+  issueEventInvoiceHandler,
+  previewEventAdvanceReceiptHandler,
+  issueEventAdvanceReceiptHandler,
+  listEventAdvanceReceiptsHandler,
   listOpenFoodTabsHandler,
   previewFoodBillHandler,
   issueFoodInvoiceHandler,

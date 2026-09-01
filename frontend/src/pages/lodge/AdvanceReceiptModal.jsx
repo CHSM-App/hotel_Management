@@ -72,8 +72,12 @@ function LangSelect({ value, onChange }) {
 // `booking` opens the modal ready to take an advance. `initialReceipt` opens it
 // on a receipt that already exists — how the bills list reprints one — in which
 // case there is no form, because the money was taken long ago.
+// `eventBooking` is the same modal against a function instead of a stay: the
+// money is held on the event, the receipt hangs off it, and the endpoints
+// differ — nothing else does.
 export default function AdvanceReceiptModal({
   booking,
+  eventBooking = null,
   initialReceipt = null,
   existingReceipts = [],
   onClose,
@@ -139,8 +143,37 @@ export default function AdvanceReceiptModal({
   //
   // Declared before what derives from them: const is not hoisted, and having
   // `remaining` sit above these threw the whole modal on every render.
-  const alreadyHeld = Number(booking?.advanceAmount) || 0;
-  const stayTotal = Number(booking?.totalPrice) || 0;
+  //
+  // A stay and a function are read through one `subject` so everything below
+  // asks one shape: what it costs, what it holds, and whether it can take more.
+  const subject = eventBooking
+    ? {
+        id: eventBooking.id,
+        guestName: eventBooking.organiserName,
+        advanceAmount: eventBooking.advanceAmount,
+        totalPrice: eventBooking.totalAmount,
+        label: eventBooking.venueName || 'Function',
+        noun: 'function',
+        // A cancelled function takes no money; a settled one has been billed
+        // and the balance was collected on the bill.
+        closed: eventBooking.status === 'CANCELLED' || eventBooking.status === 'SETTLED',
+        receiptPath: `/billing/events/${eventBooking.id}/advance-receipt`,
+      }
+    : booking
+      ? {
+          id: booking.id,
+          guestName: booking.guestName,
+          advanceAmount: booking.advanceAmount,
+          totalPrice: booking.totalPrice,
+          label: booking.roomNumber ? `Room ${booking.roomNumber}` : 'Booking',
+          noun: 'stay',
+          closed: booking.status === 'CANCELLED',
+          receiptPath: `/billing/bookings/${booking.id}/advance-receipt`,
+        }
+      : null;
+  const noun = subject?.noun ?? 'stay';
+  const alreadyHeld = Number(subject?.advanceAmount) || 0;
+  const stayTotal = Number(subject?.totalPrice) || 0;
 
   // What the stay still owes, and therefore the most another advance may be.
   // The server holds the same line; this is so the desk sees the ceiling rather
@@ -150,7 +183,7 @@ export default function AdvanceReceiptModal({
   // A cancelled stay takes no more money, and neither does one already paid up.
   // Reserved and checked-in both may — a second deposit before arrival is the
   // whole reason this exists.
-  const canTakeMore = Boolean(booking) && booking.status !== 'CANCELLED' && remaining > 0;
+  const canTakeMore = Boolean(subject) && !subject.closed && remaining > 0;
 
 
   // Voided in place, never deleted — an issued money document that vanishes is
@@ -236,7 +269,7 @@ export default function AdvanceReceiptModal({
     setTaking(true);
     try {
       const data = await apiPost(
-        `/billing/bookings/${booking.id}/advance-receipt`,
+        subject.receiptPath,
         {
           amountReceived: amount,
           paymentMethod: payLines[0].method,
@@ -276,15 +309,15 @@ export default function AdvanceReceiptModal({
           <h3>{existing ? shownReceipt.receiptNumber : 'Advance receipt'}</h3>
           <span className="billing-panel__detail-tags">
             <span className="bill-tag bill-tag--cash">
-              {booking?.roomNumber ? `Room ${booking.roomNumber}` : 'Booking'}
+              {subject?.label ?? 'Booking'}
             </span>
             {shownReceipt?.status === 'VOID' && <span className="bill-tag bill-tag--void">Void</span>}
           </span>
         </div>
 
-        {booking && (
+        {subject && (
           <p className="bookings-panel__hint">
-            {booking.guestName} · stay total {formatPrice(stayTotal)}
+            {subject.guestName} · {noun} total {formatPrice(stayTotal)}
             {alreadyHeld > 0 ? ` · ${formatPrice(alreadyHeld)} advance held` : ''}
             {remaining > 0 ? ` · ${formatPrice(remaining)} still to pay` : ' · paid in full'}
           </p>
@@ -329,8 +362,8 @@ export default function AdvanceReceiptModal({
         {!existing && existingReceipts.length === 0 && (
           <p className="bookings-panel__hint">
             {alreadyHeld > 0
-              ? `${formatPrice(alreadyHeld)} is recorded against this stay but has no receipt — take it again below to raise one, or leave it and it will show on the bill as before.`
-              : 'No advance has been taken against this stay yet.'}
+              ? `${formatPrice(alreadyHeld)} is recorded against this ${noun} but has no receipt — take it again below to raise one, or leave it and it will show on the bill as before.`
+              : `No advance has been taken against this ${noun} yet.`}
           </p>
         )}
 

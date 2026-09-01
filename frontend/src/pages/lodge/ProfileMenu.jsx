@@ -11,6 +11,7 @@ function roleLabel(role) {
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour cycle',
   NIGHT_BASED: 'Night-based',
+  CYCLE: 'Fixed check-in / checkout',
 };
 
 // Lodge facts that are worth reading but never worth acting on from here —

@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
+const lateCheckout = require('../bookings/lateCheckout');
 // The one normaliser turning 'however this request expressed its payment' into
 // the list of lines to store. Lives with the other payment rules in bookings.
 const { paymentLinesOf } = require('../bookings/bookings.schema');
@@ -83,6 +84,34 @@ function nightlyAmounts(booking) {
 // after checkout must not change a bill. Comes back empty for stays booked
 // before the lines were snapshotted, and for food bills, which have no room —
 // callers fall back to the single "Room charges" line those already showed.
+// Catering on an issued function bill, as one itemised plate line — read off
+// the snapshot, and priced at what the bill actually carried so a reprint
+// after a head-count edit still shows the figure that was issued.
+function cateringItemsOf(row, invoice) {
+  if (!(invoice.foodSubtotal > 0)) return [];
+  try {
+    const line = (JSON.parse(row.event_breakdown)?.lines ?? []).find((l) => l.side === 'FOOD');
+    const quantity = line?.quantity || 1;
+    return [{ name: 'Catering (per plate)', quantity, unitPrice: round2(invoice.foodSubtotal / quantity), lineTotal: invoice.foodSubtotal }];
+  } catch {
+    return [{ name: 'Catering', quantity: 1, unitPrice: invoice.foodSubtotal, lineTotal: invoice.foodSubtotal }];
+  }
+}
+
+// The venue-side lines of a function's quote, read off the booking's own
+// snapshot the way roomChargeLines reads a stay's. Catering is the food side
+// and is itemised separately.
+function eventChargeLinesOf(json) {
+  try {
+    const lines = JSON.parse(json)?.lines ?? [];
+    return lines
+      .filter((line) => line.side === 'VENUE')
+      .map((line) => ({ label: line.quantity > 1 ? `${line.label} × ${line.quantity}` : line.label, amount: Number(line.amount), nights: 1 }));
+  } catch {
+    return [];
+  }
+}
+
 function roomChargeLines(booking) {
   if (!booking.nightly_breakdown) return [];
   let nights;
@@ -321,6 +350,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     .query(`
       SELECT b.*, r.room_number, c.name AS category_name,
              l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
+             l.late_grace_minutes,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              l.city AS lodge_city, l.state AS lodge_state,
@@ -338,6 +368,14 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     throw new ApiError('Booking not found.', 404);
   }
   return row;
+}
+
+async function findActiveEventInvoice(request, lodgeId, eventBookingId) {
+  const result = await request
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('eventId', sql.BigInt, eventBookingId)
+    .query("SELECT id FROM dbo.invoices WHERE lodge_id = @lodgeId AND event_booking_id = @eventId AND status = 'ISSUED'");
+  return result.recordset[0] || null;
 }
 
 async function findActiveInvoice(request, bookingId) {
@@ -558,6 +596,31 @@ async function loadPricingContext(pool, booking, foodOrders) {
   };
 }
 
+// On a CYCLE property the nights are counted by the clock, so a guest who
+// booked two and left after one has paid for a night the room can be re-let
+// for. The bill still prices every booked night — that is what was sold — but
+// the desk is told how much of it was never used, so it can take that off
+// with the ordinary discount if the owner wants to. Null on every other mode,
+// and on a stay with no arrival or departure on record to count between.
+function earlyCheckoutOf(booking, grossNights) {
+  if (booking.checkin_mode !== 'CYCLE') return null;
+  if (!booking.actual_check_in_at || !booking.actual_check_out_at) return null;
+
+  const plannedNights = grossNights.length;
+  const actualNights = lateCheckout.cycleNights({
+    checkOutTime: toClockTime(booking.check_out_time),
+    actualCheckInAt: booking.actual_check_in_at,
+    at: new Date(booking.actual_check_out_at),
+    graceMinutes: booking.late_grace_minutes,
+  });
+  const unusedNights = Math.max(0, plannedNights - actualNights);
+  if (unusedNights === 0) return null;
+
+  // The nights not slept in are the last ones, priced at what they were sold at.
+  const unusedAmount = round2(grossNights.slice(plannedNights - unusedNights).reduce((sum, n) => sum + n, 0));
+  return { plannedNights, actualNights, unusedNights, unusedAmount };
+}
+
 async function buildStayBill(pool, booking, foodOrders, opts) {
   const context = opts.slabs ? { slabs: opts.slabs, foodRate: opts.foodRate } : await loadPricingContext(pool, booking, foodOrders);
   return priceStayBill(booking, foodOrders, { ...opts, ...context });
@@ -566,7 +629,7 @@ async function buildStayBill(pool, booking, foodOrders, opts) {
 async function previewBill(
   lodgeId,
   bookingId,
-  { includeLateCheckout = true, discountAmount = 0, targetTotal = 0 } = {}
+  { includeLateCheckout = true, discountAmount = 0, targetTotal = 0, discountReason = null } = {}
 ) {
   const pool = await getPool();
   const booking = await loadBookingForBilling(lodgeId, bookingId);
@@ -637,6 +700,8 @@ async function previewBill(
     lateCheckoutAgreed: round2(Number(booking.late_checkout_charge) || 0),
     includeLateCheckout,
     lateCheckoutMinutes: booking.late_checkout_minutes ?? null,
+    // Set only when a CYCLE guest left before the nights they booked ran out.
+    earlyCheckout: earlyCheckoutOf(booking, grossNights),
     advancePaid: booking.advance_amount != null ? Number(booking.advance_amount) : 0,
     advanceReceiptNumbers: booking.advance_receipt_numbers || null,
     isGstRegistered: !!booking.is_gst_registered,
@@ -655,6 +720,7 @@ async function previewBill(
       foodItems,
       lateCheckoutCharge: bill.grossLate,
       kind: 'STAY',
+      discountReason: bill.discount > 0 ? discountReason : null,
     }),
     alreadyInvoiced: !!active,
   };
@@ -849,18 +915,20 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       .input('lateCheckoutCharge', sql.Decimal(10, 2), bill.grossLate)
       .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
       .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
+      // Only kept when there is a discount for it to explain.
+      .input('discountReason', sql.NVarChar(100), breakdown.discountAmount > 0 ? input.discountReason ?? null : null)
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.invoices
           (lodge_id, booking_id, document_type, billing_side, invoice_number, room_subtotal,
            cgst_amount, sgst_amount, food_subtotal, food_cgst_amount, food_sgst_amount,
-           late_checkout_charge, discount_amount, discount_percent, round_off, total_amount,
+           late_checkout_charge, discount_amount, discount_percent, discount_reason, round_off, total_amount,
            advance_paid, balance_collected, balance_payment_method, balance_reference, created_by)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @bookingId, @documentType, @billingSide, @invoiceNumber, @roomSubtotal,
            @cgstAmount, @sgstAmount, @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
-           @lateCheckoutCharge, @discountAmount, @discountPercent, @roundOff, @totalAmount,
+           @lateCheckoutCharge, @discountAmount, @discountPercent, @discountReason, @roundOff, @totalAmount,
            @advancePaid, @balanceCollected, @balancePaymentMethod, @balanceReference, @createdBy)
       `);
 
@@ -955,8 +1023,15 @@ function mapInvoice(row) {
     bookingId: row.booking_id,
     // A bill is a food bill when no stay backs it. The screen and the printed
     // document both branch on this rather than sniffing at null fields.
-    kind: row.booking_id == null ? 'FOOD' : 'STAY',
+    kind: row.event_booking_id != null ? 'EVENT' : row.booking_id == null ? 'FOOD' : 'STAY',
     tableLabel: row.table_label ?? null,
+    // The function behind an EVENT bill, for the document's register strip.
+    eventBookingId: row.event_booking_id ?? null,
+    eventTitle: row.event_title ?? null,
+    eventType: row.event_type ?? null,
+    venueName: row.venue_name ?? null,
+    eventStartAt: row.event_start_at ?? null,
+    eventEndAt: row.event_end_at ?? null,
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
@@ -977,7 +1052,7 @@ function mapInvoice(row) {
     // Aggregated here rather than shipping the raw per-night snapshot: the list
     // renders the printed document straight from this payload, and three
     // label/amount pairs per bill cost far less than every night's JSON.
-    roomCharges: roomChargeLines(row),
+    roomCharges: row.event_breakdown ? eventChargeLinesOf(row.event_breakdown) : roomChargeLines(row),
     lateCheckoutMinutes: row.late_checkout_minutes ?? null,
     cgstAmount: Number(row.cgst_amount),
     sgstAmount: Number(row.sgst_amount),
@@ -998,6 +1073,7 @@ function mapInvoice(row) {
     // 0 on every bill written before discounts existed, which prints nothing.
     discountAmount,
     discountPercent: Number(row.discount_percent ?? 0),
+    discountReason: row.discount_reason ?? null,
     roundOff: Number(row.round_off),
     totalAmount: Number(row.total_amount),
     advancePaid: Number(row.advance_paid),
@@ -1047,7 +1123,7 @@ function mapInvoice(row) {
 // The number and the date are the two things a preview genuinely doesn't have.
 // The series is allocated at issue time on purpose, so abandoned previews
 // don't burn invoice numbers out of a sequence that has to be gapless.
-function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutCharge, kind, tableLabel }) {
+function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutCharge, kind, tableLabel, discountReason = null }) {
   const roomSubtotal = side.subtotal;
   return {
     kind,
@@ -1103,6 +1179,7 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
 
     discountAmount: side.discountAmount,
     discountPercent: side.discountPercent,
+    discountReason,
     roundOff: side.roundOff,
     totalAmount: side.totalAmount,
 
@@ -1126,7 +1203,14 @@ async function getInvoice(lodgeId, invoiceId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
-      SELECT i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+      SELECT i.*, dt.label AS table_label,
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
+             COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
+             COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
+                 ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END) AS num_guests,
+             b.check_in_date, b.check_out_date,
+             eb.title AS event_title, eb.event_type, ev.name AS venue_name,
+             eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
@@ -1135,7 +1219,8 @@ async function getInvoice(lodgeId, invoiceId) {
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
-              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers,
+              WHERE (ar.booking_id = i.booking_id OR ar.event_booking_id = i.event_booking_id)
+                AND ar.status = 'ISSUED') AS advance_receipt_numbers,
              (SELECT pl.method, pl.amount, pl.reference
               FROM dbo.payment_lines pl
               WHERE pl.invoice_id = i.id
@@ -1148,6 +1233,9 @@ async function getInvoice(lodgeId, invoiceId) {
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       LEFT JOIN dbo.room_categories c ON c.id = r.category_id
       LEFT JOIN dbo.dining_tables dt ON dt.id = i.table_id
+      -- LEFT for the same reason: a function's bill has no stay and no table.
+      LEFT JOIN dbo.event_bookings eb ON eb.id = i.event_booking_id
+      LEFT JOIN dbo.event_venues ev ON ev.id = eb.venue_id
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.id = @invoiceId AND i.lodge_id = @lodgeId
     `);
@@ -1156,7 +1244,8 @@ async function getInvoice(lodgeId, invoiceId) {
     throw new ApiError('Bill not found.', 404);
   }
   const items = await loadFoodItemsByInvoice(pool, [invoiceId]);
-  return { ...mapInvoice(row), foodItems: items.get(String(invoiceId)) || [] };
+  const invoice = mapInvoice(row);
+  return { ...invoice, foodItems: invoice.kind === 'EVENT' ? cateringItemsOf(row, invoice) : items.get(String(invoiceId)) || [] };
 }
 
 async function listInvoices(lodgeId) {
@@ -1165,7 +1254,14 @@ async function listInvoices(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT TOP 200 i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+      SELECT TOP 200 i.*, dt.label AS table_label,
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
+             COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
+             COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
+                 ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END) AS num_guests,
+             b.check_in_date, b.check_out_date,
+             eb.title AS event_title, eb.event_type, ev.name AS venue_name,
+             eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
@@ -1174,7 +1270,8 @@ async function listInvoices(lodgeId) {
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
-              WHERE ar.booking_id = i.booking_id AND ar.status = 'ISSUED') AS advance_receipt_numbers,
+              WHERE (ar.booking_id = i.booking_id OR ar.event_booking_id = i.event_booking_id)
+                AND ar.status = 'ISSUED') AS advance_receipt_numbers,
              (SELECT pl.method, pl.amount, pl.reference
               FROM dbo.payment_lines pl
               WHERE pl.invoice_id = i.id
@@ -1187,6 +1284,9 @@ async function listInvoices(lodgeId) {
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       LEFT JOIN dbo.room_categories c ON c.id = r.category_id
       LEFT JOIN dbo.dining_tables dt ON dt.id = i.table_id
+      -- LEFT for the same reason: a function's bill has no stay and no table.
+      LEFT JOIN dbo.event_bookings eb ON eb.id = i.event_booking_id
+      LEFT JOIN dbo.event_venues ev ON ev.id = eb.venue_id
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.lodge_id = @lodgeId
       ORDER BY i.created_at DESC
@@ -1197,9 +1297,9 @@ async function listInvoices(lodgeId) {
   // query rather than one per bill.
   const invoices = result.recordset.map(mapInvoice);
   const items = await loadFoodItemsByInvoice(pool, invoices.filter((i) => i.foodSubtotal > 0).map((i) => i.id));
-  return invoices.map((invoice) => ({
+  return invoices.map((invoice, index) => ({
     ...invoice,
-    foodItems: items.get(String(invoice.id)) || [],
+    foodItems: invoice.kind === 'EVENT' ? cateringItemsOf(result.recordset[index], invoice) : items.get(String(invoice.id)) || [],
   }));
 }
 
@@ -1229,6 +1329,17 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
     await new sql.Request(transaction)
       .input('invoiceId', sql.BigInt, invoiceId)
       .query('UPDATE dbo.food_orders SET invoice_id = NULL WHERE invoice_id = @invoiceId');
+
+    // A function whose bill is voided goes back to confirmed, so it can be
+    // billed again — the bill is what settled it.
+    await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('invoiceId', sql.BigInt, invoiceId)
+      .query(`
+        UPDATE dbo.event_bookings SET status = 'CONFIRMED', updated_at = SYSDATETIMEOFFSET()
+        WHERE lodge_id = @lodgeId AND status = 'SETTLED'
+          AND id = (SELECT event_booking_id FROM dbo.invoices WHERE id = @invoiceId AND lodge_id = @lodgeId)
+      `);
 
     await transaction.commit();
   } catch (err) {
@@ -1515,6 +1626,15 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
 
 module.exports = {
   readPaymentLines,
+  // Shared with eventBilling.service.js: a function's bill is the same
+  // document as a stay's, built by the same arithmetic.
+  buildBreakdown,
+  cappedDiscount,
+  computeFoodTax,
+  getFoodRate,
+  solveDiscountForTarget,
+  findActiveEventInvoice,
+  earlyCheckoutOf,
   // Shared with advanceReceipts.service.js: a receipt records how it was
   // tendered exactly as a bill does.
   insertPaymentLines,

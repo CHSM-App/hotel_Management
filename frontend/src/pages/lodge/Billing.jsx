@@ -41,6 +41,10 @@ import {
   downloadPdf,
 } from './billPaper';
 
+// What the bill says beside a discount given because a cycle-property guest
+// left before their booked nights ran out.
+const EARLY_DISCOUNT_REASON = 'Leaving early';
+
 // How overdue the guest was, in words. Duplicated from the server's own
 // lateLabel rather than shipped down with the preview, because it is four
 // lines and the bill needs it for a number it already has.
@@ -81,11 +85,13 @@ const SOURCE_LABEL = {
   ROOM: 'Room',
   ROOM_FOOD: 'Room + food',
   TABLE: 'Table',
+  EVENT: 'Function',
   ADVANCE: 'Advance',
 };
 
 function billSource(inv) {
   if (inv.kind === 'ADVANCE') return 'ADVANCE';
+  if (inv.kind === 'EVENT') return 'EVENT';
   if (inv.kind === 'FOOD') return 'TABLE';
   // A stay whose guest ordered to the room is neither a plain stay bill nor a
   // food bill — it carries two taxed blocks, and staff reconciling the kitchen
@@ -429,7 +435,12 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
 // closing the modal would leave an invisible Billing mounted forever and a
 // second attempt at the same booking would be a no-op — the parent's state
 // would already hold that id, so nothing would re-render.
-export default function Billing({ lodge, billNowBookingId = null, modalOnly = false, onClose }) {
+// billNowEventId is the same hand-over from the events diary: a function
+// whose organiser is settling up opens its bill straight away.
+// viewInvoiceId opens an already-issued bill's document straight away — a
+// settled function's "View bill" — rather than asking for a new preview the
+// server would rightly refuse.
+export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, viewInvoiceId = null, modalOnly = false, onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -520,6 +531,7 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
     loadReceipts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   const refreshAll = () => {
     loadQueue();
@@ -617,7 +629,11 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // resets is already at that same initial state here, so seeding the target is
   // the whole of it. Closing the bill leaves them on the queue as usual.
   const [billTarget, setBillTarget] = useState(
-    billNowBookingId != null ? { kind: 'STAY', bookingId: billNowBookingId } : null
+    billNowBookingId != null
+      ? { kind: 'STAY', bookingId: billNowBookingId }
+      : billNowEventId != null
+        ? { kind: 'EVENT', eventBookingId: billNowEventId }
+        : null
   );
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
@@ -668,6 +684,16 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // bill. Starts as "yes" — it was already agreed with the guest — and the
   // person writing the bill is the one who can still take it back off.
   const [includeLateCheckout, setIncludeLateCheckout] = useState(true);
+  // A discount the desk gives on a CYCLE stay, in rupees, with the reason that
+  // prints beside it. Kept as the typed strings; the server caps the amount
+  // and solves the document. An early departure pre-fills both; anything else
+  // ("regular guest", "AC not working") is typed. Empty amount means nothing
+  // off — the bill prices every night that was booked.
+  const [discountInput, setDiscountInput] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
+  const cycleDiscount = Number(discountInput) || 0;
+  const isCycleStay = preview?.document?.checkinMode === 'CYCLE';
+  const earlyReducing = discountReason === EARLY_DISCOUNT_REASON;
   // A discount is agreed as a percentage or as a round figure depending on who
   // is asking, so both boxes exist and each fills in the other. Only the amount
   // is ever sent — a percentage and an amount that disagree have no right
@@ -680,6 +706,8 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
     setPayLinesInput(null);
     setIssueError('');
     setIncludeLateCheckout(true);
+    setDiscountInput('');
+    setDiscountReason('');
     setDetailStay(null);
     setDetailStayError('');
     setPreviewOpen(false);
@@ -706,8 +734,18 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // check the till against.
   const previewPath = billTarget
     ? billTarget.kind === 'STAY'
-      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}`
-      : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
+      ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}${
+          cycleDiscount > 0
+            ? `&discountAmount=${cycleDiscount}&discountReason=${encodeURIComponent(discountReason.trim())}`
+            : ''
+        }`
+      : billTarget.kind === 'EVENT'
+        ? `/billing/events/${billTarget.eventBookingId}/preview${
+            cycleDiscount > 0
+              ? `?discountAmount=${cycleDiscount}&discountReason=${encodeURIComponent(discountReason.trim())}`
+              : ''
+          }`
+        : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
     : null;
 
   useEffect(() => {
@@ -854,7 +892,9 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
     const path =
       billTarget.kind === 'STAY'
         ? `/billing/bookings/${billTarget.bookingId}/invoice`
-        : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/invoice`;
+        : billTarget.kind === 'EVENT'
+          ? `/billing/events/${billTarget.eventBookingId}/invoice`
+          : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/invoice`;
 
     setSubmitting(true);
     try {
@@ -868,6 +908,8 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
           // bill on screen. Still an amount and never a percentage: the server
           // re-derives that, so the two can't disagree on the document.
           discountAmount: preview.discountAmount ?? 0,
+          // Printed beside the discount so the bill says why it was given.
+          ...(cycleDiscount > 0 && discountReason.trim() ? { discountReason: discountReason.trim() } : {}),
           // Sent only for a stay — a table has no checkout to be late for.
           ...(billTarget.kind === 'STAY' ? { includeLateCheckout } : {}),
           collectedAmount: collected,
@@ -903,6 +945,26 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
   // reads from those — so without this the document would blink in a moment
   // later, or not at all on the screen that has no lists to refresh.
   const [justIssued, setJustIssued] = useState(null);
+
+  // The bill asked for by id, fetched on its own: on a modal-only screen the
+  // lists above are not what the detail reads from in time, and the copy
+  // held as "just issued" is the one source the detail modal falls back to.
+  const [viewError, setViewError] = useState('');
+  useEffect(() => {
+    if (viewInvoiceId == null) return;
+    apiGet(`/billing/invoices/${viewInvoiceId}`, { token })
+      .then((data) => {
+        setJustIssued(data.invoice);
+        // Keyed on the id as the API returns it, not as it was asked for: a
+        // BIGINT comes back from the driver as a string, while the function's
+        // own record carries it as a number, and the detail lookup above is a
+        // strict comparison. Asked for as 66, it has to be found as '66'.
+        setDetailInvoiceId(data.invoice.id);
+        setViewError('');
+      })
+      .catch((err) => setViewError(err instanceof ApiError ? err.message : 'Could not open this bill.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewInvoiceId]);
   const [showVoidForm, setShowVoidForm] = useState(false);
   const [voidReason, setVoidReason] = useState('');
   const [voidError, setVoidError] = useState('');
@@ -1034,7 +1096,7 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
     `${detailInvoice.guestName ? `${detailInvoice.guestName}, here` : 'Here'} is your bill ` +
     `${detailInvoice.invoiceNumber}` +
     `${detailInvoice.lodgeName ? ` from ${detailInvoice.lodgeName}` : ''}` +
-    ` for ${formatPrice(detailInvoice.totalAmount)}. Thank you for staying with us.`;
+    ` for ${formatPrice(detailInvoice.totalAmount)}. ${detailInvoice.kind === 'EVENT' ? 'Thank you for celebrating with us.' : 'Thank you for staying with us.'}`;
 
   // Share means WhatsApp. It is the one channel this desk sends bills on, so
   // the button goes straight there rather than asking which of several ways
@@ -1362,7 +1424,9 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                               without it a row can't say why it is on screen. */}
                           {inv.kind === 'FOOD'
                             ? inv.tableLabel || 'Counter'
-                            : `${inv.guestName} · ${inv.roomNumber}`}
+                            : inv.kind === 'EVENT'
+                              ? `${inv.guestName} · ${inv.venueName || 'Function'}`
+                              : `${inv.guestName} · ${inv.roomNumber}`}
                           {inv.createdAt && ` · ${formatBillDate(inv.createdAt)}`}
                           {/* Why anybody looks a receipt up again: what is
                               still to come on the stay it was taken against. */}
@@ -1396,6 +1460,17 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
           again, with the booking panel flashing up in between.
           The backdrop closes whichever step is showing, so a click outside
           always means the same thing. */}
+      {viewError && modalOnly && (
+        <div className="glass-backdrop billing-panel__backdrop" onClick={() => onClose?.()}>
+          <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="form-banner form-banner--error">{viewError}</div>
+            <button type="button" className="btn-secondary" onClick={() => onClose?.()}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {(billTarget || (detailInvoiceId && detailInvoice)) && (
         <div
           className="glass-backdrop billing-panel__backdrop"
@@ -1420,6 +1495,54 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                 {preview.alreadyInvoiced && (
                   <div className="form-banner form-banner--info">
                     This booking already has an issued bill. Void it first to reissue.
+                  </div>
+                )}
+
+                {billTarget.kind === 'EVENT' && (
+                  <div className="form-section">
+                    <div className="form-section__title">Function</div>
+                    <div className="chart-list">
+                      <div className="chart-row">
+                        <span className="chart-row__name">Organiser</span>
+                        <span className="chart-row__value">{preview.guestName}</span>
+                      </div>
+                      <div className="chart-row">
+                        <span className="chart-row__name">Function</span>
+                        <span className="chart-row__value">
+                          {preview.eventTitle} · {preview.venueName}
+                        </span>
+                      </div>
+                      {/* The larger of the final count and the guarantee —
+                          what the kitchen bought for is what gets billed. */}
+                      <div className="chart-row">
+                        <span className="chart-row__name">Plates billed</span>
+                        <span className="chart-row__value">{preview.billablePax}</span>
+                      </div>
+                      {(preview.roomCharges ?? []).map((line) => (
+                        <div className="chart-row" key={line.label}>
+                          <span className="chart-row__name">{line.label}</span>
+                          <span className="chart-row__value">{formatPrice(line.amount)}</span>
+                        </div>
+                      ))}
+                      {preview.quotedDiscount > 0 && (
+                        <div className="chart-row">
+                          <span className="chart-row__name">Concession agreed at quoting</span>
+                          <span className="chart-row__value">−{formatPrice(preview.quotedDiscount)}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* What the desk wrote down while the function was on. Named
+                        here so the biller checks it against what was actually
+                        supplied before the total goes on paper. */}
+                    {(preview.extrasOnDay ?? []).length > 0 && (
+                      <div className="form-banner form-banner--info" style={{ marginTop: 10 }}>
+                        <strong>Added on the day:</strong>{' '}
+                        {preview.extrasOnDay
+                          .map((x) => `${x.label}${x.quantity > 1 ? ` × ${x.quantity}` : ''} (${formatPrice(x.amount)})`)
+                          .join(' · ')}
+                        {' '}— included in the lines above.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1497,6 +1620,72 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                       </>
                     )}
 
+                    {/* A cycle-property guest who left before their booked
+                        nights ran out. The bill still carries every night that
+                        was sold; this is where the desk decides whether to
+                        give the unused ones back. It fills the discount below. */}
+                    {preview.earlyCheckout && (
+                      <div
+                        className={`billing-panel__early${earlyReducing ? ' billing-panel__early--on' : ''}`}
+                        role="group"
+                        aria-labelledby="earlyCheckoutTitle"
+                      >
+                        <div className="billing-panel__early-head">
+                          <span className="billing-panel__early-icon" aria-hidden="true">
+                            !
+                          </span>
+                          <div>
+                            <div id="earlyCheckoutTitle" className="billing-panel__early-title">
+                              Guest left early
+                            </div>
+                            <div className="billing-panel__early-sub">
+                              Stayed {preview.earlyCheckout.actualNights} of{' '}
+                              {preview.earlyCheckout.plannedNights} nights booked ·{' '}
+                              {preview.earlyCheckout.unusedNights} night
+                              {preview.earlyCheckout.unusedNights === 1 ? '' : 's'} unused
+                            </div>
+                          </div>
+                          <strong className="billing-panel__early-amount">
+                            {formatPrice(preview.earlyCheckout.unusedAmount)}
+                          </strong>
+                        </div>
+
+                        <div className="billing-panel__early-row">
+                          <label htmlFor="earlyDiscount" className="billing-panel__early-label">
+                            Early-leaving discount
+                            <span>Leave blank to charge in full</span>
+                          </label>
+                          <div className="billing-panel__early-input">
+                            <span aria-hidden="true">₹</span>
+                            <input
+                              id="earlyDiscount"
+                              type="number"
+                              min="0"
+                              step="1"
+                              inputMode="decimal"
+                              placeholder="0"
+                              value={earlyReducing ? discountInput : ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '') {
+                                  setDiscountInput('');
+                                  setDiscountReason('');
+                                } else {
+                                  setDiscountInput(v);
+                                  setDiscountReason(EARLY_DISCOUNT_REASON);
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <p className="billing-panel__early-status">
+                          {earlyReducing && cycleDiscount > 0
+                            ? `${formatPrice(preview.discountAmount ?? 0)} off · printed on the bill as "Discount – ${EARLY_DISCOUNT_REASON}"`
+                            : `Charging in full · all ${preview.earlyCheckout.plannedNights} booked nights`}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Shut by default and loaded only when opened. Most bills
                         are issued off the three rows above; this is for the
                         one where the guest queries a figure and the desk needs
@@ -1533,7 +1722,11 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                 {preview.foodItems?.length > 0 && (
                   <div className="form-section">
                     <div className="form-section__title">
-                      {billTarget.kind === 'FOOD' ? billTarget.label : 'Food ordered during the stay'}
+                      {billTarget.kind === 'FOOD'
+                        ? billTarget.label
+                        : billTarget.kind === 'EVENT'
+                          ? 'Catering'
+                          : 'Food ordered during the stay'}
                     </div>
                     <div className="chart-list">
                       {preview.foodItems.map((item, index) => (
@@ -1548,10 +1741,12 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                         </div>
                       ))}
                     </div>
-                    <p className="billing-panel__hint">
-                      From order{(preview.orders ?? preview.foodOrders).length === 1 ? '' : 's'}{' '}
-                      {(preview.orders ?? preview.foodOrders).map((o) => `#${o.orderNumber}`).join(', ')}
-                    </p>
+                    {(preview.orders ?? preview.foodOrders ?? []).length > 0 && (
+                      <p className="billing-panel__hint">
+                        From order{(preview.orders ?? preview.foodOrders).length === 1 ? '' : 's'}{' '}
+                        {(preview.orders ?? preview.foodOrders).map((o) => `#${o.orderNumber}`).join(', ')}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1631,7 +1826,10 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                           on an invoice must not appear to be. */}
                       {activeAmounts.discountAmount > 0 && (
                         <div className="sim-result__line">
-                          <span>Discount ({activeAmounts.discountPercent}%)</span>
+                          <span>
+                            Discount ({activeAmounts.discountPercent}%)
+                            {cycleDiscount > 0 && discountReason.trim() && ` · ${discountReason.trim()}`}
+                          </span>
                           <span>-{formatPrice(activeAmounts.discountAmount)}</span>
                         </div>
                       )}
@@ -1688,6 +1886,54 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                     </div>
                   )}
                 </div>
+
+                {/* Only a cycle property discounts here: on the other two
+                    modes the bill is what the stay costs and any concession
+                    is settled through what the guest hands over. The reason
+                    prints on the bill beside the amount, so a discount
+                    reads as a rule ("Leaving early") and not a favour. */}
+                {isCycleStay && (
+                  <div className="form-section billing-panel__discount">
+                    <div className="form-section__title">Discount</div>
+                    <div className="field-row">
+                      <div className="field">
+                        <label htmlFor="cycleDiscount">Amount</label>
+                        <input
+                          id="cycleDiscount"
+                          type="number"
+                          min="0"
+                          step="1"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={discountInput}
+                          onChange={(e) => setDiscountInput(e.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="cycleDiscountReason">Reason (printed on bill)</label>
+                        <input
+                          id="cycleDiscountReason"
+                          type="text"
+                          maxLength={100}
+                          placeholder="e.g. Leaving early, regular guest"
+                          value={discountReason}
+                          onChange={(e) => setDiscountReason(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <p className="billing-panel__hint">
+                      {cycleDiscount > 0
+                        ? `Shown on the bill as "Discount${
+                            discountReason.trim() ? ` – ${discountReason.trim()}` : ''
+                          }" of ${formatPrice(preview.discountAmount ?? 0)}.${
+                            preview.earlyCheckout
+                              ? ` The booking keeps its ${preview.earlyCheckout.plannedNights} nights on record.`
+                              : ''
+                          }`
+                        : 'No discount on this bill.'}
+                    </p>
+                  </div>
+                )}
 
                 {/* The decision as it is actually made at a counter: the guest
                     hands over a figure, and whatever the bill has to give up to

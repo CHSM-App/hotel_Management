@@ -18,7 +18,7 @@ CREATE TABLE dbo.lodges (
     city                   NVARCHAR(100) NULL,
     state                  NVARCHAR(100) NULL,
     checkin_mode           NVARCHAR(20) NOT NULL DEFAULT 'HOUR_24'
-        CONSTRAINT ck_lodges_checkin_mode CHECK (checkin_mode IN ('HOUR_24', 'NIGHT_BASED')),
+        CONSTRAINT ck_lodges_checkin_mode CHECK (checkin_mode IN ('HOUR_24', 'NIGHT_BASED', 'CYCLE')),
     is_gst_registered      BIT NOT NULL DEFAULT 0,
     gstin                  NVARCHAR(15) NULL,
     is_specified_premises  BIT NOT NULL DEFAULT 0,
@@ -1284,6 +1284,13 @@ IF OBJECT_ID('dbo.portion_sets', 'U') IS NOT NULL DROP TABLE dbo.portion_sets;
 IF COL_LENGTH('dbo.lodges', 'check_out_time') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD check_out_time TIME(0) NOT NULL CONSTRAINT df_lodges_check_out_time DEFAULT ''11:00:00''');
 
+-- The CYCLE mode (migration 044): check in from check_in_time, out by
+-- check_out_time, and every checkout-time boundary the stay crosses is a whole
+-- night. check_in_time is what the desk quotes; the arithmetic only needs the
+-- checkout time.
+IF COL_LENGTH('dbo.lodges', 'check_in_time') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD check_in_time TIME(0) NOT NULL CONSTRAINT df_lodges_check_in_time DEFAULT ''11:00:00''');
+
 IF COL_LENGTH('dbo.lodges', 'late_grace_minutes') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD late_grace_minutes INT NOT NULL CONSTRAINT df_lodges_late_grace DEFAULT 60');
 
@@ -1342,6 +1349,11 @@ IF COL_LENGTH('dbo.invoices', 'discount_amount') IS NULL
 
 IF COL_LENGTH('dbo.invoices', 'discount_percent') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD discount_percent DECIMAL(5,2) NOT NULL CONSTRAINT df_invoices_discount_pct DEFAULT 0');
+
+-- Why the discount was given, printed beside it (migration 045). Nullable:
+-- bills issued before it existed print as they always did.
+IF COL_LENGTH('dbo.invoices', 'discount_reason') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD discount_reason NVARCHAR(100) NULL');
 
 -- ---------------------------------------------------------------------------
 -- Kitchen raw material inventory
@@ -1614,3 +1626,237 @@ IF COL_LENGTH('dbo.booking_switchable_charges', 'agreed_amount') IS NULL
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_booking_switchable_charges_agreed_amount')
     EXEC('ALTER TABLE dbo.booking_switchable_charges ADD CONSTRAINT ck_booking_switchable_charges_agreed_amount
           CHECK (agreed_amount IS NULL OR agreed_amount >= 0)');
+
+-- ---------------------------------------------------------------------------
+-- Event bookings (migration 046)
+-- ---------------------------------------------------------------------------
+-- A hall, lawn or terrace let out for a birthday, wedding, reception or
+-- corporate function. See migrations/046_event_bookings.sql for the reasoning
+-- behind each table; this is the same DDL folded in so a database built from
+-- nothing matches one migrated forward.
+
+-- Not every property has a hall to let: a fifth capability bit.
+IF COL_LENGTH('dbo.lodges', 'has_events') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD has_events BIT NOT NULL CONSTRAINT df_lodges_has_events DEFAULT 0');
+
+-- The spaces a property lets. The diary and the clash check are per venue.
+IF OBJECT_ID('dbo.event_venues', 'U') IS NULL
+CREATE TABLE dbo.event_venues (
+    id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id      BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name          NVARCHAR(100) NOT NULL,
+    capacity_pax  INT NULL,
+    -- Per slot, GST-inclusive.
+    base_charge   DECIMAL(10,2) NOT NULL CONSTRAINT df_event_venues_base_charge DEFAULT 0,
+    is_active     BIT NOT NULL CONSTRAINT df_event_venues_active DEFAULT 1,
+    created_at    DATETIMEOFFSET NOT NULL CONSTRAINT df_event_venues_created DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_event_venues_lodge_name UNIQUE (lodge_id, name)
+);
+
+-- Photos of a venue, up to six, kept the way room_images are.
+IF OBJECT_ID('dbo.event_venue_images', 'U') IS NULL
+CREATE TABLE dbo.event_venue_images (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    venue_id    BIGINT NOT NULL REFERENCES dbo.event_venues(id),
+    filename    NVARCHAR(255) NOT NULL,
+    sort_order  INT NOT NULL CONSTRAINT df_event_venue_images_sort DEFAULT 0,
+    created_at  DATETIMEOFFSET NOT NULL CONSTRAINT df_event_venue_images_created DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = 'ix_event_venue_images_venue' AND object_id = OBJECT_ID('dbo.event_venue_images')
+)
+    CREATE INDEX ix_event_venue_images_venue ON dbo.event_venue_images(venue_id);
+
+-- Decoration, DJ, mandap, extra chairs: the catalogue a function is sold from.
+IF OBJECT_ID('dbo.event_addons', 'U') IS NULL
+CREATE TABLE dbo.event_addons (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id        BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name            NVARCHAR(100) NOT NULL,
+    default_amount  DECIMAL(10,2) NOT NULL CONSTRAINT df_event_addons_amount DEFAULT 0,
+    is_per_unit     BIT NOT NULL CONSTRAINT df_event_addons_per_unit DEFAULT 0,
+    is_active       BIT NOT NULL CONSTRAINT df_event_addons_active DEFAULT 1,
+    created_at      DATETIMEOFFSET NOT NULL CONSTRAINT df_event_addons_created DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_event_addons_lodge_name UNIQUE (lodge_id, name)
+);
+
+-- One function, from the first call to the settled bill. Time is a real
+-- range (a wedding runs 6 pm to 1 am). TENTATIVE and CONFIRMED block the venue.
+IF OBJECT_ID('dbo.event_bookings', 'U') IS NULL
+CREATE TABLE dbo.event_bookings (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    venue_id            BIGINT NOT NULL REFERENCES dbo.event_venues(id),
+    event_type          NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_event_bookings_type
+        CHECK (event_type IN ('BIRTHDAY', 'WEDDING', 'RECEPTION', 'ENGAGEMENT', 'CORPORATE', 'OTHER')),
+    title               NVARCHAR(200) NOT NULL,
+    organiser_name      NVARCHAR(200) NOT NULL,
+    organiser_phone     NVARCHAR(20) NOT NULL,
+    organiser_alt_phone NVARCHAR(20) NULL,
+    start_at            DATETIMEOFFSET NOT NULL,
+    end_at              DATETIMEOFFSET NOT NULL,
+    slot                NVARCHAR(10) NOT NULL
+        CONSTRAINT ck_event_bookings_slot CHECK (slot IN ('MORNING', 'EVENING', 'FULL_DAY', 'CUSTOM')),
+    expected_pax        INT NOT NULL CONSTRAINT ck_event_bookings_expected CHECK (expected_pax >= 0),
+    guaranteed_pax      INT NOT NULL CONSTRAINT df_event_bookings_guaranteed DEFAULT 0,
+    final_pax           INT NULL,
+    venue_charge        DECIMAL(10,2) NOT NULL CONSTRAINT df_event_bookings_venue_charge DEFAULT 0,
+    per_plate_rate      DECIMAL(10,2) NOT NULL CONSTRAINT df_event_bookings_plate DEFAULT 0,
+    catering_amount     DECIMAL(10,2) NOT NULL CONSTRAINT df_event_bookings_catering DEFAULT 0,
+    addons_total        DECIMAL(10,2) NOT NULL CONSTRAINT df_event_bookings_addons DEFAULT 0,
+    discount_amount     DECIMAL(10,2) NOT NULL CONSTRAINT df_event_bookings_discount DEFAULT 0,
+    discount_reason     NVARCHAR(100) NULL,
+    total_amount        DECIMAL(10,2) NOT NULL CONSTRAINT df_event_bookings_total DEFAULT 0,
+    pricing_breakdown   NVARCHAR(MAX) NULL
+        CONSTRAINT ck_event_bookings_breakdown_json CHECK (pricing_breakdown IS NULL OR ISJSON(pricing_breakdown) = 1),
+    advance_amount      DECIMAL(10,2) NULL,
+    advance_payment_method NVARCHAR(20) NULL
+        CONSTRAINT ck_event_bookings_advance_method CHECK (advance_payment_method IN ('CASH', 'UPI', 'CARD')),
+    menu_notes          NVARCHAR(MAX) NULL,
+    setup_notes         NVARCHAR(MAX) NULL,
+    schedule_notes      NVARCHAR(MAX) NULL,
+    -- Rooms wanted alongside the function: how many, which nights (rooms_to
+    -- is the leaving morning, exclusive, as a stay's check_out_date is), and
+    -- a note. A need recorded, not a booking made — the stay is booked from
+    -- the tape chart and billed as accommodation. Catering has no flag of its
+    -- own: per_plate_rate = 0 is "no catering".
+    rooms_required      BIT NOT NULL CONSTRAINT df_event_bookings_rooms_required DEFAULT 0,
+    rooms_count         INT NULL,
+    rooms_from          DATE NULL,
+    rooms_to            DATE NULL,
+    rooms_notes         NVARCHAR(500) NULL,
+    status              NVARCHAR(10) NOT NULL CONSTRAINT df_event_bookings_status DEFAULT 'ENQUIRY'
+        CONSTRAINT ck_event_bookings_status
+        CHECK (status IN ('ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED')),
+    hold_expires_at     DATETIMEOFFSET NULL,
+    cancel_reason       NVARCHAR(200) NULL,
+    refund_amount       DECIMAL(10,2) NULL,
+    created_by          BIGINT NULL REFERENCES dbo.users(id),
+    created_at          DATETIMEOFFSET NOT NULL CONSTRAINT df_event_bookings_created DEFAULT SYSDATETIMEOFFSET(),
+    updated_at          DATETIMEOFFSET NOT NULL CONSTRAINT df_event_bookings_updated DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT ck_event_bookings_range CHECK (end_at > start_at)
+);
+
+IF COL_LENGTH('dbo.event_bookings', 'rooms_required') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rooms_required BIT NOT NULL CONSTRAINT df_event_bookings_rooms_required DEFAULT 0');
+IF COL_LENGTH('dbo.event_bookings', 'rooms_count') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rooms_count INT NULL');
+IF COL_LENGTH('dbo.event_bookings', 'rooms_from') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rooms_from DATE NULL');
+IF COL_LENGTH('dbo.event_bookings', 'rooms_to') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rooms_to DATE NULL');
+IF COL_LENGTH('dbo.event_bookings', 'rooms_notes') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rooms_notes NVARCHAR(500) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_venue_time' AND object_id = OBJECT_ID('dbo.event_bookings'))
+    CREATE INDEX ix_event_bookings_venue_time ON dbo.event_bookings(venue_id, start_at, end_at) INCLUDE (status);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_lodge_status' AND object_id = OBJECT_ID('dbo.event_bookings'))
+    CREATE INDEX ix_event_bookings_lodge_status ON dbo.event_bookings(lodge_id, status, start_at);
+
+-- What a function was sold with, at the price agreed. Snapshotted off the
+-- catalogue; agreed_amount is the whole line.
+IF OBJECT_ID('dbo.event_booking_addons', 'U') IS NULL
+CREATE TABLE dbo.event_booking_addons (
+    id                BIGINT IDENTITY(1,1) PRIMARY KEY,
+    event_booking_id  BIGINT NOT NULL REFERENCES dbo.event_bookings(id),
+    addon_id          BIGINT NULL REFERENCES dbo.event_addons(id),
+    label             NVARCHAR(100) NOT NULL,
+    quantity          INT NOT NULL CONSTRAINT df_event_booking_addons_qty DEFAULT 1
+        CONSTRAINT ck_event_booking_addons_qty CHECK (quantity >= 1),
+    unit_amount       DECIMAL(10,2) NOT NULL CONSTRAINT df_event_booking_addons_unit DEFAULT 0,
+    agreed_amount     DECIMAL(10,2) NOT NULL
+        CONSTRAINT ck_event_booking_addons_agreed CHECK (agreed_amount >= 0),
+    -- An extra asked for on the day — fifty more chairs, a second mic —
+    -- noted from the function's page while it is live so it reaches the
+    -- bill. needs_pricing is the reminder: the desk wrote it down before a
+    -- price was agreed, and the bill will not issue until one is.
+    is_extra          BIT NOT NULL CONSTRAINT df_event_booking_addons_extra DEFAULT 0,
+    needs_pricing     BIT NOT NULL CONSTRAINT df_event_booking_addons_unpriced DEFAULT 0,
+    noted_at          DATETIMEOFFSET NULL
+);
+
+IF COL_LENGTH('dbo.event_booking_addons', 'is_extra') IS NULL
+    EXEC('ALTER TABLE dbo.event_booking_addons ADD is_extra BIT NOT NULL CONSTRAINT df_event_booking_addons_extra DEFAULT 0');
+IF COL_LENGTH('dbo.event_booking_addons', 'needs_pricing') IS NULL
+    EXEC('ALTER TABLE dbo.event_booking_addons ADD needs_pricing BIT NOT NULL CONSTRAINT df_event_booking_addons_unpriced DEFAULT 0');
+IF COL_LENGTH('dbo.event_booking_addons', 'noted_at') IS NULL
+    EXEC('ALTER TABLE dbo.event_booking_addons ADD noted_at DATETIMEOFFSET NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_booking_addons_booking' AND object_id = OBJECT_ID('dbo.event_booking_addons'))
+    CREATE INDEX ix_event_booking_addons_booking ON dbo.event_booking_addons(event_booking_id);
+
+-- Hall hire is SAC 997212 at a flat 18%: a third supply_type. Catering with a
+-- function is billed on the FOOD rate as its own line.
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_gst_slabs_supply')
+    ALTER TABLE dbo.gst_slabs DROP CONSTRAINT ck_gst_slabs_supply;
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_gst_slabs_supply')
+    EXEC('ALTER TABLE dbo.gst_slabs ADD CONSTRAINT ck_gst_slabs_supply
+          CHECK (supply_type IN (''ACCOMMODATION'', ''FOOD'', ''VENUE''))');
+
+EXEC('IF NOT EXISTS (SELECT 1 FROM dbo.gst_slabs WHERE supply_type = ''VENUE'')
+        INSERT INTO dbo.gst_slabs (supply_type, max_amount, rate_percent, applies_to_specified, sac_code)
+        VALUES (''VENUE'', NULL, 18, NULL, ''997212'')');
+
+-- The final bill and the advance receipt hang off the same documents a stay
+-- uses. On invoices, room_subtotal carries the venue side (hall plus add-ons)
+-- and food_subtotal the catering; the document reads its labels from
+-- event_booking_id being set.
+IF COL_LENGTH('dbo.invoices', 'event_booking_id') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD event_booking_id BIGINT NULL REFERENCES dbo.event_bookings(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_event_active' AND object_id = OBJECT_ID('dbo.invoices'))
+    EXEC('CREATE UNIQUE INDEX uq_invoices_event_active ON dbo.invoices(event_booking_id)
+          WHERE status = ''ISSUED'' AND event_booking_id IS NOT NULL');
+
+-- A receipt is against a stay or a function, never both and never neither.
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.advance_receipts') AND name = 'booking_id' AND is_nullable = 0
+)
+    ALTER TABLE dbo.advance_receipts ALTER COLUMN booking_id BIGINT NULL;
+
+IF COL_LENGTH('dbo.advance_receipts', 'event_booking_id') IS NULL
+    EXEC('ALTER TABLE dbo.advance_receipts ADD event_booking_id BIGINT NULL REFERENCES dbo.event_bookings(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_advance_receipts_parent')
+    EXEC('ALTER TABLE dbo.advance_receipts ADD CONSTRAINT ck_advance_receipts_parent CHECK (
+        (CASE WHEN booking_id IS NULL THEN 0 ELSE 1 END)
+      + (CASE WHEN event_booking_id IS NULL THEN 0 ELSE 1 END) = 1)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_advance_receipts_event' AND object_id = OBJECT_ID('dbo.advance_receipts'))
+    EXEC('CREATE INDEX ix_advance_receipts_event ON dbo.advance_receipts(event_booking_id, status)
+          WHERE event_booking_id IS NOT NULL');
+
+-- events.manage on the built-in roles (migration 047). Only where they are
+-- still at their shipped defaults; a customised built-in keeps its own set.
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
+           AND permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage"]')
+UPDATE dbo.roles
+SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","events.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'OWNER';
+
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'RECEPTION'
+           AND permissions = '["bookings.manage","billing.manage","guests.view","orders.manage"]')
+UPDATE dbo.roles
+SET permissions = '["bookings.manage","billing.manage","guests.view","orders.manage","events.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'RECEPTION';
+
+-- ---------------------------------------------------------------------------
+-- Map coordinates (migration 050)
+-- ---------------------------------------------------------------------------
+-- Where the property is, as a pin. The address says what to print; this says
+-- where to point a map. Both set or both null, in range.
+IF COL_LENGTH('dbo.lodges', 'latitude') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD latitude DECIMAL(9,6) NULL');
+
+IF COL_LENGTH('dbo.lodges', 'longitude') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD longitude DECIMAL(9,6) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_lodges_coordinates')
+    EXEC('ALTER TABLE dbo.lodges WITH CHECK ADD CONSTRAINT ck_lodges_coordinates CHECK (
+        (latitude IS NULL AND longitude IS NULL)
+     OR (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180))');

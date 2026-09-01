@@ -10,7 +10,8 @@ async function getLodgeBySlug(slug) {
     .input('slug', sql.NVarChar, slug)
     .query(`
       SELECT id, name, slug, phone, whatsapp_number, address, city, state,
-             has_rooms, serves_food, food_room_service, food_table_service
+             has_rooms, serves_food, food_room_service, food_table_service, has_events,
+             checkin_mode, latitude, longitude
       FROM dbo.lodges
       WHERE slug = @slug AND is_active = 1
     `);
@@ -33,6 +34,13 @@ async function getLodgeBySlug(slug) {
     servesFood: !!row.serves_food,
     foodRoomService: !!row.food_room_service,
     foodTableService: !!row.food_table_service,
+    hasEvents: !!row.has_events,
+    // How a stay is counted — 24 hours from arrival, by the night, or a
+    // fixed cycle — and the pin for a directions link. The exact clock times
+    // stay off the page; the desk quotes those when a booking is made.
+    checkinMode: row.checkin_mode,
+    latitude: row.latitude == null ? null : Number(row.latitude),
+    longitude: row.longitude == null ? null : Number(row.longitude),
   };
 }
 
@@ -203,6 +211,78 @@ async function getPublicMenu(lodgeId) {
         })),
     }))
     .filter((section) => section.items.length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Venues and add-ons on the public page
+// ---------------------------------------------------------------------------
+
+// The halls and lawns a family can enquire about, with their photos, the
+// capacity and the hire charge the quote starts from. Active ones only — a
+// venue the owner has retired is not for sale. Ids stay in: unlike a room, a
+// venue is a single named thing the guest already sees the name of, so the id
+// tells nobody anything the name does not, and the enquiry needs something to
+// key a photo gallery on.
+async function listPublicVenues(lodgeId) {
+  const pool = await getPool();
+  const [venuesResult, imagesResult] = await Promise.all([
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query(`
+        SELECT id, name, capacity_pax, base_charge
+        FROM dbo.event_venues
+        WHERE lodge_id = @lodgeId AND is_active = 1
+        ORDER BY base_charge ASC, name ASC
+      `),
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query(`
+        SELECT vi.venue_id, vi.filename
+        FROM dbo.event_venue_images vi
+        JOIN dbo.event_venues v ON v.id = vi.venue_id
+        WHERE v.lodge_id = @lodgeId AND v.is_active = 1
+        ORDER BY vi.sort_order ASC, vi.id ASC
+      `),
+  ]);
+
+  const imagesByVenue = new Map();
+  for (const row of imagesResult.recordset) {
+    const list = imagesByVenue.get(row.venue_id) || [];
+    list.push(row.filename);
+    imagesByVenue.set(row.venue_id, list);
+  }
+
+  return venuesResult.recordset.map((row) => ({
+    id: row.id,
+    name: row.name,
+    capacityPax: row.capacity_pax == null ? null : Number(row.capacity_pax),
+    baseCharge: Number(row.base_charge),
+    // Bare filenames the browser resolves against the /venue-images mount.
+    images: imagesByVenue.get(row.id) || [],
+  }));
+}
+
+// What a function can be sold with beyond the hall, at list price. The desk
+// still quotes the real number; this is the menu of extras, not the bill.
+async function listPublicAddons(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT id, name, default_amount, is_per_unit
+      FROM dbo.event_addons
+      WHERE lodge_id = @lodgeId AND is_active = 1
+      ORDER BY name ASC
+    `);
+  return result.recordset.map((row) => ({
+    id: row.id,
+    name: row.name,
+    defaultAmount: Number(row.default_amount),
+    isPerUnit: !!row.is_per_unit,
+  }));
 }
 
 function assertServesFood(lodge) {
@@ -678,6 +758,8 @@ async function getPublicOrderStatus(token) {
 module.exports = {
   getLodgeBySlug,
   listPublicRoomTypes,
+  listPublicVenues,
+  listPublicAddons,
   getPublicMenu,
   getLodgeOrderingContext,
   getTableOrderingContext,

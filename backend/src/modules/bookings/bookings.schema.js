@@ -417,6 +417,10 @@ const checkOutSchema = z.object({
 
 module.exports = {
   DATE_RE,
+  TEN_DIGITS,
+  MOBILE_MESSAGE,
+  normaliseMobile,
+  optionalMobileField,
   PAYMENT_METHODS,
   ONLINE_METHODS,
   requiresReference,

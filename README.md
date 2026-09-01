@@ -19,6 +19,8 @@ Offline bookings only — no OTA, no payment gateway, no guest login.
 - [Billing and GST](#billing-and-gst)
 - [Guests, ID and vehicles](#guests-id-and-vehicles)
 - [Food ordering and roles](#food-ordering-and-roles)
+- [Events and functions](#events-and-functions)
+- [Guest WhatsApp confirmations](#guest-whatsapp-confirmations)
 - [Public enquiry page](#public-enquiry-page)
 - [Repo structure](#repo-structure)
 - [API surface](#api-surface)
@@ -166,7 +168,7 @@ Every business table carries `lodge_id`. Enforced by middleware **and** SQL Serv
 Two `lodges` fields are effectively immutable after go-live:
 
 - `is_gst_registered` — determines which documents exist at all
-- `checkin_mode` — `NIGHT_BASED` or `HOUR_24`. Most Konkan lodges run 24-hour cycles.
+- `checkin_mode` — `HOUR_24`, `NIGHT_BASED` or `CYCLE` (fixed check-in/checkout times; every checkout-time boundary crossed is a whole night). Most Konkan lodges run 24-hour cycles.
 
 Also on `lodges`: `is_specified_premises` (drives the restaurant GST rate), `whatsapp_number` (separate from `phone`), `slug` (immutable once shared).
 
@@ -599,6 +601,101 @@ lodge that has already customised Reception keeps its own set.
 
 ---
 
+## Events and functions
+
+A property with a hall, lawn or terrace lets it out for birthdays, weddings,
+receptions and corporate functions. The section is gated by the `has_events`
+capability bit on `dbo.lodges` and the `events.manage` permission, the same
+way food is gated by `serves_food` — a rooms-only lodge with a lawn and a
+restaurant with a party hall are both real, so it is its own bit rather than
+a property type.
+
+### The flow, as a banquet desk actually runs it
+
+| Stage | What happens | Status |
+|---|---|---|
+| Enquiry | A call or a walk-in: occasion, date, venue, head count. Nothing is held and nothing is paid. Two families can enquire about the same Saturday. | `ENQUIRY` |
+| Quote | Venue hire for the slot + per-plate catering × plates + add-ons (DJ, decoration, chairs…) − concession. The labelled lines are snapshotted onto the booking (`pricing_breakdown`) so a later price change never restates a quote already given. Shareable on WhatsApp. | — |
+| Tentative hold | The date is blocked for 48 h (owner can set 1–720 h) pending the advance. Lapsed holds go to `EXPIRED` on the next read — there is no scheduler in this process. | `TENTATIVE` |
+| Confirmation | Money down. Recording an advance receipt confirms the function on its own; "Confirm" without money is also allowed. | `CONFIRMED` |
+| Function sheet | Menu, setup and schedule notes on the booking — what the kitchen, the decorator and the gate each need. Printable. | — |
+| Final head count | Confirmed a day or two before. Catering is billed on the **larger of the final count and the guaranteed minimum**: the kitchen bought for the guarantee. | — |
+| Settlement | The final bill: venue side (hall + add-ons, SAC 997212, flat 18%) and catering (food rate) as two blocks on one document, less advances, balance by cash/UPI/card or a split. Issuing the bill settles the function; voiding it puts it back to confirmed. | `SETTLED` |
+| Cancellation | From any state before settlement. The reason and any refund are recorded; the receipts stay as the paper trail. | `CANCELLED` |
+
+`TENTATIVE` and `CONFIRMED` block the venue; nothing else does. A clash is
+checked twice, exactly as a room booking is — an unlocked pre-check, then the
+authoritative one under `UPDLOCK, HOLDLOCK` inside a `SERIALIZABLE`
+transaction — on create, on a hold, on a confirmation and on an edit that
+moves the time or the venue. Time is a real range (`start_at`/`end_at`,
+`DATETIMEOFFSET`) because a wedding runs past midnight; overlap is half-open,
+so a morning slot ending at 15:00 and an evening one starting at 15:00 do not
+clash.
+
+### Money
+
+The two money documents are the ones a stay already has. `dbo.invoices` and
+`dbo.advance_receipts` each gained a nullable `event_booking_id` beside
+`booking_id` (a receipt is held to exactly one parent by a CHECK, as
+`payment_lines` is). On an event bill `room_subtotal` carries the venue side
+and `food_subtotal` the catering, so every reader that sums, reports or prints
+those columns keeps working; the document reads its labels from `kind:
+'EVENT'`. `event_bookings.advance_amount` is the source of truth for money
+held, written by the receipt paths the way `bookings.advance_amount` is.
+
+### Tables
+
+`event_venues`, `event_addons` (the catalogue), `event_bookings`,
+`event_booking_addons` (what a function was sold with, at the agreed price).
+Migration `046_event_bookings.sql`; the DDL is mirrored into `schema.sql`.
+
+---
+
+## Guest WhatsApp confirmations
+
+When a stay is saved, or a function takes its venue, the guest gets a WhatsApp
+message confirming it. One approved SMSala template serves both — a stay and a
+function say the same seven things — sent through `src/config/whatsapp.js`, the
+same client the password-change OTP already used, and assembled in
+`src/modules/notifications/bookingConfirmation.js`.
+
+The template's variables, in order:
+
+| # | Value | Stay | Function |
+|---|---|---|---|
+| `{{1}}` | Who | `guest_name` | `organiser_name` |
+| `{{2}}` | Where | property name | property name + venue |
+| `{{3}}` | Booking id | `#41` | `EV-7` |
+| `{{4}}` | Start | check-in date, plus the property's check-in time | `start_at`, in IST |
+| `{{5}}` | End | check-out date, plus the property's check-out time | `end_at`, in IST |
+| `{{6}}` | Directions | Maps link from the property's coordinates, else its address | same |
+| `{{7}}` | Phone | property phone, else its WhatsApp number | same |
+
+Things worth knowing:
+
+- **Off unless configured.** `WHATSAPP_BOOKING_TEMPLATE_ID` blank means no
+  message and no database read. A property whose template is not approved yet
+  simply does not use the feature.
+- **Best-effort, never blocking.** The booking is committed before the send is
+  fired, and the send is not awaited. The notifier never throws: every outcome
+  is logged (`warn` on failure) and the desk is not told in the UI. A message
+  that did not go out is a phone call, not a lost booking — and the usual
+  cause, a number that is not on WhatsApp, is nothing the server can fix.
+- **Commas are the variable separator.** The provider packs all seven into one
+  comma-separated `Sample` string, so a comma inside a value shifts every later
+  variable along by one — the address landing in the phone slot. Every value
+  goes through `clean()`, which turns commas into dashes and an empty value
+  into `-` (the provider rejects a blank variable outright).
+- **A bare enquiry is not told "confirmed".** A function sends on creation only
+  when its status blocks the venue (`TENTATIVE` or `CONFIRMED`), and on a
+  transition only when it was not already blocking — so a tentative hold that
+  is later confirmed is not messaged twice.
+- **A `HOUR_24` property promises dates, not times**, because its checkout is
+  24 hours after the guest actually arrives and there is no clock time to quote
+  until they do. `NIGHT_BASED` and `CYCLE` quote the property's own times.
+
+---
+
 ## Public enquiry page
 
 Separate server-rendered app. Unauthenticated, high-read, SEO-relevant.
@@ -701,6 +798,16 @@ GET    /billing/queue                    checked-out stays awaiting a bill
 GET    /billing/food-tabs                tables holding delivered, unbilled food
 GET    /billing/food-tabs/:id/preview    :id is a table id, or "counter"
 POST   /billing/food-tabs/:id/invoice    closes the table into one document
+
+GET    /events/venues | /events/addons   the hall(s) and the add-on catalogue
+GET    /events/availability?venueId=&startAt=&endAt=
+POST   /events/quote                     venue + plates + add-ons - concession
+GET    /events?fromDate=&toDate=         the function diary
+POST   /events                           { ..., status: ENQUIRY|TENTATIVE|CONFIRMED }
+PATCH  /events/:id/hold | confirm | release | cancel
+GET    /billing/events/:id/preview
+POST   /billing/events/:id/invoice       settles the function
+POST   /billing/events/:id/advance-receipt
 
 GET    /public/lodges/:slug/menu               the single ordering page
 POST   /public/lodges/:slug/orders             { roomNumber, pin, items[], note }

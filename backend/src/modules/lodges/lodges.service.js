@@ -34,6 +34,8 @@ async function createLodgeWithOwner(input) {
       .input('addressMr', sql.NVarChar, input.addressMr || null)
       .input('city', sql.NVarChar, input.city || null)
       .input('state', sql.NVarChar, input.state || null)
+      .input('latitude', sql.Decimal(9, 6), input.latitude ?? null)
+      .input('longitude', sql.Decimal(9, 6), input.longitude ?? null)
       .input('checkinMode', sql.NVarChar, input.checkinMode)
       .input('isGstRegistered', sql.Bit, input.isGstRegistered)
       .input('gstin', sql.NVarChar, input.gstin || null)
@@ -42,16 +44,19 @@ async function createLodgeWithOwner(input) {
       .input('servesFood', sql.Bit, input.servesFood)
       .input('foodRoomService', sql.Bit, input.foodRoomService)
       .input('foodTableService', sql.Bit, input.foodTableService)
+      .input('hasEvents', sql.Bit, input.hasEvents)
       .query(`
         INSERT INTO dbo.lodges
-          (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state, checkin_mode,
+          (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
+           latitude, longitude, checkin_mode,
            is_gst_registered, gstin, is_specified_premises,
-           has_rooms, serves_food, food_room_service, food_table_service)
+           has_rooms, serves_food, food_room_service, food_table_service, has_events)
         OUTPUT inserted.id
         VALUES
-          (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state, @checkinMode,
+          (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state,
+           @latitude, @longitude, @checkinMode,
            @isGstRegistered, @gstin, @isSpecifiedPremises,
-           @hasRooms, @servesFood, @foodRoomService, @foodTableService)
+           @hasRooms, @servesFood, @foodRoomService, @foodTableService, @hasEvents)
       `);
 
     const lodgeId = lodgeResult.recordset[0].id;
@@ -98,9 +103,9 @@ async function listLodges() {
 
   const result = await pool.request().query(`
     SELECT
-      l.id, l.name, l.slug, l.city, l.state, l.checkin_mode, l.is_gst_registered,
+      l.id, l.name, l.slug, l.city, l.state, l.latitude, l.longitude, l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
-      l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service,
+      l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
       u.name AS owner_name, u.phone AS owner_phone
     FROM dbo.lodges l
     LEFT JOIN dbo.users u ON u.lodge_id = l.id AND u.role = 'OWNER'
@@ -122,10 +127,11 @@ async function getLodgeDetail(id) {
 
   const result = await pool.request().input('id', sql.BigInt, id).query(`
     SELECT
-      id, name, slug, phone, whatsapp_number, address, city, state,
+      id, name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
+      latitude, longitude,
       checkin_mode, is_gst_registered, gstin, is_specified_premises,
-      has_rooms, serves_food, food_room_service, food_table_service,
-      check_out_time, late_grace_minutes, late_half_day_percent,
+      has_rooms, serves_food, food_room_service, food_table_service, has_events,
+      check_out_time, check_in_time, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
       is_active, created_at
     FROM dbo.lodges
@@ -181,4 +187,117 @@ async function getLodgeDetail(id) {
   };
 }
 
-module.exports = { createLodgeWithOwner, listLodges, getLodgeDetail };
+// The same cross-field rules createLodgeSchema enforces, applied to the row
+// as it will be after the edit. Stated once here rather than duplicated as
+// zod refines, because an edit only carries the fields that changed.
+function assertProfileConsistent(row) {
+  if (!row.has_rooms && !row.serves_food && !row.has_events) {
+    throw new ApiError('A property with no rooms, no food service and no venue has nothing to sell.', 400);
+  }
+  if (row.is_gst_registered && !row.gstin) {
+    throw new ApiError('Enter the GSTIN, or turn off GST registration.', 400);
+  }
+  if (row.food_room_service && !row.has_rooms) {
+    throw new ApiError('In-room ordering needs rooms - turn it off for a restaurant.', 400);
+  }
+  if (!row.serves_food && (row.food_room_service || row.food_table_service)) {
+    throw new ApiError('Turn on food service before choosing how orders are taken.', 400);
+  }
+  if (row.is_specified_premises && !(row.has_rooms && row.serves_food)) {
+    throw new ApiError('Specified premises only applies to a property that has rooms and serves food.', 400);
+  }
+  if ((row.latitude === null) !== (row.longitude === null)) {
+    throw new ApiError('Enter both latitude and longitude, or leave both empty.', 400);
+  }
+}
+
+// Internal staff correcting a property after onboarding: a wrong phone
+// number, a GSTIN that arrived late, a hall the owner has since built. Absent
+// fields are left alone; '' clears a text field.
+async function updateLodge(id, input) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, id).query('SELECT * FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  const text = (key, column) => (input[key] !== undefined ? input[key] || null : current[column]);
+  const flag = (key, column) => (input[key] !== undefined ? (input[key] ? 1 : 0) : current[column] ? 1 : 0);
+
+  const next = {
+    name: input.lodgeName ?? current.name,
+    slug: input.slug ?? current.slug,
+    phone: text('phone', 'phone'),
+    whatsapp_number: text('whatsappNumber', 'whatsapp_number'),
+    address: text('address', 'address'),
+    name_mr: text('lodgeNameMr', 'name_mr'),
+    address_mr: text('addressMr', 'address_mr'),
+    city: text('city', 'city'),
+    state: text('state', 'state'),
+    // Not the text helper: a coordinate of 0 is a real value, and null from
+    // the caller means "clear the pin", which is also what an absent column
+    // reads as.
+    latitude: input.latitude !== undefined ? input.latitude : current.latitude ?? null,
+    longitude: input.longitude !== undefined ? input.longitude : current.longitude ?? null,
+    checkin_mode: input.checkinMode ?? current.checkin_mode,
+    is_gst_registered: flag('isGstRegistered', 'is_gst_registered'),
+    gstin: text('gstin', 'gstin'),
+    is_specified_premises: flag('isSpecifiedPremises', 'is_specified_premises'),
+    has_rooms: flag('hasRooms', 'has_rooms'),
+    serves_food: flag('servesFood', 'serves_food'),
+    food_room_service: flag('foodRoomService', 'food_room_service'),
+    food_table_service: flag('foodTableService', 'food_table_service'),
+    has_events: flag('hasEvents', 'has_events'),
+    is_active: flag('isActive', 'is_active'),
+  };
+  assertProfileConsistent(next);
+
+  if (next.slug !== current.slug) {
+    const taken = await pool
+      .request()
+      .input('slug', sql.NVarChar, next.slug)
+      .input('id', sql.BigInt, id)
+      .query('SELECT id FROM dbo.lodges WHERE slug = @slug AND id <> @id');
+    if (taken.recordset.length > 0) throw new ApiError('A property with that slug already exists.', 409);
+  }
+
+  await pool
+    .request()
+    .input('id', sql.BigInt, id)
+    .input('name', sql.NVarChar, next.name)
+    .input('slug', sql.NVarChar, next.slug)
+    .input('phone', sql.NVarChar, next.phone)
+    .input('whatsappNumber', sql.NVarChar, next.whatsapp_number)
+    .input('address', sql.NVarChar, next.address)
+    .input('nameMr', sql.NVarChar, next.name_mr)
+    .input('addressMr', sql.NVarChar, next.address_mr)
+    .input('city', sql.NVarChar, next.city)
+    .input('state', sql.NVarChar, next.state)
+    .input('latitude', sql.Decimal(9, 6), next.latitude)
+    .input('longitude', sql.Decimal(9, 6), next.longitude)
+    .input('checkinMode', sql.NVarChar, next.checkin_mode)
+    .input('isGstRegistered', sql.Bit, next.is_gst_registered)
+    .input('gstin', sql.NVarChar, next.gstin)
+    .input('isSpecifiedPremises', sql.Bit, next.is_specified_premises)
+    .input('hasRooms', sql.Bit, next.has_rooms)
+    .input('servesFood', sql.Bit, next.serves_food)
+    .input('foodRoomService', sql.Bit, next.food_room_service)
+    .input('foodTableService', sql.Bit, next.food_table_service)
+    .input('hasEvents', sql.Bit, next.has_events)
+    .input('isActive', sql.Bit, next.is_active)
+    .query(`
+      UPDATE dbo.lodges
+      SET name = @name, slug = @slug, phone = @phone, whatsapp_number = @whatsappNumber,
+          address = @address, name_mr = @nameMr, address_mr = @addressMr, city = @city, state = @state,
+          latitude = @latitude, longitude = @longitude,
+          checkin_mode = @checkinMode, is_gst_registered = @isGstRegistered, gstin = @gstin,
+          is_specified_premises = @isSpecifiedPremises,
+          has_rooms = @hasRooms, serves_food = @servesFood, food_room_service = @foodRoomService,
+          food_table_service = @foodTableService, has_events = @hasEvents, is_active = @isActive
+      WHERE id = @id
+    `);
+
+  return getLodgeDetail(id);
+}
+
+module.exports = { createLodgeWithOwner, listLodges, getLodgeDetail, updateLodge };

@@ -1,0 +1,132 @@
+.lodge-edit__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.lodge-edit {
+  background: #fff;
+  border-radius: 14px;
+  width: min(760px, 100%);
+  padding: 24px 28px 20px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.lodge-edit__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.lodge-edit__head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.lodge-edit__close {
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.lodge-edit__section {
+  padding: 14px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.lodge-edit__section h3 {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.lodge-edit .field {
+  margin-bottom: 12px;
+}
+
+.lodge-edit .field label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.lodge-edit .field input,
+.lodge-edit .field select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.lodge-edit .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lodge-edit .checkbox-field {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.lodge-edit .checkbox-field input {
+  margin-top: 3px;
+}
+
+.lodge-edit .checkbox-field label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: block;
+}
+
+.lodge-edit .checkbox-field__note {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.lodge-edit__indent {
+  margin-left: 26px;
+}
+
+.lodge-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.lodge-edit .form-banner {
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.lodge-edit .form-banner--error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+@media (max-width: 600px) {
+  .lodge-edit .field-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,6 +2,11 @@ const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
 const {
   listBillableBookingsHandler,
+  previewEventBillHandler,
+  issueEventInvoiceHandler,
+  previewEventAdvanceReceiptHandler,
+  issueEventAdvanceReceiptHandler,
+  listEventAdvanceReceiptsHandler,
   listOpenFoodTabsHandler,
   previewFoodBillHandler,
   issueFoodInvoiceHandler,
@@ -28,6 +33,15 @@ const staff = requirePermission('billing.manage');
 router.get('/queue', authenticate, staff, listBillableBookingsHandler);
 router.get('/bookings/:bookingId/preview', authenticate, staff, previewBillHandler);
 router.post('/bookings/:bookingId/invoice', authenticate, staff, issueInvoiceHandler);
+
+// Functions. The same two documents a stay gets — the final bill and the
+// advance receipt — against an event booking. Behind billing.manage like the
+// rest: the events desk takes the booking, the billing desk writes the paper.
+router.get('/events/:eventId/preview', authenticate, staff, previewEventBillHandler);
+router.post('/events/:eventId/invoice', authenticate, staff, issueEventInvoiceHandler);
+router.post('/events/:eventId/advance-receipt/preview', authenticate, staff, previewEventAdvanceReceiptHandler);
+router.post('/events/:eventId/advance-receipt', authenticate, staff, issueEventAdvanceReceiptHandler);
+router.get('/events/:eventId/advance-receipts', authenticate, staff, listEventAdvanceReceiptsHandler);
 
 // Food bills. :tableId accepts "counter" for orders taken at the till.
 router.get('/food-tabs', authenticate, staff, listOpenFoodTabsHandler);

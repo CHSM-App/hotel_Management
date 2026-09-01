@@ -70,6 +70,11 @@
   color: #4b3a6b;
 }
 
+.bill-tag--event {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
 .bill-tag--table {
   background: #fbf1e0;
   color: var(--accent-ink);
@@ -1152,4 +1157,196 @@
   .bill-actions__buttons > button.bill-actions__icon-btn {
     flex: 0 0 44px;
   }
+}
+
+/* A cycle-property guest who left before their booked nights ran out. A
+   callout rather than a list row: it is a decision the desk has to take on
+   this bill, and as one grey row among the stay's facts it went unread. Amber
+   because it is money that may be going back, not an error. */
+.billing-panel__early {
+  margin: 0.75rem 0 0.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  border: 1.5px solid #e3a008;
+  border-left-width: 5px;
+  background: #fff7e0;
+  color: #5c3d00;
+  box-shadow: 0 2px 10px rgba(227, 160, 8, 0.18);
+}
+
+.billing-panel__early--on {
+  border-color: var(--brand);
+  background: #eaf1fb;
+  color: var(--brand-ink);
+  box-shadow: 0 2px 10px rgba(30, 58, 95, 0.18);
+}
+
+.billing-panel__early-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.billing-panel__early-icon {
+  flex: 0 0 1.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e3a008;
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.billing-panel__early--on .billing-panel__early-icon {
+  background: var(--brand);
+}
+
+.billing-panel__early-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.billing-panel__early-sub {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.billing-panel__early-amount {
+  margin-left: auto;
+  font-size: 1.45rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.billing-panel__early-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.billing-panel__early-label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.billing-panel__early-label span {
+  font-weight: 400;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+/* One clean well: the ₹ sits inside it, the native spinner is gone, and the
+   page-wide inset-shadow input rule is switched off for the inner box. */
+.billing-panel__early-input {
+  display: flex;
+  align-items: center;
+  width: 9.5rem;
+  height: 2.6rem;
+  background: #fff;
+  border: 1.5px solid rgba(0, 0, 0, 0.14);
+  border-radius: 0.7rem;
+  padding: 0 0.75rem;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.billing-panel__early-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.15);
+}
+
+.billing-panel__early-input > span {
+  font-weight: 700;
+  opacity: 0.55;
+  margin-right: 0.3rem;
+}
+
+/* !important because the page-wide "well" rule in index.css is written as a
+   chain of :not([type=…]) and outranks any class selector; the well here is
+   the wrapper, so the input itself has to be bare. */
+.billing-panel__early-input input,
+.billing-panel__early-input input:focus,
+.billing-panel__early-input input:focus-visible {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border-radius: 0 !important;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0 !important;
+  font-size: 1.05rem !important;
+  font-weight: 700;
+  line-height: 1;
+  color: #1f1f1f;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.billing-panel__early-input input::-webkit-outer-spin-button,
+.billing-panel__early-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.billing-panel__early-input input::placeholder {
+  color: #9a9a9a;
+  font-weight: 500;
+}
+
+.billing-panel__early-status {
+  display: inline-block;
+  margin: 0.75rem 0 0;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.billing-panel__early--on .billing-panel__early-status {
+  background: var(--brand);
+  color: #fff;
+}
+
+@media (max-width: 560px) {
+  .billing-panel__early-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .billing-panel__early-label {
+    grid-column: 1 / -1;
+  }
+  .billing-panel__early-input {
+    width: 100%;
+  }
+}
+
+.billing-panel__early .field {
+  margin-top: 0.65rem;
+}
+
+.billing-panel__early .billing-panel__hint {
+  margin-bottom: 0;
+}
+
+/* The cycle-property discount, under the early-departure callout that fills
+   it. Keeps the two visibly one decision. */
+.billing-panel__discount {
+  margin-top: 0.75rem;
+}
+
+.billing-panel__discount .billing-panel__hint {
+  margin-bottom: 0;
 }

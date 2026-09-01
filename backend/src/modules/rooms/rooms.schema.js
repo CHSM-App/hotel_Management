@@ -92,6 +92,11 @@ const checkoutPolicySchema = z
     checkOutTime: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a checkout time as HH:MM, e.g. 11:00.'),
+    // Only meaningful on a CYCLE property; harmless elsewhere.
+    checkInTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a check-in time as HH:MM, e.g. 11:00.')
+      .optional(),
     lateGraceMinutes: z.coerce
       .number()
       .int()

@@ -12,6 +12,7 @@ import {
 } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
+import { useUrlState } from '../../lib/urlState';
 import { formatPrice } from './priceFormat';
 import StayDetails from './StayDetails';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
@@ -700,9 +701,39 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // The chart carries the drafts that fall in the window on screen; this is
   // the full list, for the chip and the drafts panel — including the ones with
   // no room or dates yet, which can't be drawn anywhere.
+  // A draft named in the URL — the register's View button lands here with
+  // ?draft=<id>. Looked up against the list as it comes in from the server,
+  // not the cache, so a stale copy can't report it missing; then the key is
+  // dropped so a reload or a later visit doesn't reopen it.
+  const [draftParam, setDraftParam] = useUrlState('draft');
+  const pendingDraftId = useRef(draftParam);
+  // openDraft is defined further down, after the form state it works on; an
+  // effect below keeps this pointed at it, and the fetch callback goes through
+  // it — by the time the list arrives the effect has long since run.
+  const openDraftRef = useRef(null);
+  // Set when the form was opened that way, so closing it takes the desk back
+  // to the register's Draft cut it came from rather than leaving it on the
+  // chart — the same courtesy an abandoned edit gets, back to its booking.
+  const cameFromRegister = useRef(false);
+  const returnToRegisterIfCame = () => {
+    if (!cameFromRegister.current) return;
+    cameFromRegister.current = false;
+    onShowRegister?.('DRAFT');
+  };
   const loadDrafts = () => {
     apiGet('/bookings/drafts', { token })
-      .then((data) => setDrafts(writeCache('/bookings/drafts', data.drafts.filter(usableDraft))))
+      .then((data) => {
+        const list = data.drafts.filter(usableDraft);
+        setDrafts(writeCache('/bookings/drafts', list));
+        const wanted = pendingDraftId.current;
+        if (wanted == null) return;
+        pendingDraftId.current = null;
+        setDraftParam(null);
+        const parked = list.find((d) => String(d.id) === String(wanted));
+        if (!parked) return;
+        cameFromRegister.current = true;
+        openDraftRef.current?.(parked);
+      })
       .catch(() => setDrafts([]));
   };
 
@@ -1214,6 +1245,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setEditTarget(null);
     setDraftId(null);
     setDraftNote('');
+    returnToRegisterIfCame();
   };
 
   // Parks what's on screen and closes. Only offered on a new booking: an edit
@@ -1238,6 +1270,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       setDraftNote('');
       loadDrafts();
       loadTapeChart();
+      returnToRegisterIfCame();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
     } finally {
@@ -1269,6 +1302,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     );
   };
 
+  // See openDraftRef, by loadDrafts.
+  useEffect(() => {
+    openDraftRef.current = openDraft;
+  });
+
   const openDraftById = (id) => {
     const parked = drafts.find((d) => String(d.id) === String(id));
     if (parked) openDraft(parked);
@@ -1285,6 +1323,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         setFormMode(null);
         setDraftId(null);
         setDraftNote('');
+        returnToRegisterIfCame();
       }
       loadDrafts();
       loadTapeChart();
@@ -1831,6 +1870,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       setEditTarget(null);
       setDraftId(null);
       setDraftNote('');
+      // Booked, so the chart with its confirmation is the right place to
+      // stay — but the way back is spent, not carried onto the next form.
+      cameFromRegister.current = false;
       loadTapeChart();
     } catch (err) {
       setFormError(
@@ -4153,6 +4195,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
 const BAND_LABEL = {
   HALF_DAY: 'part-day rate',
   FULL_DAY: 'full-night rate',
+  EXTRA_NIGHTS: 'extra night',
 };
 
 // The one moment in this app where the software asks a person for a number
@@ -4741,10 +4784,20 @@ function LateCheckoutDialog({ lateCheckout, amount, onAmount, submitting, error,
         </p>
 
         <div className="late-modal__basis">
-          <span>
-            {BAND_LABEL[lateCheckout.band] || 'policy rate'} · {lateCheckout.percent}% of{' '}
-            {formatPrice(lateCheckout.lastNightRate)}
-          </span>
+          {lateCheckout.band === 'EXTRA_NIGHTS' ? (
+            // A cycle property counts whole nights: booked for N, stayed N+k.
+            <span>
+              Stayed <strong>{lateCheckout.actualNights}</strong> night
+              {lateCheckout.actualNights === 1 ? '' : 's'}, booked for{' '}
+              <strong>{lateCheckout.plannedNights}</strong> · {lateCheckout.extraNights} extra ×{' '}
+              {formatPrice(lateCheckout.lastNightRate)}
+            </span>
+          ) : (
+            <span>
+              {BAND_LABEL[lateCheckout.band] || 'policy rate'} · {lateCheckout.percent}% of{' '}
+              {formatPrice(lateCheckout.lastNightRate)}
+            </span>
+          )}
           <span className="late-modal__suggested">
             suggests {formatPrice(lateCheckout.suggestedCharge)}
           </span>

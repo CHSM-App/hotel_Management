@@ -11,6 +11,7 @@ const {
   readPaymentLines,
 } = require('./billing.service');
 const { paymentLinesOf } = require('../bookings/bookings.schema');
+const eventsService = require('../events/events.service');
 
 // The receipt a guest is handed when they pay an advance at the time of
 // booking. Under GST that document is a Receipt Voucher (Rule 50): money taken
@@ -22,6 +23,12 @@ const { paymentLinesOf } = require('../bookings/bookings.schema');
 // status. Billing's own filtered index enforces one ISSUED invoice per booking,
 // which is exactly the rule an advance receipt must not obey — a booking can
 // carry several, one per instalment, and still be billed once at the end.
+//
+// A function booked for a wedding or a birthday takes an advance far more
+// often than a stay does, and usually in instalments. The same receipt serves
+// it: the row hangs off event_booking_id instead of booking_id, the amount
+// is held on the function the way it is held on the stay, and the tax inside
+// the advance is taken at the hall-hire rate rather than a nightly band.
 
 // What rate the advance is taxed at.
 //
@@ -35,7 +42,11 @@ const { paymentLinesOf } = require('../bookings/bookings.schema');
 // takes the rate of the highest-banded night the stay contains: that is the
 // rate the supply is capable of attracting, and under-declaring on an advance
 // is the direction that costs the property at assessment.
+//
+// A function has no nights: hall hire is one flat rate, carried on the subject
+// row by loadEventForReceipt.
 function advanceRatePercent(booking, slabs) {
+  if (booking.flat_rate_percent != null) return Number(booking.flat_rate_percent);
   const nights = nightlyAmounts(booking);
   if (nights.length === 0) return 0;
   return nights.reduce((highest, night) => Math.max(highest, ratePercentFor(night, slabs)), 0);
@@ -58,6 +69,12 @@ function taxOnAdvance(amount, ratePercent) {
   return { cgstAmount, sgstAmount };
 }
 
+const LODGE_COLUMNS = `
+             l.is_gst_registered, l.gstin, l.checkin_mode, l.check_out_time,
+             l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
+             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
+             l.city AS lodge_city, l.state AS lodge_state`;
+
 // The stay, the property, and everything the printed receipt puts in its head.
 // One query, because the document is rendered straight off this row.
 async function loadBookingForReceipt(request, lodgeId, bookingId) {
@@ -65,11 +82,7 @@ async function loadBookingForReceipt(request, lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, c.name AS category_name,
-             l.is_gst_registered, l.gstin, l.checkin_mode, l.check_out_time,
-             l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
-             l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
-             l.city AS lodge_city, l.state AS lodge_state
+      SELECT b.*, r.room_number, c.name AS category_name, ${LODGE_COLUMNS}
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -81,8 +94,39 @@ async function loadBookingForReceipt(request, lodgeId, bookingId) {
   return booking;
 }
 
+// The function, shaped like a stay for everything below: the same total,
+// advance and masthead columns under the names the receipt maths reads, plus
+// the flat hall-hire rate in place of nightly bands.
+async function loadEventForReceipt(request, lodgeId, eventBookingId) {
+  const result = await request
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('eventId', sql.BigInt, eventBookingId)
+    .query(`
+      SELECT e.*, e.total_amount AS total_price,
+             e.organiser_name AS guest_name, e.organiser_phone AS guest_phone,
+             e.title AS event_title, v.name AS venue_name,
+             e.start_at AS event_start_at, e.end_at AS event_end_at,
+             (SELECT TOP 1 rate_percent FROM dbo.gst_slabs
+              WHERE is_active = 1 AND supply_type = 'VENUE' ORDER BY id) AS flat_rate_percent,
+             ${LODGE_COLUMNS}
+      FROM dbo.event_bookings e
+      JOIN dbo.event_venues v ON v.id = e.venue_id
+      JOIN dbo.lodges l ON l.id = e.lodge_id
+      WHERE e.id = @eventId AND e.lodge_id = @lodgeId
+    `);
+  const row = result.recordset[0];
+  if (!row) throw new ApiError('Event booking not found.', 404);
+  return { ...row, event_booking_id: row.id, flat_rate_percent: row.flat_rate_percent ?? 0 };
+}
+
 function toIsoDate(value) {
+  if (value == null) return null;
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+}
+
+function toIsoInstant(value) {
+  if (value == null) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 // The receipt as the document will print it. Deliberately the same field names
@@ -100,7 +144,16 @@ function mapReceipt(row) {
   const stayTotal = Number(row.stay_total);
   return {
     id: row.id,
-    bookingId: row.booking_id,
+    bookingId: row.booking_id ?? null,
+    // Against a stay or against a function. The document branches on this
+    // for its register strip; nothing about the money changes.
+    kind: row.event_booking_id != null ? 'EVENT' : 'STAY',
+    eventBookingId: row.event_booking_id ?? null,
+    eventTitle: row.event_title ?? null,
+    eventType: row.event_type ?? null,
+    venueName: row.venue_name ?? null,
+    eventStartAt: toIsoInstant(row.event_start_at),
+    eventEndAt: toIsoInstant(row.event_end_at),
     receiptNumber: row.receipt_number,
     documentType: row.document_type,
     billingSide: row.billing_side,
@@ -140,9 +193,9 @@ function mapReceipt(row) {
     // The stay this is against, for the register strip on the document.
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
-    numGuests: row.num_guests,
-    roomNumber: row.room_number,
-    categoryName: row.category_name,
+    numGuests: row.num_guests ?? null,
+    roomNumber: row.room_number ?? null,
+    categoryName: row.category_name ?? null,
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
 
@@ -162,7 +215,7 @@ function mapReceipt(row) {
 }
 
 const RECEIPT_SELECT = `
-  SELECT ar.id, ar.booking_id, ar.receipt_number, ar.document_type, ar.billing_side,
+  SELECT ar.id, ar.booking_id, ar.event_booking_id, ar.receipt_number, ar.document_type, ar.billing_side,
          ar.amount_received, ar.cgst_amount, ar.sgst_amount, ar.rate_percent, ar.stay_total,
          ar.payment_method, ar.payment_reference, ar.status, ar.void_reason, ar.voided_at,
          ar.created_at,
@@ -171,16 +224,20 @@ const RECEIPT_SELECT = `
           WHERE pl.advance_receipt_id = ar.id
           ORDER BY pl.id
           FOR JSON PATH) AS payment_lines,
-         b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+         COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
+         COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
+         b.num_guests, b.check_in_date, b.check_out_date,
          r.room_number, c.name AS category_name,
-         l.is_gst_registered, l.gstin, l.checkin_mode, l.check_out_time,
-         l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
-         l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
-         l.city AS lodge_city, l.state AS lodge_state
+         eb.title AS event_title, eb.event_type, ev.name AS venue_name,
+         eb.start_at AS event_start_at, eb.end_at AS event_end_at,
+         ${LODGE_COLUMNS}
   FROM dbo.advance_receipts ar
-  JOIN dbo.bookings b ON b.id = ar.booking_id
-  JOIN dbo.rooms r ON r.id = b.room_id
-  JOIN dbo.room_categories c ON c.id = r.category_id
+  -- LEFT on both parents: a receipt is against a stay or against a function.
+  LEFT JOIN dbo.bookings b ON b.id = ar.booking_id
+  LEFT JOIN dbo.rooms r ON r.id = b.room_id
+  LEFT JOIN dbo.room_categories c ON c.id = r.category_id
+  LEFT JOIN dbo.event_bookings eb ON eb.id = ar.event_booking_id
+  LEFT JOIN dbo.event_venues ev ON ev.id = eb.venue_id
   JOIN dbo.lodges l ON l.id = ar.lodge_id
 `;
 
@@ -228,6 +285,17 @@ async function listAdvanceReceiptsForBooking(lodgeId, bookingId) {
   return result.recordset.map(mapReceipt);
 }
 
+async function listAdvanceReceiptsForEvent(lodgeId, eventBookingId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('eventId', sql.BigInt, eventBookingId)
+    .query(`${RECEIPT_SELECT} WHERE ar.event_booking_id = @eventId AND ar.lodge_id = @lodgeId
+            ORDER BY ar.id DESC`);
+  return result.recordset.map(mapReceipt);
+}
+
 // Pure, given the booking and the slabs — so the preview and the issue path
 // compute the document exactly once between them, and what gets written is
 // provably what was shown.
@@ -251,6 +319,8 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
     throw new ApiError('An advance receipt needs an amount.', 400);
   }
 
+  const isEvent = booking.event_booking_id != null;
+  const noun = isEvent ? 'function' : 'stay';
   const stayTotal = Number(booking.total_price);
   // Held to the stay it is against. Taking more than the stay costs is a
   // data-entry slip, and one that would print a negative balance due on a
@@ -259,8 +329,8 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
   if (round2(alreadyHeld + amount) > stayTotal) {
     throw new ApiError(
       alreadyHeld > 0
-        ? `That would take the advance past the stay total of ₹${stayTotal} — ₹${alreadyHeld} is already held.`
-        : `An advance can’t be more than the stay total of ₹${stayTotal}.`,
+        ? `That would take the advance past the ${noun} total of ₹${stayTotal} — ₹${alreadyHeld} is already held.`
+        : `An advance can’t be more than the ${noun} total of ₹${stayTotal}.`,
       400
     );
   }
@@ -282,7 +352,8 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
     // to keep the series gapless, and a preview that filled them in would show
     // the desk a number the receipt will not actually carry.
     id: null,
-    booking_id: booking.id,
+    booking_id: isEvent ? null : booking.id,
+    event_booking_id: isEvent ? booking.event_booking_id : null,
     receipt_number: null,
     document_type: documentType,
     billing_side: billingSide,
@@ -308,6 +379,78 @@ async function previewAdvanceReceipt(lodgeId, bookingId, input) {
   const booking = await loadBookingForReceipt(pool.request(), lodgeId, bookingId);
   const slabs = await getGstSlabs(pool);
   return buildReceiptPreview(booking, slabs, input);
+}
+
+async function previewEventAdvanceReceipt(lodgeId, eventBookingId, input) {
+  const pool = await getPool();
+  const event = await loadEventForReceipt(pool.request(), lodgeId, eventBookingId);
+  const slabs = await getGstSlabs(pool);
+  return buildReceiptPreview(event, slabs, input);
+}
+
+// The advance series, created on first use the way the invoice series is.
+// Its own run rather than sharing the bill series: an advance taken today
+// and a bill cut next week must not interleave, or the tax-invoice
+// numbering develops gaps an auditor will ask about. No prefix — the serial
+// the owner set is the whole number (see billing/series.service.js).
+//
+// Atomic allocate-and-bump, never SELECT MAX()+1: two desks taking an
+// advance at the same moment must not be handed the same number.
+async function allocateReceiptNumber(transaction, lodgeId) {
+  const seriesResult = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query("SELECT id FROM dbo.invoice_series WHERE lodge_id = @lodgeId AND series_type = 'ADVANCE'");
+  if (seriesResult.recordset.length === 0) {
+    await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query(`INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number)
+              VALUES (@lodgeId, 'ADVANCE', N'', 1)`);
+  }
+  const allocated = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      UPDATE dbo.invoice_series
+      SET next_number = next_number + 1
+      OUTPUT deleted.next_number AS number, deleted.prefix AS prefix
+      WHERE lodge_id = @lodgeId AND series_type = 'ADVANCE'
+    `);
+  const { number, prefix } = allocated.recordset[0];
+  return `${prefix}${number}`;
+}
+
+async function insertReceipt(transaction, lodgeId, userId, parent, preview, paymentLines, input) {
+  const receiptNumber = await allocateReceiptNumber(transaction, lodgeId);
+  const inserted = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, parent.bookingId ?? null)
+    .input('eventId', sql.BigInt, parent.eventBookingId ?? null)
+    .input('receiptNumber', sql.NVarChar, receiptNumber)
+    .input('documentType', sql.NVarChar, preview.documentType)
+    .input('billingSide', sql.NVarChar, preview.billingSide)
+    .input('amountReceived', sql.Decimal(10, 2), preview.amountReceived)
+    .input('cgstAmount', sql.Decimal(10, 2), preview.cgstAmount)
+    .input('sgstAmount', sql.Decimal(10, 2), preview.sgstAmount)
+    .input('ratePercent', sql.Decimal(5, 2), round2(preview.cgstRatePercent + preview.sgstRatePercent))
+    .input('stayTotal', sql.Decimal(10, 2), preview.stayTotal)
+    // The receipt's own summary of its lines — the column is NOT NULL, so a
+    // split still has to name one, and the first tender is the honest choice.
+    .input('paymentMethod', sql.NVarChar, paymentLines[0]?.method ?? input.paymentMethod)
+    .input('paymentReference', sql.NVarChar, input.paymentReference ?? null)
+    .input('createdBy', sql.BigInt, userId ?? null)
+    .query(`
+      INSERT INTO dbo.advance_receipts
+        (lodge_id, booking_id, event_booking_id, receipt_number, document_type, billing_side, amount_received,
+         cgst_amount, sgst_amount, rate_percent, stay_total, payment_method, payment_reference,
+         created_by)
+      OUTPUT inserted.id
+      VALUES
+        (@lodgeId, @bookingId, @eventId, @receiptNumber, @documentType, @billingSide, @amountReceived,
+         @cgstAmount, @sgstAmount, @ratePercent, @stayTotal, @paymentMethod, @paymentReference,
+         @createdBy)
+    `);
+  const receiptId = inserted.recordset[0].id;
+  await insertPaymentLines(transaction, lodgeId, { advanceReceiptId: receiptId }, paymentLines);
+  return receiptId;
 }
 
 // Writes the receipt and burns a number for it in one transaction — the number
@@ -378,65 +521,47 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyO
         WHERE id = @bookingId AND lodge_id = @lodgeId
       `);
 
-    // The advance series, created on first use the way the invoice series is.
-    // Its own run rather than sharing the bill series: an advance taken today
-    // and a bill cut next week must not interleave, or the tax-invoice
-    // numbering develops gaps an auditor will ask about. No prefix — the serial
-    // the owner set is the whole number (see billing/series.service.js).
-    const seriesResult = await new sql.Request(transaction)
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .query("SELECT id FROM dbo.invoice_series WHERE lodge_id = @lodgeId AND series_type = 'ADVANCE'");
-    if (seriesResult.recordset.length === 0) {
-      await new sql.Request(transaction)
-        .input('lodgeId', sql.BigInt, lodgeId)
-        .query(`INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number)
-                VALUES (@lodgeId, 'ADVANCE', N'', 1)`);
+    const receiptId = await insertReceipt(transaction, lodgeId, userId, { bookingId }, preview, paymentLines, input);
+
+    await transaction.commit();
+    return getAdvanceReceipt(lodgeId, receiptId);
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+// The same document against a function. Money in is what confirms a booking
+// that was only held or enquired about, so the status moves with the receipt
+// — see eventsService.addAdvance.
+async function issueEventAdvanceReceipt(lodgeId, userId, eventBookingId, input) {
+  const pool = await getPool();
+  const slabs = await getGstSlabs(pool);
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const event = await loadEventForReceipt(new sql.Request(transaction), lodgeId, eventBookingId);
+    if (event.status === 'CANCELLED') {
+      throw new ApiError('This function was cancelled — no advance receipt can be issued against it.', 409);
+    }
+    if (event.status === 'SETTLED') {
+      throw new ApiError('This function has already been billed — nothing more is due on it.', 409);
     }
 
-    // Atomic allocate-and-bump, never SELECT MAX()+1: two desks taking an
-    // advance at the same moment must not be handed the same number.
-    const allocated = await new sql.Request(transaction)
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .query(`
-        UPDATE dbo.invoice_series
-        SET next_number = next_number + 1
-        OUTPUT deleted.next_number AS number, deleted.prefix AS prefix
-        WHERE lodge_id = @lodgeId AND series_type = 'ADVANCE'
-      `);
-    const { number, prefix } = allocated.recordset[0];
-    const receiptNumber = `${prefix}${number}`;
+    const preview = buildReceiptPreview(event, slabs, input);
+    const paymentLines = paymentLinesOf(input, preview.amountReceived);
 
-    const inserted = await new sql.Request(transaction)
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .input('bookingId', sql.BigInt, bookingId)
-      .input('receiptNumber', sql.NVarChar, receiptNumber)
-      .input('documentType', sql.NVarChar, preview.documentType)
-      .input('billingSide', sql.NVarChar, preview.billingSide)
-      .input('amountReceived', sql.Decimal(10, 2), preview.amountReceived)
-      .input('cgstAmount', sql.Decimal(10, 2), preview.cgstAmount)
-      .input('sgstAmount', sql.Decimal(10, 2), preview.sgstAmount)
-      .input('ratePercent', sql.Decimal(5, 2), round2(preview.cgstRatePercent + preview.sgstRatePercent))
-      .input('stayTotal', sql.Decimal(10, 2), preview.stayTotal)
-      // The receipt's own summary of its lines — the column is NOT NULL, so a
-      // split still has to name one, and the first tender is the honest choice.
-      .input('paymentMethod', sql.NVarChar, paymentLines[0]?.method ?? input.paymentMethod)
-      .input('paymentReference', sql.NVarChar, input.paymentReference ?? null)
-      .input('createdBy', sql.BigInt, userId ?? null)
-      .query(`
-        INSERT INTO dbo.advance_receipts
-          (lodge_id, booking_id, receipt_number, document_type, billing_side, amount_received,
-           cgst_amount, sgst_amount, rate_percent, stay_total, payment_method, payment_reference,
-           created_by)
-        OUTPUT inserted.id
-        VALUES
-          (@lodgeId, @bookingId, @receiptNumber, @documentType, @billingSide, @amountReceived,
-           @cgstAmount, @sgstAmount, @ratePercent, @stayTotal, @paymentMethod, @paymentReference,
-           @createdBy)
-      `);
+    await eventsService.addAdvance(
+      transaction,
+      lodgeId,
+      eventBookingId,
+      preview.amountReceived,
+      paymentLines.length > 1 ? null : paymentLines[0]?.method ?? null,
+      paymentLines[0]?.reference ?? null
+    );
 
-    const receiptId = inserted.recordset[0].id;
-
-    await insertPaymentLines(transaction, lodgeId, { advanceReceiptId: receiptId }, paymentLines);
+    const receiptId = await insertReceipt(transaction, lodgeId, userId, { eventBookingId }, preview, paymentLines, input);
 
     await transaction.commit();
     return getAdvanceReceipt(lodgeId, receiptId);
@@ -461,29 +586,34 @@ async function voidAdvanceReceipt(lodgeId, receiptId, reason) {
       .query(`
         UPDATE dbo.advance_receipts
         SET status = 'VOID', void_reason = @reason, voided_at = SYSDATETIMEOFFSET()
-        OUTPUT inserted.booking_id AS bookingId, inserted.amount_received AS amountReceived
+        OUTPUT inserted.booking_id AS bookingId, inserted.event_booking_id AS eventBookingId,
+               inserted.amount_received AS amountReceived
         WHERE id = @receiptId AND lodge_id = @lodgeId AND status = 'ISSUED'
       `);
     if (result.recordset.length === 0) {
       throw new ApiError('Receipt not found or already void.', 409);
     }
-    const { bookingId, amountReceived } = result.recordset[0];
+    const { bookingId, eventBookingId, amountReceived } = result.recordset[0];
 
-    // Floored at zero rather than allowed to go negative: the booking's advance
-    // may have been corrected by hand since, and a negative advance would print
-    // on the final bill as money owed *to* the guest.
-    await new sql.Request(transaction)
-      .input('bookingId', sql.BigInt, bookingId)
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .input('amount', sql.Decimal(10, 2), amountReceived)
-      .query(`
-        UPDATE dbo.bookings
-        SET advance_amount =
-              CASE WHEN ISNULL(advance_amount, 0) - @amount > 0
-                   THEN ISNULL(advance_amount, 0) - @amount
-                   ELSE NULL END
-        WHERE id = @bookingId AND lodge_id = @lodgeId
-      `);
+    if (eventBookingId != null) {
+      await eventsService.subtractAdvance(transaction, lodgeId, eventBookingId, amountReceived);
+    } else {
+      // Floored at zero rather than allowed to go negative: the booking's advance
+      // may have been corrected by hand since, and a negative advance would print
+      // on the final bill as money owed *to* the guest.
+      await new sql.Request(transaction)
+        .input('bookingId', sql.BigInt, bookingId)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('amount', sql.Decimal(10, 2), amountReceived)
+        .query(`
+          UPDATE dbo.bookings
+          SET advance_amount =
+                CASE WHEN ISNULL(advance_amount, 0) - @amount > 0
+                     THEN ISNULL(advance_amount, 0) - @amount
+                     ELSE NULL END
+          WHERE id = @bookingId AND lodge_id = @lodgeId
+        `);
+    }
 
     await transaction.commit();
   } catch (err) {
@@ -497,8 +627,11 @@ async function voidAdvanceReceipt(lodgeId, receiptId, reason) {
 module.exports = {
   previewAdvanceReceipt,
   issueAdvanceReceipt,
+  previewEventAdvanceReceipt,
+  issueEventAdvanceReceipt,
   getAdvanceReceipt,
   listAdvanceReceipts,
   listAdvanceReceiptsForBooking,
+  listAdvanceReceiptsForEvent,
   voidAdvanceReceipt,
 };

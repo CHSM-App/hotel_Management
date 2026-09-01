@@ -1,7 +1,186 @@
-.lodge-public {
-  max-width: 1100px;
+/* The property's own website. Everything on this page sits inside .site,
+   which re-tokens the app's neumorphic palette to a flat, white, editorial
+   look — soft borders and airy shadows rather than extruded surfaces — so a
+   guest sees a hotel's site, not a dashboard with the chrome taken off. */
+.site {
+  --surface: #ffffff;
+  --paper: #ffffff;
+  --neu-sunken: #f3f4f7;
+  --site-tint: #f6f7f9;
+  --site-ink: #16212e;
+  --site-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.06);
+  --site-shadow-raised: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --site-shadow-hover: 0 8px 22px rgba(16, 24, 40, 0.1);
+  --site-shadow-pressed: inset 0 1px 2px rgba(16, 24, 40, 0.08);
+  --site-max: 1180px;
+  --site-gutter: 24px;
+  --site-nav-h: 68px;
+
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  color: var(--text);
+  scroll-behavior: smooth;
+}
+
+.site-container {
+  width: 100%;
+  max-width: var(--site-max);
   margin: 0 auto;
-  padding: 32px 20px 60px;
+  padding: 0 var(--site-gutter);
+}
+
+/* --- top bar ------------------------------------------------------------------ */
+
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+
+.site-nav__inner {
+  min-height: var(--site-nav-h);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.site-nav__brand {
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--site-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+}
+
+.site-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.site-nav__link {
+  position: relative;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 8px;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.site-nav__link:hover {
+  color: var(--site-ink);
+  background: var(--site-tint);
+}
+
+.site-nav__link--active {
+  color: var(--brand);
+}
+
+.site-nav__link--active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.site-nav__cta {
+  flex-shrink: 0;
+}
+
+/* --- buttons -------------------------------------------------------------------- */
+
+.site-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.site-btn:active {
+  transform: translateY(1px);
+}
+
+.site-btn--accent {
+  background: var(--accent);
+  color: #fff;
+}
+
+.site-btn--accent:hover {
+  background: var(--accent-ink);
+}
+
+.site-btn--primary {
+  background: var(--brand);
+  color: #fff;
+}
+
+.site-btn--primary:hover {
+  background: var(--brand-ink);
+}
+
+.site-btn--whatsapp {
+  background: #25d366;
+  color: #08321c;
+}
+
+.site-btn--whatsapp:hover {
+  background: #1ebe5b;
+}
+
+.site-btn--ghost {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+
+.site-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* --- sections --------------------------------------------------------------------- */
+
+.site-section {
+  padding: 72px 0;
+  scroll-margin-top: var(--site-nav-h);
+}
+
+.site-section--tinted {
+  background: var(--site-tint);
+}
+
+.lodge-public__section-head {
+  max-width: 62ch;
 }
 
 .lodge-public--state {
@@ -14,60 +193,355 @@
   font-size: 15px;
 }
 
-.lodge-public__header {
-  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+/* --- hero ------------------------------------------------------------------ */
+
+/* Full-bleed: the property's best photo under a brand-tinted scrim, copy
+   bottom-left the way a hotel site opens. Without a photo the same gradient
+   stands alone, so the page never opens on an empty frame. */
+.site-hero {
+  position: relative;
+  /* The opening screen: the whole viewport under the sticky bar, so the
+     first thing a guest sees is the property and nothing of what follows
+     until they choose to scroll. */
+  min-height: calc(100vh - var(--site-nav-h));
+  min-height: calc(100svh - var(--site-nav-h));
+  display: flex;
+  align-items: center;
+  scroll-margin-top: var(--site-nav-h);
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(135deg, var(--brand), var(--brand-ink));
   color: #fff;
-  border-radius: var(--radius-card, 16px);
-  padding: 32px 28px;
-  margin-bottom: 28px;
-  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
-.lodge-public__header h1 {
+
+/* The photo fills the frame behind the copy; the gradient on .site-hero stays
+   painted beneath it, so nothing white ever shows through while it loads. */
+.site-hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  /* Fades in over the gradient once decoded, so a heavy photo arrives
+     rather than pops — and the gradient reads as the design until it does. */
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+
+.site-hero__img--loaded {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-hero__img {
+    transition: none;
+  }
+}
+
+.site-hero__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 22, 40, 0.18) 0%, rgba(10, 22, 40, 0.38) 45%, rgba(10, 22, 40, 0.84) 100%);
+  pointer-events: none;
+}
+
+.site-hero:not(.site-hero--photo) .site-hero__scrim {
+  display: none;
+}
+
+.site-hero__inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 400px);
+  gap: 48px;
+  align-items: end;
+  padding-top: 72px;
+  padding-bottom: 96px;
+}
+
+.site-hero__copy {
+  min-width: 0;
+}
+
+/* The "at a glance" panel: frosted over the photo, one row per thing the
+   property offers, each a link into its section. */
+.site-glance {
+  /* Tinted dark rather than frosted white: the panel often lands on the
+     brightest part of a room photo, and white text needs a floor under it. */
+  background: rgba(8, 18, 34, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 18px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 20px 50px rgba(5, 12, 24, 0.35);
+  padding: 18px 20px 16px;
+  color: #fff;
+}
+
+.site-glance__head {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+  margin-bottom: 6px;
+}
+
+.site-glance__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-glance__list li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.site-glance__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  color: #fff;
+  text-decoration: none;
+  transition: padding-left 160ms ease;
+}
+
+.site-glance__row:hover {
+  padding-left: 4px;
+}
+
+.site-glance__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.site-glance__title {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.site-glance__detail {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.4;
+}
+
+.site-glance__cta {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.site-glance__row:hover .site-glance__cta {
+  opacity: 1;
+}
+
+.site-glance__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 13px;
+}
+
+.site-glance__foot a {
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.site-glance__foot a:hover {
+  border-bottom-color: #fff;
+}
+
+/* A quiet cue at the bottom edge: the screen is full, and this says so. */
+.site-hero__scroll {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  animation: site-hero-bob 2.2s ease-in-out infinite;
+}
+
+.site-hero__scroll:hover {
+  color: #fff;
+}
+
+@keyframes site-hero-bob {
+  0%,
+  100% {
+    transform: translate(-50%, 0);
+  }
+  50% {
+    transform: translate(-50%, 6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-hero__scroll {
+    animation: none;
+  }
+}
+
+.site-hero h1 {
   font-family: var(--serif);
   color: #fff;
-  font-size: 30px;
+  font-size: clamp(34px, 4.6vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 10px 0 12px;
+  max-width: 16ch;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* Small uppercase label above a heading: the quiet line that says what kind
+   of thing the loud line is. Light variant for the hero. */
+.lodge-public__eyebrow {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
   margin-bottom: 8px;
 }
 
-.lodge-public__address {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 14px;
-  margin-bottom: 18px;
+.lodge-public__eyebrow--light {
+  color: rgba(255, 255, 255, 0.8);
+  white-space: pre;
 }
 
-.lodge-public__contact {
+.lodge-public__address {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 26px;
+  max-width: 52ch;
+}
+
+.site-hero__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-bottom: 34px;
 }
 
-.lodge-public__contact-link {
-  display: inline-flex;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #fff;
-  font-size: 13px;
+/* The numbers a guest scans before reading anything: from-rate, rooms,
+   venues, dining, check-in. Figure + caption pairs separated by hairlines,
+   the way a hotel fact sheet sets them. */
+.lodge-public__facts {
+  list-style: none;
+  margin: 0;
+  padding: 22px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 0;
+}
+
+.lodge-public__facts li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 22px 2px 0;
+  margin-right: 22px;
+  border-right: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.lodge-public__facts li:last-child {
+  border-right: none;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.lodge-public__facts strong {
+  font-family: var(--serif);
+  font-size: 22px;
   font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 999px;
-  text-decoration: none;
-  transition: background 150ms ease;
+  line-height: 1.1;
+  color: #fff;
+  white-space: nowrap;
 }
 
-.lodge-public__contact-link:hover {
-  background: rgba(255, 255, 255, 0.24);
+.lodge-public__facts span {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.lodge-public__contact-link--whatsapp {
-  background: #25d366;
-  border-color: #25d366;
-  color: #08321c;
+/* --- loading skeleton -------------------------------------------------------- */
+
+.lodge-public__skeleton {
+  border-radius: var(--radius-card, 16px);
+  background: linear-gradient(90deg, var(--neu-sunken) 0%, #f1f3f7 50%, var(--neu-sunken) 100%);
+  background-size: 200% 100%;
+  animation: lodge-public-shimmer 1.4s ease-in-out infinite;
 }
 
-.lodge-public__contact-link--whatsapp:hover {
-  background: #1ebe5b;
+.lodge-public__skeleton--hero {
+  height: 480px;
+  border-radius: 0;
+  margin-bottom: 48px;
+}
+
+.lodge-public__skeleton-row {
+  padding-bottom: 48px;
+}
+
+.lodge-public__skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.lodge-public__skeleton--card {
+  height: 340px;
+}
+
+@keyframes lodge-public-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lodge-public__skeleton {
+    animation: none;
+  }
+  .lodge-public__hero-photo img {
+    transition: none;
+  }
 }
 
 .lodge-public__date-field {
@@ -115,19 +589,19 @@
 .lodge-public__empty {
   text-align: center;
   color: var(--text-muted);
-  padding: 40px 0;
+  padding: 64px var(--site-gutter);
 }
 
 /* --- the rooms section -------------------------------------------------- */
 
 .lodge-public__section-head {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .lodge-public__section-head h2 {
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: 32px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -135,7 +609,8 @@
 
 .lodge-public__section-head p {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--text-muted);
 }
 
@@ -146,7 +621,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card, 12px);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--site-shadow-card);
   padding: 16px 18px;
   margin-bottom: 24px;
 }
@@ -237,7 +712,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-card, 12px);
   overflow: hidden;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--site-shadow-card);
 }
 
 .lodge-public__room--unavailable {
@@ -384,7 +859,7 @@
 .lodge-public__chip {
   background: var(--paper);
   border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
+  box-shadow: var(--site-shadow-raised);
   color: var(--text);
   font-size: 11px;
   font-weight: 600;
@@ -426,19 +901,656 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 640px) {
-  .lodge-public {
-    padding: 16px 14px 40px;
-  }
+/* --- contact & location ------------------------------------------------------ */
 
+.site-contact__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 36px;
+  align-items: stretch;
+}
+
+.site-contact__grid--map {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+.site-contact__copy h2 {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--site-ink);
+}
+
+.site-contact__address {
+  margin: 0 0 22px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 44ch;
+}
+
+.site-contact__list {
+  margin: 0 0 24px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.site-contact__list > div {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-contact__list dt {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-top: 2px;
+}
+
+.site-contact__list dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--site-ink);
+}
+
+.site-contact__list dd a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.site-contact__list dd a:hover {
+  text-decoration: underline;
+}
+
+.site-contact__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* A link card standing in for a map: brand gradient, a pin, the coordinates
+   or address, and a directions prompt. Opens Google Maps in a new tab. */
+.site-contact__map {
+  position: relative;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 26px 28px;
+  border-radius: 16px;
+  overflow: hidden;
+  text-decoration: none;
+  color: #fff;
+  background:
+    radial-gradient(90% 90% at 80% 10%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 60%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 28px),
+    linear-gradient(135deg, var(--brand), var(--brand-ink));
+  box-shadow: var(--site-shadow-card);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.site-contact__map:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--site-shadow-hover);
+}
+
+.site-contact__map-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -80%);
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  backdrop-filter: blur(4px);
+}
+
+.site-contact__map-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.site-contact__map-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.site-contact__map-cta {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* --- footer ---------------------------------------------------------------------- */
+
+.site-footer {
+  background: var(--brand-ink);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.site-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 24px 40px;
+  padding-top: 44px;
+  padding-bottom: 32px;
+}
+
+.site-footer__name {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.site-footer__brand p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-width: 44ch;
+}
+
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  align-content: flex-start;
+}
+
+.site-footer__links a {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.site-footer__links a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.site-footer__bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 20px;
+  padding-top: 16px;
+  padding-bottom: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Anchored sections stop short of the sticky bar instead of sliding under it. */
+.lodge-public__rooms,
+.lodge-public__events,
+.lodge-public__food {
+  scroll-margin-top: var(--site-nav-h);
+}
+
+/* --- venues & add-ons ------------------------------------------------------ */
+
+.lodge-public__venue .lodge-public__room-cover {
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+}
+
+.lodge-public__addons {
+  margin-top: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--site-shadow-card);
+  padding: 16px 18px;
+}
+
+.lodge-public__addons-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.lodge-public__addons-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lodge-public__addon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--site-shadow-raised);
+  font-size: 13px;
+}
+
+.lodge-public__addon-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lodge-public__addon-price {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--neu-sunken);
+  box-shadow: var(--site-shadow-pressed);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.lodge-public__addons-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* --- menu card ------------------------------------------------------------- */
+
+.lodge-public__menu {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--site-shadow-card);
+  overflow: hidden;
+}
+
+.lodge-public__menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  color: #fff;
+}
+
+.lodge-public__menu-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.lodge-public__menu-meta {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 2px;
+}
+
+/* One category: heading on the left, arrows on the right, and a row that
+   scrolls sideways beneath. The row bleeds to the card's edges (negative
+   margin, matching padding) so a half-visible tile at the edge signals there
+   is more, instead of being cut by the card's padding box. */
+.lodge-public__shelf {
+  border-top: 1px solid var(--border);
+  padding: 16px 20px 18px;
+}
+
+.lodge-public__shelf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lodge-public__shelf-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lodge-public__menu-section-count {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--neu-sunken);
+  box-shadow: var(--site-shadow-pressed);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.lodge-public__shelf-arrows {
+  display: flex;
+  gap: 6px;
+}
+
+.lodge-public__shelf-arrow {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--site-shadow-raised);
+  color: var(--brand);
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.lodge-public__shelf-arrow:hover:not(:disabled) {
+  box-shadow: var(--site-shadow-hover);
+  color: var(--brand-ink);
+}
+
+.lodge-public__shelf-arrow:active:not(:disabled) {
+  box-shadow: var(--site-shadow-pressed);
+}
+
+.lodge-public__shelf-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.lodge-public__shelf-row {
+  list-style: none;
+  margin: 0 -20px;
+  padding: 6px 20px 10px;
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 20px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.lodge-public__shelf-row::-webkit-scrollbar {
+  display: none;
+}
+
+.lodge-public__dish {
+  flex: 0 0 220px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-radius: 12px;
+  box-shadow: var(--site-shadow-raised);
+  overflow: hidden;
+  transition: var(--neu-transition);
+}
+
+.lodge-public__dish:hover {
+  box-shadow: var(--site-shadow-hover);
+}
+
+.lodge-public__dish-photo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  background: var(--neu-sunken);
+}
+
+.lodge-public__dish-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lodge-public__dish-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 13px 13px;
+  flex: 1;
+}
+
+/* Without a photo the tile is text only; a slim accent rule at the top keeps
+   it from reading as a blank card next to its photographed neighbours. */
+.lodge-public__dish--no-photo {
+  border-top: 3px solid var(--brand);
+}
+
+.lodge-public__dish-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lodge-public__dish-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.lodge-public__dish-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lodge-public__dish-price {
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+/* The veg / non-veg mark. */
+.lodge-public__food-mark {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  border: 1.5px solid var(--color-success);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+}
+
+.lodge-public__food-mark::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-success);
+}
+
+.lodge-public__food-mark--non-veg {
+  border-color: var(--danger);
+}
+
+.lodge-public__food-mark--non-veg::after {
+  background: var(--danger);
+}
+
+@media (max-width: 640px) {
   /* minmax(280px, …) would overflow a 360px phone once page padding is
      taken off, so the card grid goes single-column here instead. */
   .lodge-public__room-grid {
     grid-template-columns: 1fr;
   }
 
+  .site {
+    --site-gutter: 16px;
+    --site-nav-h: 104px;
+  }
+
+  /* Brand and CTA on the first line, the section links scrolling on the
+     second — a phone has no room for all three across. */
+  .site-nav__inner {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding-top: 10px;
+    padding-bottom: 8px;
+    min-height: 0;
+  }
+
+  .site-nav__brand {
+    max-width: none;
+    flex: 1;
+    font-size: 18px;
+  }
+
+  .site-nav__cta {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .site-nav__links {
+    order: 3;
+    flex-basis: 100%;
+    margin-left: -4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .site-nav__links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-nav__link {
+    white-space: nowrap;
+    padding: 6px 10px;
+    font-size: 13.5px;
+  }
+
+  .site-hero {
+    min-height: calc(100svh - var(--site-nav-h));
+  }
+
+  .site-hero__inner {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    padding-top: 40px;
+    padding-bottom: 72px;
+  }
+
+  .site-glance {
+    padding: 14px 16px 12px;
+  }
+
+  .site-glance__title {
+    font-size: 15.5px;
+  }
+
+  .site-hero__scroll {
+    bottom: 14px;
+  }
+
+  .site-hero__actions .site-btn {
+    flex: 1 1 auto;
+  }
+
+  .lodge-public__facts li {
+    padding-right: 14px;
+    margin-right: 14px;
+  }
+
+  .lodge-public__facts strong {
+    font-size: 18px;
+  }
+
+  .site-section {
+    padding: 48px 0;
+  }
+
+  .site-contact__grid--map {
+    grid-template-columns: 1fr;
+  }
+
+  .site-contact__map {
+    min-height: 220px;
+  }
+
+  .site-footer__inner {
+    flex-direction: column;
+    padding-top: 36px;
+  }
+
   .lodge-public__search {
     padding: 14px;
+  }
+
+  .lodge-public__menu-head {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  /* Narrower tiles on a phone so the next one peeks in from the edge - the
+     peek is what tells a thumb the row scrolls. Arrows are for pointers. */
+  .lodge-public__shelf {
+    padding: 14px 14px 16px;
+  }
+
+  .lodge-public__shelf-row {
+    margin: 0 -14px;
+    padding: 4px 14px 8px;
+    gap: 10px;
+    scroll-padding-left: 14px;
+  }
+
+  .lodge-public__dish {
+    flex-basis: 168px;
+  }
+
+  .lodge-public__shelf-arrows {
+    display: none;
+  }
+
+  .lodge-public__dish-body {
+    padding: 9px 10px 10px;
+  }
+
+  .lodge-public__dish-name {
+    font-size: 13.5px;
+  }
+
+  .lodge-public__dish-desc {
+    -webkit-line-clamp: 2;
   }
 
   /* Fields pair up two to a line rather than stacking one per row, which would
@@ -475,12 +1587,8 @@
 }
 
 @media (max-width: 480px) {
-  .lodge-public__header {
-    padding: 24px 20px;
-  }
-
-  .lodge-public__header h1 {
-    font-size: 24px;
+  .site-hero h1 {
+    font-size: 32px;
   }
 
   /* The pairing above holds for the selects, which say "2 guests" and take

@@ -41,9 +41,9 @@ async function lodgeCapabilities(pool, lodgeId) {
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT has_rooms, serves_food FROM dbo.lodges WHERE id = @lodgeId');
+    .query('SELECT has_rooms, serves_food, has_events FROM dbo.lodges WHERE id = @lodgeId');
   const row = result.recordset[0];
-  return { hasRooms: !!row?.has_rooms, servesFood: !!row?.serves_food };
+  return { hasRooms: !!row?.has_rooms, servesFood: !!row?.serves_food, hasEvents: !!row?.has_events };
 }
 
 // Effective roles for a lodge: every built-in, with any lodge-specific
@@ -114,7 +114,7 @@ function validatePermissions(permissions, capabilities) {
   const unusable = permissions.filter((p) => !permissionAvailableFor(p, capabilities));
   if (unusable.length > 0) {
     const label = PERMISSIONS.find((x) => x.key === unusable[0])?.label ?? unusable[0];
-    throw new ApiError(`This property doesn’t serve food, so “${label}” can’t be granted.`, 400);
+    throw new ApiError(`This property doesn’t have that section, so “${label}” can’t be granted.`, 400);
   }
   return Array.from(new Set(permissions));
 }

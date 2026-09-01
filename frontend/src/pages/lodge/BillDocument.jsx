@@ -46,6 +46,13 @@ const STRINGS_EN = {
   reverseCharge: 'Reverse Charge',
   noWord: 'No',
   miscCharges: 'Misc Charges',
+  // A function's bill: the venue where the room number goes, plates where the
+  // persons go, and the catering under its own head.
+  venue: 'Venue',
+  plates: 'Plates -',
+  functionLabel: 'Function',
+  venueHire: 'Venue hire',
+  catering: 'Catering',
   lessDiscount: 'Less: Discount',
   totalAmount: 'TOTAL AMOUNT',
   miscTag: 'Misc',
@@ -70,6 +77,16 @@ const STRINGS_EN = {
   propSign: 'For Prop. / Manager',
 };
 
+// "(Leaving early, 50%)", "(50%)", "(Leaving early)" or nothing — the reason
+// first because it is what the guest asks about, the percentage because it
+// is what the desk agreed.
+function discountQualifier(invoice) {
+  const parts = [];
+  if (invoice.discountReason) parts.push(invoice.discountReason);
+  if (invoice.discountPercent > 0) parts.push(`${invoice.discountPercent}%`);
+  return parts.length ? ` (${parts.join(', ')})` : '';
+}
+
 const STRINGS = {
   en: STRINGS_EN,
   mr: {
@@ -84,6 +101,9 @@ const STRINGS = {
 
 const SAC_ACCOMMODATION = '996311';
 const SAC_FOOD = '996331';
+// Hall hire — rental of non-residential property. The bill carries the code
+// it was issued under; this is only the fallback for one that didn't.
+const SAC_VENUE = '997212';
 
 // Money on a document is always two decimals, and the ₹ lives in the column
 // heading rather than on every row. formatPrice is right for the app — a rate
@@ -247,9 +267,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
 
   const nights = nightsOf(invoice);
   const supplyPlace = isGst ? placeOfSupply(invoice) : null;
-  const discountLabel = `Less: Discount${
-    invoice.discountPercent > 0 ? ` (${invoice.discountPercent}%)` : ''
-  }`;
+  const discountLabel = `Less: Discount${discountQualifier(invoice)}`;
 
   // Stated from the property's own policy rather than printed as fixed text.
   // A 24-hour house measures the stay from the guest's actual arrival; a
@@ -701,6 +719,8 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
 
   const isGst = invoice.billingSide === 'GST';
   const isFoodBill = invoice.kind === 'FOOD';
+  const isEventBill = invoice.kind === 'EVENT';
+  const venueSac = invoice.venueSacCode || SAC_VENUE;
   const isPreview = invoice.status === 'PREVIEW';
   const nights = nightsOf(invoice);
 
@@ -781,6 +801,8 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
 
   const stayFrom = [formatDate(invoice.actualCheckInAt || invoice.checkInDate), formatTime(invoice.actualCheckInAt)];
   const stayTo = [formatDate(invoice.actualCheckOutAt || invoice.checkOutDate), formatTime(invoice.actualCheckOutAt)];
+  const eventFrom = [formatDate(invoice.eventStartAt), formatTime(invoice.eventStartAt)];
+  const eventTo = [formatDate(invoice.eventEndAt), formatTime(invoice.eventEndAt)];
 
   const supplyPlace = isGst ? placeOfSupply(invoice) : null;
   const checkoutTerm =
@@ -870,7 +892,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           own id is not it — a number that doesn't continue the book's sequence
           under a caption claiming it does is worse than no rule at all. */}
       <div className="memo__row memo__row--split">
-        {isFoodBill ? (
+        {isEventBill ? (
+          <>
+            <span className="memo__label">{T.billNo}</span>
+            <Filled narrow>{invoice.invoiceNumber}</Filled>
+            <span className="memo__label">{T.venue}</span>
+            <Filled narrow>{invoice.venueName}</Filled>
+            <span className="memo__label">{T.plates}</span>
+            <Filled narrow>{invoice.numGuests}</Filled>
+          </>
+        ) : isFoodBill ? (
           <>
             <span className="memo__label">{T.billNo}</span>
             <Filled narrow>{invoice.invoiceNumber}</Filled>
@@ -912,7 +943,65 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
         <tbody>
           <tr>
             <td className="memo__stay">
-              {!isFoodBill && (
+              {/* A function: what it was, when it ran, the hire and what was
+                  sold with it — the same rules the stay block uses, with the
+                  night count gone. */}
+              {isEventBill && (
+                <>
+                  <div className="memo__stay-line">
+                    <span className="memo__label">{T.functionLabel}</span>
+                    <Filled>{invoice.eventTitle}</Filled>
+                  </div>
+                  <div className="memo__stay-line">
+                    <span className="memo__label">{T.from}</span>
+                    <Filled narrow>{eventFrom[0]}</Filled>
+                    <span className="memo__label">{T.at}</span>
+                    <Filled narrow>{eventFrom[1]}</Filled>
+                  </div>
+                  <div className="memo__stay-line">
+                    <span className="memo__label">{T.to}</span>
+                    <Filled narrow>{eventTo[0]}</Filled>
+                    <span className="memo__label">{T.at}</span>
+                    <Filled narrow>{eventTo[1]}</Filled>
+                  </div>
+                  <div className="memo__stay-line">
+                    <span className="memo__label">{T.rs}</span>
+                    <Filled narrow>{baseCharge ? amt(baseCharge.amount) : null}</Filled>
+                    <span className="memo__label">{T.venueHire}</span>
+                  </div>
+                  <div className="memo__stay-line memo__stay-line--extras">
+                    <span className="memo__label">{T.extraCharges}</span>
+                    {extras.length > 0 ? (
+                      <span className="memo__extras">
+                        {extras.map((extra) => (
+                          <span className="memo__extra" key={extra.key}>
+                            <span className="memo__extra-name">{extra.label}</span>
+                            <span className="memo__extra-amt">{amt(extra.amount)}</span>
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <Filled>{null}</Filled>
+                    )}
+                  </div>
+                  {supplyPlace && (
+                    <div className="memo__stay-line memo__stay-line--fine">
+                      <span className="memo__label">{T.placeOfSupply}</span>
+                      <Filled narrow>{supplyPlace}</Filled>
+                      <span className="memo__label">{T.reverseCharge}</span>
+                      <Filled narrow>{T.noWord}</Filled>
+                    </div>
+                  )}
+                  {isGst && invoice.roomSubtotal > 0 && (
+                    <div className="memo__stay-line memo__stay-line--fine">
+                      <span className="memo__label">SAC</span>
+                      <Filled narrow>{venueSac}</Filled>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!isFoodBill && !isEventBill && (
                 <>
                   <div className="memo__stay-line">
                     <span className="memo__label">{T.forStay}</span>
@@ -982,7 +1071,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
               {invoice.foodSubtotal > 0 && (
                 <div className="memo__misc">
                   <div className="memo__misc-head">
-                    {T.miscCharges}
+                    {isEventBill ? T.catering : T.miscCharges}
                     {isGst && <span className="memo__sac">SAC {SAC_FOOD}</span>}
                   </div>
                   {invoice.foodItems?.map((item, index) => (
@@ -1019,7 +1108,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
         <tbody>
           {invoice.discountAmount > 0 && (
             <Money
-              label={`${T.lessDiscount}${invoice.discountPercent > 0 ? ` (${invoice.discountPercent}%)` : ''}`}
+              label={`${T.lessDiscount}${discountQualifier(invoice)}`}
               value={-invoice.discountAmount}
             />
           )}

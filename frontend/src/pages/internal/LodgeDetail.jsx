@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import LodgeEditModal from './LodgeEditModal';
 import { featuresForCapabilities, propertyTypeOf, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import './LodgesDashboard.css';
 import './LodgeDetail.css';
@@ -10,6 +11,7 @@ import './LodgeDetail.css';
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour cycle, counted from check-in',
   NIGHT_BASED: 'Night-based, fixed checkout time',
+  CYCLE: 'Fixed check-in / checkout cycle, whole nights',
 };
 
 const money = new Intl.NumberFormat('en-IN', {
@@ -106,6 +108,7 @@ export default function LodgeDetail() {
   // half-written booking with it — worth one question at a shared front desk
   // where the button sits next to the profile menu people open all day.
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const handleSignOut = () => {
     clearSession();
@@ -122,6 +125,7 @@ export default function LodgeDetail() {
     servesFood: lodge.serves_food,
     foodRoomService: lodge.food_room_service,
     foodTableService: lodge.food_table_service,
+    hasEvents: lodge.has_events,
   };
   const type = capabilities ? propertyTypeOf(capabilities) : null;
 
@@ -146,6 +150,17 @@ export default function LodgeDetail() {
           danger
           onConfirm={handleSignOut}
           onCancel={() => setConfirmSignOut(false)}
+        />
+      )}
+      {editing && lodge && (
+        <LodgeEditModal
+          lodge={lodge}
+          stats={stats}
+          onClose={() => setEditing(false)}
+          onSaved={(detail) => {
+            setData(detail);
+            setEditing(false);
+          }}
         />
       )}
       <div className="dash-topbar">
@@ -183,6 +198,9 @@ export default function LodgeDetail() {
                 <span className={`badge ${lodge.is_active ? 'badge--on' : 'badge--inactive'}`}>
                   {lodge.is_active ? 'Active' : 'Inactive'}
                 </span>
+                <button type="button" className="btn-accent" onClick={() => setEditing(true)}>
+                  Edit lodge
+                </button>
               </div>
             </div>
 
@@ -232,6 +250,19 @@ export default function LodgeDetail() {
                   <Row label="Address">{lodge.address}</Row>
                   <Row label="City / state">
                     {[lodge.city, lodge.state].filter(Boolean).join(', ') || '—'}
+                  </Row>
+                  <Row label="Map location">
+                    {lodge.latitude != null && lodge.longitude != null ? (
+                      <a
+                        href={`https://www.google.com/maps?q=${lodge.latitude},${lodge.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {Number(lodge.latitude)}, {Number(lodge.longitude)}
+                      </a>
+                    ) : (
+                      'Not set — add it with Edit lodge'
+                    )}
                   </Row>
                   <Row label="Onboarded">{formatDate(lodge.created_at)}</Row>
                   <Row label="Public page">
@@ -285,6 +316,12 @@ export default function LodgeDetail() {
                         opposite of how this property works. */}
                     {lodge.checkin_mode === 'NIGHT_BASED' && (
                       <Row label="Checkout time">{formatTime(lodge.check_out_time)}</Row>
+                    )}
+                    {lodge.checkin_mode === 'CYCLE' && (
+                      <>
+                        <Row label="Check-in from">{formatTime(lodge.check_in_time)}</Row>
+                        <Row label="Checkout by">{formatTime(lodge.check_out_time)}</Row>
+                      </>
                     )}
                     <Row label="Grace period">{formatDuration(lodge.late_grace_minutes)}</Row>
                     <Row label="After grace">{lodge.late_half_day_percent}% of a night</Row>

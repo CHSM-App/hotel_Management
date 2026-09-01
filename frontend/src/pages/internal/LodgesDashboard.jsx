@@ -9,6 +9,7 @@ import './LodgesDashboard.css';
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour',
   NIGHT_BASED: 'Night-based',
+  CYCLE: 'Fixed cycle',
 };
 
 // The API returns snake_case rows straight from the database here, so the flags
@@ -19,6 +20,7 @@ function describeType(lodge) {
   const type = propertyTypeOf({
     hasRooms: lodge.has_rooms,
     servesFood: lodge.serves_food,
+    hasEvents: lodge.has_events,
   });
   if (type) return type.label;
   return lodge.has_rooms ? 'Lodge' : 'No rooms, no food';
