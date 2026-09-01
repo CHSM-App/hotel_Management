@@ -15,6 +15,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
+import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
 
@@ -1018,7 +1019,10 @@ export default function MenuPanel() {
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               <div className="field">
-                <label htmlFor="sectionName">Section name</label>
+                <label htmlFor="sectionName">
+                  Section name
+                  <Req />
+                </label>
                 <SectionNameField
                   id="sectionName"
                   value={sectionForm.name}
@@ -1101,7 +1105,10 @@ export default function MenuPanel() {
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               <div className="field">
-                <label htmlFor="itemSection">Section</label>
+                <label htmlFor="itemSection">
+                  Section
+                  <Req />
+                </label>
                 <select
                   id="itemSection"
                   value={itemForm.categoryId}
@@ -1137,7 +1144,10 @@ export default function MenuPanel() {
               </div>
 
               <div className="field">
-                <label htmlFor="itemName">Dish name</label>
+                <label htmlFor="itemName">
+                  Dish name
+                  <Req />
+                </label>
                 <input
                   id="itemName"
                   value={itemForm.name}
@@ -1332,7 +1342,10 @@ export default function MenuPanel() {
               <div className="field-row">
                 {!hasSizes && (
                   <div className="field">
-                    <label htmlFor="itemPrice">Price</label>
+                    <label htmlFor="itemPrice">
+                      Price
+                      <Req />
+                    </label>
                     <div className="menu-money">
                       <span className="menu-money__symbol" aria-hidden="true">
                         ₹

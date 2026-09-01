@@ -357,6 +357,23 @@ export function downloadPdf(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+// Whether this device can hand a PDF to another app itself. The share menu
+// asks before offering the sheet: listing "Share…" on a desktop that has no
+// sheet would silently fall through to a download the desk did not ask for,
+// which is what the single share control used to do.
+//
+// Probed with a stand-in PDF rather than the real one because the menu is
+// built before any file exists, and canShare judges the type, not the bytes.
+export function canShareFiles() {
+  if (typeof navigator === 'undefined' || !navigator.canShare) return false;
+  try {
+    const probe = new File([''], 'probe.pdf', { type: 'application/pdf' });
+    return navigator.canShare({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
 // Hands the file to another app — messaging the guest their bill, which is the
 // whole point of the control. Falls back to a download only where there is no
 // share sheet to open, so the action still does something rather than nothing.
@@ -369,9 +386,3 @@ export async function sharePdf(blob, filename) {
   downloadPdf(blob, filename);
 }
 
-// The old single control's behaviour, kept for the advance receipt, which
-// still offers one button. Share where the device has a sheet, download where
-// it doesn't.
-export async function shareOrDownloadPdf(blob, filename) {
-  await sharePdf(blob, filename);
-}

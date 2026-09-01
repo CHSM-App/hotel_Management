@@ -3,6 +3,19 @@
   gap: 4px;
   margin-bottom: 14px;
   border-bottom: 1px solid var(--border);
+  /* The strip is variable-length — Food shows Tables only when table service
+     is on — so there is no width at which it can be assumed to fit. It slides
+     at every size rather than below a breakpoint; scrolling that started only
+     at 640px left the last tabs (QR codes, Settings) squeezed and unreachable
+     on tablets and half-width desktop windows. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.subtabs::-webkit-scrollbar {
+  display: none;
 }
 
 .subtabs__item {
@@ -15,6 +28,12 @@
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
+  /* Both are needed: a flex item shrinks below its content by default, so
+     without these the labels compress and wrap instead of overflowing into
+     the scroll. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+  scroll-snap-align: start;
 }
 
 .subtabs__item:hover {
@@ -27,18 +46,8 @@
 }
 
 @media (max-width: 640px) {
-  .subtabs {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .subtabs::-webkit-scrollbar {
-    display: none;
-  }
-
   .subtabs__item {
     margin-right: 16px;
-    white-space: nowrap;
   }
 }
 

@@ -16,6 +16,11 @@ const TABS = [
 
 export default function RoomsAndRates() {
   const [tab, setTab] = useUrlState('tab', 'rooms');
+  // A ?tab= this screen doesn't own falls back to the first tab rather than
+  // matching nothing and rendering an empty page under an unselected strip.
+  // The sidebar drops the key when it moves between sections, so this catches
+  // what it can't: a bookmark, a pasted link, a hand-edited URL.
+  const activeTab = TABS.some((t) => t.key === tab) ? tab : 'rooms';
 
   return (
     <div>
@@ -25,7 +30,7 @@ export default function RoomsAndRates() {
             key={t.key}
             type="button"
             className="subtabs__item"
-            aria-current={tab === t.key ? 'page' : undefined}
+            aria-current={activeTab === t.key ? 'page' : undefined}
             onClick={() => setTab(t.key)}
           >
             {t.label}
@@ -33,10 +38,10 @@ export default function RoomsAndRates() {
         ))}
       </div>
 
-      {tab === 'rooms' && <RoomsPanel />}
-      {tab === 'chart' && <PriceChartPanel />}
-      {tab === 'simulator' && <PriceSimulatorPanel />}
-      {tab === 'checkout' && <CheckoutPolicyPanel />}
+      {activeTab === 'rooms' && <RoomsPanel />}
+      {activeTab === 'chart' && <PriceChartPanel />}
+      {activeTab === 'simulator' && <PriceSimulatorPanel />}
+      {activeTab === 'checkout' && <CheckoutPolicyPanel />}
     </div>
   );
 }

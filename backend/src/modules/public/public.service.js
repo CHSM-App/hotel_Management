@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const menuService = require('../menu/menu.service');
@@ -501,6 +503,30 @@ async function verifyRoomAccess(slug, roomNumber, pin) {
   };
 }
 
+// An opaque name for one stay, for the phone to hold onto.
+//
+// The phone remembers a room number and a PIN, and both get reused: room 12 is
+// room 12 every week, and a PIN is four digits out of ten thousand. So a guest
+// who stayed in March and comes back in June can arrive still holding a pair
+// that looks plausible, and — if reception happens to issue the same PIN again
+// — one that actually verifies. That is the previous visit's login surviving
+// into this one, and the guest never sees a login screen to notice it.
+//
+// The booking id is what actually separates the two, but it is a sequential key
+// and this is an unauthenticated surface, so it is not handed out. An HMAC of
+// it is: stable for the length of a stay, different for the next one, and
+// telling nobody how many bookings the property has taken. It proves nothing on
+// its own and is never trusted as identity — the PIN is still checked afresh on
+// every request. It exists so the phone can tell "still my stay" apart from
+// "somebody's stay, but not the one I signed into".
+function stayTagFor(bookingId) {
+  return crypto
+    .createHmac('sha256', process.env.JWT_SECRET)
+    .update(`stay:${bookingId}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 // What the phone gets when the guest signs in: enough to greet them and to
 // know the sign-in took, and nothing about the property it couldn't already
 // read off the public menu. The PIN itself is never echoed back.
@@ -509,6 +535,7 @@ async function openGuestSession(slug, roomNumber, pin) {
   return {
     roomNumber: access.roomLabel,
     guestName: access.guestName || '',
+    stayTag: stayTagFor(access.bookingId),
     lodge: { name: access.lodge.name, slug: access.lodge.slug, phone: access.lodge.phone },
   };
 }
@@ -764,6 +791,7 @@ module.exports = {
   getLodgeOrderingContext,
   getTableOrderingContext,
   openGuestSession,
+  stayTagFor,
   listGuestOrders,
   updateGuestOrder,
   cancelGuestOrder,

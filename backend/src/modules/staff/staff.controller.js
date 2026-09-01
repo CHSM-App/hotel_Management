@@ -2,9 +2,17 @@ const { z } = require('zod');
 const staffService = require('./staff.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
+// A staff login is keyed on the phone number, so it is held to one shape: ten
+// digits, nothing else. The form only lets ten digits be typed; this is what
+// stops a stale form or a direct call storing anything else, and it is applied
+// to staff only — an owner's number arrives through lodge registration, which
+// records landlines and so keeps its own looser field.
+const TEN_DIGIT_PHONE = /^\d{10}$/;
+const phoneField = (schema) => schema.trim().regex(TEN_DIGIT_PHONE, 'Enter a 10-digit mobile number.');
+
 const createStaffSchema = z.object({
   name: z.string({ error: 'Enter a name.' }).trim().min(1, 'Enter a name.').max(200),
-  phone: z.string({ error: 'Enter a phone number.' }).trim().min(1, 'Enter a phone number.').max(20),
+  phone: phoneField(z.string({ error: 'Enter a phone number.' })),
   email: z.string().trim().email('Enter a valid email, or leave it blank.').optional().or(z.literal('')),
   roleKey: z.string({ error: 'Choose a role.' }).trim().min(1, 'Choose a role.'),
   tempPassword: z
@@ -14,7 +22,7 @@ const createStaffSchema = z.object({
 
 const updateStaffSchema = z.object({
   name: z.string().trim().min(1, 'Enter a name.').max(200).optional(),
-  phone: z.string().trim().min(1, 'Enter a phone number.').max(20).optional(),
+  phone: phoneField(z.string()).optional(),
   email: z.string().trim().email('Enter a valid email, or leave it blank.').optional().or(z.literal('')),
   roleKey: z.string().trim().min(1).optional(),
   isActive: z.boolean().optional(),

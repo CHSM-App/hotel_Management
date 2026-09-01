@@ -1,0 +1,160 @@
+/* Icon-only action buttons and their hover tooltip.
+   See IconButton.jsx for why the tooltip is drawn here rather than by `title`. */
+
+.icon-btn {
+  /* Square, because an icon has no reading direction to stretch along. 34px is
+     the smallest that still clears the ~32px comfortable touch target once the
+     surrounding row padding is counted. */
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: var(--neu-base);
+  color: var(--text);
+  cursor: pointer;
+  /* The same raised-to-pressed language as every other control in the app, so
+     an icon button reads as a sibling of the text buttons it replaced. */
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+  /* Anchors the tooltip, which is positioned against this box. */
+  position: relative;
+  /* A few of these are router <Link>s rather than <button>s — same control,
+     same look, but an anchor brings its own underline and inherited colour. */
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.icon-btn:hover {
+  box-shadow: var(--shadow-raised-hover);
+  color: var(--ink);
+}
+
+.icon-btn:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: var(--shadow-raised);
+}
+
+/* Destructive actions carry the danger colour on the glyph itself. The button
+   surface stays neutral — a row of solid red buttons makes deleting look like
+   the primary thing to do on the card. */
+.icon-btn--danger {
+  color: var(--danger);
+}
+
+.icon-btn--danger:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* ---- The tooltip ---------------------------------------------------------
+   Drawn from data-tooltip on the button. Shown on hover and on keyboard focus:
+   an icon-only control with a mouse-only label is unusable from the keyboard. */
+
+.icon-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  /* Above the button, centred. */
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  /* Labels like "Reset password" must not wrap to two lines in a 34px box. */
+  white-space: nowrap;
+  /* Above neighbouring cards, which carry their own shadows. */
+  z-index: 20;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 140ms ease, visibility 140ms ease;
+  /* The tooltip must never eat the pointer — hovering it would otherwise
+     re-trigger the hover it was spawned by. */
+  pointer-events: none;
+}
+
+/* The little arrow. A separate pseudo-element so it inherits nothing from the
+   bubble's padding. */
+.icon-btn::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--ink);
+  z-index: 20;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 140ms ease, visibility 140ms ease;
+  pointer-events: none;
+}
+
+.icon-btn:hover::after,
+.icon-btn:hover::before,
+.icon-btn:focus-visible::after,
+.icon-btn:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Edge clipping.
+   Action strips sit hard against the right edge of their card or panel, so a
+   centred tooltip on the last button — almost always Delete, whose label is
+   the longest — overflows and gets cut off. On the last button in a strip the
+   bubble is pinned to the button's right edge and grows leftwards into the
+   row, where there is always room. The arrow stays over the button.
+
+   :last-child rather than a modifier class: which button is last is a fact
+   about the markup, and every strip in the app ends with its destructive
+   action. */
+.icon-btn:last-child::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* The arrow keeps pointing at the button's centre, which is no longer the
+   bubble's centre. */
+.icon-btn:last-child::before {
+  left: auto;
+  right: 12px;
+  transform: none;
+}
+
+/* Touch devices have no hover, so the tooltip would either never show or —
+   worse — stick after a tap. Suppress it there; the aria-label still names the
+   control for assistive tech. */
+@media (hover: none) {
+  .icon-btn::after,
+  .icon-btn::before {
+    display: none;
+  }
+}
+
+/* A row of icon buttons. Replaces the ad-hoc flex strips the text buttons
+   used, which sized themselves to their labels. */
+.icon-btn-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

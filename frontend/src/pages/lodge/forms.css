@@ -10,6 +10,18 @@
   margin-bottom: 6px;
 }
 
+/* The heading over a group of controls — a set of checkboxes, say — which each
+   carry their own label. It reads as a label but is deliberately not one: a
+   <label> with no single control to point at sends anything following it to
+   whichever control it happens to wrap. */
+.field__group-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
 .field input,
 .field select,
 .pay-lines__row select,
@@ -34,6 +46,36 @@
 .pay-lines__ref:focus-visible {
   border-color: var(--focus);
   box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
+}
+
+/* The asterisk that marks a field the form won't submit without. A span of its
+   own rather than a character baked into the label text: the mark carries the
+   danger colour without tinting the label, and the assistive-technology reading
+   is the word "required" rather than a punctuation mark read out mid-label. */
+.field__req {
+  color: var(--danger);
+  margin-left: 2px;
+  font-weight: 700;
+  /* Containing block for the hidden text below, so it clips against the mark
+     rather than escaping to whatever positioned ancestor happens to be up the
+     tree and dragging a scrollbar out of it. */
+  position: relative;
+}
+
+/* The word behind the mark, for anything that reads the label rather than
+   looking at it. Taken out of the flow without display:none or visibility,
+   both of which would take it out of the accessibility tree along with the
+   picture — which is the one thing this span exists to stay in. */
+.field__req-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* A failed field says so under itself rather than in a banner at the top of
@@ -151,6 +193,22 @@
   letter-spacing: normal;
   padding: 1px 8px;
   border-radius: 999px;
+}
+
+/* The field an error banner is actually about. The banner names the problem at
+   the top of the form; this is what says "here" — without it a long form shows
+   a complaint with nothing to act on. Border plus a soft ring rather than
+   colour alone, so it reads for anyone who can't tell the red from the grey. */
+.field input.field__control--invalid,
+.field select.field__control--invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-bg);
+}
+
+.field input.field__control--invalid:focus-visible,
+.field select.field__control--invalid:focus-visible {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-bg), var(--shadow-inset);
 }
 
 .form-banner {

@@ -1,0 +1,60 @@
+name: hotel_manager
+description: Front desk for the lodge — bookings, billing and the kitchen, on a phone.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State & storage
+  flutter_riverpod: ^2.6.1
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.5.4
+
+  # Networking
+  dio: ^5.9.0
+  connectivity_plus: ^7.0.0
+
+  # The bill as a real PDF.
+  #
+  # The web builds one by screenshotting the rendered bill with html2canvas and
+  # wrapping the image in jsPDF — a browser technique with no equivalent here,
+  # and one that produces a picture of a bill rather than a document. This draws
+  # the same layout natively, so the text is selectable and the file is a
+  # fraction of the size.
+  pdf: ^3.11.1
+  printing: ^5.13.4
+
+  intl: ^0.20.2
+  cupertino_icons: ^1.0.8
+
+  # Serialization is hand-written rather than generated.
+  #
+  # The blueprint calls for Retrofit + json_serializable, and that was the first
+  # thing tried here. build_runner cannot compile its own build script against
+  # this Dart SDK — it AOT-compiles the entrypoint and dies on
+  # "'dart compile' does not support build hooks", before reaching a single one
+  # of these models. That is a toolchain incompatibility, not something a
+  # different annotation would fix.
+  #
+  # So the generators are gone and every model carries its own fromJson/toJson.
+  # What the blueprint actually buys — the layering, screens → viewModel →
+  # usecase → repository → api — is untouched; Retrofit was only ever the
+  # implementation inside data/api/. Restore both packages and delete the
+  # hand-written mappers if a later SDK fixes the generator.
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Declared, unlike the source project this blueprint came from, where the
+  # analysis_options include resolved to nothing because the package was
+  # missing. See Flutter_ARCHITECTURE.md §14.5.
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

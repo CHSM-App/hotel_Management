@@ -158,15 +158,14 @@ async function listOpenFoodTabsHandler(req, res, next) {
   }
 }
 
-// "counter" is the tab for orders taken at the till with no table — a real
-// grouping, so it gets a route rather than being unbillable.
-function tableIdParam(raw) {
-  return raw === 'counter' ? null : Number(raw);
-}
-
+// The tab segment is "counter", "table-<id>" or "room-<id>" — one payer's
+// running total, whichever of the three it is. Passed through as written and
+// validated in the service, which is the thing that turns it into SQL: parsing
+// it to a number here is what let a malformed segment reach the driver as NaN
+// and come back a 500 instead of a 400.
 async function previewFoodBillHandler(req, res, next) {
   try {
-    const preview = await billingService.previewFoodBill(req.user.lodgeId, tableIdParam(req.params.tableId), {
+    const preview = await billingService.previewFoodBill(req.user.lodgeId, req.params.tab, {
       discountAmount: parseDiscount(req.query.discountAmount),
       targetTotal: parseDiscount(req.query.targetTotal),
     });
@@ -185,7 +184,7 @@ async function issueFoodInvoiceHandler(req, res, next) {
     const invoice = await billingService.issueFoodInvoice(
       req.user.lodgeId,
       req.user.sub,
-      tableIdParam(req.params.tableId),
+      req.params.tab,
       parsed.data
     );
     res.status(201).json({ invoice });

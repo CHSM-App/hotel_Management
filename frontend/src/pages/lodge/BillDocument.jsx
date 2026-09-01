@@ -391,8 +391,20 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
     particulars.push({ kind: 'plain', key: 'round', label: 'Round off', amount: invoice.roundOff });
   }
 
+  // A voided bill still prints, for an audit rather than for a guest, and it
+  // has to say so on its face. This document said nothing at all: a cancelled
+  // tax invoice printed identically to a live one, which is the one mistake a
+  // numbered bill series must not make. The mark goes at the top, where it is
+  // read before the amounts, and carries the reason so the reprint explains
+  // itself.
   return (
     <div className="bill-doc" ref={ref}>
+      {invoice.status === 'VOID' && (
+        <div className="bill-doc__void">
+          <span className="bill-doc__void-mark">VOID</span>
+          {invoice.voidReason && <span className="bill-doc__void-why">{invoice.voidReason}</span>}
+        </div>
+      )}
       <div className="bill-doc__header">
         <div className="bill-doc__lodge-name">{invoice.lodgeName}</div>
         {(invoice.lodgeAddress || invoice.lodgeCity) && (
@@ -825,8 +837,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   const grossWhole = Math.floor(Math.round(leadAmount * 100) / 100);
   const grossPaise = Math.round(leadAmount * 100) % 100;
 
+  // Same void mark as the tax bill above, for the same reason and in the same
+  // place. The memo said nothing about being voided either.
   return (
     <div className="bill-doc memo" ref={ref}>
+      {invoice.status === 'VOID' && (
+        <div className="bill-doc__void">
+          <span className="bill-doc__void-mark">VOID</span>
+          {invoice.voidReason && <span className="bill-doc__void-why">{invoice.voidReason}</span>}
+        </div>
+      )}
       {/* Masthead. "Cash Memo" sits above the name on the printed book, with
           the phone numbers stacked in the corner beside it. */}
       <div className="memo__head">

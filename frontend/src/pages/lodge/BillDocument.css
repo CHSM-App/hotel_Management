@@ -1129,3 +1129,48 @@
   font-weight: 700;
   letter-spacing: 0.02em;
 }
+
+/* The void mark on the printed document.
+   A voided bill prints for an audit, never for a guest, and it has to say so
+   on its face — this document used to print identically to a live one, which
+   is the single mistake a numbered money series must not make.
+
+   Drawn with a border and a heavy rule rather than a colour fill, because it
+   has to survive the printer: print stylesheets and mono lasers drop
+   background colours, and a mark that only exists as a red tint disappears on
+   exactly the copy that gets filed. */
+.bill-doc__void {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border: 2px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+}
+
+.bill-doc__void-mark {
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  flex: none;
+}
+
+.bill-doc__void-why {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #000;
+  overflow-wrap: anywhere;
+}
+
+/* Belt and braces for the copy that comes off the printer: ask for the colour
+   to be kept, and keep the mark readable in the black-and-white it may become
+   anyway. The border above is what actually carries it. */
+@media print {
+  .bill-doc__void {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

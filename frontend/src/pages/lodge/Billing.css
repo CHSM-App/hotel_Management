@@ -9,6 +9,17 @@
   gap: 4px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
+  /* Slides at every width, not just below a breakpoint — see the note on
+     .subtabs in RoomsAndRates.css. These tabs carry a count badge, so they
+     are the widest of the three strips and the first to run out of room. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.billing-panel__subtabs::-webkit-scrollbar {
+  display: none;
 }
 
 .billing-panel__subtabs-item {
@@ -24,6 +35,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  scroll-snap-align: start;
 }
 
 .billing-panel__subtabs-item:hover {
@@ -543,19 +557,10 @@
   }
 
   /* Tabs scroll sideways rather than wrapping onto a second line, so the
-     bill list below keeps its position on screen. */
-  .billing-panel__subtabs {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .billing-panel__subtabs::-webkit-scrollbar {
-    display: none;
-  }
-
+     bill list below keeps its position on screen. The scrolling itself is on
+     the base rule now; only the spacing tightens here. */
   .billing-panel__subtabs-item {
     margin-right: 16px;
-    white-space: nowrap;
   }
 
   /* .chart-row already stacks at this width (chartSections.css); these just
@@ -1349,4 +1354,102 @@
 
 .billing-panel__discount .billing-panel__hint {
   margin-bottom: 0;
+}
+
+/* The void reason, given the weight the fact deserves.
+   It used to render as a plain detail row: the same grey label and value as
+   the guest's phone number, for the one fact that changes what the whole
+   document means. Struck through in the list and unremarkable in the modal was
+   a bill that read as live to anyone who opened it. */
+.billing-panel__void-note {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--danger-bg);
+  /* The left edge carries the state at a glance even where the background
+     tint is washed out by a bright screen at the desk. */
+  border-left: 4px solid var(--danger);
+  color: var(--danger);
+}
+
+.billing-panel__void-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+/* The reason itself is what the desk actually reads, so it is the darker of
+   the two and does not wrap under the tag on a narrow modal. */
+.billing-panel__void-reason {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The share menu — one control, the channels behind it.
+   Anchored to the button so the list opens against it rather than at the top
+   of the action row, which is where a statically positioned list would land. */
+.share-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.share-menu__list {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* It floats over the bill document behind it, so it needs a shadow to sit
+     above the paper rather than look printed on it. */
+  box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
+}
+
+/* Opens upward: the action row sits at the bottom of a tall modal, and a list
+   dropping down from it would open past the fold with nothing to scroll to. */
+.share-menu__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.share-menu__item:hover,
+.share-menu__item:focus-visible {
+  background: var(--neu-sunken);
+}
+
+.share-menu__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Says what the channel will actually do. Every route but the device sheet
+   downloads the PDF for the desk to attach by hand, and finding that out one
+   unsent bill at a time is how the old single button taught it. */
+.share-menu__hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
 }

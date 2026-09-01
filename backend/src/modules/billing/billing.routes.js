@@ -43,10 +43,12 @@ router.post('/events/:eventId/advance-receipt/preview', authenticate, staff, pre
 router.post('/events/:eventId/advance-receipt', authenticate, staff, issueEventAdvanceReceiptHandler);
 router.get('/events/:eventId/advance-receipts', authenticate, staff, listEventAdvanceReceiptsHandler);
 
-// Food bills. :tableId accepts "counter" for orders taken at the till.
+// Food bills. :tab is "counter", "table-<id>" or "room-<id>" — the three ways
+// food is served to someone with no stay to charge it to, each billed on its
+// own document.
 router.get('/food-tabs', authenticate, staff, listOpenFoodTabsHandler);
-router.get('/food-tabs/:tableId/preview', authenticate, staff, previewFoodBillHandler);
-router.post('/food-tabs/:tableId/invoice', authenticate, staff, issueFoodInvoiceHandler);
+router.get('/food-tabs/:tab/preview', authenticate, staff, previewFoodBillHandler);
+router.post('/food-tabs/:tab/invoice', authenticate, staff, issueFoodInvoiceHandler);
 // Advance receipts. Taken at the desk when the booking is made, so these sit
 // under bookings/ like the stay bill does — same booking, different document.
 //

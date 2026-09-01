@@ -4,6 +4,7 @@ import { apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import LocationPicker from '../../components/LocationPicker';
 import { validateCoordinates } from '../../lib/coordinates';
+import Req from '../../components/RequiredMark';
 import {
   PROPERTY_TYPES,
   FOOD_SERVICE_STYLES,
@@ -303,7 +304,10 @@ export default function LodgeRegistration() {
               </div>
 
               <div className="field">
-                <label htmlFor="lodgeName">{type.Noun} name</label>
+                <label htmlFor="lodgeName">
+                  {type.Noun} name
+                  <Req />
+                </label>
                 <input
                   id="lodgeName"
                   value={form.lodgeName}
@@ -313,7 +317,10 @@ export default function LodgeRegistration() {
               </div>
 
               <div className="field">
-                <label htmlFor="slug">Public link slug</label>
+                <label htmlFor="slug">
+                  Public link slug
+                  <Req />
+                </label>
                 <input
                   id="slug"
                   value={form.slug}
@@ -435,7 +442,10 @@ export default function LodgeRegistration() {
 
               {form.isGstRegistered && (
                 <div className="field">
-                  <label htmlFor="gstin">GSTIN</label>
+                  <label htmlFor="gstin">
+                    GSTIN
+                    <Req label="required while GST registered" />
+                  </label>
                   <input id="gstin" value={form.gstin} onChange={update('gstin')} placeholder="27ABCDE1234F1Z5" />
                 </div>
               )}
@@ -479,13 +489,19 @@ export default function LodgeRegistration() {
               </div>
 
               <div className="field">
-                <label htmlFor="ownerName">Owner name</label>
+                <label htmlFor="ownerName">
+                  Owner name
+                  <Req />
+                </label>
                 <input id="ownerName" value={form.ownerName} onChange={update('ownerName')} placeholder="Suresh Naik" />
               </div>
 
               <div className="field-row">
                 <div className="field">
-                  <label htmlFor="ownerPhone">Owner phone</label>
+                  <label htmlFor="ownerPhone">
+                    Owner phone
+                    <Req />
+                  </label>
                   <input id="ownerPhone" value={form.ownerPhone} onChange={update('ownerPhone')} placeholder="9876543210" />
                 </div>
                 <div className="field">
@@ -495,7 +511,10 @@ export default function LodgeRegistration() {
               </div>
 
               <div className="field">
-                <label htmlFor="tempPassword">Temporary password</label>
+                <label htmlFor="tempPassword">
+                  Temporary password
+                  <Req />
+                </label>
                 <div className="reg-password">
                   <input
                     id="tempPassword"

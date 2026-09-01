@@ -3,6 +3,9 @@ import { apiGet, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_B
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import IconButton from '../../components/IconButton';
+import { EditIcon, TrashIcon } from '../../components/ActionIcons';
+import Req from '../../components/RequiredMark';
 import './forms.css';
 import './RoomsPanel.css';
 
@@ -72,6 +75,9 @@ export default function RoomsPanel() {
   const [deleteModalRoom, setDeleteModalRoom] = useState(null);
   const [deleteModalError, setDeleteModalError] = useState('');
   const [deleteModalBusy, setDeleteModalBusy] = useState(false);
+  const [statusModalRoom, setStatusModalRoom] = useState(null);
+  const [statusModalError, setStatusModalError] = useState('');
+  const [statusModalBusy, setStatusModalBusy] = useState(false);
   const [existingImages, setExistingImages] = useState([]);
   // Photos whose file did not load. A room_images row can outlive its file —
   // an upload lost to a deploy, a half-finished delete — and the browser's
@@ -191,6 +197,34 @@ export default function RoomsPanel() {
   const closeDeleteModal = () => {
     if (deleteModalBusy) return;
     setDeleteModalRoom(null);
+  };
+
+  const openStatusModal = (room) => {
+    setStatusModalRoom(room);
+    setStatusModalError('');
+  };
+
+  const closeStatusModal = () => {
+    if (statusModalBusy) return;
+    setStatusModalRoom(null);
+  };
+
+  const handleToggleStatus = async () => {
+    setStatusModalError('');
+    setStatusModalBusy(true);
+    try {
+      await apiPatch(
+        `/rooms/${statusModalRoom.id}/status`,
+        { isActive: !statusModalRoom.isActive },
+        { token: session?.token }
+      );
+      setStatusModalRoom(null);
+      loadAll();
+    } catch (err) {
+      setStatusModalError(err instanceof ApiError ? err.message : 'Could not update this room.');
+    } finally {
+      setStatusModalBusy(false);
+    }
   };
 
   const handleDeactivateOrActivate = async () => {
@@ -357,9 +391,17 @@ export default function RoomsPanel() {
                 ) : (
                   <div className="room-card__cover-placeholder">{room.roomNumber}</div>
                 )}
-                <span className={`room-card__status badge ${room.isActive ? 'badge--on' : 'badge--off'}`}>
+                <button
+                  type="button"
+                  className={`room-card__status badge ${room.isActive ? 'badge--on' : 'badge--off'}`}
+                  onClick={() => openStatusModal(room)}
+                  title={`Click to ${room.isActive ? 'deactivate' : 'activate'} room ${room.roomNumber}`}
+                  aria-label={`Room ${room.roomNumber} is ${
+                    room.isActive ? 'active' : 'inactive'
+                  }. Click to ${room.isActive ? 'deactivate' : 'activate'}.`}
+                >
                   {room.isActive ? 'Active' : 'Inactive'}
-                </span>
+                </button>
                 {room.images.length > 1 && (
                   <span className="room-card__photo-count">+{room.images.length - 1}</span>
                 )}
@@ -395,12 +437,17 @@ export default function RoomsPanel() {
               </div>
 
               <div className="room-card__actions">
-                <button type="button" className="room-card__edit-btn" onClick={() => openEditForm(room)}>
-                  Edit
-                </button>
-                <button type="button" className="room-card__delete-btn" onClick={() => openDeleteModal(room)}>
-                  Delete
-                </button>
+                <IconButton
+                  label={`Edit room ${room.roomNumber}`}
+                  icon={<EditIcon />}
+                  onClick={() => openEditForm(room)}
+                />
+                <IconButton
+                  label={`Delete room ${room.roomNumber}`}
+                  icon={<TrashIcon />}
+                  tone="danger"
+                  onClick={() => openDeleteModal(room)}
+                />
               </div>
             </div>
           ))}
@@ -439,7 +486,10 @@ export default function RoomsPanel() {
 
                 {editingRoomId || form.mode === 'single' ? (
                   <div className="field">
-                    <label htmlFor="roomNumber">Room number</label>
+                    <label htmlFor="roomNumber">
+                      Room number
+                      <Req />
+                    </label>
                     <input
                       id="roomNumber"
                       value={form.roomNumber}
@@ -451,7 +501,10 @@ export default function RoomsPanel() {
                 ) : (
                   <div className="field-row">
                     <div className="field">
-                      <label htmlFor="rangeStart">From</label>
+                      <label htmlFor="rangeStart">
+                        From
+                        <Req />
+                      </label>
                       <input
                         id="rangeStart"
                         type="number"
@@ -461,7 +514,10 @@ export default function RoomsPanel() {
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="rangeEnd">To</label>
+                      <label htmlFor="rangeEnd">
+                        To
+                        <Req />
+                      </label>
                       <input
                         id="rangeEnd"
                         type="number"
@@ -478,7 +534,10 @@ export default function RoomsPanel() {
                 <div className="form-section__title">Pricing</div>
 
                 <div className="field">
-                  <label htmlFor="categoryId">Category</label>
+                  <label htmlFor="categoryId">
+                    Category
+                    <Req />
+                  </label>
                   <select
                     id="categoryId"
                     value={form.categoryId}
@@ -498,7 +557,10 @@ export default function RoomsPanel() {
                 <div className="form-section__title">Room details</div>
                 <div className="field-row">
                   <div className="field">
-                    <label htmlFor="floor">Floor</label>
+                    <label htmlFor="floor">
+                      Floor
+                      <Req />
+                    </label>
                     <input
                       id="floor"
                       value={form.floor}
@@ -507,7 +569,10 @@ export default function RoomsPanel() {
                     />
                   </div>
                   <div className="field">
-                    <label htmlFor="bathroomType">Bathroom</label>
+                    <label htmlFor="bathroomType">
+                      Bathroom
+                      <Req />
+                    </label>
                     <select
                       id="bathroomType"
                       value={form.bathroomType}
@@ -523,7 +588,10 @@ export default function RoomsPanel() {
                   </div>
                 </div>
                   <div className="field field--beds">
-                    <label htmlFor="bed-size-0">Beds</label>
+                    <label htmlFor="bed-size-0">
+                      Beds
+                      <Req />
+                    </label>
                     {/* One row per bed type, because a family room is a double
                         and two singles — storing whichever one the desk picked
                         first was losing the other half of the room. */}
@@ -587,7 +655,10 @@ export default function RoomsPanel() {
                   </div>
 
                 <div className="field">
-                  <label htmlFor="maxOccupancy">Max occupancy</label>
+                  <label htmlFor="maxOccupancy">
+                    Max occupancy
+                    <Req />
+                  </label>
                   <input
                     id="maxOccupancy"
                     type="number"
@@ -677,6 +748,32 @@ export default function RoomsPanel() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {statusModalRoom && (
+        <div className="glass-backdrop rooms-panel__backdrop" onClick={closeStatusModal}>
+          <div className="glass-panel rooms-panel__delete-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>
+              {statusModalRoom.isActive ? 'Deactivate' : 'Activate'} room {statusModalRoom.roomNumber}?
+            </h3>
+            <p className="rooms-panel__delete-hint">
+              {statusModalRoom.isActive
+                ? 'It will be hidden from new bookings, but its history stays intact.'
+                : 'It will be available for new bookings again.'}
+            </p>
+
+            {statusModalError && <div className="form-banner form-banner--error">{statusModalError}</div>}
+
+            <div className="rooms-panel__actions">
+              <button type="button" className="btn-secondary" onClick={closeStatusModal} disabled={statusModalBusy}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={handleToggleStatus} disabled={statusModalBusy}>
+                {statusModalBusy ? 'Saving…' : statusModalRoom.isActive ? 'Deactivate' : 'Activate'}
+              </button>
+            </div>
           </div>
         </div>
       )}

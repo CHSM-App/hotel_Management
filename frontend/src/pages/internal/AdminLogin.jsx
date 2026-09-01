@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { isStaff, setSession } from '../../lib/auth';
+import Req from '../../components/RequiredMark';
 import '../auth/AuthLayout.css';
 
 export default function AdminLogin() {
@@ -75,7 +76,10 @@ export default function AdminLogin() {
           {error && <div className="form-banner form-banner--error">{error}</div>}
 
           <div className="field">
-            <label htmlFor="identifier">Email</label>
+            <label htmlFor="identifier">
+              Email
+              <Req />
+            </label>
             <input
               id="identifier"
               type="text"
@@ -87,7 +91,10 @@ export default function AdminLogin() {
           </div>
 
           <div className="field">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">
+              Password
+              <Req />
+            </label>
             <input
               id="password"
               type="password"

@@ -320,6 +320,37 @@
   padding: 14px 16px;
 }
 
+/* A tile is now a button, so it has to shed the browser's button defaults and
+   keep the left-aligned block of label-over-figure it always looked like. */
+.guest-register__stat--action {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.guest-register__stat--action:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.guest-register__stat--action:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+.guest-register__stat--action:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Pressed in while its cut is the one the list is showing — the same "on" the
+   status chips use, so a lit tile and a lit chip mean the same thing. */
+.guest-register__stat--on {
+  border-color: var(--brand);
+  box-shadow: var(--shadow-pressed);
+}
+
 /* The money tile is the one number the range is usually opened for, so it
    carries the brand edge and the rest stay plain. */
 .guest-register__stat--money {
@@ -602,6 +633,72 @@
 /* Money is compared down the column, never across the row. */
 .guest-register__col-amount {
   text-align: right;
+}
+
+/* ---- Sortable column headings ------------------------------------------- */
+
+/* The heading itself is the button, so it inherits the column's alignment and
+   the header row keeps the height it had — a control bolted beside the label
+   would push the row taller on every column at once. */
+.guest-register__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.guest-register__col-amount .guest-register__sort {
+  /* Right-aligned like the figures beneath it, so the heading sits over its
+     own column rather than over the one to its left. */
+  flex-direction: row-reverse;
+}
+
+.guest-register__sort:hover {
+  color: var(--ink);
+}
+
+.guest-register__sort--on {
+  color: var(--brand-ink);
+}
+
+.guest-register__sort:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Stacked rather than side by side: two arrows in a row read as two controls,
+   while one above the other reads as the single up/down affordance it is. */
+.guest-register__sort-arrows {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 0.7;
+  font-size: 7px;
+}
+
+/* Present but faint until the column is the one being sorted — visible enough
+   to say "this heading does something", quiet enough that seven of them across
+   the row don't read as seven active sorts. */
+.guest-register__sort-arrow {
+  opacity: 0.28;
+}
+
+.guest-register__sort:hover .guest-register__sort-arrow {
+  opacity: 0.5;
+}
+
+.guest-register__sort-arrow--on,
+.guest-register__sort:hover .guest-register__sort-arrow--on {
+  opacity: 1;
+  color: var(--brand);
 }
 
 .guest-register__amount {

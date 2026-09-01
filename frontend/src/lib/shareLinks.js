@@ -36,3 +36,31 @@ export function buildWhatsAppLink(phone, message) {
 export function openExternal(url) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+
+// The other two channels a desk actually sends a document on. Neither carries
+// a file either — same as wa.me — so the caller saves the PDF first and these
+// only open the composed message for the attachment to be added.
+
+// A mail draft. Subject and body are separate fields rather than one blob
+// because a mail client shows the subject in the guest's inbox list, and a
+// bill arriving with an empty subject line reads as spam.
+export function buildMailLink(email, subject, body) {
+  const to = encodeURIComponent(String(email || '').trim());
+  const q = `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${to}${q}`;
+}
+
+// An SMS draft. The body separator is '?' on Android and '&' on iOS; '?' is
+// the one both accept when there is no other parameter, which there never is
+// here.
+export function buildSmsLink(phone, message) {
+  const digits = String(phone || '').replace(/[^\d+]/g, '');
+  return `sms:${digits}?body=${encodeURIComponent(message)}`;
+}
+
+// A mail or sms draft opens in the mail client, not in a browsing context, so
+// window.open would leave a blank tab behind on desktop. Same-tab navigation
+// hands the URL to the OS handler and leaves this page where it is.
+export function openComposer(url) {
+  window.location.href = url;
+}

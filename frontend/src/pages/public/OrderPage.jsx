@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { clearGuestSession, getGuestSession, setGuestSession } from '../../lib/guestSession';
 import { formatPrice } from '../lodge/priceFormat';
+import Req from '../../components/RequiredMark';
 import './OrderPage.css';
 
 const STATUS_MESSAGE = {
@@ -96,6 +97,7 @@ function GuestLogin({ lodge, onSubmit, busy, error }) {
 
         <label className="guest-login__label" htmlFor="guestRoom">
           Room number
+          <Req />
         </label>
         <input
           id="guestRoom"
@@ -110,6 +112,7 @@ function GuestLogin({ lodge, onSubmit, busy, error }) {
 
         <label className="guest-login__label" htmlFor="guestPin">
           Food PIN
+          <Req />
         </label>
         <input
           id="guestPin"
@@ -315,6 +318,79 @@ export default function OrderPage({ mode }) {
     },
     [slug],
   );
+
+  // The phone restored a login from a previous visit. Is it still this visit's?
+  //
+  // Nothing on the phone can answer that. A room number and a PIN are both
+  // reused — room 12 is room 12 every week — so the remembered pair can look
+  // perfectly valid and still belong to a stay that checked out in March. The
+  // guest scans the QR in June, the page finds the old entry, and they land
+  // signed in without ever seeing a login screen. Two ways that goes wrong: the
+  // old PIN is dead and they get an error banner over a menu instead of a form,
+  // or reception reissued the same PIN and they are quietly holding a login
+  // they never performed this visit.
+  //
+  // So the phone asks. /session re-checks the PIN and names the stay it belongs
+  // to, and a name that isn't the remembered one means the entry is stale. It is
+  // wiped and the guest gets the login screen a returning guest should get.
+  //
+  // Runs once per slug on mount, not on every session change: a sign-in that
+  // just came back from this same endpoint has nothing left to confirm.
+  const revalidatedFor = useRef('');
+  useEffect(() => {
+    if (isTable) return;
+
+    const stored = getGuestSession(slug);
+    if (!stored) return;
+    if (revalidatedFor.current === slug) return;
+    revalidatedFor.current = slug;
+
+    let cancelled = false;
+    apiPost(`/public/lodges/${slug}/session`, {
+      roomNumber: stored.roomNumber,
+      pin: stored.pin,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        const currentTag = result.stayTag || '';
+
+        // A different stay in the same room: the PIN verified, but against a
+        // booking this phone never signed into. Cleared without a message:
+        // nothing went wrong, the last stay simply ended, and an error over the
+        // login form would only puzzle someone who just walked in.
+        if (stored.stayTag && currentTag && stored.stayTag !== currentTag) {
+          signOut();
+          return;
+        }
+
+        // Same stay, still valid. Write the tag back so an entry saved before
+        // stays were tagged, or by an older build, gets one without making
+        // the guest sign in again, and refresh the booked name while here.
+        const next = {
+          roomNumber: result.roomNumber,
+          pin: stored.pin,
+          guestName: result.guestName || stored.guestName || '',
+          stayTag: currentTag,
+        };
+        setGuestSession(slug, next);
+        setSession(next);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // The PIN is gone — checked out, or reissued for the next guest. That
+        // is the ordinary end of a stay, so the server's wording is shown and
+        // the entry goes. A 429 is the room's lockout and a 5xx is the server
+        // having a bad moment; neither means this login is wrong, so the
+        // remembered pair is left alone to be retried by the orders poll.
+        if (err instanceof ApiError && err.status === 401) {
+          signOut(err.message);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isTable, slug, signOut]);
 
   const loadOrders = useCallback(() => {
     if (!session) return Promise.resolve();
@@ -600,6 +676,7 @@ export default function OrderPage({ mode }) {
         roomNumber: result.roomNumber,
         pin,
         guestName: result.guestName || '',
+        stayTag: result.stayTag || '',
       };
       setGuestSession(slug, next);
       setSession(next);

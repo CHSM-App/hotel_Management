@@ -152,6 +152,9 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'guests');
+        // See showSection: a sub-tab belongs to the section that drew it, and
+        // the register has none of its own to carry.
+        updated.delete('tab');
         if (status) updated.set('status', status);
         else updated.delete('status');
         return updated;
@@ -173,6 +176,39 @@ export default function OwnerDashboard() {
         updated.set('section', 'bookings');
         updated.set('draft', String(draftId));
         updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // Moving to another section from inside one, as the sidebar would. The
+  // register's summary tiles use it to hand a question to the screen that owns
+  // the answer.
+  //
+  // The register's own cuts are dropped on the way out for the same reason the
+  // sidebar drops them: a status or billing filter is a narrowing of the
+  // register, and carrying it into a screen that has never heard of it would
+  // leave a stale ?status= sitting in the URL to be reapplied the next time the
+  // register opens.
+  //
+  // `tab` goes with them, and for a sharper reason: five sections each keep a
+  // sub-tab under that one key, and their names don't overlap. Leaving
+  // ?tab=checkout behind on the way from Rooms & rates into Billing landed on a
+  // billing screen where no tab matched — every chip unselected and the panel
+  // blank. A sub-tab belongs to the section that drew it, so it is dropped at
+  // the door and each section opens on its own first tab.
+  const showSection = (key) => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', key);
+        updated.delete('tab');
+        updated.delete('status');
+        updated.delete('billed');
+        updated.delete('sort');
         return updated;
       },
       { replace: true }
@@ -243,7 +279,22 @@ export default function OwnerDashboard() {
           <div className="dash-topbar__mark">{me?.lodge.name || 'Loading…'}</div>
         </div>
         <div className="dash-topbar__actions">
-          {me?.user && <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />}
+          {me?.user ? (
+            <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />
+          ) : (
+            // The profile menu is built from /me, so when that call fails there
+            // is no menu — and signing out lived only inside it. That left a
+            // dashboard nobody could use and nobody could leave, on a machine
+            // at a shared front desk, still holding a session. This is the way
+            // off it while there is nothing else to show.
+            <button
+              type="button"
+              className="dash-topbar__signout"
+              onClick={() => setConfirmSignOut(true)}
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </div>
 
@@ -266,10 +317,13 @@ export default function OwnerDashboard() {
                         // status cut belongs to the register, and reaching it
                         // from the sidebar means asking for the whole list
                         // rather than resuming a cut the legend made earlier.
+                        // The sub-tab goes too — see showSection for why a
+                        // ?tab= carried across sections rendered a blank panel.
                         setSearchParams(
                           (prev) => {
                             const updated = new URLSearchParams(prev);
                             updated.set('section', feature.key);
+                            updated.delete('tab');
                             updated.delete('status');
                             return updated;
                           },
@@ -386,8 +440,12 @@ export default function OwnerDashboard() {
                 />
               )}
 
+              {/* The register's Billed tile leaves for billing, where the
+                  invoices it counted actually live — the register can list the
+                  stays that were billed, but the bills themselves are another
+                  screen's job, and that is the screen the tile is asking for. */}
               {activeFeature && activeFeature.key === 'guests' && (
-                <GuestRegister onOpenDraft={openDraftInChart} />
+                <GuestRegister onOpenDraft={openDraftInChart} onOpenSection={showSection} />
               )}
 
               {activeFeature && activeFeature.key === 'reports' && <ReportsPanel />}

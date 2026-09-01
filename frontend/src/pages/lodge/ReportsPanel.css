@@ -19,6 +19,16 @@
   gap: 4px;
   margin-bottom: -8px;
   border-bottom: 1px solid var(--border);
+  /* Slides at every width, not just below a breakpoint — see the note on
+     .subtabs in RoomsAndRates.css. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.reports-panel__subtabs::-webkit-scrollbar {
+  display: none;
 }
 
 .reports-panel__subtabs-item {
@@ -31,6 +41,9 @@
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  scroll-snap-align: start;
 }
 
 .reports-panel__subtabs-item:hover {
@@ -112,18 +125,8 @@
     padding: 16px;
   }
 
-  .reports-panel__subtabs {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .reports-panel__subtabs::-webkit-scrollbar {
-    display: none;
-  }
-
   .reports-panel__subtabs-item {
     margin-right: 16px;
-    white-space: nowrap;
   }
 
   /* Two stat tiles per row rather than one — these are short numbers

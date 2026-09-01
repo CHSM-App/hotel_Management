@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { isLodgeUser, setSession } from '../../lib/auth';
+import Req from '../../components/RequiredMark';
 import './AuthLayout.css';
 
 export default function Login() {
@@ -75,7 +76,10 @@ export default function Login() {
           {error && <div className="form-banner form-banner--error">{error}</div>}
 
           <div className="field">
-            <label htmlFor="identifier">Phone or email</label>
+            <label htmlFor="identifier">
+              Phone or email
+              <Req />
+            </label>
             <input
               id="identifier"
               type="text"
@@ -87,7 +91,10 @@ export default function Login() {
           </div>
 
           <div className="field">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">
+              Password
+              <Req />
+            </label>
             <input
               id="password"
               type="password"

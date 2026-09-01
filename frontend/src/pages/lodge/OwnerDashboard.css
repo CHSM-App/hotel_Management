@@ -4,6 +4,25 @@
   gap: 12px;
 }
 
+/* Stands in for the profile menu while there is no profile to show — a dashboard
+   that could not load still has to be one you can leave. Sits on the dark
+   topbar, so it is drawn in its colours rather than the form buttons'. */
+.dash-topbar__signout {
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dash-topbar__signout:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
 .dash-body {
   display: flex;
   align-items: flex-start;

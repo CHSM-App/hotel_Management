@@ -1,16 +1,27 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import AdvanceReceiptDocument from './AdvanceReceiptDocument';
 import DownloadIcon from '../../components/DownloadIcon';
+import ShareMenu from '../../components/ShareMenu';
+import Req from '../../components/RequiredMark';
 import {
   BILL_PDF_WIDTH,
   DEFAULT_PAPER,
   PAPER_SIZES,
   buildDocumentPdfBlob,
   printPdfBlob,
-  shareOrDownloadPdf,
+  downloadPdf,
+  sharePdf,
+  canShareFiles,
 } from './billPaper';
+import {
+  buildMailLink,
+  buildSmsLink,
+  buildWhatsAppLink,
+  openComposer,
+  openExternal,
+} from '../../lib/shareLinks';
 import { formatPrice } from './priceFormat';
 import PaymentLines from './PaymentLines';
 import {
@@ -93,6 +104,9 @@ export default function AdvanceReceiptModal({
   const [error, setError] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  // Whether this device has a share sheet to hand the file to. A property of
+  // the browser, not of the receipt, so it is asked once.
+  const deviceShare = useMemo(() => canShareFiles(), []);
   const [paperSize, setPaperSize] = useState(DEFAULT_PAPER);
   const [lang, setLang] = useState('en');
   // Taking another advance. Blank rather than pre-filled with the booking's
@@ -173,7 +187,12 @@ export default function AdvanceReceiptModal({
       : null;
   const noun = subject?.noun ?? 'stay';
   const alreadyHeld = Number(subject?.advanceAmount) || 0;
-  const stayTotal = Number(subject?.totalPrice) || 0;
+  // Rounded to the whole rupee, because that is what the final bill will ask
+  // for and what the receipt below prints. Read raw, this line offered to take
+  // 33 paise the bill would never charge, and stated a balance the receipt
+  // printed underneath it as a different figure — the same stay, two amounts,
+  // on one screen.
+  const stayTotal = Math.round(Number(subject?.totalPrice) || 0);
 
   // What the stay still owes, and therefore the most another advance may be.
   // The server holds the same line; this is so the desk sees the ceiling rather
@@ -241,7 +260,45 @@ export default function AdvanceReceiptModal({
   // print stylesheet stopped being trusted with this.
   const handlePrint = () => runPdfAction(printPdfBlob);
 
-  const handleSharePdf = () => runPdfAction(shareOrDownloadPdf);
+  // Download is now only a download. It used to be shareOrDownloadPdf, which
+  // opened the OS sheet where there was one — so on a tablet this button could
+  // not save the file, and there was nothing else here that could. Sharing has
+  // its own control beside it now, and each does the one thing it says.
+  const handleDownloadPdf = () => runPdfAction(downloadPdf);
+
+  // What the desk is sending, in the words they would use saying it aloud.
+  // An advance receipt is an acknowledgement of money already handed over, so
+  // it says what was received rather than what is owed — a guest reading "for
+  // ₹2,000" on a receipt would reasonably think they were being asked again.
+  const shareMessage = () =>
+    `${shownReceipt?.guestName ? `${shownReceipt.guestName}, here` : 'Here'} is your advance ` +
+    `receipt ${shownReceipt?.receiptNumber || ''}`.trimEnd() +
+    `${shownReceipt?.lodgeName ? ` from ${shownReceipt.lodgeName}` : ''}` +
+    ` for the ${formatPrice(shownReceipt?.amountReceived || 0)} received. Thank you.`;
+
+  const shareSubject = () =>
+    `Advance receipt ${shownReceipt?.receiptNumber || ''}`.trimEnd() +
+    `${shownReceipt?.lodgeName ? ` from ${shownReceipt.lodgeName}` : ''}`;
+
+  // The receipt shares the way the bill does — same channels, same menu, same
+  // save-then-compose order. It had no share control at all: the one icon here
+  // was a download, so a guest who wanted their advance receipt sent had to be
+  // mailed it by hand from the desk's own downloads folder.
+  const handleShare = (channel) =>
+    runPdfAction(async (blob, filename) => {
+      if (channel === 'device') {
+        await sharePdf(blob, filename);
+        return;
+      }
+      downloadPdf(blob, filename);
+      if (channel === 'email') {
+        openComposer(buildMailLink('', shareSubject(), shareMessage()));
+      } else if (channel === 'sms') {
+        openComposer(buildSmsLink(shownReceipt?.guestPhone, shareMessage()));
+      } else {
+        openExternal(buildWhatsAppLink(shownReceipt?.guestPhone, shareMessage()));
+      }
+    });
 
   // Records the money AND raises its receipt, in one call. The server adds the
   // amount to the booking rather than replacing it, refuses to take the total
@@ -369,9 +426,29 @@ export default function AdvanceReceiptModal({
 
         {error && <div className="form-banner form-banner--error">{error}</div>}
 
+        {/* Why this receipt was voided, said plainly and in the danger colour.
+            The small "Void" chip up in the header said the state but never the
+            reason, and the reason only appeared in the fine print at the foot
+            of the printed document — so the desk had to read the receipt
+            itself to find out why the money had gone back. */}
+        {shownReceipt?.status === 'VOID' && (
+          <div className="billing-panel__void-note" role="status">
+            <span className="billing-panel__void-tag">Void</span>
+            <span className="billing-panel__void-reason">
+              {shownReceipt.voidReason || 'No reason recorded.'}
+            </span>
+          </div>
+        )}
+
         {canTakeMore && showTakeForm && (
           <form onSubmit={takeAdvance} className="form-section">
-            <div className="form-section__title">Advance received now</div>
+            <div className="form-section__title">
+              Advance received now
+              {/* Both the amount and the payment type are refused when blank,
+                  and neither control carries a visible label of its own — so
+                  the mark goes on the heading that names the pair. */}
+              <Req />
+            </div>
             {/* The Amount box is handed to the editor rather than placed
                 beside it: it keeps its spot next to the payment type on an
                 ordinary advance, and moves above the list once the payment
@@ -436,13 +513,27 @@ export default function AdvanceReceiptModal({
                 <button
                   type="button"
                   className="btn-accent bill-actions__icon-btn"
-                  onClick={handleSharePdf}
+                  onClick={handleDownloadPdf}
                   disabled={pdfBusy}
-                  aria-label={pdfBusy ? 'Preparing the PDF' : 'Share or download this receipt as a PDF'}
-                  title={pdfBusy ? 'Preparing…' : 'Share / Download PDF'}
+                  aria-label={pdfBusy ? 'Preparing the PDF' : 'Download this receipt as a PDF'}
+                  title={pdfBusy ? 'Preparing…' : 'Download PDF'}
                 >
                   <DownloadIcon />
                 </button>
+              )}
+              {/* Sharing, which this modal simply did not offer. The receipt is
+                  the document a guest asks to be sent more often than the bill
+                  is — it is proof they have already paid — and the only way to
+                  send one was to download it and attach it by hand from
+                  outside the app. Same control and same channels as the bill. */}
+              {existing && (
+                <ShareMenu
+                  onShare={handleShare}
+                  disabled={pdfBusy}
+                  busy={pdfBusy}
+                  canShareFiles={deviceShare}
+                  label="Share this receipt"
+                />
               )}
               {canTakeMore && (
                 <button type="button" className="btn-secondary" onClick={() => setShowTakeForm(true)}>

@@ -17,6 +17,12 @@ import { formatPrice } from './priceFormat';
 import StayDetails from './StayDetails';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import PaymentLines from './PaymentLines';
+import IconButton from '../../components/IconButton';
+import Req from '../../components/RequiredMark';
+// Aliased: this file already has a local TrashIcon, drawn at 15px for the
+// inline row-remove buttons. The shared glyph is 18px, sized for the 34px
+// icon buttons, so the two can't be collapsed into one.
+import { TrashIcon as ActionTrashIcon, OpenIcon } from '../../components/ActionIcons';
 import {
   emptyPaymentLine,
   needsPaymentReference,
@@ -1352,10 +1358,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // the box is simply the day the guest arrived and a stay that ended last week
   // must go on being editable.
   const isPastCheckIn = canEditCheckIn && bookingForm.checkInDate < today;
-  // A pre-reservation can be held without ID proof; a walk-in is standing at
-  // the desk, so theirs is captured on the spot. An edit never demands one:
-  // whatever the stay already has stays on file unless a new file replaces it.
-  const idProofOptional = editing || bookingForm.bookingType === 'RESERVATION';
 
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
@@ -1635,24 +1637,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       failOn(`newAdultPhone-${badPhone}`, MOBILE_MESSAGE);
       return;
     }
-    // A walk-in guest is here now, so their ID proof is captured immediately;
-    // a pre-reservation defers it to whenever they actually check in. An edit
-    // asks for neither — the stay already has whatever it has.
-    if (!editing && bookingForm.bookingType === 'WALK_IN') {
-      if (!primary.idProofType) {
-        failOn('newAdultIdProofType-0', 'Choose the ID proof type.');
-        return;
-      }
-      // Three ways to satisfy this, all equivalent: a file attached now, a
-      // document already on file from a previous stay (the server copies it
-      // over), or the number read straight off the card. The last is what lets
-      // a desk with no scanner finish a walk-in — which the upload-only rule
-      // made impossible.
-      if (!primary.idProofFile && !primary.fromBookingId && !primary.idProofNumber.trim()) {
-        failOn('newAdultIdProofNumber-0', 'Upload the guest’s ID proof, or enter the ID number.');
-        return;
-      }
-    }
+    // ID proof is optional at booking time, walk-in included — a desk with no
+    // scanner and a guest whose card is still in the car can finish the booking
+    // now and have the proof added later from the stay's own screen.
     const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
     // A full payment has to be the whole stay — the rows are built to add up to
     // it, so the only way they don't is when the earlier rows of a split pass
@@ -3044,17 +3031,18 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     {d.createdByName ? ` · by ${d.createdByName}` : ''}
                   </span>
                   <span className="detail-person__meta">
-                    <button type="button" className="bookings-panel__link-btn" onClick={() => openDraft(d)}>
-                      Open
-                    </button>
-                    <button
-                      type="button"
-                      className="bookings-panel__link-btn bookings-panel__link-btn--danger"
+                    <IconButton
+                      label={`Open draft for ${d.guestName || 'unnamed guest'}`}
+                      icon={<OpenIcon />}
+                      onClick={() => openDraft(d)}
+                    />
+                    <IconButton
+                      label={`Delete draft for ${d.guestName || 'unnamed guest'}`}
+                      icon={<ActionTrashIcon />}
+                      tone="danger"
                       onClick={() => deleteDraft(d.id)}
                       disabled={submitting}
-                    >
-                      Delete
-                    </button>
+                    />
                   </span>
                 </div>
               ))}
@@ -3177,7 +3165,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   </div>
                   <div className="field-row">
                   <div className="field">
-                    <label htmlFor="checkInDate">Check-in</label>
+                    <label htmlFor="checkInDate">
+                      Check-in<Req />
+                    </label>
                     <input
                       id="checkInDate"
                       type="date"
@@ -3237,7 +3227,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                       ))}
                   </div>
                   <div className="field">
-                    <label htmlFor="checkOutDate">Check-out</label>
+                    <label htmlFor="checkOutDate">
+                      Check-out<Req />
+                    </label>
                     <input
                       id="checkOutDate"
                       type="date"
@@ -3271,7 +3263,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                 {validRange && !availableRoomsError && (
                   <div className={selectedRoom ? 'field-row booking-form__room-row' : undefined}>
                     <div className="field">
-                      <label htmlFor="roomId">Available rooms</label>
+                      <label htmlFor="roomId">
+                        Available rooms<Req />
+                      </label>
                       <select
                         id="roomId"
                         value={bookingForm.roomId}
@@ -3472,7 +3466,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   <PartyEditor
                     adults={bookingForm.adults}
                     children={bookingForm.children}
-                    idProofOptional={idProofOptional}
                     idPrefix="new"
                     onAdd={addParty}
                     onRemove={removeParty}
@@ -3759,7 +3752,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         </p>
                         <div className="field-row">
                           <div className="field">
-                            <label htmlFor="checkInIdProofType">ID proof type</label>
+                            <label htmlFor="checkInIdProofType">
+                              ID proof type<Req />
+                            </label>
                             <select
                               id="checkInIdProofType"
                               value={checkInForm.idProofType}
@@ -3774,7 +3769,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             </select>
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofNumber">ID number</label>
+                            <label htmlFor="checkInIdProofNumber">
+                              ID number
+                              <Req label="required, or ID proof document" />
+                            </label>
                             <input
                               id="checkInIdProofNumber"
                               value={checkInForm.idProofNumber}
@@ -3784,7 +3782,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             />
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofFile">ID proof document</label>
+                            <label htmlFor="checkInIdProofFile">
+                              ID proof document
+                              <Req label="required, or ID number" />
+                            </label>
                             <input
                               id="checkInIdProofFile"
                               type="file"
@@ -3834,7 +3835,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         {checkInForm.guests.map((guest, index) => (
                           <div className="bookings-panel__guest-row" key={index}>
                             <div className="field">
-                              <label htmlFor={`checkInGuestName-${index}`}>Name</label>
+                              <label htmlFor={`checkInGuestName-${index}`}>
+                                Name<Req />
+                              </label>
                               <input
                                 id={`checkInGuestName-${index}`}
                                 value={guest.name}
@@ -3908,13 +3911,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                                 }
                               />
                             </div>
-                            <button
-                              type="button"
-                              className="bookings-panel__remove-btn"
+                            <IconButton
+                              label={`Remove guest ${index + 1}`}
+                              icon={<ActionTrashIcon />}
+                              tone="danger"
                               onClick={() => removeCheckInGuest(index)}
-                            >
-                              Remove
-                            </button>
+                            />
                           </div>
                         ))}
                       </div>
@@ -3946,13 +3948,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                                 </option>
                               ))}
                             </select>
-                            <button
-                              type="button"
-                              className="bookings-panel__remove-btn"
+                            <IconButton
+                              label={`Remove vehicle ${index + 1}`}
+                              icon={<ActionTrashIcon />}
+                              tone="danger"
                               onClick={() => removeCheckInVehicle(index)}
-                            >
-                              Remove
-                            </button>
+                            />
                           </div>
                         ))}
                       </div>
@@ -4397,7 +4398,6 @@ const TrashIcon = () => (
 function PartyEditor({
   adults,
   children,
-  idProofOptional,
   idPrefix,
   onAdd,
   onRemove,
@@ -4474,8 +4474,12 @@ function PartyEditor({
           return (
             <div className="bookings-panel__party-row" key={adult.id ?? `new-${index}`}>
               <div className="field">
+                {/* Every adult on the booking needs a name — the extra rows are
+                    added by the desk, so an empty one is an unfinished row
+                    rather than an optional field. */}
                 <label htmlFor={`${idPrefix}AdultName-${index}`}>
                   {isPrimary ? 'Name (primary guest)' : 'Name'}
+                  <Req />
                 </label>
                 {isPrimary && guestLookupToken ? (
                   <GuestNameField
@@ -4522,6 +4526,7 @@ function PartyEditor({
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultPhone-${index}`}>
                   Mobile{isPrimary ? '' : ' (optional)'}
+                  {isPrimary && <Req />}
                 </label>
                 <input
                   id={`${idPrefix}AdultPhone-${index}`}
@@ -4537,7 +4542,7 @@ function PartyEditor({
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
-                  ID type{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                  ID type (optional)
                 </label>
                 <select
                   id={`${idPrefix}AdultIdProofType-${index}`}
@@ -4550,7 +4555,9 @@ function PartyEditor({
                 {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
               <div className="field">
-                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>ID number</label>
+                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
+                  ID number (optional)
+                </label>
                 <input
                   id={`${idPrefix}AdultIdProofNumber-${index}`}
                   value={adult.idProofNumber}
@@ -4560,7 +4567,7 @@ function PartyEditor({
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
-                  Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
+                  Document (optional)
                 </label>
                 <input
                   id={`${idPrefix}AdultIdProofFile-${index}`}
@@ -4634,7 +4641,9 @@ function PartyEditor({
               key={child.id ?? `new-${index}`}
             >
               <div className="field">
-                <label htmlFor={`${idPrefix}ChildName-${index}`}>Name</label>
+                <label htmlFor={`${idPrefix}ChildName-${index}`}>
+                  Name<Req />
+                </label>
                 <input
                   id={`${idPrefix}ChildName-${index}`}
                   value={child.name}
@@ -4738,9 +4747,12 @@ function VehicleEditor({ vehicles, onAdd, onRemove, onUpdate, idPrefix, fieldErr
                     </option>
                   ))}
                 </select>
-                <button type="button" className="bookings-panel__remove-btn" onClick={() => onRemove(index)}>
-                  Remove
-                </button>
+                <IconButton
+                  label={`Remove vehicle ${index + 1}`}
+                  icon={<ActionTrashIcon />}
+                  tone="danger"
+                  onClick={() => onRemove(index)}
+                />
               </div>
               {errorFor(index)}
             </div>

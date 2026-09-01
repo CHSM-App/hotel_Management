@@ -547,10 +547,18 @@ would silently destroy the charge.
 from placement, so it lands on that guest's checkout bill and never appears as an
 open table. `listOpenFoodTabs` filters `booking_id IS NULL` for exactly this reason.
 
-**A table is billed by closing it**, sweeping every delivered unbilled order on it
-into one document — diners order two or three times and pay once. Both the sweep
-and the stamp happen inside one transaction so two staff closing the same table
-can't produce two bills for the same food.
+**A tab is one payer's running total**, and there are three kinds: a dining table,
+a room served with nobody checked into it, and the counter. Room service without a
+booking has no stay to ride on, so it is billed here on its own — keyed on its
+room, not lumped in with the counter. The discriminator is `food_orders.source`,
+never a null `table_id`: a room order has one of those too, which is how room
+service used to land on the counter's bill.
+
+**A tab is billed by closing it**, sweeping every delivered unbilled order on
+*that tab* into one document — diners order two or three times and pay once, and
+the other tabs keep their own orders for their own bills. Both the sweep and the
+stamp happen inside one transaction so two staff closing the same tab can't
+produce two bills for the same food.
 
 Accommodation and food stay **separate supplies all the way to the paper**:
 different SACs (996311 / 996331), different rates, their own tax lines, stored in
@@ -795,9 +803,9 @@ PATCH  /orders/:id/status               { status, cancelReason }
 DELETE /orders/pin-lockouts/:roomNumber  reception unlocks a room
 
 GET    /billing/queue                    checked-out stays awaiting a bill
-GET    /billing/food-tabs                tables holding delivered, unbilled food
-GET    /billing/food-tabs/:id/preview    :id is a table id, or "counter"
-POST   /billing/food-tabs/:id/invoice    closes the table into one document
+GET    /billing/food-tabs                tabs holding delivered, unbilled food
+GET    /billing/food-tabs/:tab/preview   :tab is "table-<id>", "room-<id>" or "counter"
+POST   /billing/food-tabs/:tab/invoice   closes that one tab into its own document
 
 GET    /events/venues | /events/addons   the hall(s) and the add-on catalogue
 GET    /events/availability?venueId=&startAt=&endAt=

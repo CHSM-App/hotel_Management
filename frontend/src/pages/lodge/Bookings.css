@@ -1143,6 +1143,19 @@
   margin-left: 14px;
 }
 
+/* The drafts row pairs a text "Open" with an icon delete button. The shared
+   .detail-person__meta aligns on the baseline, which an icon button doesn't
+   have — it would hang low against the text. Centring is scoped to rows that
+   actually contain an icon button so the guest/vehicle rows keep their
+   baseline alignment. */
+.detail-person__meta:has(.icon-btn) {
+  align-items: center;
+}
+
+.detail-person__meta .bookings-panel__link-btn + .icon-btn {
+  margin-left: 14px;
+}
+
 /* ------------------------------------------------- unsaved details prompt
 
    Covers the booking form rather than stacking a second modal over it: the

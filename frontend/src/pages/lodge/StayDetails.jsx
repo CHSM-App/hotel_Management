@@ -1,4 +1,6 @@
 import BillDocument from './BillDocument';
+import IconButton from '../../components/IconButton';
+import { EyeIcon } from '../../components/ActionIcons';
 import './stayDetails.css';
 import { formatPrice } from './priceFormat';
 import { describeAdvance } from './paymentSplit';
@@ -184,9 +186,11 @@ export default function StayDetails({
               {booking.guestPhone}
               {booking.idProofType && ` · ${idProofLabel(booking.idProofType)}`}
               {booking.hasIdProofDocument && onViewIdProof && (
-                <button type="button" className="bookings-panel__link-btn" onClick={onViewIdProof}>
-                  View
-                </button>
+                <IconButton
+                  label="View ID proof"
+                  icon={<EyeIcon />}
+                  onClick={onViewIdProof}
+                />
               )}
             </span>
           </div>
@@ -201,13 +205,11 @@ export default function StayDetails({
                   .filter(Boolean)
                   .join(' · ') || 'No details on file'}
                 {g.hasIdProofDocument && onViewGuestIdProof && (
-                  <button
-                    type="button"
-                    className="bookings-panel__link-btn"
+                  <IconButton
+                    label={`View ID proof for ${g.name}`}
+                    icon={<EyeIcon />}
                     onClick={() => onViewGuestIdProof(g.id)}
-                  >
-                    View
-                  </button>
+                  />
                 )}
               </span>
             </div>

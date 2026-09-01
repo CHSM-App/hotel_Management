@@ -8,8 +8,15 @@ import { formatPrice } from './priceFormat';
 import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
 import DownloadIcon from '../../components/DownloadIcon';
-import ShareIcon from '../../components/ShareIcon';
-import { buildWhatsAppLink, openExternal } from '../../lib/shareLinks';
+import ShareMenu from '../../components/ShareMenu';
+import Req from '../../components/RequiredMark';
+import {
+  buildMailLink,
+  buildSmsLink,
+  buildWhatsAppLink,
+  openComposer,
+  openExternal,
+} from '../../lib/shareLinks';
 import PaymentLines from './PaymentLines';
 import {
   needsPaymentReference,
@@ -39,6 +46,8 @@ import {
   buildDocumentPdfBlob,
   printPdfBlob,
   downloadPdf,
+  sharePdf,
+  canShareFiles,
 } from './billPaper';
 
 // What the bill says beside a discount given because a cycle-property guest
@@ -155,6 +164,13 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 function istOf(value) {
   return new Date(new Date(value).getTime() + IST_OFFSET_MS);
+}
+
+// Clock time on an open food tab row — when it opened, or when a takeaway was
+// placed. Only ever shown beside a tab that is still waiting to be billed, so
+// the date is today's and would be noise.
+function timeOf(value) {
+  return new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
 // The calendar day a bill was issued on, which is what every date control here
@@ -453,7 +469,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
   const tabs = [
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
-    ...(billsTables ? [{ key: 'tables', label: 'Tables to bill' }] : []),
+    // The key stays 'tables' so existing ?tab= links keep landing here; only
+    // the wording widens, because rooms and takeaways sit in this list too.
+    ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
     { key: 'bills', label: 'Bills' },
     // Last, and deliberately not first: numbering is set once at setup and
     // then left alone, while the other tabs are used every day.
@@ -465,6 +483,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // exactly where it did before.
   const defaultTab = billsStays ? 'ready' : billsTables ? 'tables' : 'bills';
   const [tab, setTab] = useUrlState('tab', defaultTab);
+  // A ?tab= this screen doesn't own falls back to the landing tab rather than
+  // matching nothing and rendering an empty page under an unselected strip.
+  // Checked against `tabs`, not a fixed list: a property that bills no stays
+  // has no "ready" tab, so a link to one has to land somewhere real too.
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : defaultTab;
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   const [queueError, setQueueError] = useState('');
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
@@ -621,7 +644,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // Bill modal. One modal serves both kinds — the amounts and the payment
   // capture are identical; only the endpoints and the header differ, so
   // `billTarget` carries which is being billed.
-  //   { kind: 'STAY', bookingId }  |  { kind: 'FOOD', tableId, label }
+  //   { kind: 'STAY', bookingId }  |  { kind: 'FOOD', tab, label }
   //
   // A stay handed straight over by a checkout opens its bill on mount: the
   // guest is at the desk about to pay, so reception shouldn't have to find them
@@ -721,9 +744,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     onClose?.();
   };
 
-  // "counter" rather than an id — the till tab has no table row behind it.
-  const foodTabPath = (tableId) => (tableId == null ? 'counter' : tableId);
-
   // The late charge is in the path rather than subtracted here on the client:
   // adding it can move the stay into a higher GST band and change the round
   // off, so the server re-derives the whole document instead.
@@ -745,7 +765,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               ? `?discountAmount=${cycleDiscount}&discountReason=${encodeURIComponent(discountReason.trim())}`
               : ''
           }`
-        : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/preview`
+        : `/billing/food-tabs/${billTarget.tab}/preview`
     : null;
 
   useEffect(() => {
@@ -894,7 +914,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         ? `/billing/bookings/${billTarget.bookingId}/invoice`
         : billTarget.kind === 'EVENT'
           ? `/billing/events/${billTarget.eventBookingId}/invoice`
-          : `/billing/food-tabs/${foodTabPath(billTarget.tableId)}/invoice`;
+          : `/billing/food-tabs/${billTarget.tab}/invoice`;
 
     setSubmitting(true);
     try {
@@ -1021,6 +1041,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // is working.
   const [pdfBusy, setPdfBusy] = useState(null);
   const [pdfError, setPdfError] = useState('');
+  // Whether this device has a share sheet to hand the file to. A property of
+  // the browser, not of the bill, so it is asked once rather than on every
+  // render of the menu.
+  const deviceShare = useMemo(() => canShareFiles(), []);
   // The stock this bill goes out on. Held per-session rather than saved: a
   // desk prints on what is in the tray today, and the tray is what changes.
   const [paperSize, setPaperSize] = useState(DEFAULT_PAPER);
@@ -1098,18 +1122,38 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     `${detailInvoice.lodgeName ? ` from ${detailInvoice.lodgeName}` : ''}` +
     ` for ${formatPrice(detailInvoice.totalAmount)}. ${detailInvoice.kind === 'EVENT' ? 'Thank you for celebrating with us.' : 'Thank you for staying with us.'}`;
 
-  // Share means WhatsApp. It is the one channel this desk sends bills on, so
-  // the button goes straight there rather than asking which of several ways
-  // the guest would like it — the answer was the same every time.
+  // The subject a bill arrives under in the guest's inbox. Bare enough to be
+  // recognised at a glance in a list of unread mail, which is the only place
+  // it is ever read.
+  const shareSubject = () =>
+    `Bill ${detailInvoice.invoiceNumber}` +
+    `${detailInvoice.lodgeName ? ` from ${detailInvoice.lodgeName}` : ''}`;
+
+  // Share is a choice of channel now, not a synonym for WhatsApp. WhatsApp is
+  // still what most bills go out on and still sits at the top of the menu, but
+  // a company booker who wants the bill mailed, or a guest without WhatsApp,
+  // used to have no way through this screen at all.
   //
-  // A browser cannot attach a local file to a wa.me link, so the PDF is saved
-  // first and the chat opens behind it for the desk to attach. Ordered that
-  // way deliberately: the file is on disk before the new tab takes focus, so
-  // it is already waiting in the attach dialog.
-  const handleShareWhatsApp = () =>
+  // Every channel but the device sheet saves the PDF first and then opens a
+  // composed message: mailto, sms and wa.me carry text only, so the file has
+  // to be attached by hand. Ordered that way deliberately — the file is on
+  // disk before the composer takes focus, so it is already waiting in the
+  // attach dialog. The device sheet is the one route that carries the file
+  // itself, so it goes through sharePdf and skips the download.
+  const handleShare = (channel) =>
     runPdfAction('share', async (blob, filename) => {
+      if (channel === 'device') {
+        await sharePdf(blob, filename);
+        return;
+      }
       downloadPdf(blob, filename);
-      openExternal(buildWhatsAppLink(detailInvoice.guestPhone, shareMessage()));
+      if (channel === 'email') {
+        openComposer(buildMailLink('', shareSubject(), shareMessage()));
+      } else if (channel === 'sms') {
+        openComposer(buildSmsLink(detailInvoice.guestPhone, shareMessage()));
+      } else {
+        openExternal(buildWhatsAppLink(detailInvoice.guestPhone, shareMessage()));
+      }
     });
 
   const handleVoid = async (e) => {
@@ -1144,7 +1188,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             key={t.key}
             type="button"
             className="billing-panel__subtabs-item"
-            aria-current={tab === t.key ? 'page' : undefined}
+            aria-current={activeTab === t.key ? 'page' : undefined}
             onClick={() => setTab(t.key)}
           >
             {t.label}
@@ -1158,32 +1202,37 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         ))}
       </div>
 
-      {tab === 'numbering' && <BillNumberingPanel />}
+      {activeTab === 'numbering' && <BillNumberingPanel />}
 
-      {tab === 'tables' && (
+      {activeTab === 'tables' && (
         <div className="chart-section">
           <div className="chart-section__header">
-            <h3>Tables to bill</h3>
+            <h3>Food to bill</h3>
             <span className="chart-section__hint">
-              Delivered food nobody has paid for. Billing a table sweeps everything it has ordered
-              into one document.
+              Delivered food nobody has paid for. A table and a room keep one running tab; each
+              takeaway is listed on its own, since the next one is a different customer. Every
+              row bills on its own document, sweeping in only what it names.
             </span>
           </div>
 
           {foodTabsError && <div className="form-banner form-banner--error">{foodTabsError}</div>}
           {!foodTabsError && !foodTabs && <div className="dash-state">Loading…</div>}
           {!foodTabsError && foodTabs && foodTabs.length === 0 && (
-            <div className="dash-state">No open tables — everything served has been billed.</div>
+            <div className="dash-state">Nothing waiting — everything served has been billed.</div>
           )}
           {!foodTabsError && foodTabs && foodTabs.length > 0 && (
             <div className="chart-list">
               {foodTabs.map((t) => (
-                <div className="chart-row billing-panel__queue-row" key={t.tableId ?? 'counter'}>
+                <div className="chart-row billing-panel__queue-row" key={t.tab}>
                   <span className="chart-row__name">
                     {t.tableLabel}
                     <span className="chart-row__dates">
-                      {t.orderCount} order{t.orderCount === 1 ? '' : 's'} · since{' '}
-                      {new Date(t.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      {/* "since" belongs to a tab that is still filling up. A
+                          takeaway is one finished order, so it reads as the
+                          time it was placed, not the start of a running total. */}
+                      {t.tab.startsWith('counter-')
+                        ? `Placed ${timeOf(t.openedAt)}`
+                        : `${t.orderCount} order${t.orderCount === 1 ? '' : 's'} · since ${timeOf(t.openedAt)}`}
                     </span>
                   </span>
                   <span className="billing-panel__queue-actions">
@@ -1191,7 +1240,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     <button
                       type="button"
                       className="btn-accent"
-                      onClick={() => openBilling({ kind: 'FOOD', tableId: t.tableId, label: t.tableLabel })}
+                      onClick={() => openBilling({ kind: 'FOOD', tab: t.tab, label: t.tableLabel })}
                     >
                       Bill
                     </button>
@@ -1203,7 +1252,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         </div>
       )}
 
-      {tab === 'ready' && (
+      {activeTab === 'ready' && (
         <div className="chart-section">
           <div className="chart-section__header">
             <h3>Ready to bill</h3>
@@ -1238,7 +1287,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         </div>
       )}
 
-      {tab === 'bills' && (
+      {activeTab === 'bills' && (
         <div className="chart-section">
           <div className="chart-section__header">
             <h3>Bills</h3>
@@ -1947,7 +1996,15 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       summary above it — rather than as the one thing on this
                       form the desk still has to answer. The rows below it went
                       unnoticed until the bill was refused for them. */}
-                  <div className="form-section__title">Record how the guest paid</div>
+                  <div className="form-section__title">
+                    Record how the guest paid
+                    {/* The rows below are the one thing on this form the desk
+                        must answer, and they carry no label of their own to
+                        hang the mark on — so it goes on the heading that names
+                        them. Only inside the !nothingDue branch: with nothing
+                        to collect there is nothing being required. */}
+                    {!nothingDue && <Req />}
+                  </div>
                   {/* Names the figure the rows have to reach. The amount is
                       prefilled with it, so this is confirmation of what is
                       being settled rather than a sum to work out — and when a
@@ -2176,27 +2233,17 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   >
                     <DownloadIcon />
                   </button>
-                  {/* Share means WhatsApp — the one channel bills go out on
-                      here, so the button does it rather than asking. The PDF
-                      saves as the chat opens: a browser cannot attach a local
-                      file to a wa.me link, and the title says so rather than
-                      letting it be found out one unsent bill at a time. */}
-                  <button
-                    type="button"
-                    className="btn-secondary bill-actions__icon-btn"
-                    onClick={handleShareWhatsApp}
+                  {/* Share opens the channel list rather than going straight
+                      to WhatsApp. It used to be WhatsApp and only WhatsApp,
+                      which left a bill that had to be mailed or texted with no
+                      route off this screen. */}
+                  <ShareMenu
+                    onShare={handleShare}
                     disabled={pdfBusy !== null}
-                    aria-label={
-                      pdfBusy === 'share' ? 'Preparing the PDF' : 'Send this bill on WhatsApp'
-                    }
-                    title={
-                      pdfBusy === 'share'
-                        ? 'Preparing…'
-                        : 'Send on WhatsApp — the PDF downloads to attach'
-                    }
-                  >
-                    <ShareIcon />
-                  </button>
+                    busy={pdfBusy === 'share'}
+                    canShareFiles={deviceShare}
+                    label="Share this bill"
+                  />
                   {/* Last, and a link rather than a button: voiding is the one
                       irreversible thing on this screen and must not read as a
                       peer of Print. */}
@@ -2269,12 +2316,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               <BillDocument ref={attachBill} invoice={detailInvoice} lang={billLang} />
             </div>
 
+            {/* A void reason is not another detail row. It was rendered as
+                one — same weight, same grey as the guest's phone number — and
+                the single most important fact about the document on screen,
+                that it is cancelled and why, read as filler. It gets the
+                danger treatment instead, above the document rather than under
+                it, so it is seen before the amounts are. */}
             {detailInvoice.status === 'VOID' && (
-              <div className="chart-list">
-                <div className="chart-row">
-                  <span className="chart-row__name">Void reason</span>
-                  <span className="chart-row__value">{detailInvoice.voidReason}</span>
-                </div>
+              <div className="billing-panel__void-note" role="status">
+                <span className="billing-panel__void-tag">Void</span>
+                <span className="billing-panel__void-reason">
+                  {detailInvoice.voidReason || 'No reason recorded.'}
+                </span>
               </div>
             )}
 
@@ -2283,9 +2336,19 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
             {detailInvoice.status === 'ISSUED' && showVoidForm && (
               <form onSubmit={handleVoid} className="form-section">
-                <div className="form-section__title">Reason for voiding</div>
+                <div className="form-section__title">
+                  <label htmlFor="voidReason">
+                    Reason for voiding
+                    {/* Voiding is refused without one, so the field says so
+                        before the submit does. A real label rather than a bare
+                        heading, so the mark has something to belong to and the
+                        input is named to anything reading the form. */}
+                    <Req />
+                  </label>
+                </div>
                 <div className="field">
                   <input
+                    id="voidReason"
                     value={voidReason}
                     onChange={(e) => setVoidReason(e.target.value)}
                     placeholder="e.g. Guest wants a different billing side"

@@ -3,7 +3,12 @@ const rolesService = require('./roles.service');
 const { permissionsFor } = require('./permissions');
 const { ApiError } = require('../../middleware/errorHandler');
 
-const permissionsField = z.array(z.string()).default([]);
+// A role with nothing ticked grants nothing — anyone assigned to it signs in to
+// an empty app. The UI stops this at the form, and it is stopped here too so a
+// stale form or a direct call can't save one either.
+const permissionsField = z
+  .array(z.string(), { error: 'Select at least one access for this role.' })
+  .min(1, 'Select at least one access for this role.');
 
 const createRoleSchema = z.object({
   name: z.string({ error: 'Enter a role name.' }).trim().min(1, 'Enter a role name.').max(60),

@@ -74,6 +74,9 @@ export default function ReportsPanel() {
   const token = session?.token;
 
   const [tab, setTab] = useUrlState('tab', 'bookings');
+  // A ?tab= this screen doesn't own falls back to the first tab rather than
+  // matching nothing and rendering an empty page under an unselected strip.
+  const activeTab = TABS.some((t) => t.key === tab) ? tab : 'bookings';
   const [fromDate, setFromDate] = useState(startOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const validRange = Boolean(fromDate && toDate && toDate >= fromDate);
@@ -227,7 +230,7 @@ export default function ReportsPanel() {
             key={t.key}
             type="button"
             className="reports-panel__subtabs-item"
-            aria-current={tab === t.key ? 'page' : undefined}
+            aria-current={activeTab === t.key ? 'page' : undefined}
             onClick={() => setTab(t.key)}
           >
             {t.label}
@@ -235,7 +238,7 @@ export default function ReportsPanel() {
         ))}
       </div>
 
-      {tab === 'bookings' && (
+      {activeTab === 'bookings' && (
         <>
           {bookingsError && (
             <div className="dash-card">
@@ -447,7 +450,7 @@ export default function ReportsPanel() {
         </>
       )}
 
-      {tab === 'occupancy' && (
+      {activeTab === 'occupancy' && (
         <>
           {occupancyError && (
             <div className="dash-card">
@@ -513,7 +516,7 @@ export default function ReportsPanel() {
         </>
       )}
 
-      {tab === 'gst' && (
+      {activeTab === 'gst' && (
         <>
           {gstError && (
             <div className="dash-card">
