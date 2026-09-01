@@ -195,6 +195,22 @@
   border-radius: 999px;
 }
 
+/* The field an error banner is actually about. The banner names the problem at
+   the top of the form; this is what says "here" — without it a long form shows
+   a complaint with nothing to act on. Border plus a soft ring rather than
+   colour alone, so it reads for anyone who can't tell the red from the grey. */
+.field input.field__control--invalid,
+.field select.field__control--invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-bg);
+}
+
+.field input.field__control--invalid:focus-visible,
+.field select.field__control--invalid:focus-visible {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-bg), var(--shadow-inset);
+}
+
 .form-banner {
   padding: 12px 14px;
   border-radius: 8px;

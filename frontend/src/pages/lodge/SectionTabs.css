@@ -5,17 +5,32 @@
   display: flex;
   gap: 8px;
   /* Scrolls sideways rather than wrapping: ten sections on two or three lines
-     would push the list itself off a phone screen. The scrollbar is hidden
-     because the chips running to the edge are the affordance. */
+     would push the list itself off a phone screen. The bar is kept visible —
+     chips running to the edge are easy to miss on a screen with no trackpad
+     gesture, and the bar says outright that there is more to the right. */
   overflow-x: auto;
-  scrollbar-width: none;
-  padding: 2px 2px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  padding: 2px 2px 8px;
   margin-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
 
 .tabstrip::-webkit-scrollbar {
-  display: none;
+  height: 8px;
+}
+
+.tabstrip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabstrip::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.tabstrip::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .tabstrip__tab {

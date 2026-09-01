@@ -138,6 +138,16 @@
   gap: 8px;
 }
 
+/* Nothing ticked and save pressed. The whole group is the fault, not any one
+   option, so the ring goes round the list — drawn as padding plus a border so
+   the outline sits clear of the option tiles rather than tracing them. */
+.staff-roles__perm-list--invalid {
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--danger-bg);
+}
+
 .field label.staff-roles__perm-option {
   display: flex;
   align-items: flex-start;
@@ -148,6 +158,12 @@
   margin-bottom: 0;
   font-weight: 500;
   cursor: pointer;
+}
+
+/* The tiles keep their own surface inside the red group ring, so the option
+   text stays as readable as it is normally. */
+.staff-roles__perm-list--invalid .staff-roles__perm-option {
+  background: var(--surface);
 }
 
 .staff-roles__perm-option:has(input:checked) {

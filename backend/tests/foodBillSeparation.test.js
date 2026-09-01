@@ -111,15 +111,19 @@ for (const fn of ['listOpenFoodTabs', 'loadUnbilledTabOrders']) {
 test('a room tab is still keyed on the room, not swept in with the counter', () => {
   const { tabIdentity } = require('../src/modules/billing/billing.service');
   const room = tabIdentity({ source: 'ROOM', room_id: 12, room_number: '203', table_id: null });
-  const counter = tabIdentity({ source: 'COUNTER', room_id: null, table_id: null });
+  const counter = tabIdentity({ source: 'COUNTER', room_id: null, table_id: null, order_id: 41, order_number: 7 });
   assert.strictEqual(room.tab, 'room-12');
-  assert.strictEqual(counter.tab, 'counter');
+  assert.strictEqual(counter.tab, 'counter-41');
   assert.notStrictEqual(room.tab, counter.tab);
 });
 
-// Row 18: the counter/takeaway tab is a real, billable tab like any other.
-test('the counter is a billable tab with its own label', () => {
+// Row 18: a takeaway is a real, billable tab like any other — but one order
+// wide, since the next walk-in is a different customer paying separately.
+test('each takeaway is a billable tab with its own label', () => {
   const { tabIdentity, tabScope } = require('../src/modules/billing/billing.service');
-  assert.strictEqual(tabIdentity({ source: 'COUNTER' }).tableLabel, 'Counter / takeaway');
-  assert.match(tabScope({ input() { return this; } }, 'counter'), /o\.source = 'COUNTER'/);
+  assert.strictEqual(tabIdentity({ source: 'COUNTER', order_id: 41, order_number: 7 }).tableLabel, 'Takeaway #7');
+
+  const scope = tabScope({ input() { return this; } }, 'counter-41');
+  assert.match(scope, /o\.source = 'COUNTER'/);
+  assert.match(scope, /o\.id = @orderId/);
 });

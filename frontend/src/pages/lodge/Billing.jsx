@@ -160,6 +160,13 @@ function istOf(value) {
   return new Date(new Date(value).getTime() + IST_OFFSET_MS);
 }
 
+// Clock time on an open food tab row — when it opened, or when a takeaway was
+// placed. Only ever shown beside a tab that is still waiting to be billed, so
+// the date is today's and would be noise.
+function timeOf(value) {
+  return new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
 // The calendar day a bill was issued on, which is what every date control here
 // compares against. Taken from when the bill was raised rather than when the
 // guest stayed: a bill raised in April for a March stay is April's business,
@@ -451,7 +458,9 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
 
   const tabs = [
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
-    ...(billsTables ? [{ key: 'tables', label: 'Tables to bill' }] : []),
+    // The key stays 'tables' so existing ?tab= links keep landing here; only
+    // the wording widens, because rooms and takeaways sit in this list too.
+    ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
     { key: 'bills', label: 'Bills' },
     // Last, and deliberately not first: numbering is set once at setup and
     // then left alone, while the other tabs are used every day.
@@ -1136,17 +1145,18 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
       {activeTab === 'tables' && (
         <div className="chart-section">
           <div className="chart-section__header">
-            <h3>Tables to bill</h3>
+            <h3>Food to bill</h3>
             <span className="chart-section__hint">
-              Delivered food nobody has paid for — by table, by room, and the counter. Each is
-              billed on its own document, sweeping in only what that one ordered.
+              Delivered food nobody has paid for. A table and a room keep one running tab; each
+              takeaway is listed on its own, since the next one is a different customer. Every
+              row bills on its own document, sweeping in only what it names.
             </span>
           </div>
 
           {foodTabsError && <div className="form-banner form-banner--error">{foodTabsError}</div>}
           {!foodTabsError && !foodTabs && <div className="dash-state">Loading…</div>}
           {!foodTabsError && foodTabs && foodTabs.length === 0 && (
-            <div className="dash-state">No open tables — everything served has been billed.</div>
+            <div className="dash-state">Nothing waiting — everything served has been billed.</div>
           )}
           {!foodTabsError && foodTabs && foodTabs.length > 0 && (
             <div className="chart-list">
@@ -1155,8 +1165,12 @@ export default function Billing({ lodge, billNowBookingId = null, modalOnly = fa
                   <span className="chart-row__name">
                     {t.tableLabel}
                     <span className="chart-row__dates">
-                      {t.orderCount} order{t.orderCount === 1 ? '' : 's'} · since{' '}
-                      {new Date(t.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      {/* "since" belongs to a tab that is still filling up. A
+                          takeaway is one finished order, so it reads as the
+                          time it was placed, not the start of a running total. */}
+                      {t.tab.startsWith('counter-')
+                        ? `Placed ${timeOf(t.openedAt)}`
+                        : `${t.orderCount} order${t.orderCount === 1 ? '' : 's'} · since ${timeOf(t.openedAt)}`}
                     </span>
                   </span>
                   <span className="billing-panel__queue-actions">

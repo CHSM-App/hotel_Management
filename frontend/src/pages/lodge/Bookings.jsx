@@ -1319,10 +1319,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // the box is simply the day the guest arrived and a stay that ended last week
   // must go on being editable.
   const isPastCheckIn = canEditCheckIn && bookingForm.checkInDate < today;
-  // A pre-reservation can be held without ID proof; a walk-in is standing at
-  // the desk, so theirs is captured on the spot. An edit never demands one:
-  // whatever the stay already has stays on file unless a new file replaces it.
-  const idProofOptional = editing || bookingForm.bookingType === 'RESERVATION';
 
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
@@ -1602,24 +1598,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       failOn(`newAdultPhone-${badPhone}`, MOBILE_MESSAGE);
       return;
     }
-    // A walk-in guest is here now, so their ID proof is captured immediately;
-    // a pre-reservation defers it to whenever they actually check in. An edit
-    // asks for neither — the stay already has whatever it has.
-    if (!editing && bookingForm.bookingType === 'WALK_IN') {
-      if (!primary.idProofType) {
-        failOn('newAdultIdProofType-0', 'Choose the ID proof type.');
-        return;
-      }
-      // Three ways to satisfy this, all equivalent: a file attached now, a
-      // document already on file from a previous stay (the server copies it
-      // over), or the number read straight off the card. The last is what lets
-      // a desk with no scanner finish a walk-in — which the upload-only rule
-      // made impossible.
-      if (!primary.idProofFile && !primary.fromBookingId && !primary.idProofNumber.trim()) {
-        failOn('newAdultIdProofNumber-0', 'Upload the guest’s ID proof, or enter the ID number.');
-        return;
-      }
-    }
+    // ID proof is optional at booking time, walk-in included — a desk with no
+    // scanner and a guest whose card is still in the car can finish the booking
+    // now and have the proof added later from the stay's own screen.
     const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
     // A full payment has to be the whole stay — the rows are built to add up to
     // it, so the only way they don't is when the earlier rows of a split pass
@@ -3443,7 +3424,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   <PartyEditor
                     adults={bookingForm.adults}
                     children={bookingForm.children}
-                    idProofOptional={idProofOptional}
                     idPrefix="new"
                     onAdd={addParty}
                     onRemove={removeParty}
@@ -4375,7 +4355,6 @@ const TrashIcon = () => (
 function PartyEditor({
   adults,
   children,
-  idProofOptional,
   idPrefix,
   onAdd,
   onRemove,
@@ -4520,8 +4499,7 @@ function PartyEditor({
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
-                  ID type{isPrimary && !idProofOptional ? '' : ' (optional)'}
-                  {isPrimary && !idProofOptional && <Req />}
+                  ID type (optional)
                 </label>
                 <select
                   id={`${idPrefix}AdultIdProofType-${index}`}
@@ -4534,12 +4512,8 @@ function PartyEditor({
                 {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
               <div className="field">
-                {/* Starred as a pair with Document below it: a walk-in needs one
-                    of the two, not both, so each says "or Document" rather than
-                    claiming on its own to be the field that must be filled. */}
                 <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
-                  ID number
-                  {isPrimary && !idProofOptional && <Req label="required, or Document" />}
+                  ID number (optional)
                 </label>
                 <input
                   id={`${idPrefix}AdultIdProofNumber-${index}`}
@@ -4550,8 +4524,7 @@ function PartyEditor({
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
-                  Document{isPrimary && !idProofOptional ? '' : ' (optional)'}
-                  {isPrimary && !idProofOptional && <Req label="required, or ID number" />}
+                  Document (optional)
                 </label>
                 <input
                   id={`${idPrefix}AdultIdProofFile-${index}`}

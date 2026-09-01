@@ -943,10 +943,13 @@ function mapInvoice(row) {
     // document both branch on this rather than sniffing at null fields.
     kind: row.booking_id == null ? 'FOOD' : 'STAY',
     // What the food bill was raised against, in the header's own words. A room
-    // tab is a food bill with no stay behind it, so it names its room here —
-    // the counter is the only one of the three left without a name of its own.
+    // tab is a food bill with no stay behind it, so it names its room here, and
+    // a takeaway — which has neither a table nor a room — names its order, so a
+    // reprint says which walk-in it settled rather than just "the counter".
     tableLabel:
-      row.table_label ?? (row.tab_room_number != null ? `Room ${row.tab_room_number}` : null),
+      row.table_label ??
+      (row.tab_room_number != null ? `Room ${row.tab_room_number}` : null) ??
+      (row.takeaway_order_number != null ? `Takeaway #${row.takeaway_order_number}` : null),
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
@@ -1116,7 +1119,7 @@ async function getInvoice(lodgeId, invoiceId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
-      SELECT i.*, dt.label AS table_label, fr.room_number AS tab_room_number, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+      SELECT i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
@@ -1141,6 +1144,15 @@ async function getInvoice(lodgeId, invoiceId) {
       -- The room a food-only bill was raised against, which is not b.room_id:
       -- such a bill has no booking behind it at all.
       LEFT JOIN dbo.rooms fr ON fr.id = i.room_id
+      -- A takeaway bill has neither a table nor a room to name it, so it is
+      -- named by the one order it settled, reached through the back-link the
+      -- invoice writes onto that order.
+      OUTER APPLY (
+        SELECT TOP 1 fo.order_number
+        FROM dbo.food_orders fo
+        WHERE fo.invoice_id = i.id AND fo.source = 'COUNTER'
+        ORDER BY fo.id
+      ) tko
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.id = @invoiceId AND i.lodge_id = @lodgeId
     `);
@@ -1158,7 +1170,7 @@ async function listInvoices(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT TOP 200 i.*, dt.label AS table_label, fr.room_number AS tab_room_number, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+      SELECT TOP 200 i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
@@ -1183,6 +1195,15 @@ async function listInvoices(lodgeId) {
       -- The room a food-only bill was raised against, which is not b.room_id:
       -- such a bill has no booking behind it at all.
       LEFT JOIN dbo.rooms fr ON fr.id = i.room_id
+      -- A takeaway bill has neither a table nor a room to name it, so it is
+      -- named by the one order it settled, reached through the back-link the
+      -- invoice writes onto that order.
+      OUTER APPLY (
+        SELECT TOP 1 fo.order_number
+        FROM dbo.food_orders fo
+        WHERE fo.invoice_id = i.id AND fo.source = 'COUNTER'
+        ORDER BY fo.id
+      ) tko
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.lodge_id = @lodgeId
       ORDER BY i.created_at DESC
@@ -1249,6 +1270,10 @@ async function listOpenFoodTabs(lodgeId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
+             -- A counter order pays for itself, so it groups alone: the id is
+             -- part of its key, and null for the two tabs that do accumulate.
+             CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
+             MAX(o.order_number) AS order_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
              MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at
       FROM dbo.food_orders o
@@ -1260,7 +1285,8 @@ async function listOpenFoodTabs(lodgeId) {
         -- stay bill, so a checked-in guest's room order has no other document
         -- to ride on: this queue is where it gets billed, and leaving it out
         -- would strand the charge with no way to collect it.
-      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number
+      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
+               CASE WHEN o.source = 'COUNTER' THEN o.id END
       ORDER BY MIN(o.placed_at) ASC
     `);
 
@@ -1297,6 +1323,12 @@ async function loadLodgeForBilling(pool, lodgeId) {
 // `source` is the discriminator, not a null table_id: the check constraint on
 // food_orders guarantees it, and a room order has a null table_id too — which
 // is exactly how room service used to end up inside the counter tab.
+//
+// A table and a room accumulate: the party sits there ordering more, and one
+// bill closes the whole visit. The counter does not. Each takeaway is a
+// stranger who pays and leaves, so it is a tab of exactly one order, keyed on
+// that order's id — otherwise a day of walk-ins piles into a single 'counter'
+// tab and the first person to be billed pays for all of them.
 function tabIdentity(row) {
   if (row.source === 'TABLE') {
     return { tab: `table-${row.table_id}`, tableId: row.table_id, roomId: null, tableLabel: row.table_label };
@@ -1309,7 +1341,16 @@ function tabIdentity(row) {
       tableLabel: `Room ${row.room_number}`,
     };
   }
-  return { tab: 'counter', tableId: null, roomId: null, tableLabel: 'Counter / takeaway' };
+  // `id` is what the per-order loader selects, `order_id` what the grouped tab
+  // list aliases it to; either identifies the one order this tab bills.
+  const orderId = row.order_id ?? row.id ?? null;
+  const orderNumber = row.order_number ?? null;
+  return {
+    tab: orderId == null ? 'counter' : `counter-${orderId}`,
+    tableId: null,
+    roomId: null,
+    tableLabel: orderNumber == null ? 'Counter / takeaway' : `Takeaway #${orderNumber}`,
+  };
 }
 
 // Turns the :tab path segment back into the SQL selecting exactly that tab's
@@ -1317,9 +1358,7 @@ function tabIdentity(row) {
 // server fault — rejected here rather than reaching the driver as a NaN bound
 // to a BigInt, which is what surfaced as a 500.
 function tabScope(request, tab) {
-  if (tab === 'counter') return "AND o.source = 'COUNTER'";
-
-  const match = /^(table|room)-(\d+)$/.exec(String(tab ?? ''));
+  const match = /^(table|room|counter)-(\d+)$/.exec(String(tab ?? ''));
   const id = match ? Number(match[2]) : NaN;
   if (!match || !Number.isSafeInteger(id) || id <= 0) {
     throw new ApiError('Unknown tab.', 400);
@@ -1329,8 +1368,14 @@ function tabScope(request, tab) {
     request.input('tableId', sql.BigInt, id);
     return "AND o.source = 'TABLE' AND o.table_id = @tableId";
   }
-  request.input('roomId', sql.BigInt, id);
-  return "AND o.source = 'ROOM' AND o.room_id = @roomId";
+  if (match[1] === 'room') {
+    request.input('roomId', sql.BigInt, id);
+    return "AND o.source = 'ROOM' AND o.room_id = @roomId";
+  }
+  // One takeaway, one bill. Pinned to the order id rather than to
+  // source='COUNTER', which would sweep every other walk-in still unbilled.
+  request.input('orderId', sql.BigInt, id);
+  return "AND o.source = 'COUNTER' AND o.id = @orderId";
 }
 
 async function loadUnbilledTabOrders(request, lodgeId, tab) {

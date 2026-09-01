@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { getSession } from '../../lib/auth';
@@ -180,11 +180,18 @@ export default function StaffAndRoles() {
   const [roleModal, setRoleModal] = useState(null); // { mode: 'create' | 'edit', role }
   const [roleForm, setRoleForm] = useState(emptyRoleForm);
   const [roleError, setRoleError] = useState('');
+  // Which field the error banner is actually about. The banner sits at the top
+  // of a form that scrolls, so on its own it says something is wrong without
+  // saying where — this marks the field so it can be outlined and scrolled to.
+  const [roleInvalid, setRoleInvalid] = useState('');
   const [roleBusy, setRoleBusy] = useState(false);
+  const roleNameRef = useRef(null);
+  const rolePermsRef = useRef(null);
 
   const openCreateRole = () => {
     setRoleForm(emptyRoleForm);
     setRoleError('');
+    setRoleInvalid('');
     setRoleModal({ mode: 'create' });
   };
 
@@ -195,6 +202,7 @@ export default function StaffAndRoles() {
       permissions: [...role.permissions],
     });
     setRoleError('');
+    setRoleInvalid('');
     setRoleModal({ mode: 'edit', role });
   };
 
@@ -204,6 +212,12 @@ export default function StaffAndRoles() {
   };
 
   const toggleRolePermission = (key) => {
+    // Ticking anything answers the "pick at least one" complaint, so the
+    // outline comes off as the box is ticked rather than at the next save.
+    if (roleInvalid === 'permissions') {
+      setRoleInvalid('');
+      setRoleError('');
+    }
     setRoleForm((f) => ({
       ...f,
       permissions: f.permissions.includes(key)
@@ -212,15 +226,37 @@ export default function StaffAndRoles() {
     }));
   };
 
+  // Sends the eye to the field the banner is complaining about. The role modal
+  // scrolls, so the field named by an error is often off-screen when the banner
+  // appears at the top of it.
+  const focusRoleField = (field) => {
+    const el = field === 'name' ? roleNameRef.current : rolePermsRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // The permission group has no control of its own to focus, so the first
+    // checkbox in it takes the focus and the keyboard lands where the fix is.
+    const target = field === 'name' ? el : el.querySelector('input');
+    if (target) target.focus({ preventScroll: true });
+  };
+
   const handleSaveRole = async (e) => {
     e.preventDefault();
     setRoleError('');
-    if (!roleForm.name.trim()) return setRoleError('Enter a role name.');
+    setRoleInvalid('');
+    if (!roleForm.name.trim()) {
+      setRoleError('Enter a role name.');
+      setRoleInvalid('name');
+      focusRoleField('name');
+      return;
+    }
     // A role with nothing ticked grants nothing — anyone assigned to it signs in
     // to an empty app. Saving one looks like it worked and fails later at the
     // desk, so it is stopped here instead.
     if (roleForm.permissions.length === 0) {
-      return setRoleError('Select at least one access for this role.');
+      setRoleError('Select at least one access for this role.');
+      setRoleInvalid('permissions');
+      focusRoleField('permissions');
+      return;
     }
 
     setRoleBusy(true);
@@ -694,7 +730,11 @@ export default function StaffAndRoles() {
           <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
             <h3>{roleModal.mode === 'create' ? 'Add role' : `Edit ${roleModal.role.name}`}</h3>
             <form onSubmit={handleSaveRole} noValidate>
-              {roleError && <div className="form-banner form-banner--error">{roleError}</div>}
+              {roleError && (
+                <div id="roleFormError" className="form-banner form-banner--error" role="alert">
+                  {roleError}
+                </div>
+              )}
 
               {roleModal.mode === 'edit' && roleModal.role.isSystem && (
                 <div className="form-banner form-banner--info">
@@ -710,8 +750,18 @@ export default function StaffAndRoles() {
                 </label>
                 <input
                   id="roleName"
+                  ref={roleNameRef}
+                  className={roleInvalid === 'name' ? 'field__control--invalid' : undefined}
+                  aria-invalid={roleInvalid === 'name' || undefined}
+                  aria-describedby={roleInvalid === 'name' ? 'roleFormError' : undefined}
                   value={roleForm.name}
-                  onChange={(e) => setRoleForm((f) => ({ ...f, name: e.target.value }))}
+                  onChange={(e) => {
+                    if (roleInvalid === 'name') {
+                      setRoleInvalid('');
+                      setRoleError('');
+                    }
+                    setRoleForm((f) => ({ ...f, name: e.target.value }));
+                  }}
                   disabled={roleModal.mode === 'edit' && roleModal.role.isSystem}
                   placeholder="Night Manager"
                 />
@@ -735,7 +785,16 @@ export default function StaffAndRoles() {
                   Access
                   <Req />
                 </span>
-                <div className="staff-roles__perm-list">
+                <div
+                  ref={rolePermsRef}
+                  className={`staff-roles__perm-list${
+                    roleInvalid === 'permissions' ? ' staff-roles__perm-list--invalid' : ''
+                  }`}
+                  role="group"
+                  aria-label="Access"
+                  aria-invalid={roleInvalid === 'permissions' || undefined}
+                  aria-describedby={roleInvalid === 'permissions' ? 'roleFormError' : undefined}
+                >
                   {catalog.map((p) => (
                     <label className="staff-roles__perm-option" key={p.key}>
                       <input
