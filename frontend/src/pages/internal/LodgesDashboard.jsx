@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { EyeIcon } from '../../components/ActionIcons';
+import '../../components/IconButton.css';
 import { propertyTypeOf } from '../../lib/propertyProfile';
 import './LodgesDashboard.css';
 
@@ -155,8 +157,17 @@ export default function LodgesDashboard() {
                       </td>
                       <td>{formatDate(lodge.created_at)}</td>
                       <td className="dash-table__actions">
-                        <Link className="btn-view" to={`/vt-internal/lodges/${lodge.id}`}>
-                          View
+                        {/* A Link, not a button, so it can't use IconButton —
+                            but it wears the same icon-btn styling and carries
+                            the same data-tooltip, which the CSS draws off any
+                            element. */}
+                        <Link
+                          className="icon-btn"
+                          to={`/vt-internal/lodges/${lodge.id}`}
+                          aria-label={`View ${lodge.name}`}
+                          data-tooltip={`View ${lodge.name}`}
+                        >
+                          <EyeIcon />
                         </Link>
                       </td>
                     </tr>

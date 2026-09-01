@@ -98,6 +98,7 @@ function mapReceipt(row) {
   const cgstAmount = Number(row.cgst_amount);
   const sgstAmount = Number(row.sgst_amount);
   const stayTotal = Number(row.stay_total);
+  const roundOff = Number(row.round_off ?? 0);
   return {
     id: row.id,
     bookingId: row.booking_id,
@@ -120,6 +121,10 @@ function mapReceipt(row) {
     // Frozen at issue: extending the booking afterwards must not restate a
     // document the guest is already holding.
     stayTotal,
+    // The rounding that took the stay to the whole rupee the bill will ask
+    // for. Printed as its own line so the receipt and the invoice agree on
+    // the page, rather than differing by paise with nothing to explain it.
+    roundOff,
     balanceDue: round2(stayTotal - amountReceived),
     paymentMethod: row.payment_method,
     paymentReference: row.payment_reference ?? null,
@@ -163,7 +168,7 @@ function mapReceipt(row) {
 
 const RECEIPT_SELECT = `
   SELECT ar.id, ar.booking_id, ar.receipt_number, ar.document_type, ar.billing_side,
-         ar.amount_received, ar.cgst_amount, ar.sgst_amount, ar.rate_percent, ar.stay_total,
+         ar.amount_received, ar.cgst_amount, ar.sgst_amount, ar.rate_percent, ar.stay_total, ar.round_off,
          ar.payment_method, ar.payment_reference, ar.status, ar.void_reason, ar.voided_at,
          ar.created_at,
          (SELECT pl.method, pl.amount, pl.reference
@@ -251,7 +256,13 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
     throw new ApiError('An advance receipt needs an amount.', 400);
   }
 
-  const stayTotal = Number(booking.total_price);
+  // Rounded to the whole rupee, because that is what the final bill will ask
+  // for. The stay total printed here and the balance the guest is told to
+  // bring have to be the figures the invoice lands on, or the receipt sends
+  // them away expecting paise the bill will never charge. buildBreakdown
+  // rounds the invoice the same way; this is that same rupee, stated early.
+  const stayTotal = Math.round(Number(booking.total_price));
+  const roundOff = round2(stayTotal - Number(booking.total_price));
   // Held to the stay it is against. Taking more than the stay costs is a
   // data-entry slip, and one that would print a negative balance due on a
   // document handed to a guest.
@@ -291,6 +302,7 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
     sgst_amount: sgstAmount,
     rate_percent: ratePercent,
     stay_total: stayTotal,
+    round_off: roundOff,
     payment_method: input.paymentMethod,
     payment_reference: input.paymentReference ?? null,
     status: 'PREVIEW',
@@ -417,6 +429,7 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyO
       .input('sgstAmount', sql.Decimal(10, 2), preview.sgstAmount)
       .input('ratePercent', sql.Decimal(5, 2), round2(preview.cgstRatePercent + preview.sgstRatePercent))
       .input('stayTotal', sql.Decimal(10, 2), preview.stayTotal)
+      .input('roundOff', sql.Decimal(10, 2), preview.roundOff)
       // The receipt's own summary of its lines — the column is NOT NULL, so a
       // split still has to name one, and the first tender is the honest choice.
       .input('paymentMethod', sql.NVarChar, paymentLines[0]?.method ?? input.paymentMethod)
@@ -425,12 +438,12 @@ async function issueAdvanceReceipt(lodgeId, userId, bookingId, input, { alreadyO
       .query(`
         INSERT INTO dbo.advance_receipts
           (lodge_id, booking_id, receipt_number, document_type, billing_side, amount_received,
-           cgst_amount, sgst_amount, rate_percent, stay_total, payment_method, payment_reference,
+           cgst_amount, sgst_amount, rate_percent, stay_total, round_off, payment_method, payment_reference,
            created_by)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @bookingId, @receiptNumber, @documentType, @billingSide, @amountReceived,
-           @cgstAmount, @sgstAmount, @ratePercent, @stayTotal, @paymentMethod, @paymentReference,
+           @cgstAmount, @sgstAmount, @ratePercent, @stayTotal, @roundOff, @paymentMethod, @paymentReference,
            @createdBy)
       `);
 

@@ -6,6 +6,7 @@ import { clearSession, getSession } from './auth';
 // export const API_BASE = 'https://hotel.vengurlatech.com';
 export const API_BASE = 'https://hotel.vengurlatech.com';
 
+
 // `field`, when the server sent one, names the form input the message is about,
 // so a form can show it under that field and put the cursor there rather than
 // in a banner at the top. Null for everything that isn't about one input.

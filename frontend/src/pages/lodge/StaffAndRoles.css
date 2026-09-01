@@ -29,6 +29,10 @@
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  /* The row mixes a 34px icon button with plain link-style text buttons.
+     Without this they align on their box tops and the text sits low against
+     the icon's centre. */
+  align-items: center;
 }
 
 .staff-roles__role-grid {
@@ -91,6 +95,8 @@
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
+  /* Same mix as the staff row: icon button beside text buttons. */
+  align-items: center;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -192,4 +198,63 @@
   .staff-roles__actions button {
     width: 100%;
   }
+}
+
+/* The sortable column headings. Each heading is its own control, so it is a
+   real button rather than a click handler on the cell — it takes keyboard
+   focus and announces itself, and the cell keeps the aria-sort that says which
+   way the column is ordered. It inherits the head's type so a row of buttons
+   still reads as a table head rather than as a toolbar. */
+.staff-roles__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.staff-roles__sort:hover {
+  color: var(--ink);
+}
+
+.staff-roles__sort--on {
+  color: var(--brand-ink);
+}
+
+.staff-roles__sort:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Stacked rather than side by side: two arrows in a row read as two controls,
+   one above the other reads as one control showing a direction. */
+.staff-roles__sort-arrows {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 0.7;
+  font-size: 7px;
+}
+
+/* Present but faint until the column is the one being sorted — visible enough
+   to say "this heading does something", quiet enough that four of them across
+   the row don't read as four active sorts. */
+.staff-roles__sort-arrow {
+  opacity: 0.28;
+}
+
+.staff-roles__sort:hover .staff-roles__sort-arrow {
+  opacity: 0.5;
+}
+
+.staff-roles__sort-arrow--on,
+.staff-roles__sort:hover .staff-roles__sort-arrow--on {
+  opacity: 1;
 }

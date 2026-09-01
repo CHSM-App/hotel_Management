@@ -5,6 +5,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { UNITS, UNIT_LABEL, CATEGORIES, REASON_LABEL, formatQty, groupByCategory } from './inventoryUnits';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
+import Req from '../../components/RequiredMark';
 import './forms.css';
 import './InventoryPanel.css';
 
@@ -480,7 +481,10 @@ export default function InventoryPanel() {
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               <div className="field">
-                <label htmlFor="materialName">Material name</label>
+                <label htmlFor="materialName">
+                  Material name
+                  <Req />
+                </label>
                 <input
                   id="materialName"
                   value={form.name}
@@ -647,6 +651,7 @@ export default function InventoryPanel() {
                   {adjustForm.mode === 'ADD'
                     ? `How much came in (${UNIT_LABEL[adjusting.unit]})`
                     : `Counted on the shelf (${UNIT_LABEL[adjusting.unit]})`}
+                  <Req />
                 </label>
                 <input
                   id="adjustQty"

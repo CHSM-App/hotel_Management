@@ -35,3 +35,22 @@ export function writeCache(key, value) {
 export function clearCache() {
   store.clear();
 }
+
+// Drops every key for one resource after a write that changed it.
+//
+// The same rows are cached under several keys — tables live under both
+// `/tables` and `/tables:active` — so a panel that deletes a table cannot just
+// rewrite its own key: the other panels would keep painting the deleted row
+// from their stale entry until something else happened to refetch it. Matching
+// on the prefix clears the whole family in one call.
+//
+// Prefix, not exact key, because some keys carry a query string
+// (`/bookings?fromDate=…`) and the caller has no way to know which date ranges
+// somebody else cached.
+export function invalidateCache(prefix) {
+  for (const key of Array.from(store.keys())) {
+    if (key === prefix || key.startsWith(`${prefix}:`) || key.startsWith(`${prefix}?`)) {
+      store.delete(key);
+    }
+  }
+}

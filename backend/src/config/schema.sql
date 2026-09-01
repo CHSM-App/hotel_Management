@@ -504,8 +504,14 @@ CREATE TABLE dbo.invoices (
     created_at            DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
 );
 
+-- One active invoice per booking. The `booking_id IS NOT NULL` half is not
+-- redundant: a food bill has no booking, and SQL Server treats every NULL in a
+-- unique index as the *same* value — so without it the index allowed exactly
+-- one food bill per property, ever, and the second one failed with a
+-- duplicate-key error on a null booking_id.
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_booking_active' AND object_id = OBJECT_ID('dbo.invoices'))
-CREATE UNIQUE INDEX uq_invoices_booking_active ON dbo.invoices(booking_id) WHERE status = 'ISSUED';
+CREATE UNIQUE INDEX uq_invoices_booking_active ON dbo.invoices(booking_id)
+    WHERE status = 'ISSUED' AND booking_id IS NOT NULL;
 
 -- The receipt handed to a guest who pays an advance when the booking is taken.
 -- Under GST an advance against a supply is a Receipt Voucher (Rule 50) — not an
@@ -549,6 +555,9 @@ CREATE TABLE dbo.advance_receipts (
     -- states the balance due, and an extended booking must not silently restate
     -- a receipt already issued.
     stay_total          DECIMAL(10,2) NOT NULL,
+    -- The adjustment that took stay_total to the whole rupee the final bill
+    -- will ask for. Frozen with it, so a reprint states what was issued.
+    round_off           DECIMAL(10,2) NOT NULL CONSTRAINT df_advance_receipts_round_off DEFAULT 0,
     payment_method      NVARCHAR(20) NOT NULL
         CONSTRAINT ck_advance_receipts_payment_method
         CHECK (payment_method IN ('CASH', 'UPI', 'CARD')),
@@ -1123,13 +1132,25 @@ EXEC('IF NOT EXISTS (SELECT 1 FROM dbo.gst_slabs WHERE supply_type = ''FOOD'')
             (''FOOD'', NULL, 18, 1, ''996331'')');
 
 -- A restaurant bill has no stay behind it, so booking_id has to be optional.
--- The filtered unique index on booking_id already ignores NULLs, so several
--- food-only invoices can coexist without colliding.
+--
+-- Making it nullable is not on its own enough to let several food bills
+-- coexist: a unique index treats every NULL as the SAME value, so the filtered
+-- index above has to exclude null booking_ids explicitly — which it does, and
+-- which is why it has to be dropped and put back around this ALTER. A filtered
+-- index that mentions a column blocks any change to that column.
 IF EXISTS (
     SELECT 1 FROM sys.columns
     WHERE object_id = OBJECT_ID('dbo.invoices') AND name = 'booking_id' AND is_nullable = 0
 )
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_booking_active' AND object_id = OBJECT_ID('dbo.invoices'))
+        DROP INDEX uq_invoices_booking_active ON dbo.invoices;
+
     ALTER TABLE dbo.invoices ALTER COLUMN booking_id BIGINT NULL;
+
+    CREATE UNIQUE INDEX uq_invoices_booking_active ON dbo.invoices(booking_id)
+        WHERE status = 'ISSUED' AND booking_id IS NOT NULL;
+END
 
 -- Food is a separate supply on its own SAC and its own rate, so it cannot be
 -- folded into room_subtotal — GSTR-1 needs the two reported apart. A bill can
@@ -1146,6 +1167,15 @@ END
 -- document ("Table 4") and so the same table can be closed again later.
 IF COL_LENGTH('dbo.invoices', 'table_id') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD table_id BIGINT NULL REFERENCES dbo.dining_tables(id)');
+
+-- The room half of the same question. Room service ordered against a live stay
+-- rides on that stay's bill and has a booking_id, but room service with nobody
+-- checked in has no stay to ride on and is billed as its own tab — so the
+-- document has to be able to say which room it was, exactly as table_id says
+-- which table. Without this the bill could only fall back to "Counter /
+-- takeaway", which is how room orders came to share the counter's bill.
+IF COL_LENGTH('dbo.invoices', 'room_id') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD room_id BIGINT NULL REFERENCES dbo.rooms(id)');
 
 -- Marks an order as billed. This is what stops a second "close table" sweeping
 -- the same orders onto a second document, and what a void puts back.

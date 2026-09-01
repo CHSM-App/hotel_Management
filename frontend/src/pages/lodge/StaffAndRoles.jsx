@@ -3,6 +3,9 @@ import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
+import IconButton from '../../components/IconButton';
+import { EditIcon, TrashIcon } from '../../components/ActionIcons';
+import Req from '../../components/RequiredMark';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './chartSections.css';
@@ -17,10 +20,38 @@ const TABS = [
 const emptyStaffForm = { name: '', phone: '', email: '', roleKey: '', tempPassword: '' };
 const emptyRoleForm = { name: '', description: '', permissions: [] };
 
+// The staff table's sortable columns. Status is a two-state badge rather than a
+// value, so it sorts on the same words the cell shows — active first when the
+// column is opened, which is the list a desk usually wants.
+const SORT_COLUMNS = {
+  name: { label: 'Name', get: (u) => u.name || '' },
+  phone: { label: 'Phone', get: (u) => u.phone || '' },
+  role: { label: 'Role', get: (u) => u.roleName || '' },
+  status: { label: 'Status', get: (u) => (u.isActive ? 'Active' : 'Disabled') },
+};
+
+// Compared with localeCompare rather than < so "Staff 10" sorts after "Staff 9"
+// instead of before it, and so a phone column of numeric strings orders the way
+// the digits read.
+function compareValues(a, b) {
+  return String(a).localeCompare(String(b), 'en-IN', { numeric: true, sensitivity: 'base' });
+}
+
+// A staff phone is an Indian mobile number: exactly ten digits, nothing else.
+// Non-digits are dropped and the eleventh digit is refused as they are typed,
+// so the field can only ever hold a number of the right shape rather than
+// taking anything and rejecting it at save time. Separators aren't allowed
+// either — with a fixed ten-digit number there is nothing left to separate.
+const PHONE_MAX = 10;
+const PHONE_TEN = /^\d{10}$/;
+
 export default function StaffAndRoles() {
   const token = getSession()?.token;
 
   const [tab, setTab] = useUrlState('tab', 'staff');
+  // A ?tab= this screen doesn't own falls back to the first tab rather than
+  // matching nothing and rendering an empty page under an unselected strip.
+  const activeTab = TABS.some((t) => t.key === tab) ? tab : 'staff';
   const [staff, setStaff] = useState(() => readCache('/staff'));
   const [roles, setRoles] = useState(() => readCache('/roles'));
   const [catalog, setCatalog] = useState(() => readCache('/roles:permissions') ?? []);
@@ -48,8 +79,12 @@ export default function StaffAndRoles() {
   const [staffError, setStaffError] = useState('');
   const [staffBusy, setStaffBusy] = useState(false);
 
+  // Opened with no role picked, not with the first role in the list. The list
+  // happens to start at Owner, so pre-selecting it hands every new staff member
+  // the run of the property unless someone notices and changes it — a default
+  // nobody chose, on the one field where the wrong value is the costly one.
   const openCreateStaff = () => {
-    setStaffForm({ ...emptyStaffForm, roleKey: roles?.[0]?.roleKey || '' });
+    setStaffForm(emptyStaffForm);
     setStaffError('');
     setStaffModal({ mode: 'create' });
   };
@@ -76,6 +111,12 @@ export default function StaffAndRoles() {
     setStaffError('');
     if (!staffForm.name.trim()) return setStaffError('Enter a name.');
     if (!staffForm.phone.trim()) return setStaffError('Enter a phone number.');
+    // The input already refuses anything but ten digits, so this only catches a
+    // number left half-typed — but it is what stops a nine-digit number being
+    // saved as though it were a phone number.
+    if (!PHONE_TEN.test(staffForm.phone.trim())) {
+      return setStaffError('Enter a 10-digit mobile number.');
+    }
     if (!staffForm.roleKey) return setStaffError('Choose a role.');
     if (staffModal.mode === 'create' && staffForm.tempPassword.length < 8) {
       return setStaffError('Temporary password must be at least 8 characters.');
@@ -175,6 +216,12 @@ export default function StaffAndRoles() {
     e.preventDefault();
     setRoleError('');
     if (!roleForm.name.trim()) return setRoleError('Enter a role name.');
+    // A role with nothing ticked grants nothing — anyone assigned to it signs in
+    // to an empty app. Saving one looks like it worked and fails later at the
+    // desk, so it is stopped here instead.
+    if (roleForm.permissions.length === 0) {
+      return setRoleError('Select at least one access for this role.');
+    }
 
     setRoleBusy(true);
     try {
@@ -224,6 +271,35 @@ export default function StaffAndRoles() {
   const labelFor = (key) => catalog.find((p) => p.key === key)?.label || key;
   const loading = !error && (!staff || !roles);
 
+  // ---- Staff sorting ----
+  // In the query string alongside the tab, for the same reason the tab is: a
+  // staff list ordered by role and then refreshed should come back ordered by
+  // role. Held as one 'key:dir' param so the two halves of one setting can
+  // never be half-applied by a hand-trimmed link.
+  const [sortParam, setSortParam] = useUrlState('sort', '');
+  const [sortKeyRaw, sortDirRaw] = String(sortParam).split(':');
+  // An unknown column falls back to the server's order rather than to an
+  // arbitrary column — a stale link should show the staff list, not a cut of it
+  // nobody asked for.
+  const sortKey = SORT_COLUMNS[sortKeyRaw] ? sortKeyRaw : null;
+  const sortDir = sortDirRaw === 'desc' ? 'desc' : 'asc';
+
+  // First click sorts ascending, second reverses, third clears back to the
+  // list's own order — so the header that applied a sort is also the way out
+  // of it.
+  const toggleSort = (key) => {
+    if (sortKey !== key) setSortParam(`${key}:asc`);
+    else if (sortDir === 'asc') setSortParam(`${key}:desc`);
+    else setSortParam('');
+  };
+
+  const sortedStaff = sortKey && staff
+    ? [...staff].sort((a, b) => {
+        const cmp = compareValues(SORT_COLUMNS[sortKey].get(a), SORT_COLUMNS[sortKey].get(b));
+        return sortDir === 'asc' ? cmp : -cmp;
+      })
+    : staff;
+
   return (
     <div className="staff-roles">
       <div className="subtabs">
@@ -232,7 +308,7 @@ export default function StaffAndRoles() {
             key={t.key}
             type="button"
             className="subtabs__item"
-            aria-current={tab === t.key ? 'page' : undefined}
+            aria-current={activeTab === t.key ? 'page' : undefined}
             onClick={() => setTab(t.key)}
           >
             {t.label}
@@ -251,7 +327,7 @@ export default function StaffAndRoles() {
         </div>
       )}
 
-      {!error && !loading && tab === 'staff' && (
+      {!error && !loading && activeTab === 'staff' && (
         <>
           <div className="staff-roles__toolbar">
             <span className="staff-roles__count">
@@ -272,15 +348,65 @@ export default function StaffAndRoles() {
                 <table className="dash-table">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Phone</th>
-                      <th>Role</th>
-                      <th>Status</th>
+                      {/* Each heading is the control that sorts its own column —
+                          the place a hand already goes when a list needs
+                          reordering, rather than a separate menu naming the
+                          columns a second time.
+
+                          aria-sort is on the cell rather than the button so a
+                          screen reader announces the order as a property of the
+                          column, which is what it is. */}
+                      {Object.entries(SORT_COLUMNS).map(([key, col]) => (
+                        <th
+                          key={key}
+                          aria-sort={
+                            sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'
+                          }
+                        >
+                          <button
+                            type="button"
+                            className={`staff-roles__sort${
+                              sortKey === key ? ' staff-roles__sort--on' : ''
+                            }`}
+                            onClick={() => toggleSort(key)}
+                            title={
+                              sortKey === key
+                                ? `Sorted by ${col.label} — click to ${
+                                    sortDir === 'asc' ? 'reverse' : 'clear'
+                                  }`
+                                : `Sort by ${col.label}`
+                            }
+                          >
+                            {col.label}
+                            {/* Both arrows always, the active one filled: a
+                                single arrow that appears on sort makes the
+                                heading jump wider the moment it is clicked, and
+                                a row of headings that move as you use them is
+                                hard to aim at twice. */}
+                            <span className="staff-roles__sort-arrows" aria-hidden="true">
+                              <span
+                                className={`staff-roles__sort-arrow${
+                                  sortKey === key && sortDir === 'asc' ? ' staff-roles__sort-arrow--on' : ''
+                                }`}
+                              >
+                                ▲
+                              </span>
+                              <span
+                                className={`staff-roles__sort-arrow${
+                                  sortKey === key && sortDir === 'desc' ? ' staff-roles__sort-arrow--on' : ''
+                                }`}
+                              >
+                                ▼
+                              </span>
+                            </span>
+                          </button>
+                        </th>
+                      ))}
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {staff.map((u) => (
+                    {sortedStaff.map((u) => (
                       <tr key={u.id}>
                         <td>
                           {u.name}
@@ -298,9 +424,11 @@ export default function StaffAndRoles() {
                         </td>
                         <td>
                           <div className="staff-roles__row-actions">
-                            <button type="button" className="chart-row__link-btn" onClick={() => openEditStaff(u)}>
-                              Edit
-                            </button>
+                            <IconButton
+                              label={`Edit ${u.name}`}
+                              icon={<EditIcon />}
+                              onClick={() => openEditStaff(u)}
+                            />
                             <button
                               type="button"
                               className="chart-row__link-btn"
@@ -332,7 +460,7 @@ export default function StaffAndRoles() {
         </>
       )}
 
-      {!error && !loading && tab === 'roles' && (
+      {!error && !loading && activeTab === 'roles' && (
         <>
           <div className="staff-roles__toolbar">
             <span className="staff-roles__count">
@@ -374,9 +502,11 @@ export default function StaffAndRoles() {
                 </div>
 
                 <div className="staff-roles__role-actions">
-                  <button type="button" className="chart-row__link-btn" onClick={() => openEditRole(role)}>
-                    Edit access
-                  </button>
+                  <IconButton
+                    label={`Edit access for ${role.name}`}
+                    icon={<EditIcon />}
+                    onClick={() => openEditRole(role)}
+                  />
                   {role.isOverridden && (
                     <button
                       type="button"
@@ -387,16 +517,15 @@ export default function StaffAndRoles() {
                     </button>
                   )}
                   {role.isCustom && (
-                    <button
-                      type="button"
-                      className="chart-row__link-btn chart-row__link-btn--danger"
+                    <IconButton
+                      label={`Delete ${role.name}`}
+                      icon={<TrashIcon />}
+                      tone="danger"
                       onClick={() => {
                         setDeleteRoleTarget(role);
                         setDeleteRoleError('');
                       }}
-                    >
-                      Delete
-                    </button>
+                    />
                   )}
                 </div>
               </div>
@@ -414,7 +543,10 @@ export default function StaffAndRoles() {
               {staffError && <div className="form-banner form-banner--error">{staffError}</div>}
               <div className="field-row">
                 <div className="field">
-                  <label htmlFor="staffName">Name</label>
+                  <label htmlFor="staffName">
+                    Name
+                    <Req />
+                  </label>
                   <input
                     id="staffName"
                     value={staffForm.name}
@@ -422,11 +554,27 @@ export default function StaffAndRoles() {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="staffPhone">Phone</label>
+                  <label htmlFor="staffPhone">
+                    Phone
+                    <Req />
+                  </label>
                   <input
                     id="staffPhone"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={PHONE_MAX}
                     value={staffForm.phone}
-                    onChange={(e) => setStaffForm((f) => ({ ...f, phone: e.target.value }))}
+                    onChange={(e) =>
+                      setStaffForm((f) => ({
+                        ...f,
+                        // Sliced after stripping, not before: pasting a number
+                        // written with spaces or a +91 should keep its ten
+                        // digits rather than losing the last few to characters
+                        // that were never going to be stored.
+                        phone: e.target.value.replace(/\D/g, '').slice(0, PHONE_MAX),
+                      }))
+                    }
+                    placeholder="9876543210"
                   />
                 </div>
               </div>
@@ -440,7 +588,10 @@ export default function StaffAndRoles() {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="staffRole">Role</label>
+                  <label htmlFor="staffRole">
+                    Role
+                    <Req />
+                  </label>
                   <select
                     id="staffRole"
                     value={staffForm.roleKey}
@@ -458,7 +609,12 @@ export default function StaffAndRoles() {
 
               {staffModal.mode === 'create' && (
                 <div className="field">
-                  <label htmlFor="staffPassword">Temporary password</label>
+                  <label htmlFor="staffPassword">
+                    Temporary password
+                    {/* Only rendered while creating, which is exactly when the
+                        submit refuses a blank or short one. */}
+                    <Req />
+                  </label>
                   <input
                     id="staffPassword"
                     type="text"
@@ -505,7 +661,10 @@ export default function StaffAndRoles() {
               <form onSubmit={handleResetPassword} noValidate>
                 {pwError && <div className="form-banner form-banner--error">{pwError}</div>}
                 <div className="field">
-                  <label htmlFor="pwValue">Temporary password for {pwUser.name}</label>
+                  <label htmlFor="pwValue">
+                    Temporary password for {pwUser.name}
+                    <Req />
+                  </label>
                   <input
                     id="pwValue"
                     type="text"
@@ -545,7 +704,10 @@ export default function StaffAndRoles() {
               )}
 
               <div className="field">
-                <label htmlFor="roleName">Role name</label>
+                <label htmlFor="roleName">
+                  Role name
+                  <Req />
+                </label>
                 <input
                   id="roleName"
                   value={roleForm.name}
@@ -566,7 +728,13 @@ export default function StaffAndRoles() {
               </div>
 
               <div className="field">
-                <label>Access</label>
+                {/* A group label rather than a label element with no control to
+                    point at — the checkboxes below carry their own labels, and
+                    the required mark belongs to the group as a whole. */}
+                <span className="field__group-label">
+                  Access
+                  <Req />
+                </span>
                 <div className="staff-roles__perm-list">
                   {catalog.map((p) => (
                     <label className="staff-roles__perm-option" key={p.key}>

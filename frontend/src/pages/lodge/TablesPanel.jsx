@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
-import { readCache, writeCache } from '../../lib/dataCache';
+import { readCache, writeCache, invalidateCache } from '../../lib/dataCache';
+import IconButton from '../../components/IconButton';
+import { EditIcon, TrashIcon, RefreshIcon } from '../../components/ActionIcons';
+import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
 
@@ -16,15 +19,17 @@ export default function TablesPanel() {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const load = () => {
+  // Returns the promise so a delete can wait for the corrected list before it
+  // lets go of the row it removed optimistically.
+  const load = () =>
     apiGet('/tables', { token: session?.token })
       .then((data) => {
         setTables(writeCache('/tables', data.tables));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load tables.'));
-  };
 
   useEffect(() => {
     load();
@@ -68,6 +73,7 @@ export default function TablesPanel() {
         await apiPost('/tables', { label: form.label, seats: form.seats || null }, { token: session?.token });
       }
       setShowForm(false);
+      invalidateCache('/tables');
       load();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Could not save the table.');
@@ -79,6 +85,7 @@ export default function TablesPanel() {
   const toggleActive = async (table) => {
     try {
       await apiPatch(`/tables/${table.id}/status`, { isActive: !table.isActive }, { token: session?.token });
+      invalidateCache('/tables');
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not update the table.');
@@ -92,19 +99,37 @@ export default function TablesPanel() {
     if (!confirmed) return;
     try {
       await apiPost(`/tables/${table.id}/regenerate-qr`, {}, { token: session?.token });
+      invalidateCache('/tables');
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not issue a new QR code.');
     }
   };
 
+  // Deletes exactly the one table whose button was pressed. The row goes from
+  // the list straight away rather than waiting for the refetch — over a slow
+  // link the old list stayed on screen long enough to look like nothing had
+  // happened, and a second impatient click would then delete the next table.
+  // `deletingId` closes that window; the refetch behind it is what corrects
+  // the list if the server disagrees.
   const remove = async (table) => {
+    if (deletingId) return;
     if (!window.confirm(`Delete ${table.label}?`)) return;
+    setDeletingId(table.id);
     try {
       await apiDelete(`/tables/${table.id}`, { token: session?.token });
-      load();
+      setTables((current) => (current ? current.filter((t) => t.id !== table.id) : current));
+      // Both the QR codes tab and Orders read tables from this cache, so a
+      // delete that only rewrote this panel's key left the deleted table's QR
+      // card on screen — and back in this list on the next visit.
+      invalidateCache('/tables');
+      await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete the table.');
+      invalidateCache('/tables');
+      load();
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -154,18 +179,26 @@ export default function TablesPanel() {
                   </div>
                 </div>
                 <div className="menu-item__actions">
-                  <button type="button" onClick={() => openForm(table)}>
-                    Edit
-                  </button>
+                  <IconButton
+                    label={`Edit ${table.label}`}
+                    icon={<EditIcon />}
+                    onClick={() => openForm(table)}
+                  />
                   <button type="button" onClick={() => toggleActive(table)}>
                     {table.isActive ? 'Deactivate' : 'Activate'}
                   </button>
-                  <button type="button" onClick={() => regenerateQr(table)}>
-                    New QR
-                  </button>
-                  <button type="button" className="menu-danger" onClick={() => remove(table)}>
-                    Delete
-                  </button>
+                  <IconButton
+                    label={`New QR code for ${table.label}`}
+                    icon={<RefreshIcon />}
+                    onClick={() => regenerateQr(table)}
+                  />
+                  <IconButton
+                    label={`Delete ${table.label}`}
+                    icon={<TrashIcon />}
+                    tone="danger"
+                    disabled={deletingId != null}
+                    onClick={() => remove(table)}
+                  />
                 </div>
               </li>
             ))}
@@ -201,7 +234,10 @@ export default function TablesPanel() {
 
               {editingId || form.mode === 'single' ? (
                 <div className="field">
-                  <label htmlFor="tableLabel">Table name</label>
+                  <label htmlFor="tableLabel">
+                    Table name
+                    <Req />
+                  </label>
                   <input
                     id="tableLabel"
                     value={form.label}
@@ -223,7 +259,10 @@ export default function TablesPanel() {
                   </div>
                   <div className="field-row">
                     <div className="field">
-                      <label htmlFor="tableFrom">From</label>
+                      <label htmlFor="tableFrom">
+                        From
+                        <Req />
+                      </label>
                       <input
                         id="tableFrom"
                         type="number"
@@ -233,7 +272,10 @@ export default function TablesPanel() {
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="tableTo">To</label>
+                      <label htmlFor="tableTo">
+                        To
+                        <Req />
+                      </label>
                       <input
                         id="tableTo"
                         type="number"

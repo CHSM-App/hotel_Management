@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiGet, apiGetBlob, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -7,6 +8,8 @@ import { STAY_STATUS_CHIP_LABEL } from './stayFormat';
 import { formatPrice } from './priceFormat';
 import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
+import IconButton from '../../components/IconButton';
+import { EyeIcon } from '../../components/ActionIcons';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './GuestRegister.css';
@@ -104,6 +107,14 @@ const STATUS_FILTERS = [
 // different thing, which is why the chart gives it a hue of its own.
 const DRAFT_FILTER = { key: 'DRAFT', label: 'Draft', swatch: 'draft' };
 
+// A stay that actually happened or is going to. What the Stays and Guests tiles
+// count — both skip cancellations, since a cancelled booking is nobody staying
+// and nobody to count — so it is also the cut those tiles hand over when they
+// are clicked. Filtering to exactly what a tile totalled is the whole point of
+// making it clickable: a tile reading 12 that produces a list of 15 is worse
+// than one that does nothing at all.
+const REAL_STAY_STATUSES = ['BOOKED', 'CHECKED_IN', 'CHECKED_OUT'];
+
 function nightsBetween(fromStr, toStr) {
   const ms = new Date(`${toStr}T00:00:00Z`) - new Date(`${fromStr}T00:00:00Z`);
   return Math.max(1, Math.round(ms / 86400000));
@@ -145,6 +156,72 @@ function formatNightDate(dateStr) {
   return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
+// What each sortable column sorts on. The register is read as much for "who
+// owes the most" and "who came in last" as it is row by row, and until now the
+// only order on offer was whatever the server sent.
+//
+// Keyed off the value, not the rendered cell: the Came in and Left columns show
+// a date over a time but sort on the timestamp behind both, and Amount sorts on
+// the number rather than on the formatted "₹ 1,200" that would sort as text.
+//
+// `numeric` decides the default direction as well as the comparison. A desk
+// clicking Amount wants the biggest bill first and clicking Guest wants A
+// before Z, so a money or date column opens descending and a text one ascending
+// — one less click on the order that was actually being asked for.
+const SORT_COLUMNS = {
+  room: { label: 'Room', get: (b) => b.roomNumber || '' },
+  invoice: { label: 'Bill No', get: (b) => b.invoiceNumber || '' },
+  guest: { label: 'Guest', get: (b) => b.guestName || '' },
+  checkIn: { label: 'Came in', numeric: true, get: (b) => stampValue(b.actualCheckInAt, b.checkInDate) },
+  checkOut: { label: 'Left', numeric: true, get: (b) => stampValue(b.actualCheckOutAt, b.checkOutDate) },
+  amount: { label: 'Amount', numeric: true, get: (b) => b.billAmount || 0 },
+  status: { label: 'Status', get: (b) => STAY_STATUS_CHIP_LABEL[b.status] || '' },
+};
+
+// A stay that hasn't arrived yet still belongs somewhere in a column of
+// arrivals, and the day it is due is the honest answer — the cell already says
+// "Due 14 Mar", so sorting on it puts the row where the cell claims it is.
+function stampValue(actual, plannedDate) {
+  if (actual) return new Date(actual).getTime();
+  return plannedDate ? new Date(`${plannedDate}T00:00:00Z`).getTime() : 0;
+}
+
+// Compared with localeCompare rather than < so "Room 10" sorts after "Room 9"
+// instead of before it — a register full of numbered rooms sorted as plain text
+// is a register a desk can't use.
+function compareValues(a, b, numeric) {
+  if (numeric) return (a || 0) - (b || 0);
+  return String(a).localeCompare(String(b), 'en-IN', { numeric: true, sensitivity: 'base' });
+}
+
+// One tile of the summary strip, and the control that narrows the list to the
+// rows it counted. A button rather than a div with a click handler, so it is
+// reachable by keyboard and announced as something that can be pressed —
+// a figure that silently does something when clicked is worse than one that
+// does nothing.
+//
+// aria-pressed rather than a plain label, because a tile is a toggle in effect:
+// pressing it applies its cut and the tile stays lit while that cut is the one
+// being shown, which is the only way to tell from the strip alone whether the
+// list beneath answers all the stays or just these.
+function StatTile({ label, value, note, active, hint, onClick, className = '' }) {
+  return (
+    <button
+      type="button"
+      className={`guest-register__stat guest-register__stat--action${
+        active ? ' guest-register__stat--on' : ''
+      } ${className}`}
+      onClick={onClick}
+      aria-pressed={active}
+      title={hint}
+    >
+      <span className="guest-register__stat-label">{label}</span>
+      <strong className="guest-register__stat-value">{value}</strong>
+      {note && <span className="guest-register__stat-note">{note}</span>}
+    </button>
+  );
+}
+
 // Reads after its label ("Left late by — 2h 15m"), so no "late" in the value.
 function formatLateBy(minutes) {
   if (!minutes) return null;
@@ -154,7 +231,10 @@ function formatLateBy(minutes) {
   return mins === 0 ? `${hours} hours` : `${hours}h ${mins}m`;
 }
 
-export default function GuestRegister() {
+// onOpenSection moves the dashboard to another section, for the tiles whose
+// subject is another screen's. Optional — the register works without it, and
+// every tile that has one falls back to filtering in place.
+export default function GuestRegister({ onOpenSection }) {
   const session = getSession();
   const token = session?.token;
 
@@ -165,7 +245,7 @@ export default function GuestRegister() {
   // to — the tape chart's legend points here with a status already chosen, and
   // a refresh keeps it. 'ALL' is the fallback, so the plain register stays a
   // clean /dashboard?section=guests with nothing appended.
-  const [statusParam, setStatusFilter] = useUrlState('status', 'ALL');
+  const [statusParam, setStatusParam] = useUrlState('status', 'ALL');
   // A hand-edited or stale link must not leave the chips showing nothing
   // selected while the list silently filters on a status that doesn't exist.
   //
@@ -173,10 +253,98 @@ export default function GuestRegister() {
   // it is a real cut this screen offers, and leaving it out of the guard made
   // choosing the Draft chip fall straight back to 'ALL' — the URL said DRAFT
   // and the list showed every booking.
-  const statusFilter =
-    statusParam === DRAFT_FILTER.key || STATUS_FILTERS.some((s) => s.key === statusParam)
-      ? statusParam
-      : 'ALL';
+  //
+  // Several statuses at once, because the questions a desk actually asks of the
+  // register are rarely one status wide: "who is still here or still to come"
+  // is Reserved + Checked in, and asking it one chip at a time means reading
+  // the list twice and holding the first half in your head. The URL carries
+  // them comma-separated ('status=BOOKED,CHECKED_IN'), so a multi-status cut is
+  // as linkable and as refresh-proof as a single one always was.
+  const selectedStatuses = String(statusParam)
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s === DRAFT_FILTER.key || STATUS_FILTERS.some((f) => f.key === s));
+  // 'ALL' is the absence of a cut, so it cannot be one of several: a link that
+  // names it alongside real statuses means the statuses. An empty or wholly
+  // unrecognised param leaves nothing selected, which is the same thing as All.
+  const statuses = selectedStatuses.filter((s) => s !== 'ALL');
+  const showingAll = statuses.length === 0;
+  const isStatusOn = (key) => (key === 'ALL' ? showingAll : statuses.includes(key));
+
+  // Chips toggle rather than replace — except All, the one chip that means "no
+  // cut at all", so choosing it clears the rest instead of joining them.
+  // Toggling the last chip back off lands on All rather than on an empty cut,
+  // which would show nothing with no chip pressed to explain why.
+  const toggleStatus = (key) => {
+    if (key === 'ALL') {
+      setStatusParam('ALL');
+      return;
+    }
+    const next = statuses.includes(key) ? statuses.filter((s) => s !== key) : [...statuses, key];
+    setStatusParam(next.length ? next.join(',') : 'ALL');
+  };
+  // Both cuts in one write.
+  //
+  // useUrlState's setter builds the next URL from the params it captured on the
+  // render it was created on, so two of them called in sequence do not compose:
+  // the second starts from the URL as it was *before* the first ran and undoes
+  // it. A tile setting the status and clearing the billing cut ended up setting
+  // neither, and clicking it did nothing at all.
+  //
+  // The summary tiles are the only place that moves two cuts at once, so they
+  // go through here instead. Same shape as the dashboard's own
+  // showRegisterWithStatus, and for the same reason.
+  const [, setRegisterParams] = useSearchParams();
+  const applyCut = ({ status, billed }) => {
+    setRegisterParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        // 'ALL' is each cut's fallback, and useUrlState keeps a fallback out of
+        // the URL entirely — so the plain register stays a clean
+        // ?section=guests rather than carrying two params that say "no filter".
+        if (status && status !== 'ALL') updated.set('status', status);
+        else updated.delete('status');
+        if (billed && billed !== 'ALL') updated.set('billed', billed);
+        else updated.delete('billed');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // Whether a stay has been invoiced. Not a booking status — a checked-out stay
+  // can be either — so it is a cut of its own rather than another chip in the
+  // status row, and the two combine: Checked in + Not billed is a real question
+  // ("who is still here that I haven't raised a bill for") that neither cut
+  // could answer alone.
+  //
+  // Its own param, so the Billed and Pending tiles can point at it and the
+  // resulting view is still a link a desk can keep.
+  const [billedParam, setBilledParam] = useUrlState('billed', 'ALL');
+  const billedFilter = billedParam === 'YES' || billedParam === 'NO' ? billedParam : 'ALL';
+
+  // In the query string for the same reason the status cut is: a register
+  // sorted by amount and then refreshed should come back sorted by amount.
+  // Held as one 'key:dir' param rather than two, so the two halves of one
+  // setting can never be half-applied by a hand-trimmed link.
+  const [sortParam, setSortParam] = useUrlState('sort', '');
+  const [sortKeyRaw, sortDirRaw] = String(sortParam).split(':');
+  // An unknown column falls back to the server's order rather than to an
+  // arbitrary column — a stale link should show the register, not a cut of it
+  // nobody asked for.
+  const sortKey = SORT_COLUMNS[sortKeyRaw] ? sortKeyRaw : null;
+  const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : 'asc';
+
+  // First click sorts the column the way that column is usually wanted, second
+  // click reverses it, third clears back to the register's own order — so the
+  // header that applied a sort is also the way out of it.
+  const toggleSort = (key) => {
+    const openingDir = SORT_COLUMNS[key].numeric ? 'desc' : 'asc';
+    if (sortKey !== key) setSortParam(`${key}:${openingDir}`);
+    else if (sortDir === openingDir) setSortParam(`${key}:${openingDir === 'asc' ? 'desc' : 'asc'}`);
+    else setSortParam('');
+  };
+
   // Seeded from what this session already fetched for the range the page opens
   // on, so coming back paints the register immediately instead of showing a
   // loading state while a request crosses to the database. Changing the range
@@ -287,16 +455,59 @@ export default function GuestRegister() {
   // booking list is emptied when that cut is chosen and vice versa. `filtered`
   // stays exactly what it was for every other filter — the summary strip and
   // the row table both read it, and neither can total a parked form.
-  const showingDrafts = statusFilter === DRAFT_FILTER.key;
-  const filtered = showingDrafts
-    ? []
-    : searched?.filter((b) => statusFilter === 'ALL' || b.status === statusFilter);
+  //
+  // Drafts join the rows rather than replacing them once more than one chip is
+  // pressed: "Draft + Reserved" is a question about both piles, and answering
+  // it with only one of them would silently drop half of what was asked for.
+  // Draft on its own still shows drafts only, exactly as it did.
+  const showingDrafts = statuses.includes(DRAFT_FILTER.key);
+  const showingStays = showingAll || statuses.some((s) => s !== DRAFT_FILTER.key);
+  // Draft and nothing else — the one case where this screen stops being a
+  // register of stays and becomes a list of parked forms, which is what the
+  // card's title, its subtitle and the summary strip all key off.
+  const draftsOnly = showingDrafts && !showingStays;
+  const filtered = showingStays
+    ? searched?.filter(
+        (b) =>
+          (showingAll || statuses.includes(b.status)) &&
+          (billedFilter === 'ALL' || (billedFilter === 'YES') === Boolean(b.invoiceNumber))
+      )
+    : [];
   const filteredDrafts = showingDrafts ? searchedDrafts : [];
 
-  const statusCounts = (searched || []).reduce((acc, b) => {
-    acc[b.status] = (acc[b.status] || 0) + 1;
-    return acc;
-  }, {});
+  // Sorted after filtering, so the order is over the rows actually on screen.
+  // Null means the server's own order — the register opens the way it always
+  // did, and a sort is something asked for rather than one imposed on arrival.
+  const sorted = sortKey
+    ? [...(filtered || [])].sort((a, b) => {
+        const col = SORT_COLUMNS[sortKey];
+        const cmp = compareValues(col.get(a), col.get(b), col.numeric);
+        return sortDir === 'asc' ? cmp : -cmp;
+      })
+    : filtered;
+
+  // The same order over the parked rows, for the columns a draft actually has.
+  // A draft carries no bill, no arrival and no amount, so sorting by one of
+  // those leaves them in the order they came in rather than inventing a rank
+  // for a field that is a dash on every row.
+  const sortedDrafts = sortKey
+    ? [...filteredDrafts].sort((a, b) => {
+        const get = { room: (d) => d.roomNumber || '', guest: (d) => d.guestName || '' }[sortKey];
+        if (!get) return 0;
+        const cmp = compareValues(get(a), get(b), false);
+        return sortDir === 'asc' ? cmp : -cmp;
+      })
+    : filteredDrafts;
+
+  // Counted within the billed cut as well as the search, so a chip promising
+  // four rows hands over four rows. A count taken before the billed filter
+  // would over-promise the moment Pending was chosen from the summary strip.
+  const statusCounts = (searched || [])
+    .filter((b) => billedFilter === 'ALL' || (billedFilter === 'YES') === Boolean(b.invoiceNumber))
+    .reduce((acc, b) => {
+      acc[b.status] = (acc[b.status] || 0) + 1;
+      return acc;
+    }, {});
   statusCounts[DRAFT_FILTER.key] = searchedDrafts.length;
 
   // Appended only when there is something parked to look at — see DRAFT_FILTER.
@@ -307,6 +518,13 @@ export default function GuestRegister() {
   // pressed and the table showing drafts, with no way back but the browser.
   const statusFilters =
     drafts?.length || showingDrafts ? [...STATUS_FILTERS, DRAFT_FILTER] : STATUS_FILTERS;
+
+  // Only the tiles that can still be totalled. With Draft pressed alongside a
+  // status the strip goes on answering for the stays beside the drafts — it is
+  // the stays half of the list it has always described — and it is dropped
+  // entirely only when drafts are the whole of what's on screen, where every
+  // tile would read zero against rows that are plainly there.
+  const showStats = showingStays;
 
   // Read off the rows on screen, so the strip always answers for the range and
   // filter the register is currently showing rather than for the whole month.
@@ -342,11 +560,28 @@ export default function GuestRegister() {
     setToDate(t);
   };
 
-  const filtersActive = Boolean(query) || statusFilter !== 'ALL';
+  // What ALL is the whole of — every searched stay the billed cut still allows,
+  // for the same reason the per-status counts respect it.
+  const allCount = searched?.filter(
+    (b) => billedFilter === 'ALL' || (billedFilter === 'YES') === Boolean(b.invoiceNumber)
+  ).length;
+
+  // Whether the list is currently showing exactly what the Stays and Guests
+  // tiles count. Compared as a set rather than as a string, so the three chips
+  // pressed by hand in any order light the tile the same way clicking the tile
+  // does — the tile reports the cut being shown, not the click that caused it.
+  const isRealStaysCut =
+    billedFilter === 'ALL' &&
+    statuses.length === REAL_STAY_STATUSES.length &&
+    REAL_STAY_STATUSES.every((s) => statuses.includes(s));
+
+  const filtersActive = Boolean(query) || !showingAll || billedFilter !== 'ALL';
 
   const clearFilters = () => {
     setSearch('');
-    setStatusFilter('ALL');
+    // One write, not two — see applyCut. Clearing them separately left whichever
+    // cut was cleared first back in the URL, so "Clear filters" cleared one.
+    applyCut({ status: 'ALL', billed: 'ALL' });
   };
 
   // Detail modal — fetches the full booking record on demand rather than
@@ -553,11 +788,20 @@ export default function GuestRegister() {
             ))}
           </div>
 
-          <div className="guest-register__status-filters" role="group" aria-label="Filter by status">
+          {/* Several cuts can be on at once, so the chips are checkboxes rather
+              than a one-of-many choice, and the group is named as one. All is
+              still the odd one out — it clears rather than joins — but it reads
+              as another box in the same set, which is what it looks like. */}
+          <div
+            className="guest-register__status-filters"
+            role="group"
+            aria-label="Filter by status — pick as many as you need"
+          >
             {statusFilters.map((s) => {
               // ALL counts stays only, not drafts — it is the whole of the list
               // the other status chips cut up, and a parked form is not in it.
-              const count = s.key === 'ALL' ? searched?.length : statusCounts[s.key];
+              const count = s.key === 'ALL' ? allCount : statusCounts[s.key];
+              const on = isStatusOn(s.key);
               return (
                 <button
                   key={s.key}
@@ -567,8 +811,14 @@ export default function GuestRegister() {
                     // zero means "not loaded", not "none of these".
                     bookings && s.swatch && !count ? ' guest-register__status-chip--empty' : ''
                   }`}
-                  aria-pressed={statusFilter === s.key}
-                  onClick={() => setStatusFilter(s.key)}
+                  // Checked, not pressed: a set of chips several of which can be
+                  // on at once is a set of checkboxes, and aria-pressed would
+                  // have a screen reader announce each one as an independent
+                  // button rather than as one of a group of cuts.
+                  role="checkbox"
+                  aria-checked={on}
+                  aria-pressed={on}
+                  onClick={() => toggleStatus(s.key)}
                 >
                   {/* Decorative: the chip says its status in words beside it,
                       so the dot repeats rather than adds, and a screen reader
@@ -585,6 +835,35 @@ export default function GuestRegister() {
               );
             })}
           </div>
+
+          {/* The billing cut, kept visible in the same row as the statuses so a
+              cut arriving from the summary strip or from a link is something
+              the desk can see and undo — a filter applied by a tile above and
+              shown nowhere is a list that has silently gone short.
+
+              Only two chips, and only while one is on: an unfiltered register
+              needs no "Billed / Not billed" pair sitting permanently beside the
+              statuses, and the tiles are how the cut is normally reached. */}
+          {billedFilter !== 'ALL' && (
+            <div
+              className="guest-register__status-filters"
+              role="group"
+              aria-label="Filter by billing"
+            >
+              <button
+                type="button"
+                className="guest-register__status-chip"
+                aria-pressed="true"
+                onClick={() => setBilledParam('ALL')}
+                title="Stop filtering by whether a bill was raised"
+              >
+                {billedFilter === 'YES' ? 'Billed' : 'Not billed'}
+                <span className="guest-register__status-count" aria-hidden="true">
+                  ×
+                </span>
+              </button>
+            </div>
+          )}
 
           {/* One way back to the full list, so a desk that has narrowed the
               register three times over never has to undo each one.
@@ -619,44 +898,80 @@ export default function GuestRegister() {
       {/* What the range came to, before the rows are read one by one. Not while
           the drafts cut is showing: every tile here totals stays — guests booked
           in, money billed — and a parked form has none of it, so the strip would
-          read as four zeroes against rows that are plainly there. */}
-      {!error && bookings && !showingDrafts && (
+          read as four zeroes against rows that are plainly there.
+
+          Every tile is also the way into the rows behind it. A number on a
+          dashboard invites the question "which ones?", and until now the only
+          answer was to work out which chips reproduced the tile and press them
+          — so the tile applies that cut itself and the list below is the
+          answer. Stays and Guests both count every stay but the cancelled ones,
+          so that is the cut they hand over — the list that comes back is the
+          rows the figure was made of, which is the only thing a total on a tile
+          can honestly promise. */}
+      {!error && bookings && showStats && (
         <div className="guest-register__stats">
-          <div className="guest-register__stat">
-            <span className="guest-register__stat-label">Stays</span>
-            <strong className="guest-register__stat-value">{stats.stays}</strong>
-            {stats.cancelled > 0 && (
-              <span className="guest-register__stat-note">{stats.cancelled} cancelled</span>
-            )}
-          </div>
-          <div className="guest-register__stat">
-            <span className="guest-register__stat-label">Guests</span>
-            <strong className="guest-register__stat-value">{stats.people}</strong>
-            <span className="guest-register__stat-note">people booked in</span>
-          </div>
-          <div className="guest-register__stat">
-            <span className="guest-register__stat-label">In house</span>
-            <strong className="guest-register__stat-value">{stats.inHouse}</strong>
-            <span className="guest-register__stat-note">not checked out yet</span>
-          </div>
-          <div className="guest-register__stat guest-register__stat--money">
-            <span className="guest-register__stat-label">Billed</span>
-            <strong className="guest-register__stat-value">{formatPrice(stats.amount)}</strong>
-            <span className="guest-register__stat-note">
-              {stats.billedCount} {stats.billedCount === 1 ? 'bill' : 'bills'} issued
-            </span>
-          </div>
+          <StatTile
+            label="Stays"
+            value={stats.stays}
+            note={stats.cancelled > 0 ? `${stats.cancelled} cancelled` : null}
+            active={isRealStaysCut}
+            hint="Show the stays counted here — everything but the cancelled ones"
+            onClick={() => applyCut({ status: REAL_STAY_STATUSES.join(','), billed: 'ALL' })}
+          />
+          <StatTile
+            label="Guests"
+            value={stats.people}
+            note="people booked in"
+            active={isRealStaysCut}
+            hint="Show the stays these guests are booked on"
+            onClick={() => applyCut({ status: REAL_STAY_STATUSES.join(','), billed: 'ALL' })}
+          />
+          <StatTile
+            label="In house"
+            value={stats.inHouse}
+            note="not checked out yet"
+            active={statuses.length === 1 && statuses[0] === 'CHECKED_IN'}
+            hint="Show only the guests currently in house"
+            onClick={() => applyCut({ status: 'CHECKED_IN', billed: 'ALL' })}
+          />
+          {/* The one tile whose subject lives on another screen. It counts money
+              raised on invoices, and invoices are billing's — so it goes there
+              rather than filtering the register down to the stays those bills
+              were raised against, which is a list of guests, not of bills.
+
+              Falls back to filtering in place when nothing was passed to move
+              sections with, so the tile still answers rather than going dead if
+              the register is ever mounted on its own. */}
+          <StatTile
+            className="guest-register__stat--money"
+            label="Billed"
+            value={formatPrice(stats.amount)}
+            note={`${stats.billedCount} ${stats.billedCount === 1 ? 'bill' : 'bills'} issued`}
+            active={!onOpenSection && billedFilter === 'YES'}
+            hint={onOpenSection ? 'Open billing and invoices' : 'Show only the stays a bill has been raised for'}
+            onClick={() => {
+              if (onOpenSection) {
+                onOpenSection('billing');
+                return;
+              }
+              applyCut({ status: 'ALL', billed: 'YES' });
+            }}
+          />
 
           {/* Only when there is something left to bill — an empty pending tile
               is a column of zero the desk has to read past every time. */}
           {stats.pending > 0 && (
-            <div className="guest-register__stat guest-register__stat--pending">
-              <span className="guest-register__stat-label">Pending</span>
-              <strong className="guest-register__stat-value">{formatPrice(stats.pending)}</strong>
-              <span className="guest-register__stat-note">
-                {stats.pendingCount} {stats.pendingCount === 1 ? 'stay' : 'stays'} not billed yet
-              </span>
-            </div>
+            <StatTile
+              className="guest-register__stat--pending"
+              label="Pending"
+              value={formatPrice(stats.pending)}
+              note={`${stats.pendingCount} ${stats.pendingCount === 1 ? 'stay' : 'stays'} not billed yet`}
+              active={billedFilter === 'NO'}
+              hint="Show only the stays still to be billed"
+              onClick={() => {
+                applyCut({ status: 'ALL', billed: 'NO' });
+              }}
+            />
           )}
         </div>
       )}
@@ -717,17 +1032,17 @@ export default function GuestRegister() {
             <p className="guest-register__empty-title">
               {query
                 ? `No guest matching “${search.trim()}”`
-                : showingDrafts
+                : draftsOnly
                   ? 'Nothing parked right now'
-                  : statusFilter !== 'ALL'
-                    ? 'No stays with this status'
+                  : !showingAll
+                    ? (statuses.length === 1 ? 'No stays with this status' : 'No stays with any of these statuses')
                     : 'No guests in these dates'}
             </p>
             <p>
               {/* Drafts aren't filed under the date range, so widening it would
                   do nothing — the only thing that can be wrong here is the
                   search. */}
-              {showingDrafts
+              {draftsOnly
                 ? query
                   ? 'Try a different spelling — drafts are found by guest name or room.'
                   : 'A booking form saved before it was finished will show up here.'
@@ -741,9 +1056,16 @@ export default function GuestRegister() {
                   Clear search
                 </button>
               )}
-              {statusFilter !== 'ALL' && (
-                <button type="button" className="btn-secondary" onClick={() => setStatusFilter('ALL')}>
+              {!showingAll && (
+                <button type="button" className="btn-secondary" onClick={() => setStatusParam('ALL')}>
                   Show all statuses
+                </button>
+              )}
+              {billedFilter !== 'ALL' && (
+                <button type="button" className="btn-secondary" onClick={() => setBilledParam('ALL')}>
+                  {/* Named for the cut being lifted, not for the one in force —
+                      the button says what pressing it gets you. */}
+                  Show billed and unbilled
                 </button>
               )}
               {activePreset?.key !== 'month' && (
@@ -764,22 +1086,37 @@ export default function GuestRegister() {
         <div className="dash-card">
           <div className="guest-register__card-head">
             <div>
-              <h3 className="guest-register__card-title">{showingDrafts ? 'Drafts' : 'Register'}</h3>
+              <h3 className="guest-register__card-title">{draftsOnly ? 'Drafts' : 'Register'}</h3>
               <p className="guest-register__card-sub">
                 {/* Drafts are not filed under the range, so naming it here would
-                    claim a filter that isn't being applied to them. */}
-                {showingDrafts
+                    claim a filter that isn't being applied to them. With stays
+                    showing beside them the range is being applied — to the
+                    stays — so it is named, and the drafts are called out as the
+                    part of the list it doesn't govern. */}
+                {draftsOnly
                   ? 'Booking forms saved before they were finished'
-                  : `${formatDateLong(fromDate)} to ${formatDateLong(toDate)}`}
+                  : `${formatDateLong(fromDate)} to ${formatDateLong(toDate)}${
+                      showingDrafts ? ', plus every parked draft' : ''
+                    }`}
               </p>
             </div>
             <div className="guest-register__card-tools">
               <span className="guest-register__card-count">
-                {showingDrafts
+                {draftsOnly
                   ? `${filteredDrafts.length} ${filteredDrafts.length === 1 ? 'draft' : 'drafts'}`
-                  : filtered.length === bookings.length
-                    ? `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`
-                    : `${filtered.length} of ${bookings.length} entries`}
+                  : // Counted apart when both are on screen: a draft is not an
+                    // entry in the register, and adding the two into one total
+                    // would claim more stays in the range than there are.
+                    [
+                      filtered.length === bookings.length
+                        ? `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`
+                        : `${filtered.length} of ${bookings.length} entries`,
+                      showingDrafts
+                        ? `${filteredDrafts.length} ${filteredDrafts.length === 1 ? 'draft' : 'drafts'}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
               </span>
               {/* Check-ins happen while this screen is open. */}
               <button
@@ -815,18 +1152,66 @@ export default function GuestRegister() {
             <table className="dash-table guest-register__table">
               <thead>
                 <tr>
-                  <th>Room</th>
-                  <th>Bill No</th>
-                  <th>Guest</th>
-                  <th>Came in</th>
-                  <th>Left</th>
-                  <th className="guest-register__col-amount">Amount</th>
-                  <th>Status</th>
+                  {/* Each heading is the control that sorts its own column —
+                      the place a hand already goes when a register needs
+                      reordering, rather than a separate menu naming the
+                      columns a second time.
+
+                      aria-sort is on the cell rather than the button so a
+                      screen reader announces the order as a property of the
+                      column, which is what it is. */}
+                  {Object.entries(SORT_COLUMNS).map(([key, col]) => (
+                    <th
+                      key={key}
+                      className={key === 'amount' ? 'guest-register__col-amount' : undefined}
+                      aria-sort={
+                        sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className={`guest-register__sort${
+                          sortKey === key ? ' guest-register__sort--on' : ''
+                        }`}
+                        onClick={() => toggleSort(key)}
+                        title={
+                          sortKey === key
+                            ? `Sorted by ${col.label} — click to ${
+                                sortDir === (col.numeric ? 'desc' : 'asc') ? 'reverse' : 'clear'
+                              }`
+                            : `Sort by ${col.label}`
+                        }
+                      >
+                        {col.label}
+                        {/* Both arrows always, the active one filled: a single
+                            arrow that appears on sort makes the heading jump
+                            wider the moment it is clicked, and a column of
+                            headings that move as you use them is hard to aim
+                            at twice. */}
+                        <span className="guest-register__sort-arrows" aria-hidden="true">
+                          <span
+                            className={`guest-register__sort-arrow${
+                              sortKey === key && sortDir === 'asc' ? ' guest-register__sort-arrow--on' : ''
+                            }`}
+                          >
+                            ▲
+                          </span>
+                          <span
+                            className={`guest-register__sort-arrow${
+                              sortKey === key && sortDir === 'desc' ? ' guest-register__sort-arrow--on' : ''
+                            }`}
+                          >
+                            ▼
+                          </span>
+                        </span>
+                      </button>
+                    </th>
+                  ))}
                   <th className="dash-table__actions"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((b) => {
+                {sorted.map((b) => {
                   // Why this row is in the results when the name on it is not
                   // what was typed. Without it a co-guest hit reads as the
                   // search having gone wrong.
@@ -928,13 +1313,11 @@ export default function GuestRegister() {
                         </span>
                       </td>
                       <td className="dash-table__actions">
-                        <button
-                          type="button"
-                          className="guest-register__view-details-btn"
+                        <IconButton
+                          label={`View details for ${b.guestName}`}
+                          icon={<EyeIcon />}
                           onClick={() => openDetail(b.id)}
-                        >
-                          View details
-                        </button>
+                        />
                       </td>
                     </tr>
                   );
@@ -947,7 +1330,7 @@ export default function GuestRegister() {
                     filled with guesses. What a draft does carry is who it is
                     for, which room was being considered, and the nights it
                     named, and those sit where the eye already looks for them. */}
-                {filteredDrafts.map((d) => (
+                {sortedDrafts.map((d) => (
                   <tr key={`draft-${d.id}`} className="guest-register__row guest-register__row--draft">
                     <td>
                       {d.roomNumber ? (
@@ -1331,9 +1714,11 @@ export default function GuestRegister() {
                           <dd className="guest-register__id-cell">
                             <span>{detailBooking.idProofType}</span>
                             {detailBooking.hasIdProofDocument && (
-                              <button type="button" className="guest-register__view-btn" onClick={handleViewIdProof}>
-                                View ID
-                              </button>
+                              <IconButton
+                                label="View ID proof"
+                                icon={<EyeIcon />}
+                                onClick={handleViewIdProof}
+                              />
                             )}
                           </dd>
                         </>
@@ -1358,13 +1743,11 @@ export default function GuestRegister() {
                                 </span>
                               </div>
                               {g.hasIdProofDocument && (
-                                <button
-                                  type="button"
-                                  className="guest-register__view-btn"
+                                <IconButton
+                                  label={`View ID proof for ${g.name}`}
+                                  icon={<EyeIcon />}
                                   onClick={() => handleViewGuestIdProof(g)}
-                                >
-                                  View ID
-                                </button>
+                                />
                               )}
                             </li>
                           ))}

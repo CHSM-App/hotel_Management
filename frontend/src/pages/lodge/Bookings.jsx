@@ -16,6 +16,12 @@ import { formatPrice } from './priceFormat';
 import StayDetails from './StayDetails';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import PaymentLines from './PaymentLines';
+import IconButton from '../../components/IconButton';
+import Req from '../../components/RequiredMark';
+// Aliased: this file already has a local TrashIcon, drawn at 15px for the
+// inline row-remove buttons. The shared glyph is 18px, sized for the 34px
+// icon buttons, so the two can't be collapsed into one.
+import { TrashIcon as ActionTrashIcon, OpenIcon } from '../../components/ActionIcons';
 import {
   emptyPaymentLine,
   needsPaymentReference,
@@ -337,24 +343,6 @@ const usableNumber = (raw, max) => {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
 };
-
-// The asterisk on a label the form won't submit without. Sighted readers get
-// the mark, screen readers get the word — an asterisk read aloud in the middle
-// of a label is noise, and title alone is never announced.
-//
-// Only ever on a field the submit-time checks in this file actually stop on, so
-// the mark stays worth believing. Where two fields satisfy one requirement
-// between them (an ID number *or* a scanned document), both are starred and
-// `label` names the other, because starring neither hides a real requirement
-// and starring one picks a winner the validation doesn't.
-function Req({ label = 'required' }) {
-  return (
-    <span className="field__req" title={label}>
-      <span aria-hidden="true">*</span>
-      <span className="field__req-text">{` (${label})`}</span>
-    </span>
-  );
-}
 
 const TEN_DIGITS = /^\d{10}$/;
 const MOBILE_MESSAGE = 'Enter a 10-digit mobile number.';
@@ -3020,17 +3008,18 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     {d.createdByName ? ` · by ${d.createdByName}` : ''}
                   </span>
                   <span className="detail-person__meta">
-                    <button type="button" className="bookings-panel__link-btn" onClick={() => openDraft(d)}>
-                      Open
-                    </button>
-                    <button
-                      type="button"
-                      className="bookings-panel__link-btn bookings-panel__link-btn--danger"
+                    <IconButton
+                      label={`Open draft for ${d.guestName || 'unnamed guest'}`}
+                      icon={<OpenIcon />}
+                      onClick={() => openDraft(d)}
+                    />
+                    <IconButton
+                      label={`Delete draft for ${d.guestName || 'unnamed guest'}`}
+                      icon={<ActionTrashIcon />}
+                      tone="danger"
                       onClick={() => deleteDraft(d.id)}
                       disabled={submitting}
-                    >
-                      Delete
-                    </button>
+                    />
                   </span>
                 </div>
               ))}
@@ -3900,13 +3889,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                                 }
                               />
                             </div>
-                            <button
-                              type="button"
-                              className="bookings-panel__remove-btn"
+                            <IconButton
+                              label={`Remove guest ${index + 1}`}
+                              icon={<ActionTrashIcon />}
+                              tone="danger"
                               onClick={() => removeCheckInGuest(index)}
-                            >
-                              Remove
-                            </button>
+                            />
                           </div>
                         ))}
                       </div>
@@ -3938,13 +3926,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                                 </option>
                               ))}
                             </select>
-                            <button
-                              type="button"
-                              className="bookings-panel__remove-btn"
+                            <IconButton
+                              label={`Remove vehicle ${index + 1}`}
+                              icon={<ActionTrashIcon />}
+                              tone="danger"
                               onClick={() => removeCheckInVehicle(index)}
-                            >
-                              Remove
-                            </button>
+                            />
                           </div>
                         ))}
                       </div>
@@ -4744,9 +4731,12 @@ function VehicleEditor({ vehicles, onAdd, onRemove, onUpdate, idPrefix, fieldErr
                     </option>
                   ))}
                 </select>
-                <button type="button" className="bookings-panel__remove-btn" onClick={() => onRemove(index)}>
-                  Remove
-                </button>
+                <IconButton
+                  label={`Remove vehicle ${index + 1}`}
+                  icon={<ActionTrashIcon />}
+                  tone="danger"
+                  onClick={() => onRemove(index)}
+                />
               </div>
               {errorFor(index)}
             </div>

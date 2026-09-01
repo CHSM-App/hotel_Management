@@ -10,6 +10,18 @@
   margin-bottom: 6px;
 }
 
+/* The heading over a group of controls — a set of checkboxes, say — which each
+   carry their own label. It reads as a label but is deliberately not one: a
+   <label> with no single control to point at sends anything following it to
+   whichever control it happens to wrap. */
+.field__group-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
 .field input,
 .field select,
 .pay-lines__row select,

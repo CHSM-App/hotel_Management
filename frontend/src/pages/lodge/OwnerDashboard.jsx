@@ -131,8 +131,43 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'guests');
+        // See showSection: a sub-tab belongs to the section that drew it, and
+        // the register has none of its own to carry.
+        updated.delete('tab');
         if (status) updated.set('status', status);
         else updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // Moving to another section from inside one, as the sidebar would. The
+  // register's summary tiles use it to hand a question to the screen that owns
+  // the answer.
+  //
+  // The register's own cuts are dropped on the way out for the same reason the
+  // sidebar drops them: a status or billing filter is a narrowing of the
+  // register, and carrying it into a screen that has never heard of it would
+  // leave a stale ?status= sitting in the URL to be reapplied the next time the
+  // register opens.
+  //
+  // `tab` goes with them, and for a sharper reason: five sections each keep a
+  // sub-tab under that one key, and their names don't overlap. Leaving
+  // ?tab=checkout behind on the way from Rooms & rates into Billing landed on a
+  // billing screen where no tab matched — every chip unselected and the panel
+  // blank. A sub-tab belongs to the section that drew it, so it is dropped at
+  // the door and each section opens on its own first tab.
+  const showSection = (key) => {
+    setBillNowBookingId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', key);
+        updated.delete('tab');
+        updated.delete('status');
+        updated.delete('billed');
+        updated.delete('sort');
         return updated;
       },
       { replace: true }
@@ -240,10 +275,13 @@ export default function OwnerDashboard() {
                         // status cut belongs to the register, and reaching it
                         // from the sidebar means asking for the whole list
                         // rather than resuming a cut the legend made earlier.
+                        // The sub-tab goes too — see showSection for why a
+                        // ?tab= carried across sections rendered a blank panel.
                         setSearchParams(
                           (prev) => {
                             const updated = new URLSearchParams(prev);
                             updated.set('section', feature.key);
+                            updated.delete('tab');
                             updated.delete('status');
                             return updated;
                           },
@@ -322,7 +360,13 @@ export default function OwnerDashboard() {
                 />
               )}
 
-              {activeFeature && activeFeature.key === 'guests' && <GuestRegister />}
+              {/* The register's Billed tile leaves for billing, where the
+                  invoices it counted actually live — the register can list the
+                  stays that were billed, but the bills themselves are another
+                  screen's job, and that is the screen the tile is asking for. */}
+              {activeFeature && activeFeature.key === 'guests' && (
+                <GuestRegister onOpenSection={showSection} />
+              )}
 
               {activeFeature && activeFeature.key === 'reports' && <ReportsPanel />}
 

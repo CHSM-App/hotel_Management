@@ -3,6 +3,8 @@ import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import IconButton from '../../components/IconButton';
+import { EditIcon, TrashIcon } from '../../components/ActionIcons';
 import './forms.css';
 import './chartSections.css';
 
@@ -372,19 +374,20 @@ export default function PriceChartPanel() {
                 <span className="chart-row__value">
                   {formatPrice(c.basePrice)}
                   <span className="chart-row__actions">
-                    <button type="button" className="chart-row__link-btn" onClick={() => openEditCategory(c)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="chart-row__link-btn chart-row__link-btn--danger"
+                    <IconButton
+                      label={`Edit ${c.name}`}
+                      icon={<EditIcon />}
+                      onClick={() => openEditCategory(c)}
+                    />
+                    <IconButton
+                      label={`Delete ${c.name}`}
+                      icon={<TrashIcon />}
+                      tone="danger"
                       onClick={() => {
                         setDeleteModalCategory(c);
                         setDeleteModalCategoryError('');
                       }}
-                    >
-                      Delete
-                    </button>
+                    />
                   </span>
                 </span>
               </div>
@@ -394,17 +397,24 @@ export default function PriceChartPanel() {
         <form className="inline-add-form" onSubmit={handleSubmitCategory}>
           {categoryError && <div className="form-banner form-banner--error">{categoryError}</div>}
           <div className="inline-add-form__row">
+            {/* These add-rows have no room for a label, so the asterisk rides
+                the placeholder and the accessible name carries the word — the
+                same two readings the marked labels elsewhere give, in the only
+                place this layout has to put them. Both boxes are refused when
+                blank, so both are marked. */}
             <input
               value={categoryForm.name}
               onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Deluxe"
+              placeholder="Deluxe *"
+              aria-label="Category name (required)"
             />
             <input
               type="number"
               min="1"
               value={categoryForm.basePrice}
               onChange={(e) => setCategoryForm((f) => ({ ...f, basePrice: e.target.value }))}
-              placeholder="Base price ₹"
+              placeholder="Base price ₹ *"
+              aria-label="Base price in rupees (required)"
             />
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={categorySubmitting}>
@@ -438,19 +448,20 @@ export default function PriceChartPanel() {
                 <span className="chart-row__value">
                   {formatPrice(c.chargePerNight)}/night
                   <span className="chart-row__actions">
-                    <button type="button" className="chart-row__link-btn" onClick={() => openEditCharge(c)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="chart-row__link-btn chart-row__link-btn--danger"
+                    <IconButton
+                      label={`Edit ${c.name}`}
+                      icon={<EditIcon />}
+                      onClick={() => openEditCharge(c)}
+                    />
+                    <IconButton
+                      label={`Delete ${c.name}`}
+                      icon={<TrashIcon />}
+                      tone="danger"
                       onClick={() => {
                         setDeleteModalCharge(c);
                         setDeleteModalChargeError('');
                       }}
-                    >
-                      Delete
-                    </button>
+                    />
                   </span>
                 </span>
               </div>
@@ -463,14 +474,16 @@ export default function PriceChartPanel() {
             <input
               value={chargeForm.name}
               onChange={(e) => setChargeForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="AC"
+              placeholder="AC *"
+              aria-label="Charge name (required)"
             />
             <input
               type="number"
               min="1"
               value={chargeForm.chargePerNight}
               onChange={(e) => setChargeForm((f) => ({ ...f, chargePerNight: e.target.value }))}
-              placeholder="Amount ₹/night"
+              placeholder="Amount ₹/night *"
+              aria-label="Amount per night in rupees (required)"
             />
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={chargeSubmitting}>
@@ -529,16 +542,17 @@ export default function PriceChartPanel() {
                       </>
                     ) : (
                       <>
-                        <button type="button" className="chart-row__link-btn" onClick={() => openEditSeason(s)}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="chart-row__link-btn chart-row__link-btn--danger"
+                        <IconButton
+                          label={`Edit ${s.name}`}
+                          icon={<EditIcon />}
+                          onClick={() => openEditSeason(s)}
+                        />
+                        <IconButton
+                          label={`Delete ${s.name}`}
+                          icon={<TrashIcon />}
+                          tone="danger"
                           onClick={() => setConfirmDeleteSeasonId(s.id)}
-                        >
-                          Delete
-                        </button>
+                        />
                       </>
                     )}
                   </span>
@@ -550,26 +564,33 @@ export default function PriceChartPanel() {
         <form className="inline-add-form" onSubmit={handleSubmitSeason}>
           {seasonError && <div className="form-banner form-banner--error">{seasonError}</div>}
           <div className="inline-add-form__row inline-add-form__row--seasons">
+            {/* Name and the percentage are the two the submit stops on; the
+                dates come prefilled and are only checked against each other,
+                so they are named but not marked. */}
             <input
               value={seasonForm.name}
               onChange={(e) => setSeasonForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Diwali"
+              placeholder="Diwali *"
+              aria-label="Season name (required)"
             />
             <input
               type="date"
               value={seasonForm.startDate}
               onChange={(e) => setSeasonForm((f) => ({ ...f, startDate: e.target.value }))}
+              aria-label="Season start date"
             />
             <input
               type="date"
               value={seasonForm.endDate}
               onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))}
+              aria-label="Season end date"
             />
             <input
               type="number"
               value={seasonForm.adjustmentPercent}
               onChange={(e) => setSeasonForm((f) => ({ ...f, adjustmentPercent: e.target.value }))}
-              placeholder="+% "
+              placeholder="+% *"
+              aria-label="Price adjustment percentage (required)"
             />
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={seasonSubmitting}>

@@ -66,6 +66,8 @@ const STRINGS_EN = {
   taxableValue: 'Taxable Value',
   stayTotal: 'Stay Total',
   lessAdvance: 'Less: Advance Received',
+  subTotal: 'Sub Total',
+  roundOff: 'Round off',
   balanceDue: 'BALANCE DUE',
   inwords: '(Inwords Rupees',
   words: amountInWords,
@@ -131,6 +133,31 @@ function nightsOf(receipt) {
   return n > 0 ? n : 1;
 }
 
+// Paise-safe, matching the bill document: the receipt states a sub total the
+// round off has to carry back to the printed stay total exactly.
+function round2(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+// One row of the money column, split into rupees and paise so it lands on the
+// same ruled verticals the bill uses. Same shape as the bill document's own,
+// because the two sheets sit in the same book and a receipt whose money column
+// ruled differently would read as a different property's paper.
+function Money({ label, value, strong, rule }) {
+  const n = Number(value) || 0;
+  const sign = n < 0 ? '-' : '';
+  const paiseTotal = Math.round(Math.abs(n) * 100);
+  const whole = Math.floor(paiseTotal / 100);
+  const paise = paiseTotal % 100;
+  return (
+    <tr className={`memo__money${strong ? ' memo__money--strong' : ''}${rule ? ' memo__money--rule' : ''}`}>
+      <td className="memo__money-label">{label}</td>
+      <td className="memo__rs">{`${sign}${whole.toLocaleString('en-IN')}`}</td>
+      <td className="memo__ps">{String(paise).padStart(2, '0')}</td>
+    </tr>
+  );
+}
+
 const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ receipt, lang = 'en' }, ref) {
   if (!receipt) return null;
 
@@ -179,6 +206,12 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   ]
     .filter(Boolean)
     .join('  ');
+
+  // The stay as the final bill will ask for it, and the rounding that got it
+  // there. Both frozen at issue rather than re-derived, so a reprint states
+  // the figures the guest was actually handed.
+  const stayTotal = Number(receipt.stayTotal) || 0;
+  const roundOff = Number(receipt.roundOff) || 0;
 
   const advanceWhole = Math.floor(Math.round(receipt.amountReceived * 100) / 100);
   const advancePaise = Math.round(receipt.amountReceived * 100) % 100;
@@ -295,6 +328,33 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
           <span className="memo__label">{T.reverseCharge}</span>
           <Filled narrow>{T.noWord}</Filled>
         </div>
+      )}
+
+      {/* What the stay comes to, what this receipt takes off it, and what the
+          guest still owes — the three figures the pad leaves the desk to write
+          in by hand. The round off is stated with them because the stay total
+          above it is the rounded one: without the line the receipt shows a
+          total that does not match the nights priced above it, and the guest
+          is left to find the difference on the final bill instead.
+
+          Printed only where the receipt names a balance at all. A stay settled
+          in full has nothing left to summarise, and the acknowledgement below
+          already says so in words. */}
+      {stayTotal > 0 && (
+        <table className="memo__totals">
+          <colgroup>
+            <col />
+            <col className="memo__col-rs" />
+            <col className="memo__col-ps" />
+          </colgroup>
+          <tbody>
+            {roundOff !== 0 && <Money label={T.subTotal} value={round2(stayTotal - roundOff)} />}
+            {roundOff !== 0 && <Money label={T.roundOff} value={roundOff} />}
+            <Money label={T.stayTotal} value={stayTotal} rule />
+            <Money label={T.lessAdvance} value={receipt.amountReceived} />
+            <Money label={T.balanceDue} value={receipt.balanceDue} strong rule />
+          </tbody>
+        </table>
       )}
 
       {/* The boxed figure, bottom-left on the pad. It is what the eye goes to

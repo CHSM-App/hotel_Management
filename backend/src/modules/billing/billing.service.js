@@ -151,34 +151,9 @@ function computeFoodTax(subtotal, ratePercent) {
   return { cgstAmount, sgstAmount, taxable: ratePercent > 0 && subtotal > 0 };
 }
 
-// Delivered food that hasn't been put on a bill yet. DELIVERED is the gate on
-// purpose — the charge posts when the guest actually receives the food, so a
-// cancelled or still-cooking order can never reach a folio.
-async function loadUnbilledOrders(request, lodgeId, { bookingId = null, tableId = null }) {
-  const scope = bookingId ? 'AND o.booking_id = @bookingId' : 'AND o.table_id = @tableId';
-  request.input('lodgeId', sql.BigInt, lodgeId);
-  if (bookingId) request.input('bookingId', sql.BigInt, bookingId);
-  else request.input('tableId', sql.BigInt, tableId);
-
-  const result = await request.query(`
-    SELECT o.id, o.order_number, o.subtotal, o.placed_at, o.source,
-           r.room_number, t.label AS table_label
-    FROM dbo.food_orders o
-    LEFT JOIN dbo.rooms r ON r.id = o.room_id
-    LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
-    WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL ${scope}
-    ORDER BY o.placed_at ASC
-  `);
-
-  return result.recordset.map((row) => ({
-    id: row.id,
-    orderNumber: row.order_number,
-    subtotal: Number(row.subtotal),
-    placedAt: row.placed_at,
-    roomNumber: row.room_number,
-    tableLabel: row.table_label,
-  }));
-}
+// Food is never loaded onto a stay bill, so there is no by-booking loader here
+// any more — every delivered, unbilled order reaches its bill through
+// loadUnbilledTabOrders, keyed on the tab that owes for it.
 
 function ratePercentFor(amount, slabs) {
   for (const slab of slabs) {
@@ -373,7 +348,7 @@ function ratePercentFromAmount(taxAmount, subtotal) {
 // which is why the split is recomputed here rather than only in the caller.
 //
 // `food` is optional so every room-only caller keeps its old shape.
-function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, isGstSide, food = null, discountAmount = 0 }) {
+function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, discountAmount = 0 }) {
   const foodSubtotal = food ? round2(food.subtotal) : 0;
   const foodCgst = food ? food.cgstAmount : 0;
   const foodSgst = food ? food.sgstAmount : 0;
@@ -403,8 +378,17 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, isGstSide, food 
   // not charged on top of them — so the total is the subtotal, full stop.
   // Adding totalCgst + totalSgst here is what the exclusive model did, and
   // doing it now would bill the guest the tax twice.
+  //
+  // Rounded to the whole rupee on both sides. It used to round only the GST
+  // side, which left the cash receipt asking for paise nobody at a lodge desk
+  // has, and — because the round off line prints only when it is non-zero —
+  // left that receipt with no round off line at all while the tax invoice for
+  // the same stay carried one: two documents off one booking, stating
+  // different amounts and reconciling differently. The desk collects rupees,
+  // so both documents are written in rupees, and both show the adjustment
+  // that got them there.
   const preRound = subtotal;
-  const totalAmount = isGstSide ? Math.round(preRound) : round2(preRound);
+  const totalAmount = Math.round(preRound);
   const roundOff = round2(totalAmount - preRound);
 
   return {
@@ -527,7 +511,6 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
           roomSubtotal,
           cgstAmount: round2(cgstAmount + late.cgstAmount),
           sgstAmount: round2(sgstAmount + late.sgstAmount),
-          isGstSide: true,
           food,
           discountAmount: discount,
         }),
@@ -540,7 +523,6 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
       roomSubtotal,
       cgstAmount: 0,
       sgstAmount: 0,
-      isGstSide: false,
       food: food ? { ...food, cgstAmount: 0, sgstAmount: 0 } : null,
       discountAmount: discount,
     }),
@@ -577,9 +559,14 @@ async function previewBill(
 
   const active = await findActiveInvoice(pool.request(), bookingId);
 
-  // Anything the guest ate and was served during the stay, not yet billed.
-  const foodOrders = await loadUnbilledOrders(pool.request(), lodgeId, { bookingId });
-  const foodItems = await loadFoodItemsForOrders(pool.request(), foodOrders.map((o) => o.id));
+  // Food never rides on the stay bill. Room service is settled on its own food
+  // bill against the room, whether or not anybody is checked into it — so the
+  // guest's main bill is accommodation only, and the food they ordered to the
+  // room is a separate document. Kept as empty lists rather than removed so
+  // every consumer of this preview — the pricing, the document, the screen —
+  // keeps its shape and simply prices a bill whose food side is nil.
+  const foodOrders = [];
+  const foodItems = [];
 
   const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
 
@@ -786,10 +773,9 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       throw new ApiError('This booking already has an issued bill. Void it before reissuing.', 409);
     }
 
-    // Re-read inside the transaction rather than reusing the preview's list:
-    // reception may deliver one more order between opening the bill and
-    // issuing it, and the charge belongs on this document, not stranded.
-    const foodOrders = await loadUnbilledOrders(new sql.Request(transaction), lodgeId, { bookingId });
+    // No food on a stay bill — it is billed separately against the room, so
+    // there is nothing to re-read here and nothing to stamp with this invoice.
+    const foodOrders = [];
 
     // Priced by the same code the preview ran, so the document written here is
     // the one the desk agreed to on screen.
@@ -956,7 +942,11 @@ function mapInvoice(row) {
     // A bill is a food bill when no stay backs it. The screen and the printed
     // document both branch on this rather than sniffing at null fields.
     kind: row.booking_id == null ? 'FOOD' : 'STAY',
-    tableLabel: row.table_label ?? null,
+    // What the food bill was raised against, in the header's own words. A room
+    // tab is a food bill with no stay behind it, so it names its room here —
+    // the counter is the only one of the three left without a name of its own.
+    tableLabel:
+      row.table_label ?? (row.tab_room_number != null ? `Room ${row.tab_room_number}` : null),
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
@@ -1126,7 +1116,7 @@ async function getInvoice(lodgeId, invoiceId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
-      SELECT i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+      SELECT i.*, dt.label AS table_label, fr.room_number AS tab_room_number, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
@@ -1148,6 +1138,9 @@ async function getInvoice(lodgeId, invoiceId) {
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       LEFT JOIN dbo.room_categories c ON c.id = r.category_id
       LEFT JOIN dbo.dining_tables dt ON dt.id = i.table_id
+      -- The room a food-only bill was raised against, which is not b.room_id:
+      -- such a bill has no booking behind it at all.
+      LEFT JOIN dbo.rooms fr ON fr.id = i.room_id
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.id = @invoiceId AND i.lodge_id = @lodgeId
     `);
@@ -1165,7 +1158,7 @@ async function listInvoices(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT TOP 200 i.*, dt.label AS table_label, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
+      SELECT TOP 200 i.*, dt.label AS table_label, fr.room_number AS tab_room_number, b.guest_name, b.guest_phone, b.num_guests, b.check_in_date, b.check_out_date,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              r.room_number, c.name AS category_name,
@@ -1187,6 +1180,9 @@ async function listInvoices(lodgeId) {
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       LEFT JOIN dbo.room_categories c ON c.id = r.category_id
       LEFT JOIN dbo.dining_tables dt ON dt.id = i.table_id
+      -- The room a food-only bill was raised against, which is not b.room_id:
+      -- such a bill has no booking behind it at all.
+      LEFT JOIN dbo.rooms fr ON fr.id = i.room_id
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.lodge_id = @lodgeId
       ORDER BY i.created_at DESC
@@ -1252,23 +1248,24 @@ async function listOpenFoodTabs(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT o.table_id, t.label AS table_label,
+      SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
              MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.rooms r ON r.id = o.room_id
       WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-        -- Room-service food is not settled here; it rides on the stay's bill at
-        -- checkout, so it must not also appear as an open tab.
-        AND o.booking_id IS NULL
-      GROUP BY o.table_id, t.label
+        -- Every delivered, unbilled order is an open tab, including room
+        -- service ordered against a live stay. Food is never folded into the
+        -- stay bill, so a checked-in guest's room order has no other document
+        -- to ride on: this queue is where it gets billed, and leaving it out
+        -- would strand the charge with no way to collect it.
+      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number
       ORDER BY MIN(o.placed_at) ASC
     `);
 
   return result.recordset.map((row) => ({
-    tableId: row.table_id,
-    // Counter orders have no table; they're grouped together under one tab.
-    tableLabel: row.table_label || 'Counter / takeaway',
+    ...tabIdentity(row),
     orderCount: row.order_count,
     subtotal: Number(row.subtotal),
     openedAt: row.opened_at,
@@ -1292,18 +1289,62 @@ async function loadLodgeForBilling(pool, lodgeId) {
   return row;
 }
 
-// tableId null means the counter tab.
-async function loadUnbilledTabOrders(request, lodgeId, tableId) {
+// A tab is one payer's running total, so the three ways food reaches someone
+// who has no stay to charge it to are three separate tabs: a dining table, a
+// room being served with nobody checked into it, and the counter. Merging any
+// two of them would put one customer's food on another's bill.
+//
+// `source` is the discriminator, not a null table_id: the check constraint on
+// food_orders guarantees it, and a room order has a null table_id too — which
+// is exactly how room service used to end up inside the counter tab.
+function tabIdentity(row) {
+  if (row.source === 'TABLE') {
+    return { tab: `table-${row.table_id}`, tableId: row.table_id, roomId: null, tableLabel: row.table_label };
+  }
+  if (row.source === 'ROOM') {
+    return {
+      tab: `room-${row.room_id}`,
+      tableId: null,
+      roomId: row.room_id,
+      tableLabel: `Room ${row.room_number}`,
+    };
+  }
+  return { tab: 'counter', tableId: null, roomId: null, tableLabel: 'Counter / takeaway' };
+}
+
+// Turns the :tab path segment back into the SQL selecting exactly that tab's
+// orders. Anything that isn't one of the three shapes is a bad request, not a
+// server fault — rejected here rather than reaching the driver as a NaN bound
+// to a BigInt, which is what surfaced as a 500.
+function tabScope(request, tab) {
+  if (tab === 'counter') return "AND o.source = 'COUNTER'";
+
+  const match = /^(table|room)-(\d+)$/.exec(String(tab ?? ''));
+  const id = match ? Number(match[2]) : NaN;
+  if (!match || !Number.isSafeInteger(id) || id <= 0) {
+    throw new ApiError('Unknown tab.', 400);
+  }
+
+  if (match[1] === 'table') {
+    request.input('tableId', sql.BigInt, id);
+    return "AND o.source = 'TABLE' AND o.table_id = @tableId";
+  }
+  request.input('roomId', sql.BigInt, id);
+  return "AND o.source = 'ROOM' AND o.room_id = @roomId";
+}
+
+async function loadUnbilledTabOrders(request, lodgeId, tab) {
   request.input('lodgeId', sql.BigInt, lodgeId);
-  const scope = tableId == null ? 'AND o.table_id IS NULL' : 'AND o.table_id = @tableId';
-  if (tableId != null) request.input('tableId', sql.BigInt, tableId);
+  const scope = tabScope(request, tab);
 
   const result = await request.query(`
-    SELECT o.id, o.order_number, o.subtotal, o.placed_at, t.label AS table_label
+    SELECT o.id, o.order_number, o.subtotal, o.placed_at, o.source,
+           o.table_id, o.room_id, t.label AS table_label, r.room_number
     FROM dbo.food_orders o
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+    LEFT JOIN dbo.rooms r ON r.id = o.room_id
     WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-      AND o.booking_id IS NULL ${scope}
+      ${scope}
     ORDER BY o.placed_at ASC
   `);
 
@@ -1312,7 +1353,7 @@ async function loadUnbilledTabOrders(request, lodgeId, tableId) {
     orderNumber: row.order_number,
     subtotal: Number(row.subtotal),
     placedAt: row.placed_at,
-    tableLabel: row.table_label,
+    tableLabel: tabIdentity(row).tableLabel,
   }));
 }
 
@@ -1330,7 +1371,7 @@ function priceFoodBill(lodge, orders, discountAmount, foodRate) {
         // a tax invoice — there's no nil band to fall through to a bill of
         // supply the way a cheap room night does.
         documentType: 'TAX_INVOICE',
-        ...buildBreakdown({ roomSubtotal: 0, cgstAmount: 0, sgstAmount: 0, isGstSide: true, food, discountAmount: discount }),
+        ...buildBreakdown({ roomSubtotal: 0, cgstAmount: 0, sgstAmount: 0, food, discountAmount: discount }),
       }
     : null;
   const nonGst = {
@@ -1339,7 +1380,6 @@ function priceFoodBill(lodge, orders, discountAmount, foodRate) {
       roomSubtotal: 0,
       cgstAmount: 0,
       sgstAmount: 0,
-      isGstSide: false,
       food: { ...food, cgstAmount: 0, sgstAmount: 0 },
       discountAmount: discount,
     }),
@@ -1352,10 +1392,10 @@ async function buildFoodBill(pool, lodge, orders, discountAmount, foodRate = nul
   return priceFoodBill(lodge, orders, discountAmount, foodRate ?? (await getFoodRate(pool, lodge.is_specified_premises)));
 }
 
-async function previewFoodBill(lodgeId, tableId, { discountAmount = 0, targetTotal = 0 } = {}) {
+async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal = 0 } = {}) {
   const pool = await getPool();
   const lodge = await loadLodgeForBilling(pool, lodgeId);
-  const orders = await loadUnbilledTabOrders(pool.request(), lodgeId, tableId);
+  const orders = await loadUnbilledTabOrders(pool.request(), lodgeId, tab);
 
   if (orders.length === 0) {
     throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
@@ -1382,8 +1422,8 @@ async function previewFoodBill(lodgeId, tableId, { discountAmount = 0, targetTot
   const bill = await buildFoodBill(pool, lodge, orders, applied, foodRate);
 
   return {
-    tableId: tableId ?? null,
-    tableLabel: orders[0].tableLabel || 'Counter / takeaway',
+    tab,
+    tableLabel: orders[0].tableLabel,
     orders,
     foodItems,
     isGstRegistered: !!lodge.is_gst_registered,
@@ -1401,14 +1441,16 @@ async function previewFoodBill(lodgeId, tableId, { discountAmount = 0, targetTot
       foodItems,
       lateCheckoutCharge: 0,
       kind: 'FOOD',
-      tableLabel: orders[0].tableLabel || 'Counter / takeaway',
+      tableLabel: orders[0].tableLabel,
     }),
   };
 }
 
-// Closes a table: sweeps every delivered, unbilled order on it into one
-// document and stamps them so a second close can't bill them again.
-async function issueFoodInvoice(lodgeId, userId, tableId, input) {
+// Closes one tab — a table, a room being served with no stay behind it, or the
+// counter: sweeps every delivered, unbilled order on *that tab* into one
+// document and stamps them so a second close can't bill them again. Scoped to
+// the one tab, so the other two keep their own orders and get their own bills.
+async function issueFoodInvoice(lodgeId, userId, tab, input) {
   const pool = await getPool();
   const lodge = await loadLodgeForBilling(pool, lodgeId);
   const billingSide = lodge.is_gst_registered ? input.billingSide || 'GST' : 'NON_GST';
@@ -1422,10 +1464,17 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
   try {
     // Read inside the transaction: two staff closing the same table at once
     // must not produce two bills for the same food.
-    const orders = await loadUnbilledTabOrders(new sql.Request(transaction), lodgeId, tableId);
+    const orders = await loadUnbilledTabOrders(new sql.Request(transaction), lodgeId, tab);
     if (orders.length === 0) {
       throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
     }
+
+    // Which of the three the tab is, so the document can name it. Derived from
+    // the same segment the orders were selected by, so the bill can never claim
+    // a table it did not sweep.
+    const tabMatch = /^(table|room)-(\d+)$/.exec(String(tab ?? ''));
+    const tabTableId = tabMatch?.[1] === 'table' ? Number(tabMatch[2]) : null;
+    const tabRoomId = tabMatch?.[1] === 'room' ? Number(tabMatch[2]) : null;
 
     const bill = await buildFoodBill(pool, lodge, orders, input.discountAmount ?? 0);
     const { documentType, ...breakdown } = billingSide === 'GST' ? bill.gst : bill.nonGst;
@@ -1458,7 +1507,8 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
 
     const inserted = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
-      .input('tableId', sql.BigInt, tableId ?? null)
+      .input('tableId', sql.BigInt, tabTableId)
+      .input('roomId', sql.BigInt, tabRoomId)
       .input('documentType', sql.NVarChar, documentType)
       .input('billingSide', sql.NVarChar, billingSide)
       .input('invoiceNumber', sql.NVarChar, `${prefix}${number}`)
@@ -1478,7 +1528,7 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.invoices
-          (lodge_id, booking_id, table_id, document_type, billing_side, invoice_number,
+          (lodge_id, booking_id, table_id, room_id, document_type, billing_side, invoice_number,
            room_subtotal, cgst_amount, sgst_amount,
            food_subtotal, food_cgst_amount, food_sgst_amount,
            discount_amount, discount_percent,
@@ -1486,7 +1536,7 @@ async function issueFoodInvoice(lodgeId, userId, tableId, input) {
            balance_payment_method, balance_reference, created_by)
         OUTPUT inserted.id
         VALUES
-          (@lodgeId, NULL, @tableId, @documentType, @billingSide, @invoiceNumber,
+          (@lodgeId, NULL, @tableId, @roomId, @documentType, @billingSide, @invoiceNumber,
            0, 0, 0,
            @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
            @discountAmount, @discountPercent,
@@ -1544,4 +1594,8 @@ module.exports = {
   listOpenFoodTabs,
   previewFoodBill,
   issueFoodInvoice,
+  // Exported for the tab-separation tests: which tab an order belongs to, and
+  // which orders a tab selects, are the two halves of "one payer, one bill".
+  tabIdentity,
+  tabScope,
 };

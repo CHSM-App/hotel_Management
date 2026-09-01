@@ -35,7 +35,10 @@
   /* The extrusion is the edge. A 1px rule on top of it drew the card twice. */
   border: none;
   border-radius: var(--radius-card, 12px);
-  overflow: hidden;
+  /* Deliberately NOT `overflow: hidden`. The clip existed only to round the
+     cover image's top corners, and it also swallowed the action buttons'
+     hover tooltips, which rise out of the card's bottom edge. The cover now
+     rounds its own corners instead — see .room-card__cover. */
   box-shadow: var(--shadow-card);
   transition: box-shadow 200ms ease, transform 200ms ease;
 }
@@ -50,6 +53,10 @@
   height: 118px;
   flex-shrink: 0;
   background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  /* Carries the card's top corners now that the card itself no longer clips.
+     Top only — the cover sits at the top of the card. */
+  border-radius: var(--radius-card, 12px) var(--radius-card, 12px) 0 0;
+  overflow: hidden;
 }
 
 .room-card__cover-btn {
@@ -87,6 +94,25 @@
   top: 8px;
   right: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.room-card__status:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.24);
+}
+
+.room-card__status:active {
+  transform: translateY(0);
+}
+
+.room-card__status:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
 }
 
 .room-card__photo-count {
@@ -243,32 +269,16 @@
   overflow: hidden;
 }
 
+/* The icon buttons are square and fixed-width, so the strip pushes them to the
+   trailing edge rather than stretching them across the card the text buttons
+   used to fill. */
 .room-card__actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   padding: 8px 13px 10px;
   border-top: 1px solid var(--border);
-}
-
-.room-card__edit-btn,
-.room-card__delete-btn {
-  flex: 1 1 auto;
-  min-width: 62px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 6px 8px;
-  color: var(--ink);
-}
-
-.room-card__delete-btn {
-  color: var(--danger);
-  border-color: var(--danger);
 }
 
 .rooms-panel__delete-modal {
