@@ -639,10 +639,16 @@
 
 /* One guest, one line: name / mobile / ID type / ID number / document, with
    the remove button riding along at the end so the row stays scannable down
-   the column of names. Children drop the mobile column. */
+   the column of names. Children drop the mobile column.
+
+   The last two are one cell of 2.2fr rather than two of 1fr and 1.2fr: where
+   the form requires an ID they are bracketed together (see .field-pair, which
+   subdivides that cell in the same ratio), and where it doesn't the pair
+   wrapper is absent and the two fields fall into the cell as a plain pair.
+   Either way they take the width they always took between them. */
 .bookings-panel__party-row {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr 0.9fr 1fr 1.2fr auto;
+  grid-template-columns: 1.1fr 0.9fr 0.9fr 2.2fr auto;
   align-items: end;
   gap: 8px 10px;
   padding: 10px 12px;
@@ -654,6 +660,64 @@
 
 .bookings-panel__party-row--child {
   grid-template-columns: 1.1fr 0.9fr 1fr 1.2fr auto;
+}
+
+/* An ID number and a scanned document answer one requirement between them, so
+   where the form asks for it they are bracketed under a caption saying so —
+   which a required mark on each cannot say, reading instead as two cards
+   wanted. The pair occupies one cell of the row and divides it in the ratio
+   the two columns had, so the fields keep the widths they always had. */
+.bookings-panel__party-row .field-pair {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 10px;
+  align-items: end;
+  /* Room above for the caption, which is out of flow. Taken as padding rather
+     than margin so the cell's own bottom edge stays on the row's baseline and
+     the inputs go on lining up with the unpaired ones beside them. */
+  padding-top: 15px;
+}
+
+/* The bracket itself: a hairline across both fields with the caption sitting
+   in a notch cut out of it. Drawn on the caption's own background rather than
+   as two rules, so it needs no measuring of the words. */
+.bookings-panel__party-row .field-pair::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+/* No caption, no bracket, and no room reserved for either — the pair is only
+   a grid cell then, and the two fields sit level with the rest of the row.
+   After the rules it overrides, since it matches at the same specificity and
+   would otherwise lose to them: the co-guest rows were drawing a bracket over
+   two fields plainly labelled optional. */
+.bookings-panel__party-row .field-pair--bare {
+  padding-top: 0;
+}
+
+.bookings-panel__party-row .field-pair--bare::before {
+  content: none;
+}
+
+.bookings-panel__party-row .field-pair__caption {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  background: var(--surface);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .bookings-panel__party-row .field {
@@ -1396,8 +1460,14 @@
   line-height: 1.3;
 }
 
+/* Enough for two lines of it. The message is out of flow, so this padding is
+   the row's only allowance for it and anything taller hangs off the bottom of
+   the card — which is what a one-line allowance did to the walk-in ID errors,
+   in a column narrow enough to wrap them. Messages here are kept to a few
+   words for the same reason; this is the room for when a narrow viewport
+   wraps a short one anyway. */
 .bookings-panel__party-row:has(.field__error) {
-  padding-bottom: 34px;
+  padding-bottom: 48px;
 }
 
 /* ---------------------------------------------------- booking saved dialog */

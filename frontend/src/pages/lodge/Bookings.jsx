@@ -1836,9 +1836,36 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       failOn(`newAdultPhone-${badPhone}`, MOBILE_MESSAGE);
       return;
     }
-    // ID proof is optional at booking time, walk-in included — a desk with no
-    // scanner and a guest whose card is still in the car can finish the booking
-    // now and have the proof added later from the stay's own screen.
+    // ID proof is optional on a pre-reservation — a desk with no scanner and a
+    // guest whose card is still in the car can hold the room now and have the
+    // proof added at check-in, which is where it is asked for.
+    //
+    // A walk-in has no such later: saving one checks the guest in on the spot,
+    // and check-in is exactly what can't happen without an ID proof on record.
+    // So it is asked for here, against the same rule the server applies — a
+    // type, plus a number or a document to back it, since a type on its own
+    // records that the dropdown was opened and not that a card was seen.
+    //
+    // Skipped when the primary guest was picked from the typeahead with a
+    // document already on file: the server carries that one onto the booking,
+    // which satisfies its own check.
+    const primaryGuest = bookingForm.adults[0];
+    const walkInNeedsId =
+      !editing && bookingForm.bookingType === 'WALK_IN' && !primaryGuest.fromBookingId;
+    //
+    // Said in a few words each, because these sit under one field of a
+    // five-across row: a sentence explaining *why* the walk-in wants an ID
+    // wraps to six lines in a column that narrow and pushes the row apart.
+    // The reason is already on the labels, which carry the mark and read
+    // "required, or document".
+    if (walkInNeedsId && !primaryGuest.idProofType) {
+      failOn('newAdultIdProofType-0', 'Choose an ID type.');
+      return;
+    }
+    if (walkInNeedsId && !primaryGuest.idProofFile && !primaryGuest.idProofNumber.trim()) {
+      failOn('newAdultIdProofNumber-0', 'Enter the ID number, or upload the document.');
+      return;
+    }
     const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
     // A full payment has to be the whole stay — the rows are built to add up to
     // it, so the only way they don't is when the earlier rows of a split pass
@@ -3865,6 +3892,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     // settled — swapping them for someone else is a cancel and
                     // rebook, so no suggestions there.
                     guestLookupToken={editing ? null : token}
+                    // A walk-in is checked in the moment it is saved, and no
+                    // stay can be checked in without an ID proof on record —
+                    // so here these fields are required, and the labels have
+                    // to say so rather than reading "optional" and then
+                    // failing at the server. A pre-reservation defers the
+                    // whole of it to check-in, which asks for it there.
+                    idRequired={!editing && bookingForm.bookingType === 'WALK_IN'}
                     fieldErr={fieldErr}
                   />
                 </div>
@@ -4147,6 +4181,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         <div className="form-section__title">Guest ID proof</div>
                         <p className="bookings-panel__hint">
                           Wasn&apos;t collected when this room was reserved — required before check-in.
+                          Choose a type, then give either the number or the document.
                         </p>
                         <div className="field-row">
                           <div className="field">
@@ -4167,10 +4202,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             </select>
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofNumber">
-                              ID number
-                              <Req label="required, or ID proof document" />
-                            </label>
+                            {/* Unmarked, like its pair below: the check stops
+                                on the two being empty together, not on either
+                                one, and a mark on each reads as both wanted.
+                                The line above says which it is. */}
+                            <label htmlFor="checkInIdProofNumber">ID number</label>
                             <input
                               id="checkInIdProofNumber"
                               value={checkInForm.idProofNumber}
@@ -4180,10 +4216,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             />
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofFile">
-                              ID proof document
-                              <Req label="required, or ID number" />
-                            </label>
+                            <label htmlFor="checkInIdProofFile">ID proof document</label>
                             <input
                               id="checkInIdProofFile"
                               type="file"
@@ -5112,6 +5145,24 @@ const TrashIcon = () => (
   </svg>
 );
 
+// Two fields that answer one requirement between them, under a bracket saying
+// so. Neither can carry a required mark — the check stops on the pair being
+// empty, not on either field — and a caption over both is what a mark cannot
+// say: that one of them is enough.
+//
+// The wrapper is always rendered, caption or not: it is one cell of the row's
+// grid, and dropping it would spill two fields into a grid sized for one and
+// push the remove button off the end. Without a caption it is a plain pair,
+// its bracket suppressed by the modifier class.
+function PairedFields({ caption, children }) {
+  return (
+    <div className={`field-pair${caption ? '' : ' field-pair--bare'}`}>
+      {caption && <span className="field-pair__caption">{caption}</span>}
+      {children}
+    </div>
+  );
+}
+
 function PartyEditor({
   adults,
   children,
@@ -5120,6 +5171,11 @@ function PartyEditor({
   onRemove,
   onUpdate,
   guestLookupToken,
+  // Whether the primary guest's ID proof is being asked for now rather than at
+  // check-in. Only the primary guest's: the co-guest rows are what the desk
+  // types off whichever cards the party hands over, and check-in has never
+  // stopped on those.
+  idRequired = false,
   fieldErr,
 }) {
   // Adding a row and then having to click into it is two actions for one
@@ -5188,6 +5244,11 @@ function PartyEditor({
       <div className="bookings-panel__repeat-list">
         {adults.map((adult, index) => {
           const isPrimary = index === 0;
+          // A guest picked from the typeahead who already has a document on
+          // file carries it onto this booking, so the requirement is met
+          // before the desk touches these fields — marking them then would
+          // ask for a card that is already on record.
+          const needsId = idRequired && isPrimary && !adult.fromBookingId;
           return (
             <div className="bookings-panel__party-row" key={adult.id ?? `new-${index}`}>
               <div className="field">
@@ -5259,7 +5320,8 @@ function PartyEditor({
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
-                  ID type (optional)
+                  {needsId ? 'ID type' : 'ID type (optional)'}
+                  {needsId && <Req />}
                 </label>
                 <select
                   id={`${idPrefix}AdultIdProofType-${index}`}
@@ -5271,30 +5333,44 @@ function PartyEditor({
                 </select>
                 {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
-              <div className="field">
-                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
-                  ID number (optional)
-                </label>
-                <input
-                  id={`${idPrefix}AdultIdProofNumber-${index}`}
-                  value={adult.idProofNumber}
-                  onChange={(e) => onUpdate('adults', index, { idProofNumber: e.target.value })}
-                />
-                {fieldErr(`${idPrefix}AdultIdProofNumber-${index}`)}
-              </div>
-              <div className="field">
-                <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
-                  Document (optional)
-                </label>
-                <input
-                  id={`${idPrefix}AdultIdProofFile-${index}`}
-                  type="file"
-                  accept={ID_PROOF_ACCEPT}
-                  onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
-                />
-                {onFile(adult)}
-                {fieldErr(`${idPrefix}AdultIdProofFile-${index}`)}
-              </div>
+              {/* Neither of these two carries a required mark, and none is
+                  missing. A mark means "the form stops on this field", and the
+                  form stops on neither: it stops when *both* are empty. Two
+                  marks read as two cards being wanted, and one mark would pick
+                  a winner the check doesn't have.
+
+                  So the pair is bracketed instead, under one caption that says
+                  what the check actually asks. Wrapped in a cell of their own
+                  to hang the caption across both — the row is a grid, and a
+                  bracket over two of its columns has nothing else to attach
+                  to. The cell divides its own width the way the row's columns
+                  did, so the fields keep the widths they had. */}
+              <PairedFields caption={needsId ? 'Either one' : null}>
+                <div className="field">
+                  <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
+                    {needsId ? 'ID number' : 'ID number (optional)'}
+                  </label>
+                  <input
+                    id={`${idPrefix}AdultIdProofNumber-${index}`}
+                    value={adult.idProofNumber}
+                    onChange={(e) => onUpdate('adults', index, { idProofNumber: e.target.value })}
+                  />
+                  {fieldErr(`${idPrefix}AdultIdProofNumber-${index}`)}
+                </div>
+                <div className="field">
+                  <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
+                    {needsId ? 'Document' : 'Document (optional)'}
+                  </label>
+                  <input
+                    id={`${idPrefix}AdultIdProofFile-${index}`}
+                    type="file"
+                    accept={ID_PROOF_ACCEPT}
+                    onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
+                  />
+                  {onFile(adult)}
+                  {fieldErr(`${idPrefix}AdultIdProofFile-${index}`)}
+                </div>
+              </PairedFields>
               {/* The primary guest is the booking itself — there's no booking
                   left to remove them from. */}
               {isPrimary ? (
@@ -5421,6 +5497,15 @@ function PartyEditor({
         + Add child
       </button>
       <p className="bookings-panel__hint">
+        {/* The bracket over the two fields says one of them is enough; this
+            says which stay is asking and what else it wants alongside — the
+            ID type, which does carry a mark of its own. */}
+        {idRequired && (
+          <>
+            <strong>A walk-in is checked in as it saves, so the primary guest needs an ID type, plus
+            either the number or the document.</strong>{' '}
+          </>
+        )}
         Either an ID number or a document identifies a guest — one is enough, both is better.
         Documents accept an image (JPG/PNG/WEBP) or PDF, up to 5MB. An uploaded document replaces what
         is on file; removing the guest is what takes one off a booking.

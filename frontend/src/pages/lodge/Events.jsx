@@ -485,8 +485,27 @@ function EventList({ venues, onOpen, refreshKey }) {
             </option>
           ))}
         </select>
-        <input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} aria-label="From" />
-        <input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} aria-label="To" />
+        <input
+          type="date"
+          value={range.from}
+          max={range.to ? addDays(range.to, -1) : undefined}
+          onChange={(e) =>
+            setRange((r) => {
+              const from = e.target.value;
+              // 'to' has to stay strictly after 'from', so a 'from' pushed onto or
+              // past it drags it along rather than leaving an empty range behind.
+              return { from, to: from && r.to && r.to <= from ? addDays(from, 1) : r.to };
+            })
+          }
+          aria-label="From"
+        />
+        <input
+          type="date"
+          value={range.to}
+          min={range.from ? addDays(range.from, 1) : undefined}
+          onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+          aria-label="To"
+        />
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}

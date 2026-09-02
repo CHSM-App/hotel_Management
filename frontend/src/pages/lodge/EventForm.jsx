@@ -9,6 +9,7 @@ import {
   EVENT_TYPE_LABEL,
   SLOT_HOURS,
   SLOT_LABEL,
+  addDays,
   formatEventWhen,
   localToIso,
   toDateKey,
@@ -289,6 +290,22 @@ export default function EventForm({
     return () => clearTimeout(t);
   }, [form.venueId, startAt, endAt, event?.id, token]);
 
+  // The head count the venue actually has to seat, worked out here rather than
+  // read off the quote: the quote is debounced and comes back from the server,
+  // so a form driven by it would let the desk type 500 into a 200-seat hall and
+  // see nothing for half a second. Same rule the server prices on — the larger
+  // of the expected count and the catering guarantee, and the final figure once
+  // there is one.
+  const seatedPax = useMemo(() => {
+    const counted = event?.finalPax != null ? Number(event.finalPax) : Number(form.expectedPax) || 0;
+    const guaranteed = catering ? Number(form.guaranteedPax) || 0 : 0;
+    return Math.max(counted, guaranteed);
+  }, [event?.finalPax, form.expectedPax, form.guaranteedPax, catering]);
+
+  // A venue with no capacity recorded holds whatever the desk says it holds:
+  // an unknown limit is not a limit, and inventing one would block real work.
+  const overCapacity = venue?.capacityPax != null && seatedPax > venue.capacityPax ? { venue, pax: seatedPax } : null;
+
   const addonPayload = useMemo(
     () =>
       lines
@@ -370,6 +387,14 @@ export default function EventForm({
     if (!form.organiserName.trim()) return ['organiserName', 'Who is organising it?'];
     if (!/^\d{10}$/.test(form.organiserPhone.trim())) return ['organiserPhone', 'Enter a 10-digit mobile number.'];
     if (form.expectedPax === '' || Number(form.expectedPax) <= 0) return ['expectedPax', 'How many guests are expected?'];
+    // Over the venue's seating is a real refusal, not a note on the quote: the
+    // count goes back to the field that owns it. Which field that is depends on
+    // which one pushed the party over, so the desk lands on the number they
+    // would have to change.
+    if (overCapacity) {
+      const field = catering && Number(form.guaranteedPax) > Number(form.expectedPax) ? 'guaranteedPax' : 'expectedPax';
+      return [field, `${venue.name} seats ${venue.capacityPax}. Lower the count, or pick a venue that holds ${seatedPax}.`];
+    }
     if (catering && !(Number(form.perPlateRate) > 0)) return ['perPlateRate', 'Enter the per-plate rate.'];
     if (roomsRequired) {
       if (!(Number(form.roomsCount) >= 1)) return ['roomsCount', 'How many rooms are needed?'];
@@ -611,9 +636,12 @@ export default function EventForm({
             </Field>
             <Field label="Ends" name="endDate" error={errFor('endDate') || errFor('endAt')} required>
               <div className="field-row">
+                {/* Same day is a normal function — the times tell morning from evening —
+                    so the floor is the start date itself, not the day after it. */}
                 <input
                   id="ev-endDate"
                   type="date"
+                  min={form.startDate || undefined}
                   value={form.endDate}
                   onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value, slot: 'CUSTOM' }))}
                 />
@@ -667,13 +695,37 @@ export default function EventForm({
         <div className="form-section">
           <div className="form-section__title">Guests &amp; pricing</div>
           <div className="field-row">
-            <Field label="Expected guests" name="expectedPax" error={errFor('expectedPax')} required>
-              <input id="ev-expectedPax" type="number" min="1" value={form.expectedPax} onChange={(e) => update('expectedPax', e.target.value)} />
+            <Field
+              label="Expected guests"
+              name="expectedPax"
+              error={errFor('expectedPax')}
+              hint={venue?.capacityPax ? `${venue.name} seats ${venue.capacityPax}.` : undefined}
+              required
+            >
+              <input
+                id="ev-expectedPax"
+                type="number"
+                min="1"
+                max={venue?.capacityPax ?? undefined}
+                aria-invalid={overCapacity ? 'true' : undefined}
+                value={form.expectedPax}
+                onChange={(e) => update('expectedPax', e.target.value)}
+              />
             </Field>
             <Field label="Venue hire charge" name="venueCharge" error={errFor('venueCharge')}>
               <input id="ev-venueCharge" type="number" min="0" value={form.venueCharge} onChange={(e) => update('venueCharge', e.target.value)} />
             </Field>
           </div>
+
+          {/* Said as the count is typed, not after the quote comes back, and in
+              the same voice as the venue-taken banner above: the desk is over a
+              limit and the way out is a smaller party or a bigger hall. */}
+          {overCapacity && (
+            <div className="events-avail events-avail--clash" role="alert">
+              {venue.name} seats {venue.capacityPax}. This party is {seatedPax} — {seatedPax - venue.capacityPax} over what the venue holds.
+              Lower the count or pick a larger venue.
+            </div>
+          )}
 
           {(canCater || canRooms) && (
             <div className="events-needs">
@@ -707,6 +759,8 @@ export default function EventForm({
                   id="ev-guaranteedPax"
                   type="number"
                   min="0"
+                  max={venue?.capacityPax ?? undefined}
+                  aria-invalid={overCapacity ? 'true' : undefined}
                   value={form.guaranteedPax}
                   placeholder={form.expectedPax || ''}
                   onChange={(e) => update('guaranteedPax', e.target.value)}
@@ -722,10 +776,21 @@ export default function EventForm({
                   <input id="ev-roomsCount" type="number" min="1" value={form.roomsCount} onChange={(e) => update('roomsCount', e.target.value)} />
                 </Field>
                 <Field label="From (night of)" name="roomsFrom" error={errFor('roomsFrom')} required>
-                  <input id="ev-roomsFrom" type="date" value={form.roomsFrom} onChange={(e) => update('roomsFrom', e.target.value)} />
+                  <input
+                    id="ev-roomsFrom"
+                    type="date"
+                    value={form.roomsFrom}
+                    onChange={(e) =>
+                      setForm((f) => {
+                        const roomsFrom = e.target.value;
+                        return { ...f, roomsFrom, roomsTo: roomsFrom && f.roomsTo && f.roomsTo <= roomsFrom ? addDays(roomsFrom, 1) : f.roomsTo };
+                      })
+                    }
+                  />
                 </Field>
                 <Field label="Until (morning of)" name="roomsTo" error={errFor('roomsTo')} required>
-                  <input id="ev-roomsTo" type="date" min={form.roomsFrom || undefined} value={form.roomsTo} onChange={(e) => update('roomsTo', e.target.value)} />
+                  {/* At least one night: the morning they leave is never the night they arrive. */}
+                  <input id="ev-roomsTo" type="date" min={form.roomsFrom ? addDays(form.roomsFrom, 1) : undefined} value={form.roomsTo} onChange={(e) => update('roomsTo', e.target.value)} />
                 </Field>
               </div>
               <Field label="Room notes" name="roomsNotes" hint="A need noted for the desk — the rooms are booked from the tape chart.">
@@ -843,7 +908,6 @@ export default function EventForm({
                   </div>
                 </>
               )}
-              {quote.overCapacity && <div className="events-quote__warn">{quote.overCapacity}</div>}
             </div>
           )}
         </div>

@@ -370,9 +370,22 @@ async function quote(lodgeId, input, { pool = null, request = null } = {}) {
   });
   const overCapacity =
     venue.capacityPax != null && pricing.billablePax > venue.capacityPax
-      ? `${venue.name} seats ${venue.capacityPax}; this party is ${pricing.billablePax}.`
+      ? `${venue.name} seats ${venue.capacityPax}; this party is ${pricing.billablePax}. Lower the count or pick a larger venue.`
       : null;
   return { venue, addons, pricing, overCapacity, capabilities };
+}
+
+// A party the venue cannot seat is refused, not filed with a note on it.
+// /events/quote still returns overCapacity as a message so the form can say so
+// while the desk is typing; this is the same rule at the point it is saved, so
+// a request that never went near the form cannot get past it either.
+//
+// Exactly at capacity is fine — a 300-seat hall seats 300. Only above it is
+// over. And a venue with no capacity recorded holds whatever it is told to:
+// quote() leaves overCapacity null there, and an unknown limit must not become
+// a limit of zero.
+function assertWithinCapacity(overCapacity) {
+  if (overCapacity) throw new ApiError(overCapacity, 409);
 }
 
 // ---------------------------------------------------------------------------
@@ -647,7 +660,8 @@ function bindPricing(request, pricing, input) {
 // one thing this feature must never allow.
 async function createEventBooking(lodgeId, userId, input) {
   const pool = await getPool();
-  const { addons, pricing, capabilities } = await quote(lodgeId, input, { pool });
+  const { addons, pricing, capabilities, overCapacity } = await quote(lodgeId, input, { pool });
+  assertWithinCapacity(overCapacity);
   const blocks = BLOCKING.includes(input.status);
 
   if (blocks) {
@@ -761,7 +775,8 @@ async function updateEventBooking(lodgeId, id, input) {
     throw new ApiError('The function must end after it starts.', 400);
   }
 
-  const { addons, pricing, capabilities } = await quote(lodgeId, merged, { pool });
+  const { addons, pricing, capabilities, overCapacity } = await quote(lodgeId, merged, { pool });
+  assertWithinCapacity(overCapacity);
   // The rooms need travels as a set: sent, it replaces; absent, it stays.
   const roomsGiven = input.roomsRequired !== undefined;
   const moved =
