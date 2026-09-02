@@ -1470,6 +1470,21 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const numGuests = bookingForm.adults.length + bookingForm.children.length;
   const overOccupancy = Boolean(selectedRoom?.maxOccupancy && numGuests > selectedRoom.maxOccupancy);
 
+  // Whether each numbered section has what it needs. The numbers were already
+  // there, but a marker that looks the same full or empty only says where you
+  // are in the list — not what is left to do. A desk taking a booking over the
+  // phone reads these to know whether it can hang up.
+  //
+  // "Done" is deliberately each section's own minimum, not the form's: 3 and 4
+  // are genuinely optional, so they tick as soon as they hold anything and
+  // never nag when left alone.
+  const stepDone = {
+    1: Boolean(bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.roomId),
+    2: Boolean(bookingForm.adults[0]?.name?.trim()) && !overOccupancy,
+    3: bookingForm.collectFull || String(bookingForm.advanceAmount ?? '').trim() !== '',
+    4: bookingForm.vehicles.length > 0,
+  };
+
   const toggleCharge = (chargeId) => {
     setChargeTotals((t) => {
       const next = { ...t };
@@ -2312,9 +2327,16 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const showTileHover = (event, tile) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const HALF_WIDTH = 116;
-    // Tiles in the first category sit close to the top of the window; theirs
-    // hangs below so it isn't cut off by the top edge.
-    const below = rect.top < 150;
+    // The card is roughly this tall at its longest — a stay with a name, a
+    // category, a date range and a hint line. Flipping is decided against the
+    // real height rather than a round number: the threshold used to be a flat
+    // 150px, which is shorter than the card itself, so a tile in the first
+    // category cleared the test, opened upward, and covered the toolbar and
+    // the category heading above it instead of being cut off by the window.
+    const CARD_H = 132;
+    // Room above the tile for the card plus its 8px offset? Then it hangs up
+    // there. Otherwise it drops below, where the chart scrolls away under it.
+    const below = rect.top < CARD_H + 16;
     setHoverTile({
       ...tile,
       below,
@@ -3161,7 +3183,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
 
                 <div className="form-section">
                   <div className="form-section__title">
-                    <span className="form-section__num">1</span>Stay &amp; room
+                    <StepNum n={1} done={stepDone[1]} />Stay &amp; room
                   </div>
                   <div className="field-row">
                   <div className="field">
@@ -3388,6 +3410,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     this figure. */}
                 {quote && (
                   <div className="sim-result">
+                    {/* Said once, in words, above the boxes. The pencil inside
+                        each box marks which figures are editable; this is what
+                        tells a new receptionist that any of them are, without
+                        waiting for a hover that never happens on a touchscreen. */}
+                    <p className="sim-result__hint">
+                      Amounts in boxes can be changed — tap to edit
+                    </p>
                     {quote.charges.map((charge, i) => (
                       <div className="sim-result__line" key={i}>
                         <span>
@@ -3404,28 +3433,16 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             A season uplift stays fixed — it is a percentage of
                             the rate above it, so it follows on its own. */}
                         {charge.isBase ? (
-                          <input
-                            className="sim-result__amount-input"
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputMode="decimal"
-                            aria-label={`Total for ${charge.label}`}
-                            onFocus={(e) => e.target.select()}
+                          <EditableAmount
+                            label={charge.label}
                             value={baseTotal ?? String(charge.amount)}
-                            onChange={(e) => setRoomTotal(e.target.value)}
+                            onChange={setRoomTotal}
                           />
                         ) : charge.chargeId ? (
-                          <input
-                            className="sim-result__amount-input"
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputMode="decimal"
-                            aria-label={`Total for ${charge.label}`}
-                            onFocus={(e) => e.target.select()}
+                          <EditableAmount
+                            label={charge.label}
                             value={chargeTotals[charge.chargeId] ?? String(charge.amount)}
-                            onChange={(e) => setChargeTotal(charge, e.target.value)}
+                            onChange={(v) => setChargeTotal(charge, v)}
                           />
                         ) : (
                           <span>{formatPrice(charge.amount)}</span>
@@ -3444,7 +3461,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
 
                 <div className="form-section">
                   <div className="form-section__title">
-                    <span className="form-section__num">2</span>Guest details
+                    <StepNum n={2} done={stepDone[2]} />Guest details
                   </div>
 
                   {/* The party count is whatever reception typed in, not a
@@ -3486,7 +3503,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               <div className="booking-form__optional">
               <details className="form-section form-section--collapsible" open>
                 <summary>
-                  <span className="form-section__num">3</span>
+                  <StepNum n={3} done={stepDone[3]} />
                   {bookingForm.collectFull ? 'Payment' : 'Advance payment'}
                   {bookingForm.collectFull ? (
                     <span className="form-section__badge form-section__badge--full">
@@ -3553,7 +3570,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
 
               <details className="form-section form-section--collapsible" open>
                 <summary>
-                  <span className="form-section__num">4</span>
+                  <StepNum n={4} done={stepDone[4]} />
                   Vehicles
                   {bookingForm.vehicles.length > 0 && (
                     <span className="form-section__badge">{bookingForm.vehicles.length}</span>
@@ -3586,8 +3603,15 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                 <div className="booking-form__total">
                   {quote ? (
                     <>
+                      {/* What the figure is for, not just how many nights it
+                          covers. The room and the party are the two things the
+                          desk reads back down a phone line, and scrolling up to
+                          find them while quoting a price is the moment a
+                          booking gets taken wrong. */}
                       <span className="booking-form__total-label">
                         {quote.nights.length} night{quote.nights.length === 1 ? '' : 's'}
+                        {selectedRoom ? ` · Room ${selectedRoom.roomNumber}` : ''}
+                        {` · ${numGuests} guest${numGuests === 1 ? '' : 's'}`}
                       </span>
                       <span className="booking-form__total-value">{formatPrice(quote.totalPrice)}</span>
                     </>
@@ -4218,6 +4242,103 @@ const BAND_LABEL = {
 //
 // Only ever offered for the primary guest of a *new* booking. Changing who an
 // existing stay belongs to is a cancel and rebook, not a lookup.
+// The marker on a numbered section. It was a plain circled digit, which says
+// where a section sits in the order but not whether it still wants anything —
+// four identical badges down a form are a table of contents, not progress. A
+// filled section swaps its digit for a tick, so the desk can see what is left
+// by scrolling rather than by re-reading every field.
+//
+// The digit stays the label for anything not looking at it: the tick is
+// decoration, and "step 2, complete" is what the section actually is.
+function StepNum({ n, done }) {
+  return (
+    <span
+      className={`form-section__num${done ? ' form-section__num--done' : ''}`}
+      aria-label={done ? `Step ${n}, complete` : `Step ${n}`}
+    >
+      {done ? (
+        <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" focusable="false">
+          <path
+            d="M5 13l4.5 4.5L19 7"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : (
+        <span aria-hidden="true">{n}</span>
+      )}
+    </span>
+  );
+}
+
+// One editable figure on the price breakdown. Reception negotiates a total
+// ("call it 350") far more often than a per-night rate, so these have always
+// been typeable — but they sat in a column of read-only figures styled to
+// match them, and a box that looks like the number beside it reads as a
+// number, not as a field. Nobody at a desk clicks a total to find out.
+//
+// The pencil is what says otherwise, and it is a real button rather than a
+// drawn-on mark: anything that looks pressable and isn't teaches the desk that
+// the picture lies, which costs more than the hint was worth. Pressing it does
+// what pressing it looks like it should — puts the cursor in the figure with
+// the old value selected, so the new one types straight over it.
+function EditableAmount({ label, value, onChange }) {
+  const inputRef = useRef(null);
+
+  const startEditing = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  };
+
+  return (
+    <span className="amount-edit">
+      <input
+        ref={inputRef}
+        className="sim-result__amount-input"
+        type="number"
+        min="0"
+        step="1"
+        inputMode="decimal"
+        aria-label={`Total for ${label} — editable`}
+        onFocus={(e) => e.target.select()}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {/* Inside the well at its trailing edge, after the figure in the markup
+          as well as on the screen — the money is what the row is about and it
+          keeps the reading position; the mark is what stepped aside for it.
+
+          tabIndex -1 keeps it out of the tab order: it focuses the very input
+          beside it, so leaving it in would mean tabbing through the form
+          stopped twice on every rate for no gain. */}
+      <button
+        type="button"
+        className="amount-edit__pencil"
+        onClick={startEditing}
+        tabIndex={-1}
+        aria-hidden="true"
+        title={`Change the total for ${label}`}
+      >
+        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">
+          <path
+            d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </span>
+  );
+}
+
 function GuestNameField({ id, value, token, onChange, onPick }) {
   const [matches, setMatches] = useState([]);
   const [open, setOpen] = useState(false);

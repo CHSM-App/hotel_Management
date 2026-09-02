@@ -120,11 +120,12 @@
 .inline-add-form__row input,
 .inline-add-form__row select {
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 42px;
+  box-shadow: var(--shadow-well);
 }
 
 /* Save and Cancel share one grid cell, so the row keeps the same number of

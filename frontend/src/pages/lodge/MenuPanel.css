@@ -58,14 +58,15 @@
 
 .menu-search input {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   padding: 10px 12px 10px 34px;
   font-size: 14px;
   font-family: inherit;
   color: var(--ink);
   min-height: 42px;
+  box-shadow: var(--shadow-well);
 }
 
 .menu-search input::placeholder {
@@ -75,7 +76,7 @@
 .menu-search input:focus-visible {
   outline: none;
   border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.12);
 }
 
 .menu-stats {
@@ -893,11 +894,12 @@
 .menu-portions__row .menu-money input {
   width: 100%;
   padding: 10px 12px 10px 28px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 42px;
+  box-shadow: var(--shadow-well);
 }
 
 /* On the menu row, sizes stack over each other instead of running along one

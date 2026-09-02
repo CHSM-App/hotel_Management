@@ -201,7 +201,7 @@
 .reg-shell .field select:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.13);
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
 }
 
 .reg-shell .field:last-child,
@@ -268,7 +268,7 @@
 
 .reg-type:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.18);
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.18);
 }
 
 .reg-type__check {
@@ -572,23 +572,23 @@
   font-weight: 600;
   font-size: 15px;
   cursor: pointer;
-  /* Same construction as .btn-cta: the down-right shadow tinted to the fill,
-     the up-left highlight left white against the page. The flat drop it
-     replaces was the last material-style shadow on this form. */
-  box-shadow: 5px 5px 12px rgba(122, 31, 31, 0.3), -5px -5px 12px var(--neu-light);
+  /* Same construction as .btn-cta: a downward cast tinted to the button's own
+     fill. It was carrying a red shadow under a gold gradient — a leftover from
+     the palette before this one — which read as a shadow borrowed from another
+     control. Amber now, so the lift belongs to the button. */
+  box-shadow: 0 2px 6px rgba(150, 112, 6, 0.28), 0 10px 22px -8px rgba(150, 112, 6, 0.48);
   transition: filter 150ms ease, box-shadow 200ms ease;
 }
 
 .reg-cta:hover:not(:disabled) {
   filter: brightness(1.07);
-  box-shadow: 7px 7px 16px rgba(122, 31, 31, 0.34), -7px -7px 16px var(--neu-light);
+  box-shadow: 0 4px 10px rgba(150, 112, 6, 0.32), 0 16px 30px -8px rgba(150, 112, 6, 0.52);
 }
 
 /* Pressed rather than nudged down — the inset does what translateY used to. */
 .reg-cta:active:not(:disabled) {
   filter: brightness(0.98);
-  box-shadow: inset 3px 3px 7px rgba(60, 12, 12, 0.45),
-    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 2px 6px rgba(92, 68, 4, 0.45);
 }
 
 .reg-cta:disabled {

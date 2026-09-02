@@ -1,10 +1,9 @@
 import { clearSession, getSession } from './auth';
 
-// In production the backend serves this SPA, so VITE_API_URL is set to '' (empty)
-// and requests go same-origin (/auth, /rooms, …). Only fall back to the local dev
-// server when the var is entirely unset — an explicit '' must stay empty.
-// export const API_BASE = 'https://hotel.vengurlatech.com';
-export const API_BASE = 'https://hotel.vengurlatech.com';
+// Local development: points at the backend on port 8000 (PORT in backend/.env).
+// Swap to the production line below before building for deploy.
+ export const API_BASE = 'https://hotel.vengurlatech.com';
+//export const API_BASE = 'http://localhost:8000';
 
 
 // `field`, when the server sent one, names the form input the message is about,
