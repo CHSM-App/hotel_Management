@@ -274,6 +274,20 @@ export default function InventoryPanel() {
     return <p className="inv-panel__hint">Loading the store cupboard…</p>;
   }
 
+  // Where the adjustment dialog's footer figure comes from: what the shelf
+  // reads once this is recorded. Display only — handleAdjust still sends the
+  // typed number and the mode, and the server does the arithmetic it always
+  // did. Null until a usable number is typed, so the footer shows a dash
+  // rather than NaN.
+  const adjustedTotal = (() => {
+    if (!adjusting) return null;
+    const raw = String(adjustForm.quantity).trim();
+    if (raw === '') return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return adjustForm.mode === 'ADD' ? adjusting.quantity + n : n;
+  })();
+
   return (
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -458,26 +472,37 @@ export default function InventoryPanel() {
       {showForm && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowForm(false)}>
           <div
-            className="glass-panel inv-panel__modal"
+            className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="materialModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="inv-modal__head">
-              <h3 id="materialModalTitle">{editingId ? 'Edit material' : 'New raw material'}</h3>
-              <button
-                type="button"
-                className="inv-modal__close"
-                onClick={() => setShowForm(false)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
+            <form className="modal-form" onSubmit={handleSubmit} noValidate>
+              {/* Header and footer stay put while only the fields scroll, so
+                  the title and Save are always on screen. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="materialModalTitle">{editingId ? 'Edit material' : 'New raw material'}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {editingId
+                    ? 'What this material is called and when to warn about it. The unit it is counted in is fixed.'
+                    : 'Something the kitchen buys and counts — rice, oil, gas. Recipes draw down against it.'}
+                </p>
+              </div>
 
-            <form className="inv-modal__body" onSubmit={handleSubmit} noValidate>
+              <div className="modal-form__body">
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               <div className="field">
@@ -578,19 +603,30 @@ export default function InventoryPanel() {
                   <span className="field__error">{fieldErrors.lowStockThreshold}</span>
                 )}
               </div>
+              </div>
 
-              <div className="inv-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowForm(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {form.name.trim() || 'New material'}
+                  </span>
+                  <span className="modal-form__summary-value modal-form__summary-value--text">
+                    Counted in {UNITS.find((u) => u.key === form.unit)?.name || '—'}
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -600,31 +636,34 @@ export default function InventoryPanel() {
       {adjusting && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setAdjusting(null)}>
           <div
-            className="glass-panel inv-panel__modal"
+            className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="adjustModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="inv-modal__head">
-              <div>
-                <h3 id="adjustModalTitle">{adjusting.name}</h3>
-                <p className="inv-modal__sub">
-                  {formatQty(adjusting.quantity)} {UNIT_LABEL[adjusting.unit]} on the books
+            <form className="modal-form" onSubmit={handleAdjust} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="adjustModalTitle">{adjusting.name}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setAdjusting(null)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {formatQty(adjusting.quantity)} {UNIT_LABEL[adjusting.unit]} on the books. Record what
+                  came in, or correct the figure to a shelf count.
                 </p>
               </div>
-              <button
-                type="button"
-                className="inv-modal__close"
-                onClick={() => setAdjusting(null)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
 
-            <form className="inv-modal__body" onSubmit={handleAdjust} noValidate>
+              <div className="modal-form__body">
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               <div className="inv-mode">
@@ -681,19 +720,34 @@ export default function InventoryPanel() {
                   maxLength={200}
                 />
               </div>
+              </div>
 
-              <div className="inv-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setAdjusting(null)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Record'}
-                </button>
+              {/* Where this leaves the shelf. The whole point of the dialog is
+                  changing that figure, so it is the figure that stays on
+                  screen while the number is typed. */}
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {adjustForm.mode === 'ADD' ? 'Stock after this' : 'Corrected to'}
+                  </span>
+                  <span className="modal-form__summary-value">
+                    {adjustedTotal == null ? '—' : formatQty(adjustedTotal)}
+                    <span className="modal-form__summary-unit"> {UNIT_LABEL[adjusting.unit]}</span>
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setAdjusting(null)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Record'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

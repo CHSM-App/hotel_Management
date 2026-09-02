@@ -3,18 +3,30 @@
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
   display: flex;
-  align-items: flex-start;
+  /* Centred rather than top-aligned, and the backdrop no longer scrolls — the
+     dialog is a fixed height now and does its own scrolling inside. */
+  align-items: center;
   justify-content: center;
   padding: 32px 16px;
-  overflow-y: auto;
   z-index: 50;
 }
 
+/* Head and footer pinned against the panel edges with only the middle
+   scrolling — the same shape the lodge-side dialogs use (.modal-form in
+   pages/lodge/forms.css), drawn in this screen's own colours since the admin
+   pages are on a separate palette. Four sections of fields used to push Save
+   past the bottom of the window, which is how a half-edited property gets
+   abandoned. */
 .lodge-edit {
   background: #fff;
   border-radius: 14px;
   width: min(760px, 100%);
-  padding: 24px 28px 20px;
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
 }
 
@@ -22,7 +34,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  flex-shrink: 0;
+  padding: 18px 28px 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* The only part that scrolls. */
+.lodge-edit__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 28px 18px;
+  scrollbar-gutter: stable;
 }
 
 .lodge-edit__head h2 {
@@ -42,6 +65,12 @@
 .lodge-edit__section {
   padding: 14px 0;
   border-top: 1px solid #e2e8f0;
+}
+
+/* The header already draws a rule above it — a second one right under it reads
+   as a rendering fault. */
+.lodge-edit__body > .lodge-edit__section:first-child {
+  border-top: none;
 }
 
 .lodge-edit__section h3 {
@@ -108,9 +137,12 @@
 .lodge-edit__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
-  padding-top: 14px;
+  flex-shrink: 0;
+  padding: 12px 28px;
   border-top: 1px solid #e2e8f0;
+  background: #fff;
 }
 
 .lodge-edit .form-banner {

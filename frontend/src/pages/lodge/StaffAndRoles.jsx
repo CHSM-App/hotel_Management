@@ -573,9 +573,33 @@ export default function StaffAndRoles() {
       {/* Staff create / edit */}
       {staffModal && (
         <div className="glass-backdrop staff-roles__backdrop" onClick={closeStaffModal}>
-          <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{staffModal.mode === 'create' ? 'Add staff' : 'Edit staff'}</h3>
-            <form onSubmit={handleSaveStaff} noValidate>
+          <div
+            className="glass-panel staff-roles__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSaveStaff} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{staffModal.mode === 'create' ? 'Add staff' : 'Edit staff'}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={closeStaffModal}
+                    disabled={staffBusy}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {staffModal.mode === 'create'
+                    ? 'They sign in with their phone number and the temporary password you set here.'
+                    : 'Their details and what they can reach. Changing the role changes it immediately.'}
+                </p>
+              </div>
+
+              <div className="modal-form__body">
               {staffError && <div className="form-banner form-banner--error">{staffError}</div>}
               <div className="field-row">
                 <div className="field">
@@ -663,14 +687,30 @@ export default function StaffAndRoles() {
                   </p>
                 </div>
               )}
+              </div>
 
-              <div className="staff-roles__actions">
-                <button type="button" className="btn-secondary" onClick={closeStaffModal} disabled={staffBusy}>
-                  Cancel
-                </button>
-                <button className="btn-accent" type="submit" disabled={staffBusy}>
-                  {staffBusy ? 'Saving…' : 'Save'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {staffForm.name.trim() || 'New staff member'}
+                  </span>
+                  <span className="modal-form__summary-value modal-form__summary-value--text">
+                    {roles.find((r) => r.roleKey === staffForm.roleKey)?.name || 'No role yet'}
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeStaffModal}
+                    disabled={staffBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button className="btn-accent" type="submit" disabled={staffBusy}>
+                    {staffBusy ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -680,21 +720,62 @@ export default function StaffAndRoles() {
       {/* Reset password */}
       {pwUser && (
         <div className="glass-backdrop staff-roles__backdrop" onClick={() => !pwBusy && setPwUser(null)}>
-          <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Reset password</h3>
+          <div
+            className="glass-panel staff-roles__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
             {pwDone ? (
-              <>
-                <div className="form-banner form-banner--info">
-                  Done. {pwUser.name} can sign in with this password and will be asked to change it.
+              <div className="modal-form">
+                <div className="modal-form__head">
+                  <div className="modal-form__head-row">
+                    <h3>Reset password</h3>
+                    <button
+                      type="button"
+                      className="modal-form__close"
+                      onClick={() => setPwUser(null)}
+                      aria-label="Close"
+                      title="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
-                <div className="staff-roles__actions">
-                  <button type="button" className="btn-accent" onClick={() => setPwUser(null)}>
-                    Close
-                  </button>
+                <div className="modal-form__body">
+                  <div className="form-banner form-banner--info">
+                    Done. {pwUser.name} can sign in with this password and will be asked to change it.
+                  </div>
                 </div>
-              </>
+                <div className="modal-form__foot">
+                  <div className="modal-form__foot-actions">
+                    <button type="button" className="btn-accent" onClick={() => setPwUser(null)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <form onSubmit={handleResetPassword} noValidate>
+              <form className="modal-form" onSubmit={handleResetPassword} noValidate>
+                <div className="modal-form__head">
+                  <div className="modal-form__head-row">
+                    <h3>Reset password</h3>
+                    <button
+                      type="button"
+                      className="modal-form__close"
+                      onClick={() => setPwUser(null)}
+                      disabled={pwBusy}
+                      aria-label="Close"
+                      title="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <p className="modal-form__sub">
+                    Sets a password for {pwUser.name} to sign in with once. They are asked to choose
+                    their own straight after.
+                  </p>
+                </div>
+
+                <div className="modal-form__body">
                 {pwError && <div className="form-banner form-banner--error">{pwError}</div>}
                 <div className="field">
                   <label htmlFor="pwValue">
@@ -710,13 +791,22 @@ export default function StaffAndRoles() {
                     autoFocus
                   />
                 </div>
-                <div className="staff-roles__actions">
-                  <button type="button" className="btn-secondary" onClick={() => setPwUser(null)} disabled={pwBusy}>
-                    Cancel
-                  </button>
-                  <button className="btn-accent" type="submit" disabled={pwBusy}>
-                    {pwBusy ? 'Saving…' : 'Reset password'}
-                  </button>
+                </div>
+
+                <div className="modal-form__foot">
+                  <div className="modal-form__foot-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setPwUser(null)}
+                      disabled={pwBusy}
+                    >
+                      Cancel
+                    </button>
+                    <button className="btn-accent" type="submit" disabled={pwBusy}>
+                      {pwBusy ? 'Saving…' : 'Reset password'}
+                    </button>
+                  </div>
                 </div>
               </form>
             )}
@@ -727,9 +817,34 @@ export default function StaffAndRoles() {
       {/* Role create / edit */}
       {roleModal && (
         <div className="glass-backdrop staff-roles__backdrop" onClick={closeRoleModal}>
-          <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{roleModal.mode === 'create' ? 'Add role' : `Edit ${roleModal.role.name}`}</h3>
-            <form onSubmit={handleSaveRole} noValidate>
+          <div
+            className="glass-panel staff-roles__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSaveRole} noValidate>
+              {/* The access list is the tall part, so the title and Save are
+                  pinned and only the checkboxes scroll. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{roleModal.mode === 'create' ? 'Add role' : `Edit ${roleModal.role.name}`}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={closeRoleModal}
+                    disabled={roleBusy}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  A job title and what it can reach. Staff are given a role rather than individual
+                  permissions, so changing it here changes it for everyone who holds it.
+                </p>
+              </div>
+
+              <div className="modal-form__body">
               {roleError && (
                 <div id="roleFormError" className="form-banner form-banner--error" role="alert">
                   {roleError}
@@ -810,14 +925,31 @@ export default function StaffAndRoles() {
                   ))}
                 </div>
               </div>
+              </div>
 
-              <div className="staff-roles__actions">
-                <button type="button" className="btn-secondary" onClick={closeRoleModal} disabled={roleBusy}>
-                  Cancel
-                </button>
-                <button className="btn-accent" type="submit" disabled={roleBusy}>
-                  {roleBusy ? 'Saving…' : 'Save access'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {roleForm.name.trim() || 'New role'} · access
+                  </span>
+                  <span className="modal-form__summary-value">
+                    {roleForm.permissions.length}
+                    <span className="modal-form__summary-unit"> of {catalog.length}</span>
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeRoleModal}
+                    disabled={roleBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button className="btn-accent" type="submit" disabled={roleBusy}>
+                    {roleBusy ? 'Saving…' : 'Save access'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

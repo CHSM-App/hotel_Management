@@ -148,6 +148,10 @@ export default function RecipesPanel() {
 
   const rows = rowsByScope[scope] || [];
 
+  // The footer's count: rows that actually name a material. A blank row waiting
+  // to be filled in is not an ingredient yet. Display only.
+  const filledRowCount = rows.filter((r) => r.materialId).length;
+
   const setRows = (updater) =>
     setRowsByScope((all) => ({ ...all, [scope]: typeof updater === 'function' ? updater(all[scope] || []) : updater }));
 
@@ -354,29 +358,33 @@ export default function RecipesPanel() {
       {editing && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setEditing(null)}>
           <div
-            className="glass-panel inv-panel__modal inv-panel__modal--wide"
+            className="glass-panel inv-panel__modal inv-panel__modal--wide modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="recipeModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="inv-modal__head">
-              <div>
-                <h3 id="recipeModalTitle">{editing.name}</h3>
-                <p className="inv-modal__sub">What one serving takes out of the store cupboard</p>
+            <form className="modal-form" onSubmit={handleSave} noValidate>
+              {/* The ingredient list is the tall part, so the head and the
+                  Save button are pinned and only the rows scroll. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="recipeModalTitle">{editing.name}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setEditing(null)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">What one serving takes out of the store cupboard.</p>
               </div>
-              <button
-                type="button"
-                className="inv-modal__close"
-                onClick={() => setEditing(null)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
 
-            <form className="inv-modal__body" onSubmit={handleSave} noValidate>
+              <div className="modal-form__body">
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               {editing.portions.length > 0 && (
@@ -513,19 +521,28 @@ export default function RecipesPanel() {
                     .join(' · ')}
                 </p>
               )}
+              </div>
 
-              <div className="inv-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setEditing(null)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save recipe'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {perSize ? 'Ingredients for this size' : 'Ingredients'}
+                  </span>
+                  <span className="modal-form__summary-value">{filledRowCount}</span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setEditing(null)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Save recipe'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

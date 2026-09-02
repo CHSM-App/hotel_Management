@@ -7,6 +7,7 @@ import { formatPrice } from './priceFormat';
 import IconButton from '../../components/IconButton';
 import { EditIcon, TrashIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
+import StepNum from '../../components/StepNum';
 import './forms.css';
 import './RoomsPanel.css';
 
@@ -387,6 +388,53 @@ export default function RoomsPanel() {
   // clearing the box, the other by adding a room.
   const searching = searchTerm.trim().length > 0;
 
+  // --- what the add/edit form shows about itself ---
+
+  // The category carries the rate, and the rate is what the form is really
+  // setting — the chips beside the select and the figure in the footer both
+  // read off it.
+  const selectedCategory =
+    (categories || []).find((c) => String(c.id) === String(form.categoryId)) || null;
+
+  const photoCount = existingImages.length + form.imageFiles.length;
+
+  // How many rooms this submit will actually create. A bulk range whose ends
+  // aren't both filled in yet has no count to give, so it says so rather than
+  // showing a wrong one.
+  const bulkCount = (() => {
+    const from = Number(form.rangeStart);
+    const to = Number(form.rangeEnd);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+    if (!form.rangeStart || !form.rangeEnd || to < from) return null;
+    return to - from + 1;
+  })();
+
+  const roomCountLabel = editingRoomId
+    ? `Room ${form.roomNumber || '—'}`
+    : form.mode === 'bulk'
+      ? bulkCount
+        ? `${bulkCount} room${bulkCount === 1 ? '' : 's'}`
+        : 'Room range'
+      : form.roomNumber.trim()
+        ? `Room ${form.roomNumber.trim()}`
+        : '1 room';
+
+  // Which of the four blocks are answered. Same signal the booking form uses:
+  // the badge swaps its digit for a tick, so a tall form can be re-read by
+  // scrolling rather than by re-checking every field.
+  const numberDone =
+    editingRoomId || form.mode === 'single' ? form.roomNumber.trim() !== '' : bulkCount !== null;
+  const stepDone = {
+    1: numberDone,
+    2: form.categoryId !== '',
+    3:
+      form.floor.trim() !== '' &&
+      form.bathroomType !== '' &&
+      form.beds.some((b) => b.size !== '') &&
+      form.maxOccupancy !== '',
+    4: photoCount > 0,
+  };
+
   return (
     <div className="rooms-panel">
       {!error && !loading && noCategories && (
@@ -532,33 +580,67 @@ export default function RoomsPanel() {
 
       {showForm && (
         <div className="glass-backdrop rooms-panel__backdrop" onClick={closeForm}>
-          <div className="glass-panel rooms-panel__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{editingRoomId ? 'Edit room' : 'Add room'}</h3>
+          <div
+            className="glass-panel rooms-panel__modal rooms-panel__modal--form modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSubmit} noValidate>
+              {/* Header stays put while the body scrolls: single against bulk
+                  changes what the rest of the form asks for, so it shouldn't
+                  scroll out of sight. Same shape as the new-booking form. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{editingRoomId ? `Edit room · ${form.roomNumber}` : 'Add room'}</h3>
+                  {/* One room or a floor's worth is the first decision, so it
+                      belongs beside the title. An edit is always one room. */}
+                  {!editingRoomId && (
+                    <div className="toggle-group">
+                      <button
+                        type="button"
+                        aria-pressed={form.mode === 'single'}
+                        onClick={() => setForm((f) => ({ ...f, mode: 'single' }))}
+                      >
+                        Single
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={form.mode === 'bulk'}
+                        onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
+                      >
+                        Bulk range
+                      </button>
+                    </div>
+                  )}
+                  {/* The way out, visible without scrolling to the bottom of a
+                      form this tall. The one in the footer is the same door. */}
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={closeForm}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {editingRoomId
+                    ? 'Corrections apply to this room only — its bookings and history stay as they are.'
+                    : form.mode === 'bulk'
+                      ? 'Creates every room in the range at once, all sharing these details. Photos are added per room afterwards.'
+                      : 'Adds one room to the chart. Everything but the description and photos is needed before it can be booked.'}
+                </p>
+              </div>
 
-            <form onSubmit={handleSubmit} noValidate>
+              <div className="modal-form__body">
               {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               <div className="form-section">
-                <div className="form-section__title">Room number</div>
-
-                {!editingRoomId && (
-                  <div className="toggle-group">
-                    <button
-                      type="button"
-                      aria-pressed={form.mode === 'single'}
-                      onClick={() => setForm((f) => ({ ...f, mode: 'single' }))}
-                    >
-                      Single
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={form.mode === 'bulk'}
-                      onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
-                    >
-                      Bulk range
-                    </button>
-                  </div>
-                )}
+                <div className="form-section__title">
+                  <StepNum n={1} done={stepDone[1]} />
+                  {editingRoomId || form.mode === 'single' ? 'Room number' : 'Room range'}
+                </div>
 
                 {editingRoomId || form.mode === 'single' ? (
                   <div className="field">
@@ -607,7 +689,9 @@ export default function RoomsPanel() {
               </div>
 
               <div className="form-section">
-                <div className="form-section__title">Pricing</div>
+                <div className="form-section__title">
+                  <StepNum n={2} done={stepDone[2]} />Pricing
+                </div>
 
                 <div className="field">
                   <label htmlFor="categoryId">
@@ -627,10 +711,24 @@ export default function RoomsPanel() {
                     ))}
                   </select>
                 </div>
+
+                {/* What the category actually means in money, once picked. The
+                    rate is the thing being set here, and reading it back off a
+                    dropdown option is the wrong place to check it. */}
+                {selectedCategory && (
+                  <div className="modal-form__chips">
+                    <span className="modal-form__chip modal-form__chip--rate">
+                      {formatPrice(selectedCategory.basePrice)} /night
+                    </span>
+                    <span className="modal-form__chip">{selectedCategory.name}</span>
+                  </div>
+                )}
               </div>
 
               <div className="form-section">
-                <div className="form-section__title">Room details</div>
+                <div className="form-section__title">
+                  <StepNum n={3} done={stepDone[3]} />Room details
+                </div>
                 <div className="field-row">
                   <div className="field">
                     <label htmlFor="floor">
@@ -758,8 +856,12 @@ export default function RoomsPanel() {
               </div>
 
               {(editingRoomId || form.mode === 'single') && (
-                <div className="form-section">
-                  <div className="form-section__title">Photos (optional)</div>
+                <details className="form-section form-section--collapsible" open>
+                  <summary>
+                    <StepNum n={4} done={stepDone[4]} />
+                    Photos
+                    {photoCount > 0 && <span className="form-section__badge">{photoCount}</span>}
+                  </summary>
 
                   {existingImages.length > 0 && (
                     <div className="room-form__photo-grid">
@@ -802,26 +904,47 @@ export default function RoomsPanel() {
                         e.target.value = '';
                       }}
                     />
-                    <p className="bookings-panel__hint">
+                    <p className="modal-form__hint">
                       Up to {MAX_ROOM_IMAGES} photos, JPG/PNG/WEBP, 5MB each.
                     </p>
                   </div>
-                </div>
+                </details>
               )}
+              </div>
 
-              <div className="rooms-panel__actions">
-                <button type="button" className="btn-secondary" onClick={closeForm} disabled={submitting}>
-                  Cancel
-                </button>
-                <button className="btn-accent" type="submit" disabled={submitting}>
-                  {editingRoomId
-                    ? submitting
-                      ? 'Saving…'
-                      : 'Save changes'
-                    : submitting
-                      ? 'Adding…'
-                      : 'Add room'}
-                </button>
+              {/* Rate and actions pinned below the scroll area, the way the
+                  booking form pins its total: the figure the room will be sold
+                  at has to stay visible while the details are filled in. */}
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  {selectedCategory ? (
+                    <>
+                      <span className="modal-form__summary-label">
+                        {roomCountLabel} · {selectedCategory.name}
+                      </span>
+                      <span className="modal-form__summary-value">
+                        {formatPrice(selectedCategory.basePrice)}
+                        <span className="modal-form__summary-unit"> /night</span>
+                      </span>
+                    </>
+                  ) : (
+                    <span className="modal-form__summary-label">Pick a category to set the rate</span>
+                  )}
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button type="button" className="btn-secondary" onClick={closeForm} disabled={submitting}>
+                    Cancel
+                  </button>
+                  <button className="btn-accent" type="submit" disabled={submitting}>
+                    {editingRoomId
+                      ? submitting
+                        ? 'Saving…'
+                        : 'Save changes'
+                      : submitting
+                        ? 'Adding…'
+                        : 'Add room'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

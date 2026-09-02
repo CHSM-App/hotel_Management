@@ -246,46 +246,9 @@
   flex-shrink: 0;
 }
 
-/* Numbered section markers — turns four similar-looking blocks into a
-   sequence you can track your position in. */
-.form-section__num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Never squeezed by a long heading beside it — a flattened circle reads as
-     a rendering fault rather than as a badge. */
-  flex: none;
-  /* 19px rather than the 17px it started at: it now holds a tick as well as a
-     digit, and a checkmark inside 17px is a smudge at desk distance. */
-  width: 19px;
-  height: 19px;
-  /* No margin. Both headings that carry this badge — .form-section__title and
-     the collapsible <summary> — are flex rows with their own 8px gap, so a
-     margin here would be added on top of it and sections 3 and 4 would sit a
-     notch further out than 1 and 2. */
-  border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1;
-  transition: background-color 200ms ease, box-shadow 200ms ease;
-}
-
-/* A finished section goes green. Colour is the fast signal down a scrolling
-   form, but it is never the only one — the badge swaps its digit for a tick at
-   the same moment, so the state survives a monochrome screen and a reader who
-   cannot separate the two hues. */
-.form-section__num--done {
-  background: #1c7a4a;
-  box-shadow: 0 0 0 3px rgba(28, 122, 74, 0.16);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .form-section__num {
-    transition: none;
-  }
-}
+/* .form-section__num — the numbered step badge — now lives in forms.css: the
+   add/edit-room form carries the same markers, and it does not import this
+   sheet. */
 
 .booking-form__room-meta {
   margin: -2px 0 12px;

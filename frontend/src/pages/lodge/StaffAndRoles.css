@@ -119,7 +119,9 @@
   padding: 28px;
 }
 
-.staff-roles__modal h3 {
+/* Not inside .modal-form, whose pinned header supplies its own spacing — see
+   forms.css. This is for the plain dialogs that are still one block. */
+.staff-roles__modal > h3 {
   margin-bottom: 18px;
 }
 

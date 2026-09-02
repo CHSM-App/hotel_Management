@@ -430,7 +430,9 @@
   padding: 28px;
 }
 
-.rooms-panel__modal h3 {
+/* Not inside .modal-form, whose pinned header supplies its own spacing — see
+   forms.css. This is for the plain dialogs that are still one block. */
+.rooms-panel__modal > h3 {
   margin-bottom: 18px;
 }
 
@@ -440,6 +442,30 @@
   gap: 10px;
   margin-top: 6px;
 }
+
+/* ------------------------------------------------- add / edit room form
+
+   The shell — pinned head, scrolling body, pinned foot, tighter density — is
+   .modal-form in forms.css, shared with every other add/edit dialog. Only the
+   room-specific bits live here. */
+
+.rooms-panel__modal--form {
+  /* Wider than the plain 520px modal: the bed rows and the photo grid both
+     read better with the extra width than with the height they would
+     otherwise cost. */
+  max-width: 640px;
+}
+
+/* The bed rows are not .field children, so the shell density rules do not
+   reach them. */
+.modal-form .bed-row select,
+.modal-form .bed-row input {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
 
 .room-card__description {
   font-size: 12px;
@@ -628,6 +654,14 @@
     max-width: none;
     max-height: calc(100svh - 20px);
     padding: 20px 16px;
+  }
+
+  /* The bed rows sit outside .field, so the shell mobile rule does not reach
+     them. */
+  .modal-form .bed-row select,
+  .modal-form .bed-row input {
+    min-height: 44px;
+    padding: 10px 12px;
   }
 
   .rooms-panel__actions {

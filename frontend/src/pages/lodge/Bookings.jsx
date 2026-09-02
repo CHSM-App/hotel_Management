@@ -19,6 +19,7 @@ import AdvanceReceiptModal from './AdvanceReceiptModal';
 import PaymentLines from './PaymentLines';
 import IconButton from '../../components/IconButton';
 import Req from '../../components/RequiredMark';
+import StepNum from '../../components/StepNum';
 // Aliased: this file already has a local TrashIcon, drawn at 15px for the
 // inline row-remove buttons. The shared glyph is 18px, sized for the 34px
 // icon buttons, so the two can't be collapsed into one.
@@ -4453,38 +4454,6 @@ const BAND_LABEL = {
 //
 // Only ever offered for the primary guest of a *new* booking. Changing who an
 // existing stay belongs to is a cancel and rebook, not a lookup.
-// The marker on a numbered section. It was a plain circled digit, which says
-// where a section sits in the order but not whether it still wants anything —
-// four identical badges down a form are a table of contents, not progress. A
-// filled section swaps its digit for a tick, so the desk can see what is left
-// by scrolling rather than by re-reading every field.
-//
-// The digit stays the label for anything not looking at it: the tick is
-// decoration, and "step 2, complete" is what the section actually is.
-function StepNum({ n, done }) {
-  return (
-    <span
-      className={`form-section__num${done ? ' form-section__num--done' : ''}`}
-      aria-label={done ? `Step ${n}, complete` : `Step ${n}`}
-    >
-      {done ? (
-        <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" focusable="false">
-          <path
-            d="M5 13l4.5 4.5L19 7"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      ) : (
-        <span aria-hidden="true">{n}</span>
-      )}
-    </span>
-  );
-}
-
 // One editable figure on the price breakdown. Reception negotiates a total
 // ("call it 350") far more often than a per-night rate, so these have always
 // been typeable — but they sat in a column of read-only figures styled to

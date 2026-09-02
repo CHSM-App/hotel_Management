@@ -348,6 +348,9 @@
   z-index: 60;
 }
 
+/* The read-only history modal still scrolls as one block. The two form
+   dialogs add .modal-form__panel, which turns off this scroll and hands it to
+   the body between a pinned head and foot — see forms.css. */
 .inv-panel__modal {
   width: 100%;
   max-width: 460px;

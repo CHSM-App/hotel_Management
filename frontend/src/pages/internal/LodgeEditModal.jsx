@@ -120,6 +120,7 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           </button>
         </div>
 
+        <div className="lodge-edit__body">
         {error && <div className="form-banner form-banner--error">{error}</div>}
 
         <section className="lodge-edit__section">
@@ -272,6 +273,7 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
             onChange={update('isActive')}
           />
         </section>
+        </div>
 
         <div className="lodge-edit__actions">
           <button type="button" className="btn-view" onClick={onClose} disabled={saving}>

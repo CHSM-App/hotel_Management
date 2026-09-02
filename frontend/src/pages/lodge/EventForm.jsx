@@ -515,17 +515,33 @@ export default function EventForm({
 
   return (
     <div className="glass-backdrop events-modal__backdrop">
-      <div className="glass-panel events-modal" role="dialog" aria-modal="true" aria-labelledby="event-form-title">
-        <div className="events-modal__head">
-          <div>
+      <div
+        className="glass-panel events-modal modal-form__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="event-form-title"
+      >
+        <div className="modal-form">
+        {/* Head and footer pinned, only the sections scroll — this is the
+            longest form in the app after a booking, and its action row is a
+            row of four, none of which should scroll out of reach. */}
+        <div className="modal-form__head">
+          <div className="modal-form__head-row">
             <h3 id="event-form-title">{isEdit ? `Edit “${event.title}”` : 'New function enquiry'}</h3>
-            {startAt && endAt && <div className="events-modal__sub">{formatEventWhen(startAt, endAt)}</div>}
+            <button
+              type="button"
+              className="modal-form__close"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close"
+            >
+              ×
+            </button>
           </div>
-          <button type="button" className="events-modal__close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          {startAt && endAt && <p className="modal-form__sub">{formatEventWhen(startAt, endAt)}</p>}
         </div>
 
+        <div className="modal-form__body">
         {error && <div className="form-banner form-banner--error">{error}</div>}
 
         <div className="form-section">
@@ -872,8 +888,9 @@ export default function EventForm({
             <textarea id="ev-scheduleNotes" value={form.scheduleNotes} onChange={(e) => update('scheduleNotes', e.target.value)} placeholder="Baraat 7 pm, dinner 9 pm, …" />
           </Field>
         </div>
+        </div>
 
-        <div className="events-modal__footer">
+        <div className="modal-form__foot events-modal__footer">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
           </button>
@@ -909,6 +926,7 @@ export default function EventForm({
               </button>
             </>
           )}
+        </div>
         </div>
       </div>
 

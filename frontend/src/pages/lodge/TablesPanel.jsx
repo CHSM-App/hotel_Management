@@ -133,6 +133,20 @@ export default function TablesPanel() {
     }
   };
 
+  // How many tables this submit will create, for the footer. A range whose ends
+  // aren't both filled in yet has no count to give, so it says so rather than
+  // showing a wrong one. Display only — handleSubmit is untouched.
+  const tableCountLabel = (() => {
+    if (editingId) return form.label.trim() || 'This table';
+    if (form.mode !== 'bulk') return form.label.trim() || '1 table';
+    const from = Number(form.rangeStart);
+    const to = Number(form.rangeEnd);
+    if (!form.rangeStart || !form.rangeEnd) return 'Table range';
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return 'Table range';
+    const n = to - from + 1;
+    return `${n} table${n === 1 ? '' : 's'}`;
+  })();
+
   return (
     <div className="tables-panel">
       <div className="rooms-panel__toolbar">
@@ -208,29 +222,56 @@ export default function TablesPanel() {
 
       {showForm && (
         <div className="glass-backdrop" onClick={() => !submitting && setShowForm(false)}>
-          <div className="glass-panel menu-panel__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{editingId ? 'Edit table' : 'Add tables'}</h3>
-            <form onSubmit={handleSubmit} noValidate>
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
-
-              {!editingId && (
-                <div className="toggle-group">
+          <div
+            className="glass-panel menu-panel__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSubmit} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{editingId ? 'Edit table' : 'Add tables'}</h3>
+                  {/* One table or a room's worth is the first decision, so it
+                      belongs beside the title. An edit is always one table. */}
+                  {!editingId && (
+                    <div className="toggle-group">
+                      <button
+                        type="button"
+                        aria-pressed={form.mode === 'single'}
+                        onClick={() => setForm((f) => ({ ...f, mode: 'single' }))}
+                      >
+                        One table
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={form.mode === 'bulk'}
+                        onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
+                      >
+                        A range
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
-                    aria-pressed={form.mode === 'single'}
-                    onClick={() => setForm((f) => ({ ...f, mode: 'single' }))}
+                    className="modal-form__close"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
                   >
-                    One table
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={form.mode === 'bulk'}
-                    onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
-                  >
-                    A range
+                    ×
                   </button>
                 </div>
-              )}
+                <p className="modal-form__sub">
+                  {editingId
+                    ? 'What this table is called, and how many it seats.'
+                    : form.mode === 'bulk'
+                      ? 'Creates every table in the range at once, all seating the same number.'
+                      : 'Adds one table. Orders are taken against it by name.'}
+                </p>
+              </div>
+
+              <div className="modal-form__body">
+              {formError && <div className="form-banner form-banner--error">{formError}</div>}
 
               {editingId || form.mode === 'single' ? (
                 <div className="field">
@@ -298,19 +339,29 @@ export default function TablesPanel() {
                   placeholder="4"
                 />
               </div>
+              </div>
 
-              <div className="menu-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowForm(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">{tableCountLabel}</span>
+                  <span className="modal-form__summary-value">
+                    {String(form.seats).trim() === '' ? '—' : form.seats}
+                    <span className="modal-form__summary-unit"> seats each</span>
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -594,8 +594,9 @@
   padding: 22px 24px;
 }
 
-.events-modal h3 {
-  margin-bottom: 4px;
+/* The pinned header supplies its own spacing — see .modal-form__head. */
+.events-modal .modal-form__head h3 {
+  margin: 0;
 }
 
 .events-modal__head {
@@ -884,14 +885,13 @@
   margin: -4px 0 12px;
 }
 
+/* Rides on .modal-form__foot (forms.css), which pins it and draws the rule
+   above it. What is left here is this footer’s own shape: a wrapping row of
+   four controls rather than a summary and two buttons, so it fills the width
+   instead of sitting to the right. */
 .events-modal__footer {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  justify-content: flex-start;
 }
 
 .events-modal__footer .field {
