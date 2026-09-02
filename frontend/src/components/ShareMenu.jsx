@@ -1,95 +1,52 @@
-import { useEffect, useRef, useState } from 'react';
 import ShareIcon from './ShareIcon';
 
-// The channels a document goes out on, behind one control.
+// Sending a document to the guest on WhatsApp, in one press.
 //
-// This replaced a button that meant WhatsApp and nothing else. WhatsApp is
-// still the common case and still sits first, but a desk that mails a company
-// booker their bill, or texts a guest with no WhatsApp, had no way through —
-// the one channel was the whole feature. The others are one list item each.
+// The desk's own WhatsApp does the sending, not the server. Pressing this saves
+// the PDF and opens a chat with the guest, message already typed; the desk
+// attaches the file from the downloads folder and presses send. That attach is
+// a manual step and there is no way around it from a browser — wa.me carries
+// text and never a file, and no page can put a local PDF into someone else's
+// WhatsApp.
 //
-// Every channel here saves the PDF first and then opens a composed message,
-// because none of the links involved can carry a file: mailto, sms and wa.me
-// all take text only. The device share sheet is the one exception and does
-// attach the file, so it is offered where the browser has one.
+// A server-side send does exist (see billShare.service.js on the backend) and
+// needs no attaching at all, but it can only go out through an approved SMSala
+// template. Until that template is approved this is the route that works, and
+// it works on any desk with WhatsApp installed or WhatsApp Web signed in.
+//
+// So this button is never disabled for configuration reasons: there is nothing
+// to configure. It greys out only while the PDF is being built.
 export default function ShareMenu({
   onShare,
   disabled = false,
   busy = false,
-  canShareFiles = false,
-  label = 'Share this document',
+  // Shown in the tooltip so the desk can see which number the chat will open
+  // on before pressing — the moment a wrong number is still cheap to fix.
+  guestPhone = '',
+  label = 'Send this document to the guest on WhatsApp',
   className = 'btn-secondary bill-actions__icon-btn',
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
-  const btnRef = useRef(null);
+  const title = busy
+    ? 'Preparing…'
+    : guestPhone
+      ? `Save the PDF and open WhatsApp to ${guestPhone}`
+      : 'Save the PDF and open WhatsApp';
 
-  // Click-away and Escape both shut it. A menu that can only be dismissed by
-  // picking something from it is a menu the desk has to answer.
-  useEffect(() => {
-    if (!open) return undefined;
-    const onDocPointer = (e) => {
-      if (!wrapRef.current?.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        btnRef.current?.focus();
-      }
-    };
-    document.addEventListener('mousedown', onDocPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const pick = (channel) => {
-    setOpen(false);
-    onShare(channel);
-  };
-
-  // The sheet is listed first where it exists: it is the only route that
-  // attaches the file itself, so it is the one that takes the fewest steps.
-  const items = [
-    canShareFiles && { key: 'device', label: 'Share…', hint: 'Attaches the PDF' },
-    { key: 'whatsapp', label: 'WhatsApp', hint: 'PDF downloads to attach' },
-    { key: 'email', label: 'Email', hint: 'PDF downloads to attach' },
-    { key: 'sms', label: 'SMS', hint: 'PDF downloads to attach' },
-  ].filter(Boolean);
-
+  // No wrapper element. The <span> that used to be here anchored a dropdown
+  // that no longer exists, and it broke the action row's sizing: those rules
+  // are direct-child selectors (.bill-actions__buttons > button), so a button
+  // one level down missed them and rendered at the icon's own 20px rather than
+  // the row's 44px.
   return (
-    <span className="share-menu" ref={wrapRef}>
-      <button
-        ref={btnRef}
-        type="button"
-        className={className}
-        onClick={() => setOpen((v) => !v)}
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={busy ? 'Preparing the PDF' : label}
-        title={busy ? 'Preparing…' : 'Share'}
-      >
-        <ShareIcon />
-      </button>
-      {open && (
-        <div className="share-menu__list" role="menu">
-          {items.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              role="menuitem"
-              className="share-menu__item"
-              onClick={() => pick(item.key)}
-            >
-              <span className="share-menu__label">{item.label}</span>
-              <span className="share-menu__hint">{item.hint}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </span>
+    <button
+      type="button"
+      className={className}
+      onClick={() => onShare('whatsapp')}
+      disabled={disabled}
+      aria-label={busy ? 'Preparing the PDF' : label}
+      title={title}
+    >
+      <ShareIcon />
+    </button>
   );
 }

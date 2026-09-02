@@ -477,13 +477,18 @@ export default function StaffAndRoles() {
                             >
                               Reset password
                             </button>
-                            <button
-                              type="button"
-                              className="chart-row__link-btn chart-row__link-btn--danger"
-                              onClick={() => toggleStaffActive(u)}
-                            >
-                              {u.isActive ? 'Disable' : 'Enable'}
-                            </button>
+                            {/* Owners can't be disabled from here — the backend
+                                refuses the last active owner anyway, and the
+                                button only ever offered an error. */}
+                            {u.roleKey !== 'OWNER' && (
+                              <button
+                                type="button"
+                                className="chart-row__link-btn chart-row__link-btn--danger"
+                                onClick={() => toggleStaffActive(u)}
+                              >
+                                {u.isActive ? 'Disable' : 'Enable'}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

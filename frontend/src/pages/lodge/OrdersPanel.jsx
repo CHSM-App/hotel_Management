@@ -604,6 +604,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Who is checked into the selected room, so staff can eyeball the register
+  // before charging food to somebody's stay. null while nothing is selected.
+  const [occupancy, setOccupancy] = useState(null);
+  const [occupancyLoading, setOccupancyLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -627,6 +631,43 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, submitting]);
+
+  // Selecting a room asks the server who is in it. Resolved server-side against
+  // the live booking rather than read off the room list, so what staff verify
+  // against is the register itself and not a stale cached payload.
+  //
+  // The room id is captured per-run and checked before the result is applied:
+  // a quick change of selection can land two responses out of order, and the
+  // wrong guest shown next to the wrong room is exactly the error this is here
+  // to prevent.
+  useEffect(() => {
+    // Cleared by the destination handler rather than here, so this effect only
+    // ever runs for a room it is actually going to look up.
+    if (target.kind !== 'ROOM' || !target.id) return undefined;
+
+    let cancelled = false;
+    const roomId = target.id;
+
+    apiGet(`/orders/room-occupancy/${roomId}`, { token: session?.token })
+      .then((data) => {
+        if (cancelled) return;
+        setOccupancy(data.occupancy);
+      })
+      .catch(() => {
+        // A lookup failure must not block the order — the desk can still take
+        // it. The panel just says it couldn't check rather than asserting the
+        // room is empty, which would be a worse lie than saying nothing.
+        if (!cancelled) setOccupancy({ failed: true });
+      })
+      .finally(() => {
+        if (!cancelled) setOccupancyLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.kind, target.id]);
 
   // A half plate and a full plate of the same dish are two lines, so the key is
   // the pair — the same shape the guest's own page uses.
@@ -708,6 +749,20 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
       return;
     }
 
+    // A takeaway walks out of the door with the food, so the name and number
+    // are the only way to call it back or work out whose it was. Checked here
+    // and again on the server, which is what actually holds the rule.
+    if (target.kind === 'COUNTER') {
+      if (!guestName.trim()) {
+        setError('Add the guest’s name for a counter order.');
+        return;
+      }
+      if (!guestPhone.trim()) {
+        setError('Add a phone number for a counter order.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       await apiPost(
@@ -715,8 +770,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
         {
           roomId: target.kind === 'ROOM' ? target.id : null,
           tableId: target.kind === 'TABLE' ? target.id : null,
-          guestName,
-          guestPhone,
+          // Typed at the counter and then switched to a room, these would
+          // otherwise ride along on an order whose payer is the booking.
+          guestName: target.kind === 'COUNTER' ? guestName : '',
+          guestPhone: target.kind === 'COUNTER' ? guestPhone : '',
           note,
           items: lines.map((l) => ({
             itemId: l.itemId,
@@ -773,6 +830,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
                 onChange={(e) => {
                   const [kind, id] = e.target.value.split(':');
                   setTarget({ kind, id });
+                  // Reset here, where the choice is made, so the previous
+                  // room's guest never lingers beside a new selection.
+                  setOccupancy(null);
+                  setOccupancyLoading(kind === 'ROOM' && !!id);
                 }}
               >
                 <option value="COUNTER:">Counter / takeaway</option>
@@ -789,30 +850,64 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
               </select>
             </div>
 
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="orderGuest">
-                  Guest name <span className="field__optional">optional</span>
-                </label>
-                <input
-                  id="orderGuest"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                />
+            {target.kind === 'ROOM' && (
+              <div className="occupancy" aria-live="polite">
+                {occupancyLoading && <p className="occupancy__muted">Checking who&apos;s in this room…</p>}
+
+                {!occupancyLoading && occupancy?.failed && (
+                  <p className="occupancy__muted">
+                    Couldn&apos;t check the register just now — confirm the guest at the desk.
+                  </p>
+                )}
+
+                {!occupancyLoading && occupancy && !occupancy.failed && occupancy.occupied && (
+                  <>
+                    <p className="occupancy__label">Checked in to this room</p>
+                    <p className="occupancy__name">{occupancy.guestName || 'Name not on the booking'}</p>
+                    {occupancy.guestPhone && <p className="occupancy__phone">{occupancy.guestPhone}</p>}
+                    <p className="occupancy__hint">
+                      Check this matches the guest ordering before you charge it to the room.
+                    </p>
+                  </>
+                )}
+
+                {!occupancyLoading && occupancy && !occupancy.failed && !occupancy.occupied && (
+                  <p className="occupancy__vacant">
+                    Nobody is checked in to this room — the food will be billed against the room itself.
+                  </p>
+                )}
               </div>
-              <div className="field">
-                <label htmlFor="orderPhone">
-                  Phone <span className="field__optional">optional</span>
-                </label>
-                <input
-                  id="orderPhone"
-                  inputMode="tel"
-                  value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value)}
-                  placeholder="For a phone order"
-                />
+            )}
+
+            {/* Only the counter asks for these. A room or a table already
+                identifies the payer — the booking above, or the table the
+                party is sitting at — so re-typing a name there would be a
+                second, weaker record of something the register already knows.
+                A takeaway has neither: this is the only trace of who the food
+                is for, so it is required rather than optional. */}
+            {target.kind === 'COUNTER' && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="orderGuest">Guest name</label>
+                  <input
+                    id="orderGuest"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Who's collecting"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="orderPhone">Phone</label>
+                  <input
+                    id="orderPhone"
+                    inputMode="tel"
+                    value={guestPhone}
+                    onChange={(e) => setGuestPhone(e.target.value)}
+                    placeholder="To call when it's ready"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {!sections && <p className="menu-panel__hint">Loading the menu…</p>}
 

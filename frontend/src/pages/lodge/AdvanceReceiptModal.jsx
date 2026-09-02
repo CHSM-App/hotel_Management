@@ -194,6 +194,13 @@ export default function AdvanceReceiptModal({
   // on one screen.
   const stayTotal = Math.round(Number(subject?.totalPrice) || 0);
 
+  // Named on screen rather than applied silently. The line above quietly moved
+  // the figure the desk quotes, and a guest handed a rupee-rounded total has to
+  // be able to see where the paise went — the receipt itself prints this as its
+  // own "Round off" row, and the screen that leads to it should not be the one
+  // place the adjustment is invisible.
+  const stayRoundOff = Math.round((stayTotal - (Number(subject?.totalPrice) || 0)) * 100) / 100;
+
   // What the stay still owes, and therefore the most another advance may be.
   // The server holds the same line; this is so the desk sees the ceiling rather
   // than discovering it.
@@ -375,6 +382,9 @@ export default function AdvanceReceiptModal({
         {subject && (
           <p className="bookings-panel__hint">
             {subject.guestName} · {noun} total {formatPrice(stayTotal)}
+            {stayRoundOff !== 0
+              ? ` (incl. round off ${stayRoundOff > 0 ? '+' : '−'}${formatPrice(Math.abs(stayRoundOff))})`
+              : ''}
             {alreadyHeld > 0 ? ` · ${formatPrice(alreadyHeld)} advance held` : ''}
             {remaining > 0 ? ` · ${formatPrice(remaining)} still to pay` : ' · paid in full'}
           </p>

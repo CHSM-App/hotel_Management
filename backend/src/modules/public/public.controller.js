@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const publicService = require('./public.service');
+const billShareService = require('../billing/billShare.service');
 const { orderItemsSchema } = require('../orders/orders.schema');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -184,7 +185,34 @@ async function getOrderStatusHandler(req, res, next) {
   }
 }
 
+// The bill a guest was sent on WhatsApp, fetched by the token in that link.
+//
+// Served inline rather than as an attachment: the link is tapped inside a chat,
+// and a phone that is handed a PDF inline opens it in its viewer, where a guest
+// can read it and then save or forward it if they want to. `attachment` would
+// make the common case — "let me just look at my bill" — a download first.
+//
+// No-store, because this is one guest's bill and the one place it must not be
+// left is a shared proxy cache.
+async function getSharedBillHandler(req, res, next) {
+  try {
+    const { filePath, invoiceNumber } = await billShareService.readSharedBill(String(req.params.token || ''));
+    res.type('application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
+    // The bill's own number, so a guest who does save it gets a file named
+    // after the document rather than after our storage key.
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${String(invoiceNumber).replace(/[\/"]/g, '-')}.pdf"`
+    );
+    res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  getSharedBillHandler,
   getLodgePageHandler,
   getMenuPageHandler,
   getTableOrderPageHandler,

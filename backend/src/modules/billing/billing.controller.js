@@ -8,6 +8,7 @@ const billingService = require('./billing.service');
 const advanceReceiptsService = require('./advanceReceipts.service');
 const eventBillingService = require('./eventBilling.service');
 const seriesService = require('./series.service');
+const billShareService = require('./billShare.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
 async function listBillableBookingsHandler(req, res, next) {
@@ -339,7 +340,36 @@ async function updateSeriesHandler(req, res, next) {
   }
 }
 
+// Sends the bill the browser just built to the guest's WhatsApp. The PDF
+// arrives as multipart (billShareUpload has already written it to disk and put
+// it on req.file); the number, when the desk typed one, rides alongside it in
+// the same form body.
+async function shareInvoiceWhatsAppHandler(req, res, next) {
+  try {
+    const result = await billShareService.shareInvoiceOnWhatsApp(
+      req.user.lodgeId,
+      req.user.sub,
+      Number(req.params.id),
+      { file: req.file, phone: req.body?.phone }
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listInvoiceSharesHandler(req, res, next) {
+  try {
+    const shares = await billShareService.listShares(req.user.lodgeId, Number(req.params.id));
+    res.json({ shares, whatsAppAvailable: billShareService.whatsAppAvailable() });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  shareInvoiceWhatsAppHandler,
+  listInvoiceSharesHandler,
   listBillableBookingsHandler,
   previewEventBillHandler,
   issueEventInvoiceHandler,

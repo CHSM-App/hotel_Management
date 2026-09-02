@@ -11,6 +11,7 @@ const {
   placeRoomOrderHandler,
   placeTableOrderHandler,
   getOrderStatusHandler,
+  getSharedBillHandler,
 } = require('./public.controller');
 
 const router = Router();
@@ -54,5 +55,14 @@ router.post('/tables/:token/orders', placeTableOrderHandler);
 
 // One status route for both, keyed on the opaque token returned at placement.
 router.get('/orders/:token', getOrderStatusHandler);
+
+// A bill the desk sent to a guest on WhatsApp. Unauthenticated like everything
+// else here, and for the same kind of reason: the guest has no account, and the
+// random token in the link they were sent is the whole of the credential.
+//
+// Not rate limited, unlike the PIN routes above. There is no secret to guess at
+// a useful rate — the token is 32 hex characters — and a guest re-opening their
+// own bill from a chat several times is ordinary, not an attack.
+router.get('/bills/:token', getSharedBillHandler);
 
 module.exports = router;

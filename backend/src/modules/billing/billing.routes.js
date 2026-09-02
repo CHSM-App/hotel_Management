@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
+const { billShareUpload } = require('../../middleware/billShareUpload');
 const {
   listBillableBookingsHandler,
   previewEventBillHandler,
@@ -23,6 +24,8 @@ const {
   listAdvanceReceiptsHandler,
   getAdvanceReceiptHandler,
   voidAdvanceReceiptHandler,
+  shareInvoiceWhatsAppHandler,
+  listInvoiceSharesHandler,
 } = require('./billing.controller');
 
 const router = Router();
@@ -66,6 +69,17 @@ router.post('/advance-receipts/:id/void', authenticate, staff, voidAdvanceReceip
 router.get('/invoices', authenticate, staff, listInvoicesHandler);
 router.get('/invoices/:id', authenticate, staff, getInvoiceHandler);
 router.post('/invoices/:id/void', authenticate, staff, voidInvoiceHandler);
+
+// Sending a bill to the guest, and the record of what has been sent.
+//
+// The PDF travels up rather than being built here: it is drawn in the browser
+// off the very document the desk previewed, so the guest gets the bill on the
+// paper and in the language that was chosen on screen. See billShare.service.
+//
+// billShareUpload runs before the handler and writes the file to disk, so the
+// handler is responsible for removing it again on any path that does not send.
+router.post('/invoices/:id/share/whatsapp', authenticate, staff, billShareUpload, shareInvoiceWhatsAppHandler);
+router.get('/invoices/:id/shares', authenticate, staff, listInvoiceSharesHandler);
 
 // The serials printed on bills and advance receipts. Behind billing.manage like
 // everything else here: whoever cuts the bills is who decides what they are

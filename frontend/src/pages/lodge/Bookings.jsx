@@ -24,6 +24,8 @@ import Req from '../../components/RequiredMark';
 // icon buttons, so the two can't be collapsed into one.
 import { TrashIcon as ActionTrashIcon, OpenIcon } from '../../components/ActionIcons';
 import {
+  PAYMENT_METHOD_LABEL,
+  describeAdvance,
   emptyPaymentLine,
   needsPaymentReference,
   paymentFieldId,
@@ -204,6 +206,10 @@ const LEGEND_LINKS = [
   { status: 'BOOKED', swatch: 'booked' },
   { status: 'CHECKED_IN', swatch: 'checked-in' },
   { status: 'CHECKED_OUT', swatch: 'checked-out' },
+  // Border-only on the chart, because a cancelled stay holds no night to
+  // fill — but it is still a status the register can be cut by, so its chip
+  // links there like the others.
+  { status: 'CANCELLED', swatch: 'cancelled' },
 ].map((item) => ({ ...item, label: STAY_STATUS_CHIP_LABEL[item.status] }));
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
 
@@ -934,6 +940,27 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       const from = draft.checkInDate > rangeStart ? draft.checkInDate : rangeStart;
       const to = draft.checkOutDate < rangeEnd ? draft.checkOutDate : rangeEnd;
       for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, draft);
+    }
+    return byRoom;
+  }, [tapeData, rangeStart, rangeEnd]);
+
+  // And once more for cancelled stays, apart for the same reason: a
+  // cancellation holds no night, so it can share dates with a vacant slot or
+  // a live booking alike. It never takes the tile — it borders it, which is
+  // how the desk sees a booking fell through here without the night reading
+  // as sold.
+  const cancelledOccupancy = useMemo(() => {
+    const byRoom = new Map();
+    for (const stay of tapeData?.cancelled ?? []) {
+      const key = String(stay.roomId);
+      let byDate = byRoom.get(key);
+      if (!byDate) {
+        byDate = new Map();
+        byRoom.set(key, byDate);
+      }
+      const from = stay.checkInDate > rangeStart ? stay.checkInDate : rangeStart;
+      const to = stay.checkOutDate < rangeEnd ? stay.checkOutDate : rangeEnd;
+      for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, stay);
     }
     return byRoom;
   }, [tapeData, rangeStart, rangeEnd]);
@@ -1905,6 +1932,17 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const [advanceReceipts, setAdvanceReceipts] = useState([]);
   const [detailError, setDetailError] = useState('');
   const [showCheckInForm, setShowCheckInForm] = useState(false);
+  // The settlement step a cancellation goes through: null until "Cancel
+  // booking" is pressed, then the answers being typed — how much of the
+  // advance goes back, and why the stay fell through. What is not refunded is
+  // kept as the cancellation charge, and the reports count it as income.
+  const [cancelSettle, setCancelSettle] = useState(null);
+  // Which settlement boxes the complaints are about, said under the boxes
+  // themselves — { refundAmount?: message, refundMethod?: message }, checked
+  // together so two empty boxes are told off in one press rather than one per
+  // press. The banner stays for errors that aren't any one field's fault (the
+  // server refusing).
+  const [cancelFieldErrors, setCancelFieldErrors] = useState(null);
   const initialCheckInForm = {
     advanceAmount: '',
     advanceLines: [emptyPaymentLine()],
@@ -2041,6 +2079,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setDetailError('');
     setShowCheckInForm(false);
     setCheckInForm(initialCheckInForm);
+    setCancelSettle(null);
     setActionError('');
     setIdProofError('');
     setShowAdvanceReceipt(false);
@@ -2307,11 +2346,82 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     }
   };
 
+  // Step one of cancelling: not the cancellation itself, but the settlement
+  // question it has to answer first. Opens with the whole advance offered
+  // back — keeping any of it is a decision the desk makes by typing a smaller
+  // figure, never a default it forgets to change.
+  // Both boxes open empty on purpose: the refund and its tender are answers
+  // the desk gives, not defaults it forgets to change — and the submit guard
+  // refuses to move until both are given.
+  const openCancelSettle = () => {
+    setActionError('');
+    setCancelFieldErrors(null);
+    setCancelSettle({
+      refundAmount: '',
+      refundMethod: '',
+      // The other shape of the settlement, for a stay that held no advance:
+      // a fee collected from the guest on the spot. Off until the desk says
+      // otherwise — not charging is the common case.
+      collectCharge: false,
+      chargeAmount: '',
+      chargeMethod: '',
+      reason: '',
+    });
+  };
+
   const handleCancel = async () => {
+    const advance = Number(bookingDetail?.advanceAmount) || 0;
+    const body = {};
+    if (cancelSettle?.reason.trim()) body.reason = cancelSettle.reason.trim();
+    if (advance > 0) {
+      const refund = Number(cancelSettle?.refundAmount);
+      const errs = {};
+      // Said under the box each is about, so the words stay short — the label
+      // above the box already names the thing being asked for.
+      if (cancelSettle?.refundAmount.trim() === '' || !Number.isFinite(refund) || refund < 0) {
+        errs.refundAmount = 'Enter an amount.';
+      } else if (refund > advance) {
+        errs.refundAmount = `Up to ${formatPrice(advance)}.`;
+      }
+      // The tender is only demanded when money is actually moving — and when
+      // the amount box hasn't answered yet, an untyped amount may still turn
+      // out to be 0, so the type is asked for alongside rather than skipped.
+      if (!cancelSettle?.refundMethod && (errs.refundAmount ? true : refund > 0)) {
+        errs.refundMethod = 'Choose a type.';
+      }
+      if (Object.keys(errs).length > 0) {
+        setCancelFieldErrors(errs);
+        return;
+      }
+      body.refundAmount = refund;
+      if (refund > 0) body.refundPaymentMethod = cancelSettle.refundMethod;
+    } else if (cancelSettle?.collectCharge) {
+      // No advance held, and the desk is taking a fee on the spot: money in,
+      // so both boxes have to answer — an unticked box would have skipped the
+      // question entirely.
+      const total = Number(bookingDetail?.totalPrice) || 0;
+      const amount = Number(cancelSettle.chargeAmount);
+      const errs = {};
+      if (cancelSettle.chargeAmount.trim() === '' || !Number.isFinite(amount) || amount <= 0) {
+        errs.chargeAmount = 'Enter an amount.';
+      } else if (total > 0 && amount > total) {
+        errs.chargeAmount = `Up to ${formatPrice(total)}.`;
+      }
+      if (!cancelSettle.chargeMethod) {
+        errs.chargeMethod = 'Choose a type.';
+      }
+      if (Object.keys(errs).length > 0) {
+        setCancelFieldErrors(errs);
+        return;
+      }
+      body.cancellationCharge = amount;
+      body.cancellationChargePaymentMethod = cancelSettle.chargeMethod;
+    }
+    setCancelFieldErrors(null);
     setActionError('');
     setActionSubmitting(true);
     try {
-      await apiPatch(`/bookings/${selectedBookingId}/cancel`, {}, { token });
+      await apiPatch(`/bookings/${selectedBookingId}/cancel`, body, { token });
       setSelectedBookingId(null);
       loadTapeChart();
     } catch (err) {
@@ -2400,6 +2510,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const renderRoomRow = (room) => {
     const byDate = occupancy.get(String(room.id));
     const draftsByDate = draftOccupancy.get(String(room.id));
+    const cancelledByDate = cancelledOccupancy.get(String(room.id));
     const rowClasses = ['tape-month__row'];
     if (hoverTile?.room.id === room.id) rowClasses.push('tape-month__row--active');
 
@@ -2429,6 +2540,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         {dates.map((d) => {
           const booking = byDate?.get(d);
           const draft = draftsByDate?.get(d);
+          // A stay that was cancelled for this night. Whatever else the tile
+          // is — vacant, drafted on, or let again — it gets the cancelled
+          // border on top, and the hover card says whose booking fell through.
+          const cancelledStay = cancelledByDate?.get(d);
           const past = d < today;
 
           // A night nobody has booked, but somebody has a draft on. Yellow,
@@ -2441,14 +2556,15 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             if (d === addDays(draft.checkOutDate, -1)) classes.push('tape-tile--end');
             if (d === today) classes.push('tape-tile--today');
             if (hoverTile?.draft?.id === draft.id) classes.push('tape-tile--active');
+            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
                 type="button"
                 className={classes.join(' ')}
                 onClick={() => openDraftById(draft.id)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, draft })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, draft })}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, draft, cancelled: cancelledStay })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, draft, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
                 aria-label={`${room.roomNumber} has a draft booking on ${formatDateLong(d)}`}
@@ -2465,14 +2581,15 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           if (!booking && past) {
             const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
+            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
                 type="button"
                 className={classes.join(' ')}
                 onClick={() => openNewBooking(room.id, d)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
                 aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)} — record a stay`}
@@ -2486,17 +2603,22 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             const classes = ['tape-tile', 'tape-tile--vacant'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             if (d === today) classes.push('tape-tile--today');
+            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
                 type="button"
                 className={classes.join(' ')}
                 onClick={() => openNewBooking(room.id, d)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null })}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, cancelled: cancelledStay })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
-                aria-label={`${room.roomNumber} vacant on ${formatDateLong(d)}`}
+                aria-label={
+                  cancelledStay
+                    ? `${room.roomNumber} vacant on ${formatDateLong(d)} — a booking here was cancelled`
+                    : `${room.roomNumber} vacant on ${formatDateLong(d)}`
+                }
               />
             );
           }
@@ -2523,6 +2645,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           // flag, which is the desk's cue that somebody is drafting against a
           // room they can't have.
           if (draft) classes.push('tape-tile--has-draft');
+          // A night let again after an earlier booking fell through on it. The
+          // live stay keeps its fill; the cancellation rides as the border.
+          if (cancelledStay) classes.push('tape-tile--cancelled-mark');
           // A stay the search found. Every night of it is marked, so the whole
           // strip lights up rather than one tile of it — the desk is looking
           // for a guest, and the answer to "where are they?" is the stay, not
@@ -2560,8 +2685,8 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               // stretch.
               style={d === activeFrom ? { '--tape-hit-span': activeSpan } : undefined}
               onClick={() => openDetail(booking.id)}
-              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft, past })}
-              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft, past })}
+              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft, past, cancelled: cancelledStay })}
+              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft, past, cancelled: cancelledStay })}
               onMouseLeave={() => setHoverTile(null)}
               onBlur={() => setHoverTile(null)}
               aria-label={`${room.roomNumber} ${STATUS_LABEL[booking.status]} on ${formatDateLong(d)}`}
@@ -2974,6 +3099,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   A draft also names this night{hoverTile.draft.guestName ? ` (${hoverTile.draft.guestName})` : ''}.
                 </span>
               )}
+              {/* The night was let again after an earlier booking fell
+                  through on it — that is what the red border on the tile is. */}
+              {hoverTile.cancelled && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
+                  {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
+                </span>
+              )}
             </>
           ) : hoverTile.draft ? (
             <>
@@ -2994,6 +3126,35 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   a held room and this one isn't. */}
               <span className="tape-tooltip__hint">
                 Not booked — this room is still free. Click to finish or delete it.
+              </span>
+              {hoverTile.cancelled && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
+                  {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
+                </span>
+              )}
+            </>
+          ) : hoverTile.cancelled ? (
+            <>
+              {/* An empty night with a red border: the story is the booking
+                  that fell through, so the card leads with it — while the
+                  hint keeps saying what the empty tile still offers. */}
+              <span className="tape-tooltip__top">
+                <span className="tape-tooltip__dot tape-tooltip__dot--cancelled" />
+                Booking cancelled
+              </span>
+              <strong>{hoverTile.cancelled.guestName}</strong>
+              <span className="tape-tooltip__meta">
+                Room {hoverTile.room.roomNumber} · {hoverTile.room.categoryName}
+              </span>
+              <span className="tape-tooltip__dates">
+                {formatDateLong(hoverTile.cancelled.checkInDate)}
+                <i>→</i>
+                {formatDateLong(hoverTile.cancelled.checkOutDate)}
+              </span>
+              <span className="tape-tooltip__hint">
+                {hoverTile.past
+                  ? 'This night has passed — it can’t be booked'
+                  : 'The night is back on sale — click to book it'}
               </span>
             </>
           ) : (
@@ -3699,10 +3860,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       {selectedBookingId && !lateCheckout && (
         <div
           // Dismissable by backdrop while it is only being read, but not once
-          // the check-in form is open on top of it — that form has typed-in
-          // details of its own, and it has its own Back button.
+          // the check-in form or the cancellation settlement is open on top of
+          // it — both have typed-in details of their own and their own way
+          // back.
           className="glass-backdrop bookings-panel__backdrop"
-          onClick={showCheckInForm ? undefined : closeDetail}
+          onClick={showCheckInForm || cancelSettle ? undefined : closeDetail}
         >
           <div className="glass-panel bookings-panel__modal" onClick={(e) => e.stopPropagation()}>
             {detailError && <div className="form-banner form-banner--error">{detailError}</div>}
@@ -4013,13 +4175,267 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     is last because leaving is not one of them.
 
                     Hidden behind the check-in form, which has its own Back. */}
-                {!showCheckInForm && (
+                {/* The settlement a cancellation has to answer first: where the
+                    advance goes. In place of the footer actions, the way the
+                    check-in form is — one question on screen at a time. */}
+                {!showCheckInForm && cancelSettle && (
+                  <div className="bookings-panel__cancel-settle">
+                    <div className="form-section__title">Cancel this booking</div>
+                    {Number(bookingDetail.advanceAmount) > 0 ? (
+                      <>
+                        <p className="bookings-panel__hint">
+                          Settle the advance before the booking goes: what goes back to the guest, and what
+                          the property keeps as the cancellation charge.
+                        </p>
+                        {/* The settlement as a statement: what was taken, what
+                            goes back, what stays — footed like the tariff is,
+                            with the refund typed straight into its own row so
+                            the arithmetic updates where it is read. */}
+                        <div className="bookings-panel__cancel-settle-sheet">
+                          <div className="bookings-panel__cancel-settle-row">
+                            <span>
+                              Advance taken
+                              {/* Only when a method was recorded — "· " against
+                                  nothing is a separator with no second half. */}
+                              {(bookingDetail.advancePaymentLines?.length ||
+                                bookingDetail.advancePaymentMethod) && (
+                                <span className="bookings-panel__muted">
+                                  {' · '}
+                                  {describeAdvance(
+                                    bookingDetail.advancePaymentLines,
+                                    bookingDetail.advancePaymentMethod
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                            <span>{formatPrice(bookingDetail.advanceAmount)}</span>
+                          </div>
+                          <div className="bookings-panel__cancel-settle-row">
+                            <span>Refund to guest</span>
+                            <span className="bookings-panel__cancel-settle-refund">
+                              {/* Each box under its own small label, and both
+                                  deliberately blank: the tender and the amount
+                                  are the desk's answers, not defaults. The
+                                  tender only means anything against a refund
+                                  that moves money — at zero it is ignored on
+                                  save. */}
+                              <span className="bookings-panel__cancel-settle-ctl">
+                                <label htmlFor="cancel-refund-method">Payment type</label>
+                                <select
+                                  id="cancel-refund-method"
+                                  value={cancelSettle.refundMethod}
+                                  aria-invalid={cancelFieldErrors?.refundMethod ? true : undefined}
+                                  onChange={(e) => {
+                                    setCancelFieldErrors((errs) => {
+                                      if (!errs?.refundMethod) return errs;
+                                      const { refundMethod, ...rest } = errs;
+                                      return Object.keys(rest).length ? rest : null;
+                                    });
+                                    setCancelSettle((f) => ({ ...f, refundMethod: e.target.value }));
+                                  }}
+                                >
+                                  <option value="">Choose type</option>
+                                  {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                                    <option key={value} value={value}>
+                                      {label}
+                                    </option>
+                                  ))}
+                                </select>
+                                {cancelFieldErrors?.refundMethod && (
+                                  <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                    {cancelFieldErrors.refundMethod}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="bookings-panel__cancel-settle-minus" aria-hidden="true">
+                                −
+                              </span>
+                              <span className="bookings-panel__cancel-settle-ctl">
+                                <label htmlFor="cancel-refund-amount">Amount</label>
+                                <input
+                                  id="cancel-refund-amount"
+                                  type="number"
+                                  min="0"
+                                  max={bookingDetail.advanceAmount}
+                                  step="0.01"
+                                  placeholder="0"
+                                  value={cancelSettle.refundAmount}
+                                  aria-invalid={cancelFieldErrors?.refundAmount ? true : undefined}
+                                  onChange={(e) => {
+                                    setCancelFieldErrors((errs) => {
+                                      if (!errs?.refundAmount) return errs;
+                                      const { refundAmount, ...rest } = errs;
+                                      return Object.keys(rest).length ? rest : null;
+                                    });
+                                    setCancelSettle((f) => ({ ...f, refundAmount: e.target.value }));
+                                  }}
+                                  aria-describedby="cancel-settle-kept"
+                                  autoFocus
+                                />
+                                {cancelFieldErrors?.refundAmount && (
+                                  <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                    {cancelFieldErrors.refundAmount}
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          </div>
+                          <div
+                            className="bookings-panel__cancel-settle-row bookings-panel__cancel-settle-row--total"
+                            id="cancel-settle-kept"
+                          >
+                            <span>Kept as cancellation charge</span>
+                            <span>
+                              {/* Unanswered until the refund is typed: a blank
+                                  box is not a refund of zero, and footing it as
+                                  one would show the whole advance kept before
+                                  the desk has said anything. */}
+                              {cancelSettle.refundAmount.trim() === ''
+                                ? '—'
+                                : formatPrice(
+                                    Math.max(
+                                      0,
+                                      (Number(bookingDetail.advanceAmount) || 0) -
+                                        (Number(cancelSettle.refundAmount) || 0)
+                                    )
+                                  )}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="bookings-panel__hint">
+                          No advance was taken on this stay. The booking can be cancelled as it is, or a
+                          cancellation charge collected from the guest now.
+                        </p>
+                        <label className="bookings-panel__cancel-settle-collect">
+                          <input
+                            type="checkbox"
+                            checked={cancelSettle.collectCharge}
+                            onChange={(e) => {
+                              setCancelFieldErrors(null);
+                              setCancelSettle((f) => ({ ...f, collectCharge: e.target.checked }));
+                            }}
+                          />
+                          Collect a cancellation charge
+                        </label>
+                        {cancelSettle.collectCharge && (
+                          <div className="bookings-panel__cancel-settle-sheet">
+                            <div className="bookings-panel__cancel-settle-row">
+                              <span>Cancellation charge</span>
+                              <span className="bookings-panel__cancel-settle-refund">
+                                <span className="bookings-panel__cancel-settle-ctl">
+                                  <label htmlFor="cancel-charge-method">Payment type</label>
+                                  <select
+                                    id="cancel-charge-method"
+                                    value={cancelSettle.chargeMethod}
+                                    aria-invalid={cancelFieldErrors?.chargeMethod ? true : undefined}
+                                    onChange={(e) => {
+                                      setCancelFieldErrors((errs) => {
+                                        if (!errs?.chargeMethod) return errs;
+                                        const { chargeMethod, ...rest } = errs;
+                                        return Object.keys(rest).length ? rest : null;
+                                      });
+                                      setCancelSettle((f) => ({ ...f, chargeMethod: e.target.value }));
+                                    }}
+                                  >
+                                    <option value="">Choose type</option>
+                                    {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                                      <option key={value} value={value}>
+                                        {label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {cancelFieldErrors?.chargeMethod && (
+                                    <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                      {cancelFieldErrors.chargeMethod}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="bookings-panel__cancel-settle-ctl">
+                                  <label htmlFor="cancel-charge-amount">Amount</label>
+                                  <input
+                                    id="cancel-charge-amount"
+                                    type="number"
+                                    min="0"
+                                    max={bookingDetail.totalPrice}
+                                    step="0.01"
+                                    placeholder="0"
+                                    value={cancelSettle.chargeAmount}
+                                    aria-invalid={cancelFieldErrors?.chargeAmount ? true : undefined}
+                                    onChange={(e) => {
+                                      setCancelFieldErrors((errs) => {
+                                        if (!errs?.chargeAmount) return errs;
+                                        const { chargeAmount, ...rest } = errs;
+                                        return Object.keys(rest).length ? rest : null;
+                                      });
+                                      setCancelSettle((f) => ({ ...f, chargeAmount: e.target.value }));
+                                    }}
+                                    autoFocus
+                                  />
+                                  {cancelFieldErrors?.chargeAmount && (
+                                    <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                      {cancelFieldErrors.chargeAmount}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="bookings-panel__cancel-settle-row bookings-panel__cancel-settle-row--total">
+                              <span>Collected as cancellation charge</span>
+                              <span>
+                                {cancelSettle.chargeAmount.trim() === ''
+                                  ? '—'
+                                  : formatPrice(Math.max(0, Number(cancelSettle.chargeAmount) || 0))}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="bookings-panel__cancel-settle-fields">
+                      <label htmlFor="cancel-reason">Reason (optional)</label>
+                      <input
+                        id="cancel-reason"
+                        value={cancelSettle.reason}
+                        maxLength={200}
+                        placeholder="Guest called off the trip"
+                        onChange={(e) => setCancelSettle((f) => ({ ...f, reason: e.target.value }))}
+                      />
+                    </div>
+                    <div className="bookings-panel__actions">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setActionError('');
+                          setCancelFieldErrors(null);
+                          setCancelSettle(null);
+                        }}
+                        disabled={actionSubmitting}
+                      >
+                        Keep the booking
+                      </button>
+                      <button
+                        type="button"
+                        className="confirm-dialog__danger"
+                        onClick={handleCancel}
+                        disabled={actionSubmitting}
+                      >
+                        {actionSubmitting ? 'Cancelling…' : 'Cancel booking'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!showCheckInForm && !cancelSettle && (
                   <div className="bookings-panel__actions bookings-panel__actions--footer">
                     {bookingDetail.status === 'BOOKED' && (
                       <button
                         type="button"
                         className="bookings-panel__danger-link"
-                        onClick={handleCancel}
+                        onClick={openCancelSettle}
                         disabled={actionSubmitting}
                       >
                         Cancel booking

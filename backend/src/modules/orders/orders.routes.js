@@ -8,6 +8,7 @@ const {
   updateStatusHandler,
   updateItemReadyHandler,
   clearPinLockoutHandler,
+  roomOccupancyHandler,
 } = require('./orders.controller');
 
 const router = Router();
@@ -24,6 +25,15 @@ router.delete(
 
 // /queue is declared before /:id so "queue" isn't swallowed as an order id.
 router.get('/queue', authenticate, requirePermission('orders.manage'), listQueueHandler);
+
+// Like /queue, declared ahead of /:id so the literal segment wins over the
+// order-id route.
+router.get(
+  '/room-occupancy/:roomId',
+  authenticate,
+  requirePermission('orders.manage'),
+  roomOccupancyHandler
+);
 router.get('/', authenticate, requirePermission('orders.manage'), listOrdersHandler);
 router.get('/:id', authenticate, requirePermission('orders.manage'), getOrderHandler);
 router.post('/', authenticate, requirePermission('orders.manage'), createCounterOrderHandler);

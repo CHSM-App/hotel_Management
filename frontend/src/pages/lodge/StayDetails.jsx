@@ -248,9 +248,63 @@ export default function StayDetails({
                   <span className="detail-fact__value">{booking.advanceReference}</span>
                 </div>
               )}
+              {/* How the cancellation settled the advance. Only on stays whose
+                  cancellation answered the question — older ones recorded
+                  nothing, and inventing figures for them would be worse. */}
+              {booking.status === 'CANCELLED' && booking.refundAmount != null && (
+                <>
+                  <div className="detail-fact">
+                    <span className="detail-fact__label">Refunded</span>
+                    <span className="detail-fact__value">
+                      {formatPrice(booking.refundAmount)}
+                      {booking.refundPaymentMethod && (
+                        <span className="bookings-panel__muted"> · {booking.refundPaymentMethod}</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="detail-fact">
+                    <span className="detail-fact__label">Cancellation charge</span>
+                    <span className="detail-fact__value">{formatPrice(booking.cancellationCharge ?? 0)}</span>
+                  </div>
+                </>
+              )}
+              {booking.status === 'CANCELLED' && booking.cancelReason && (
+                <div className="detail-fact detail-fact--wide">
+                  <span className="detail-fact__label">Cancelled because</span>
+                  <span className="detail-fact__value">{booking.cancelReason}</span>
+                </div>
+              )}
             </div>
           ) : (
-            <p className="detail-empty">No advance taken.</p>
+            <>
+              <p className="detail-empty">No advance taken.</p>
+              {booking.status === 'CANCELLED' && (booking.cancelReason || booking.cancellationCharge > 0) && (
+                <div className="detail-facts">
+                  {/* A fee taken at the desk while cancelling — there was no
+                      advance to keep it from, so it carries its own tender. */}
+                  {booking.cancellationCharge > 0 && (
+                    <div className="detail-fact">
+                      <span className="detail-fact__label">Cancellation charge</span>
+                      <span className="detail-fact__value">
+                        {formatPrice(booking.cancellationCharge)}
+                        {booking.cancellationChargePaymentMethod && (
+                          <span className="bookings-panel__muted">
+                            {' · '}
+                            {booking.cancellationChargePaymentMethod}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {booking.cancelReason && (
+                    <div className="detail-fact detail-fact--wide">
+                      <span className="detail-fact__label">Cancelled because</span>
+                      <span className="detail-fact__value">{booking.cancelReason}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 

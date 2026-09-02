@@ -22,6 +22,12 @@ const OTP_TEMPLATE_ID = process.env.WHATSAPP_OTP_TEMPLATE_ID || '';
 // confirmation goes out and nothing else changes — the switch for a property
 // that has not had the template approved yet.
 const BOOKING_TEMPLATE_ID = process.env.WHATSAPP_BOOKING_TEMPLATE_ID || '';
+// The approved "here is your bill" template, sent from the billing screen when
+// the desk shares a bill with a guest. Separate from the booking one because
+// they say different things at different times and a property may have only
+// one of them approved. Left blank, the Share menu reports the channel as
+// unavailable rather than failing at the provider.
+const BILL_TEMPLATE_ID = process.env.WHATSAPP_BILL_TEMPLATE_ID || '';
 
 // Indian numbers, in the shapes people actually type them: ten digits, ten with
 // a leading zero, or already carrying the 91 country code. Anything else is
@@ -104,6 +110,14 @@ function isBookingTemplateConfigured() {
   return isConfigured() && !isPlaceholder(BOOKING_TEMPLATE_ID);
 }
 
+// The same question for the bill template. Asked by the billing screen before
+// it offers WhatsApp as a channel, so a property without the template sees the
+// option greyed out with a reason rather than a send that fails at the desk
+// after the guest has been told the bill is on its way.
+function isBillTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(BILL_TEMPLATE_ID);
+}
+
 async function sendOtp(phone, otpCode) {
   if (!isConfigured()) {
     throw new Error('WhatsApp API token is not configured.');
@@ -173,5 +187,7 @@ module.exports = {
   normalisePhone,
   isConfigured,
   isBookingTemplateConfigured,
+  isBillTemplateConfigured,
   BOOKING_TEMPLATE_ID,
+  BILL_TEMPLATE_ID,
 };

@@ -66,6 +66,13 @@ const ICON_PATHS = {
       <path d="M18 20V10M12 20V4M6 20v-6" />
     </>
   ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </>
+  ),
   party: (
     <>
       <path d="M5.8 11.3 2 22l10.7-3.8" />
@@ -340,6 +347,25 @@ export default function OwnerDashboard() {
               </ul>
             </div>
           ))}
+
+          {/* Last, and set apart by a rule: every section above is part of the
+              property, this is help about all of them. Ungated by permission —
+              the guide shows whatever sections the user can actually reach, so
+              there is nothing here for a limited role to leak. */}
+          <div className="dash-sidebar__group dash-sidebar__guide">
+            <ul className="dash-sidebar__list">
+              <li>
+                <button
+                  type="button"
+                  className="dash-sidebar__item"
+                  onClick={() => navigate('/guide')}
+                >
+                  <Icon name="help" />
+                  User guide
+                </button>
+              </li>
+            </ul>
+          </div>
         </nav>
 
         {/* The sidebar names the section, so the panel doesn't repeat it as a

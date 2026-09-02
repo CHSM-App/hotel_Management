@@ -174,11 +174,15 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
       .input('fromDate', sql.Date, fromDate)
       .input('toDate', sql.Date, toDate);
 
-  // Cancelled stays are excluded from every half. Whether an advance on one was
-  // refunded is not recorded anywhere, so counting it as income would overstate
-  // takings on exactly the stays that produced none. The report says so on the
-  // page rather than leaving an owner to wonder why a cancelled booking's
-  // advance is missing from the totals.
+  // Cancelled stays are excluded from the advance and balance halves: their
+  // advances largely went back to the guest, and counting them as income would
+  // overstate takings on exactly the stays that produced none. What a
+  // cancellation *kept* is different — since cancellations settle the money
+  // (refund recorded, remainder held as the cancellation charge), the kept
+  // slice is real income, and it is reported below as its own line, dated by
+  // the day of cancellation, rather than folded into the advance figure it
+  // would only muddy. Cancellations from before settlements existed have no
+  // charge recorded and still contribute nothing, which is truthful for them.
   const stayPeriodCase = `
     CASE
       WHEN b.check_in_date < @fromDate THEN 'EARLIER'
@@ -212,6 +216,17 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
       AND b.status <> 'CANCELLED'
       AND b.advance_amount > ISNULL(r.total, 0)
       AND CAST(b.created_at AS DATE) BETWEEN @fromDate AND @toDate
+  `);
+
+  // Money kept from cancelled stays, dated by when each stay was cancelled —
+  // that is the day the advance stopped being a deposit and became income.
+  const cancellationCharges = await period(pool.request()).query(`
+    SELECT b.id, b.cancellation_charge, ${stayPeriodCase}
+    FROM dbo.bookings b
+    WHERE b.lodge_id = @lodgeId
+      AND b.status = 'CANCELLED'
+      AND b.cancellation_charge > 0
+      AND CAST(b.cancelled_at AS DATE) BETWEEN @fromDate AND @toDate
   `);
 
   const balances = await period(pool.request()).query(`
@@ -304,12 +319,26 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     file(row, 'balance', amount);
   }
 
+  // Summed on its own rather than through add()/file(): the charge was
+  // tendered when the advance was, possibly split across methods, so filing
+  // it under a payment mode here would claim a precision the record does not
+  // have. It is a figure of its own, and the report prints it as one.
+  let cancellationChargesKept = 0;
+  for (const row of cancellationCharges.recordset) {
+    cancellationChargesKept = round2(cancellationChargesKept + Number(row.cancellation_charge));
+  }
+
   return {
     advanceCollected,
     advanceCount,
     balanceCollected,
     balanceCount: balances.recordset.length,
-    totalCollected: round2(advanceCollected + balanceCollected),
+    // Cancellation charges are income of the period too — money the house
+    // kept when a stay fell through — but they ride outside the advance and
+    // balance halves, so byPaymentMode still foots against those two alone.
+    cancellationChargesKept,
+    cancellationChargeCount: cancellationCharges.recordset.length,
+    totalCollected: round2(advanceCollected + balanceCollected + cancellationChargesKept),
     byPaymentMode,
     byStayPeriod,
   };
@@ -545,6 +574,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
              DATEDIFF(day, b.check_in_date, b.check_out_date) AS nights,
              b.actual_check_in_at, b.actual_check_out_at,
              b.total_price, b.advance_amount, b.advance_payment_method, b.created_at,
+             b.cancel_reason, b.refund_amount, b.cancellation_charge,
              r.room_number, c.name AS category_name,
              i.invoice_number, i.document_type, i.billing_side, i.created_at AS invoice_created_at,
              i.room_subtotal, i.food_subtotal,
@@ -606,6 +636,12 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       advanceTenders: mergeTenders(
         splitAcross(advanceAmount, tenders.advance.get(String(row.id)), row.advance_payment_method)
       ),
+      // How a cancellation settled the advance: refunded to the guest, and
+      // kept as the cancellation charge. Null on live stays, and on
+      // cancellations that never settled the money.
+      cancelReason: row.cancel_reason || null,
+      refundAmount: row.refund_amount != null ? Number(row.refund_amount) : null,
+      cancellationCharge: row.cancellation_charge != null ? Number(row.cancellation_charge) : null,
       invoiceNumber: row.invoice_number || null,
       documentType: row.document_type || null,
       billingSide: row.billing_side || null,
@@ -654,7 +690,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   // What cancelled stays would have added, kept aside rather than discarded so
   // the report can name the figure it is leaving out. A number an owner can see
   // and dismiss is very different from one that silently went missing.
-  const cancelled = { count: 0, bookedValue: 0, advanceHeld: 0 };
+  const cancelled = { count: 0, bookedValue: 0, advanceHeld: 0, refunded: 0, chargesKept: 0 };
   const summary = {
     totalBookings: bookings.length,
     activeBookings: 0,
@@ -687,6 +723,11 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       cancelled.count += 1;
       cancelled.bookedValue = round2(cancelled.bookedValue + booking.totalPrice);
       cancelled.advanceHeld = round2(cancelled.advanceHeld + booking.advanceAmount);
+      // Where the held money went, on the stays whose cancellation settled it.
+      // The two need not add to advanceHeld: older cancellations recorded
+      // neither figure, and their advances stay unaccounted for.
+      cancelled.refunded = round2(cancelled.refunded + (booking.refundAmount ?? 0));
+      cancelled.chargesKept = round2(cancelled.chargesKept + (booking.cancellationCharge ?? 0));
       continue;
     }
 
@@ -720,6 +761,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   const collections = await getCollectionsInPeriod(pool, lodgeId, fromDate, toDate);
   summary.advanceCollected = collections.advanceCollected;
   summary.balanceCollected = collections.balanceCollected;
+  summary.cancellationChargesKept = collections.cancellationChargesKept;
   summary.totalCollected = collections.totalCollected;
 
   return {

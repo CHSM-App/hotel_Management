@@ -129,6 +129,14 @@
   color: var(--brand-ink);
 }
 
+/* The guide's own entry, last in the nav and set off by a rule: every item
+   above is a part of the property, this is help about all of them. */
+.dash-sidebar__guide {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 .dash-sidebar__soon {
   margin-left: auto;
   flex-shrink: 0;
@@ -187,6 +195,14 @@
      horizontally scrollable row instead of stacking a header per group. */
   .dash-sidebar__group {
     display: contents;
+  }
+
+  /* The guide joins that row like any other item — a rule above it belongs to
+     a stacked column and would draw across the strip here. */
+  .dash-sidebar__guide {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
   }
 
   .dash-sidebar__label {
