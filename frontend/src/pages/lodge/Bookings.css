@@ -211,15 +211,26 @@
 .booking-form__total {
   display: flex;
   flex-direction: column;
+  /* Both the min-width and the shrink are load-bearing: without them the
+     nowrap label below sets the column's floor and pushes the buttons out of
+     the footer instead of ellipsing. */
   min-width: 0;
+  flex: 1 1 auto;
 }
 
+/* Carries the room and the party as well as the night count, so it has to be
+   told what to do when it runs out of room: truncate rather than wrap. The
+   figure underneath is the thing the footer exists to keep on screen, and a
+   label that grows to two lines is what pushes it off. */
 .booking-form__total-label {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .booking-form__total-value {
@@ -241,14 +252,39 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 17px;
-  margin-right: 7px;
+  /* Never squeezed by a long heading beside it — a flattened circle reads as
+     a rendering fault rather than as a badge. */
+  flex: none;
+  /* 19px rather than the 17px it started at: it now holds a tick as well as a
+     digit, and a checkmark inside 17px is a smudge at desk distance. */
+  width: 19px;
+  height: 19px;
+  /* No margin. Both headings that carry this badge — .form-section__title and
+     the collapsible <summary> — are flex rows with their own 8px gap, so a
+     margin here would be added on top of it and sections 3 and 4 would sit a
+     notch further out than 1 and 2. */
   border-radius: 50%;
   background: var(--brand);
   color: #fff;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
+  line-height: 1;
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+/* A finished section goes green. Colour is the fast signal down a scrolling
+   form, but it is never the only one — the badge swaps its digit for a tick at
+   the same moment, so the state survives a monochrome screen and a reader who
+   cannot separate the two hues. */
+.form-section__num--done {
+  background: #1c7a4a;
+  box-shadow: 0 0 0 3px rgba(28, 122, 74, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form-section__num {
+    transition: none;
+  }
 }
 
 .booking-form__room-meta {
@@ -309,24 +345,124 @@
   padding: 3px 0;
 }
 
-/* An extras total, edited in place. Deliberately looks like the figure it
-   replaces — right-aligned, same size — with only a hairline border to say it
-   can be typed in. A full input chrome here would turn a quiet summary into a
-   form and pull the eye off the stay total underneath. */
+/* An extras total, edited in place. This used to be styled to match the figure
+   it replaces, on the theory that a quiet summary shouldn't turn into a form —
+   but the figures around it are read-only, so looking like them made the one
+   editable number on the panel look read-only too, and reception had no way to
+   discover it but by clicking. It now carries the same paper fill and well as
+   every other input in the app. */
 .booking-form .sim-result__amount-input {
-  width: 78px;
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface);
-  color: inherit;
+  width: 108px;
+  padding: 3px 30px 3px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 6px;
+  background: var(--field);
+  box-shadow: var(--shadow-well);
+  color: var(--ink);
   font: inherit;
-  text-align: right;
+  font-variant-numeric: tabular-nums;
+  /* The figure keeps the left of the box, where the eye lands first — the
+     pencil is the thing that moved aside for it, not the other way round. */
+  text-align: left;
+  cursor: text;
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+  /* The browser's own spinner sits exactly where the pencil goes, so one would
+     be drawn over the other. Nothing is lost by dropping it: these are rates
+     typed in whole rupees off a tariff card, not figures nudged a step at a
+     time, and the arrows were never how anyone set them. */
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
-.booking-form .sim-result__amount-input:focus {
-  border-color: var(--brand);
+.booking-form .sim-result__amount-input::-webkit-outer-spin-button,
+.booking-form .sim-result__amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.booking-form .sim-result__amount-input:hover:not(:disabled):not([readonly]) {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--shadow-well-hover);
+}
+
+.booking-form .sim-result__amount-input:focus,
+.booking-form .sim-result__amount-input:focus-visible {
+  border-color: var(--focus);
+  box-shadow: var(--shadow-well-focus);
   outline: none;
+}
+
+/* Said in words, once, above the boxes. The pencil inside each box says which
+   figures are editable; this says that any of them are, without waiting for a
+   hover that never comes on a touchscreen. */
+.booking-form .sim-result__hint {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Holds the pencil against the input, so the mark can be laid inside the well
+   rather than beside it — a mark outside the box points at the box, a mark
+   inside it belongs to it, and belonging is what reads as "this is a field". */
+.amount-edit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+/* Inside the well at its trailing edge, and a real button — pressing it puts
+   the cursor in the figure beside it with the old value selected. Anything
+   that looks pressable and isn't teaches the desk that the picture lies.
+
+   Always drawn, never revealed on hover: hover is a question nobody thinks to
+   ask of a figure that already looks settled, and a touchscreen has no hover
+   to ask it with. Sized past the 13px glyph it holds — 24px square, because it
+   is pressed with a fingertip at a reception desk. */
+.amount-edit__pencil {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  opacity: 0.8;
+  cursor: pointer;
+  transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.amount-edit:hover .amount-edit__pencil {
+  opacity: 1;
+}
+
+/* The mark answers the pointer on its own, so the desk can tell the button
+   apart from the field it sits in before committing the click. */
+.amount-edit__pencil:hover {
+  color: var(--brand);
+  background: rgba(30, 58, 95, 0.09);
+}
+
+.amount-edit__pencil:active {
+  background: rgba(30, 58, 95, 0.16);
+}
+
+.amount-edit:focus-within .amount-edit__pencil {
+  opacity: 1;
+  color: var(--focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amount-edit__pencil,
+  .booking-form .sim-result__amount-input {
+    transition: none;
+  }
 }
 
 .booking-form .sim-result__total {
@@ -696,11 +832,12 @@
   flex: 1;
   min-width: 0;
   padding: 11px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 44px;
+  box-shadow: var(--shadow-well);
 }
 
 /* The plate is the thing being read down the list; the type is a four-option
@@ -1085,20 +1222,21 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  /* The amber cast of .btn-accent's red-tinted shadow, so the lift belongs to
-     the button's own colour instead of floating on a neutral grey. */
-  box-shadow: 5px 5px 12px rgba(150, 112, 6, 0.28), -5px -5px 12px var(--neu-light);
-  transition: background 150ms ease, box-shadow 150ms ease;
+  /* The same downward cast .btn-accent takes, in amber instead of violet: the
+     two sit side by side and have to lift by the same amount off the same
+     surface, or the pair reads as two controls from different screens. */
+  box-shadow: 0 2px 6px rgba(150, 112, 6, 0.26), 0 10px 22px -8px rgba(150, 112, 6, 0.46);
+  transition: background 150ms ease, filter 150ms ease, box-shadow 150ms ease;
 }
 
 .bookings-panel__draft-chip:hover {
   background: var(--tape-draft-deep, #d4a70c);
-  box-shadow: 7px 7px 16px rgba(150, 112, 6, 0.32), -7px -7px 16px var(--neu-light);
+  box-shadow: 0 4px 10px rgba(150, 112, 6, 0.3), 0 16px 30px -8px rgba(150, 112, 6, 0.5);
 }
 
 .bookings-panel__draft-chip:active {
-  box-shadow: inset 3px 3px 7px rgba(92, 68, 4, 0.45),
-    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+  filter: brightness(0.98);
+  box-shadow: inset 0 2px 6px rgba(92, 68, 4, 0.45);
 }
 
 .bookings-panel__draft-chip svg {

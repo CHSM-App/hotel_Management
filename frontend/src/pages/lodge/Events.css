@@ -18,12 +18,12 @@
 .events__toolbar select,
 .events__toolbar input {
   padding: 9px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 42px;
-  box-shadow: var(--shadow-inset);
+  box-shadow: var(--shadow-well);
 }
 
 .events__toolbar .btn-accent {
@@ -261,11 +261,12 @@
 
 .events-setup__edit-row input {
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 38px;
+  box-shadow: var(--shadow-well);
 }
 
 .events-setup__edit-row input[type='text'] {
@@ -536,12 +537,13 @@
 .events-extras__price input,
 .events-extras__add input {
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 38px;
   font: inherit;
+  box-shadow: var(--shadow-well);
 }
 
 .events-extras__price input {
@@ -652,14 +654,14 @@
   width: 100%;
   min-height: 72px;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   font: inherit;
   font-size: 14px;
   resize: vertical;
-  box-shadow: var(--shadow-inset);
+  box-shadow: var(--shadow-well);
 }
 
 .field textarea:focus-visible {
@@ -756,11 +758,12 @@
 
 .events-oneoff input {
   padding: 9px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 40px;
+  box-shadow: var(--shadow-well);
 }
 
 .events-oneoff button {
@@ -942,11 +945,12 @@
 .events-detail__fact input {
   width: 80px;
   padding: 4px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   text-align: right;
+  box-shadow: var(--shadow-well);
 }
 
 .events-detail__notes {

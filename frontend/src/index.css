@@ -1,17 +1,17 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #1E3A5F;
-  --color-secondary: #9C2B2B;
-  --color-background: #E9ECF1;
-  --color-surface: #E9ECF1;
-  --color-success: #16A34A;
-  --color-warning: #EAB308;
-  --color-danger: #C1121F;
+  --color-primary: #5B3FD9;
+  --color-secondary: #C79A3A;
+  --color-background: #F4F6FA;
+  --color-surface: #FFFFFF;
+  --color-success: #15803D;
+  --color-warning: #E0A414;
+  --color-danger: #C0392B;
 
   /* CTA gradient stops — e.g. bg-gradient-to-r from-cta-from to-cta-to */
-  --color-cta-from: #B3261E;
-  --color-cta-to: #7A1F1F;
+  --color-cta-from: #7C5CE8;
+  --color-cta-to: #5B3FD9;
 
   /* Semantic radii — an extrusion needs generous corners to catch the light,
      so both steps go up from the old 12/16px. */
@@ -20,69 +20,102 @@
 }
 
 :root {
-  /* --- Neumorphic depth ----------------------------------------------------
-     Cards, inputs and buttons all sit at exactly the same value as the page —
-     `--surface` and `--paper` are deliberately the same colour. Nothing is
-     separated by fill, so depth comes entirely from a fixed light source at
-     the top-left: a white highlight up-left, a cool shadow down-right.
+  /* --- Surface & depth -----------------------------------------------------
+     Hierarchy is carried by fill first: a cool off-white page (--paper) with
+     white cards (--surface) sitting on it. Depth is then a soft downward
+     shadow from a single overhead light — a tight contact shadow plus a wider
+     ambient one — never a bevel.
 
-     Because the whole app already reads depth through these four tokens, the
-     shadow names below are unchanged: every existing `var(--shadow-card)` call
-     site becomes an extrusion without its stylesheet being touched. */
-  --neu-base: #e9ecf1;
-  --neu-light: #ffffff;
-  --neu-dark: #c3cad6;
+     The shadow token names are unchanged from the previous extrusion palette,
+     so every existing `var(--shadow-card)` call site picks up the new
+     elevation without its own stylesheet being touched. --neu-* remain the
+     raw swatches those call sites still reference. */
+  --neu-base: #F4F6FA;
+  --neu-light: #FFFFFF;
+  --neu-dark: #DCE1EC;
 
   /* Raised — panels and cards. */
-  --shadow-card: 6px 6px 14px var(--neu-dark), -6px -6px 14px var(--neu-light);
+  --shadow-card: 0 1px 2px rgba(22, 33, 46, 0.05), 0 10px 28px -8px rgba(22, 33, 46, 0.13);
   /* Modals, popovers, anything over a scrim. Only a step above --shadow-card:
      the scrim behind a modal is already doing the separating, and a full-depth
      extrusion on a 560px panel reads as a halo rather than as lift. */
-  --shadow-elevated: 8px 8px 18px var(--neu-dark), -7px -7px 16px var(--neu-light);
+  --shadow-elevated: 0 2px 8px rgba(22, 33, 46, 0.07), 0 28px 56px -16px rgba(22, 33, 46, 0.26);
   /* A shallower lift for buttons, chips and tabs, so dense rows of them stay
      legible instead of turning to mush. */
-  --shadow-raised: 4px 4px 9px var(--neu-dark), -4px -4px 9px var(--neu-light);
+  --shadow-raised: 0 1px 2px rgba(22, 33, 46, 0.06), 0 3px 10px -3px rgba(22, 33, 46, 0.11);
   /* Carved into the surface — inputs at rest, tabs and toggles when selected. */
-  --shadow-inset: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+  --shadow-inset: inset 0 0 0 1px var(--border), inset 0 2px 4px rgba(22, 33, 46, 0.05);
   /* A control held down. Shallower than --shadow-inset so the travel between
      raised and pressed reads as movement. */
-  --shadow-pressed: inset 2px 2px 5px var(--neu-dark), inset -2px -2px 5px var(--neu-light);
+  --shadow-pressed: inset 0 0 0 1px var(--border), inset 0 1px 3px rgba(22, 33, 46, 0.07);
 
   /* The hover partner to --shadow-raised: the same light source, thrown a
      little further. Three call sites had this exact pair inlined before it had
      a name; a control that lifts on hover should lift by the same amount
      everywhere, which is exactly the thing a literal can't promise. */
-  --shadow-raised-hover: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  --shadow-raised-hover: 0 2px 5px rgba(22, 33, 46, 0.08), 0 10px 22px -6px rgba(22, 33, 46, 0.18);
 
   /* One duration for every state change in the system. Neumorphism reads as a
      physical surface, and a surface that snaps between states reads as a
      redraw instead of as movement — the travel is the whole signal. */
   --neu-transition: box-shadow 200ms ease, color 200ms ease, background-color 200ms ease;
 
-  /* The escape hatch for the places a real inset shadow cannot be drawn. A
-     <tr> under `border-collapse: collapse` generates no box, so a box-shadow on
-     it is silently dropped by every engine — and the app's tables are all
-     collapsed. This is the flat stand-in for --shadow-pressed: dark enough to
-     read as a recess against --neu-base, light enough to leave text contrast
-     untouched. Use it on hovered table rows, and nowhere a shadow would work. */
-  --neu-sunken: #e2e6ec;
+  /* The flat fill for places a shadow cannot be drawn. A <tr> under
+     `border-collapse: collapse` generates no box, so a box-shadow on it is
+     silently dropped by every engine — and the tables here are all collapsed.
+     Cool enough to read as a highlighted row against white, light enough to
+     leave text contrast untouched. Use it on hovered table rows. */
+  --neu-sunken: #EEF1F7;
 
-  --ink: #16212e;
-  --text: #46525c;
-  --text-muted: #5b6670;
-  --paper: var(--neu-base);
-  --surface: var(--neu-base);
+  --ink: #16212E;
+  --text: #48566A;
+  --text-muted: #78859A;
+  --paper: #F4F6FA;
+  --surface: #FFFFFF;
   /* Soft enough to read as a groove rather than a drawn line, but still
      present: table rules and list dividers carry real meaning and shadows
      alone can't separate a 32px row. */
-  --border: #d5dbe4;
-  --brand: #1e3a5f;
-  --brand-ink: #142744;
-  --accent: #9c2b2b;
-  --accent-ink: #7a1f1f;
-  --danger: #c1121f;
-  --danger-bg: #f7e4e5;
-  --focus: #1e3a5f;
+  --border: #E3E8F0;
+  /* The brand is a violet, and it is the only saturated hue the chrome uses —
+     topbar, primary buttons, the selected item in the sidebar. --brand is the
+     mid stop the flat surfaces take; --brand-ink is the deep end, used as the
+     second stop wherever the chrome runs a gradient and as the pressed state
+     for anything filled with --brand. */
+  --brand: #5B3FD9;
+  --brand-ink: #4527B8;
+  /* The gradient the topbar and the primary button run: the brand lit from the
+     left. Kept as its own pair rather than reusing --brand/--brand-ink, so the
+     lift reads as light on a surface instead of as a darker shade of itself. */
+  --brand-lift: #7C5CE8;
+  /* Violet at the weight a tint needs: the sidebar's selected row, hover wells,
+     any place the brand has to sit under text rather than behind white. */
+  --brand-wash: #EFEBFD;
+  --brand-wash-edge: #DCD4FA;
+  /* Gold stays the accent — it is what makes the draft count findable against a
+     screen whose chrome is now entirely violet. */
+  --accent: #C79A3A;
+  --accent-ink: #A67C22;
+  --danger: #C0392B;
+  --danger-bg: #FBECEA;
+  --focus: #5B3FD9;
+
+  /* --- Editable fields -----------------------------------------------------
+     Cards are already white, so a field cannot be told apart from the card it
+     sits on by fill alone. The signal flips: a live field keeps the white fill
+     and gains a real rim plus a shallow inner shadow, while read-only and
+     disabled controls drop back to the page tone. The rim is what survives a
+     glance, a cheap monitor and a screenshot. */
+  --field: #FFFFFF;
+  --field-border: #DDE3EC;
+  --field-border-hover: #B6BFD0;
+  --field-placeholder: #9AA4B5;
+  /* The inner shadow under the top rim — light falling into the box. Kept
+     shallow: the border is doing most of the work now. */
+  --shadow-well: inset 0 1px 2px rgba(22, 33, 46, 0.06);
+  --shadow-well-hover: inset 0 1px 3px rgba(22, 33, 46, 0.1);
+  /* Focus is a brand ring outside the box: the rim already says "field", so
+     the active one needs a different axis to be found on. */
+  --shadow-well-focus: inset 0 1px 2px rgba(22, 33, 46, 0.04), 0 0 0 3px rgba(91, 63, 217, 0.22);
 
   --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --serif: 'Fraunces', Georgia, serif;
@@ -102,15 +135,14 @@
 }
 
 @layer components {
-  /* Solid modal surface — PIN entry, payment popups, every form modal. No
-     outer shadow and no border: a light panel on a dark scrim is already fully
-     separated from the page, and an extrusion on top of that reads as a halo
-     rather than as lift. Depth inside the modal still works normally — this
-     only drops the edge, not the wells and buttons within it. */
+  /* Solid modal surface — PIN entry, payment popups, every form modal. A white
+     panel lifted off a dark scrim: the scrim separates it from the page, the
+     shadow says how far above it floats. */
   .glass-panel {
     background: var(--surface);
     border: none;
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-elevated);
   }
 
   /* Dimmed scrim behind a modal */
@@ -118,27 +150,25 @@
     background: rgba(15, 23, 42, 0.45);
   }
 
-  /* Gradient CTA button — e.g. "Convert to Booking". The one control that
-     keeps a fill: on a page where every surface is the same colour, the
-     primary action needs a value difference to stay findable. */
+  /* Gradient CTA button — e.g. "Convert to Booking". The deepest fill on the
+     page, so the primary action is never in doubt. */
   .btn-cta {
     background-image: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
     color: #fff;
     border-radius: var(--radius-tile);
-    box-shadow: 5px 5px 12px rgba(122, 31, 31, 0.3), -5px -5px 12px var(--neu-light);
+    box-shadow: 0 2px 6px rgba(69, 39, 184, 0.26), 0 10px 22px -8px rgba(69, 39, 184, 0.46);
     transition: filter 150ms ease, box-shadow 150ms ease;
   }
 
   .btn-cta:hover {
     filter: brightness(1.06);
-    box-shadow: 7px 7px 16px rgba(122, 31, 31, 0.34), -7px -7px 16px var(--neu-light);
+    box-shadow: 0 4px 10px rgba(69, 39, 184, 0.3), 0 16px 30px -8px rgba(69, 39, 184, 0.5);
   }
 
   /* Pressed rather than nudged down: the inset does what translateY used to. */
   .btn-cta:active {
     filter: brightness(0.98);
-    box-shadow: inset 3px 3px 7px rgba(60, 12, 12, 0.45),
-      inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 2px 6px rgba(45, 22, 130, 0.45);
   }
 
   /* Reusable extrusion primitives, for markup that has no stylesheet of its
@@ -162,9 +192,11 @@
     box-shadow: var(--shadow-pressed);
   }
 
+  /* A well things sit inside — drops to the page tone so it reads as recessed
+     below the white card around it. */
   .neu-inset {
-    background: var(--surface);
-    border: none;
+    background: var(--paper);
+    border: 1px solid var(--border);
     border-radius: var(--radius-tile);
     box-shadow: var(--shadow-inset);
   }
@@ -235,11 +267,66 @@ img {
 input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
 select,
 textarea {
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  box-shadow: var(--shadow-inset);
+  box-shadow: var(--shadow-well);
+  transition: box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+/* A field nobody has typed into yet still has to say it takes typing. Muted
+   rather than faint: the hint has to read as an instruction, and has to stay
+   clearly lighter than the real value that replaces it. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+}
+
+/* The pointer is the cheapest place to prove a field is live, and it costs
+   nothing to anyone not using one. The well deepens and its rim darkens before
+   a single click has been spent finding out. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):hover:not(:disabled):not([readonly]),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled):not([readonly]) {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--shadow-well-hover);
+}
+
+/* A select is the one control whose editability is invisible without a mark:
+   with the platform arrow suppressed it is just a box of text. Drawn as an
+   inline SVG rather than a glyph so it inherits no font and no line-height. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%235b6670' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+  padding-right: 34px;
+  cursor: pointer;
+}
+
+/* Read-only and disabled controls go back to sitting flush with the page. The
+   whole point of the fill above is that it means "you can type here", so the
+   controls that take no typing must not carry it — otherwise the signal is
+   spent everywhere and means nothing anywhere. */
+input:disabled,
+select:disabled,
+textarea:disabled,
+input[readonly],
+textarea[readonly] {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-pressed);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+input[readonly],
+textarea[readonly] {
+  cursor: default;
 }
 
 /* --- the 16px floor -------------------------------------------------------

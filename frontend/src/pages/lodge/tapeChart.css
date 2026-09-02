@@ -16,23 +16,33 @@
      dark enough that each empty night keeps its own outline across a month of
      them, still short of the saturation the sold nights carry. Green gets
      assertive only under the pointer. */
-  --tape-vacant: #e4f0e8;
-  --tape-vacant-edge: #a5c9b1;
-  --tape-vacant-well: #b3c8ba;
-  --tape-vacant-hover: #d5e9db;
-  --tape-vacant-edge-hover: #74ad88;
+  /* A night still for sale is a shallow mint well. Cooler and cleaner than the
+     old #e4f0e8, which carried enough yellow to read as grubby beige once a
+     whole month of them was on screen at once — this is the same idea in a
+     fresher green, so an empty chart looks calm rather than dusty. */
+  --tape-vacant: #e8f5ec;
+  --tape-vacant-edge: #9fcfb2;
+  --tape-vacant-well: #bfd8c7;
+  --tape-vacant-hover: #d2ecdb;
+  --tape-vacant-edge-hover: #56b47a;
   /* The same well, one step deeper — a weekend is a shade of vacant, not a
      different state, so it stays in the mint family. */
-  --tape-weekend: #dbeae0;
+  --tape-weekend: #dcefe3;
   --tape-weekend-wash: rgba(30, 58, 95, 0.035);
   /* An empty night that has already passed: flat, and deliberately outside the
      mint family, because the green means "on sale" and this one isn't. */
   --tape-past: #eceef1;
 
-  --tape-booked: #c0392b;
-  --tape-booked-deep: #a52f22;
-  --tape-checked-in: #2f6fb5;
-  --tape-checked-in-deep: #245a96;
+  /* The four sold states, retuned as one family. Each was picked on its own
+     before — a brick red, a dull steel blue, a grey slate, a flat yellow — and
+     side by side on the grid they read as four unrelated swatches rather than
+     as one legend. They now share a level: the same jewel-toned depth and the
+     same distance off the mint they sit against, so the chart reads as a single
+     system and the eye tells them apart by hue alone. */
+  --tape-booked: #e0453c;
+  --tape-booked-deep: #c2312a;
+  --tape-checked-in: #2f7fe4;
+  --tape-checked-in-deep: #1f63bd;
   /* A finished stay. Slate rather than a faded red or blue, because it is not
      a weaker version of either — the room was sold, the guest has gone, and
      nothing about it is still to be done. Desaturated so a month of history
@@ -60,10 +70,16 @@
      full contrast, strong enough to read as a filled chip rather than a smudge. */
   --tape-hit-wash: rgba(124, 58, 237, 0.1);
 
-  --tape-tile: 26px;
-  --tape-tile-h: 22px;
-  --tape-row-h: 32px;
-  --tape-room-col: 124px;
+  /* The grid's rhythm. Tiles were 26x22 in a 32px row, which on a desk-width
+     window left every night a target too small to click with confidence and
+     the room column too tight for the floor line under the number. Widened to
+     30x26 in a 38px row: a month of nights still fits the window at the widths
+     this screen is actually used at, and each tile is now a comfortable click
+     rather than a careful one. */
+  --tape-tile: 30px;
+  --tape-tile-h: 26px;
+  --tape-row-h: 38px;
+  --tape-room-col: 138px;
   /* The gutter held clear on the right of every chart. Matches the inset the
      card's own header uses, so the two line up. */
   --tape-tail: 18px;
@@ -253,10 +269,11 @@
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
-  padding: 13px 18px;
+  padding: 15px 20px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, var(--paper), var(--surface));
 }
+
 
 .tape-month-card__title {
   display: flex;
@@ -268,14 +285,23 @@
 .tape-month-card__title h4 {
   margin: 0;
   font-family: var(--serif);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--ink);
   letter-spacing: -0.01em;
 }
 
+/* The room count, as a chip rather than loose grey text beside the name. It is
+   a fact about the category, not a subtitle, and a pill says so while keeping
+   it clearly the quieter half of the pair. */
 .tape-month-card__title span {
-  font-size: 11.5px;
+  align-self: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -688,11 +714,16 @@
   max-width: 232px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #101a26;
+  /* Deep violet-ink rather than the near-black it was. The card floats over a
+     chart whose every other colour is either the brand violet or a status hue,
+     and a neutral black read as a system popup dropped on top of the app
+     instead of a surface belonging to it. Dark enough to stay legible over a
+     saturated tile, tinted enough to be this product's dark. */
+  background: #1B1436;
   color: #ffffff;
   font-size: 11.5px;
   line-height: 1.45;
-  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.32);
+  box-shadow: 0 10px 30px rgba(27, 20, 54, 0.38);
   pointer-events: none;
   animation: tape-tooltip-in 0.12s ease-out;
 }
@@ -1061,14 +1092,14 @@
   min-width: 0;
   /* Room for the icon and the clear button that sit over the two ends. */
   padding: 9px 34px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
   height: 38px;
-  box-shadow: var(--shadow-inset);
+  box-shadow: var(--shadow-well);
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 

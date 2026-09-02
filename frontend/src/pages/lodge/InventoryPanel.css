@@ -71,11 +71,12 @@
 .inv-search input {
   width: 100%;
   padding: 9px 12px 9px 32px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   font: inherit;
   color: var(--ink);
+  box-shadow: var(--shadow-well);
 }
 
 .inv-search input:focus {
@@ -554,11 +555,12 @@
   flex: 1;
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   font: inherit;
   color: var(--ink);
+  box-shadow: var(--shadow-well);
 }
 
 .inv-recipe__qty {
@@ -571,13 +573,14 @@
 .inv-recipe__qty input {
   width: 96px;
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   font: inherit;
   color: var(--ink);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-well);
 }
 
 .inv-recipe__unit {

@@ -483,14 +483,15 @@ label.order-card__item:has(.order-card__tick:disabled) {
 }
 
 .order-history__date input {
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   padding: 9px 12px;
   font: inherit;
   font-size: 14px;
   color: var(--ink);
   min-height: 40px;
+  box-shadow: var(--shadow-well);
 }
 
 .order-history__filters {

@@ -33,7 +33,7 @@
 .rowmenu__trigger:focus-visible {
   outline: none;
   border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.12);
 }
 
 /* Fixed, and rendered into document.body — see RowMenu.jsx. top/left are set

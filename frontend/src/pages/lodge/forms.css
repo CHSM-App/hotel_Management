@@ -22,30 +22,74 @@
   margin-bottom: 6px;
 }
 
+/* Paper set into the surface — see --field in index.css. Everything else in
+   this form sits at page colour, so the fill is what separates the boxes you
+   fill in from the labels and totals you only read. */
 .field input,
 .field select,
+.field textarea,
 .pay-lines__row select,
 .pay-lines__row input,
 .pay-lines__ref {
   width: 100%;
   padding: 11px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--field);
   color: var(--ink);
   min-height: 44px;
-  box-shadow: var(--shadow-inset);
+  box-shadow: var(--shadow-well);
+  transition: box-shadow 160ms ease, border-color 160ms ease;
 }
 
-/* The well deepens on focus rather than swapping to a flat outline, so the
-   active field still belongs to the same material as the rest of the form. */
+/* Checkboxes and radios are drawn by the platform. They are inside .field too,
+   and the fill and well above only smudge them. */
+.field input[type='checkbox'],
+.field input[type='radio'] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.field input:hover:not(:disabled):not([readonly]),
+.field select:hover:not(:disabled),
+.field textarea:hover:not(:disabled):not([readonly]),
+.pay-lines__row select:hover:not(:disabled),
+.pay-lines__row input:hover:not(:disabled):not([readonly]),
+.pay-lines__ref:hover:not(:disabled):not([readonly]) {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--shadow-well-hover);
+}
+
+/* Focus rings the box rather than deepening the well. Depth is already spent
+   saying "this is a field"; the one field of thirty that has the cursor needs
+   a signal on an axis that isn't already in use, and a brand-coloured ring
+   carries across a room in a way another 2px of shadow does not. */
 .field input:focus-visible,
 .field select:focus-visible,
+.field textarea:focus-visible,
 .pay-lines__row select:focus-visible,
 .pay-lines__row input:focus-visible,
 .pay-lines__ref:focus-visible {
+  outline: none;
   border-color: var(--focus);
-  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
+  box-shadow: var(--shadow-well-focus);
+}
+
+/* Read-only and disabled fields drop back to page colour, so "can't touch
+   this" and "type here" never look alike. */
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled,
+.field input[readonly],
+.field textarea[readonly] {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-pressed);
+  color: var(--text-muted);
 }
 
 /* The asterisk that marks a field the form won't submit without. A span of its
@@ -129,7 +173,17 @@
    quieter than the field labels underneath it, so a long form looked like one
    undivided run of inputs — full ink and a heavier weight are what make the
    breaks between sections legible while scrolling past them. */
+/* Flex for the same reason the collapsible summary below is: these headings
+   carry a step badge, and on a text baseline a 19px circle rides low against
+   12px uppercase. Centring it is the difference between a marker on the line
+   and a marker in it.
+
+   The gap here is what spaces the badge from the words, so the badge itself
+   carries no margin of its own — see .form-section__num in Bookings.css. */
 .form-section__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -200,15 +254,17 @@
    a complaint with nothing to act on. Border plus a soft ring rather than
    colour alone, so it reads for anyone who can't tell the red from the grey. */
 .field input.field__control--invalid,
-.field select.field__control--invalid {
+.field select.field__control--invalid,
+.field textarea.field__control--invalid {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-bg);
+  box-shadow: var(--shadow-well), 0 0 0 3px var(--danger-bg);
 }
 
 .field input.field__control--invalid:focus-visible,
-.field select.field__control--invalid:focus-visible {
+.field select.field__control--invalid:focus-visible,
+.field textarea.field__control--invalid:focus-visible {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-bg), var(--shadow-inset);
+  box-shadow: var(--shadow-well), 0 0 0 3px rgba(193, 18, 31, 0.28);
 }
 
 .form-banner {
@@ -325,12 +381,15 @@
   min-height: 0;
   margin-left: auto;
   padding: 3px 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 6px;
   font-size: 13px;
   text-align: center;
-  background: var(--surface);
-  color: var(--text);
+  /* Typed into, so it takes the field fill like every other input — inside a
+     chip that is deliberately flat, this is the only thing marking it out as
+     the one part of the chip you edit rather than tick. */
+  background: var(--field);
+  color: var(--ink);
 }
 
 /* With no depth to carry it, the ticked state leans on the brand border and
