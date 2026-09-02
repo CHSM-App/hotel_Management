@@ -179,7 +179,31 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
         aria-expanded={open}
         aria-label="Account menu"
       >
-        {initial}
+        <span className="profile-menu__trigger-avatar" aria-hidden="true">{initial}</span>
+        {/* The name and role read out of the topbar rather than only from inside
+            the menu — at a shared front desk, "who is this machine signed in
+            as?" is worth answering without a click. Hidden on narrow screens,
+            where the topbar has no room for it and the avatar stands alone. */}
+        <span className="profile-menu__trigger-text">
+          <span className="profile-menu__trigger-name">{user.name}</span>
+          <span className="profile-menu__trigger-role">{roleLabel(user.role)}</span>
+        </span>
+        <svg
+          className="profile-menu__trigger-chevron"
+          viewBox="0 0 12 12"
+          width="12"
+          height="12"
+          aria-hidden="true"
+        >
+          <path
+            d="M2.5 4.5 6 8l3.5-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
 
       {open && (

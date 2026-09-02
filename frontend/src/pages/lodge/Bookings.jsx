@@ -1076,6 +1076,162 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     return stats;
   }, [categorySections, occupancy, dates.length]);
 
+  // Each category card, by name, so the chips above can reach the one they
+  // stand for. A map rather than an array because the sections come and go as
+  // rooms are added and removed, and a name is stabler than a position.
+  const sectionRefs = useRef(new Map());
+
+  // Which category the page is parked on, so the chip for it reads as the
+  // current one. Set on click and then kept honest by the observer below —
+  // scrolling away from a category by hand should move the highlight too,
+  // otherwise the strip claims a section the desk has already left.
+  const [activeCategory, setActiveCategory] = useState(null);
+
+  // Set while a chip's scroll is still travelling. The animation drags every
+  // card in between through the observer's band on the way, and each crossing
+  // would overwrite the chip that was clicked — so the observer stands down
+  // until the page has come to rest on the section that was asked for.
+  const jumping = useRef(null);
+
+  // A property with three or four grades of room runs the chart well past a
+  // screen, and reaching the deluxe rooms means scrolling past every standard
+  // one. The chips jump straight there.
+  const jumpToCategory = (name) => {
+    const el = sectionRefs.current.get(name);
+    if (!el) return;
+    setActiveCategory(name);
+    // The month nav sits sticky at the top, so scrolling the card flush with
+    // the viewport tucks its header underneath it. Offset by the strip's own
+    // height, read off the element rather than hard-coded, so the card's
+    // heading clears it on every breakpoint.
+    const sticky = document.querySelector('.tape-controls');
+    const offset = (sticky?.getBoundingClientRect().height || 0) + 12;
+    const target = Math.max(0, el.getBoundingClientRect().top + window.scrollY - offset);
+
+    // Held until the scroll has actually arrived, not merely until it stops
+    // moving. A smooth scroll begins stationary — it takes a frame or two to
+    // get going — so "two frames without movement" is true at the very start,
+    // before the page has left the category it was on. The lock would drop
+    // there and the animation's own scroll events would then drive the
+    // highlight backwards onto whatever it was travelling through: click
+    // Deluxe, land on Deluxe, and watch the chip walk back to Standard.
+    //
+    // So arrival is the test, with stillness only as the way out for a scroll
+    // that can never arrive — a target past the end of the page clamps short
+    // of it, and the lock must not be held open for good.
+    jumping.current = name;
+    let still = 0;
+    let last = window.scrollY;
+    const settle = () => {
+      if (jumping.current !== name) return; // superseded by a later chip
+      const y = window.scrollY;
+      // Within a pixel of where it was sent, or as close as the page can get:
+      // at the end stop the browser clamps, and that counts as arrived.
+      const maxTop = document.documentElement.scrollHeight - window.innerHeight;
+      const arrived = Math.abs(y - Math.min(target, maxTop)) <= 1;
+      still = Math.abs(y - last) <= 1 ? still + 1 : 0;
+      last = y;
+      // Stillness is only trusted once the page has had time to start: the
+      // browser can sit on the first frames of a smooth scroll, and releasing
+      // there is the bug this whole block exists to avoid.
+      if (arrived || still >= 12) {
+        jumping.current = null;
+        return;
+      }
+      requestAnimationFrame(settle);
+    };
+    window.scrollTo({ top: target, behavior: 'smooth' });
+    requestAnimationFrame(settle);
+  };
+
+  // Keeps the chips in step with the page when the desk scrolls by hand.
+  //
+  // Driven by the scroll event rather than an IntersectionObserver. The
+  // observer was the wrong instrument twice over: it reports only the cards
+  // whose visibility *changed*, so it cannot be read as "what is on screen
+  // now", and a card taller than the viewport crosses no boundary at all while
+  // it is being scrolled through — it goes silent for exactly the stretch the
+  // chip most needs to keep up. A scroll listener fires whenever the page
+  // moves, which is the actual question being asked.
+  useEffect(() => {
+    if (categorySections.length < 2) return undefined;
+
+    const pick = () => {
+      if (jumping.current) return;
+
+      // The card the probe line falls inside wins. The line sits just under
+      // the sticky strip — exactly where a jumped-to card's header comes to
+      // rest — so the highlight agrees with where the page was actually sent.
+      //
+      // Not "whichever card is highest on screen": after a jump to Deluxe the
+      // tail of Standard is still above it, so Standard is always the higher of
+      // the two and would win every time. That was the chip staying on
+      // Standard while the page sat on Deluxe.
+      const sticky = document.querySelector('.tape-controls');
+      const probe = (sticky?.getBoundingClientRect().height || 0) + 16;
+
+      // Walked in layout order, so "the last card whose top has passed the
+      // line" means what it says.
+      let best = null;
+      let bestTop = -Infinity;
+      for (const section of categorySections) {
+        const el = sectionRefs.current.get(section.categoryName);
+        if (!el) continue;
+        const { top, bottom } = el.getBoundingClientRect();
+        if (top > probe) continue; // still below the line
+        if (top > bestTop) {
+          bestTop = top;
+          best = el;
+        }
+        if (bottom > probe) break; // the line is inside this card; done
+      }
+      // Nothing has reached the line yet — the page is above the first card,
+      // so the first category is the one being read.
+      if (!best) best = sectionRefs.current.get(categorySections[0]?.categoryName) || null;
+
+      // At the bottom of the page the probe stops being able to answer. The
+      // last card or two sit below the line with no scroll left to bring them
+      // up to it, so the line keeps reporting whichever card spans it —
+      // clicking Suite would send the page as far as it goes and then light up
+      // Deluxe. Once the page is against its end stop, the bottom of the
+      // screen is what the desk is reading, so the lowest card showing there
+      // wins instead.
+      const atEnd =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      if (atEnd) {
+        for (const section of categorySections) {
+          const el = sectionRefs.current.get(section.categoryName);
+          // Anything whose top is on screen at the end stop is a card the
+          // scroll could never lift to the line; the last such is the one the
+          // page has come to rest on.
+          if (el && el.getBoundingClientRect().top < window.innerHeight) best = el;
+        }
+      }
+
+      if (best) setActiveCategory(best.dataset.category || null);
+    };
+
+    // Measuring inside the scroll event would lay out the page on every one of
+    // them; a frame is as often as the highlight can visibly change anyway.
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        pick();
+      });
+    };
+
+    pick(); // settle the chip on load, before anything has scrolled
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [categorySections]);
+
   // The booking form. One form, two jobs: taking a stay and correcting one.
   // 'EDIT' is the same modal with the answers already filled in, which is why
   // there is one piece of state here and not two — a second copy is where a
@@ -2650,13 +2806,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         </div>
       </div>
 
-      {/* Three of the five stand for a booking status the register can be cut
-          by, so they double as a way into it — the colour on the chart and the
-          list of those stays are the same question asked two ways.
+      {/* Four of the five lead somewhere — the colour on the chart and the pile
+          of stays wearing it are the same question asked two ways. Three of them
+          cut the register by status; Draft opens the parked forms, which are
+          their own pile because a draft never reaches the register at all.
 
-          Vacant and Draft stay plain text: a vacant night is the absence of a
-          booking, and a draft is a parked form that never reaches the register
-          at all. Neither has a list to point at. */}
+          Vacant stays plain text: a vacant night is the absence of a booking,
+          and there is no list of nothing to point at. */}
       <div className="tape-legend">
         {/* Guest names are kept off the tiles on purpose, which leaves the
             chart unable to answer the question the desk asks it most often:
@@ -2843,11 +2999,56 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             {item.label}
           </button>
         ))}
-        <span className="tape-legend__item">
+        {/* Draft lands in the register beside the other three rather than in
+            the toolbar's modal. The register carries a Draft cut of its own,
+            so following the yellow gets the desk the same kind of page the red
+            and the blue do — a filtered list it can search and sort. The modal
+            stays where it is, on the toolbar button, for a quick look without
+            leaving the chart. */}
+        <button
+          type="button"
+          className="tape-legend__item tape-legend__item--link"
+          onClick={() => onShowRegister?.('DRAFT')}
+          title="Show drafts in Booking Details"
+        >
           <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
-        </span>
+        </button>
         <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
+
+      {/* One chip per grade of room, in the same shape as the legend's, so the
+          strip reads as one row of ways into the chart: the status chips cut it
+          by colour, these jump it by category.
+
+          Only worth showing when there is somewhere to jump to — with a single
+          category the chip would scroll to the card already filling the screen.
+          The sold figure rides along because it is the number the desk opens
+          this screen for, and it saves them the trip to read it. */}
+      {!tapeError && categorySections.length > 1 && (
+        <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
+          {categorySections.map((section) => {
+            const stats = categoryStats.get(section.categoryName);
+            const active = activeCategory === section.categoryName;
+            return (
+              <button
+                key={section.categoryName}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
+                onClick={() => jumpToCategory(section.categoryName)}
+                title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
+                  section.rooms.length === 1 ? '' : 's'
+                }`}
+              >
+                {section.categoryName}
+                <span className="tape-cats__count">{section.rooms.length}</span>
+                {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       </div>
 
       {tapeError && (
@@ -2885,7 +3086,17 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           {categorySections.map((section) => {
             const stats = categoryStats.get(section.categoryName);
             return (
-              <section key={section.categoryName} className="tape-month-card">
+              <section
+                key={section.categoryName}
+                className="tape-month-card"
+                // Named on the node so the observer can say which card came
+                // into view without closing over the list it was built from.
+                data-category={section.categoryName}
+                ref={(el) => {
+                  if (el) sectionRefs.current.set(section.categoryName, el);
+                  else sectionRefs.current.delete(section.categoryName);
+                }}
+              >
                 <div className="tape-month-card__head">
                   <div className="tape-month-card__title">
                     <h4>{section.categoryName}</h4>

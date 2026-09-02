@@ -33,6 +33,10 @@
   font-size: 13.5px;
   line-height: 1.55;
   color: var(--text);
+  /* Callers that list what they are asking about write one item per line;
+     without this the list arrives as one paragraph, which is the run-on the
+     list was replacing. Still wraps, so a long title doesn't push the panel. */
+  white-space: pre-wrap;
 }
 
 .confirm-dialog__actions {
@@ -93,4 +97,10 @@
   .confirm-dialog__danger {
     margin-left: 0;
   }
+}
+
+/* One button and no cancel beside it: pushed to the end so it sits where the
+   answering button always sits, rather than drifting to the left edge. */
+.confirm-dialog__actions > :only-child {
+  margin-left: auto;
 }

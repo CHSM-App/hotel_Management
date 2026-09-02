@@ -2,25 +2,81 @@
   position: relative;
 }
 
+/* A chip rather than a bare circle: avatar, then who is signed in and in what
+   role, then the chevron that says the whole thing opens. Capped in width so a
+   long name shortens itself instead of squeezing the lodge name beside it. */
 .profile-menu__trigger {
-  width: 34px;
-  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 240px;
+  padding: 4px 12px 4px 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   border: 1px solid rgba(255, 255, 255, 0.35);
   color: #ffffff;
-  font-family: var(--serif);
-  font-size: 16px;
-  font-weight: 600;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: background 150ms ease;
 }
 
 .profile-menu__trigger:hover {
   background: rgba(255, 255, 255, 0.24);
+}
+
+.profile-menu__trigger-avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-menu__trigger-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+}
+
+.profile-menu__trigger-name,
+.profile-menu__trigger-role {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu__trigger-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.profile-menu__trigger-role {
+  font-size: 11px;
+  line-height: 1.25;
+  /* Secondary to the name, but on a saturated header anything under ~0.7
+     opacity stops being readable rather than reading as quiet. */
+  opacity: 0.78;
+}
+
+.profile-menu__trigger-chevron {
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: transform 150ms ease;
+}
+
+.profile-menu__trigger[aria-expanded='true'] .profile-menu__trigger-chevron {
+  transform: rotate(180deg);
 }
 
 .profile-menu__dropdown {
@@ -305,6 +361,23 @@
 }
 
 @media (max-width: 640px) {
+  /* Below this the topbar is carrying the lodge name too, and there is not
+     room for both. The chip drops back to the avatar alone — the name and role
+     are a step away inside the menu, which is where they were before. */
+  .profile-menu__trigger {
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .profile-menu__trigger-text,
+  .profile-menu__trigger-chevron {
+    display: none;
+  }
+
+  .profile-menu__trigger-avatar {
+    background: none;
+  }
+
   /* The dropdown is anchored to the avatar at the right edge of the topbar,
      so on a narrow screen it has to be capped to the viewport (minus the
      topbar's own padding) or it would push the page sideways. */
@@ -319,4 +392,110 @@
     grid-template-columns: 1fr;
     gap: 1px;
   }
+}
+
+/* --- Menu refinements -----------------------------------------------------
+   The dropdown carries more information than anything else in the chrome —
+   identity, the property, its registration details, a share link and three
+   actions — and it was presenting all of it at one weight inside a single
+   16px box. These rules give it a top-to-bottom reading order without adding
+   any new colour to the system. */
+
+/* The panel is a floating surface over content, so it gets the card radius
+   rather than the tile radius the flat 12px was giving it, and it loses the
+   drawn border: --shadow-elevated is already separating it from the page, and
+   a 1px grey line on top of that reads as a second, competing edge. */
+.profile-menu__dropdown {
+  border: none;
+  border-radius: var(--radius-card);
+  padding: 0;
+  /* The padding moves onto the sections below so the identity header can run
+     edge to edge as a tinted band. */
+  overscroll-behavior: contain;
+}
+
+/* The header of the menu: who is signed in, on the brand's own wash so the
+   panel opens with an anchor rather than with body copy. */
+.profile-menu__identity {
+  padding: 16px;
+  background: linear-gradient(135deg, var(--brand-wash), #F6F3FE);
+  border-bottom: 1px solid var(--brand-wash-edge);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+/* Everything after the identity band keeps the padding the panel gave up.
+   Applied to the blocks that are genuinely direct children of the dropdown:
+   .profile-menu__lodge wraps the head, the facts list and the share link, and
+   the password form wraps its own banner and hints — padding those two
+   containers indents their contents once rather than twice. */
+.profile-menu__contact,
+.profile-menu__lodge,
+.profile-menu__password-form,
+.profile-menu__banner {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.profile-menu__contact {
+  margin-top: 14px;
+  line-height: 1.5;
+}
+
+/* The banner is a child of the form when a password is being changed, but the
+   "Password changed." confirmation is a direct child of the dropdown. It is
+   already indented by the form in the first case, so the padding above would
+   double there. */
+.profile-menu__password-form .profile-menu__banner {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* The action rows sit in their own tray at the foot of the menu, inset from
+   the edges so a hovered row reads as a row rather than as the whole panel
+   lighting up. */
+.profile-menu__action {
+  width: calc(100% - 16px);
+  margin: 0 8px;
+}
+
+.profile-menu__action:last-child {
+  margin-bottom: 8px;
+}
+
+/* The divider ran the full width of a panel that now has 16px gutters; a rule
+   that touches both edges cuts the card in half instead of separating two
+   groups inside it. */
+.profile-menu__divider {
+  margin: 12px 16px;
+}
+
+/* Sign out is the one destructive row in the menu. It was --danger text on
+   hover-only feedback, which is the same quiet treatment the two harmless rows
+   get; the wash makes the difference visible before the click. */
+.profile-menu__action--danger:hover {
+  background: var(--danger-bg);
+  box-shadow: none;
+}
+
+/* The share link is the one thing in here anyone copies, so it earns a real
+   well rather than a raised chip — it is a value to be read, not a control. */
+.profile-menu__link {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-well);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.profile-menu__copy-link:hover {
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+}
+
+/* The label column was uppercase muted at 11px against 13px values — correct
+   in weight, but the two columns shared a baseline and read as one run of
+   text. A hair more tracking separates them. */
+.profile-menu__fact dt {
+  letter-spacing: 0.05em;
+  font-weight: 600;
 }

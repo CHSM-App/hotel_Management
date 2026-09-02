@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { useSearchTerm, matchesSearch } from '../../lib/searchContext';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import IconButton from '../../components/IconButton';
@@ -21,7 +22,7 @@ function bedSummary(room) {
   if (beds.length === 0) return null;
   return beds.map((b) => `${b.count} ${bedSizeLabel[b.size] || b.size}`).join(' + ');
 }
-const bathroomTypeLabel = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
+const bathroomTypeLabel = { ATTACHED: 'Attached Bathroom', COMMON: 'Common Bathroom' };
 
 const initialForm = {
   mode: 'single',
@@ -45,7 +46,7 @@ function GuestIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.4"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -54,6 +55,28 @@ function GuestIcon() {
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+/* Same 12px box and stroke weight as GuestIcon, so the two chip icons sit at
+   the same optical size in a row. */
+function BathIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 12V5.5a2.5 2.5 0 0 1 5 0V6" />
+      <path d="M2 12h20v2a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5v-2Z" />
+      <path d="M7 19l-1 2M17 19l1 2" />
     </svg>
   );
 }
@@ -334,6 +357,36 @@ export default function RoomsPanel() {
   const loading = !error && (!rooms || !categories);
   const noCategories = categories && categories.length === 0;
 
+  // The app bar's search box, narrowed against what the card actually shows —
+  // number, category, floor, bed, bathroom, occupancy and the active/inactive
+  // word. Matching what is on the card is the point: someone types "deluxe" or
+  // "inactive" because they can see it, and a match they cannot see reads as
+  // the filter being broken.
+  // A card only earns the tall photo band if there is a photo to put in it. A
+  // room whose only image 404s counts as photoless, same as one with none at
+  // all — otherwise the card holds open 132px for a broken <img>.
+  const hasCover = (room) =>
+    room.images.length > 0 && !brokenPhotos.has(room.images[0].filename);
+
+  const searchTerm = useSearchTerm();
+  const visibleRooms = (rooms || []).filter((room) =>
+    matchesSearch(
+      searchTerm,
+      room.roomNumber,
+      room.category?.name,
+      room.floor && `Floor ${room.floor}`,
+      bedSummary(room),
+      room.bathroomType && bathroomTypeLabel[room.bathroomType],
+      room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
+      room.isActive ? 'Active' : 'Inactive',
+      room.description
+    )
+  );
+  // A search that matched nothing is a different state from a lodge with no
+  // rooms yet, and the two need different words — one is a dead end you fix by
+  // clearing the box, the other by adding a room.
+  const searching = searchTerm.trim().length > 0;
+
   return (
     <div className="rooms-panel">
       {!error && !loading && noCategories && (
@@ -342,7 +395,11 @@ export default function RoomsPanel() {
 
       <div className="rooms-panel__toolbar">
         <span className="rooms-panel__count">
-          {rooms ? `${rooms.length} room${rooms.length === 1 ? '' : 's'}` : ' '}
+          {rooms
+            ? searching
+              ? `${visibleRooms.length} of ${rooms.length} room${rooms.length === 1 ? '' : 's'}`
+              : `${rooms.length} room${rooms.length === 1 ? '' : 's'}`
+            : ' '}
         </span>
         <button type="button" className="btn-accent" onClick={openForm} disabled={noCategories}>
           + Add room
@@ -367,12 +424,22 @@ export default function RoomsPanel() {
         </div>
       )}
 
-      {!error && rooms && rooms.length > 0 && (
+      {!error && rooms && rooms.length > 0 && visibleRooms.length === 0 && (
+        <div className="dash-card">
+          <div className="dash-state">No rooms match “{searchTerm.trim()}”.</div>
+        </div>
+      )}
+
+      {!error && rooms && visibleRooms.length > 0 && (
         <div className="room-grid">
-          {rooms.map((room) => (
+          {visibleRooms.map((room) => (
             <div className="room-card" key={room.id}>
-              <div className="room-card__cover">
-                {room.images.length > 0 && !brokenPhotos.has(room.images[0].filename) ? (
+              <div
+                className={`room-card__cover${
+                  hasCover(room) ? '' : ' room-card__cover--empty'
+                }`}
+              >
+                {hasCover(room) ? (
                   <button
                     type="button"
                     className="room-card__cover-btn"
@@ -409,7 +476,13 @@ export default function RoomsPanel() {
 
               <div className="room-card__body">
                 <div className="room-card__top">
-                  <span className="room-card__number">{room.roomNumber}</span>
+                  {/* On a photoless card the band above already carries the room
+                      number at 30px, so repeating it here is the card saying the
+                      same word twice. A photo card has no such band, and needs
+                      it. */}
+                  {hasCover(room) && (
+                    <span className="room-card__number">{room.roomNumber}</span>
+                  )}
                   <span className="room-card__rate">
                     {formatPrice(room.price)}
                     <span className="room-card__rate-unit"> /night</span>
@@ -422,12 +495,15 @@ export default function RoomsPanel() {
                     {room.floor && <span className="room-card__chip">Floor {room.floor}</span>}
                     {bedSummary(room) && <span className="room-card__chip">{bedSummary(room)}</span>}
                     {room.bathroomType && (
-                      <span className="room-card__chip">{bathroomTypeLabel[room.bathroomType]}</span>
+                      <span className="room-card__chip">
+                        <BathIcon />
+                        {bathroomTypeLabel[room.bathroomType]}
+                      </span>
                     )}
                     {room.maxOccupancy && (
                       <span className="room-card__chip room-card__chip--occupancy">
                         <GuestIcon />
-                        Max {room.maxOccupancy} guest{room.maxOccupancy === 1 ? '' : 's'}
+                        Max {room.maxOccupancy} Guest{room.maxOccupancy === 1 ? '' : 's'}
                       </span>
                     )}
                   </div>

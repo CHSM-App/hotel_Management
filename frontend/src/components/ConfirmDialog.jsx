@@ -20,6 +20,11 @@ export default function ConfirmDialog({
   // Destructive answers are unfilled and sit apart from the safe one, so the
   // irreversible choice takes the most deliberate aim.
   danger = false,
+  // For a dialog that reports rather than asks: something was refused and the
+  // only way on is to go back and change it. Offering "Cancel" beside "OK"
+  // there invents a choice that isn't real, so the cancel button is dropped
+  // and the single button is what Escape and the backdrop answer with.
+  soleAction = false,
   busy = false,
   onConfirm,
   onCancel,
@@ -46,9 +51,11 @@ export default function ConfirmDialog({
         {message && <p className="confirm-dialog__message">{message}</p>}
 
         <div className="confirm-dialog__actions">
-          <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </button>
+          {!soleAction && (
+            <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </button>
+          )}
           <button
             type="button"
             className={danger ? 'confirm-dialog__danger' : 'btn-accent'}
