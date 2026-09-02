@@ -1394,62 +1394,12 @@
   overflow-wrap: anywhere;
 }
 
-/* The share menu — one control, the channels behind it.
-   Anchored to the button so the list opens against it rather than at the top
-   of the action row, which is where a statically positioned list would land. */
-.share-menu {
-  position: relative;
-  display: inline-flex;
-}
-
-.share-menu__list {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  z-index: 30;
-  min-width: 210px;
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-  border-radius: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  /* It floats over the bill document behind it, so it needs a shadow to sit
-     above the paper rather than look printed on it. */
-  box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
-}
-
-/* Opens upward: the action row sits at the bottom of a tall modal, and a list
-   dropping down from it would open past the fold with nothing to scroll to. */
-.share-menu__item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  color: var(--text);
-}
-
-.share-menu__item:hover,
-.share-menu__item:focus-visible {
-  background: var(--neu-sunken);
-}
-
-.share-menu__label {
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-/* Says what the channel will actually do. Every route but the device sheet
-   downloads the PDF for the desk to attach by hand, and finding that out one
-   unsent bill at a time is how the old single button taught it. */
-.share-menu__hint {
-  font-size: 0.74rem;
-  color: var(--text-muted);
+/* An icon button mid-action — the bill's PDF is being built, so Download and
+   Share are both briefly unpressable. They have to look it: nothing else on
+   this row is ever disabled, and without this the button is indistinguishable
+   from a working one and pressing it appears to do nothing at all. */
+.bill-actions__buttons > button.bill-actions__icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: var(--shadow-pressed);
 }

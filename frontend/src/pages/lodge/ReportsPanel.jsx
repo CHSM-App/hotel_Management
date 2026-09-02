@@ -279,6 +279,16 @@ export default function ReportsPanel() {
                     {formatPrice(bookings.summary.billedAmount)}
                   </span>
                 </div>
+                {/* Only when a cancellation actually kept money — a zero here
+                    would just make the grid wider on every quiet month. */}
+                {Number(bookings.summary.cancellationChargesKept) > 0 && (
+                  <div className="reports-panel__stat">
+                    <span className="reports-panel__stat-label">Cancellation charges</span>
+                    <span className="reports-panel__stat-value">
+                      {formatPrice(bookings.summary.cancellationChargesKept)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="dash-card reports-panel__download">

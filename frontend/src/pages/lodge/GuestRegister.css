@@ -239,10 +239,16 @@
   background: var(--tape-checked-out-deep, #6f7e8c);
 }
 
-/* No tile on the chart to borrow from — a cancelled stay holds no nights to
-   draw — so it takes the danger red its badge already uses in the list. */
+/* Drawn the way the chart draws a cancellation: an empty tile with the red
+   edge, never a fill. It used to be a solid danger red, which sat next to
+   Reserved's brick red as two filled squares nobody could tell apart — the
+   hollow is what says "this held nothing", on the chip exactly as on the
+   chart. The base swatch's inner ring is dropped so the red border is the
+   only edge. */
 .guest-register__status-swatch--cancelled {
-  background: var(--danger, #c1121f);
+  background: transparent;
+  border: 1.5px solid var(--danger, #c1121f);
+  box-shadow: none;
 }
 
 .guest-register__status-swatch--draft {
@@ -675,12 +681,15 @@
   color: var(--text-muted, #5b6670);
 }
 
-/* No tile on the chart — a cancelled stay holds no nights to draw — so it keeps
-   the register's own danger wash rather than inventing a fifth tape colour. It
-   reads as an exception, which is what it is. */
+/* Hollow, like the chart's cancelled mark and the filter chip's swatch: a red
+   outline around nothing, because a cancelled stay held nothing. It used to
+   wear the danger wash — which is Reserved's light-red pill in everything but
+   name, and a Status column where the two are twins is a column misread at
+   the worst moment. The outline is the one pill shape no other status uses. */
 .guest-register__status-badge--cancelled {
-  background: var(--danger-bg);
-  color: var(--danger);
+  background: transparent;
+  border: 1.5px solid var(--danger, #c0392b);
+  color: var(--danger, #c0392b);
 }
 
 /* The chart's yellow, deepened for text. --tape-draft is #f2c31d, a bright fill
@@ -1394,6 +1403,28 @@
   letter-spacing: 0.06em;
   color: var(--text-muted);
   margin: 0 0 12px;
+}
+
+/* Why a cancelled record is red, above the stay's own facts. Washed like the
+   status badge is, so the section and the chip that opened it read as the same
+   statement; the facts inside stay the register's ordinary ink — the reason
+   and the settlement are record, not warning. */
+.guest-register__cancelled {
+  padding: 14px 16px 8px;
+  border-radius: 12px;
+  background: var(--danger-bg, #fdf1f1);
+}
+
+.guest-register__cancelled-title {
+  color: var(--danger, #c1121f);
+}
+
+/* The settlement statement inside the red wash: lifted onto its own white
+   sheet so it reads as the record of where the money went, not as more of the
+   warning around it. */
+.guest-register__cancelled-sheet {
+  margin-top: 10px;
+  background: var(--surface, #fff);
 }
 
 /* A definition list, because that's what a register entry is — a field and the

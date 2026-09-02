@@ -1600,7 +1600,12 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
                       stay come to. */}
                   {/* Blanks are spelled out. "—" makes a reader stop and work
                       out whether the guest hasn't arrived or the system didn't
-                      record it; the words say which. */}
+                      record it; the words say which.
+
+                      Not drawn at all on a cancelled record: "Not arrived yet"
+                      twice over and a room charge nobody owes are three tiles
+                      of noise above the one section that matters there. */}
+                  {detailBooking.status !== 'CANCELLED' && (
                   <div className="guest-register__summary">
                     <div className="guest-register__summary-tile">
                       <span className="guest-register__summary-label">Came in</span>
@@ -1627,6 +1632,99 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
                       <strong>{formatPrice(invoice ? invoice.totalAmount : detailBooking.totalPrice)}</strong>
                     </div>
                   </div>
+                  )}
+
+                  {/* Why the record is red before what the record says. On a
+                      cancelled stay, "why was this cancelled and where did the
+                      money go" is the question the register was opened to
+                      answer, so it comes above the stay's own facts. */}
+                  {detailBooking.status === 'CANCELLED' && (
+                    <section className="guest-register__section guest-register__cancelled">
+                      <h4 className="guest-register__section-title guest-register__cancelled-title">
+                        Cancelled
+                        {detailBooking.cancelledAt && ` · ${formatDateTime(detailBooking.cancelledAt)}`}
+                      </h4>
+                      <dl className="guest-register__facts">
+                        <dt>Reason</dt>
+                        <dd>
+                          {detailBooking.cancelReason || (
+                            <span className="guest-register__muted">No reason recorded</span>
+                          )}
+                        </dd>
+                      </dl>
+                      {/* The settlement, as the same footed statement the
+                          cancel screen showed when it was made: taken,
+                          refunded, kept. Only where the cancellation made
+                          one — an older cancellation recorded nothing, and
+                          inventing zeroes for it would claim it did. */}
+                      {detailBooking.refundAmount != null && (
+                        <div className="guest-register__tariff guest-register__cancelled-sheet">
+                          <div className="guest-register__tariff-row">
+                            <span>
+                              Advance taken
+                              {(detailBooking.advancePaymentLines?.length ||
+                                detailBooking.advancePaymentMethod) && (
+                                <span className="guest-register__muted">
+                                  {' · '}
+                                  {describeAdvance(
+                                    detailBooking.advancePaymentLines,
+                                    detailBooking.advancePaymentMethod
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                            <span>{formatPrice(detailBooking.advanceAmount ?? 0)}</span>
+                          </div>
+                          <div className="guest-register__tariff-row">
+                            <span>
+                              Refunded to guest
+                              {detailBooking.refundPaymentMethod && (
+                                <span className="guest-register__muted">
+                                  {' · '}
+                                  {detailBooking.refundPaymentMethod}
+                                </span>
+                              )}
+                            </span>
+                            <span>− {formatPrice(detailBooking.refundAmount)}</span>
+                          </div>
+                          <div className="guest-register__tariff-row guest-register__tariff-row--total">
+                            <span>Kept as cancellation charge</span>
+                            <span>{formatPrice(detailBooking.cancellationCharge ?? 0)}</span>
+                          </div>
+                        </div>
+                      )}
+                      {/* The other shape of a settlement: no advance to keep
+                          from, a fee taken at the desk instead — one line,
+                          because there is no arithmetic to foot. */}
+                      {detailBooking.refundAmount == null && detailBooking.cancellationCharge > 0 && (
+                        <div className="guest-register__tariff guest-register__cancelled-sheet">
+                          <div className="guest-register__tariff-row guest-register__tariff-row--total">
+                            <span>
+                              Cancellation charge collected
+                              {detailBooking.cancellationChargePaymentMethod && (
+                                <span className="guest-register__muted">
+                                  {' · '}
+                                  {detailBooking.cancellationChargePaymentMethod}
+                                </span>
+                              )}
+                            </span>
+                            <span>{formatPrice(detailBooking.cancellationCharge)}</span>
+                          </div>
+                        </div>
+                      )}
+                      {/* The tariff section below is not drawn on a cancelled
+                          record, so the one fact it carried — money held on a
+                          cancellation too old to have settled it — is said
+                          here instead of silently disappearing. */}
+                      {detailBooking.refundAmount == null && detailBooking.advanceAmount > 0 && (
+                        <p className="guest-register__tariff-note">
+                          An advance of {formatPrice(detailBooking.advanceAmount)} was held on this stay.
+                          Whether it was refunded wasn&apos;t recorded — this cancellation predates
+                          settlements.
+                        </p>
+                      )}
+                    </section>
+                  )}
 
                   <section className="guest-register__section">
                     <h4 className="guest-register__section-title">The stay</h4>
@@ -1771,6 +1869,12 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
                     )}
                   </section>
 
+                  {/* Not drawn on a cancelled record: a tariff for nights
+                      nobody stayed and "hasn't been billed yet" for a stay
+                      that never will be are answers to questions a cancelled
+                      record isn't asked. Its money story is the settlement
+                      sheet in the red section above. */}
+                  {detailBooking.status !== 'CANCELLED' && (
                   <section className="guest-register__section">
                     <h4 className="guest-register__section-title">Room rate, night by night</h4>
                     {/* Night by night, from the rates frozen when the booking
@@ -1849,6 +1953,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
                       </p>
                     )}
                   </section>
+                  )}
                 </>
               )}
             </div>

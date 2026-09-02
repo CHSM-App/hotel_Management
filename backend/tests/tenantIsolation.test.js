@@ -249,6 +249,11 @@ test('every query touching a lodge-scoped table filters by lodge', () => {
       why: 'Guest order tracking, reached by an unguessable random token rather than a session. There is no lodge context to filter by — the token is the capability.',
     },
     {
+      file: 'billing/billShare.service.js',
+      match: 's.token = @token',
+      why: 'A bill the desk sent to a guest on WhatsApp, fetched by the random token in that link. Same shape as the guest order lookup above: the reader is a guest with no session and no lodge context, so the token is the capability. The row it finds carries its own lodge_id, and the bill is only served while both the share and the invoice are still good.',
+    },
+    {
       file: 'staff/staff.service.js',
       match: '@email IS NOT NULL AND email = @email',
       why: 'Deliberately global, on both the create and the edit path: phone and email are unique across the whole platform (uq_users_email), so these uniqueness checks must see every lodge or the INSERT fails on the index instead of with a readable message.',

@@ -282,13 +282,17 @@ function summarySheet(report) {
         'Three parts. (1) Money received: counted on the date each payment came in, whichever stay it was for. ' +
           '(2) Stays checking in this period and the bills issued for them: counted by check-in date. ' +
           '(3) The Bookings sheet: one row per stay in part 2. Parts 1 and 2 are dated differently and are not ' +
-          'expected to match. Cancelled bookings are excluded from every money figure.'
+          'expected to match. Cancelled bookings are excluded from every money figure, except the cancellation ' +
+          'charges on them — money kept back from an advance, or collected while cancelling — which part 1 counts as income.'
       ),
     ],
     [],
     sectionRow(`1. MONEY RECEIVED IN ${period.toUpperCase()}`),
     [bold('Advances received'), money(summary.advanceCollected)],
     [bold('Final payments received'), money(summary.balanceCollected)],
+    ...(summary.cancellationChargesKept
+      ? [[bold('Cancellation charges kept'), money(summary.cancellationChargesKept)]]
+      : []),
     totalsRow([bold('Total received'), money(summary.totalCollected)]),
     [
       note(
@@ -305,12 +309,17 @@ function summarySheet(report) {
     if (mode === 'UNRECORDED' && !t.total) continue;
     rows.push([text(PAYMENT_MODE_LABEL[mode]), money(t.advance), money(t.balance), money(t.total)]);
   }
+  // Foots the two columns above it, which is what a totals row is for.
+  // Cancellation charges ride outside the mode split — the advance they were
+  // held back from may have arrived by more than one mode — so they appear in
+  // the section total but not here.
+  const modeSplitTotal = (summary.advanceCollected || 0) + (summary.balanceCollected || 0);
   rows.push(
     totalsRow([
-      bold('Total received'),
+      bold('Total by mode'),
       money(summary.advanceCollected),
       money(summary.balanceCollected),
-      money(summary.totalCollected),
+      money(modeSplitTotal),
     ])
   );
 
@@ -328,10 +337,10 @@ function summarySheet(report) {
     }
     rows.push(
       totalsRow([
-        bold('Total received'),
+        bold('Total by stay'),
         money(summary.advanceCollected),
         money(summary.balanceCollected),
-        money(summary.totalCollected),
+        money(modeSplitTotal),
       ])
     );
   }
@@ -351,7 +360,12 @@ function summarySheet(report) {
   if (summary.cancelled?.count) {
     rows.push([bold('Cancelled — bookings'), count(summary.cancelled.count)]);
     rows.push([bold('Cancelled — booked value, not counted'), money(summary.cancelled.bookedValue)]);
-    rows.push([bold('Cancelled — advance held, not counted'), money(summary.cancelled.advanceHeld)]);
+    rows.push([bold('Cancelled — advance held'), money(summary.cancelled.advanceHeld)]);
+    // Where the held money went, on the stays whose cancellation settled it.
+    if (summary.cancelled.refunded || summary.cancelled.chargesKept) {
+      rows.push([bold('Cancelled — refunded to guests'), money(summary.cancelled.refunded || 0)]);
+      rows.push([bold('Cancelled — cancellation charges'), money(summary.cancelled.chargesKept || 0)]);
+    }
   }
 
   rows.push([]);
@@ -835,7 +849,8 @@ export async function buildBookingReportPdf(rawReport) {
       'came in, whichever stay it was for. Part 2 is the stays that checked in during the period and the bills ' +
       'issued for them, counted by check-in date. Part 3 is the register of those stays, one row each. Parts 1 ' +
       'and 2 are dated differently and are not expected to agree. Cancelled bookings are listed but excluded ' +
-      'from every money figure. All amounts in rupees.'
+      'from every money figure, except the cancellation charges kept on them, which part 1 counts as income. ' +
+      'All amounts in rupees.'
   );
 
   // The headline figures, one line, before the detail.
@@ -853,21 +868,34 @@ export async function buildBookingReportPdf(rawReport) {
 
   // ---- Part 1 -------------------------------------------------------------
   layout.heading(`1. Money received in ${period}`, { subtitle: 'Cash basis — dated by when the money came in' });
+  const chargesKeptInPeriod = summary.cancellationChargesKept || 0;
   layout.tiles(
-    [
-      ['Advances received', formatAmount(summary.advanceCollected)],
-      ['Final payments received', formatAmount(summary.balanceCollected)],
-      ['Total received', formatAmount(summary.totalCollected)],
-    ],
-    3
+    chargesKeptInPeriod
+      ? [
+          ['Advances received', formatAmount(summary.advanceCollected)],
+          ['Final payments received', formatAmount(summary.balanceCollected)],
+          ['Cancellation charges kept', formatAmount(chargesKeptInPeriod)],
+          ['Total received', formatAmount(summary.totalCollected)],
+        ]
+      : [
+          ['Advances received', formatAmount(summary.advanceCollected)],
+          ['Final payments received', formatAmount(summary.balanceCollected)],
+          ['Total received', formatAmount(summary.totalCollected)],
+        ],
+    chargesKeptInPeriod ? 4 : 3
   );
   layout.note(
     'An advance is dated by the receipt that acknowledged it; a final payment by the date of the bill it ' +
       'settled. This includes money received for stays in other periods, and excludes money for this ' +
       "period's stays that came in earlier or later." +
-      (cancelled.advanceHeld
+      (chargesKeptInPeriod
+        ? ' A cancellation charge is money kept back from an advance, or collected from the guest while ' +
+          'cancelling, dated by the day of cancellation. It sits outside the mode and stay tables below, ' +
+          'which foot to advances plus final payments.'
+        : '') +
+      (cancelled.advanceHeld && !(cancelled.refunded || cancelled.chargesKept)
         ? ` Advances of ${formatAmount(cancelled.advanceHeld)} held on ${plural(cancelled.count, 'cancelled booking')} ` +
-          'are not counted — refunds are not tracked, so that money is not reported as income.'
+          'are not counted — those cancellations recorded no settlement, so that money is not reported as income.'
         : '')
   );
 
@@ -877,11 +905,14 @@ export async function buildBookingReportPdf(rawReport) {
     { label: 'Final payments', width: 110, align: 'right' },
     { label: 'Total', width: 110, align: 'right' },
   ];
+  // Foots the two columns it sits under. Cancellation charges are in the
+  // section's Total received tile but not in these tables — the advance they
+  // were held back from may have arrived by more than one mode.
   const moneyTotals = [
-    'Total received',
+    'Total (advances + final payments)',
     formatAmount(summary.advanceCollected),
     formatAmount(summary.balanceCollected),
-    formatAmount(summary.totalCollected),
+    formatAmount((summary.advanceCollected || 0) + (summary.balanceCollected || 0)),
   ];
 
   layout.subheading('By payment mode');
@@ -949,6 +980,10 @@ export async function buildBookingReportPdf(rawReport) {
       (cancelled.count
         ? ` ${plural(cancelled.count, 'cancelled booking')} worth ${formatAmount(cancelled.bookedValue)} ` +
           'is counted in the bookings above but excluded from room nights and from every money figure.'
+        : '') +
+      (cancelled.refunded || cancelled.chargesKept
+        ? ` On them, ${formatAmount(cancelled.refunded || 0)} of advances was refunded and ` +
+          `${formatAmount(cancelled.chargesKept || 0)} taken as cancellation charges.`
         : '')
   );
 
@@ -1072,7 +1107,7 @@ export async function buildBookingReportPdf(rawReport) {
       'its booked value is in part 2 under "Not yet billed".' +
       (cancelled.count
         ? ' Cancelled bookings are listed for the record with their money columns blank — they are excluded ' +
-          'from every total.'
+          'from every total here; any cancellation charge kept on one is income in part 1.'
         : '')
   );
 
@@ -1125,7 +1160,7 @@ export async function buildBookingReportPdf(rawReport) {
     pdf.text(
       clip(
         pdf,
-        `${name} · Booking report, ${period} · All amounts in Rs. · Cancelled bookings excluded from all money figures.`,
+        `${name} · Booking report, ${period} · All amounts in Rs. · Cancelled bookings excluded from all money figures except cancellation charges kept.`,
         CONTENT_WIDTH - 80
       ),
       MARGIN,

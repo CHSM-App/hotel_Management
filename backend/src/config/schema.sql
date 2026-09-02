@@ -643,6 +643,62 @@ CREATE INDEX ix_payment_lines_invoice ON dbo.payment_lines(invoice_id) WHERE inv
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_lines_receipt' AND object_id = OBJECT_ID('dbo.payment_lines'))
 CREATE INDEX ix_payment_lines_receipt ON dbo.payment_lines(advance_receipt_id) WHERE advance_receipt_id IS NOT NULL;
 
+-- Every copy of a bill handed to a guest over WhatsApp, and the token that copy
+-- is reachable by. (migration 058)
+--
+-- A bill sent on WhatsApp travels as a link, not as an attachment: the
+-- provider's SendMessage takes an approved template and its text variables and
+-- has no way to carry a file. So the PDF is stored and one of the template's
+-- variables is the URL it is stored at.
+--
+-- That URL is opened by the guest, who has no login — the row is what stands in
+-- for one. `token` is the whole of the credential, so it is generated with
+-- crypto.randomUUID and is the only way in: no id is guessable into a
+-- neighbouring bill, because the id is never in the URL.
+--
+-- The file lives on disk under uploads/bill-shares (see billShareUpload.js) and
+-- `filename` names it there. The row is the index; the disk holds the bytes.
+--
+-- One row per send rather than one per invoice. A bill re-sent because the
+-- first number was wrong is a second delivery to a second phone, and a desk
+-- asking "did this reach the guest" needs both attempts, not the last one.
+IF OBJECT_ID('dbo.bill_shares', 'U') IS NULL
+CREATE TABLE dbo.bill_shares (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    invoice_id     BIGINT NOT NULL REFERENCES dbo.invoices(id),
+    -- The credential the guest's link carries. Unique because it is looked up
+    -- on its own — a duplicate would serve one guest another's bill.
+    token          NVARCHAR(64) NOT NULL,
+    -- Where the bytes are on disk, relative to the bill-shares directory.
+    filename       NVARCHAR(120) NOT NULL,
+    -- What was actually dialled, normalised to the provider's shape, so a
+    -- misdelivery can be traced to the number rather than to the guest the
+    -- bill was for.
+    phone          NVARCHAR(20) NULL,
+    channel        NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_bill_shares_channel CHECK (channel IN ('WHATSAPP', 'EMAIL')),
+    -- 'SENT' or 'FAILED'. The provider accepting the message is all this can
+    -- honestly record: delivery to the handset is not reported back.
+    status         NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_bill_shares_status CHECK (status IN ('SENT', 'FAILED')),
+    -- The provider's own description when it said no, which is what separates
+    -- "number not on WhatsApp" from "template not approved".
+    error          NVARCHAR(400) NULL,
+    -- The provider's campaign id for a send that went through, so a disputed
+    -- delivery can be taken back to them with a reference.
+    campaign_id    NVARCHAR(100) NULL,
+    sent_by        BIGINT NULL REFERENCES dbo.users(id),
+    created_at     DATETIME2(0) NOT NULL CONSTRAINT df_bill_shares_created DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_bill_shares_token' AND object_id = OBJECT_ID('dbo.bill_shares'))
+CREATE UNIQUE INDEX uq_bill_shares_token ON dbo.bill_shares(token);
+
+-- The detail screen lists what has been sent for one bill, newest first.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bill_shares_invoice' AND object_id = OBJECT_ID('dbo.bill_shares'))
+CREATE INDEX ix_bill_shares_invoice ON dbo.bill_shares(invoice_id, id DESC);
+
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
 -- and, when its role_key matches a built-in, overrides it. That's what lets an
@@ -1569,6 +1625,37 @@ IF COL_LENGTH('dbo.invoices', 'balance_reference') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD balance_reference NVARCHAR(64) NULL');
 
 -- ---------------------------------------------------------------------------
+-- What happened to the money when a stay was cancelled (055). What the desk
+-- gave back, what it kept as the cancellation charge, why, and when. Refund
+-- plus charge equals the advance held at the moment of cancellation; both
+-- stay NULL on a cancellation that never settled the question — NULL means
+-- "not settled", not "kept nothing". cancelled_at dates the charge as income
+-- of the day the stay fell through, which is the day the cash-basis report
+-- files it under.
+IF COL_LENGTH('dbo.bookings', 'cancel_reason') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD cancel_reason NVARCHAR(200) NULL');
+IF COL_LENGTH('dbo.bookings', 'refund_amount') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD refund_amount DECIMAL(10,2) NULL');
+IF COL_LENGTH('dbo.bookings', 'cancellation_charge') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD cancellation_charge DECIMAL(10,2) NULL');
+IF COL_LENGTH('dbo.bookings', 'cancelled_at') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD cancelled_at DATETIMEOFFSET NULL');
+-- How the refund went back (056) — the same three tenders the advance uses.
+-- NULL alongside a refund means "not recorded", not "cash".
+IF COL_LENGTH('dbo.bookings', 'refund_payment_method') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD refund_payment_method NVARCHAR(20) NULL
+            CONSTRAINT ck_bookings_refund_method
+            CHECK (refund_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
+-- How a cancellation charge was collected when there was no advance to keep
+-- it from (057). A kept-from-advance charge has no tender of its own; a
+-- charge on a stay with no advance is money taken at the desk while
+-- cancelling, and this is how it arrived.
+IF COL_LENGTH('dbo.bookings', 'cancellation_charge_payment_method') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD cancellation_charge_payment_method NVARCHAR(20) NULL
+            CONSTRAINT ck_bookings_charge_method
+            CHECK (cancellation_charge_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
+
+-- ---------------------------------------------------------------------------
 -- The advance-receipt number series
 -- ---------------------------------------------------------------------------
 -- Advance receipts run on their own sequence so the tax-invoice numbering stays
@@ -1779,6 +1866,15 @@ IF COL_LENGTH('dbo.event_bookings', 'rooms_to') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD rooms_to DATE NULL');
 IF COL_LENGTH('dbo.event_bookings', 'rooms_notes') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD rooms_notes NVARCHAR(500) NULL');
+
+-- The half a function's cancellation always had the words for (cancel_reason,
+-- refund_amount) completed with the figure it never named: the slice of the
+-- advance the house kept, and when the cancellation happened (055). Same NULL
+-- semantics as on bookings — NULL is "not settled", not "kept nothing".
+IF COL_LENGTH('dbo.event_bookings', 'cancellation_charge') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD cancellation_charge DECIMAL(10,2) NULL');
+IF COL_LENGTH('dbo.event_bookings', 'cancelled_at') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD cancelled_at DATETIMEOFFSET NULL');
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_venue_time' AND object_id = OBJECT_ID('dbo.event_bookings'))
     CREATE INDEX ix_event_bookings_venue_time ON dbo.event_bookings(venue_id, start_at, end_at) INCLUDE (status);

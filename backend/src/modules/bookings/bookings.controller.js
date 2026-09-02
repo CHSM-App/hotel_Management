@@ -6,6 +6,7 @@ const {
   checkInSchema,
   updateBookingSchema,
   checkOutSchema,
+  cancelBookingSchema,
   bookingDraftSchema,
 } = require('./bookings.schema');
 const bookingsService = require('./bookings.service');
@@ -411,7 +412,11 @@ async function checkOutHandler(req, res, next) {
 
 async function cancelBookingHandler(req, res, next) {
   try {
-    const booking = await bookingsService.cancelBooking(req.user.lodgeId, Number(req.params.id));
+    const parsed = cancelBookingSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const booking = await bookingsService.cancelBooking(req.user.lodgeId, Number(req.params.id), parsed.data);
     res.json({ booking });
   } catch (err) {
     next(err);

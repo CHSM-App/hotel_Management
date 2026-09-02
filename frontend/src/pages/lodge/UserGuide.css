@@ -1,0 +1,288 @@
+.guide-page {
+  min-height: 100svh;
+  background: var(--paper);
+}
+
+/* A slim bar rather than the dashboard's topbar: this page is reached from the
+   dashboard and its main job is to let you get back. */
+.guide-page__top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--neu-light), 0 4px 12px -6px var(--neu-dark);
+}
+
+.guide-page__topinner {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.guide-page__back {
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  margin-left: -10px;
+  border-radius: var(--radius-tile);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--brand-ink);
+  cursor: pointer;
+}
+
+.guide-page__back:hover {
+  background: var(--brand-wash);
+}
+
+.guide-page__lodge {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.guide-page__inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.guide-page__eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand-ink);
+}
+
+.guide-page__title {
+  margin: 0 0 12px;
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The line that explains why this guide is shorter than the one on the next
+   desk. Wide measure, but capped — a full-bleed paragraph is hard to track. */
+.guide-page__lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.guide-page__loading {
+  margin: 16px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.guide-page__cols {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 40px;
+  margin-top: 32px;
+  align-items: start;
+}
+
+/* Sticks while the body scrolls, so the way out of a long page is always in
+   reach rather than back at the top. */
+.guide-toc {
+  position: sticky;
+  top: 76px;
+}
+
+.guide-toc__label {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.guide-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-toc a {
+  display: block;
+  padding: 7px 10px;
+  border-radius: var(--radius-tile);
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.guide-toc a:hover {
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--ink);
+}
+
+.guide-page__body {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.guide-section {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-raised);
+  padding: 24px 26px;
+  /* Clears the sticky bar when jumped to from the contents rail — without it
+     the heading lands underneath and reads as the wrong section. */
+  scroll-margin-top: 76px;
+}
+
+.guide-section__title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.guide-section__summary {
+  margin: 0 0 20px;
+  max-width: 68ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.guide-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.guide-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* The number carries the sequence, so the heading beside it need not repeat
+   it. */
+.guide-step__num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-step__heading {
+  margin: 3px 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.guide-step__body {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* The irreversible things and the traps. Deliberately unlike the steps — they
+   lose their weight if they read as more instructions. */
+.guide-notes {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+}
+
+.guide-notes__title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* The app resets list markers globally, so these are asked for back: they read
+   as a list of separate cautions, not one run-on block. */
+.guide-notes ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc outside;
+}
+
+.guide-notes li {
+  max-width: 66ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.guide-notes li::marker {
+  color: var(--text-muted);
+}
+
+.guide-notes li + li {
+  margin-top: 9px;
+}
+
+.guide-page__foot {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+@media (max-width: 860px) {
+  /* The rail becomes a lid rather than a column — a 200px sidebar on a phone
+     leaves neither it nor the text enough room. */
+  .guide-page__cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .guide-toc {
+    position: static;
+    background: var(--surface);
+    border-radius: var(--radius-tile);
+    box-shadow: var(--shadow-raised);
+    padding: 14px 16px;
+  }
+
+  .guide-toc ul {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .guide-page__title {
+    font-size: 24px;
+  }
+
+  .guide-section {
+    padding: 20px 18px;
+  }
+}

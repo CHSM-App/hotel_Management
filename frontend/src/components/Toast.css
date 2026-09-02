@@ -1,0 +1,93 @@
+/* Bottom-centre, above everything. The bill modal is z-index 100 and the
+   confirm dialog 200; a toast reporting what just happened inside either of
+   them has to clear both or it reports it to nobody. */
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  /* The stack spans the screen so its children can centre in it, but it must
+     not swallow clicks on what is underneath. Each toast takes its own back. */
+  pointer-events: none;
+  width: min(560px, calc(100vw - 32px));
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px 12px 16px;
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-elevated);
+  /* The tone is carried by a bar down the leading edge rather than by a tinted
+     background: a bill screen is already full of colour, and a solid green
+     panel reads as a status the document has rather than a thing that just
+     happened. */
+  border-left: 4px solid var(--border);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  animation: toast-in 180ms ease-out;
+}
+
+.toast--success {
+  border-left-color: var(--color-success);
+}
+
+.toast--error {
+  border-left-color: var(--danger);
+}
+
+.toast--info {
+  border-left-color: var(--brand);
+}
+
+.toast__message {
+  flex: 1;
+  /* A provider's failure text can be long and has no spaces to break at when
+     it names an id. Better wrapped than clipped: the wording is the whole
+     value of an error toast. */
+  overflow-wrap: anywhere;
+}
+
+.toast__dismiss {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.toast__dismiss:hover {
+  color: var(--ink);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Someone who has asked for less motion still gets the toast, just without it
+   sliding in. */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

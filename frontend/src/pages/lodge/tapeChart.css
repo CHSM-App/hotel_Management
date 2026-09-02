@@ -49,6 +49,12 @@
      reads as a record while today's business keeps the loud colours. */
   --tape-checked-out: #8695a3;
   --tape-checked-out-deep: #6f7e8c;
+  /* A booking that fell through. Never a fill — a cancelled stay holds no
+     night, so it is drawn as a border on tiles that stay whatever else they
+     are — in the danger red its badge already wears in the register. Deeper
+     than the booked brick on purpose: the two reds meet on the same chart,
+     and a ring in the same shade as the bars would read as part of one. */
+  --tape-cancelled: var(--danger, #c1121f);
   /* Yellow rather than a lighter red or blue: a draft is not a weaker booking,
      it is a different kind of thing, and a shade of an existing colour would
      read as one. Nothing is ever printed on these tiles — they are empty
@@ -249,6 +255,13 @@
 
 .tape-legend__swatch--draft {
   background: var(--tape-draft);
+}
+
+/* Drawn the way the mark is drawn on the chart: an empty tile with the red
+   edge, so the legend key looks like the thing it names. */
+.tape-legend__swatch--cancelled {
+  background: transparent;
+  border: 1.5px solid var(--tape-cancelled);
 }
 
 /* ---------- jump-to-category chips ---------- */
@@ -836,6 +849,24 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
 }
 
+/* A booking was cancelled for this night. Only the border says so — the tile
+   keeps whatever it is underneath: a vacant slot still selling the night, a
+   draft, or a stay let again on the same dates. Border plus a 1px inset ring
+   rather than a fatter border, so the mark reads at tile size without eating
+   the cell.
+
+   The compound selectors out-rank the vacant hover (which repaints the rim
+   green to say "sell me") and the past block (which strips borders entirely) —
+   on a marked tile the cancellation keeps its edge in every one of those
+   states. */
+.tape-tile--cancelled-mark,
+.tape-tile--vacant.tape-tile--cancelled-mark:hover,
+.tape-tile--past.tape-tile--cancelled-mark,
+.tape-tile--past.tape-tile--cancelled-mark:hover {
+  border: 1px solid var(--tape-cancelled);
+  box-shadow: inset 0 0 0 1px var(--tape-cancelled);
+}
+
 /* Today's column is marked in the date header only — the filled circle on the
    date number in .tape-month__date--today. The tiles themselves used to carry
    a 1.5px inset ring as well, which drew a hard rule down the whole grid and
@@ -922,6 +953,16 @@
 
 .tape-tooltip__dot--vacant {
   background: #9aa6b2;
+}
+
+.tape-tooltip__dot--cancelled {
+  background: var(--tape-cancelled);
+}
+
+/* The line naming whose booking fell through on this night — red like the
+   border it explains, so card and mark read as one statement. */
+.tape-tooltip__hint--cancelled {
+  color: #e8a0a0;
 }
 
 .tape-tooltip strong {
