@@ -89,6 +89,10 @@
   /* The gutter held clear on the right of every chart. Matches the inset the
      card's own header uses, so the two line up. */
   --tape-tail: 18px;
+  /* Grey rather than the accent: the bar's job is to say "this moves", not to
+     compete with the booked tiles it sits beside. */
+  --tape-scrollbar-thumb: #C7CEDB;
+  --tape-scrollbar-thumb-hover: var(--text-muted);
 }
 
 /* ---------- month stepper ---------- */
@@ -260,12 +264,123 @@
   border: 1.5px solid var(--tape-cancelled);
 }
 
+/* ---------- jump-to-category chips ---------- */
+
+/* Its own line under the legend rather than more chips on the end of it. The
+   legend's chips are captions for the colours in the grid; these are a way of
+   moving around it, and a property with four grades of room would otherwise
+   push the search box and the status chips onto a second line anyway. */
+.tape-cats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  /* One line, scrolled sideways, on a property with more categories than the
+     strip is wide — wrapping would grow the sticky header a row at a time and
+     eat the chart underneath it. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+}
+
+.tape-cats::-webkit-scrollbar {
+  display: none;
+}
+
+.tape-cats__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.tape-cats__chip:hover {
+  border-color: var(--brand);
+}
+
+.tape-cats__chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The one being read. Filled rather than merely outlined, because at 12px an
+   accent border alone is easy to miss against four neighbours. */
+.tape-cats__chip--active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+}
+
+/* The room count, and how much of the category is sold. Both are secondary to
+   the name, so they sit back a step — and on the filled chip they cannot use
+   the muted colour, which would disappear into the accent. */
+.tape-cats__count,
+.tape-cats__sold {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.tape-cats__count {
+  padding: 1px 6px;
+  font-size: 11px;
+  background: var(--paper);
+  border-radius: 999px;
+}
+
+.tape-cats__sold {
+  font-size: 11px;
+}
+
+.tape-cats__chip--active .tape-cats__count,
+.tape-cats__chip--active .tape-cats__sold {
+  color: inherit;
+}
+
+.tape-cats__chip--active .tape-cats__count {
+  background: rgb(255 255 255 / 0.22);
+}
+
+@media (hover: none) {
+  .tape-cats__chip:hover {
+    border-color: var(--border);
+  }
+}
+
 /* ---------- one card per room category ---------- */
 
 .tape-months {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* Room below the last card so a chip can actually bring it to the top of the
+   screen. Without it the page runs out of scroll while the final category is
+   still halfway down — clicking Suite moves the page barely at all, and the
+   card the desk asked for is left sitting under the one above it. Enough for
+   a category to clear the sticky strip, and no more, so the chart does not
+   trail a screenful of blank on a property with one grade of room. */
+.tape-months::after {
+  content: '';
+  display: block;
+  /* Shrinks on a short viewport, where 60vh of nothing would be most of the
+     page — the last card only needs to reach the top, not to fill the screen. */
+  height: min(60vh, 420px);
+  flex: none;
+  pointer-events: none;
 }
 
 .tape-month-card {
@@ -367,15 +482,39 @@
      trailing column inside the grid could not do this: it sits at the far end
      of the content, which is exactly where nobody is looking. */
   margin-right: var(--tape-tail);
-  /* Scrolled, but without a bar sitting under every card — one per category was
-     five of them down the page, and the chart is wheeled and trackpadded far
-     more than the bar is ever grabbed. */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  /* The bar is shown rather than hidden: a month of nights runs well past the
+     card's edge, and with no bar nothing on screen says the chart moves at all.
+     Kept thin and low-contrast so one per category down the page stays quiet. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--tape-scrollbar-thumb) transparent;
 }
 
 .tape-chart-scroll::-webkit-scrollbar {
-  display: none;
+  width: 10px;
+  height: 10px;
+}
+
+.tape-chart-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Inset from the track by a transparent border so the thumb reads as a slim
+   pill floating in the gutter rather than a bar filling it. */
+.tape-chart-scroll::-webkit-scrollbar-thumb {
+  background: var(--tape-scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.tape-chart-scroll:hover::-webkit-scrollbar-thumb,
+.tape-chart-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--tape-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.tape-chart-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .tape-month {

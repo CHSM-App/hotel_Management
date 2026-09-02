@@ -722,9 +722,52 @@
   color: #276749;
 }
 
+/* The one message on this form that must not be skimmed past. The desk works
+   from the buttons at the bottom of a scrolling modal, so this gets a red rule
+   down its edge and a short flash as it lands — it has to read as a stop,
+   not as the green "available" line wearing a different colour. The dialog
+   raised on save is the real guard; this is what makes it visible before then. */
 .events-avail--clash {
   background: var(--danger-bg);
   color: var(--danger);
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  animation: events-avail-flash 0.9s ease-out 2;
+}
+
+/* The warning triangle, drawn rather than imported so the strip carries no
+   dependency on an icon set being loaded by this form. */
+.events-avail--clash::before {
+  content: '!';
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+
+@keyframes events-avail-flash {
+  50% {
+    background: var(--danger);
+    color: #fff;
+  }
+}
+
+/* The flash is an attention-getter, not information — the border and the icon
+   already carry the message for anyone who does not want the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .events-avail--clash {
+    animation: none;
+  }
 }
 
 .events-avail--checking {
