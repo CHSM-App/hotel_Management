@@ -130,9 +130,15 @@ async function createCounterOrderHandler(req, res, next) {
       if (roomResult.recordset.length === 0) {
         throw new ApiError('Room not found.', 404);
       }
+      bookingId = await resolveRoomBooking(lodgeId, input.roomId);
+      // No active booking on the room, so there is nobody to charge the food
+      // to. Refused here rather than just noted on the screen — the client
+      // check is only a courtesy, and a direct API call has to obey this too.
+      if (!bookingId) {
+        throw new ApiError('This room has no guest checked in — a food order can’t be placed for it.', 409);
+      }
       source = 'ROOM';
       roomId = input.roomId;
-      bookingId = await resolveRoomBooking(lodgeId, input.roomId);
     } else if (input.tableId) {
       const tableResult = await (await getPool())
         .request()

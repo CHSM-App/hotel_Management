@@ -1,10 +1,23 @@
 .bookings-panel__toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Packed left rather than spread edge to edge, so the row reads the same
+     at any width or zoom — nav, chips and Draft/New booking sit close
+     together instead of a gap opening up between them that grows or shrinks
+     with the screen. */
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+/* Holds the status chips as one group, so they wrap and space together
+   rather than each chip being its own flex child of the toolbar. */
+.bookings-panel__toolbar-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .bookings-panel__nav {
@@ -987,6 +1000,7 @@
   }
 
   .bookings-panel__toolbar {
+    flex-wrap: wrap;
     gap: 10px;
   }
 
@@ -1220,8 +1234,10 @@
 .bookings-panel__toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  /* Pinned to the row's right edge, away from the status chips. */
+  margin-left: auto;
 }
 
 /* Built as a peer of .btn-accent beside it — same geometry, same weight, same

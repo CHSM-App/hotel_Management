@@ -783,6 +783,13 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
       }
     }
 
+    // No banner here: the note beside the room picker already says this, and
+    // the button reaching this point at all means it was bypassed rather than
+    // clicked — nothing new to tell the user that isn't on screen already.
+    if (target.kind === 'ROOM' && occupancy && !occupancy.failed && !occupancy.occupied) {
+      return;
+    }
+
     if (lines.length === 0) {
       reportError('Add at least one item.');
       return;
@@ -901,8 +908,9 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
                 )}
 
                 {!occupancyLoading && occupancy && !occupancy.failed && !occupancy.occupied && (
-                  <p className="occupancy__vacant">
-                    Nobody is checked in to this room — the food will be billed against the room itself.
+                  <p className="occupancy__vacant occupancy__vacant--error" role="alert">
+                    Nobody is checked in to this room. Select a different room, or the counter, to place
+                    this order.
                   </p>
                 )}
               </div>
@@ -1084,8 +1092,18 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
               {/* Not disabled on an empty cart: a disabled button gives no
                   feedback at all when pressed, which is why "Add at least one
                   item" was never seen. Left enabled, the click reaches
-                  handleSubmit and its own check reports the problem instead. */}
-              <button type="submit" className="btn-accent" disabled={submitting}>
+                  handleSubmit and its own check reports the problem instead.
+                  An unoccupied room is different — there is no way to fix that
+                  from this form, so the button is blocked outright rather than
+                  handing back an error the guest-name field can't fix. */}
+              <button
+                type="submit"
+                className="btn-accent"
+                disabled={
+                  submitting ||
+                  (target.kind === 'ROOM' && occupancy && !occupancy.failed && !occupancy.occupied)
+                }
+              >
                 {submitting ? 'Placing…' : 'Place order'}
               </button>
             </div>

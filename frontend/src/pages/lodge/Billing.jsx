@@ -1287,7 +1287,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               {foodTabs.map((t) => (
                 <div className="chart-row billing-panel__queue-row" key={t.tab}>
                   <span className="chart-row__name">
-                    {t.tableLabel}
+                    {/* A room or counter tab is running for whoever is actually
+                        behind it — named alongside the table label rather than
+                        replacing it, so the row still says which tab it is. */}
+                    {t.guestName ? `${t.tableLabel} · ${t.guestName}` : t.tableLabel}
                     <span className="chart-row__dates">
                       {/* "since" belongs to a tab that is still filling up. A
                           takeaway is one finished order, so it reads as the

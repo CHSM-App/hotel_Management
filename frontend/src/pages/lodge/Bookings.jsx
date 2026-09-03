@@ -2754,7 +2754,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             if (d === addDays(draft.checkOutDate, -1)) classes.push('tape-tile--end');
             if (d === today) classes.push('tape-tile--today');
             if (hoverTile?.draft?.id === draft.id) classes.push('tape-tile--active');
-            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
@@ -2779,7 +2779,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           if (!booking && past) {
             const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
-            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
@@ -2801,7 +2801,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             const classes = ['tape-tile', 'tape-tile--vacant'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             if (d === today) classes.push('tape-tile--today');
-            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
@@ -2845,7 +2845,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           if (draft) classes.push('tape-tile--has-draft');
           // A night let again after an earlier booking fell through on it. The
           // live stay keeps its fill; the cancellation rides as the border.
-          if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+          // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
           // A stay the search found. Every night of it is marked, so the whole
           // strip lights up rather than one tile of it — the desk is looking
           // for a guest, and the answer to "where are they?" is the stay, not
@@ -2945,6 +2945,43 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             </button>
           </div>
         </div>
+
+        {/* The status chips share the top row with the month stepper: the
+            colour legend for the chart belongs beside the control that moves
+            through it. Wrapped in one container so they wrap and space as a
+            group rather than each chip being its own child of the toolbar. */}
+        <div className="bookings-panel__toolbar-chips">
+          <span className="tape-legend__item">
+            <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
+          </span>
+          {LEGEND_LINKS.map((item) => (
+            <button
+              key={item.status}
+              type="button"
+              className="tape-legend__item tape-legend__item--link"
+              onClick={() => onShowRegister?.(item.status)}
+              title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
+            >
+              <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
+              {item.label}
+            </button>
+          ))}
+          {/* Draft lands in the register beside the other three rather than in
+              the toolbar's modal. The register carries a Draft cut of its own,
+              so following the yellow gets the desk the same kind of page the red
+              and the blue do — a filtered list it can search and sort. The modal
+              stays where it is, on the toolbar button, for a quick look without
+              leaving the chart. */}
+          <button
+            type="button"
+            className="tape-legend__item tape-legend__item--link"
+            onClick={() => onShowRegister?.('DRAFT')}
+            title="Show drafts in Booking Details"
+          >
+            <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
+          </button>
+        </div>
+
         <div className="bookings-panel__toolbar-actions">
           {/* Drafts that name a room and dates are on the chart already; this
               is how the rest are reached, and how a desk sees at a glance that
@@ -2973,26 +3010,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         </div>
       </div>
 
-      {/* Four of the five lead somewhere — the colour on the chart and the pile
-          of stays wearing it are the same question asked two ways. Three of them
-          cut the register by status; Draft opens the parked forms, which are
-          their own pile because a draft never reaches the register at all.
-
-          Vacant stays plain text: a vacant night is the absence of a booking,
-          and there is no list of nothing to point at. */}
+      {/* Search and the category jumps share the second row: both are ways of
+          finding a place on the chart to land, rather than a way of reading
+          the colours already on it. */}
       <div className="tape-legend">
-        {/* Guest names are kept off the tiles on purpose, which leaves the
-            chart unable to answer the question the desk asks it most often:
-            "which room is this guest in?" This is that answer. It searches what
-            the register searches — the party's names, their ID numbers, the
-            bill, the phone — and replies on the chart itself, by lighting up
-            the stays rather than by opening a list somewhere else.
-
-            First on the legend's line, with the status chips following it.
-            The two belong together: the chips say what the colours on the chart
-            mean, and the search is how a particular stay among them is found —
-            both are ways of reading the same grid, and the row now runs
-            find-then-filter from left to right. */}
         <div className={`tape-search${searchHits.length > 0 ? ' tape-search--found' : ''}`}>
           <div className="tape-search__box">
           <svg
@@ -3043,41 +3064,20 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           )}
         </div>
 
-        {/* The answer, hung directly under the field that asked the question.
-
-            It sat out on the legend's line before, at the far end of the strip
-            from the box — so the eye had to travel the width of the toolbar to
-            read the reply to what it had just typed, and the guest's name was
-            squeezed into whatever space the legend chips had left over
-            ("Aniket Mestry" arriving as "Aniket"). Anchored to the field, it
-            gets the field's whole width and reads as one control: type at the
-            top, the result appears below it.
-
-            Absolutely positioned so it hangs over the chart rather than pushing
-            it down — the strip keeps its height whether or not a search is
-            running, and the rows below never jump as results come and go. */}
         {search.trim() !== '' && (
           <div className="tape-search__result" role="status" aria-live="polite">
             {searchHits.length === 0 ? (
               <span className="tape-search__empty">
-                {/* Named back, so a mistyped search is obvious as a mistyped
-                    search rather than as an absent guest. */}
                 No stay matching &ldquo;{search.trim()}&rdquo;
               </span>
             ) : (
               <>
-                {/* The count as a fraction, stacked tight: the position is the
-                    number that changes as the desk steps, so it leads. */}
                 <span className="tape-search__count">
                   <strong>{Math.min(hitIndex, searchHits.length - 1) + 1}</strong>
                   <span className="tape-search__count-sep">/</span>
                   {searchHits.length}
                 </span>
 
-                {/* Who the arrows are parked on, and where they are. This is
-                    the line that turns "3 of 12" into an answer — the desk
-                    asked which room a guest is in, and this says it outright
-                    instead of leaving them to find the ring on the chart. */}
                 <span className="tape-search__who">
                   <strong>{activeHit?.booking.guestName}</strong>
                   {activeHit && (
@@ -3086,17 +3086,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         Room {activeHit.roomNumber} ·{' '}
                         {formatDateLong(activeHit.booking.checkInDate)}
                       </span>
-                      {/* The two things the desk uses to be sure it has the
-                          right person. A property will have several Sharmas
-                          across a month and two of them can share a first name;
-                          the phone and the ID number are what settle it, and
-                          they are already searchable — showing them closes the
-                          loop on a search that matched one of them, where the
-                          name alone left the desk wondering which it hit.
-
-                          Both are optional on a booking, so the line renders
-                          only what is on file rather than printing a dash for
-                          whatever is missing. */}
                       {(activeHit.booking.guestPhone || activeHit.booking.idProofNumber) && (
                         <span className="tape-search__ids">
                           {activeHit.booking.guestPhone && (
@@ -3122,9 +3111,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     type="button"
                     className="tape-search__arrow"
                     onClick={() => stepHit(-1)}
-                    // Disabled only when stepping would be a no-op. With a
-                    // single match the arrows would spin on the spot, which
-                    // reads as a broken control rather than a finished search.
                     disabled={searchHits.length < 2}
                     aria-label="Previous match"
                     title="Previous match (Shift+Enter)"
@@ -3151,71 +3137,43 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           </div>
         )}
         </div>
-        <span className="tape-legend__item">
-          <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
-        </span>
-        {LEGEND_LINKS.map((item) => (
-          <button
-            key={item.status}
-            type="button"
-            className="tape-legend__item tape-legend__item--link"
-            onClick={() => onShowRegister?.(item.status)}
-            title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
-          >
-            <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
-            {item.label}
-          </button>
-        ))}
-        {/* Draft lands in the register beside the other three rather than in
-            the toolbar's modal. The register carries a Draft cut of its own,
-            so following the yellow gets the desk the same kind of page the red
-            and the blue do — a filtered list it can search and sort. The modal
-            stays where it is, on the toolbar button, for a quick look without
-            leaving the chart. */}
-        <button
-          type="button"
-          className="tape-legend__item tape-legend__item--link"
-          onClick={() => onShowRegister?.('DRAFT')}
-          title="Show drafts in Booking Details"
-        >
-          <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
-        </button>
+
+        {/* One chip per grade of room, in the same shape as the legend's, so the
+            strip reads as one row of ways into the chart: the status chips cut it
+            by colour, these jump it by category.
+
+            Only worth showing when there is somewhere to jump to — with a single
+            category the chip would scroll to the card already filling the screen.
+            The sold figure rides along because it is the number the desk opens
+            this screen for, and it saves them the trip to read it. */}
+        {!tapeError && categorySections.length > 1 && (
+          <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
+            {categorySections.map((section) => {
+              const stats = categoryStats.get(section.categoryName);
+              const active = activeCategory === section.categoryName;
+              return (
+                <button
+                  key={section.categoryName}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
+                  onClick={() => jumpToCategory(section.categoryName)}
+                  title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
+                    section.rooms.length === 1 ? '' : 's'
+                  }`}
+                >
+                  {section.categoryName}
+                  <span className="tape-cats__count">{section.rooms.length}</span>
+                  {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
-
-      {/* One chip per grade of room, in the same shape as the legend's, so the
-          strip reads as one row of ways into the chart: the status chips cut it
-          by colour, these jump it by category.
-
-          Only worth showing when there is somewhere to jump to — with a single
-          category the chip would scroll to the card already filling the screen.
-          The sold figure rides along because it is the number the desk opens
-          this screen for, and it saves them the trip to read it. */}
-      {!tapeError && categorySections.length > 1 && (
-        <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
-          {categorySections.map((section) => {
-            const stats = categoryStats.get(section.categoryName);
-            const active = activeCategory === section.categoryName;
-            return (
-              <button
-                key={section.categoryName}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
-                onClick={() => jumpToCategory(section.categoryName)}
-                title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
-                  section.rooms.length === 1 ? '' : 's'
-                }`}
-              >
-                {section.categoryName}
-                <span className="tape-cats__count">{section.rooms.length}</span>
-                {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
       </div>
 
       {tapeError && (
@@ -3354,11 +3312,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               )}
               {/* The night was let again after an earlier booking fell
                   through on it — that is what the red border on the tile is. */}
-              {hoverTile.cancelled && (
+              {/* {hoverTile.cancelled && (
                 <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
                   {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
                 </span>
-              )}
+              )} */}
             </>
           ) : hoverTile.draft ? (
             <>
@@ -3380,13 +3338,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               <span className="tape-tooltip__hint">
                 Not booked — this room is still free. Click to finish or delete it.
               </span>
-              {hoverTile.cancelled && (
+              {/* {hoverTile.cancelled && (
                 <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
                   {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
                 </span>
-              )}
+              )} */}
             </>
-          ) : hoverTile.cancelled ? (
+          ) : false && hoverTile.cancelled ? (
             <>
               {/* An empty night with a red border: the story is the booking
                   that fell through, so the card leads with it — while the

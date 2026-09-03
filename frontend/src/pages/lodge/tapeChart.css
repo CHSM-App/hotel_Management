@@ -118,13 +118,13 @@
 }
 
 .tape-nav__arrow {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: 50%;
   background: transparent;
   color: var(--text-muted);
-  font-size: 20px;
+  font-size: 17px;
   line-height: 1;
   cursor: pointer;
   transition: var(--neu-transition);
@@ -144,7 +144,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  min-width: 128px;
+  min-width: 110px;
   justify-content: center;
   padding: 0 6px;
   white-space: nowrap;
@@ -152,14 +152,14 @@
 
 .tape-nav__label strong {
   font-family: var(--serif);
-  font-size: 17px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--ink);
   letter-spacing: -0.01em;
 }
 
 .tape-nav__label span {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -168,18 +168,20 @@
 .tape-legend {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
-  font-size: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
   color: var(--text);
 }
 
 .tape-legend__item {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 11px 4px 8px;
+  gap: 6px;
+  padding: 5px 11px 5px 9px;
+  font-size: 12px;
+  line-height: 1.5;
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 999px;
@@ -193,8 +195,19 @@
    somewhere. */
 .tape-legend__item--link {
   font: inherit;
+  /* font: inherit resets line-height to the parent's (the page default),
+     overriding .tape-legend__item's own 1.5 for any element that carries
+     both classes — which is every chip except the plain-span Vacant. Redeclared
+     here so the button chips come out the same size as it instead of taller. */
+  font-size: 12px;
+  line-height: 1.5;
   color: inherit;
   cursor: pointer;
+  /* Buttons carry their own UA margin/border defaults on top of the shared
+     .tape-legend__item box — reset here so a button chip matches the plain
+     span (Vacant) exactly instead of rendering fractionally larger. */
+  margin: 0;
+  appearance: none;
   transition:
     box-shadow 0.15s ease,
     transform 0.15s ease;
@@ -287,28 +300,35 @@
   display: none;
 }
 
+/* Same chip as the legend's — raised off the surface rather than outlined —
+   so the two rows of chips read as one family instead of two different
+   controls stacked on top of each other. */
 .tape-cats__chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex: 0 0 auto;
-  padding: 5px 12px;
+  padding: 6px 12px 6px 10px;
+  line-height: 1.5;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 999px;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease,
     background 0.15s ease,
     color 0.15s ease;
 }
 
 .tape-cats__chip:hover {
-  border-color: var(--brand);
+  box-shadow: var(--shadow-raised-hover, var(--shadow-raised));
+  transform: translateY(-1px);
 }
 
 .tape-cats__chip:focus-visible {
@@ -316,11 +336,11 @@
   outline-offset: 2px;
 }
 
-/* The one being read. Filled rather than merely outlined, because at 12px an
-   accent border alone is easy to miss against four neighbours. */
+/* The one being read. Filled rather than merely outlined, because at this
+   size a border alone is easy to miss against three neighbours. */
 .tape-cats__chip--active {
   background: var(--brand);
-  border-color: var(--brand);
+  box-shadow: none;
   color: #ffffff;
 }
 
@@ -334,14 +354,15 @@
 }
 
 .tape-cats__count {
-  padding: 1px 6px;
-  font-size: 11px;
+  padding: 1px 7px;
+  font-size: 12px;
+  line-height: 1.5;
   background: var(--paper);
   border-radius: 999px;
 }
 
 .tape-cats__sold {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .tape-cats__chip--active .tape-cats__count,
@@ -355,7 +376,8 @@
 
 @media (hover: none) {
   .tape-cats__chip:hover {
-    border-color: var(--border);
+    box-shadow: var(--shadow-raised);
+    transform: none;
   }
 }
 
@@ -1233,19 +1255,14 @@
   margin-bottom: 0;
 }
 
-/* The search field, sitting in the gap the month stepper and the actions leave
-   between them. Takes the slack so the row stays balanced at any width, but
-   never grows past a comfortable reading length — a search box the width of a
-   desk is not easier to type into. */
+/* The search field, first on the row it shares with the category chips.
+   Wide enough to show the whole placeholder and to give the result panel
+   hanging under it room for a full name, but it does not grow past that — a
+   search box the width of a desk is no easier to type into. */
 .tape-search {
   position: relative;
   display: flex;
   align-items: center;
-  /* First on the legend's row, wide enough to show the whole placeholder and
-     to give the result panel hanging under it room for a full name — the row
-     has slack to spare after the five chips, and this is what it is for. It
-     does not grow past that: a search box the width of a desk is no easier to
-     type into, and the chips should stay near the field they filter beside. */
   flex: 0 1 360px;
   min-width: 0;
   /* Clears the chips it shares the row with. */
@@ -1271,14 +1288,14 @@
   width: 100%;
   min-width: 0;
   /* Room for the icon and the clear button that sit over the two ends. */
-  padding: 9px 34px;
+  padding: 7px 32px;
   border: 1px solid var(--field-border);
   border-radius: 10px;
   background: var(--field);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
-  height: 38px;
+  font-size: 12px;
+  height: 32px;
   box-shadow: var(--shadow-well);
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }

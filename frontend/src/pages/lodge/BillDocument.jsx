@@ -900,7 +900,11 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
 
       <div className="memo__row">
         <span className="memo__label">{T.name}</span>
-        <Filled>{isFoodBill ? invoice.tableLabel || T.counter : invoice.guestName}</Filled>
+        {/* A room tab is running for whoever is actually staying there, and a
+            counter/takeaway order carries whatever name staff typed in at
+            the till — both print like a stay bill's guest. Only a table tab
+            has no guest behind it at all, and falls back to naming the table. */}
+        <Filled>{isFoodBill ? invoice.guestName || invoice.tableLabel || T.counter : invoice.guestName}</Filled>
         <span className="memo__label">{T.mobNo}</span>
         <Filled narrow>{invoice.guestPhone}</Filled>
       </div>
