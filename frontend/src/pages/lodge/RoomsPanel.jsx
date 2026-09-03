@@ -413,23 +413,30 @@ export default function RoomsPanel() {
     room.images.length > 0 && !brokenPhotos.has(room.images[0].filename);
 
   const searchTerm = useSearchTerm();
-  const visibleRooms = (rooms || []).filter((room) =>
-    matchesSearch(
-      searchTerm,
-      room.roomNumber,
-      room.category?.name,
-      room.floor && `Floor ${room.floor}`,
-      bedSummary(room),
-      room.bathroomType && bathroomTypeLabel[room.bathroomType],
-      room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
-      room.isActive ? 'Active' : 'Inactive',
-      room.description
-    )
-  );
+  // A hotel with dozens of rooms turns "find the deluxe rooms" into a lot of
+  // scrolling through the grid, or typing the category name into the search
+  // box and hoping it's spelled the way the card shows it. A dropdown next to
+  // the room count answers the same question in one click.
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const visibleRooms = (rooms || [])
+    .filter((room) => !categoryFilter || String(room.category?.id) === categoryFilter)
+    .filter((room) =>
+      matchesSearch(
+        searchTerm,
+        room.roomNumber,
+        room.category?.name,
+        room.floor && `Floor ${room.floor}`,
+        bedSummary(room),
+        room.bathroomType && bathroomTypeLabel[room.bathroomType],
+        room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
+        room.isActive ? 'Active' : 'Inactive',
+        room.description
+      )
+    );
   // A search that matched nothing is a different state from a lodge with no
   // rooms yet, and the two need different words — one is a dead end you fix by
   // clearing the box, the other by adding a room.
-  const searching = searchTerm.trim().length > 0;
+  const searching = searchTerm.trim().length > 0 || categoryFilter !== '';
 
   // --- what the add/edit form shows about itself ---
 
@@ -492,6 +499,21 @@ export default function RoomsPanel() {
               : `${rooms.length} room${rooms.length === 1 ? '' : 's'}`
             : ' '}
         </span>
+        {categories && categories.length > 0 && (
+          <select
+            className="rooms-panel__type-filter"
+            aria-label="Filter by room type"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="">All room types</option>
+            {categories.map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
         <button type="button" className="btn-accent" onClick={openForm} disabled={noCategories}>
           + Add room
         </button>
@@ -517,7 +539,11 @@ export default function RoomsPanel() {
 
       {!error && rooms && rooms.length > 0 && visibleRooms.length === 0 && (
         <div className="dash-card">
-          <div className="dash-state">No rooms match “{searchTerm.trim()}”.</div>
+          <div className="dash-state">
+            {searchTerm.trim()
+              ? `No rooms match "${searchTerm.trim()}".`
+              : 'No rooms of this type.'}
+          </div>
         </div>
       )}
 
