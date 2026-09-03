@@ -421,6 +421,33 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadToken]);
 
+  // The default range's end is "today", but a lodge with reservations further
+  // out than that would have the register open already hiding them. Asking
+  // once, unfiltered, for the latest checkout on file and stretching the
+  // opening 'To' out to meet it means the default range always covers every
+  // booking that exists, not just the ones up to the day the page happened to
+  // load on. Only stretches — it never pulls 'To' earlier than today — and
+  // only runs once, so it doesn't fight a range the desk has since chosen.
+  useEffect(() => {
+    let active = true;
+    apiGet('/bookings', { token })
+      .then((data) => {
+        if (!active) return;
+        const latest = (data.bookings || []).reduce(
+          (max, b) => (b.checkOutDate > max ? b.checkOutDate : max),
+          ''
+        );
+        if (latest > todayIso()) {
+          setToDate((current) => (current === todayIso() ? latest : current));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const query = search.trim().toLowerCase();
   // Searched first, filtered by status second — so the status chips can carry
   // how many rows each one holds within what's been searched for.

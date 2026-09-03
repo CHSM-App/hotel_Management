@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache, invalidateCache } from '../../lib/dataCache';
@@ -7,8 +7,33 @@ import { EditIcon, TrashIcon, RefreshIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
+import './RoomsPanel.css';
+import './TablesPanel.css';
 
 const emptyForm = { mode: 'single', label: '', prefix: 'T', rangeStart: '', rangeEnd: '', seats: '' };
+
+// A chair glyph, at the same 12px box and stroke weight as the chip icons in
+// RoomsPanel, so a seats chip sits at the same optical size as the rest of
+// the app's card chips.
+function SeatsIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" />
+      <path d="M5 9h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z" />
+      <path d="M6 15v6M18 15v6" />
+    </svg>
+  );
+}
 
 export default function TablesPanel() {
   const session = getSession();
@@ -18,7 +43,25 @@ export default function TablesPanel() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
   const [deletingId, setDeletingId] = useState(null);
 
   // Returns the promise so a delete can wait for the corrected list before it
@@ -44,18 +87,37 @@ export default function TablesPanel() {
         : emptyForm
     );
     setFormError('');
+    setFieldError(null);
     setShowForm(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
+    setFieldError(null);
+
+    if (editingId || form.mode !== 'bulk') {
+      if (!form.label.trim()) {
+        failOn('tableLabel', 'Enter a table name.');
+        return;
+      }
+    } else if (!form.rangeStart) {
+      failOn('tableFrom', 'Enter the start of the range.');
+      return;
+    } else if (!form.rangeEnd) {
+      failOn('tableTo', 'Enter the end of the range.');
+      return;
+    } else if (Number(form.rangeEnd) < Number(form.rangeStart)) {
+      failOn('tableTo', 'The range end must not be before its start.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (editingId) {
         await apiPatch(
           `/tables/${editingId}`,
-          { label: form.label, seats: form.seats || null },
+          { label: form.label.trim(), seats: form.seats || null },
           { token: session?.token }
         );
       } else if (form.mode === 'bulk') {
@@ -70,13 +132,21 @@ export default function TablesPanel() {
           { token: session?.token }
         );
       } else {
-        await apiPost('/tables', { label: form.label, seats: form.seats || null }, { token: session?.token });
+        await apiPost(
+          '/tables',
+          { label: form.label.trim(), seats: form.seats || null },
+          { token: session?.token }
+        );
       }
       setShowForm(false);
       invalidateCache('/tables');
       load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save the table.');
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOn(err.field, err.message);
+      } else {
+        reportFormError(err instanceof ApiError ? err.message : 'Could not save the table.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -179,49 +249,61 @@ export default function TablesPanel() {
       )}
 
       {!error && tables && tables.length > 0 && (
-        <div className="menu-section">
-          <ul className="menu-items">
-            {tables.map((table) => (
-              <li className={`menu-item ${table.isActive ? '' : 'menu-item--out'}`} key={table.id}>
-                <div className="menu-item__body">
-                  <div className="menu-item__name">
-                    {table.label}
-                    {!table.isActive && <span className="badge badge--off">Inactive</span>}
-                  </div>
-                  <div className="menu-item__desc">
-                    {table.seats ? `${table.seats} seats` : 'Seats not set'}
-                  </div>
-                </div>
-                <div className="menu-item__actions">
-                  <IconButton
-                    label={`Edit ${table.label}`}
-                    icon={<EditIcon />}
-                    onClick={() => openForm(table)}
-                  />
-                  <button type="button" onClick={() => toggleActive(table)}>
-                    {table.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
-                  <IconButton
-                    label={`New QR code for ${table.label}`}
-                    icon={<RefreshIcon />}
-                    onClick={() => regenerateQr(table)}
-                  />
-                  <IconButton
-                    label={`Delete ${table.label}`}
-                    icon={<TrashIcon />}
-                    tone="danger"
-                    disabled={deletingId != null}
-                    onClick={() => remove(table)}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
+        <div className="table-grid">
+          {tables.map((table) => (
+            <div className={`table-card${table.isActive ? '' : ' table-card--off'}`} key={table.id}>
+              <div className="table-card__band">
+                <span className="table-card__label">{table.label}</span>
+                <button
+                  type="button"
+                  className={`table-card__status badge ${table.isActive ? 'badge--on' : 'badge--off'}`}
+                  onClick={() => toggleActive(table)}
+                  title={`Click to ${table.isActive ? 'deactivate' : 'activate'} ${table.label}`}
+                  aria-label={`${table.label} is ${table.isActive ? 'active' : 'inactive'}. Click to ${
+                    table.isActive ? 'deactivate' : 'activate'
+                  }.`}
+                >
+                  {table.isActive ? 'Active' : 'Inactive'}
+                </button>
+              </div>
+
+              <div className="table-card__body">
+                {table.seats ? (
+                  <span className="table-card__chip">
+                    <SeatsIcon />
+                    {table.seats} seat{table.seats === 1 ? '' : 's'}
+                  </span>
+                ) : (
+                  <span className="table-card__chip table-card__chip--muted">Seats not set</span>
+                )}
+              </div>
+
+              <div className="table-card__actions">
+                <IconButton
+                  label={`Edit ${table.label}`}
+                  icon={<EditIcon />}
+                  onClick={() => openForm(table)}
+                />
+                <IconButton
+                  label={`New QR code for ${table.label}`}
+                  icon={<RefreshIcon />}
+                  onClick={() => regenerateQr(table)}
+                />
+                <IconButton
+                  label={`Delete ${table.label}`}
+                  icon={<TrashIcon />}
+                  tone="danger"
+                  disabled={deletingId != null}
+                  onClick={() => remove(table)}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {showForm && (
-        <div className="glass-backdrop" onClick={() => !submitting && setShowForm(false)}>
+        <div className="glass-backdrop menu-panel__backdrop" onClick={() => !submitting && setShowForm(false)}>
           <div
             className="glass-panel menu-panel__modal modal-form__panel"
             onClick={(e) => e.stopPropagation()}
@@ -271,7 +353,11 @@ export default function TablesPanel() {
               </div>
 
               <div className="modal-form__body">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               {editingId || form.mode === 'single' ? (
                 <div className="field">
@@ -281,11 +367,13 @@ export default function TablesPanel() {
                   </label>
                   <input
                     id="tableLabel"
+                    aria-invalid={invalid('tableLabel')}
                     value={form.label}
                     onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
                     placeholder="T1"
                     autoFocus
                   />
+                  {fieldErr('tableLabel')}
                 </div>
               ) : (
                 <>
@@ -307,10 +395,12 @@ export default function TablesPanel() {
                       <input
                         id="tableFrom"
                         type="number"
+                        aria-invalid={invalid('tableFrom')}
                         value={form.rangeStart}
                         onChange={(e) => setForm((f) => ({ ...f, rangeStart: e.target.value }))}
                         placeholder="1"
                       />
+                      {fieldErr('tableFrom')}
                     </div>
                     <div className="field">
                       <label htmlFor="tableTo">
@@ -320,10 +410,12 @@ export default function TablesPanel() {
                       <input
                         id="tableTo"
                         type="number"
+                        aria-invalid={invalid('tableTo')}
                         value={form.rangeEnd}
                         onChange={(e) => setForm((f) => ({ ...f, rangeEnd: e.target.value }))}
                         placeholder="12"
                       />
+                      {fieldErr('tableTo')}
                     </div>
                   </div>
                 </>

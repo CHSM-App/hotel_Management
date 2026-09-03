@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
 import './OrdersPanel.css';
@@ -603,7 +604,29 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const [query, setQuery] = useState('');
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [error, setError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // The banner sits above a menu that can run to a hundred dishes, so a
+  // failure caught on submit — a missing guest name, the server refusing —
+  // has to bring itself back into view rather than rely on already being in
+  // it. Same shape as the booking form's failOn/reportFormError.
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
   // Who is checked into the selected room, so staff can eyeball the register
   // before charging food to somebody's stay. null while nothing is selected.
   const [occupancy, setOccupancy] = useState(null);
@@ -743,24 +766,26 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldError(null);
 
-    if (lines.length === 0) {
-      setError('Add at least one item.');
-      return;
-    }
-
-    // A takeaway walks out of the door with the food, so the name and number
-    // are the only way to call it back or work out whose it was. Checked here
-    // and again on the server, which is what actually holds the rule.
+    // Checked in the order the fields sit on the form — guest details before
+    // the menu — the same order every other form here checks in, so the
+    // first thing reported is the first thing the eye would reach scrolling
+    // down from the top rather than whichever check happens to run first.
     if (target.kind === 'COUNTER') {
       if (!guestName.trim()) {
-        setError('Add the guest’s name for a counter order.');
+        failOn('orderGuest', 'Add the guest’s name for a counter order.');
         return;
       }
       if (!guestPhone.trim()) {
-        setError('Add a phone number for a counter order.');
+        failOn('orderPhone', 'Add a phone number for a counter order.');
         return;
       }
+    }
+
+    if (lines.length === 0) {
+      reportError('Add at least one item.');
+      return;
     }
 
     setSubmitting(true);
@@ -785,7 +810,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
       );
       onPlaced();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not place the order.');
+      reportError(err instanceof ApiError ? err.message : 'Could not place the order.');
     } finally {
       setSubmitting(false);
     }
@@ -820,7 +845,11 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
 
         <form className="counter-form" onSubmit={handleSubmit} noValidate>
           <div className="counter-form__scroll">
-            {error && <div className="form-banner form-banner--error">{error}</div>}
+            {error && (
+              <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+                {error}
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="orderTarget">Where&apos;s it going?</label>
@@ -888,23 +917,33 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
             {target.kind === 'COUNTER' && (
               <div className="field-row">
                 <div className="field">
-                  <label htmlFor="orderGuest">Guest name</label>
+                  <label htmlFor="orderGuest">
+                    Guest name
+                    <Req />
+                  </label>
                   <input
                     id="orderGuest"
+                    aria-invalid={invalid('orderGuest')}
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
                     placeholder="Who's collecting"
                   />
+                  {fieldErr('orderGuest')}
                 </div>
                 <div className="field">
-                  <label htmlFor="orderPhone">Phone</label>
+                  <label htmlFor="orderPhone">
+                    Phone
+                    <Req />
+                  </label>
                   <input
                     id="orderPhone"
                     inputMode="tel"
+                    aria-invalid={invalid('orderPhone')}
                     value={guestPhone}
                     onChange={(e) => setGuestPhone(e.target.value)}
                     placeholder="To call when it's ready"
                   />
+                  {fieldErr('orderPhone')}
                 </div>
               </div>
             )}
@@ -1042,11 +1081,11 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
               <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
                 Cancel
               </button>
-              <button
-                type="submit"
-                className="btn-accent"
-                disabled={submitting || lines.length === 0}
-              >
+              {/* Not disabled on an empty cart: a disabled button gives no
+                  feedback at all when pressed, which is why "Add at least one
+                  item" was never seen. Left enabled, the click reaches
+                  handleSubmit and its own check reports the problem instead. */}
+              <button type="submit" className="btn-accent" disabled={submitting}>
                 {submitting ? 'Placing…' : 'Place order'}
               </button>
             </div>

@@ -422,7 +422,22 @@ export default function EventForm({
 
   const focusField = (name) => {
     const el = document.getElementById(`ev-${name}`) || document.getElementById(name);
-    if (el) el.focus();
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+
+  // The banner's own equivalent of focusField, for the one failure left that
+  // names no field — a server error the 409 and err.field branches above
+  // don't catch. Same reason those two exist: this is the longest form in the
+  // app after a booking, and a message left at the top scrolls out of view
+  // the moment the desk works down into Catering or Rooms.
+  const errorBannerRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorBannerRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
   };
 
   // `ack` is set once the desk has answered the clash dialog, so the second
@@ -490,7 +505,7 @@ export default function EventForm({
         : await apiPost('/events', body, { token });
       if (data.advanceError) {
         setSavedWithoutAdvance(data.event);
-        setError(`The function was saved, but the advance was not recorded: ${data.advanceError} Take it from the function’s page.`);
+        reportError(`The function was saved, but the advance was not recorded: ${data.advanceError} Take it from the function’s page.`);
         return;
       }
       onSaved?.(data.event);
@@ -506,7 +521,7 @@ export default function EventForm({
         setFieldError({ field: err.field, message: err.message });
         focusField(err.field);
       } else {
-        setError(err.message);
+        reportError(err.message);
       }
     } finally {
       setSaving(false);
@@ -567,7 +582,11 @@ export default function EventForm({
         </div>
 
         <div className="modal-form__body">
-        {error && <div className="form-banner form-banner--error">{error}</div>}
+        {error && (
+          <div ref={errorBannerRef} className="form-banner form-banner--error form-banner--flash">
+            {error}
+          </div>
+        )}
 
         <div className="form-section">
           <div className="form-section__title">Function</div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
@@ -75,6 +75,31 @@ export default function LodgeRegistration() {
   const [form, setForm] = useState(initialForm);
   const [slugTouched, setSlugTouched] = useState(false);
   const [error, setError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
+  // Four steps down a single scrolling column, so a failure caught on submit
+  // has to bring itself into view rather than rely on already being on
+  // screen — same failOn/reportError shape as the lodge-side forms
+  // (pages/lodge/forms.css).
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    setFieldError(null);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  // Field-only: the message goes under the box that caused it, and must not
+  // also land in the banner above — that would render the same line twice.
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
   const [success, setSuccess] = useState(false);
   // Captured at submit, because the form resets to its Lodge default straight
   // afterwards — otherwise creating a restaurant would report "Lodge created".
@@ -125,22 +150,35 @@ export default function LodgeRegistration() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldError(null);
 
-    if (!form.lodgeName.trim() || !form.slug.trim() || !form.ownerName.trim() || !form.ownerPhone.trim()) {
-      setError(`${type.Noun} name, slug, owner name and owner phone are required.`);
+    if (!form.lodgeName.trim()) {
+      failOn('lodgeName', `Enter the ${type.noun} name.`);
+      return;
+    }
+    if (!form.slug.trim()) {
+      failOn('slug', 'Enter a public link slug.');
       return;
     }
     if (form.isGstRegistered && !form.gstin.trim()) {
-      setError('Enter the GSTIN, or turn off GST registration.');
+      failOn('gstin', 'Enter the GSTIN, or turn off GST registration.');
+      return;
+    }
+    if (!form.ownerName.trim()) {
+      failOn('ownerName', 'Enter the owner name.');
+      return;
+    }
+    if (!form.ownerPhone.trim()) {
+      failOn('ownerPhone', 'Enter the owner phone.');
       return;
     }
     if (!form.tempPassword) {
-      setError('Set a temporary password for the first login.');
+      failOn('tempPassword', 'Set a temporary password for the first login.');
       return;
     }
     const coords = validateCoordinates(form);
     if (!coords.ok) {
-      setError(coords.message);
+      failOn('location-lat', coords.message);
       return;
     }
 
@@ -165,9 +203,13 @@ export default function LodgeRegistration() {
       setForm(initialForm);
       setSlugTouched(false);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : `Could not create the ${type.noun}. Check your connection.`
-      );
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOn(err.field, err.message);
+      } else {
+        reportError(
+          err instanceof ApiError ? err.message : `Could not create the ${type.noun}. Check your connection.`
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -200,7 +242,11 @@ export default function LodgeRegistration() {
 
         <form className="reg-grid" onSubmit={handleSubmit} noValidate>
           <div className="reg-col">
-            {error && <div className="form-banner form-banner--error">{error}</div>}
+            {error && (
+              <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+                {error}
+              </div>
+            )}
             {success && (
               <div className="form-banner form-banner--info">
                 {successNoun} created. Share the phone/email and temporary password with the owner
@@ -310,10 +356,12 @@ export default function LodgeRegistration() {
                 </label>
                 <input
                   id="lodgeName"
+                  aria-invalid={invalid('lodgeName')}
                   value={form.lodgeName}
                   onChange={handleNameChange}
                   placeholder={type.examples.name}
                 />
+                {fieldErr('lodgeName')}
               </div>
 
               <div className="field">
@@ -323,6 +371,7 @@ export default function LodgeRegistration() {
                 </label>
                 <input
                   id="slug"
+                  aria-invalid={invalid('slug')}
                   value={form.slug}
                   onChange={(e) => {
                     setSlugTouched(true);
@@ -330,6 +379,7 @@ export default function LodgeRegistration() {
                   }}
                   placeholder={type.examples.slug}
                 />
+                {fieldErr('slug')}
               </div>
 
               <div className="field-row">
@@ -446,7 +496,14 @@ export default function LodgeRegistration() {
                     GSTIN
                     <Req label="required while GST registered" />
                   </label>
-                  <input id="gstin" value={form.gstin} onChange={update('gstin')} placeholder="27ABCDE1234F1Z5" />
+                  <input
+                    id="gstin"
+                    aria-invalid={invalid('gstin')}
+                    value={form.gstin}
+                    onChange={update('gstin')}
+                    placeholder="27ABCDE1234F1Z5"
+                  />
+                  {fieldErr('gstin')}
                 </div>
               )}
 
@@ -493,7 +550,14 @@ export default function LodgeRegistration() {
                   Owner name
                   <Req />
                 </label>
-                <input id="ownerName" value={form.ownerName} onChange={update('ownerName')} placeholder="Suresh Naik" />
+                <input
+                  id="ownerName"
+                  aria-invalid={invalid('ownerName')}
+                  value={form.ownerName}
+                  onChange={update('ownerName')}
+                  placeholder="Suresh Naik"
+                />
+                {fieldErr('ownerName')}
               </div>
 
               <div className="field-row">
@@ -502,7 +566,14 @@ export default function LodgeRegistration() {
                     Owner phone
                     <Req />
                   </label>
-                  <input id="ownerPhone" value={form.ownerPhone} onChange={update('ownerPhone')} placeholder="9876543210" />
+                  <input
+                    id="ownerPhone"
+                    aria-invalid={invalid('ownerPhone')}
+                    value={form.ownerPhone}
+                    onChange={update('ownerPhone')}
+                    placeholder="9876543210"
+                  />
+                  {fieldErr('ownerPhone')}
                 </div>
                 <div className="field">
                   <label htmlFor="ownerEmail">Owner email (optional)</label>
@@ -518,6 +589,7 @@ export default function LodgeRegistration() {
                 <div className="reg-password">
                   <input
                     id="tempPassword"
+                    aria-invalid={invalid('tempPassword')}
                     value={form.tempPassword}
                     onChange={update('tempPassword')}
                     placeholder="Generate or set one"
@@ -526,6 +598,7 @@ export default function LodgeRegistration() {
                     Generate
                   </button>
                 </div>
+                {fieldErr('tempPassword')}
               </div>
             </section>
           </div>

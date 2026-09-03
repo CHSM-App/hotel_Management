@@ -117,7 +117,7 @@ async function createRooms(lodgeId, input) {
     .query('SELECT id FROM dbo.room_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
 
   if (category.recordset.length === 0) {
-    throw new ApiError('Choose a valid category.', 400);
+    throw new ApiError('Choose a valid category.', 400, 'categoryId');
   }
 
   if (input.switchableChargeIds.length > 0) {
@@ -140,7 +140,14 @@ async function createRooms(lodgeId, input) {
   const taken = new Set(existing.recordset.map((r) => r.room_number));
   const conflicts = roomNumbers.filter((n) => taken.has(n));
   if (conflicts.length > 0) {
-    throw new ApiError(`Room number already in use: ${conflicts.join(', ')}.`, 409);
+    // Single mode names one field to land the message under; a range spans
+    // rangeStart..rangeEnd, and the message names which numbers in it clash
+    // rather than pretending one end of the range is the problem.
+    throw new ApiError(
+      `Room number already in use: ${conflicts.join(', ')}.`,
+      409,
+      input.roomNumber ? 'roomNumber' : 'rangeStart'
+    );
   }
 
   const transaction = new sql.Transaction(pool);
@@ -205,7 +212,7 @@ async function updateRoom(lodgeId, roomId, input) {
     .input('categoryId', sql.BigInt, input.categoryId)
     .query('SELECT id FROM dbo.room_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
   if (category.recordset.length === 0) {
-    throw new ApiError('Choose a valid category.', 400);
+    throw new ApiError('Choose a valid category.', 400, 'categoryId');
   }
 
   if (input.switchableChargeIds && input.switchableChargeIds.length > 0) {
@@ -226,7 +233,7 @@ async function updateRoom(lodgeId, roomId, input) {
     .input('roomNumber', sql.NVarChar, input.roomNumber)
     .query('SELECT id FROM dbo.rooms WHERE lodge_id = @lodgeId AND room_number = @roomNumber AND id <> @roomId');
   if (conflict.recordset.length > 0) {
-    throw new ApiError('Room number already in use.', 409);
+    throw new ApiError('Room number already in use.', 409, 'roomNumber');
   }
 
   const transaction = new sql.Transaction(pool);

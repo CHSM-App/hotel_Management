@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { isStaff, setSession } from '../../lib/auth';
@@ -10,6 +10,13 @@ export default function AdminLogin() {
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // Staff-only page: keep it out of search indexes. The real access
   // control is the /auth/admin-login endpoint only accepting SUPERADMIN.
@@ -34,7 +41,7 @@ export default function AdminLogin() {
     setError('');
 
     if (!form.identifier.trim() || !form.password) {
-      setError('Enter your email and password.');
+      reportError('Enter your email and password.');
       return;
     }
 
@@ -45,7 +52,7 @@ export default function AdminLogin() {
       // replace, not push — see the lodge login for why.
       navigate('/vt-internal/dashboard', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not sign in. Check your connection.');
+      reportError(err instanceof ApiError ? err.message : 'Could not sign in. Check your connection.');
     } finally {
       setSubmitting(false);
     }
@@ -73,7 +80,11 @@ export default function AdminLogin() {
           <h2>Admin sign-in</h2>
           <p className="auth-card__hint">Restricted to Vengurla Tech internal accounts.</p>
 
-          {error && <div className="form-banner form-banner--error">{error}</div>}
+          {error && (
+            <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+              {error}
+            </div>
+          )}
 
           <div className="field">
             <label htmlFor="identifier">

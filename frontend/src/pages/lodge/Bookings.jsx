@@ -1336,6 +1336,20 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const [formError, setFormError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // A save can fail for a reason no single field owns — the room got taken
+  // while this form was open, the phone number is already on another guest —
+  // and that answer only comes back after the server round-trip, so it can't
+  // be caught by failOn on the way in. The banner it lands in sits at the top
+  // of a form long enough that the desk is often scrolled well past it by the
+  // time Save is pressed, so the failure has to bring the eye to itself the
+  // same way a field failure does.
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // Reports a failure against the control that caused it and takes the cursor
   // there. The form is tall enough that a message about the guest's phone is
@@ -1446,7 +1460,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const saveDraft = async () => {
     if (submitting) return;
     if (!hasFormContent(bookingForm)) {
-      setFormError('There is nothing to save yet — fill in a detail or two first.');
+      reportFormError('There is nothing to save yet — fill in a detail or two first.');
       return;
     }
     setSubmitting(true);
@@ -1462,7 +1476,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       loadTapeChart();
       returnToRegisterIfCame();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
     } finally {
       setSubmitting(false);
     }
@@ -1518,7 +1532,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       loadDrafts();
       loadTapeChart();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
     } finally {
       setSubmitting(false);
     }
@@ -2088,7 +2102,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       cameFromRegister.current = false;
       loadTapeChart();
     } catch (err) {
-      setFormError(
+      reportFormError(
         err instanceof ApiError
           ? err.message
           : editing
@@ -3560,7 +3574,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               </div>
 
               <div className="booking-form__body">
-                {formError && <div className="form-banner form-banner--error">{formError}</div>}
+                {formError && (
+                  <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                    {formError}
+                  </div>
+                )}
 
                 {/* Says which draft this is and offers the way out of it —
                     a parked booking that can't be thrown away accumulates. */}

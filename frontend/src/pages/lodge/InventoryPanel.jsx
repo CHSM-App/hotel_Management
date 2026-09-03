@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -14,6 +14,25 @@ import './InventoryPanel.css';
 // somebody will notice it.
 const emptyMaterialForm = { name: '', unit: 'KG', category: 'OTHER', quantity: '', lowStockThreshold: '' };
 const emptyAdjustForm = { mode: 'ADD', quantity: '', note: '' };
+
+// Maps the names validateMaterial and the server both use onto the DOM ids
+// their inputs actually carry, so a failure against either can find and
+// scroll to the right box — the boxes are named "materialName" etc. to stay
+// unique in a page with more than one form.
+const MATERIAL_FIELD_IDS = {
+  name: 'materialName',
+  quantity: 'materialQty',
+  lowStockThreshold: 'materialLow',
+};
+
+function focusFirstError(errors, fieldIds) {
+  const first = Object.keys(fieldIds).find((key) => errors[key]);
+  if (!first) return;
+  const el = document.getElementById(fieldIds[first]);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
 
 function validateMaterial(form, isEditing) {
   const errors = {};
@@ -65,6 +84,13 @@ export default function InventoryPanel() {
 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   const load = () =>
     apiGet('/inventory/materials', { token: session?.token })
@@ -152,7 +178,10 @@ export default function InventoryPanel() {
     e.preventDefault();
     const errors = validateMaterial(form, editingId !== null);
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, MATERIAL_FIELD_IDS);
+      return;
+    }
 
     setSubmitting(true);
     setFormError('');
@@ -180,7 +209,16 @@ export default function InventoryPanel() {
       setShowForm(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save that. Try again.');
+      // A duplicate name is the commonest refusal here, and the server now
+      // names the field it's about — so it lands under Material name, focused
+      // and scrolled to, instead of a banner the desk has to go looking for.
+      if (err instanceof ApiError && err.field && MATERIAL_FIELD_IDS[err.field]) {
+        const nextErrors = { [err.field]: err.message };
+        setFieldErrors(nextErrors);
+        focusFirstError(nextErrors, MATERIAL_FIELD_IDS);
+      } else {
+        reportFormError(err instanceof ApiError ? err.message : 'Could not save that. Try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -196,7 +234,7 @@ export default function InventoryPanel() {
     e.preventDefault();
     const raw = String(adjustForm.quantity).trim();
     if (raw === '' || !Number.isFinite(Number(raw))) {
-      setFormError('Enter a quantity.');
+      reportFormError('Enter a quantity.');
       return;
     }
 
@@ -211,7 +249,7 @@ export default function InventoryPanel() {
       setAdjusting(null);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not record that. Try again.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not record that. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -503,7 +541,11 @@ export default function InventoryPanel() {
               </div>
 
               <div className="modal-form__body">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="field">
                 <label htmlFor="materialName">
@@ -512,6 +554,7 @@ export default function InventoryPanel() {
                 </label>
                 <input
                   id="materialName"
+                  aria-invalid={Boolean(fieldErrors.name)}
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="Basmati rice"
@@ -664,7 +707,11 @@ export default function InventoryPanel() {
               </div>
 
               <div className="modal-form__body">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="inv-mode">
                 <button

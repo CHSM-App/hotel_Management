@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import BillNumberingPanel from './BillNumberingPanel';
@@ -694,9 +694,28 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // Named to read like an assignment at the call site: fail the amount, fail
   // the method. Anything with no field behind it — a refusal from the server —
   // passes null and falls back to the banner above the buttons.
+  //
+  // The issue form scrolls (the stay/function summary, the discount fold, the
+  // bill preview all sit above the payment rows), so a failure caught on
+  // submit has to bring itself into view rather than rely on already being on
+  // screen — same idea as failOn/reportFormError elsewhere in the app. A
+  // field error scrolls to the DOM node it names; a fieldless one scrolls the
+  // banner into view instead, once it exists on the next paint.
+  const issueErrorRef = useRef(null);
   const failIssue = (message, field = null) => {
     setIssueError(message);
     setIssueField(field);
+    if (field) {
+      const el = document.getElementById(field);
+      if (el) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    } else if (message) {
+      requestAnimationFrame(() => {
+        issueErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
   };
 
   const issueFieldError = (field) =>
@@ -988,6 +1007,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const [voidReason, setVoidReason] = useState('');
   const [voidError, setVoidError] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
+  const voidErrorRef = useRef(null);
+  const reportVoidError = (message) => {
+    setVoidError(message);
+    requestAnimationFrame(() => {
+      voidErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // The list first — it carries whatever a void has since done to the bill —
   // falling back to the copy returned by the issue itself, which is the only
@@ -1196,7 +1222,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     e.preventDefault();
     setVoidError('');
     if (!voidReason.trim()) {
-      setVoidError('Enter a reason for voiding this bill.');
+      reportVoidError('Enter a reason for voiding this bill.');
       return;
     }
     setVoidSubmitting(true);
@@ -1205,7 +1231,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       setDetailInvoiceId(null);
       refreshAll();
     } catch (err) {
-      setVoidError(err instanceof ApiError ? err.message : 'Could not void this bill.');
+      reportVoidError(err instanceof ApiError ? err.message : 'Could not void this bill.');
     } finally {
       setVoidSubmitting(false);
     }
@@ -2177,7 +2203,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     message down here about a field several sections up is a
                     message about something off-screen. */}
                 {issueError && !issueField && (
-                  <div className="form-banner form-banner--error">{issueError}</div>
+                  <div ref={issueErrorRef} className="form-banner form-banner--error form-banner--flash">
+                    {issueError}
+                  </div>
                 )}
 
                 <div className="billing-panel__actions">
@@ -2365,7 +2393,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               </div>
             )}
 
-            {voidError && <div className="form-banner form-banner--error">{voidError}</div>}
+            {voidError && (
+              <div ref={voidErrorRef} className="form-banner form-banner--error form-banner--flash">
+                {voidError}
+              </div>
+            )}
             {pdfError && <div className="form-banner form-banner--error">{pdfError}</div>}
 
             {detailInvoice.status === 'ISSUED' && showVoidForm && (

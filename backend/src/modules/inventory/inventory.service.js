@@ -82,7 +82,7 @@ async function createMaterial(lodgeId, input, userId) {
     .input('name', sql.NVarChar, input.name)
     .query('SELECT id FROM dbo.raw_materials WHERE lodge_id = @lodgeId AND name = @name');
   if (existing.recordset.length > 0) {
-    throw new ApiError('A raw material with that name already exists.', 409);
+    throw new ApiError('A raw material with that name already exists.', 409, 'name');
   }
 
   const opening = round3(input.quantity);
@@ -138,7 +138,7 @@ async function updateMaterial(lodgeId, materialId, input) {
     .input('materialId', sql.BigInt, materialId)
     .query('SELECT id FROM dbo.raw_materials WHERE lodge_id = @lodgeId AND name = @name AND id <> @materialId');
   if (conflict.recordset.length > 0) {
-    throw new ApiError('A raw material with that name already exists.', 409);
+    throw new ApiError('A raw material with that name already exists.', 409, 'name');
   }
 
   const result = await pool
