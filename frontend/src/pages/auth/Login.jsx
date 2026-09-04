@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { isLodgeUser, setSession } from '../../lib/auth';
@@ -10,6 +10,13 @@ export default function Login() {
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // If they get here already signed in — a bookmark, a typed URL, or Back
   // reaching an entry older than the replace — send them on rather than show a
@@ -26,7 +33,7 @@ export default function Login() {
     setError('');
 
     if (!form.identifier.trim() || !form.password) {
-      setError('Enter your phone or email and your password.');
+      reportError('Enter your phone or email and your password.');
       return;
     }
 
@@ -39,7 +46,7 @@ export default function Login() {
       // form the user has already satisfied.
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not sign in. Check your connection.');
+      reportError(err instanceof ApiError ? err.message : 'Could not sign in. Check your connection.');
     } finally {
       setSubmitting(false);
     }
@@ -73,7 +80,11 @@ export default function Login() {
           <h2>Sign in</h2>
           <p className="auth-card__hint">Use the phone or email your lodge registered with.</p>
 
-          {error && <div className="form-banner form-banner--error">{error}</div>}
+          {error && (
+            <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+              {error}
+            </div>
+          )}
 
           <div className="field">
             <label htmlFor="identifier">

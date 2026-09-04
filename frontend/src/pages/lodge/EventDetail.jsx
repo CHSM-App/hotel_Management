@@ -422,13 +422,35 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
     }
   };
 
+  // Opens the settlement with the whole advance offered back — keeping any of
+  // it is a decision made by typing a smaller figure, not a forgotten default.
+  const openCancel = () => {
+    setActionError('');
+    setCancelForm({ reason: '', refundAmount: event?.advanceAmount > 0 ? String(event.advanceAmount) : '' });
+    setCancelling(true);
+  };
+
   const submitCancel = async () => {
     if (!cancelForm.reason.trim()) {
       setActionError('Give a reason for the cancellation.');
       return;
     }
+    const advance = Number(event?.advanceAmount) || 0;
     const body = { reason: cancelForm.reason.trim() };
-    if (cancelForm.refundAmount !== '') body.refundAmount = Number(cancelForm.refundAmount);
+    if (advance > 0) {
+      const refund = Number(cancelForm.refundAmount);
+      if (cancelForm.refundAmount === '' || !Number.isFinite(refund) || refund < 0) {
+        setActionError('Enter how much of the advance goes back — 0 keeps all of it.');
+        return;
+      }
+      if (refund > advance) {
+        setActionError(`The refund can’t be more than the ${formatPrice(advance)} advance held.`);
+        return;
+      }
+      body.refundAmount = refund;
+    } else if (cancelForm.refundAmount !== '') {
+      body.refundAmount = Number(cancelForm.refundAmount);
+    }
     if (await transition('cancel', body)) setCancelling(false);
   };
 
@@ -515,6 +537,8 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             <div className="events-detail__cancelled">
               Cancelled{event.cancelReason ? `: ${event.cancelReason}` : ''}
               {Number(event.refundAmount) > 0 && ` · Refunded ${formatPrice(event.refundAmount)}`}
+              {Number(event.cancellationCharge) > 0 &&
+                ` · Cancellation charge kept ${formatPrice(event.cancellationCharge)}`}
             </div>
           )}
           {status === 'EXPIRED' && (
@@ -644,17 +668,34 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 <label htmlFor="ev-cancel-reason">Reason</label>
                 <input id="ev-cancel-reason" value={cancelForm.reason} onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))} autoFocus />
               </div>
-              <div className="field">
-                <label htmlFor="ev-cancel-refund">Refund of advance (optional)</label>
-                <input
-                  id="ev-cancel-refund"
-                  type="number"
-                  min="0"
-                  value={cancelForm.refundAmount}
-                  placeholder={event.advanceAmount ? `up to ${event.advanceAmount}` : '0'}
-                  onChange={(e) => setCancelForm((f) => ({ ...f, refundAmount: e.target.value }))}
-                />
-              </div>
+              {Number(event.advanceAmount) > 0 && (
+                <>
+                  <p className="events-cancel__hint">
+                    An advance of <strong>{formatPrice(event.advanceAmount)}</strong> is held on this function.
+                    Whatever is not refunded is recorded as a cancellation charge.
+                  </p>
+                  <div className="field">
+                    <label htmlFor="ev-cancel-refund">Refund to organiser</label>
+                    <input
+                      id="ev-cancel-refund"
+                      type="number"
+                      min="0"
+                      max={event.advanceAmount}
+                      step="0.01"
+                      value={cancelForm.refundAmount}
+                      onChange={(e) => setCancelForm((f) => ({ ...f, refundAmount: e.target.value }))}
+                    />
+                  </div>
+                  <p className="events-cancel__hint">
+                    Kept as cancellation charge:{' '}
+                    <strong>
+                      {formatPrice(
+                        Math.max(0, (Number(event.advanceAmount) || 0) - (Number(cancelForm.refundAmount) || 0))
+                      )}
+                    </strong>
+                  </p>
+                </>
+              )}
               <div className="events-cancel__actions">
                 <button type="button" className="btn-secondary" onClick={() => setCancelling(false)} disabled={busy}>
                   Keep it
@@ -719,7 +760,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
               </button>
             )}
             {!closed && status !== 'SETTLED' && !cancelling && (
-              <button type="button" className="confirm-dialog__danger" style={{ marginLeft: 0 }} disabled={busy} onClick={() => setCancelling(true)}>
+              <button type="button" className="confirm-dialog__danger" style={{ marginLeft: 0 }} disabled={busy} onClick={openCancel}>
                 Cancel event
               </button>
             )}

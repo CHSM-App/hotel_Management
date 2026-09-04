@@ -591,11 +591,38 @@
   max-width: 760px;
   max-height: 90vh;
   overflow-y: auto;
-  padding: 22px 24px;
+  padding: 0 24px 22px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
-.events-modal h3 {
-  margin-bottom: 4px;
+.events-modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.events-modal::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 14px 0;
+}
+
+.events-modal::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.events-modal::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* The pinned header supplies its own spacing — see .modal-form__head. */
+.events-modal .modal-form__head h3 {
+  margin: 0;
+}
+
+/* modal top padding lives in the sticky head; restore it when the
+   first child is something else (loading / error states) */
+.events-modal > :first-child:not(.events-modal__head) {
+  margin-top: 22px;
 }
 
 .events-modal__head {
@@ -603,7 +630,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -24px 14px;
+  padding: 22px 24px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .events-modal__close {
@@ -690,9 +723,52 @@
   color: #276749;
 }
 
+/* The one message on this form that must not be skimmed past. The desk works
+   from the buttons at the bottom of a scrolling modal, so this gets a red rule
+   down its edge and a short flash as it lands — it has to read as a stop,
+   not as the green "available" line wearing a different colour. The dialog
+   raised on save is the real guard; this is what makes it visible before then. */
 .events-avail--clash {
   background: var(--danger-bg);
   color: var(--danger);
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  animation: events-avail-flash 0.9s ease-out 2;
+}
+
+/* The warning triangle, drawn rather than imported so the strip carries no
+   dependency on an icon set being loaded by this form. */
+.events-avail--clash::before {
+  content: '!';
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+
+@keyframes events-avail-flash {
+  50% {
+    background: var(--danger);
+    color: #fff;
+  }
+}
+
+/* The flash is an attention-getter, not information — the border and the icon
+   already carry the message for anyone who does not want the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .events-avail--clash {
+    animation: none;
+  }
 }
 
 .events-avail--checking {
@@ -841,14 +917,13 @@
   margin: -4px 0 12px;
 }
 
+/* Rides on .modal-form__foot (forms.css), which pins it and draws the rule
+   above it. What is left here is this footer’s own shape: a wrapping row of
+   four controls rather than a summary and two buttons, so it fills the width
+   instead of sitting to the right. */
 .events-modal__footer {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  justify-content: flex-start;
 }
 
 .events-modal__footer .field {
@@ -1006,6 +1081,15 @@
   margin-bottom: 10px;
 }
 
+/* The settlement half of cancelling: what the advance held was, and the
+   figure being kept. Muted, because the strong tags inside carry the money. */
+.events-cancel__hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 .events-cancel__actions {
   display: flex;
   justify-content: flex-end;
@@ -1050,7 +1134,16 @@
   .events-modal {
     max-width: none;
     max-height: calc(100svh - 20px);
-    padding: 18px 14px;
+    padding: 0 14px 18px;
+  }
+
+  .events-modal__head {
+    margin: 0 -14px 14px;
+    padding: 18px 14px 12px;
+  }
+
+  .events-modal > :first-child:not(.events-modal__head) {
+    margin-top: 18px;
   }
 
   .events-oneoff {

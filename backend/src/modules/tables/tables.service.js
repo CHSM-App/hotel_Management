@@ -43,7 +43,7 @@ async function createTable(lodgeId, input) {
     .input('label', sql.NVarChar, input.label)
     .query('SELECT id FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND label = @label');
   if (existing.recordset.length > 0) {
-    throw new ApiError('A table with that name already exists.', 409);
+    throw new ApiError('A table with that name already exists.', 409, 'tableLabel');
   }
 
   const result = await pool
@@ -63,10 +63,10 @@ async function createTable(lodgeId, input) {
 
 async function bulkCreateTables(lodgeId, input) {
   if (input.rangeEnd < input.rangeStart) {
-    throw new ApiError('The end number must be the same or higher than the start.', 400);
+    throw new ApiError('The end number must be the same or higher than the start.', 400, 'tableTo');
   }
   if (input.rangeEnd - input.rangeStart + 1 > 100) {
-    throw new ApiError('That range would create more than 100 tables — add them in smaller batches.', 400);
+    throw new ApiError('That range would create more than 100 tables — add them in smaller batches.', 400, 'tableTo');
   }
 
   const pool = await getPool();
@@ -83,7 +83,7 @@ async function bulkCreateTables(lodgeId, input) {
   const toCreate = labels.filter((l) => !taken.has(l));
 
   if (toCreate.length === 0) {
-    throw new ApiError('Every table in that range already exists.', 409);
+    throw new ApiError('Every table in that range already exists.', 409, 'tableFrom');
   }
 
   const transaction = new sql.Transaction(pool);
@@ -119,7 +119,7 @@ async function updateTable(lodgeId, tableId, input) {
     .input('label', sql.NVarChar, input.label)
     .query('SELECT id FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND label = @label AND id <> @tableId');
   if (conflict.recordset.length > 0) {
-    throw new ApiError('A table with that name already exists.', 409);
+    throw new ApiError('A table with that name already exists.', 409, 'tableLabel');
   }
 
   const result = await pool

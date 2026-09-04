@@ -4,9 +4,12 @@
 //
 // Only ever put this on a field the form's own submit-time checks actually stop
 // on, so the mark stays worth believing. Where two fields satisfy one
-// requirement between them (an ID number *or* a scanned document), both are
-// marked and `label` names the arrangement, because marking neither hides a
-// real requirement and marking one picks a winner the validation doesn't.
+// requirement between them (an ID number *or* a scanned document), mark
+// neither: the check stops on neither field, only on both being empty at once,
+// and two marks side by side are read as two cards being wanted. `label` is
+// only ever read aloud, so it cannot do that arithmetic for a sighted reader.
+// Name the requirement in prose near the fields instead, where there is room
+// for the word "or".
 //
 // Styles live in pages/lodge/forms.css alongside the fields it sits in.
 export default function RequiredMark({ label = 'required' }) {

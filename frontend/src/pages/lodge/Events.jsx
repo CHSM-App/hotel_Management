@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost, apiPostForm, apiPatchForm, apiDelete, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { useUrlState } from '../../lib/urlState';
@@ -53,7 +54,7 @@ const GROW_WITHIN_PX = 90;
 // The order the legend reads in — the walk a booking takes.
 const DIARY_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
 
-function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, refreshKey }) {
+function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, refreshKey }) {
   const token = getSession()?.token;
   const today = toDateKey(new Date());
   const [windowStart, setWindowStart] = useState(() => addDays(today, -WINDOW_PAST_DAYS));
@@ -273,16 +274,22 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, refreshKey })
 
       <div className="tape-legend">
         {DIARY_STATUSES.map((s) => (
-          <span key={s} className="tape-legend__item">
+          <button
+            key={s}
+            type="button"
+            className="tape-legend__item tape-legend__item--link"
+            onClick={() => onShowList?.(s)}
+            title={`Show ${EVENT_STATUS_LABEL[s].toLowerCase()} functions in the List tab`}
+          >
             <i className="tape-legend__swatch" style={{ background: EVENT_STATUS_COLOR[s] }} />
             {EVENT_STATUS_LABEL[s]}
-          </span>
+          </button>
         ))}
         <span className="tape-legend__item">
           <i className="tape-legend__swatch tape-legend__swatch--vacant" />
           Vacant
         </span>
-        <span className="tape-legend__hint">Hover a tile to see the function · click to open · click a vacant day to start an enquiry</span>
+        <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start an enquiry</span>
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -423,7 +430,12 @@ function defaultRange() {
 function EventList({ venues, onOpen, refreshKey }) {
   const token = getSession()?.token;
   const [range, setRange] = useState(defaultRange);
-  const [status, setStatus] = useState('');
+  // The status cut lives in the URL rather than in local state, because it is
+  // the one filter that is arrived at from somewhere else: a colour on the
+  // diary's legend is followed here, and it has nothing but the query string to
+  // hand the status over in. It also means a cut of the list can be linked to
+  // and survives the reload that plain state would lose.
+  const [status, setStatus] = useUrlState('status', '');
   const [venueId, setVenueId] = useState('');
   const [search, setSearch] = useState('');
   const [events, setEvents] = useState(null);
@@ -473,8 +485,27 @@ function EventList({ venues, onOpen, refreshKey }) {
             </option>
           ))}
         </select>
-        <input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} aria-label="From" />
-        <input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} aria-label="To" />
+        <input
+          type="date"
+          value={range.from}
+          max={range.to ? addDays(range.to, -1) : undefined}
+          onChange={(e) =>
+            setRange((r) => {
+              const from = e.target.value;
+              // 'to' has to stay strictly after 'from', so a 'from' pushed onto or
+              // past it drags it along rather than leaving an empty range behind.
+              return { from, to: from && r.to && r.to <= from ? addDays(from, 1) : r.to };
+            })
+          }
+          aria-label="From"
+        />
+        <input
+          type="date"
+          value={range.to}
+          min={range.from ? addDays(range.from, 1) : undefined}
+          onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+          aria-label="To"
+        />
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -940,6 +971,43 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: 
 
   const bump = () => setBumps((k) => k + 1);
 
+  // Following a colour on the diary's legend into the list's cut of it.
+  //
+  // Both keys go in one setSearchParams rather than through setTab and the
+  // list's own setStatus: each of those replaces the URL from the params it
+  // captured on this render, so calling them in sequence would have the second
+  // overwrite the first and land on the list with no status chosen.
+  const [, setSearchParams] = useSearchParams();
+  const showListWithStatus = (status) => {
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('tab', 'list');
+        if (status) updated.set('status', status);
+        else updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // A status is the list's filter, so it leaves with the list. Left in the URL
+  // it would be waiting on the next visit to the tab — a cut nobody chose,
+  // with the diary's legend the only thing that could explain it.
+  const changeTab = (next) => {
+    if (next === 'list') return setTab(next);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.delete('status');
+        if (next === 'diary') updated.delete('tab');
+        else updated.set('tab', next);
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
   return (
     <div>
       <div className="subtabs">
@@ -949,7 +1017,7 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: 
             type="button"
             className="subtabs__item"
             aria-current={tab === t.key ? 'page' : undefined}
-            onClick={() => setTab(t.key)}
+            onClick={() => changeTab(t.key)}
           >
             {t.label}
           </button>
@@ -963,6 +1031,7 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: 
           setShowClosed={setShowClosed}
           onOpen={setOpenId}
           onNew={(date, venueId) => setCreating({ date, venueId })}
+          onShowList={showListWithStatus}
           refreshKey={refreshKey}
         />
       )}

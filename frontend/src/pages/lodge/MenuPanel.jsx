@@ -13,6 +13,7 @@ import {
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import StepNum from '../../components/StepNum';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
@@ -341,11 +342,20 @@ export default function MenuPanel() {
   const [showItemForm, setShowItemForm] = useState(false);
 
   // The banner is now only for failures with no field to sit under; anything
-  // the server pins to a field goes into the errors map beside it.
+  // the server pins to a field goes into the errors map beside it. Rare, but
+  // still worth reaching: a save that fails for no field's fault otherwise
+  // lands silently at the top of a form that can run well below the fold.
   const [formError, setFormError] = useState('');
   const [itemErrors, setItemErrors] = useState({});
   const [sectionErrors, setSectionErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // A dish's sizes, typed on the dish. Empty means one price and nothing to
   // choose, which is what every dish looks like until a size is added.
@@ -472,7 +482,8 @@ export default function MenuPanel() {
         'Could not save the section.'
       );
       setSectionErrors(fieldErrors);
-      setFormError(banner);
+      if (banner) reportFormError(banner);
+      else setFormError('');
       focusFirstError(fieldErrors, SECTION_FIELD_IDS);
     } finally {
       setSubmitting(false);
@@ -561,7 +572,8 @@ export default function MenuPanel() {
     } catch (err) {
       const { fieldErrors, banner } = splitApiError(err, ITEM_FIELD_IDS, 'Could not save the item.');
       setItemErrors(fieldErrors);
-      setFormError(banner);
+      if (banner) reportFormError(banner);
+      else setFormError('');
       focusFirstError(fieldErrors, ITEM_FIELD_IDS);
     } finally {
       setSubmitting(false);
@@ -709,6 +721,26 @@ export default function MenuPanel() {
       f.imageFile ? { ...f, imageFile: null } : { ...f, removeImage: true, imageFile: null }
     );
   };
+
+  // --- what the dish form shows about itself ---
+
+  // Which of the three blocks are answered. Display only: validateItem still
+  // decides what may be saved, and this changes nothing about that.
+  const itemStepDone = {
+    1: itemForm.categoryId !== '' && itemForm.name.trim() !== '',
+    2: Boolean(dishPhotoPreview),
+    3: hasSizes
+      ? namedPortions.every((r) => String(r.price).trim() !== '' && Number.isFinite(Number(r.price)))
+      : String(itemForm.price).trim() !== '' && Number.isFinite(Number(itemForm.price)),
+  };
+
+  // The figure in the footer — one price, or the sizes joined. A dash until
+  // there is a number worth showing.
+  const priceOrDash = (v) =>
+    String(v).trim() !== '' && Number.isFinite(Number(v)) ? formatPrice(Number(v)) : '—';
+  const itemPriceSummary = hasSizes
+    ? namedPortions.map((r) => `${r.label.trim()} ${priceOrDash(r.price)}`).join(' · ')
+    : priceOrDash(itemForm.price);
 
   return (
     <div className="menu-panel">
@@ -993,30 +1025,41 @@ export default function MenuPanel() {
           onClick={() => !submitting && setShowSectionForm(false)}
         >
           <div
-            className="glass-panel menu-panel__modal menu-panel__modal--fixed"
+            className="glass-panel menu-panel__modal menu-panel__modal--fixed modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="sectionModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="menu-modal__head">
-              <h3 id="sectionModalTitle">{editingSectionId ? 'Edit section' : 'New section'}</h3>
-              <button
-                type="button"
-                className="menu-modal__close"
-                onClick={() => setShowSectionForm(false)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <form
-              className="menu-modal__body menu-modal__body--fixed"
-              onSubmit={handleSectionSubmit}
-              noValidate
-            >
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+            <form className="modal-form" onSubmit={handleSectionSubmit} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="sectionModalTitle">{editingSectionId ? 'Edit section' : 'New section'}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setShowSectionForm(false)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  A heading on the menu — Starters, Breads, Desserts. Dishes are filed under it.
+                </p>
+              </div>
+
+              {/* --fixed rather than the usual scrolling body: two fields have
+                  nothing to scroll, and a scroll box is what would clip the
+                  name field's suggestions list at the dialog's bottom edge. */}
+              <div className="modal-form__body modal-form__body--fixed">
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="field">
                 <label htmlFor="sectionName">
@@ -1048,19 +1091,22 @@ export default function MenuPanel() {
                   <p className="field__error">{sectionErrors.sortOrder}</p>
                 )}
               </div>
+              </div>
 
-              <div className="menu-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowSectionForm(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setShowSectionForm(false)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1073,36 +1119,47 @@ export default function MenuPanel() {
           onClick={() => !submitting && setShowItemForm(false)}
         >
           <div
-            className="glass-panel menu-panel__modal"
+            className="glass-panel menu-panel__modal modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="itemModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="menu-modal__head">
-              <div>
-                <h3 id="itemModalTitle">{editingItemId ? 'Edit dish' : 'Add a dish'}</h3>
-                <p className="menu-modal__sub">
+            <form className="modal-form" onSubmit={handleItemSubmit} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="itemModalTitle">{editingItemId ? 'Edit dish' : 'Add a dish'}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setShowItemForm(false)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
                   {itemSection
-                    ? `${editingItemId ? 'In' : 'Goes into'} ${itemSection.name}`
+                    ? `${editingItemId ? 'In' : 'Goes into'} ${itemSection.name}.`
                     : pendingSectionName
-                      ? `Goes into ${pendingSectionName}, which will be created`
-                      : 'Pick the section it belongs to'}
+                      ? `Goes into ${pendingSectionName}, which will be created.`
+                      : 'Pick the section it belongs to.'}
                 </p>
               </div>
-              <button
-                type="button"
-                className="menu-modal__close"
-                onClick={() => setShowItemForm(false)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
 
-            <form className="menu-modal__body" onSubmit={handleItemSubmit} noValidate>
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              <div className="modal-form__body">
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
+
+              <div className="form-section">
+                <div className="form-section__title">
+                  <StepNum n={1} done={itemStepDone[1]} />The dish
+                </div>
 
               <div className="field">
                 <label htmlFor="itemSection">
@@ -1209,16 +1266,18 @@ export default function MenuPanel() {
                   </span>
                 </div>
               </div>
+              </div>
 
               {/* A dish photo is the one thing on this form that sells the
                   dish. Optional and unhurried: a kitchen photographs its
                   signature plates over time, not all forty on the day it
                   writes the menu. */}
-              <div className="field">
-                <span className="field__label">
-                  Photo <span className="field__optional">optional</span>
-                </span>
+              <div className="form-section">
+                <div className="form-section__title">
+                  <StepNum n={2} done={itemStepDone[2]} />Photo
+                </div>
 
+              <div className="field">
                 <div className="menu-photo">
                   {dishPhotoPreview ? (
                     <div className="menu-photo__preview">
@@ -1255,6 +1314,12 @@ export default function MenuPanel() {
                   </div>
                 </div>
               </div>
+              </div>
+
+              <div className="form-section">
+                <div className="form-section__title">
+                  <StepNum n={3} done={itemStepDone[3]} />Price
+                </div>
 
               {/* Portions replace the single price rather than sitting beside
                   it — a dish sold as half and full has no one price, and
@@ -1386,9 +1451,11 @@ export default function MenuPanel() {
                   )}
                 </div>
               </div>
+              </div>
 
               {/* The same card markup the menu itself uses, so what's checked
                   here is what the menu shows rather than an approximation. */}
+              <div className="form-section">
               <div className="menu-preview">
                 <span className="menu-preview__label">Preview</span>
                 <div className="dish-card menu-preview__card">
@@ -1432,19 +1499,38 @@ export default function MenuPanel() {
                 Half and full plates are two separate items — there are no sizes or add-ons to pick
                 on the guest&apos;s side, so what the kitchen sees is exactly what was ordered.
               </p>
+              </div>
+              </div>
 
-              <div className="menu-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowItemForm(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : editingItemId ? 'Save changes' : 'Add dish'}
-                </button>
+              {/* The price is what the form is really setting, and it is the
+                  last thing scrolled past — keeping it in the footer means it
+                  can be checked without scrolling back up. */}
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {itemForm.name.trim() || 'New dish'}
+                  </span>
+                  <span
+                    className={`modal-form__summary-value${
+                      hasSizes ? ' modal-form__summary-value--text' : ''
+                    }`}
+                  >
+                    {itemPriceSummary}
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setShowItemForm(false)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : editingItemId ? 'Save changes' : 'Add dish'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

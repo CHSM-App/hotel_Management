@@ -1,10 +1,23 @@
 .bookings-panel__toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Packed left rather than spread edge to edge, so the row reads the same
+     at any width or zoom — nav, chips and Draft/New booking sit close
+     together instead of a gap opening up between them that grows or shrinks
+     with the screen. */
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+/* Holds the status chips as one group, so they wrap and space together
+   rather than each chip being its own flex child of the toolbar. */
+.bookings-panel__toolbar-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .bookings-panel__nav {
@@ -246,46 +259,9 @@
   flex-shrink: 0;
 }
 
-/* Numbered section markers — turns four similar-looking blocks into a
-   sequence you can track your position in. */
-.form-section__num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Never squeezed by a long heading beside it — a flattened circle reads as
-     a rendering fault rather than as a badge. */
-  flex: none;
-  /* 19px rather than the 17px it started at: it now holds a tick as well as a
-     digit, and a checkmark inside 17px is a smudge at desk distance. */
-  width: 19px;
-  height: 19px;
-  /* No margin. Both headings that carry this badge — .form-section__title and
-     the collapsible <summary> — are flex rows with their own 8px gap, so a
-     margin here would be added on top of it and sections 3 and 4 would sit a
-     notch further out than 1 and 2. */
-  border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1;
-  transition: background-color 200ms ease, box-shadow 200ms ease;
-}
-
-/* A finished section goes green. Colour is the fast signal down a scrolling
-   form, but it is never the only one — the badge swaps its digit for a tick at
-   the same moment, so the state survives a monochrome screen and a reader who
-   cannot separate the two hues. */
-.form-section__num--done {
-  background: #1c7a4a;
-  box-shadow: 0 0 0 3px rgba(28, 122, 74, 0.16);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .form-section__num {
-    transition: none;
-  }
-}
+/* .form-section__num — the numbered step badge — now lives in forms.css: the
+   add/edit-room form carries the same markers, and it does not import this
+   sheet. */
 
 .booking-form__room-meta {
   margin: -2px 0 12px;
@@ -676,10 +652,16 @@
 
 /* One guest, one line: name / mobile / ID type / ID number / document, with
    the remove button riding along at the end so the row stays scannable down
-   the column of names. Children drop the mobile column. */
+   the column of names. Children drop the mobile column.
+
+   The last two are one cell of 2.2fr rather than two of 1fr and 1.2fr: where
+   the form requires an ID they are bracketed together (see .field-pair, which
+   subdivides that cell in the same ratio), and where it doesn't the pair
+   wrapper is absent and the two fields fall into the cell as a plain pair.
+   Either way they take the width they always took between them. */
 .bookings-panel__party-row {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr 0.9fr 1fr 1.2fr auto;
+  grid-template-columns: 1.1fr 0.9fr 0.9fr 2.2fr auto;
   align-items: end;
   gap: 8px 10px;
   padding: 10px 12px;
@@ -691,6 +673,64 @@
 
 .bookings-panel__party-row--child {
   grid-template-columns: 1.1fr 0.9fr 1fr 1.2fr auto;
+}
+
+/* An ID number and a scanned document answer one requirement between them, so
+   where the form asks for it they are bracketed under a caption saying so —
+   which a required mark on each cannot say, reading instead as two cards
+   wanted. The pair occupies one cell of the row and divides it in the ratio
+   the two columns had, so the fields keep the widths they always had. */
+.bookings-panel__party-row .field-pair {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 10px;
+  align-items: end;
+  /* Room above for the caption, which is out of flow. Taken as padding rather
+     than margin so the cell's own bottom edge stays on the row's baseline and
+     the inputs go on lining up with the unpaired ones beside them. */
+  padding-top: 15px;
+}
+
+/* The bracket itself: a hairline across both fields with the caption sitting
+   in a notch cut out of it. Drawn on the caption's own background rather than
+   as two rules, so it needs no measuring of the words. */
+.bookings-panel__party-row .field-pair::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+/* No caption, no bracket, and no room reserved for either — the pair is only
+   a grid cell then, and the two fields sit level with the rest of the row.
+   After the rules it overrides, since it matches at the same specificity and
+   would otherwise lose to them: the co-guest rows were drawing a bracket over
+   two fields plainly labelled optional. */
+.bookings-panel__party-row .field-pair--bare {
+  padding-top: 0;
+}
+
+.bookings-panel__party-row .field-pair--bare::before {
+  content: none;
+}
+
+.bookings-panel__party-row .field-pair__caption {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  background: var(--surface);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .bookings-panel__party-row .field {
@@ -960,6 +1000,7 @@
   }
 
   .bookings-panel__toolbar {
+    flex-wrap: wrap;
     gap: 10px;
   }
 
@@ -1193,8 +1234,10 @@
 .bookings-panel__toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  /* Pinned to the row's right edge, away from the status chips. */
+  margin-left: auto;
 }
 
 /* Built as a peer of .btn-accent beside it — same geometry, same weight, same
@@ -1433,8 +1476,14 @@
   line-height: 1.3;
 }
 
+/* Enough for two lines of it. The message is out of flow, so this padding is
+   the row's only allowance for it and anything taller hangs off the bottom of
+   the card — which is what a one-line allowance did to the walk-in ID errors,
+   in a column narrow enough to wrap them. Messages here are kept to a few
+   words for the same reason; this is the room for when a narrow viewport
+   wraps a short one anyway. */
 .bookings-panel__party-row:has(.field__error) {
-  padding-bottom: 34px;
+  padding-bottom: 48px;
 }
 
 /* ---------------------------------------------------- booking saved dialog */
@@ -1670,4 +1719,182 @@
 .form-section__badge--full {
   background: #e3f3e8;
   color: #1d6b3a;
+}
+
+/* ------------------------------------------------- cancellation settlement
+
+   The question a cancellation asks before it happens: where does the advance
+   go. Swaps in for the footer actions the way the check-in form does, so the
+   stay being ended is still readable above it. Bordered in the danger colour
+   because everything inside it belongs to ending a reservation. */
+.bookings-panel__cancel-settle {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #e8b4b4;
+  border-radius: 12px;
+  background: #fdf6f6;
+}
+
+.bookings-panel__cancel-settle-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+  max-width: 420px;
+}
+
+.bookings-panel__cancel-settle-fields label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* The settlement as a statement: taken, refunded, kept — each a labelled row
+   footed the way the register's tariff box is, so the desk reads it as money
+   accounted for rather than a form filled in. Lifted onto its own white sheet
+   against the panel's red wash: the wash says "this ends a booking", the
+   sheet says "and this is the account of it". */
+.bookings-panel__cancel-settle-sheet {
+  margin: 12px 0 4px;
+  /* The panel's full width: a statement squeezed into half the line left the
+     other half as dead space and the boxes cramped against each other. */
+  font-size: 13.5px;
+  background: var(--surface, #fff);
+  border: 1px solid #eedada;
+  border-radius: 12px;
+  padding: 2px 18px;
+}
+
+.bookings-panel__cancel-settle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 46px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border, #e7e2da);
+}
+
+.bookings-panel__cancel-settle-row label {
+  font-size: 13.5px;
+}
+
+/* The money column: every figure flush right and in lining digits, so taken,
+   refunded and kept read as one column of arithmetic. */
+.bookings-panel__cancel-settle-row > span:last-child {
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The refund cell: the tender, the minus, and the box it applies to, read as
+   one entry in that column. Top-aligned: the labels are one line each, so the
+   boxes still sit level — and an error hanging under one box drops below
+   without dragging the other box down with it. */
+.bookings-panel__cancel-settle-refund {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* One labelled control: the caption above, the box below. */
+.bookings-panel__cancel-settle-ctl {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bookings-panel__cancel-settle-ctl label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Level with the middle of the boxes: label (14px) + gap (3px) + half the
+   38px box, less half its own line. */
+.bookings-panel__cancel-settle-minus {
+  padding-top: 27px;
+  color: var(--text-muted);
+}
+
+/* The complaint, under the box it is about — small, because the label above
+   the box already names the thing, and block so it takes its own line. */
+.bookings-panel__cancel-settle-ctl-error {
+  display: block;
+  margin: 3px 0 0;
+  font-size: 11.5px;
+}
+
+/* The question a no-advance cancellation asks: charge a fee, or let it go.
+   A checkbox rather than a third button — it reveals the sheet, it doesn't
+   commit anything. */
+.bookings-panel__cancel-settle-collect {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bookings-panel__cancel-settle-collect input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  accent-color: var(--danger, #c0392b);
+}
+
+.bookings-panel__cancel-settle-refund input {
+  width: 140px;
+  min-height: 38px;
+  padding: 6px 12px;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sized like the field beside it rather than the bare default, whose arrow
+   was sitting on top of "UPI". Room for the longest label plus the arrow. */
+.bookings-panel__cancel-settle-refund select {
+  min-height: 38px;
+  min-width: 130px;
+  padding: 6px 10px;
+  border: 1px solid var(--field-border, #ddd6cc);
+  border-radius: 8px;
+  background: var(--field, #fff);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+/* The figure the whole panel exists to make explicit. Not a warning colour on
+   the label — keeping a charge is a legitimate answer, it just has to be a
+   stated one — but the amount takes the panel's red, because it is the one
+   number here the property keeps. The row above yields its hairline so the
+   total's heavier rule stands alone rather than doubling up against it. */
+.bookings-panel__cancel-settle-row:has(+ .bookings-panel__cancel-settle-row--total) {
+  border-bottom: none;
+}
+
+/* The same red edge forms.css puts on a failed field, said here because these
+   boxes live in a sheet row rather than a .field wrapper. The full border
+   shorthand, so the edge lands identically on both boxes whatever border each
+   started with. */
+.bookings-panel__cancel-settle-refund select[aria-invalid='true'],
+.bookings-panel__cancel-settle-refund input[aria-invalid='true'] {
+  border: 1.5px solid var(--danger);
+  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+}
+
+.bookings-panel__cancel-settle-row--total {
+  border-bottom: none;
+  border-top: 2px solid #e3c2c2;
+  font-weight: 700;
+}
+
+.bookings-panel__cancel-settle-row--total > span:last-child {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--danger, #c0392b);
 }

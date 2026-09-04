@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiPatch, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { copyText } from '../../lib/clipboard';
+import './forms.css';
 import './ProfileMenu.css';
 
 function roleLabel(role) {
@@ -40,6 +41,17 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // The dropdown is a fixed panel that can still run past the bottom of a
+  // short phone screen once the password form's fields and hint text are all
+  // open — a failure caught on submit brings its banner into view rather than
+  // relying on it already being visible, same as the other forms in the app.
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
   const [linkCopied, setLinkCopied] = useState('');
   // Which half of the password change is on screen. "details" collects the
   // passwords, "code" collects the one-time code that authorises the change.
@@ -99,7 +111,7 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     setError('');
     const invalid = validateNewPassword();
     if (invalid) {
-      setError(invalid);
+      reportError(invalid);
       return;
     }
 
@@ -110,7 +122,7 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
       setPasswordStep('code');
       setForm((f) => ({ ...f, otp: '' }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send the code.');
+      reportError(err instanceof ApiError ? err.message : 'Could not send the code.');
     } finally {
       setSubmitting(false);
     }
@@ -126,7 +138,7 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     setError('');
 
     if (!/^\d{6}$/.test(form.otp.trim())) {
-      setError('Enter the 6-digit code sent to your phone.');
+      reportError('Enter the 6-digit code sent to your phone.');
       return;
     }
 
@@ -147,7 +159,7 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
       setPasswordStep('details');
       setCodeSentTo('');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not change your password.');
+      reportError(err instanceof ApiError ? err.message : 'Could not change your password.');
     } finally {
       setSubmitting(false);
     }
@@ -179,7 +191,31 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
         aria-expanded={open}
         aria-label="Account menu"
       >
-        {initial}
+        <span className="profile-menu__trigger-avatar" aria-hidden="true">{initial}</span>
+        {/* The name and role read out of the topbar rather than only from inside
+            the menu — at a shared front desk, "who is this machine signed in
+            as?" is worth answering without a click. Hidden on narrow screens,
+            where the topbar has no room for it and the avatar stands alone. */}
+        <span className="profile-menu__trigger-text">
+          <span className="profile-menu__trigger-name">{user.name}</span>
+          <span className="profile-menu__trigger-role">{roleLabel(user.role)}</span>
+        </span>
+        <svg
+          className="profile-menu__trigger-chevron"
+          viewBox="0 0 12 12"
+          width="12"
+          height="12"
+          aria-hidden="true"
+        >
+          <path
+            d="M2.5 4.5 6 8l3.5-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
 
       {open && (
@@ -276,7 +312,14 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
               onSubmit={passwordStep === 'details' ? handleSendCode : handleChangePassword}
               className="profile-menu__password-form"
             >
-              {error && <div className="form-banner form-banner--error profile-menu__banner">{error}</div>}
+              {error && (
+                <div
+                  ref={errorRef}
+                  className="form-banner form-banner--error form-banner--flash profile-menu__banner"
+                >
+                  {error}
+                </div>
+              )}
 
               {passwordStep === 'details' ? (
                 <>

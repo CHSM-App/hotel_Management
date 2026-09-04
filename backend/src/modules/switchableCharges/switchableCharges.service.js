@@ -36,7 +36,7 @@ async function createSwitchableCharge(lodgeId, input) {
     .query('SELECT id FROM dbo.switchable_charges WHERE lodge_id = @lodgeId AND name = @name');
 
   if (existing.recordset.length > 0) {
-    throw new ApiError('A switchable charge with that name already exists.', 409);
+    throw new ApiError('A switchable charge with that name already exists.', 409, 'chargeName');
   }
 
   const result = await pool
@@ -72,7 +72,7 @@ async function updateSwitchableCharge(lodgeId, chargeId, input) {
     .input('name', sql.NVarChar, input.name)
     .query('SELECT id FROM dbo.switchable_charges WHERE lodge_id = @lodgeId AND name = @name AND id <> @chargeId');
   if (nameConflict.recordset.length > 0) {
-    throw new ApiError('A switchable charge with that name already exists.', 409);
+    throw new ApiError('A switchable charge with that name already exists.', 409, 'chargeName');
   }
 
   await pool

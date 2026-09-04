@@ -733,6 +733,69 @@ label.order-card__item:has(.order-card__tick:disabled) {
   min-height: 0;
 }
 
+/* Who is checked into the selected room. Sits directly under the destination
+   dropdown because it exists to be read at the moment the room is picked —
+   staff are comparing this name against the person in front of them before
+   the food goes onto that stay. */
+.occupancy {
+  margin: -4px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+}
+
+.occupancy__label {
+  margin: 0 0 2px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The one line staff actually check, so it outweighs everything around it. */
+.occupancy__name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.occupancy__phone {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.occupancy__hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.occupancy__muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.occupancy__vacant {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* A vacant room blocks the order outright, so this reads as a validation
+   error rather than an FYI — same treatment as the form's other error text. */
+.occupancy__vacant--error {
+  padding: 8px 10px;
+  border-radius: var(--radius-tile);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .counter-find {
   display: flex;
   gap: 10px;

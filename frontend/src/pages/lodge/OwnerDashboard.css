@@ -31,7 +31,13 @@
 .dash-sidebar {
   width: 240px;
   flex-shrink: 0;
-  min-height: calc(100svh - var(--dash-topbar-h));
+  /* Capped to the viewport rather than only floored at it — a rail with more
+     groups than a laptop screen is tall used to grow past 100svh, and a sticky
+     element taller than the viewport scrolls with the page instead of staying
+     put. Sign out lives outside .dash-sidebar__scroll below, as a sibling flex
+     child, so it stays fixed at the floor of the rail rather than scrolling
+     away with either the page or the section list. */
+  height: calc(100svh - var(--dash-topbar-h));
   background: var(--surface);
   border-right: none;
   /* Directional rather than a full extrusion: the sidebar runs the height of
@@ -41,6 +47,70 @@
   padding: 18px 14px;
   position: sticky;
   top: 0;
+  /* A column so the footer can be pinned to the floor of the rail. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The scrolling part of the rail: every section group plus the user guide
+   link. Sized to whatever the footer below it leaves over, and scrolling on
+   its own rather than the rail as a whole — that is what keeps Sign out
+   always in view instead of requiring a scroll to reach it. */
+.dash-sidebar__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.dash-sidebar__footer {
+  flex-shrink: 0;
+  /* Its own space above the rule — without it a tall menu that fills the rail
+     would put Sign out directly against the last section, which is exactly the
+     misread ("another section") the separator is there to prevent. */
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* Shaped like a nav item so it belongs to the rail, but never carries the
+   brand wash or the pressed state — it goes somewhere, it isn't somewhere you
+   are. Drawn in the danger tone throughout rather than only on hover: it is
+   the one control here that ends the session, and a grey row that turns red
+   under the pointer announces that only to someone already reaching for it. */
+.dash-sidebar__signout {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-tile);
+  padding: 9px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  /* A deeper blood red than the --danger the form errors use. Those sit inside
+     a panel and only ever appear when something is wrong; this one is on
+     screen all day beside eight violet sections, and the softer brick went
+     brownish next to them rather than reading as red at all. */
+  color: #8B0000;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.dash-sidebar__signout svg {
+  flex-shrink: 0;
+}
+
+/* A wash of the same red rather than the plain surface the nav items lift onto
+   — the row is already red, so lifting it onto white would drain colour at the
+   exact moment it is being pressed. */
+.dash-sidebar__signout:hover {
+  background: rgba(139, 0, 0, 0.08);
+  box-shadow: var(--shadow-raised);
+}
+
+.dash-sidebar__signout:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .dash-sidebar__group {
@@ -129,6 +199,14 @@
   color: var(--brand-ink);
 }
 
+/* The guide's own entry, last in the nav and set off by a rule: every item
+   above is a part of the property, this is help about all of them. */
+.dash-sidebar__guide {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 .dash-sidebar__soon {
   margin-left: auto;
   flex-shrink: 0;
@@ -172,6 +250,7 @@
 
   .dash-sidebar {
     width: 100%;
+    height: auto;
     min-height: 0;
     position: static;
     border-right: none;
@@ -180,13 +259,37 @@
     display: flex;
     flex-direction: row;
     overflow-x: auto;
+    overflow-y: visible;
     gap: 6px;
+  }
+
+  /* Dissolves into the row rather than boxing the sections it wraps — its own
+     scroll is a desktop-only affordance for a rail taller than the viewport,
+     which doesn't apply once the rail is this horizontal strip. */
+  .dash-sidebar__scroll {
+    display: contents;
+    overflow: visible;
   }
 
   /* Dissolve each group wrapper on mobile so its list joins one flat,
      horizontally scrollable row instead of stacking a header per group. */
   .dash-sidebar__group {
     display: contents;
+  }
+
+  /* The guide joins that row like any other item — a rule above it belongs to
+     a stacked column and would draw across the strip here. */
+  .dash-sidebar__guide {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  /* The rail is a horizontal scroller here, where there is no "bottom" to pin
+     to — Sign out would just become the last tab you scroll past. It stays in
+     the topbar profile menu on this layout, which is always in view. */
+  .dash-sidebar__footer {
+    display: none;
   }
 
   .dash-sidebar__label {
@@ -231,4 +334,480 @@
   padding: 14px 18px;
   font-size: 14px;
   margin-bottom: 28px;
+}
+
+/* --- Chrome refinements ---------------------------------------------------
+   The shell was correct but flat-footed: the topbar met the content with no
+   edge, the sidebar's groups ran together, and the panel had no breathing room
+   at the top of a long grid. Everything below tightens that reading without
+   introducing a second visual language — same tokens, same light source. */
+
+/* The band already carries a gradient; what it lacked was a bottom edge. On a
+   white content area the violet simply stopped, which read as a crop rather
+   than as a layer sitting above the page. A hairline of its own darker end
+   plus a short ambient throw gives it somewhere to land. */
+.dash-topbar {
+  position: sticky;
+  top: 0;
+  /* Above the sidebar's own sticky positioning, so scrolling a long tape chart
+     doesn't slide the rail over the bar. Kept below the dropdown's z-50. */
+  z-index: 30;
+  box-shadow: 0 1px 0 rgba(91, 63, 217, 0.35), 0 6px 16px -8px rgba(22, 33, 46, 0.2);
+}
+
+/* The property's name is the one piece of identity on the screen. At 16px in
+   the serif it was competing with the profile chip beside it rather than
+   anchoring the bar. */
+.dash-topbar__mark {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+/* The rail sits under a sticky bar now, so its own sticky offset has to start
+   below it — otherwise the first nav item slides under the topbar and the
+   group label above it is what gets clipped. */
+.dash-sidebar {
+  top: var(--dash-topbar-h);
+  height: calc(100svh - var(--dash-topbar-h));
+}
+
+/* Group labels were the same muted grey as body copy at 11px, which left the
+   rail reading as one undifferentiated list of eleven rows. A touch more
+   tracking and weight makes them scan as headers without adding a rule. */
+.dash-sidebar__label {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8996AC;
+}
+
+/* Icons in the rail were carrying full muted weight against 14px text at 500,
+   so the glyph pulled harder than the word it labelled. */
+.dash-sidebar__item svg {
+  opacity: 0.85;
+  transition: opacity 150ms ease;
+}
+
+.dash-sidebar__item:hover svg,
+.dash-sidebar__item[aria-current='page'] svg {
+  opacity: 1;
+}
+
+/* The selected row reads as brand-tinted, but on a rail of eleven rows the
+   tint alone is a weak anchor at a glance across a desk. A short bar on the
+   leading edge gives it a hard left boundary — the one place the eye returns
+   to when scanning a vertical list. */
+.dash-sidebar__item[aria-current='page'] {
+  position: relative;
+}
+
+.dash-sidebar__item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+}
+
+/* "Soon" sat at full muted contrast on a raised chip, which made an unbuilt
+   section look as clickable as a live one. Quieted so it reads as a note on
+   the row rather than as an action beside it. */
+.dash-sidebar__soon {
+  box-shadow: none;
+  background: var(--paper);
+  border-color: var(--border);
+  color: #8996AC;
+}
+
+/* A section with nothing built yet is still a real destination, and the panel
+   it lands in was a bare centred sentence. This gives the empty and loading
+   states the same vertical rhythm as a populated grid. */
+.dash-main > .dash-card .dash-state {
+  padding: 64px 24px;
+  font-size: 14.5px;
+}
+
+/* The banner is the first thing a new owner sees, and it was a flat amber
+   block. Given the same left-edge accent the selected nav row uses, so the two
+   warnings on the screen speak the same way. */
+.reset-banner {
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  line-height: 1.55;
+  box-shadow: var(--shadow-raised);
+}
+
+@media (max-width: 800px) {
+  /* The rail is a horizontal scroller here, so the vertical edge bar would sit
+     across the top of a tab rather than down its side — the bottom border the
+     mobile rules already draw is the equivalent signal. */
+  .dash-sidebar__item[aria-current='page']::before {
+    display: none;
+  }
+
+  /* Sticky stacking is for the two-column desktop layout. Here the rail scrolls
+     with the page, so pinning it would eat a third of a phone viewport. */
+  .dash-sidebar {
+    top: auto;
+  }
+}
+
+/* --- App bar --------------------------------------------------------------
+   The bar was a violet band carrying a name and an avatar. It now carries the
+   work: the brand block that heads the rail, the control that collapses it,
+   the search field, notifications, and the profile chip.
+
+   White rather than brand-filled, and the reason is the rail beneath it. The
+   sidebar is a white surface running the height of the page; a saturated band
+   above it cut the chrome in two and made the rail look like it belonged to a
+   different screen. On white the two read as one continuous frame, and the
+   violet is spent where it means something — the selected section, the primary
+   button — instead of on 58px of decoration.
+
+   Scoped to --light so the superadmin dashboard, which shares .dash-topbar,
+   keeps the band it was designed with. */
+/* Declared on the shell rather than on the bar, so the rail below can read the
+   same number — the brand block and the sidebar have to be the same width or
+   the search field stops lining up with the content column. */
+/* Scoped to a shell that actually contains the light bar. Vite bundles every
+   stylesheet into one file, so a bare .dash-shell here would retune the
+   superadmin dashboard too — it shares the class and still wants its 58px
+   violet band. */
+.dash-shell:has(.dash-topbar--light) {
+  --dash-brand-w: 240px;
+  /* Taller than the 58px band it replaces: the bar now holds a two-line brand
+     block and a 38px field, and at 58px both were touching its edges. The
+     sidebar subtracts this token rather than a literal, so raising it here is
+     the whole change. */
+  --dash-topbar-h: 64px;
+}
+
+.dash-topbar--light {
+  background: var(--surface);
+  color: var(--ink);
+  /* The bar has a foot now rather than a coloured underline: a hairline in the
+     border tone, and a soft throw so it sits above the page as the sticky
+     layer it is. */
+  box-shadow: 0 1px 0 var(--border), 0 4px 14px -8px rgba(22, 33, 46, 0.18);
+  /* The brand block owns the left inset (it matches the rail's own padding),
+     so the bar itself only pads the right. */
+  padding: 0 28px 0 0;
+  gap: 0;
+  justify-content: flex-start;
+}
+
+/* Locked to the rail's width and given the rail's right edge, so the brand
+   reads as the sidebar's header and the search field starts exactly where the
+   content column does. */
+.dash-brand {
+  width: var(--dash-brand-w);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 100%;
+  min-width: 0;
+}
+
+.dash-brand__badge {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The one saturated element in the bar. It is the mark, so it gets the
+     gradient the CTA buttons use rather than a flat fill. */
+  background: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
+  color: #ffffff;
+}
+
+.dash-brand__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Small, heavy and tracked out rather than large: it is a wordmark, not a page
+   heading, and the section title already lives in the rail below it. */
+.dash-brand__name {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-ink);
+  line-height: 1.2;
+}
+
+/* The property's name. It is whatever the owner typed, so it truncates rather
+   than pushing the search field sideways. */
+.dash-brand__sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-topbar__menu {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.dash-topbar__menu:hover {
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--ink);
+}
+
+.dash-topbar__menu:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* A well, not a raised control — it takes input rather than offering a press,
+   which is the same distinction every other field in the app draws. Capped so
+   it does not run the whole width of a desk monitor and leave the bell and the
+   profile chip stranded at the far edge. */
+.dash-topbar__search {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--field);
+  /* A real border rather than an inset ring. The wrapper is the field here, so
+     it is drawn the way every other input in the app is drawn — same border
+     token, same well — and the <input> inside it is stripped bare below. */
+  border: 1px solid var(--field-border);
+  box-shadow: var(--shadow-well);
+  color: var(--field-placeholder);
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.dash-topbar__search:hover {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--shadow-well-hover);
+}
+
+/* The focus ring goes on the wrapper, and the border darkens with it — the
+   halo alone left the rim lighter on focus than at rest, which read as the
+   field going soft at the exact moment it went live. */
+.dash-topbar__search:focus-within {
+  border-color: var(--brand);
+  box-shadow: var(--shadow-well-focus);
+}
+
+.dash-topbar__search svg {
+  flex-shrink: 0;
+}
+
+/* The global input rule dresses every field in the app with a border, a 10px
+   radius and a well of its own. Inside this pill that drew a second, squarer
+   box within the first — and its :hover re-added a rim the wrapper had already
+   drawn. The input is stripped back to bare text; the wrapper is the field.
+   Each property below has to be listed: the global rule beats a plain reset on
+   background alone, and its hover and focus states re-apply the rest. */
+.dash-topbar__search input,
+.dash-topbar__search input:hover,
+.dash-topbar__search input:focus,
+.dash-topbar__search input:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.dash-topbar__search input::placeholder {
+  color: var(--field-placeholder);
+}
+
+/* Strips the browser's own clear affordance, which draws a grey cross that
+   fights the field's own icon. */
+.dash-topbar__search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* Pushed to the far edge, away from the search field it would otherwise sit
+   against. */
+.dash-topbar--light .dash-topbar__actions {
+  margin-left: auto;
+  padding-left: 16px;
+  gap: 8px;
+}
+
+
+/* The profile chip was drawn for a saturated band — translucent white on
+   violet. On the light bar it reads as a smudge, so it is redrawn as a quiet
+   surface with the app's own text colours. */
+.dash-topbar--light .profile-menu__trigger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink);
+  padding-left: 4px;
+}
+
+.dash-topbar--light .profile-menu__trigger:hover {
+  background: var(--neu-sunken);
+}
+
+.dash-topbar--light .profile-menu__trigger-avatar {
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+  color: #ffffff;
+}
+
+.dash-topbar--light .profile-menu__trigger-role {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.dash-topbar--light .profile-menu__trigger-chevron {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* The fallback sign-out, for when /me fails and there is no profile menu. Same
+   redraw: it was outlined in white for the violet band. */
+.dash-topbar--light .dash-topbar__signout {
+  border-color: var(--border);
+  color: var(--danger);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.dash-topbar--light .dash-topbar__signout:hover {
+  background: var(--danger-bg);
+  border-color: var(--border);
+}
+
+/* The rail is 240px to match the brand block above it — already true, and now
+   load-bearing, so the two are pinned to the same token. */
+.dash-topbar--light + .dash-body .dash-sidebar {
+  width: var(--dash-brand-w, 240px);
+}
+
+/* Collapsed by the hamburger. Only below the breakpoint, where the rail is a
+   horizontal strip that costs a phone real vertical space — on a desk monitor
+   the rail is the navigation and hiding it would strand the user on whatever
+   section they happen to be on. */
+@media (max-width: 800px) {
+  .dash-sidebar--collapsed {
+    display: none;
+  }
+}
+
+/* Above the breakpoint the hamburger has nothing to collapse, so it is not
+   shown — a control that does nothing is worse than one that is not there. */
+@media (min-width: 801px) {
+  .dash-topbar__menu {
+    display: none;
+  }
+}
+
+@media (max-width: 800px) {
+  /* The brand block stops tracking the rail here — the rail is a full-width
+     strip below, so the block goes back to being just a mark and gives its
+     width to the search field. */
+  .dash-brand {
+    width: auto;
+    padding-left: 16px;
+    padding-right: 4px;
+  }
+
+  .dash-topbar__menu {
+    margin-right: 8px;
+  }
+
+  .dash-topbar--light {
+    padding-right: 16px;
+  }
+}
+
+/* On a phone the search field and the brand's second line are both fighting
+   for a width neither can have. The property name goes (it is in the profile
+   menu), and the search field keeps the room. */
+@media (max-width: 560px) {
+  .dash-brand__text {
+    display: none;
+  }
+
+  .dash-topbar__search {
+    max-width: none;
+  }
+}
+
+/* Holds the search field's slot on sections that have no search, so the bell
+   and the profile chip stay put as you move between them. */
+.dash-topbar__search-gap {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+}
+
+/* --- Brand block, tightened ----------------------------------------------
+   The two lines were set at 13px/11px with a 1px gap, which packed them into
+   the badge beside them and left the block reading as one grey smudge at desk
+   distance. The wordmark carries the weight, the property name sits back from
+   it, and both get room to breathe. */
+.dash-brand {
+  gap: 11px;
+}
+
+.dash-brand__badge {
+  width: 36px;
+  height: 36px;
+  /* A squircle rather than a near-circle: it sits above a rail of 14px-radius
+     tiles, and matching that family is what makes it read as this app's mark
+     rather than a favicon dropped in. */
+  border-radius: 11px;
+  box-shadow: 0 2px 6px -1px rgba(91, 63, 217, 0.45);
+}
+
+.dash-brand__text {
+  gap: 2px;
+}
+
+/* Tracking is what makes a short uppercase wordmark read as a mark. At 0.08em
+   it was tight enough to look like ordinary caps; the extra air plus a slightly
+   larger size gives it the presence the block was missing. */
+.dash-brand__name {
+  font-size: 13.5px;
+  letter-spacing: 0.1em;
+}
+
+/* Stepped back from the wordmark rather than sitting level with it — it is the
+   property's name, not a second heading. */
+.dash-brand__sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }

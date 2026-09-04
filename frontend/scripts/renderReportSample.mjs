@@ -60,7 +60,7 @@ const stay = (over) => ({
 const bookings = [
   stay({ id: 1 }),
   stay({ id: 2, status: 'BOOKED', invoiceNumber: null, documentType: null, actualCheckInAt: null, actualCheckOutAt: null, billedAmount: null, taxableValue: null, cgstAmount: null, sgstAmount: null, roundOff: null, discountAmount: null, advancePaid: null, balanceCollected: null, balanceTenders: [], balanceDue: null, guestName: 'Asha' }),
-  stay({ id: 3, status: 'CANCELLED', invoiceNumber: null, documentType: null, billedAmount: null, guestName: 'Cancelled Guest' }),
+  stay({ id: 3, status: 'CANCELLED', invoiceNumber: null, documentType: null, billedAmount: null, guestName: 'Cancelled Guest', refundAmount: 1500, cancellationCharge: 500, cancelReason: 'Guest called off the trip' }),
   ...Array.from({ length: 60 }, (_, i) => stay({ id: 10 + i, roomNumber: String(102 + (i % 8)), billedAmount: 123456.78, taxableValue: 110229.27, cgstAmount: 6613.76, sgstAmount: 6613.75, roundOff: -0.22, discountAmount: 12345.67, advanceAmount: 100000, balanceCollected: 23456.78 })),
 ];
 
@@ -104,10 +104,11 @@ const report = {
     stayBalance: 1410700,
     stayBalanceDue: 0,
     stayTotal: 7412700,
-    cancelled: { count: 1, bookedValue: 5000, advanceHeld: 2000 },
+    cancelled: { count: 1, bookedValue: 5000, advanceHeld: 2000, refunded: 1500, chargesKept: 500 },
     advanceCollected: 6100000,
     balanceCollected: 1500000,
-    totalCollected: 7600000,
+    cancellationChargesKept: 500,
+    totalCollected: 7600500,
     byStatus: { BOOKED: 1, CHECKED_IN: 0, CHECKED_OUT: 61, CANCELLED: 1 },
     byPaymentMode: {
       CASH: { advance: 3000000, balance: 700000, total: 3700000 },

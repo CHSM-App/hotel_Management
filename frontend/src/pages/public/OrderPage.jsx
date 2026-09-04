@@ -74,7 +74,7 @@ function groupByType(items) {
 // Defined at module level rather than inside OrderPage: a component declared
 // during render is a new type every render, so React would remount it on each
 // keystroke and the field would lose focus mid-PIN.
-function GuestLogin({ lodge, onSubmit, busy, error }) {
+function GuestLogin({ lodge, onSubmit, busy, error, errorRef, invalidField }) {
   const [roomNumber, setRoomNumber] = useState('');
   const [pin, setPin] = useState('');
 
@@ -93,7 +93,11 @@ function GuestLogin({ lodge, onSubmit, busy, error }) {
           Where shall we bring it? Enter your room and the food PIN from your check-in slip.
         </p>
 
-        {error && <div className="guest-login__error">{error}</div>}
+        {error && (
+          <div ref={errorRef} className="guest-login__error">
+            {error}
+          </div>
+        )}
 
         <label className="guest-login__label" htmlFor="guestRoom">
           Room number
@@ -104,6 +108,7 @@ function GuestLogin({ lodge, onSubmit, busy, error }) {
           className="guest-login__input"
           inputMode="numeric"
           autoComplete="off"
+          aria-invalid={invalidField === 'guestRoom'}
           value={roomNumber}
           onChange={(e) => setRoomNumber(e.target.value)}
           placeholder="101"
@@ -119,6 +124,7 @@ function GuestLogin({ lodge, onSubmit, busy, error }) {
           className="guest-login__input"
           inputMode="numeric"
           autoComplete="one-time-code"
+          aria-invalid={invalidField === 'guestPin'}
           value={pin}
           onChange={(e) => setPin(e.target.value)}
           placeholder="4 digits"
@@ -219,6 +225,11 @@ export default function OrderPage({ mode }) {
   const [session, setSession] = useState(() => (mode === 'table' ? null : getGuestSession(slug)));
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState('');
+  // Which box a blank-field failure is about, so GuestLogin can ring that one
+  // input rather than only the banner above it — a server-side rejection (bad
+  // PIN) names no single field and leaves this null.
+  const [signInInvalidField, setSignInInvalidField] = useState(null);
+  const signInErrorRef = useRef(null);
 
   const [orders, setOrders] = useState([]);
   const [ordersError, setOrdersError] = useState('');
@@ -283,6 +294,11 @@ export default function OrderPage({ mode }) {
   // runs, it holds the tab the guest actually chose.
   const jumpingRef = useRef(false);
   const jumpTimer = useRef(null);
+
+  // The sheet's own error banner, so a submit refused with the guest scrolled
+  // down among the lines (or the name/note fields below them) still brings
+  // the reason into view instead of leaving it above the fold.
+  const placeErrorRef = useRef(null);
 
   const contextPath = useMemo(
     () => (isTable ? `/public/tables/${token}` : `/public/lodges/${slug}/menu`),
@@ -655,14 +671,33 @@ export default function OrderPage({ mode }) {
   const cancelling =
     (cancelToken && orders.find((o) => o.token === cancelToken && o.canModify)) || null;
 
+  // Sets the banner and, when the failure is about one specific box, scrolls
+  // and rings that box too — a blank PIN box off the bottom of a phone screen
+  // otherwise leaves the guest reading a banner with nothing under it that
+  // looks wrong.
+  const failSignIn = (message, field = null) => {
+    setSignInError(message);
+    setSignInInvalidField(field);
+    const el = field && document.getElementById(field);
+    if (el) {
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } else {
+      requestAnimationFrame(() => {
+        signInErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+  };
+
   const handleSignIn = async (roomNumber, pin) => {
     setSignInError('');
+    setSignInInvalidField(null);
     if (!roomNumber) {
-      setSignInError('Enter your room number.');
+      failSignIn('Enter your room number.', 'guestRoom');
       return;
     }
     if (!pin) {
-      setSignInError('Enter the PIN reception gave you.');
+      failSignIn('Enter the PIN reception gave you.', 'guestPin');
       return;
     }
 
@@ -684,7 +719,7 @@ export default function OrderPage({ mode }) {
       // previous order keeps it.
       setGuestName((current) => current || result.guestName || '');
     } catch (err) {
-      setSignInError(err instanceof ApiError ? err.message : 'Could not sign you in.');
+      failSignIn(err instanceof ApiError ? err.message : 'Could not sign you in.');
     } finally {
       setSigningIn(false);
     }
@@ -789,12 +824,23 @@ export default function OrderPage({ mode }) {
   // off and the "speak to the counter" notice on.
   const canOrder = isTable || (context?.roomOrderingEnabled && !!session);
 
+  // Sets the sheet's banner and scrolls it into view — the sheet holds a
+  // scrolling list of lines above it and a name/note pair below, so a message
+  // that only appears where it happened to render can land off-screen either
+  // way.
+  const reportPlaceError = (message) => {
+    setPlaceError(message);
+    requestAnimationFrame(() => {
+      placeErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+
   const handlePlace = async (e) => {
     e.preventDefault();
     setPlaceError('');
 
     if (lines.length === 0) {
-      setPlaceError(
+      reportPlaceError(
         editing
           ? 'An order needs at least one item. Cancel the order instead if you don’t want it.'
           : 'Add something to your order first.',
@@ -850,7 +896,7 @@ export default function OrderPage({ mode }) {
         signOut(err.message);
         return;
       }
-      setPlaceError(err instanceof ApiError ? err.message : 'Could not place the order.');
+      reportPlaceError(err instanceof ApiError ? err.message : 'Could not place the order.');
     } finally {
       setPlacing(false);
     }
@@ -882,6 +928,8 @@ export default function OrderPage({ mode }) {
         onSubmit={handleSignIn}
         busy={signingIn}
         error={signInError}
+        errorRef={signInErrorRef}
+        invalidField={signInInvalidField}
       />
     );
   }
@@ -1383,7 +1431,11 @@ export default function OrderPage({ mode }) {
               </div>
             )}
 
-            {placeError && <div className="order-sheet__error">{placeError}</div>}
+            {placeError && (
+              <div ref={placeErrorRef} className="order-sheet__error">
+                {placeError}
+              </div>
+            )}
 
             {/* The lines are worked on here, not just totted up. They used to be
                 three read-only spans, which meant changing a quantity was a

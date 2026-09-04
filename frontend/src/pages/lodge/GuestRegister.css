@@ -123,51 +123,44 @@
   border-top: 1px solid var(--border);
 }
 
-/* Segmented, because the four ranges are one choice — picking a second
-   replaces the first rather than adding to it. */
+/* Segmented, because the ranges are one choice — picking a second replaces the
+   first rather than adding to it. Same treatment billing gives the same
+   shortcuts: the two screens are read by the same people on the same day, so
+   what they share should be one control, not two that merely agree on wording. */
 .guest-register__presets {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--shadow-inset);
 }
 
 .guest-register__preset {
-  background: var(--surface);
+  background: none;
   border: none;
-  border-right: 1px solid var(--border);
-  padding: 7px 13px;
+  border-radius: 999px;
+  padding: 6px 13px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
-  transition: var(--neu-transition);
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
-.guest-register__preset:last-child {
-  border-right: none;
-}
-
-/* One segment of a single choice, so it dips under the pointer rather than
-   lifting away from the three it is joined to. */
 .guest-register__preset:hover {
   color: var(--ink);
-  box-shadow: var(--shadow-pressed);
 }
 
-.guest-register__preset:active {
-  box-shadow: var(--shadow-inset);
-}
-
-/* The chosen range stays visibly held down, and keeps its fill: four segments
-   at the same value need more than a shadow to say which one is live. */
+/* The chosen range is the one thing lifted off a track that is otherwise sunk,
+   so which of them is live reads before the labels do. */
 .guest-register__preset[aria-pressed='true'] {
-  background: var(--brand);
-  color: #ffffff;
-  box-shadow: inset 3px 3px 7px rgba(9, 20, 38, 0.5),
-    inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--brand-ink);
 }
 
 .guest-register__status-filters {
@@ -246,10 +239,16 @@
   background: var(--tape-checked-out-deep, #6f7e8c);
 }
 
-/* No tile on the chart to borrow from — a cancelled stay holds no nights to
-   draw — so it takes the danger red its badge already uses in the list. */
+/* Drawn the way the chart draws a cancellation: an empty tile with the red
+   edge, never a fill. It used to be a solid danger red, which sat next to
+   Reserved's brick red as two filled squares nobody could tell apart — the
+   hollow is what says "this held nothing", on the chip exactly as on the
+   chart. The base swatch's inner ring is dropped so the red border is the
+   only edge. */
 .guest-register__status-swatch--cancelled {
-  background: var(--danger, #c1121f);
+  background: transparent;
+  border: 1.5px solid var(--danger, #c1121f);
+  box-shadow: none;
 }
 
 .guest-register__status-swatch--draft {
@@ -482,37 +481,153 @@
   overflow: auto;
 }
 
+/* ---- Spreadsheet grid ----------------------------------------------------
+
+   A register is read the way a ledger sheet is: down one column, comparing
+   figures, not across one row at a time. So the table is ruled both ways —
+   every cell bounded, rows banded, columns separated — rather than left as
+   floating lines of text on white. The vertical rules are what a horizontal-
+   only table is missing: without them the eye loses which column a value
+   belongs to halfway down a long range.
+
+   Scoped to .guest-register__table throughout, because .dash-table is also the
+   internal dashboard's table, and that is a short list where a full grid would
+   be heavier than the content needs. */
+.guest-register__table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* The head is a band, not a line of loose labels. It takes the brand wash
+   rather than plain grey: the register is the screen this section is named for,
+   and a tinted header is what separates a sheet you are meant to work in from a
+   table that merely lists things. The rule under it is the brand's own edge
+   colour, so the band closes on a line of its own family instead of a grey one
+   laid across it. */
 .guest-register__table thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  background: var(--surface);
+  z-index: 2;
+  /* The violet wash band, with the labels in black rather than the brand violet
+     they started as. The band was never the problem — a tinted header is what
+     makes this read as a sheet to work in. The problem was that the ink on it
+     was the *same hue* as the wash behind it, one step apart, so the headings
+     read as watermarks.
+
+     Black is the strongest answer to that: no hue of its own to argue with the
+     wash, maximum contrast, and it leaves the violet band free to be a surface
+     rather than a colour competing with the words on it. */
+  background: linear-gradient(180deg, #f6f3ff 0%, var(--brand-wash, #efebfd) 100%);
+  color: #000;
+  padding: 11px 14px;
+  border-bottom: 2px solid var(--brand-wash-edge, #dcd4fa);
+  border-right: 1px solid var(--brand-wash-edge, #dcd4fa);
+  font-size: 11px;
+  font-weight: 700;
+  /* Rows pass *under* the head when a long range scrolls. Without a shadow the
+     two meet as flat colour and the topmost row looks stuck to the heading
+     instead of moving behind it. */
+  box-shadow: 0 1px 3px rgba(22, 33, 46, 0.06);
+}
+
+.guest-register__table thead th:last-child {
+  border-right: none;
 }
 
 .guest-register__table td {
   vertical-align: middle;
-  padding-top: 12px;
-  padding-bottom: 12px;
+  /* Tighter than the dashboard's 16px: the point of a sheet is that many rows
+     are on screen at once to be compared. */
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  /* The column rules are drawn lighter than the row rules on purpose. Both at
+     full strength turns the sheet into a wire cage that competes with its own
+     contents; the horizontal lines separate records, which is the stronger of
+     the two readings, so the verticals only need to be enough to keep a column
+     tracked down the page.
+
+     The violet edge, matching the band the columns hang from — the grid then
+     reads as one sheet ruled by the same hand rather than as grey lines under a
+     tinted header. */
+  border-right: 1px solid var(--brand-wash-edge, #dcd4fa);
+}
+
+.guest-register__table td:last-child {
+  border-right: none;
+}
+
+/* Banding does the work the eye needs to track one row across eight columns —
+   easier to follow than a rule, and it survives a filter reordering the rows.
+   Held very light: the stripe is a guide for the eye, and at any more weight it
+   competes with the status badges and the in-house edge for attention. */
+.guest-register__table tbody tr:nth-child(even) > td {
+  background: var(--neu-sunken, #eef1f7);
+}
+
+/* Figures line up digit over digit down the column, which is the only way a
+   column of money can be scanned. */
+.guest-register__table td,
+.guest-register__table th {
+  font-variant-numeric: tabular-nums;
+}
+
+/* .dash-table drops the last row's rule so a card ends on its own edge, and
+   that still holds here — .dash-card clips at a 12px radius, so a rule on the
+   final row would run out to meet a rounded corner it can't follow. The one
+   place it must be restored is a scrolled sheet: when the body is taller than
+   the viewport the last row is nowhere near the card's edge, and an unruled row
+   there reads as the table having been cut off mid-render. */
+.guest-register__table-scroll .guest-register__table tr:last-child td {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Room and Guest are the two columns a register is searched by, so they carry
+   the sheet's weight; the rest stay quiet enough to scan past. */
+.guest-register__table tbody td:first-child .guest-register__cell-main {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* A figure is the one thing on the row that gets compared rather than read, so
+   it is set a step firmer than the text beside it. */
+.guest-register__col-amount .guest-register__amount {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 /* The record opens from the button on the end of the row, so the row itself
    isn't clickable — the hover tint only keeps the eye on one line while a long
    range is read across. */
-/* The old rule set the background to --paper, which is the same value as the
-   table's --surface, so the row a desk was pointing at looked exactly like the
-   rest of them — the hover did nothing at all.
+/* A tint rather than a pressed shadow: the grid above bounds every cell, and a
+   groove drawn inside one that is already ruled on four sides reads as a second
+   border rather than as depth.
 
-   Painted with --neu-sunken rather than a pressed shadow because .dash-table is
-   `border-collapse: collapse`, and a collapsed <tr> generates no box for a
-   box-shadow to attach to. The tint is the flat stand-in for that groove. */
-.guest-register__table tbody tr:hover {
-  background: var(--neu-sunken);
+   Painted on the cells rather than the row, so it wins over the banding above —
+   which is also per-cell. A tint on the <tr> would sit behind the striped cells
+   and leave every other row unhighlighted.
+
+   The brand wash, one step up from the stripe: the row under the cursor is the
+   one being read, and it should be unmistakable which of two adjacent bands it
+   is. Same violet as the header, so pointing at a row and reading its column
+   heading are visibly the same gesture. */
+.guest-register__table tbody tr:hover > td {
+  background: var(--brand-wash, #efebfd);
 }
 
 /* Guests still in the building are the rows a desk acts on; a left edge marks
    them without adding a colour the status badge already carries. */
-.guest-register__row--in-house td:first-child {
-  box-shadow: inset 3px 0 0 0 var(--brand);
+.guest-register__row--in-house > td:first-child {
+  /* Widened a touch from 3px: the sheet now has a ruled left edge of its own,
+     and at 3px the marker was reading as a slightly thicker border rather than
+     as a flag on the row. */
+  box-shadow: inset 4px 0 0 0 var(--brand);
+}
+
+/* The room number is the marker's label — an edge with ordinary text beside it
+   marks the row but doesn't say what about it is different. */
+.guest-register__row--in-house > td:first-child .guest-register__cell-main {
+  color: var(--brand-ink);
 }
 
 /* The Status column in the tape chart's colours, so a red row here and a red
@@ -533,6 +648,19 @@
    that import — if the dashboard is ever code-split these badges would lose
    their colour silently, and a literal second argument is cheaper than that
    bug. */
+/* A badge on a ruled sheet needs an edge of its own. Against plain white the
+   flat washes below read as pills; sitting inside a bounded, banded cell they
+   start to look like a stray cell fill instead. A hairline ring in the badge's
+   own hue — currentColor at low alpha, so each state rings itself without a
+   fifth colour being named — puts the pill back on top of the sheet. */
+.guest-register__table .badge {
+  /* Held at 22% — a full-strength ring would read as loud as the word inside
+     it, and there are five of these down the column. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 .guest-register__status-badge--booked {
   background: #f7e3e0;
   color: var(--tape-booked-deep, #a52f22);
@@ -553,12 +681,15 @@
   color: var(--text-muted, #5b6670);
 }
 
-/* No tile on the chart — a cancelled stay holds no nights to draw — so it keeps
-   the register's own danger wash rather than inventing a fifth tape colour. It
-   reads as an exception, which is what it is. */
+/* Hollow, like the chart's cancelled mark and the filter chip's swatch: a red
+   outline around nothing, because a cancelled stay held nothing. It used to
+   wear the danger wash — which is Reserved's light-red pill in everything but
+   name, and a Status column where the two are twins is a column misread at
+   the worst moment. The outline is the one pill shape no other status uses. */
 .guest-register__status-badge--cancelled {
-  background: var(--danger-bg);
-  color: var(--danger);
+  background: transparent;
+  border: 1.5px solid var(--danger, #c0392b);
+  color: var(--danger, #c0392b);
 }
 
 /* The chart's yellow, deepened for text. --tape-draft is #f2c31d, a bright fill
@@ -574,7 +705,9 @@
    same question — who is coming, to which room — but the row is tinted so its
    column of dashes reads as "not filled in yet" rather than as a stay whose
    data went missing. */
-.guest-register__row--draft {
+/* Per-cell, so a draft keeps its tint whether it lands on an odd or an even
+   row of the banding. */
+.guest-register__row--draft > td {
   background: #fffdf5;
 }
 
@@ -661,12 +794,27 @@
   flex-direction: row-reverse;
 }
 
+/* Black cannot get darker, so hover is carried by an underline instead of a
+   colour shift — the heading still has to answer the cursor with something, and
+   moving it to violet would put it on the band's own hue and lose contrast at
+   the exact moment it is being pointed at. */
 .guest-register__sort:hover {
-  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--brand);
 }
 
+/* Same reason: with black labels the sorted column is marked by the weight of
+   its underline rather than by its ink. Drawn in the brand, where a 2px solid
+   line holds the colour fine without needing the contrast that text does — and
+   it is twice the hover line, so the two states never read alike. */
 .guest-register__sort--on {
-  color: var(--brand-ink);
+  color: #000;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--brand);
 }
 
 .guest-register__sort:focus-visible {
@@ -695,10 +843,14 @@
   opacity: 0.5;
 }
 
+/* --brand here would be violet-on-violet-wash at 7px, which is where a small
+   glyph loses first. It stays black at full opacity instead — at this size the
+   arrow needs contrast far more than it needs to carry the brand, and the jump
+   from 0.28 to 1 is the whole signal. */
 .guest-register__sort-arrow--on,
 .guest-register__sort:hover .guest-register__sort-arrow--on {
   opacity: 1;
-  color: var(--brand);
+  color: #000;
 }
 
 .guest-register__amount {
@@ -809,7 +961,11 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--brand-ink);
-  background: #eef4f2;
+  /* Was #eef4f2, a green-grey, under violet ink — the two hues fought and the
+     tag read as a leftover from another palette. The brand's own wash puts the
+     chip and its letters in one colour family. */
+  background: var(--brand-wash, #efebfd);
+  box-shadow: inset 0 0 0 1px var(--brand-wash-edge, #dcd4fa);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -1249,6 +1405,28 @@
   margin: 0 0 12px;
 }
 
+/* Why a cancelled record is red, above the stay's own facts. Washed like the
+   status badge is, so the section and the chip that opened it read as the same
+   statement; the facts inside stay the register's ordinary ink — the reason
+   and the settlement are record, not warning. */
+.guest-register__cancelled {
+  padding: 14px 16px 8px;
+  border-radius: 12px;
+  background: var(--danger-bg, #fdf1f1);
+}
+
+.guest-register__cancelled-title {
+  color: var(--danger, #c1121f);
+}
+
+/* The settlement statement inside the red wash: lifted onto its own white
+   sheet so it reads as the record of where the money went, not as more of the
+   warning around it. */
+.guest-register__cancelled-sheet {
+  margin-top: 10px;
+  background: var(--surface, #fff);
+}
+
 /* A definition list, because that's what a register entry is — a field and the
    value recorded against it. The label column is fixed so every value in the
    record lines up down one edge and can be read as a column. */
@@ -1445,7 +1623,11 @@
     display: none;
   }
 
+  /* The track keeps its shape and scrolls inside itself, rather than each pill
+     being squeezed to fit — a five-label row narrowed to phone width would put
+     the wording below the size it can still be read at. */
   .guest-register__presets {
+    flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -1455,8 +1637,8 @@
   }
 
   .guest-register__preset {
-    flex: 1;
-    padding: 9px 10px;
+    flex: 0 0 auto;
+    padding: 8px 12px;
   }
 
   .guest-register__status-filters {

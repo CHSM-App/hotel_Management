@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import BillNumberingPanel from './BillNumberingPanel';
@@ -12,11 +12,11 @@ import ShareMenu from '../../components/ShareMenu';
 import Req from '../../components/RequiredMark';
 import {
   buildMailLink,
-  buildSmsLink,
   buildWhatsAppLink,
   openComposer,
   openExternal,
 } from '../../lib/shareLinks';
+import { useToast } from '../../components/Toast';
 import PaymentLines from './PaymentLines';
 import {
   needsPaymentReference,
@@ -47,7 +47,6 @@ import {
   printPdfBlob,
   downloadPdf,
   sharePdf,
-  canShareFiles,
 } from './billPaper';
 
 // What the bill says beside a discount given because a cycle-property guest
@@ -695,9 +694,28 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // Named to read like an assignment at the call site: fail the amount, fail
   // the method. Anything with no field behind it — a refusal from the server —
   // passes null and falls back to the banner above the buttons.
+  //
+  // The issue form scrolls (the stay/function summary, the discount fold, the
+  // bill preview all sit above the payment rows), so a failure caught on
+  // submit has to bring itself into view rather than rely on already being on
+  // screen — same idea as failOn/reportFormError elsewhere in the app. A
+  // field error scrolls to the DOM node it names; a fieldless one scrolls the
+  // banner into view instead, once it exists on the next paint.
+  const issueErrorRef = useRef(null);
   const failIssue = (message, field = null) => {
     setIssueError(message);
     setIssueField(field);
+    if (field) {
+      const el = document.getElementById(field);
+      if (el) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    } else if (message) {
+      requestAnimationFrame(() => {
+        issueErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
   };
 
   const issueFieldError = (field) =>
@@ -989,6 +1007,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const [voidReason, setVoidReason] = useState('');
   const [voidError, setVoidError] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
+  const voidErrorRef = useRef(null);
+  const reportVoidError = (message) => {
+    setVoidError(message);
+    requestAnimationFrame(() => {
+      voidErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // The list first — it carries whatever a void has since done to the bill —
   // falling back to the copy returned by the issue itself, which is the only
@@ -1041,10 +1066,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // is working.
   const [pdfBusy, setPdfBusy] = useState(null);
   const [pdfError, setPdfError] = useState('');
-  // Whether this device has a share sheet to hand the file to. A property of
-  // the browser, not of the bill, so it is asked once rather than on every
-  // render of the menu.
-  const deviceShare = useMemo(() => canShareFiles(), []);
+  const toast = useToast();
   // The stock this bill goes out on. Held per-session rather than saved: a
   // desk prints on what is in the tray today, and the tray is what changes.
   const [paperSize, setPaperSize] = useState(DEFAULT_PAPER);
@@ -1090,7 +1112,17 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     } catch (err) {
       // An aborted share sheet is the user changing their mind, not a failure.
       if (err?.name !== 'AbortError') {
-        setPdfError('Could not generate the bill PDF.');
+        // A server refusal carries a reason worth reading — "number not on
+        // WhatsApp" and "template not approved" call for completely different
+        // fixes, and flattening both to "could not generate the PDF" would be
+        // wrong twice over: the PDF generated fine, and the desk is left with
+        // nothing to act on. Only a genuine local failure keeps that wording.
+        const message = err instanceof ApiError ? err.message : 'Could not generate the bill PDF.';
+        setPdfError(message);
+        // Sending is the one action here with no visible trace on the bill, so
+        // its failure is raised the same way its success is. Print and Download
+        // announce themselves by producing a file, and need no toast.
+        if (kind === 'share') toast.show(message, 'error');
       }
     } finally {
       setPdfBusy(null);
@@ -1104,6 +1136,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // downloaded one line for line — see printPdfBlob for why the page's own
   // print stylesheet stopped being trusted with this.
   const handlePrint = () => runPdfAction('print', printPdfBlob);
+
 
   // What the desk is sending, in the words they would use saying it aloud.
   // The guest is named because a bill arriving from an unknown number with no
@@ -1129,38 +1162,67 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     `Bill ${detailInvoice.invoiceNumber}` +
     `${detailInvoice.lodgeName ? ` from ${detailInvoice.lodgeName}` : ''}`;
 
-  // Share is a choice of channel now, not a synonym for WhatsApp. WhatsApp is
-  // still what most bills go out on and still sits at the top of the menu, but
-  // a company booker who wants the bill mailed, or a guest without WhatsApp,
-  // used to have no way through this screen at all.
+  // Share, by channel. The two behave differently on purpose.
   //
-  // Every channel but the device sheet saves the PDF first and then opens a
-  // composed message: mailto, sms and wa.me carry text only, so the file has
-  // to be attached by hand. Ordered that way deliberately — the file is on
-  // disk before the composer takes focus, so it is already waiting in the
-  // attach dialog. The device sheet is the one route that carries the file
-  // itself, so it goes through sharePdf and skips the download.
-  const handleShare = (channel) =>
+  // Share means WhatsApp, and the desk's own WhatsApp is what sends it.
+  //
+  // The PDF is saved first and the chat opens second, in that order and
+  // deliberately: wa.me carries text and never a file, so the desk attaches the
+  // bill by hand once the chat is up, and doing the download first means the
+  // file is already waiting in the attach dialog rather than being fetched
+  // while WhatsApp has focus.
+  //
+  // The toast says the file was saved and does not claim the guest was sent
+  // anything, because at this point nobody has been: the message is sitting in
+  // a WhatsApp window that the desk still has to press send on. Overstating
+  // that would make the toast worse than no toast — a desk that reads "sent"
+  // and closes the tab has sent nothing.
+  //
+  // There is a server-side send too (billShare.service.js), which does deliver
+  // and does report delivery, but it can only go out through an approved SMSala
+  // template. This is the route that works today and on any desk with WhatsApp
+  // to hand.
+  //
+  // 'device' and 'email' are unreachable from this screen — the button goes
+  // straight to WhatsApp rather than opening a list of channels. They are kept
+  // because neither is dead in any meaningful sense: 'device' is the browser's
+  // own share sheet, the one route that attaches the file itself, and 'email'
+  // saves the PDF and opens a mail draft. Restoring either is a menu item
+  // rather than a rewrite.
+  const handleShare = (channel, options = {}) =>
     runPdfAction('share', async (blob, filename) => {
       if (channel === 'device') {
         await sharePdf(blob, filename);
         return;
       }
+
       downloadPdf(blob, filename);
+
       if (channel === 'email') {
-        openComposer(buildMailLink('', shareSubject(), shareMessage()));
-      } else if (channel === 'sms') {
-        openComposer(buildSmsLink(detailInvoice.guestPhone, shareMessage()));
-      } else {
-        openExternal(buildWhatsAppLink(detailInvoice.guestPhone, shareMessage()));
+        openComposer(buildMailLink(options.email || '', shareSubject(), shareMessage()));
+        toast.show(
+          `Bill PDF saved. Attach it in the mail draft${options.email ? ` to ${options.email}` : ''}.`,
+          'info'
+        );
+        return;
       }
+
+      // A new tab rather than this one: the bill modal stays open behind it, so
+      // closing WhatsApp puts the desk back on the bill they were sending.
+      openExternal(buildWhatsAppLink(detailInvoice.guestPhone, shareMessage()));
+      toast.show(
+        detailInvoice.guestPhone
+          ? `Bill PDF saved. Attach it in the WhatsApp chat that opened.`
+          : `Bill PDF saved. Pick the guest in WhatsApp and attach it there.`,
+        'info'
+      );
     });
 
   const handleVoid = async (e) => {
     e.preventDefault();
     setVoidError('');
     if (!voidReason.trim()) {
-      setVoidError('Enter a reason for voiding this bill.');
+      reportVoidError('Enter a reason for voiding this bill.');
       return;
     }
     setVoidSubmitting(true);
@@ -1169,7 +1231,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       setDetailInvoiceId(null);
       refreshAll();
     } catch (err) {
-      setVoidError(err instanceof ApiError ? err.message : 'Could not void this bill.');
+      reportVoidError(err instanceof ApiError ? err.message : 'Could not void this bill.');
     } finally {
       setVoidSubmitting(false);
     }
@@ -1225,7 +1287,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               {foodTabs.map((t) => (
                 <div className="chart-row billing-panel__queue-row" key={t.tab}>
                   <span className="chart-row__name">
-                    {t.tableLabel}
+                    {/* A room or counter tab is running for whoever is actually
+                        behind it — named alongside the table label rather than
+                        replacing it, so the row still says which tab it is. */}
+                    {t.guestName ? `${t.tableLabel} · ${t.guestName}` : t.tableLabel}
                     <span className="chart-row__dates">
                       {/* "since" belongs to a tab that is still filling up. A
                           takeaway is one finished order, so it reads as the
@@ -2141,7 +2206,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     message down here about a field several sections up is a
                     message about something off-screen. */}
                 {issueError && !issueField && (
-                  <div className="form-banner form-banner--error">{issueError}</div>
+                  <div ref={issueErrorRef} className="form-banner form-banner--error form-banner--flash">
+                    {issueError}
+                  </div>
                 )}
 
                 <div className="billing-panel__actions">
@@ -2233,16 +2300,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   >
                     <DownloadIcon />
                   </button>
-                  {/* Share opens the channel list rather than going straight
-                      to WhatsApp. It used to be WhatsApp and only WhatsApp,
-                      which left a bill that had to be mailed or texted with no
-                      route off this screen. */}
+                  {/* One press: the bill is saved and a WhatsApp chat with
+                      the guest opens for the desk to attach it to. */}
                   <ShareMenu
                     onShare={handleShare}
                     disabled={pdfBusy !== null}
                     busy={pdfBusy === 'share'}
-                    canShareFiles={deviceShare}
-                    label="Share this bill"
+                    guestPhone={detailInvoice.guestPhone}
+                    label="Send this bill to the guest on WhatsApp"
                   />
                   {/* Last, and a link rather than a button: voiding is the one
                       irreversible thing on this screen and must not read as a
@@ -2331,7 +2396,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               </div>
             )}
 
-            {voidError && <div className="form-banner form-banner--error">{voidError}</div>}
+            {voidError && (
+              <div ref={voidErrorRef} className="form-banner form-banner--error form-banner--flash">
+                {voidError}
+              </div>
+            )}
             {pdfError && <div className="form-banner form-banner--error">{pdfError}</div>}
 
             {detailInvoice.status === 'ISSUED' && showVoidForm && (

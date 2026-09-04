@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPatch, apiPost } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { formatPrice } from './priceFormat';
 import PaymentLines from './PaymentLines';
 import { emptyPaymentLine, needsPaymentReference, paymentFieldId, paymentLinesError, sumLines, toPaymentLines } from './paymentSplit';
@@ -8,6 +9,7 @@ import {
   EVENT_TYPE_LABEL,
   SLOT_HOURS,
   SLOT_LABEL,
+  addDays,
   formatEventWhen,
   localToIso,
   toDateKey,
@@ -18,10 +20,34 @@ import './Events.css';
 
 const DEBOUNCE_MS = 400;
 
-function Field({ label, name, error, children, hint }) {
+// What is already on the slot, written out for the dialog. One line per
+// function rather than the banner's run-on sentence: the desk is deciding
+// against these, and a semicolon-joined list is the thing they were skimming
+// past in the first place.
+function clashSummary(venue, clashes = []) {
+  const what = clashes
+    .map((c) => `• “${c.title}” — ${c.organiserName} (${formatEventWhen(c.startAt, c.endAt)})`)
+    .join('\n');
+  return `${venue?.name || 'This venue'} is already booked at these hours:\n${what}\n\nAn enquiry can still be saved on a taken slot, but it does not hold the date.`;
+}
+
+// `required` marks the label with an asterisk. It says what the form will
+// refuse to save without, so the desk can see the shape of the minimum before
+// they start typing rather than by walking into firstInvalid one field at a
+// time. The mark mirrors that check — see firstInvalid — so the two cannot
+// drift into saying different things about the same field.
+function Field({ label, name, error, children, hint, required = false }) {
   return (
     <div className="field">
-      <label htmlFor={`ev-${name}`}>{label}</label>
+      <label htmlFor={`ev-${name}`}>
+        {label}
+        {required && (
+          <span className="field__req">
+            <span aria-hidden="true">*</span>
+            <span className="field__req-text">required</span>
+          </span>
+        )}
+      </label>
       {children}
       {error && <p className="field__error">{error}</p>}
       {!error && hint && <p className="field__hint">{hint}</p>}
@@ -192,6 +218,17 @@ export default function EventForm({
   const [fieldError, setFieldError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [availability, setAvailability] = useState(null);
+  // The venue being taken, raised as a dialog rather than left to the banner at
+  // the top of the form. The desk works from the buttons at the bottom of a
+  // modal that scrolls, so a message written above the first field is off
+  // screen at the moment it matters — the clash was being saved straight past.
+  //
+  // Two shapes, because the server treats the two cases differently:
+  //   'blocked'  — a hold or a confirmation was refused (409). Nothing to
+  //                decide; the dialog reports it and the desk picks new hours.
+  //   'confirm'  — an enquiry, which is allowed to sit on a taken slot. The
+  //                desk is told what it is landing on and says whether to go on.
+  const [clash, setClash] = useState(null);
   const [quote, setQuote] = useState(null);
   const [quoteError, setQuoteError] = useState('');
 
@@ -252,6 +289,22 @@ export default function EventForm({
     }, DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [form.venueId, startAt, endAt, event?.id, token]);
+
+  // The head count the venue actually has to seat, worked out here rather than
+  // read off the quote: the quote is debounced and comes back from the server,
+  // so a form driven by it would let the desk type 500 into a 200-seat hall and
+  // see nothing for half a second. Same rule the server prices on — the larger
+  // of the expected count and the catering guarantee, and the final figure once
+  // there is one.
+  const seatedPax = useMemo(() => {
+    const counted = event?.finalPax != null ? Number(event.finalPax) : Number(form.expectedPax) || 0;
+    const guaranteed = catering ? Number(form.guaranteedPax) || 0 : 0;
+    return Math.max(counted, guaranteed);
+  }, [event?.finalPax, form.expectedPax, form.guaranteedPax, catering]);
+
+  // A venue with no capacity recorded holds whatever the desk says it holds:
+  // an unknown limit is not a limit, and inventing one would block real work.
+  const overCapacity = venue?.capacityPax != null && seatedPax > venue.capacityPax ? { venue, pax: seatedPax } : null;
 
   const addonPayload = useMemo(
     () =>
@@ -334,6 +387,14 @@ export default function EventForm({
     if (!form.organiserName.trim()) return ['organiserName', 'Who is organising it?'];
     if (!/^\d{10}$/.test(form.organiserPhone.trim())) return ['organiserPhone', 'Enter a 10-digit mobile number.'];
     if (form.expectedPax === '' || Number(form.expectedPax) <= 0) return ['expectedPax', 'How many guests are expected?'];
+    // Over the venue's seating is a real refusal, not a note on the quote: the
+    // count goes back to the field that owns it. Which field that is depends on
+    // which one pushed the party over, so the desk lands on the number they
+    // would have to change.
+    if (overCapacity) {
+      const field = catering && Number(form.guaranteedPax) > Number(form.expectedPax) ? 'guaranteedPax' : 'expectedPax';
+      return [field, `${venue.name} seats ${venue.capacityPax}. Lower the count, or pick a venue that holds ${seatedPax}.`];
+    }
     if (catering && !(Number(form.perPlateRate) > 0)) return ['perPlateRate', 'Enter the per-plate rate.'];
     if (roomsRequired) {
       if (!(Number(form.roomsCount) >= 1)) return ['roomsCount', 'How many rooms are needed?'];
@@ -361,10 +422,27 @@ export default function EventForm({
 
   const focusField = (name) => {
     const el = document.getElementById(`ev-${name}`) || document.getElementById(name);
-    if (el) el.focus();
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
 
-  const save = async (status) => {
+  // The banner's own equivalent of focusField, for the one failure left that
+  // names no field — a server error the 409 and err.field branches above
+  // don't catch. Same reason those two exist: this is the longest form in the
+  // app after a booking, and a message left at the top scrolls out of view
+  // the moment the desk works down into Catering or Rooms.
+  const errorBannerRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorBannerRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+
+  // `ack` is set once the desk has answered the clash dialog, so the second
+  // pass through goes to the server instead of asking again.
+  const save = async (status, ack = false) => {
     const invalid = firstInvalid();
     if (invalid) {
       setFieldError({ field: invalid[0], message: invalid[1] });
@@ -372,6 +450,16 @@ export default function EventForm({
       focusField(invalid[0]);
       return;
     }
+
+    // An enquiry is allowed onto a taken slot, so the server will not stop it
+    // and the desk has to be the one to decide. Asked before anything is sent,
+    // and only when the check has actually come back saying the venue is taken.
+    const taken = availability && !availability.checking && !availability.available ? availability.clashes : null;
+    if (taken && taken.length > 0 && !ack) {
+      setClash({ kind: 'confirm', status, clashes: taken });
+      return;
+    }
+
     const body = {
       eventType: form.eventType,
       title: form.title.trim(),
@@ -417,16 +505,23 @@ export default function EventForm({
         : await apiPost('/events', body, { token });
       if (data.advanceError) {
         setSavedWithoutAdvance(data.event);
-        setError(`The function was saved, but the advance was not recorded: ${data.advanceError} Take it from the function’s page.`);
+        reportError(`The function was saved, but the advance was not recorded: ${data.advanceError} Take it from the function’s page.`);
         return;
       }
       onSaved?.(data.event);
     } catch (err) {
-      if (err.field && document.getElementById(`ev-${err.field}`)) {
+      // 409 is the venue being taken. The desk asked for a hold or a
+      // confirmation on hours that are already someone else's, and the server
+      // refused — raised as a dialog because this is the message that was
+      // being missed at the top of a scrolled form.
+      if (err.status === 409) {
+        setClash({ kind: 'blocked', message: err.message });
+        setError('');
+      } else if (err.field && document.getElementById(`ev-${err.field}`)) {
         setFieldError({ field: err.field, message: err.message });
         focusField(err.field);
       } else {
-        setError(err.message);
+        reportError(err.message);
       }
     } finally {
       setSaving(false);
@@ -445,11 +540,14 @@ export default function EventForm({
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape' && !saving) onClose();
+      // Not while the clash dialog is up: it has its own Escape, and both
+      // listeners sit on window — one press would answer the dialog and throw
+      // away the half-typed form behind it in the same breath.
+      if (e.key === 'Escape' && !saving && !clash) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [saving, onClose]);
+  }, [saving, clash, onClose]);
 
   const pricing = quote?.pricing;
   const venueLines = pricing?.lines?.filter((l) => l.side === 'VENUE') || [];
@@ -457,18 +555,38 @@ export default function EventForm({
 
   return (
     <div className="glass-backdrop events-modal__backdrop">
-      <div className="glass-panel events-modal" role="dialog" aria-modal="true" aria-labelledby="event-form-title">
-        <div className="events-modal__head">
-          <div>
+      <div
+        className="glass-panel events-modal modal-form__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="event-form-title"
+      >
+        <div className="modal-form">
+        {/* Head and footer pinned, only the sections scroll — this is the
+            longest form in the app after a booking, and its action row is a
+            row of four, none of which should scroll out of reach. */}
+        <div className="modal-form__head">
+          <div className="modal-form__head-row">
             <h3 id="event-form-title">{isEdit ? `Edit “${event.title}”` : 'New function enquiry'}</h3>
-            {startAt && endAt && <div className="events-modal__sub">{formatEventWhen(startAt, endAt)}</div>}
+            <button
+              type="button"
+              className="modal-form__close"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close"
+            >
+              ×
+            </button>
           </div>
-          <button type="button" className="events-modal__close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          {startAt && endAt && <p className="modal-form__sub">{formatEventWhen(startAt, endAt)}</p>}
         </div>
 
-        {error && <div className="form-banner form-banner--error">{error}</div>}
+        <div className="modal-form__body">
+        {error && (
+          <div ref={errorBannerRef} className="form-banner form-banner--error form-banner--flash">
+            {error}
+          </div>
+        )}
 
         <div className="form-section">
           <div className="form-section__title">Function</div>
@@ -482,7 +600,7 @@ export default function EventForm({
                 ))}
               </select>
             </Field>
-            <Field label="Title" name="title" error={errFor('title')}>
+            <Field label="Title" name="title" error={errFor('title')} required>
               <input
                 id="ev-title"
                 ref={firstInput}
@@ -493,7 +611,7 @@ export default function EventForm({
             </Field>
           </div>
           <div className="field-row">
-            <Field label="Venue" name="venueId" error={errFor('venueId')}>
+            <Field label="Venue" name="venueId" error={errFor('venueId')} required>
               <select id="ev-venueId" value={form.venueId} onChange={(e) => pickVenue(e.target.value)}>
                 <option value="">Choose a venue</option>
                 {venues
@@ -517,7 +635,7 @@ export default function EventForm({
             </Field>
           </div>
           <div className="field-row">
-            <Field label="Starts" name="startDate" error={errFor('startDate') || errFor('startAt')}>
+            <Field label="Starts" name="startDate" error={errFor('startDate') || errFor('startAt')} required>
               <div className="field-row">
                 <input
                   id="ev-startDate"
@@ -535,11 +653,14 @@ export default function EventForm({
                 />
               </div>
             </Field>
-            <Field label="Ends" name="endDate" error={errFor('endDate') || errFor('endAt')}>
+            <Field label="Ends" name="endDate" error={errFor('endDate') || errFor('endAt')} required>
               <div className="field-row">
+                {/* Same day is a normal function — the times tell morning from evening —
+                    so the floor is the start date itself, not the day after it. */}
                 <input
                   id="ev-endDate"
                   type="date"
+                  min={form.startDate || undefined}
                   value={form.endDate}
                   onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value, slot: 'CUSTOM' }))}
                 />
@@ -566,10 +687,10 @@ export default function EventForm({
         <div className="form-section">
           <div className="form-section__title">Organiser</div>
           <div className="field-row field-row--triple">
-            <Field label="Name" name="organiserName" error={errFor('organiserName')}>
+            <Field label="Name" name="organiserName" error={errFor('organiserName')} required>
               <input id="ev-organiserName" value={form.organiserName} onChange={(e) => update('organiserName', e.target.value)} />
             </Field>
-            <Field label="Mobile" name="organiserPhone" error={errFor('organiserPhone')}>
+            <Field label="Mobile" name="organiserPhone" error={errFor('organiserPhone')} required>
               <input
                 id="ev-organiserPhone"
                 inputMode="numeric"
@@ -593,13 +714,37 @@ export default function EventForm({
         <div className="form-section">
           <div className="form-section__title">Guests &amp; pricing</div>
           <div className="field-row">
-            <Field label="Expected guests" name="expectedPax" error={errFor('expectedPax')}>
-              <input id="ev-expectedPax" type="number" min="1" value={form.expectedPax} onChange={(e) => update('expectedPax', e.target.value)} />
+            <Field
+              label="Expected guests"
+              name="expectedPax"
+              error={errFor('expectedPax')}
+              hint={venue?.capacityPax ? `${venue.name} seats ${venue.capacityPax}.` : undefined}
+              required
+            >
+              <input
+                id="ev-expectedPax"
+                type="number"
+                min="1"
+                max={venue?.capacityPax ?? undefined}
+                aria-invalid={overCapacity ? 'true' : undefined}
+                value={form.expectedPax}
+                onChange={(e) => update('expectedPax', e.target.value)}
+              />
             </Field>
             <Field label="Venue hire charge" name="venueCharge" error={errFor('venueCharge')}>
               <input id="ev-venueCharge" type="number" min="0" value={form.venueCharge} onChange={(e) => update('venueCharge', e.target.value)} />
             </Field>
           </div>
+
+          {/* Said as the count is typed, not after the quote comes back, and in
+              the same voice as the venue-taken banner above: the desk is over a
+              limit and the way out is a smaller party or a bigger hall. */}
+          {overCapacity && (
+            <div className="events-avail events-avail--clash" role="alert">
+              {venue.name} seats {venue.capacityPax}. This party is {seatedPax} — {seatedPax - venue.capacityPax} over what the venue holds.
+              Lower the count or pick a larger venue.
+            </div>
+          )}
 
           {(canCater || canRooms) && (
             <div className="events-needs">
@@ -620,7 +765,7 @@ export default function EventForm({
 
           {catering && (
             <div className="field-row">
-              <Field label="Per-plate rate" name="perPlateRate" error={errFor('perPlateRate')}>
+              <Field label="Per-plate rate" name="perPlateRate" error={errFor('perPlateRate')} required>
                 <input id="ev-perPlateRate" type="number" min="0" value={form.perPlateRate} onChange={(e) => update('perPlateRate', e.target.value)} />
               </Field>
               <Field
@@ -633,6 +778,8 @@ export default function EventForm({
                   id="ev-guaranteedPax"
                   type="number"
                   min="0"
+                  max={venue?.capacityPax ?? undefined}
+                  aria-invalid={overCapacity ? 'true' : undefined}
                   value={form.guaranteedPax}
                   placeholder={form.expectedPax || ''}
                   onChange={(e) => update('guaranteedPax', e.target.value)}
@@ -644,14 +791,25 @@ export default function EventForm({
           {roomsRequired && (
             <>
               <div className="field-row field-row--triple">
-                <Field label="Rooms needed" name="roomsCount" error={errFor('roomsCount')}>
+                <Field label="Rooms needed" name="roomsCount" error={errFor('roomsCount')} required>
                   <input id="ev-roomsCount" type="number" min="1" value={form.roomsCount} onChange={(e) => update('roomsCount', e.target.value)} />
                 </Field>
-                <Field label="From (night of)" name="roomsFrom" error={errFor('roomsFrom')}>
-                  <input id="ev-roomsFrom" type="date" value={form.roomsFrom} onChange={(e) => update('roomsFrom', e.target.value)} />
+                <Field label="From (night of)" name="roomsFrom" error={errFor('roomsFrom')} required>
+                  <input
+                    id="ev-roomsFrom"
+                    type="date"
+                    value={form.roomsFrom}
+                    onChange={(e) =>
+                      setForm((f) => {
+                        const roomsFrom = e.target.value;
+                        return { ...f, roomsFrom, roomsTo: roomsFrom && f.roomsTo && f.roomsTo <= roomsFrom ? addDays(roomsFrom, 1) : f.roomsTo };
+                      })
+                    }
+                  />
                 </Field>
-                <Field label="Until (morning of)" name="roomsTo" error={errFor('roomsTo')}>
-                  <input id="ev-roomsTo" type="date" min={form.roomsFrom || undefined} value={form.roomsTo} onChange={(e) => update('roomsTo', e.target.value)} />
+                <Field label="Until (morning of)" name="roomsTo" error={errFor('roomsTo')} required>
+                  {/* At least one night: the morning they leave is never the night they arrive. */}
+                  <input id="ev-roomsTo" type="date" min={form.roomsFrom ? addDays(form.roomsFrom, 1) : undefined} value={form.roomsTo} onChange={(e) => update('roomsTo', e.target.value)} />
                 </Field>
               </div>
               <Field label="Room notes" name="roomsNotes" hint="A need noted for the desk — the rooms are booked from the tape chart.">
@@ -769,7 +927,6 @@ export default function EventForm({
                   </div>
                 </>
               )}
-              {quote.overCapacity && <div className="events-quote__warn">{quote.overCapacity}</div>}
             </div>
           )}
         </div>
@@ -814,8 +971,9 @@ export default function EventForm({
             <textarea id="ev-scheduleNotes" value={form.scheduleNotes} onChange={(e) => update('scheduleNotes', e.target.value)} placeholder="Baraat 7 pm, dinner 9 pm, …" />
           </Field>
         </div>
+        </div>
 
-        <div className="events-modal__footer">
+        <div className="modal-form__foot events-modal__footer">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
           </button>
@@ -852,7 +1010,28 @@ export default function EventForm({
             </>
           )}
         </div>
+        </div>
       </div>
+
+      {clash && (
+        <ConfirmDialog
+          title={clash.kind === 'blocked' ? 'That slot is already taken' : 'The venue is already taken'}
+          message={clash.kind === 'blocked' ? clash.message : clashSummary(venue, clash.clashes)}
+          // Nothing to weigh up on a refusal — the only way on is different
+          // hours — so the dialog carries one button and no false choice.
+          confirmLabel={clash.kind === 'blocked' ? 'Pick other hours' : 'Save the enquiry anyway'}
+          cancelLabel={clash.kind === 'blocked' ? undefined : 'Go back'}
+          soleAction={clash.kind === 'blocked'}
+          danger={clash.kind === 'confirm'}
+          busy={saving}
+          onConfirm={() => {
+            const next = clash;
+            setClash(null);
+            if (next.kind === 'confirm') save(next.status, true);
+          }}
+          onCancel={() => setClash(null)}
+        />
+      )}
     </div>
   );
 }

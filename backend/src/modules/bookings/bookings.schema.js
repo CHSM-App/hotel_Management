@@ -415,6 +415,45 @@ const checkOutSchema = z.object({
     .default(0),
 });
 
+// The settlement a cancellation records. Both fields are optional so a bare
+// cancel — an old client, or a stay with no advance — still goes through and
+// simply leaves the settlement unrecorded. When a refund figure does arrive,
+// the service holds it against the advance and keeps the remainder as the
+// cancellation charge; a blank reason is "none given", not an error.
+const cancelBookingSchema = z.object({
+  reason: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().trim().max(200, 'Keep the cancellation reason under 200 characters.').optional()
+  ),
+  refundAmount: z.preprocess(
+    (value) => (value === '' || value == null ? undefined : value),
+    z.coerce
+      .number({ error: 'Enter the refund as a number.' })
+      .min(0, 'A refund can’t be negative.')
+      .max(9999999, 'That refund looks wrong — check it.')
+      .optional()
+  ),
+  refundPaymentMethod: z.preprocess(
+    (value) => (value === '' || value == null ? undefined : value),
+    z.enum(PAYMENT_METHODS, { error: 'Choose how the refund was given.' }).optional()
+  ),
+  // A charge collected at the desk while cancelling a stay that held no
+  // advance. Mutually exclusive with the refund pair — the service enforces
+  // that, since which pair applies depends on whether an advance exists.
+  cancellationCharge: z.preprocess(
+    (value) => (value === '' || value == null ? undefined : value),
+    z.coerce
+      .number({ error: 'Enter the cancellation charge as a number.' })
+      .min(0, 'A cancellation charge can’t be negative.')
+      .max(9999999, 'That charge looks wrong — check it.')
+      .optional()
+  ),
+  cancellationChargePaymentMethod: z.preprocess(
+    (value) => (value === '' || value == null ? undefined : value),
+    z.enum(PAYMENT_METHODS, { error: 'Choose how the charge was collected.' }).optional()
+  ),
+});
+
 module.exports = {
   DATE_RE,
   TEN_DIGITS,
@@ -436,5 +475,6 @@ module.exports = {
   checkInSchema,
   updateBookingSchema,
   checkOutSchema,
+  cancelBookingSchema,
   bookingDraftSchema,
 };

@@ -13,7 +13,7 @@ async function createLodgeWithOwner(input) {
       .query('SELECT id FROM dbo.lodges WHERE slug = @slug');
 
     if (existingSlug.recordset.length > 0) {
-      throw new ApiError('That slug is already taken.', 409);
+      throw new ApiError('That slug is already taken.', 409, 'slug');
     }
 
     const existingPhone = await new sql.Request(transaction)
@@ -21,7 +21,7 @@ async function createLodgeWithOwner(input) {
       .query('SELECT id FROM dbo.users WHERE phone = @phone');
 
     if (existingPhone.recordset.length > 0) {
-      throw new ApiError('A user with that phone number already exists.', 409);
+      throw new ApiError('A user with that phone number already exists.', 409, 'ownerPhone');
     }
 
     const lodgeResult = await new sql.Request(transaction)
@@ -258,7 +258,7 @@ async function updateLodge(id, input) {
       .input('slug', sql.NVarChar, next.slug)
       .input('id', sql.BigInt, id)
       .query('SELECT id FROM dbo.lodges WHERE slug = @slug AND id <> @id');
-    if (taken.recordset.length > 0) throw new ApiError('A property with that slug already exists.', 409);
+    if (taken.recordset.length > 0) throw new ApiError('A property with that slug already exists.', 409, 'edit-slug');
   }
 
   await pool

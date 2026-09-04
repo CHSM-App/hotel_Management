@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { clearSession, getSession } from '../../lib/auth';
+import { SearchContext } from '../../lib/searchContext';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
@@ -66,6 +67,13 @@ const ICON_PATHS = {
       <path d="M18 20V10M12 20V4M6 20v-6" />
     </>
   ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </>
+  ),
   party: (
     <>
       <path d="M5.8 11.3 2 22l10.7-3.8" />
@@ -75,13 +83,38 @@ const ICON_PATHS = {
       <path d="M12.2 7.8 16.2 11.8" />
     </>
   ),
+  signout: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </>
+  ),
+  menu: (
+    <>
+      <path d="M3 6h18M3 12h18M3 18h18" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </>
+  ),
+  building: (
+    <>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <path d="M9 6h.01M15 6h.01M9 10h.01M15 10h.01M9 14h.01M15 14h.01" />
+      <path d="M10 22v-4h4v4" />
+    </>
+  ),
 };
 
-function Icon({ name }) {
+function Icon({ name, size = 18 }) {
   return (
     <svg
-      width="18"
-      height="18"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -238,6 +271,18 @@ export default function OwnerDashboard() {
   // where the button sits next to the profile menu people open all day.
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
+  // Topbar state. The rail is open by default because on a desk monitor it is
+  // always visible; the hamburger only has an effect below the breakpoint,
+  // where the CSS hides a closed rail.
+  const [navOpen, setNavOpen] = useState(true);
+  // Stored with the section it was typed on rather than as a bare string. A
+  // term belongs to the list it is narrowing, so moving to another section has
+  // to drop it — and doing that by remembering which section owns the term
+  // costs nothing, where clearing it in an effect meant a second render on
+  // every navigation (and every handler that changes the section remembering
+  // to clear it, including the browser's own back button, which cannot).
+  const [searchState, setSearchState] = useState({ section: null, term: '' });
+
   const handleSignOut = () => {
     clearSession();
     navigate('/login', { replace: true });
@@ -256,6 +301,29 @@ export default function OwnerDashboard() {
     visibleFeatures.find((f) => f.key === activeSection) ||
     visibleFeatures.find((f) => f.key === LANDING_SECTION) ||
     visibleFeatures[0];
+  // Only the sections that actually filter on it get a search box. A field that
+  // sits in the bar all day and does nothing on six screens out of nine teaches
+  // people it is decorative, and then they stop reaching for it on the screens
+  // where it works.
+  const SEARCH_PLACEHOLDERS = {
+    rooms: 'Search rooms, type, status…',
+  };
+  const searchPlaceholder = activeFeature ? SEARCH_PLACEHOLDERS[activeFeature.key] : undefined;
+  // Reads as empty the moment the section changes, without a render spent
+  // clearing it.
+  const search = searchState.section === activeFeature?.key ? searchState.term : '';
+  const setSearch = (term) => setSearchState({ section: activeFeature?.key, term });
+
+  // The rail keeps whatever scroll position it was at when a section was
+  // opened from a group further down the list. Without this, switching to a
+  // short screen after scrolling the rail to reach a group near the bottom
+  // left the rail scrolled away from the current section instead of showing
+  // it selected at the top.
+  const sidebarScrollRef = useRef(null);
+  useEffect(() => {
+    sidebarScrollRef.current?.scrollTo(0, 0);
+  }, [activeFeature?.key]);
+
   const sidebarGroups = SIDEBAR_GROUP_ORDER.map((group) => ({
     group,
     features: visibleFeatures.filter((f) => f.group === group),
@@ -274,10 +342,56 @@ export default function OwnerDashboard() {
           onCancel={() => setConfirmSignOut(false)}
         />
       )}
-      <div className="dash-topbar">
-        <div>
-          <div className="dash-topbar__mark">{me?.lodge.name || 'Loading…'}</div>
+      <div className="dash-topbar dash-topbar--light">
+        {/* The brand block sits over the rail rather than in the bar's flow:
+            it is the sidebar's header, and lining it up with the rail below is
+            what stops the bar reading as one undivided strip. */}
+        <div className="dash-brand">
+          <span className="dash-brand__badge" aria-hidden="true">
+            <Icon name="building" size={20} />
+          </span>
+          <span className="dash-brand__text">
+            <span className="dash-brand__name">Front Desk</span>
+            {/* The name is whatever the owner typed, and the block is pinned to
+                the rail's width, so a long one clips. title= is what makes the
+                clipped half reachable — the full name is also in the profile
+                menu, but that is a click away and this is a hover. */}
+            <span className="dash-brand__sub" title={me?.lodge.name || undefined}>
+              {me?.lodge.name || 'Hotel Management'}
+            </span>
+          </span>
         </div>
+
+        {/* Collapses the rail on narrow windows, where 240px of permanent nav
+            costs more than it gives. Above the breakpoint the rail never
+            hides, so the control has nothing to say and stays out of the bar. */}
+        <button
+          type="button"
+          className="dash-topbar__menu"
+          aria-label={navOpen ? 'Hide sections' : 'Show sections'}
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((open) => !open)}
+        >
+          <Icon name="menu" size={20} />
+        </button>
+
+        {searchPlaceholder ? (
+          <div className="dash-topbar__search">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label={searchPlaceholder}
+            />
+          </div>
+        ) : (
+          // Holds the space the field would occupy, so the profile chip doesn't
+          // slide left and right as you move between sections.
+          <div className="dash-topbar__search-gap" />
+        )}
+
         <div className="dash-topbar__actions">
           {me?.user ? (
             <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />
@@ -299,47 +413,90 @@ export default function OwnerDashboard() {
       </div>
 
       <div className="dash-body">
-        <nav className="dash-sidebar" aria-label="Dashboard sections">
-          {sidebarGroups.map(({ group, features }) => (
-            <div className="dash-sidebar__group" key={group}>
-              <div className="dash-sidebar__label">{group}</div>
-              <ul className="dash-sidebar__list">
-                {features.map((feature) => (
-                  <li key={feature.key}>
-                    <button
-                      type="button"
-                      className="dash-sidebar__item"
-                      aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
-                      onClick={() => {
-                        setBillNowBookingId(null);
+        <nav
+          className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}`}
+          aria-label="Dashboard sections"
+        >
+          {/* Only this region scrolls when the section list runs past the
+              viewport — Sign out sits outside it, in its own flex child below,
+              so it stays pinned at the floor of the rail instead of scrolling
+              out of view with the sections. */}
+          <div className="dash-sidebar__scroll" ref={sidebarScrollRef}>
+            {sidebarGroups.map(({ group, features }) => (
+              <div className="dash-sidebar__group" key={group}>
+                <div className="dash-sidebar__label">{group}</div>
+                <ul className="dash-sidebar__list">
+                  {features.map((feature) => (
+                    <li key={feature.key}>
+                      <button
+                        type="button"
+                        className="dash-sidebar__item"
+                        aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
+                        onClick={() => {
+                          setBillNowBookingId(null);
     setBillNowEventId(null);
-                        // Cleared for the same reason billNowBookingId is: the
-                        // status cut belongs to the register, and reaching it
-                        // from the sidebar means asking for the whole list
-                        // rather than resuming a cut the legend made earlier.
-                        // The sub-tab goes too — see showSection for why a
-                        // ?tab= carried across sections rendered a blank panel.
-                        setSearchParams(
-                          (prev) => {
-                            const updated = new URLSearchParams(prev);
-                            updated.set('section', feature.key);
-                            updated.delete('tab');
-                            updated.delete('status');
-                            return updated;
-                          },
-                          { replace: true }
-                        );
-                      }}
-                    >
-                      <Icon name={feature.icon} />
-                      {feature.title}
-                      {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
-                    </button>
-                  </li>
-                ))}
+                          // Cleared for the same reason billNowBookingId is: the
+                          // status cut belongs to the register, and reaching it
+                          // from the sidebar means asking for the whole list
+                          // rather than resuming a cut the legend made earlier.
+                          // The sub-tab goes too — see showSection for why a
+                          // ?tab= carried across sections rendered a blank panel.
+                          setSearchParams(
+                            (prev) => {
+                              const updated = new URLSearchParams(prev);
+                              updated.set('section', feature.key);
+                              updated.delete('tab');
+                              updated.delete('status');
+                              return updated;
+                            },
+                            { replace: true }
+                          );
+                        }}
+                      >
+                        <Icon name={feature.icon} />
+                        {feature.title}
+                        {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {/* Last, and set apart by a rule: every section above is part of the
+                property, this is help about all of them. Ungated by permission —
+                the guide shows whatever sections the user can actually reach, so
+                there is nothing here for a limited role to leak. */}
+            <div className="dash-sidebar__group dash-sidebar__guide">
+              <ul className="dash-sidebar__list">
+                <li>
+                  <button
+                    type="button"
+                    className="dash-sidebar__item"
+                    onClick={() => navigate('/guide')}
+                  >
+                    <Icon name="help" />
+                    User guide
+                  </button>
+                </li>
               </ul>
             </div>
-          ))}
+          </div>
+
+          {/* Signing out lived only behind the topbar avatar, which is the last
+              place someone looks for it — every other action on this screen is
+              in the sidebar. Pushed to the bottom of the rail and set apart by
+              a rule, so it reads as leaving rather than as a ninth section. */}
+          <div className="dash-sidebar__footer">
+            <button
+              type="button"
+              className="dash-sidebar__signout"
+              onClick={() => setConfirmSignOut(true)}
+            >
+              <Icon name="signout" />
+              Sign out
+            </button>
+          </div>
         </nav>
 
         {/* The sidebar names the section, so the panel doesn't repeat it as a
@@ -368,7 +525,11 @@ export default function OwnerDashboard() {
                 </div>
               )}
 
-              {activeFeature && activeFeature.key === 'rooms' && <RoomsAndRates />}
+              {activeFeature && activeFeature.key === 'rooms' && (
+                <SearchContext.Provider value={search}>
+                  <RoomsAndRates />
+                </SearchContext.Provider>
+              )}
 
               {activeFeature && activeFeature.key === 'bookings' && (
                 <Bookings

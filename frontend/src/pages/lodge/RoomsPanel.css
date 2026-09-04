@@ -6,9 +6,51 @@
   margin-bottom: 12px;
 }
 
-.rooms-panel__count {
+/* Sits between the room count and "+ Add room". Pushed against the button by
+   the same margin-left:auto trick the rate uses on the card, so the filter
+   stays next to the button it affects the view above rather than drifting to
+   the middle of the bar. */
+.rooms-panel__type-filter {
+  margin-left: auto;
+  min-height: 34px;
+  padding: 6px 28px 6px 10px;
   font-size: 13px;
-  color: var(--text-muted);
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.rooms-panel__type-filter:hover {
+  border-color: var(--brand);
+}
+
+.rooms-panel__type-filter:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .rooms-panel__toolbar {
+    flex-wrap: wrap;
+  }
+
+  .rooms-panel__type-filter {
+    margin-left: 0;
+    flex: 1;
+  }
+}
+
+/* The toolbar has no page heading above it, so this line is the closest thing
+   the panel has to one. Ink and semibold rather than muted 13px: it reads as
+   "what you are looking at" instead of as a caption under nothing. */
+.rooms-panel__count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .rooms-panel__note {
@@ -25,7 +67,7 @@
 .room-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
-  gap: 14px;
+  gap: 16px;
 }
 
 .room-card {
@@ -34,29 +76,113 @@
   background: var(--surface);
   /* The extrusion is the edge. A 1px rule on top of it drew the card twice. */
   border: none;
-  border-radius: var(--radius-card, 12px);
+  border-radius: var(--radius-card);
   /* Deliberately NOT `overflow: hidden`. The clip existed only to round the
      cover image's top corners, and it also swallowed the action buttons'
      hover tooltips, which rise out of the card's bottom edge. The cover now
      rounds its own corners instead — see .room-card__cover. */
   box-shadow: var(--shadow-card);
-  transition: box-shadow 200ms ease, transform 200ms ease;
+  /* Cubic-bezier rather than ease, so the card arrives with a slight settle
+     instead of coasting to a stop. */
+  transition: box-shadow 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
+    transform 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
+/* The lift is tinted with the brand rather than neutral grey. A violet-cast
+   shadow under a card whose header is violet reads as that card's own light
+   being thrown onto the page; the stock grey elevation reads as a generic
+   panel. */
 .room-card:hover {
-  box-shadow: var(--shadow-elevated);
+  box-shadow: 0 2px 6px rgba(69, 39, 184, 0.08), 0 14px 30px -12px rgba(69, 39, 184, 0.22);
   transform: translateY(-2px);
 }
 
 .room-card__cover {
   position: relative;
-  height: 118px;
+  /* Roughly 4:3 against the ~212px column, so a real room photo gets enough
+     height to read as photography rather than as a strip. */
+  height: 132px;
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  /* The pale cover and the white body are close in value, so without this the
+     two run together and the card loses its top edge. */
+  border-bottom: 1px solid var(--border);
+  /* The base tint behind a loading photo. The photoless case overrides this
+     with the brand fill — see .room-card__cover--empty. */
+  background: var(--brand-wash);
   /* Carries the card's top corners now that the card itself no longer clips.
      Top only — the cover sits at the top of the card. */
-  border-radius: var(--radius-card, 12px) var(--radius-card, 12px) 0 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   overflow: hidden;
+}
+
+/* With no photo the band becomes the card's own header: brand violet carrying
+   the room number in white. The pale lavender wash it replaced sat only a few
+   steps from the white card under it, so the band read as an empty gap rather
+   than as a deliberate header.
+
+   Three things separate this from a flat coloured rectangle. The gradient runs
+   past --brand into --brand-ink so the fill has somewhere to travel and the
+   corner nearest the light stays the brightest point. A soft radial highlight
+   sits over it, offset toward that same corner, which is what stops a 132px
+   slab of saturated violet reading as printed card stock. And an inset hairline
+   along the bottom edge catches the light where the band meets the white body,
+   so the two surfaces part cleanly without a drawn border. */
+/* Ten of these fill a screen, and ten saturated violet slabs make the grid
+   heavier than anything on it — the colour stops meaning "brand" and starts
+   meaning "background". So the band keeps the card's own white and the violet
+   drops back to being ink: the room number is the only brand-coloured thing on
+   it. The band is also shorter now, because without a fill to justify it the
+   height was holding nothing but air. */
+.room-card__cover--empty {
+  height: 86px;
+  background: var(--surface);
+  /* Band and body are both white now, so the two need a rule between them —
+     inset from the edges, matching the one above the action row, so the card
+     reads as one surface divided rather than as stacked strips. */
+  border-bottom: none;
+  background-image: linear-gradient(var(--border), var(--border));
+  background-repeat: no-repeat;
+  background-position: 14px 100%;
+  background-size: calc(100% - 28px) 1px;
+}
+
+/* The room number as the band's content. White on the violet fill clears
+   contrast comfortably, and the serif display face is what the app uses for
+   headings — this band is the card's heading. Tabular figures so the numbers
+   sit at identical widths down every column of the grid. */
+.room-card__cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 600;
+  /* Violet as ink on white rather than white on violet. Same brand, a tenth of
+     the weight on the page. */
+  color: var(--brand);
+  /* Serif numerals at this size sit slightly loose by default; pulling them
+     together makes a three-digit number read as one object, not three glyphs. */
+  letter-spacing: -0.005em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Room" set above the number in the band. A bare figure floating in violet
+   could be a rate, a count or a floor; one word of context costs 11px of
+   height and removes the question. Wide tracking and half-opacity keep it as a
+   label — the number stays the thing you read. */
+.room-card__cover-placeholder::before {
+  content: 'Room';
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .room-card__cover-btn {
@@ -76,24 +202,79 @@
   display: block;
 }
 
-.room-card__cover-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
+/* On the card the pill sits over a photo, so it needs a solid fill to stay
+   legible — the tinted .badge--on used elsewhere would wash out over an image.
+   Scoped to the room card; the table badges keep the quieter tint. */
+.room-card__status.badge--on {
+  background: var(--success);
+  color: #fff;
+}
+
+/* A rounded chip rather than a bare dot on the band. Floating text with no
+   container didn't read as a control, and this one is clickable — it toggles
+   the room. The chip is drawn in the state's own colour but at tint strength:
+   a pale ground with a matching rim and the word in the full ink, so it reads
+   as a status you can press without becoming the solid block of green that
+   made the old grid heavy. The dot stays as the part that carries at a glance. */
+.room-card__cover--empty .room-card__status {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-family: var(--serif);
-  font-size: 22px;
+  gap: 5px;
+  border-radius: 999px;
+  border: 1px solid;
+  box-shadow: none;
+  font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-  letter-spacing: 0.02em;
+  padding: 3px 9px 3px 8px;
+}
+
+.room-card__cover--empty .room-card__status.badge--on {
+  background: var(--success-bg);
+  border-color: rgba(21, 128, 61, 0.22);
+  color: var(--success);
+}
+
+.room-card__cover--empty .room-card__status.badge--off {
+  background: var(--danger-bg);
+  border-color: rgba(192, 57, 43, 0.22);
+  color: var(--danger);
+}
+
+/* currentColor, so the dot follows whichever state the chip is in without a
+   rule of its own per state. */
+.room-card__cover--empty .room-card__status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+/* The rim firms up rather than the fill deepening — a tinted chip that darkens
+   on hover reads as having changed state, which is the one thing this control
+   must not imply until it is actually clicked. */
+.room-card__cover--empty .room-card__status:hover {
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.room-card__cover--empty .room-card__status.badge--on:hover {
+  border-color: rgba(21, 128, 61, 0.5);
+}
+
+.room-card__cover--empty .room-card__status.badge--off:hover {
+  border-color: rgba(192, 57, 43, 0.5);
 }
 
 .room-card__status {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  top: 10px;
+  right: 10px;
+  /* Softer than the old drop shadow: the pill now sits on a pale cover, not a
+     saturated one, so it needs lift rather than separation from a dark field. */
+  box-shadow: 0 1px 3px rgba(22, 33, 46, 0.12);
   border: none;
   cursor: pointer;
   font-family: inherit;
@@ -103,7 +284,7 @@
 .room-card__status:hover {
   filter: brightness(1.06);
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 3px 8px rgba(22, 33, 46, 0.2);
 }
 
 .room-card__status:active {
@@ -111,7 +292,7 @@
 }
 
 .room-card__status:focus-visible {
-  outline: 2px solid var(--accent, #2563eb);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -129,7 +310,7 @@
 
 .room-card__body {
   flex: 1;
-  padding: 11px 13px 4px;
+  padding: 15px 16px 10px;
 }
 
 .room-form__photo-grid {
@@ -174,30 +355,55 @@
 }
 
 .room-card__number {
-  font-family: var(--serif);
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--ink);
+  /* Sans, matching the spec's Inter-like voice. The serif is the app's display
+     face for page headings; a room number is data, not a heading. */
+  /* Tabular figures so the numbers line up column to column down the grid. */
+  font-size: 16px;
+  font-weight: 700;
+  /* Brand violet: the room number is the card's identity and the one thing the
+     eye lands on first when scanning the grid. */
+  color: var(--brand);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
+/* Deluxe / Suite / Standard is the room's class — a named tier, so it keeps the
+   tracked-label treatment. But not in gold: a third accent colour on a card
+   that already has a violet number and a green dot is one signal too many, and
+   uppercase gold read as louder than the room number it sat under. Muted grey
+   lets the tier register as a label without asking for attention. */
 .room-card__category {
-  font-size: 12.5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 7px;
+  margin-bottom: 10px;
 }
 
 .room-card__rate {
   flex-shrink: 0;
+  /* Holds the right edge even when it is the row's only child — on a photoless
+     card the room number has moved up into the band, and `space-between` alone
+     would park a lone rate on the left. */
+  margin-left: auto;
   font-size: 15px;
   font-weight: 700;
-  color: var(--brand-ink);
+  letter-spacing: -0.015em;
+  /* Navy, not violet. The room number carries the brand accent; two violets in
+     one row makes neither of them the lead. */
+  color: var(--ink);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
+/* "/night" is the unit, not part of the figure — lighter and smaller so the
+   eye takes the amount first and the unit only if it needs it. */
 .room-card__rate-unit {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
   color: var(--text-muted);
+  letter-spacing: 0;
 }
 
 .room-card__chips {
@@ -208,24 +414,39 @@
 }
 
 .room-card__chip {
+  /* Barely-there fill with no border. These run four to a card and ten cards to
+     a screen; at that count a drawn box around each one turns the card into a
+     grid of little cages. Neutral page-grey rather than a violet tint — the
+     brand belongs on the room number, not on forty background chips. */
   background: var(--paper);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
+  border: none;
   color: var(--text);
-  font-size: 10.5px;
+  /* 10.5px was below the point where a 600-weight label stays comfortable on a
+     laptop screen, and these are the card's actual room facts, not fine print. */
+  font-size: 11.5px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 4.5px 10px;
+  border-radius: 7px;
   white-space: nowrap;
 }
 
+/* Occupancy reads as one more room fact, so it takes the same shell as the
+   others — the icon alone is enough to tell it apart. It used to carry a violet
+   outline, which made the least important chip the loudest. */
 .room-card__chip--occupancy {
+  color: var(--text);
+}
+
+/* Every chip that carries an icon aligns it with the label on one baseline. */
+.room-card__chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: transparent;
-  border-color: var(--brand);
-  color: var(--brand-ink);
+  gap: 5px;
+}
+
+.room-card__chip svg {
+  flex-shrink: 0;
+  opacity: 0.75;
 }
 
 .rooms-panel__backdrop {
@@ -246,7 +467,9 @@
   padding: 28px;
 }
 
-.rooms-panel__modal h3 {
+/* Not inside .modal-form, whose pinned header supplies its own spacing — see
+   forms.css. This is for the plain dialogs that are still one block. */
+.rooms-panel__modal > h3 {
   margin-bottom: 18px;
 }
 
@@ -257,12 +480,41 @@
   margin-top: 6px;
 }
 
+/* ------------------------------------------------- add / edit room form
+
+   The shell — pinned head, scrolling body, pinned foot, tighter density — is
+   .modal-form in forms.css, shared with every other add/edit dialog. Only the
+   room-specific bits live here. */
+
+.rooms-panel__modal--form {
+  /* Wider than the plain 520px modal: the bed rows and the photo grid both
+     read better with the extra width than with the height they would
+     otherwise cost. */
+  max-width: 640px;
+}
+
+/* The bed rows are not .field children, so the shell density rules do not
+   reach them. */
+.modal-form .bed-row select,
+.modal-form .bed-row input {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+
 .room-card__description {
-  font-size: 11.5px;
+  font-size: 12px;
+  /* Plain muted text at full strength. Violet at 75% opacity read as a
+     disabled link rather than as prose, and it put a second accent colour on a
+     card that already leads with a violet room number. Grey is what the rest
+     of the app uses for secondary copy; this line is no different. */
   color: var(--text-muted);
-  font-style: italic;
-  line-height: 1.45;
-  margin-bottom: 7px;
+  /* Was italic. On a metadata line that read as an aside rather than as room
+     data, and italics at 11.5px hold up poorly. */
+  line-height: 1.5;
+  margin-bottom: 8px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -277,8 +529,13 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  padding: 8px 13px 10px;
-  border-top: 1px solid var(--border);
+  padding: 9px 12px 10px;
+  /* The rule stops short of the card's edges rather than running wall to wall.
+     A full-bleed line cuts the card in two; an inset one reads as a division
+     within a single surface, which is what this is. */
+  border-top: none;
+  background:
+    linear-gradient(var(--border), var(--border)) no-repeat 14px 0 / calc(100% - 28px) 1px;
 }
 
 .rooms-panel__delete-modal {
@@ -434,6 +691,14 @@
     max-width: none;
     max-height: calc(100svh - 20px);
     padding: 20px 16px;
+  }
+
+  /* The bed rows sit outside .field, so the shell mobile rule does not reach
+     them. */
+  .modal-form .bed-row select,
+  .modal-form .bed-row input {
+    min-height: 44px;
+    padding: 10px 12px;
   }
 
   .rooms-panel__actions {

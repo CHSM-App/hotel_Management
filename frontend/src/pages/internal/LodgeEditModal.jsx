@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import LocationPicker from '../../components/LocationPicker';
@@ -60,7 +60,31 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
   const token = getSession()?.token;
   const [form, setForm] = useState(() => formFromLodge(lodge));
   const [error, setError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Four sections deep, so a failure caught on Save has to bring itself into
+  // view rather than rely on already being on screen — same pattern the
+  // lodge-side forms use (see forms.css's failOn/reportFormError).
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    setFieldError(null);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  // Field-only: the message goes under the box that caused it, and must not
+  // also land in the banner above — that rendered the same line twice.
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
 
   const update = (key) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
@@ -75,17 +99,22 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.lodgeName.trim() || !form.slug.trim()) {
-      setError('Name and slug are required.');
+    setFieldError(null);
+    if (!form.lodgeName.trim()) {
+      failOn('edit-name', 'Enter the property name.');
+      return;
+    }
+    if (!form.slug.trim()) {
+      failOn('edit-slug', 'Enter a slug.');
       return;
     }
     if (form.isGstRegistered && !form.gstin.trim()) {
-      setError('Enter the GSTIN, or turn off GST registration.');
+      failOn('edit-gstin', 'Enter the GSTIN, or turn off GST registration.');
       return;
     }
     const coords = validateCoordinates(form);
     if (!coords.ok) {
-      setError(coords.message);
+      failOn('edit-location-lat', coords.message);
       return;
     }
     setSaving(true);
@@ -104,7 +133,11 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
       const detail = await apiPatch(`/internal/lodges/${lodge.id}`, payload, { token });
       onSaved(detail);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save these changes.');
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOn(err.field, err.message);
+      } else {
+        reportError(err instanceof ApiError ? err.message : 'Could not save these changes.');
+      }
     } finally {
       setSaving(false);
     }
@@ -120,18 +153,35 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           </button>
         </div>
 
-        {error && <div className="form-banner form-banner--error">{error}</div>}
+        <div className="lodge-edit__body">
+        {error && (
+          <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+            {error}
+          </div>
+        )}
 
         <section className="lodge-edit__section">
           <h3>Property &amp; contact</h3>
           <div className="field-row">
             <div className="field">
               <label htmlFor="edit-name">Name</label>
-              <input id="edit-name" value={form.lodgeName} onChange={update('lodgeName')} />
+              <input
+                id="edit-name"
+                aria-invalid={invalid('edit-name')}
+                value={form.lodgeName}
+                onChange={update('lodgeName')}
+              />
+              {fieldErr('edit-name')}
             </div>
             <div className="field">
               <label htmlFor="edit-slug">Slug</label>
-              <input id="edit-slug" value={form.slug} onChange={update('slug')} />
+              <input
+                id="edit-slug"
+                aria-invalid={invalid('edit-slug')}
+                value={form.slug}
+                onChange={update('slug')}
+              />
+              {fieldErr('edit-slug')}
             </div>
           </div>
           <div className="field-row">
@@ -248,7 +298,14 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           {form.isGstRegistered && (
             <div className="field">
               <label htmlFor="edit-gstin">GSTIN</label>
-              <input id="edit-gstin" value={form.gstin} onChange={update('gstin')} placeholder="27ABCDE1234F1Z5" />
+              <input
+                id="edit-gstin"
+                aria-invalid={invalid('edit-gstin')}
+                value={form.gstin}
+                onChange={update('gstin')}
+                placeholder="27ABCDE1234F1Z5"
+              />
+              {fieldErr('edit-gstin')}
             </div>
           )}
           {form.hasRooms && form.servesFood && (
@@ -272,6 +329,7 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
             onChange={update('isActive')}
           />
         </section>
+        </div>
 
         <div className="lodge-edit__actions">
           <button type="button" className="btn-view" onClick={onClose} disabled={saving}>

@@ -594,7 +594,9 @@
    list off at the dialog's bottom edge. Letting it overflow is what makes the
    list readable; growing the dialog instead would mean a mostly empty panel
    sized around a list that isn't there until the field is clicked. */
-.menu-panel__modal--fixed {
+/* Doubled to outweigh .modal-form__panel, which clips — see forms.css. The
+   clip is what cut the suggestions list off at the dialog's bottom edge. */
+.menu-panel__modal--fixed.menu-panel__modal--fixed {
   overflow: visible;
 }
 

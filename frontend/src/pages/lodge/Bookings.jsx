@@ -19,11 +19,14 @@ import AdvanceReceiptModal from './AdvanceReceiptModal';
 import PaymentLines from './PaymentLines';
 import IconButton from '../../components/IconButton';
 import Req from '../../components/RequiredMark';
+import StepNum from '../../components/StepNum';
 // Aliased: this file already has a local TrashIcon, drawn at 15px for the
 // inline row-remove buttons. The shared glyph is 18px, sized for the 34px
 // icon buttons, so the two can't be collapsed into one.
 import { TrashIcon as ActionTrashIcon, OpenIcon } from '../../components/ActionIcons';
 import {
+  PAYMENT_METHOD_LABEL,
+  describeAdvance,
   emptyPaymentLine,
   needsPaymentReference,
   paymentFieldId,
@@ -204,6 +207,10 @@ const LEGEND_LINKS = [
   { status: 'BOOKED', swatch: 'booked' },
   { status: 'CHECKED_IN', swatch: 'checked-in' },
   { status: 'CHECKED_OUT', swatch: 'checked-out' },
+  // Border-only on the chart, because a cancelled stay holds no night to
+  // fill — but it is still a status the register can be cut by, so its chip
+  // links there like the others.
+  { status: 'CANCELLED', swatch: 'cancelled' },
 ].map((item) => ({ ...item, label: STAY_STATUS_CHIP_LABEL[item.status] }));
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
 
@@ -938,6 +945,27 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     return byRoom;
   }, [tapeData, rangeStart, rangeEnd]);
 
+  // And once more for cancelled stays, apart for the same reason: a
+  // cancellation holds no night, so it can share dates with a vacant slot or
+  // a live booking alike. It never takes the tile — it borders it, which is
+  // how the desk sees a booking fell through here without the night reading
+  // as sold.
+  const cancelledOccupancy = useMemo(() => {
+    const byRoom = new Map();
+    for (const stay of tapeData?.cancelled ?? []) {
+      const key = String(stay.roomId);
+      let byDate = byRoom.get(key);
+      if (!byDate) {
+        byDate = new Map();
+        byRoom.set(key, byDate);
+      }
+      const from = stay.checkInDate > rangeStart ? stay.checkInDate : rangeStart;
+      const to = stay.checkOutDate < rangeEnd ? stay.checkOutDate : rangeEnd;
+      for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, stay);
+    }
+    return byRoom;
+  }, [tapeData, rangeStart, rangeEnd]);
+
   // Which bookings on the chart answer to what's in the search box, in the
   // order they are read on screen: category by category, room by room, and
   // within a room by the night the stay starts on. That order is what makes the
@@ -1076,6 +1104,162 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     return stats;
   }, [categorySections, occupancy, dates.length]);
 
+  // Each category card, by name, so the chips above can reach the one they
+  // stand for. A map rather than an array because the sections come and go as
+  // rooms are added and removed, and a name is stabler than a position.
+  const sectionRefs = useRef(new Map());
+
+  // Which category the page is parked on, so the chip for it reads as the
+  // current one. Set on click and then kept honest by the observer below —
+  // scrolling away from a category by hand should move the highlight too,
+  // otherwise the strip claims a section the desk has already left.
+  const [activeCategory, setActiveCategory] = useState(null);
+
+  // Set while a chip's scroll is still travelling. The animation drags every
+  // card in between through the observer's band on the way, and each crossing
+  // would overwrite the chip that was clicked — so the observer stands down
+  // until the page has come to rest on the section that was asked for.
+  const jumping = useRef(null);
+
+  // A property with three or four grades of room runs the chart well past a
+  // screen, and reaching the deluxe rooms means scrolling past every standard
+  // one. The chips jump straight there.
+  const jumpToCategory = (name) => {
+    const el = sectionRefs.current.get(name);
+    if (!el) return;
+    setActiveCategory(name);
+    // The month nav sits sticky at the top, so scrolling the card flush with
+    // the viewport tucks its header underneath it. Offset by the strip's own
+    // height, read off the element rather than hard-coded, so the card's
+    // heading clears it on every breakpoint.
+    const sticky = document.querySelector('.tape-controls');
+    const offset = (sticky?.getBoundingClientRect().height || 0) + 12;
+    const target = Math.max(0, el.getBoundingClientRect().top + window.scrollY - offset);
+
+    // Held until the scroll has actually arrived, not merely until it stops
+    // moving. A smooth scroll begins stationary — it takes a frame or two to
+    // get going — so "two frames without movement" is true at the very start,
+    // before the page has left the category it was on. The lock would drop
+    // there and the animation's own scroll events would then drive the
+    // highlight backwards onto whatever it was travelling through: click
+    // Deluxe, land on Deluxe, and watch the chip walk back to Standard.
+    //
+    // So arrival is the test, with stillness only as the way out for a scroll
+    // that can never arrive — a target past the end of the page clamps short
+    // of it, and the lock must not be held open for good.
+    jumping.current = name;
+    let still = 0;
+    let last = window.scrollY;
+    const settle = () => {
+      if (jumping.current !== name) return; // superseded by a later chip
+      const y = window.scrollY;
+      // Within a pixel of where it was sent, or as close as the page can get:
+      // at the end stop the browser clamps, and that counts as arrived.
+      const maxTop = document.documentElement.scrollHeight - window.innerHeight;
+      const arrived = Math.abs(y - Math.min(target, maxTop)) <= 1;
+      still = Math.abs(y - last) <= 1 ? still + 1 : 0;
+      last = y;
+      // Stillness is only trusted once the page has had time to start: the
+      // browser can sit on the first frames of a smooth scroll, and releasing
+      // there is the bug this whole block exists to avoid.
+      if (arrived || still >= 12) {
+        jumping.current = null;
+        return;
+      }
+      requestAnimationFrame(settle);
+    };
+    window.scrollTo({ top: target, behavior: 'smooth' });
+    requestAnimationFrame(settle);
+  };
+
+  // Keeps the chips in step with the page when the desk scrolls by hand.
+  //
+  // Driven by the scroll event rather than an IntersectionObserver. The
+  // observer was the wrong instrument twice over: it reports only the cards
+  // whose visibility *changed*, so it cannot be read as "what is on screen
+  // now", and a card taller than the viewport crosses no boundary at all while
+  // it is being scrolled through — it goes silent for exactly the stretch the
+  // chip most needs to keep up. A scroll listener fires whenever the page
+  // moves, which is the actual question being asked.
+  useEffect(() => {
+    if (categorySections.length < 2) return undefined;
+
+    const pick = () => {
+      if (jumping.current) return;
+
+      // The card the probe line falls inside wins. The line sits just under
+      // the sticky strip — exactly where a jumped-to card's header comes to
+      // rest — so the highlight agrees with where the page was actually sent.
+      //
+      // Not "whichever card is highest on screen": after a jump to Deluxe the
+      // tail of Standard is still above it, so Standard is always the higher of
+      // the two and would win every time. That was the chip staying on
+      // Standard while the page sat on Deluxe.
+      const sticky = document.querySelector('.tape-controls');
+      const probe = (sticky?.getBoundingClientRect().height || 0) + 16;
+
+      // Walked in layout order, so "the last card whose top has passed the
+      // line" means what it says.
+      let best = null;
+      let bestTop = -Infinity;
+      for (const section of categorySections) {
+        const el = sectionRefs.current.get(section.categoryName);
+        if (!el) continue;
+        const { top, bottom } = el.getBoundingClientRect();
+        if (top > probe) continue; // still below the line
+        if (top > bestTop) {
+          bestTop = top;
+          best = el;
+        }
+        if (bottom > probe) break; // the line is inside this card; done
+      }
+      // Nothing has reached the line yet — the page is above the first card,
+      // so the first category is the one being read.
+      if (!best) best = sectionRefs.current.get(categorySections[0]?.categoryName) || null;
+
+      // At the bottom of the page the probe stops being able to answer. The
+      // last card or two sit below the line with no scroll left to bring them
+      // up to it, so the line keeps reporting whichever card spans it —
+      // clicking Suite would send the page as far as it goes and then light up
+      // Deluxe. Once the page is against its end stop, the bottom of the
+      // screen is what the desk is reading, so the lowest card showing there
+      // wins instead.
+      const atEnd =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      if (atEnd) {
+        for (const section of categorySections) {
+          const el = sectionRefs.current.get(section.categoryName);
+          // Anything whose top is on screen at the end stop is a card the
+          // scroll could never lift to the line; the last such is the one the
+          // page has come to rest on.
+          if (el && el.getBoundingClientRect().top < window.innerHeight) best = el;
+        }
+      }
+
+      if (best) setActiveCategory(best.dataset.category || null);
+    };
+
+    // Measuring inside the scroll event would lay out the page on every one of
+    // them; a frame is as often as the highlight can visibly change anyway.
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        pick();
+      });
+    };
+
+    pick(); // settle the chip on load, before anything has scrolled
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [categorySections]);
+
   // The booking form. One form, two jobs: taking a stay and correcting one.
   // 'EDIT' is the same modal with the answers already filled in, which is why
   // there is one piece of state here and not two — a second copy is where a
@@ -1152,6 +1336,20 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const [formError, setFormError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // A save can fail for a reason no single field owns — the room got taken
+  // while this form was open, the phone number is already on another guest —
+  // and that answer only comes back after the server round-trip, so it can't
+  // be caught by failOn on the way in. The banner it lands in sits at the top
+  // of a form long enough that the desk is often scrolled well past it by the
+  // time Save is pressed, so the failure has to bring the eye to itself the
+  // same way a field failure does.
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // Reports a failure against the control that caused it and takes the cursor
   // there. The form is tall enough that a message about the guest's phone is
@@ -1262,7 +1460,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const saveDraft = async () => {
     if (submitting) return;
     if (!hasFormContent(bookingForm)) {
-      setFormError('There is nothing to save yet — fill in a detail or two first.');
+      reportFormError('There is nothing to save yet — fill in a detail or two first.');
       return;
     }
     setSubmitting(true);
@@ -1278,7 +1476,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       loadTapeChart();
       returnToRegisterIfCame();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
     } finally {
       setSubmitting(false);
     }
@@ -1334,7 +1532,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       loadDrafts();
       loadTapeChart();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
     } finally {
       setSubmitting(false);
     }
@@ -1652,9 +1850,36 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       failOn(`newAdultPhone-${badPhone}`, MOBILE_MESSAGE);
       return;
     }
-    // ID proof is optional at booking time, walk-in included — a desk with no
-    // scanner and a guest whose card is still in the car can finish the booking
-    // now and have the proof added later from the stay's own screen.
+    // ID proof is optional on a pre-reservation — a desk with no scanner and a
+    // guest whose card is still in the car can hold the room now and have the
+    // proof added at check-in, which is where it is asked for.
+    //
+    // A walk-in has no such later: saving one checks the guest in on the spot,
+    // and check-in is exactly what can't happen without an ID proof on record.
+    // So it is asked for here, against the same rule the server applies — a
+    // type, plus a number or a document to back it, since a type on its own
+    // records that the dropdown was opened and not that a card was seen.
+    //
+    // Skipped when the primary guest was picked from the typeahead with a
+    // document already on file: the server carries that one onto the booking,
+    // which satisfies its own check.
+    const primaryGuest = bookingForm.adults[0];
+    const walkInNeedsId =
+      !editing && bookingForm.bookingType === 'WALK_IN' && !primaryGuest.fromBookingId;
+    //
+    // Said in a few words each, because these sit under one field of a
+    // five-across row: a sentence explaining *why* the walk-in wants an ID
+    // wraps to six lines in a column that narrow and pushes the row apart.
+    // The reason is already on the labels, which carry the mark and read
+    // "required, or document".
+    if (walkInNeedsId && !primaryGuest.idProofType) {
+      failOn('newAdultIdProofType-0', 'Choose an ID type.');
+      return;
+    }
+    if (walkInNeedsId && !primaryGuest.idProofFile && !primaryGuest.idProofNumber.trim()) {
+      failOn('newAdultIdProofNumber-0', 'Enter the ID number, or upload the document.');
+      return;
+    }
     const hasAdvanceAmount = bookingForm.advanceAmount.trim() !== '';
     // A full payment has to be the whole stay — the rows are built to add up to
     // it, so the only way they don't is when the earlier rows of a split pass
@@ -1877,7 +2102,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       cameFromRegister.current = false;
       loadTapeChart();
     } catch (err) {
-      setFormError(
+      reportFormError(
         err instanceof ApiError
           ? err.message
           : editing
@@ -1905,6 +2130,17 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const [advanceReceipts, setAdvanceReceipts] = useState([]);
   const [detailError, setDetailError] = useState('');
   const [showCheckInForm, setShowCheckInForm] = useState(false);
+  // The settlement step a cancellation goes through: null until "Cancel
+  // booking" is pressed, then the answers being typed — how much of the
+  // advance goes back, and why the stay fell through. What is not refunded is
+  // kept as the cancellation charge, and the reports count it as income.
+  const [cancelSettle, setCancelSettle] = useState(null);
+  // Which settlement boxes the complaints are about, said under the boxes
+  // themselves — { refundAmount?: message, refundMethod?: message }, checked
+  // together so two empty boxes are told off in one press rather than one per
+  // press. The banner stays for errors that aren't any one field's fault (the
+  // server refusing).
+  const [cancelFieldErrors, setCancelFieldErrors] = useState(null);
   const initialCheckInForm = {
     advanceAmount: '',
     advanceLines: [emptyPaymentLine()],
@@ -2041,6 +2277,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setDetailError('');
     setShowCheckInForm(false);
     setCheckInForm(initialCheckInForm);
+    setCancelSettle(null);
     setActionError('');
     setIdProofError('');
     setShowAdvanceReceipt(false);
@@ -2307,11 +2544,82 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     }
   };
 
+  // Step one of cancelling: not the cancellation itself, but the settlement
+  // question it has to answer first. Opens with the whole advance offered
+  // back — keeping any of it is a decision the desk makes by typing a smaller
+  // figure, never a default it forgets to change.
+  // Both boxes open empty on purpose: the refund and its tender are answers
+  // the desk gives, not defaults it forgets to change — and the submit guard
+  // refuses to move until both are given.
+  const openCancelSettle = () => {
+    setActionError('');
+    setCancelFieldErrors(null);
+    setCancelSettle({
+      refundAmount: '',
+      refundMethod: '',
+      // The other shape of the settlement, for a stay that held no advance:
+      // a fee collected from the guest on the spot. Off until the desk says
+      // otherwise — not charging is the common case.
+      collectCharge: false,
+      chargeAmount: '',
+      chargeMethod: '',
+      reason: '',
+    });
+  };
+
   const handleCancel = async () => {
+    const advance = Number(bookingDetail?.advanceAmount) || 0;
+    const body = {};
+    if (cancelSettle?.reason.trim()) body.reason = cancelSettle.reason.trim();
+    if (advance > 0) {
+      const refund = Number(cancelSettle?.refundAmount);
+      const errs = {};
+      // Said under the box each is about, so the words stay short — the label
+      // above the box already names the thing being asked for.
+      if (cancelSettle?.refundAmount.trim() === '' || !Number.isFinite(refund) || refund < 0) {
+        errs.refundAmount = 'Enter an amount.';
+      } else if (refund > advance) {
+        errs.refundAmount = `Up to ${formatPrice(advance)}.`;
+      }
+      // The tender is only demanded when money is actually moving — and when
+      // the amount box hasn't answered yet, an untyped amount may still turn
+      // out to be 0, so the type is asked for alongside rather than skipped.
+      if (!cancelSettle?.refundMethod && (errs.refundAmount ? true : refund > 0)) {
+        errs.refundMethod = 'Choose a type.';
+      }
+      if (Object.keys(errs).length > 0) {
+        setCancelFieldErrors(errs);
+        return;
+      }
+      body.refundAmount = refund;
+      if (refund > 0) body.refundPaymentMethod = cancelSettle.refundMethod;
+    } else if (cancelSettle?.collectCharge) {
+      // No advance held, and the desk is taking a fee on the spot: money in,
+      // so both boxes have to answer — an unticked box would have skipped the
+      // question entirely.
+      const total = Number(bookingDetail?.totalPrice) || 0;
+      const amount = Number(cancelSettle.chargeAmount);
+      const errs = {};
+      if (cancelSettle.chargeAmount.trim() === '' || !Number.isFinite(amount) || amount <= 0) {
+        errs.chargeAmount = 'Enter an amount.';
+      } else if (total > 0 && amount > total) {
+        errs.chargeAmount = `Up to ${formatPrice(total)}.`;
+      }
+      if (!cancelSettle.chargeMethod) {
+        errs.chargeMethod = 'Choose a type.';
+      }
+      if (Object.keys(errs).length > 0) {
+        setCancelFieldErrors(errs);
+        return;
+      }
+      body.cancellationCharge = amount;
+      body.cancellationChargePaymentMethod = cancelSettle.chargeMethod;
+    }
+    setCancelFieldErrors(null);
     setActionError('');
     setActionSubmitting(true);
     try {
-      await apiPatch(`/bookings/${selectedBookingId}/cancel`, {}, { token });
+      await apiPatch(`/bookings/${selectedBookingId}/cancel`, body, { token });
       setSelectedBookingId(null);
       loadTapeChart();
     } catch (err) {
@@ -2400,6 +2708,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const renderRoomRow = (room) => {
     const byDate = occupancy.get(String(room.id));
     const draftsByDate = draftOccupancy.get(String(room.id));
+    const cancelledByDate = cancelledOccupancy.get(String(room.id));
     const rowClasses = ['tape-month__row'];
     if (hoverTile?.room.id === room.id) rowClasses.push('tape-month__row--active');
 
@@ -2429,6 +2738,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         {dates.map((d) => {
           const booking = byDate?.get(d);
           const draft = draftsByDate?.get(d);
+          // A stay that was cancelled for this night. Whatever else the tile
+          // is — vacant, drafted on, or let again — it gets the cancelled
+          // border on top, and the hover card says whose booking fell through.
+          const cancelledStay = cancelledByDate?.get(d);
           const past = d < today;
 
           // A night nobody has booked, but somebody has a draft on. Yellow,
@@ -2441,14 +2754,15 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             if (d === addDays(draft.checkOutDate, -1)) classes.push('tape-tile--end');
             if (d === today) classes.push('tape-tile--today');
             if (hoverTile?.draft?.id === draft.id) classes.push('tape-tile--active');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
                 type="button"
                 className={classes.join(' ')}
                 onClick={() => openDraftById(draft.id)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, draft })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, draft })}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, draft, cancelled: cancelledStay })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, draft, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
                 aria-label={`${room.roomNumber} has a draft booking on ${formatDateLong(d)}`}
@@ -2465,14 +2779,15 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           if (!booking && past) {
             const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
                 type="button"
                 className={classes.join(' ')}
                 onClick={() => openNewBooking(room.id, d)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true })}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
                 aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)} — record a stay`}
@@ -2486,17 +2801,22 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             const classes = ['tape-tile', 'tape-tile--vacant'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             if (d === today) classes.push('tape-tile--today');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
                 type="button"
                 className={classes.join(' ')}
                 onClick={() => openNewBooking(room.id, d)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null })}
+                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, cancelled: cancelledStay })}
+                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
                 onBlur={() => setHoverTile(null)}
-                aria-label={`${room.roomNumber} vacant on ${formatDateLong(d)}`}
+                aria-label={
+                  cancelledStay
+                    ? `${room.roomNumber} vacant on ${formatDateLong(d)} — a booking here was cancelled`
+                    : `${room.roomNumber} vacant on ${formatDateLong(d)}`
+                }
               />
             );
           }
@@ -2523,6 +2843,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           // flag, which is the desk's cue that somebody is drafting against a
           // room they can't have.
           if (draft) classes.push('tape-tile--has-draft');
+          // A night let again after an earlier booking fell through on it. The
+          // live stay keeps its fill; the cancellation rides as the border.
+          // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
           // A stay the search found. Every night of it is marked, so the whole
           // strip lights up rather than one tile of it — the desk is looking
           // for a guest, and the answer to "where are they?" is the stay, not
@@ -2560,8 +2883,8 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               // stretch.
               style={d === activeFrom ? { '--tape-hit-span': activeSpan } : undefined}
               onClick={() => openDetail(booking.id)}
-              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft, past })}
-              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft, past })}
+              onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft, past, cancelled: cancelledStay })}
+              onFocus={(e) => showTileHover(e, { room, date: d, booking, draft, past, cancelled: cancelledStay })}
               onMouseLeave={() => setHoverTile(null)}
               onBlur={() => setHoverTile(null)}
               aria-label={`${room.roomNumber} ${STATUS_LABEL[booking.status]} on ${formatDateLong(d)}`}
@@ -2622,6 +2945,43 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             </button>
           </div>
         </div>
+
+        {/* The status chips share the top row with the month stepper: the
+            colour legend for the chart belongs beside the control that moves
+            through it. Wrapped in one container so they wrap and space as a
+            group rather than each chip being its own child of the toolbar. */}
+        <div className="bookings-panel__toolbar-chips">
+          <span className="tape-legend__item">
+            <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
+          </span>
+          {LEGEND_LINKS.map((item) => (
+            <button
+              key={item.status}
+              type="button"
+              className="tape-legend__item tape-legend__item--link"
+              onClick={() => onShowRegister?.(item.status)}
+              title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
+            >
+              <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
+              {item.label}
+            </button>
+          ))}
+          {/* Draft lands in the register beside the other three rather than in
+              the toolbar's modal. The register carries a Draft cut of its own,
+              so following the yellow gets the desk the same kind of page the red
+              and the blue do — a filtered list it can search and sort. The modal
+              stays where it is, on the toolbar button, for a quick look without
+              leaving the chart. */}
+          <button
+            type="button"
+            className="tape-legend__item tape-legend__item--link"
+            onClick={() => onShowRegister?.('DRAFT')}
+            title="Show drafts in Booking Details"
+          >
+            <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
+          </button>
+        </div>
+
         <div className="bookings-panel__toolbar-actions">
           {/* Drafts that name a room and dates are on the chart already; this
               is how the rest are reached, and how a desk sees at a glance that
@@ -2650,26 +3010,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         </div>
       </div>
 
-      {/* Three of the five stand for a booking status the register can be cut
-          by, so they double as a way into it — the colour on the chart and the
-          list of those stays are the same question asked two ways.
-
-          Vacant and Draft stay plain text: a vacant night is the absence of a
-          booking, and a draft is a parked form that never reaches the register
-          at all. Neither has a list to point at. */}
+      {/* Search and the category jumps share the second row: both are ways of
+          finding a place on the chart to land, rather than a way of reading
+          the colours already on it. */}
       <div className="tape-legend">
-        {/* Guest names are kept off the tiles on purpose, which leaves the
-            chart unable to answer the question the desk asks it most often:
-            "which room is this guest in?" This is that answer. It searches what
-            the register searches — the party's names, their ID numbers, the
-            bill, the phone — and replies on the chart itself, by lighting up
-            the stays rather than by opening a list somewhere else.
-
-            First on the legend's line, with the status chips following it.
-            The two belong together: the chips say what the colours on the chart
-            mean, and the search is how a particular stay among them is found —
-            both are ways of reading the same grid, and the row now runs
-            find-then-filter from left to right. */}
         <div className={`tape-search${searchHits.length > 0 ? ' tape-search--found' : ''}`}>
           <div className="tape-search__box">
           <svg
@@ -2720,41 +3064,20 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           )}
         </div>
 
-        {/* The answer, hung directly under the field that asked the question.
-
-            It sat out on the legend's line before, at the far end of the strip
-            from the box — so the eye had to travel the width of the toolbar to
-            read the reply to what it had just typed, and the guest's name was
-            squeezed into whatever space the legend chips had left over
-            ("Aniket Mestry" arriving as "Aniket"). Anchored to the field, it
-            gets the field's whole width and reads as one control: type at the
-            top, the result appears below it.
-
-            Absolutely positioned so it hangs over the chart rather than pushing
-            it down — the strip keeps its height whether or not a search is
-            running, and the rows below never jump as results come and go. */}
         {search.trim() !== '' && (
           <div className="tape-search__result" role="status" aria-live="polite">
             {searchHits.length === 0 ? (
               <span className="tape-search__empty">
-                {/* Named back, so a mistyped search is obvious as a mistyped
-                    search rather than as an absent guest. */}
                 No stay matching &ldquo;{search.trim()}&rdquo;
               </span>
             ) : (
               <>
-                {/* The count as a fraction, stacked tight: the position is the
-                    number that changes as the desk steps, so it leads. */}
                 <span className="tape-search__count">
                   <strong>{Math.min(hitIndex, searchHits.length - 1) + 1}</strong>
                   <span className="tape-search__count-sep">/</span>
                   {searchHits.length}
                 </span>
 
-                {/* Who the arrows are parked on, and where they are. This is
-                    the line that turns "3 of 12" into an answer — the desk
-                    asked which room a guest is in, and this says it outright
-                    instead of leaving them to find the ring on the chart. */}
                 <span className="tape-search__who">
                   <strong>{activeHit?.booking.guestName}</strong>
                   {activeHit && (
@@ -2763,17 +3086,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         Room {activeHit.roomNumber} ·{' '}
                         {formatDateLong(activeHit.booking.checkInDate)}
                       </span>
-                      {/* The two things the desk uses to be sure it has the
-                          right person. A property will have several Sharmas
-                          across a month and two of them can share a first name;
-                          the phone and the ID number are what settle it, and
-                          they are already searchable — showing them closes the
-                          loop on a search that matched one of them, where the
-                          name alone left the desk wondering which it hit.
-
-                          Both are optional on a booking, so the line renders
-                          only what is on file rather than printing a dash for
-                          whatever is missing. */}
                       {(activeHit.booking.guestPhone || activeHit.booking.idProofNumber) && (
                         <span className="tape-search__ids">
                           {activeHit.booking.guestPhone && (
@@ -2799,9 +3111,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     type="button"
                     className="tape-search__arrow"
                     onClick={() => stepHit(-1)}
-                    // Disabled only when stepping would be a no-op. With a
-                    // single match the arrows would spin on the spot, which
-                    // reads as a broken control rather than a finished search.
                     disabled={searchHits.length < 2}
                     aria-label="Previous match"
                     title="Previous match (Shift+Enter)"
@@ -2828,24 +3137,41 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           </div>
         )}
         </div>
-        <span className="tape-legend__item">
-          <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
-        </span>
-        {LEGEND_LINKS.map((item) => (
-          <button
-            key={item.status}
-            type="button"
-            className="tape-legend__item tape-legend__item--link"
-            onClick={() => onShowRegister?.(item.status)}
-            title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
-          >
-            <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
-            {item.label}
-          </button>
-        ))}
-        <span className="tape-legend__item">
-          <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
-        </span>
+
+        {/* One chip per grade of room, in the same shape as the legend's, so the
+            strip reads as one row of ways into the chart: the status chips cut it
+            by colour, these jump it by category.
+
+            Only worth showing when there is somewhere to jump to — with a single
+            category the chip would scroll to the card already filling the screen.
+            The sold figure rides along because it is the number the desk opens
+            this screen for, and it saves them the trip to read it. */}
+        {!tapeError && categorySections.length > 1 && (
+          <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
+            {categorySections.map((section) => {
+              const stats = categoryStats.get(section.categoryName);
+              const active = activeCategory === section.categoryName;
+              return (
+                <button
+                  key={section.categoryName}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
+                  onClick={() => jumpToCategory(section.categoryName)}
+                  title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
+                    section.rooms.length === 1 ? '' : 's'
+                  }`}
+                >
+                  {section.categoryName}
+                  <span className="tape-cats__count">{section.rooms.length}</span>
+                  {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
       </div>
@@ -2885,7 +3211,17 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           {categorySections.map((section) => {
             const stats = categoryStats.get(section.categoryName);
             return (
-              <section key={section.categoryName} className="tape-month-card">
+              <section
+                key={section.categoryName}
+                className="tape-month-card"
+                // Named on the node so the observer can say which card came
+                // into view without closing over the list it was built from.
+                data-category={section.categoryName}
+                ref={(el) => {
+                  if (el) sectionRefs.current.set(section.categoryName, el);
+                  else sectionRefs.current.delete(section.categoryName);
+                }}
+              >
                 <div className="tape-month-card__head">
                   <div className="tape-month-card__title">
                     <h4>{section.categoryName}</h4>
@@ -2974,6 +3310,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   A draft also names this night{hoverTile.draft.guestName ? ` (${hoverTile.draft.guestName})` : ''}.
                 </span>
               )}
+              {/* The night was let again after an earlier booking fell
+                  through on it — that is what the red border on the tile is. */}
+              {/* {hoverTile.cancelled && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
+                  {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
+                </span>
+              )} */}
             </>
           ) : hoverTile.draft ? (
             <>
@@ -2994,6 +3337,35 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   a held room and this one isn't. */}
               <span className="tape-tooltip__hint">
                 Not booked — this room is still free. Click to finish or delete it.
+              </span>
+              {/* {hoverTile.cancelled && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
+                  {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
+                </span>
+              )} */}
+            </>
+          ) : false && hoverTile.cancelled ? (
+            <>
+              {/* An empty night with a red border: the story is the booking
+                  that fell through, so the card leads with it — while the
+                  hint keeps saying what the empty tile still offers. */}
+              <span className="tape-tooltip__top">
+                <span className="tape-tooltip__dot tape-tooltip__dot--cancelled" />
+                Booking cancelled
+              </span>
+              <strong>{hoverTile.cancelled.guestName}</strong>
+              <span className="tape-tooltip__meta">
+                Room {hoverTile.room.roomNumber} · {hoverTile.room.categoryName}
+              </span>
+              <span className="tape-tooltip__dates">
+                {formatDateLong(hoverTile.cancelled.checkInDate)}
+                <i>→</i>
+                {formatDateLong(hoverTile.cancelled.checkOutDate)}
+              </span>
+              <span className="tape-tooltip__hint">
+                {hoverTile.past
+                  ? 'This night has passed — it can’t be booked'
+                  : 'The night is back on sale — click to book it'}
               </span>
             </>
           ) : (
@@ -3160,7 +3532,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               </div>
 
               <div className="booking-form__body">
-                {formError && <div className="form-banner form-banner--error">{formError}</div>}
+                {formError && (
+                  <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                    {formError}
+                  </div>
+                )}
 
                 {/* Says which draft this is and offers the way out of it —
                     a parked booking that can't be thrown away accumulates. */}
@@ -3492,6 +3868,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     // settled — swapping them for someone else is a cancel and
                     // rebook, so no suggestions there.
                     guestLookupToken={editing ? null : token}
+                    // A walk-in is checked in the moment it is saved, and no
+                    // stay can be checked in without an ID proof on record —
+                    // so here these fields are required, and the labels have
+                    // to say so rather than reading "optional" and then
+                    // failing at the server. A pre-reservation defers the
+                    // whole of it to check-in, which asks for it there.
+                    idRequired={!editing && bookingForm.bookingType === 'WALK_IN'}
                     fieldErr={fieldErr}
                   />
                 </div>
@@ -3699,10 +4082,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       {selectedBookingId && !lateCheckout && (
         <div
           // Dismissable by backdrop while it is only being read, but not once
-          // the check-in form is open on top of it — that form has typed-in
-          // details of its own, and it has its own Back button.
+          // the check-in form or the cancellation settlement is open on top of
+          // it — both have typed-in details of their own and their own way
+          // back.
           className="glass-backdrop bookings-panel__backdrop"
-          onClick={showCheckInForm ? undefined : closeDetail}
+          onClick={showCheckInForm || cancelSettle ? undefined : closeDetail}
         >
           <div className="glass-panel bookings-panel__modal" onClick={(e) => e.stopPropagation()}>
             {detailError && <div className="form-banner form-banner--error">{detailError}</div>}
@@ -3773,6 +4157,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         <div className="form-section__title">Guest ID proof</div>
                         <p className="bookings-panel__hint">
                           Wasn&apos;t collected when this room was reserved — required before check-in.
+                          Choose a type, then give either the number or the document.
                         </p>
                         <div className="field-row">
                           <div className="field">
@@ -3793,10 +4178,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             </select>
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofNumber">
-                              ID number
-                              <Req label="required, or ID proof document" />
-                            </label>
+                            {/* Unmarked, like its pair below: the check stops
+                                on the two being empty together, not on either
+                                one, and a mark on each reads as both wanted.
+                                The line above says which it is. */}
+                            <label htmlFor="checkInIdProofNumber">ID number</label>
                             <input
                               id="checkInIdProofNumber"
                               value={checkInForm.idProofNumber}
@@ -3806,10 +4192,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             />
                           </div>
                           <div className="field">
-                            <label htmlFor="checkInIdProofFile">
-                              ID proof document
-                              <Req label="required, or ID number" />
-                            </label>
+                            <label htmlFor="checkInIdProofFile">ID proof document</label>
                             <input
                               id="checkInIdProofFile"
                               type="file"
@@ -4013,13 +4396,267 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     is last because leaving is not one of them.
 
                     Hidden behind the check-in form, which has its own Back. */}
-                {!showCheckInForm && (
+                {/* The settlement a cancellation has to answer first: where the
+                    advance goes. In place of the footer actions, the way the
+                    check-in form is — one question on screen at a time. */}
+                {!showCheckInForm && cancelSettle && (
+                  <div className="bookings-panel__cancel-settle">
+                    <div className="form-section__title">Cancel this booking</div>
+                    {Number(bookingDetail.advanceAmount) > 0 ? (
+                      <>
+                        <p className="bookings-panel__hint">
+                          Settle the advance before the booking goes: what goes back to the guest, and what
+                          the property keeps as the cancellation charge.
+                        </p>
+                        {/* The settlement as a statement: what was taken, what
+                            goes back, what stays — footed like the tariff is,
+                            with the refund typed straight into its own row so
+                            the arithmetic updates where it is read. */}
+                        <div className="bookings-panel__cancel-settle-sheet">
+                          <div className="bookings-panel__cancel-settle-row">
+                            <span>
+                              Advance taken
+                              {/* Only when a method was recorded — "· " against
+                                  nothing is a separator with no second half. */}
+                              {(bookingDetail.advancePaymentLines?.length ||
+                                bookingDetail.advancePaymentMethod) && (
+                                <span className="bookings-panel__muted">
+                                  {' · '}
+                                  {describeAdvance(
+                                    bookingDetail.advancePaymentLines,
+                                    bookingDetail.advancePaymentMethod
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                            <span>{formatPrice(bookingDetail.advanceAmount)}</span>
+                          </div>
+                          <div className="bookings-panel__cancel-settle-row">
+                            <span>Refund to guest</span>
+                            <span className="bookings-panel__cancel-settle-refund">
+                              {/* Each box under its own small label, and both
+                                  deliberately blank: the tender and the amount
+                                  are the desk's answers, not defaults. The
+                                  tender only means anything against a refund
+                                  that moves money — at zero it is ignored on
+                                  save. */}
+                              <span className="bookings-panel__cancel-settle-ctl">
+                                <label htmlFor="cancel-refund-method">Payment type</label>
+                                <select
+                                  id="cancel-refund-method"
+                                  value={cancelSettle.refundMethod}
+                                  aria-invalid={cancelFieldErrors?.refundMethod ? true : undefined}
+                                  onChange={(e) => {
+                                    setCancelFieldErrors((errs) => {
+                                      if (!errs?.refundMethod) return errs;
+                                      const { refundMethod, ...rest } = errs;
+                                      return Object.keys(rest).length ? rest : null;
+                                    });
+                                    setCancelSettle((f) => ({ ...f, refundMethod: e.target.value }));
+                                  }}
+                                >
+                                  <option value="">Choose type</option>
+                                  {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                                    <option key={value} value={value}>
+                                      {label}
+                                    </option>
+                                  ))}
+                                </select>
+                                {cancelFieldErrors?.refundMethod && (
+                                  <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                    {cancelFieldErrors.refundMethod}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="bookings-panel__cancel-settle-minus" aria-hidden="true">
+                                −
+                              </span>
+                              <span className="bookings-panel__cancel-settle-ctl">
+                                <label htmlFor="cancel-refund-amount">Amount</label>
+                                <input
+                                  id="cancel-refund-amount"
+                                  type="number"
+                                  min="0"
+                                  max={bookingDetail.advanceAmount}
+                                  step="0.01"
+                                  placeholder="0"
+                                  value={cancelSettle.refundAmount}
+                                  aria-invalid={cancelFieldErrors?.refundAmount ? true : undefined}
+                                  onChange={(e) => {
+                                    setCancelFieldErrors((errs) => {
+                                      if (!errs?.refundAmount) return errs;
+                                      const { refundAmount, ...rest } = errs;
+                                      return Object.keys(rest).length ? rest : null;
+                                    });
+                                    setCancelSettle((f) => ({ ...f, refundAmount: e.target.value }));
+                                  }}
+                                  aria-describedby="cancel-settle-kept"
+                                  autoFocus
+                                />
+                                {cancelFieldErrors?.refundAmount && (
+                                  <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                    {cancelFieldErrors.refundAmount}
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          </div>
+                          <div
+                            className="bookings-panel__cancel-settle-row bookings-panel__cancel-settle-row--total"
+                            id="cancel-settle-kept"
+                          >
+                            <span>Kept as cancellation charge</span>
+                            <span>
+                              {/* Unanswered until the refund is typed: a blank
+                                  box is not a refund of zero, and footing it as
+                                  one would show the whole advance kept before
+                                  the desk has said anything. */}
+                              {cancelSettle.refundAmount.trim() === ''
+                                ? '—'
+                                : formatPrice(
+                                    Math.max(
+                                      0,
+                                      (Number(bookingDetail.advanceAmount) || 0) -
+                                        (Number(cancelSettle.refundAmount) || 0)
+                                    )
+                                  )}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="bookings-panel__hint">
+                          No advance was taken on this stay. The booking can be cancelled as it is, or a
+                          cancellation charge collected from the guest now.
+                        </p>
+                        <label className="bookings-panel__cancel-settle-collect">
+                          <input
+                            type="checkbox"
+                            checked={cancelSettle.collectCharge}
+                            onChange={(e) => {
+                              setCancelFieldErrors(null);
+                              setCancelSettle((f) => ({ ...f, collectCharge: e.target.checked }));
+                            }}
+                          />
+                          Collect a cancellation charge
+                        </label>
+                        {cancelSettle.collectCharge && (
+                          <div className="bookings-panel__cancel-settle-sheet">
+                            <div className="bookings-panel__cancel-settle-row">
+                              <span>Cancellation charge</span>
+                              <span className="bookings-panel__cancel-settle-refund">
+                                <span className="bookings-panel__cancel-settle-ctl">
+                                  <label htmlFor="cancel-charge-method">Payment type</label>
+                                  <select
+                                    id="cancel-charge-method"
+                                    value={cancelSettle.chargeMethod}
+                                    aria-invalid={cancelFieldErrors?.chargeMethod ? true : undefined}
+                                    onChange={(e) => {
+                                      setCancelFieldErrors((errs) => {
+                                        if (!errs?.chargeMethod) return errs;
+                                        const { chargeMethod, ...rest } = errs;
+                                        return Object.keys(rest).length ? rest : null;
+                                      });
+                                      setCancelSettle((f) => ({ ...f, chargeMethod: e.target.value }));
+                                    }}
+                                  >
+                                    <option value="">Choose type</option>
+                                    {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                                      <option key={value} value={value}>
+                                        {label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {cancelFieldErrors?.chargeMethod && (
+                                    <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                      {cancelFieldErrors.chargeMethod}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="bookings-panel__cancel-settle-ctl">
+                                  <label htmlFor="cancel-charge-amount">Amount</label>
+                                  <input
+                                    id="cancel-charge-amount"
+                                    type="number"
+                                    min="0"
+                                    max={bookingDetail.totalPrice}
+                                    step="0.01"
+                                    placeholder="0"
+                                    value={cancelSettle.chargeAmount}
+                                    aria-invalid={cancelFieldErrors?.chargeAmount ? true : undefined}
+                                    onChange={(e) => {
+                                      setCancelFieldErrors((errs) => {
+                                        if (!errs?.chargeAmount) return errs;
+                                        const { chargeAmount, ...rest } = errs;
+                                        return Object.keys(rest).length ? rest : null;
+                                      });
+                                      setCancelSettle((f) => ({ ...f, chargeAmount: e.target.value }));
+                                    }}
+                                    autoFocus
+                                  />
+                                  {cancelFieldErrors?.chargeAmount && (
+                                    <span className="field__error bookings-panel__cancel-settle-ctl-error">
+                                      {cancelFieldErrors.chargeAmount}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="bookings-panel__cancel-settle-row bookings-panel__cancel-settle-row--total">
+                              <span>Collected as cancellation charge</span>
+                              <span>
+                                {cancelSettle.chargeAmount.trim() === ''
+                                  ? '—'
+                                  : formatPrice(Math.max(0, Number(cancelSettle.chargeAmount) || 0))}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="bookings-panel__cancel-settle-fields">
+                      <label htmlFor="cancel-reason">Reason (optional)</label>
+                      <input
+                        id="cancel-reason"
+                        value={cancelSettle.reason}
+                        maxLength={200}
+                        placeholder="Guest called off the trip"
+                        onChange={(e) => setCancelSettle((f) => ({ ...f, reason: e.target.value }))}
+                      />
+                    </div>
+                    <div className="bookings-panel__actions">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setActionError('');
+                          setCancelFieldErrors(null);
+                          setCancelSettle(null);
+                        }}
+                        disabled={actionSubmitting}
+                      >
+                        Keep the booking
+                      </button>
+                      <button
+                        type="button"
+                        className="confirm-dialog__danger"
+                        onClick={handleCancel}
+                        disabled={actionSubmitting}
+                      >
+                        {actionSubmitting ? 'Cancelling…' : 'Cancel booking'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!showCheckInForm && !cancelSettle && (
                   <div className="bookings-panel__actions bookings-panel__actions--footer">
                     {bookingDetail.status === 'BOOKED' && (
                       <button
                         type="button"
                         className="bookings-panel__danger-link"
-                        onClick={handleCancel}
+                        onClick={openCancelSettle}
                         disabled={actionSubmitting}
                       >
                         Cancel booking
@@ -4242,38 +4879,6 @@ const BAND_LABEL = {
 //
 // Only ever offered for the primary guest of a *new* booking. Changing who an
 // existing stay belongs to is a cancel and rebook, not a lookup.
-// The marker on a numbered section. It was a plain circled digit, which says
-// where a section sits in the order but not whether it still wants anything —
-// four identical badges down a form are a table of contents, not progress. A
-// filled section swaps its digit for a tick, so the desk can see what is left
-// by scrolling rather than by re-reading every field.
-//
-// The digit stays the label for anything not looking at it: the tick is
-// decoration, and "step 2, complete" is what the section actually is.
-function StepNum({ n, done }) {
-  return (
-    <span
-      className={`form-section__num${done ? ' form-section__num--done' : ''}`}
-      aria-label={done ? `Step ${n}, complete` : `Step ${n}`}
-    >
-      {done ? (
-        <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" focusable="false">
-          <path
-            d="M5 13l4.5 4.5L19 7"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      ) : (
-        <span aria-hidden="true">{n}</span>
-      )}
-    </span>
-  );
-}
-
 // One editable figure on the price breakdown. Reception negotiates a total
 // ("call it 350") far more often than a per-night rate, so these have always
 // been typeable — but they sat in a column of read-only figures styled to
@@ -4516,6 +5121,24 @@ const TrashIcon = () => (
   </svg>
 );
 
+// Two fields that answer one requirement between them, under a bracket saying
+// so. Neither can carry a required mark — the check stops on the pair being
+// empty, not on either field — and a caption over both is what a mark cannot
+// say: that one of them is enough.
+//
+// The wrapper is always rendered, caption or not: it is one cell of the row's
+// grid, and dropping it would spill two fields into a grid sized for one and
+// push the remove button off the end. Without a caption it is a plain pair,
+// its bracket suppressed by the modifier class.
+function PairedFields({ caption, children }) {
+  return (
+    <div className={`field-pair${caption ? '' : ' field-pair--bare'}`}>
+      {caption && <span className="field-pair__caption">{caption}</span>}
+      {children}
+    </div>
+  );
+}
+
 function PartyEditor({
   adults,
   children,
@@ -4524,6 +5147,11 @@ function PartyEditor({
   onRemove,
   onUpdate,
   guestLookupToken,
+  // Whether the primary guest's ID proof is being asked for now rather than at
+  // check-in. Only the primary guest's: the co-guest rows are what the desk
+  // types off whichever cards the party hands over, and check-in has never
+  // stopped on those.
+  idRequired = false,
   fieldErr,
 }) {
   // Adding a row and then having to click into it is two actions for one
@@ -4592,6 +5220,11 @@ function PartyEditor({
       <div className="bookings-panel__repeat-list">
         {adults.map((adult, index) => {
           const isPrimary = index === 0;
+          // A guest picked from the typeahead who already has a document on
+          // file carries it onto this booking, so the requirement is met
+          // before the desk touches these fields — marking them then would
+          // ask for a card that is already on record.
+          const needsId = idRequired && isPrimary && !adult.fromBookingId;
           return (
             <div className="bookings-panel__party-row" key={adult.id ?? `new-${index}`}>
               <div className="field">
@@ -4663,7 +5296,8 @@ function PartyEditor({
               </div>
               <div className="field">
                 <label htmlFor={`${idPrefix}AdultIdProofType-${index}`}>
-                  ID type (optional)
+                  {needsId ? 'ID type' : 'ID type (optional)'}
+                  {needsId && <Req />}
                 </label>
                 <select
                   id={`${idPrefix}AdultIdProofType-${index}`}
@@ -4675,30 +5309,44 @@ function PartyEditor({
                 </select>
                 {fieldErr(`${idPrefix}AdultIdProofType-${index}`)}
               </div>
-              <div className="field">
-                <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
-                  ID number (optional)
-                </label>
-                <input
-                  id={`${idPrefix}AdultIdProofNumber-${index}`}
-                  value={adult.idProofNumber}
-                  onChange={(e) => onUpdate('adults', index, { idProofNumber: e.target.value })}
-                />
-                {fieldErr(`${idPrefix}AdultIdProofNumber-${index}`)}
-              </div>
-              <div className="field">
-                <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
-                  Document (optional)
-                </label>
-                <input
-                  id={`${idPrefix}AdultIdProofFile-${index}`}
-                  type="file"
-                  accept={ID_PROOF_ACCEPT}
-                  onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
-                />
-                {onFile(adult)}
-                {fieldErr(`${idPrefix}AdultIdProofFile-${index}`)}
-              </div>
+              {/* Neither of these two carries a required mark, and none is
+                  missing. A mark means "the form stops on this field", and the
+                  form stops on neither: it stops when *both* are empty. Two
+                  marks read as two cards being wanted, and one mark would pick
+                  a winner the check doesn't have.
+
+                  So the pair is bracketed instead, under one caption that says
+                  what the check actually asks. Wrapped in a cell of their own
+                  to hang the caption across both — the row is a grid, and a
+                  bracket over two of its columns has nothing else to attach
+                  to. The cell divides its own width the way the row's columns
+                  did, so the fields keep the widths they had. */}
+              <PairedFields caption={needsId ? 'Either one' : null}>
+                <div className="field">
+                  <label htmlFor={`${idPrefix}AdultIdProofNumber-${index}`}>
+                    {needsId ? 'ID number' : 'ID number (optional)'}
+                  </label>
+                  <input
+                    id={`${idPrefix}AdultIdProofNumber-${index}`}
+                    value={adult.idProofNumber}
+                    onChange={(e) => onUpdate('adults', index, { idProofNumber: e.target.value })}
+                  />
+                  {fieldErr(`${idPrefix}AdultIdProofNumber-${index}`)}
+                </div>
+                <div className="field">
+                  <label htmlFor={`${idPrefix}AdultIdProofFile-${index}`}>
+                    {needsId ? 'Document' : 'Document (optional)'}
+                  </label>
+                  <input
+                    id={`${idPrefix}AdultIdProofFile-${index}`}
+                    type="file"
+                    accept={ID_PROOF_ACCEPT}
+                    onChange={(e) => onUpdate('adults', index, { idProofFile: e.target.files[0] || null })}
+                  />
+                  {onFile(adult)}
+                  {fieldErr(`${idPrefix}AdultIdProofFile-${index}`)}
+                </div>
+              </PairedFields>
               {/* The primary guest is the booking itself — there's no booking
                   left to remove them from. */}
               {isPrimary ? (
@@ -4825,6 +5473,15 @@ function PartyEditor({
         + Add child
       </button>
       <p className="bookings-panel__hint">
+        {/* The bracket over the two fields says one of them is enough; this
+            says which stay is asking and what else it wants alongside — the
+            ID type, which does carry a mark of its own. */}
+        {idRequired && (
+          <>
+            <strong>A walk-in is checked in as it saves, so the primary guest needs an ID type, plus
+            either the number or the document.</strong>{' '}
+          </>
+        )}
         Either an ID number or a document identifies a guest — one is enough, both is better.
         Documents accept an image (JPG/PNG/WEBP) or PDF, up to 5MB. An uploaded document replaces what
         is on file; removing the guest is what takes one off a booking.

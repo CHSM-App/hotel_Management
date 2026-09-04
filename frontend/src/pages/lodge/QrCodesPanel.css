@@ -407,9 +407,40 @@
     display: none !important;
   }
 
+  /* html/body/#root carry `min-height: 100svh` and the shell's sidebar and
+     topbar are `position: sticky` — both are screen-viewport concepts with no
+     equivalent on a printed page. Chrome's print layout tries to resolve them
+     anyway, which collapses or mispositions everything after them and is what
+     printed a blank page: the QR cards were still there, just laid out inside
+     a box the print engine had sized to nothing. Pinning the whole chain back
+     to normal static flow with an auto height is what lets the cards render
+     from the top of the sheet. */
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .dash-shell {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  .dash-topbar,
+  .dash-sidebar {
+    position: static !important;
+  }
+
   .dash-body,
   .dash-main {
     display: block !important;
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    overflow: visible !important;
     padding: 0 !important;
     margin: 0 !important;
     background: #ffffff !important;
@@ -456,6 +487,14 @@
   .qr-card__frame {
     border: none;
     padding: 0;
+  }
+
+  /* The code itself, not the frame around it — a printer or "no background
+     graphics" setting that's still allowed to touch colour rendering must not
+     get the chance to thin out the one thing on the sheet that has to scan. */
+  .qr-card__img {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .qr-group {

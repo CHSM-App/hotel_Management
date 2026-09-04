@@ -1197,10 +1197,10 @@ async function getInvoice(lodgeId, invoiceId) {
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
       SELECT i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number,
-             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
-             COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
+             COALESCE(b.guest_name, eb.organiser_name, rb.guest_name, fo.guest_name) AS guest_name,
+             COALESCE(b.guest_phone, eb.organiser_phone, rb.guest_phone, fo.guest_phone) AS guest_phone,
              COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
-                 ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END) AS num_guests,
+                 ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END, rb.num_guests) AS num_guests,
              b.check_in_date, b.check_out_date,
              eb.title AS event_title, eb.event_type, ev.name AS venue_name,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
@@ -1232,15 +1232,37 @@ async function getInvoice(lodgeId, invoiceId) {
       -- The room a food-only bill was raised against, which is not b.room_id:
       -- such a bill has no booking behind it at all.
       LEFT JOIN dbo.rooms fr ON fr.id = i.room_id
+      -- Room service is charged to whoever was actually staying there: the stay
+      -- on that room whose actual window covers when this bill was cut, or —
+      -- failing that (a reprint pulled while the guest was still mid-stay, with
+      -- no checkout timestamp yet) the most recent one checked in by then. A
+      -- food-only invoice carries no booking_id of its own, so without this a
+      -- room-service bill named nobody at all.
+      OUTER APPLY (
+        SELECT TOP 1 rb2.guest_name, rb2.guest_phone, rb2.num_guests
+        FROM dbo.bookings rb2
+        WHERE rb2.room_id = i.room_id AND rb2.actual_check_in_at IS NOT NULL
+          AND rb2.actual_check_in_at <= i.created_at
+          AND (rb2.actual_check_out_at IS NULL OR rb2.actual_check_out_at >= i.created_at)
+        ORDER BY rb2.actual_check_in_at DESC
+      ) rb
       -- A takeaway bill has neither a table nor a room to name it, so it is
       -- named by the one order it settled, reached through the back-link the
-      -- invoice writes onto that order.
+      -- invoice writes onto that order. The same order also carries whatever
+      -- name and phone staff typed in at the till, which is the only record of
+      -- a walk-in's identity that exists anywhere.
       OUTER APPLY (
-        SELECT TOP 1 fo.order_number
+        SELECT TOP 1 fo.order_number, fo.guest_name, fo.guest_phone
         FROM dbo.food_orders fo
         WHERE fo.invoice_id = i.id AND fo.source = 'COUNTER'
         ORDER BY fo.id
       ) tko
+      OUTER APPLY (
+        SELECT TOP 1 fo2.guest_name, fo2.guest_phone
+        FROM dbo.food_orders fo2
+        WHERE fo2.invoice_id = i.id AND fo2.guest_name IS NOT NULL
+        ORDER BY fo2.id
+      ) fo
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.id = @invoiceId AND i.lodge_id = @lodgeId
     `);
@@ -1260,10 +1282,10 @@ async function listInvoices(lodgeId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT TOP 200 i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number,
-             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
-             COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
+             COALESCE(b.guest_name, eb.organiser_name, rb.guest_name, fo.guest_name) AS guest_name,
+             COALESCE(b.guest_phone, eb.organiser_phone, rb.guest_phone, fo.guest_phone) AS guest_phone,
              COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
-                 ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END) AS num_guests,
+                 ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END, rb.num_guests) AS num_guests,
              b.check_in_date, b.check_out_date,
              eb.title AS event_title, eb.event_type, ev.name AS venue_name,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
@@ -1295,15 +1317,32 @@ async function listInvoices(lodgeId) {
       -- The room a food-only bill was raised against, which is not b.room_id:
       -- such a bill has no booking behind it at all.
       LEFT JOIN dbo.rooms fr ON fr.id = i.room_id
+      -- Room service is charged to whoever was actually staying there — see the
+      -- matching OUTER APPLY in getInvoice() for why this can't just be b.
+      OUTER APPLY (
+        SELECT TOP 1 rb2.guest_name, rb2.guest_phone, rb2.num_guests
+        FROM dbo.bookings rb2
+        WHERE rb2.room_id = i.room_id AND rb2.actual_check_in_at IS NOT NULL
+          AND rb2.actual_check_in_at <= i.created_at
+          AND (rb2.actual_check_out_at IS NULL OR rb2.actual_check_out_at >= i.created_at)
+        ORDER BY rb2.actual_check_in_at DESC
+      ) rb
       -- A takeaway bill has neither a table nor a room to name it, so it is
       -- named by the one order it settled, reached through the back-link the
-      -- invoice writes onto that order.
+      -- invoice writes onto that order. The same order also carries whatever
+      -- name and phone staff typed in at the till — see getInvoice().
       OUTER APPLY (
-        SELECT TOP 1 fo.order_number
+        SELECT TOP 1 fo.order_number, fo.guest_name, fo.guest_phone
         FROM dbo.food_orders fo
         WHERE fo.invoice_id = i.id AND fo.source = 'COUNTER'
         ORDER BY fo.id
       ) tko
+      OUTER APPLY (
+        SELECT TOP 1 fo2.guest_name, fo2.guest_phone
+        FROM dbo.food_orders fo2
+        WHERE fo2.invoice_id = i.id AND fo2.guest_name IS NOT NULL
+        ORDER BY fo2.id
+      ) fo
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.lodge_id = @lodgeId
       ORDER BY i.created_at DESC
@@ -1386,10 +1425,22 @@ async function listOpenFoodTabs(lodgeId) {
              CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
              MAX(o.order_number) AS order_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
-             MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at
+             MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at,
+             -- Who a room tab is actually running for — the same guest the bill
+             -- itself will name. A table tab has nobody behind it. A counter tab
+             -- is always exactly one order (see tabIdentity), so MAX here is just
+             -- that order's own guest_name/guest_phone, typed in at the till.
+             COALESCE(rb.guest_name, MAX(o.guest_name)) AS guest_name,
+             COALESCE(rb.guest_phone, MAX(o.guest_phone)) AS guest_phone
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
+      OUTER APPLY (
+        SELECT TOP 1 b.guest_name, b.guest_phone
+        FROM dbo.bookings b
+        WHERE o.source = 'ROOM' AND b.room_id = o.room_id AND b.status = 'CHECKED_IN'
+        ORDER BY b.actual_check_in_at DESC
+      ) rb
       WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
         -- Every delivered, unbilled order is an open tab, including room
         -- service ordered against a live stay. Food is never folded into the
@@ -1397,12 +1448,15 @@ async function listOpenFoodTabs(lodgeId) {
         -- to ride on: this queue is where it gets billed, and leaving it out
         -- would strand the charge with no way to collect it.
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
-               CASE WHEN o.source = 'COUNTER' THEN o.id END
+               CASE WHEN o.source = 'COUNTER' THEN o.id END,
+               rb.guest_name, rb.guest_phone
       ORDER BY MIN(o.placed_at) ASC
     `);
 
   return result.recordset.map((row) => ({
     ...tabIdentity(row),
+    guestName: row.guest_name ?? null,
+    guestPhone: row.guest_phone ?? null,
     orderCount: row.order_count,
     subtotal: Number(row.subtotal),
     openedAt: row.opened_at,
@@ -1495,7 +1549,8 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
 
   const result = await request.query(`
     SELECT o.id, o.order_number, o.subtotal, o.placed_at, o.source,
-           o.table_id, o.room_id, t.label AS table_label, r.room_number
+           o.table_id, o.room_id, t.label AS table_label, r.room_number,
+           o.guest_name, o.guest_phone
     FROM dbo.food_orders o
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
@@ -1510,6 +1565,10 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     subtotal: Number(row.subtotal),
     placedAt: row.placed_at,
     tableLabel: tabIdentity(row).tableLabel,
+    // Only a counter/takeaway order carries its own name and phone — typed in
+    // at the till because there is no booking or table to name it instead.
+    guestName: row.guest_name ?? null,
+    guestPhone: row.guest_phone ?? null,
   }));
 }
 
@@ -1557,6 +1616,30 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
     throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
   }
 
+  // A room tab is food charged to whoever is actually staying there — the
+  // same guest the checkout bill would name — so the preview looks the
+  // guest up the same way resolveRoomBooking() does for the order itself.
+  // A counter/takeaway tab has no booking behind it, but staff typed a name
+  // and phone in at the till when the order was placed, and that travels
+  // with the order itself. A table tab has neither, and stays blank.
+  const roomMatch = /^room-(\d+)$/.exec(String(tab ?? ''));
+  let guest = null;
+  if (roomMatch) {
+    const guestResult = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('roomId', sql.BigInt, Number(roomMatch[1]))
+      .query(`
+        SELECT TOP 1 guest_name, guest_phone, num_guests
+        FROM dbo.bookings
+        WHERE lodge_id = @lodgeId AND room_id = @roomId AND status = 'CHECKED_IN'
+        ORDER BY actual_check_in_at DESC
+      `);
+    guest = guestResult.recordset[0] ?? null;
+  } else if (orders[0].guestName || orders[0].guestPhone) {
+    guest = { guest_name: orders[0].guestName, guest_phone: orders[0].guestPhone };
+  }
+
   const foodItems = await loadFoodItemsForOrders(pool.request(), orders.map((o) => o.id));
 
   // No advance on a table tab, so what the customer hands over is the total.
@@ -1591,7 +1674,7 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
     gst: bill.gst,
     nonGst: bill.nonGst,
     document: buildPreviewDocument({
-      row: lodge,
+      row: { ...lodge, ...guest },
       side: bill.gst ?? bill.nonGst,
       billingSide: lodge.is_gst_registered ? 'GST' : 'NON_GST',
       foodItems,

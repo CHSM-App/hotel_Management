@@ -26,12 +26,53 @@ function safeFilename(name) {
 // every card.
 function QrCard({ title, subtitle, url, dataUrl, large, filename }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+
+  // navigator.clipboard needs a secure context (HTTPS, or localhost) and can
+  // be missing entirely in some in-app/webview browsers. Lodges often run
+  // this dashboard over a plain-HTTP LAN address on a reception tablet, so
+  // the async API silently isn't there — falling back to the old
+  // execCommand copy (deprecated, but still the only thing that works
+  // without HTTPS) keeps the button functional instead of doing nothing.
+  const legacyCopy = (text) => {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    let ok;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    document.body.removeChild(el);
+    return ok;
+  };
 
   const copyLink = () => {
-    navigator.clipboard.writeText(url).then(() => {
+    setCopyFailed(false);
+    const markCopied = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
-    });
+    };
+    const markFailed = () => {
+      setCopyFailed(true);
+      setTimeout(() => setCopyFailed(false), 1600);
+    };
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(markCopied, () => {
+        if (!legacyCopy(url)) markFailed();
+        else markCopied();
+      });
+    } else if (legacyCopy(url)) {
+      markCopied();
+    } else {
+      markFailed();
+    }
   };
 
   return (
@@ -50,7 +91,7 @@ function QrCard({ title, subtitle, url, dataUrl, large, filename }) {
       <div className="qr-card__url">{url}</div>
       <div className="qr-card__tools">
         <button type="button" onClick={copyLink}>
-          {copied ? 'Copied' : 'Copy link'}
+          {copied ? 'Copied' : copyFailed ? "Couldn't copy" : 'Copy link'}
         </button>
         <a
           className="qr-card__download"

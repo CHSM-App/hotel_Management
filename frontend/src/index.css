@@ -13,10 +13,11 @@
   --color-cta-from: #7C5CE8;
   --color-cta-to: #5B3FD9;
 
-  /* Semantic radii — an extrusion needs generous corners to catch the light,
-     so both steps go up from the old 12/16px. */
+  /* Semantic radii. The 20px card corner dated from the extrusion palette,
+     where a generous curve was needed to catch the light; the surfaces are
+     flat now, and 16px reads tighter and more enterprise at card sizes. */
   --radius-tile: 0.875rem; /* 14px */
-  --radius-card: 1.25rem;  /* 20px */
+  --radius-card: 1rem;     /* 16px */
 }
 
 :root {
@@ -87,6 +88,13 @@
      left. Kept as its own pair rather than reusing --brand/--brand-ink, so the
      lift reads as light on a surface instead of as a darker shade of itself. */
   --brand-lift: #7C5CE8;
+  /* The topbar runs the full width of the screen and sits above every page, so
+     the same violet that reads as confident on a 140px button reads as a heavy
+     slab at 1900px. These two are the band's own stops: the brand lifted and
+     desaturated a step, so the bar still says violet without pressing down on
+     the page under it. White text clears 4.5:1 on both ends. */
+  --brand-band: #8B72EC;
+  --brand-band-deep: #6E52E0;
   /* Violet at the weight a tint needs: the sidebar's selected row, hover wells,
      any place the brand has to sit under text rather than behind white. */
   --brand-wash: #EFEBFD;
@@ -95,6 +103,11 @@
      screen whose chrome is now entirely violet. */
   --accent: #C79A3A;
   --accent-ink: #A67C22;
+  /* Active/on states. The violet is the brand, so it cannot also be the
+     affirmative signal — a status pill in brand colour reads as chrome rather
+     than as a state. Green at 4.6:1 on its own tint. */
+  --success: #15803D;
+  --success-bg: #E9F5ED;
   --danger: #C0392B;
   --danger-bg: #FBECEA;
   --focus: #5B3FD9;
@@ -206,6 +219,39 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* --- Scrollbars ------------------------------------------------------------
+   The default bar is a 15-17px slab of chrome down the side of every panel,
+   which is a lot of furniture for something that is wheeled far more often
+   than it is grabbed. A 6px thumb in the border grey stays findable and
+   draggable without competing with the content beside it. Panels that want no
+   bar at all still opt out locally with `scrollbar-width: none`. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--neu-dark) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--neu-dark);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {

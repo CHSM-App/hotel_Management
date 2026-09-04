@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -68,6 +68,42 @@ function DeleteOptionsModal({ title, isActive, error, busy, onDeactivate, onDele
   );
 }
 
+// Each inline-add form (categories, extras, seasons) is its own independent
+// error state below its own list — a list long enough to push the form and
+// its banner off the bottom of the screen, especially while editing a row
+// near the top. This factory gives each section the same failOn/fieldErr/
+// invalid/reportError shape the rest of the app's forms use, without three
+// hand-copied blocks that could drift apart.
+function useSectionErrors(setError) {
+  const [fieldError, setFieldError] = useState(null);
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    setFieldError(null);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  // Field-only: the message sits under the box that caused it, so it must not
+  // also go into the banner above — that was showing the same line twice.
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
+  const clear = () => setFieldError(null);
+  // The ref is returned separately from the rest: bundling it into the same
+  // object as the render-time helpers below (fieldErr, invalid) trips
+  // react-hooks/refs, which treats any object carrying a ref as unsafe to
+  // touch during render — even though these two never read errorRef.current.
+  return [errorRef, { reportError, failOn, fieldErr, invalid, clear }];
+}
+
 export default function PriceChartPanel() {
   const session = getSession();
   const [categories, setCategories] = useState(() => readCache('/categories'));
@@ -77,6 +113,7 @@ export default function PriceChartPanel() {
 
   const [categoryForm, setCategoryForm] = useState(emptyCategoryForm);
   const [categoryError, setCategoryError] = useState('');
+  const [categoryErrorRef, categoryErrors] = useSectionErrors(setCategoryError);
   const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [deleteModalCategory, setDeleteModalCategory] = useState(null);
@@ -85,6 +122,7 @@ export default function PriceChartPanel() {
 
   const [chargeForm, setChargeForm] = useState(emptyChargeForm);
   const [chargeError, setChargeError] = useState('');
+  const [chargeErrorRef, chargeErrors] = useSectionErrors(setChargeError);
   const [chargeSubmitting, setChargeSubmitting] = useState(false);
   const [editingChargeId, setEditingChargeId] = useState(null);
   const [deleteModalCharge, setDeleteModalCharge] = useState(null);
@@ -93,6 +131,7 @@ export default function PriceChartPanel() {
 
   const [seasonForm, setSeasonForm] = useState(emptySeasonForm);
   const [seasonError, setSeasonError] = useState('');
+  const [seasonErrorRef, seasonErrors] = useSectionErrors(setSeasonError);
   const [seasonSubmitting, setSeasonSubmitting] = useState(false);
   const [editingSeasonId, setEditingSeasonId] = useState(null);
   const [seasonDeletingId, setSeasonDeletingId] = useState(null);
@@ -125,19 +164,26 @@ export default function PriceChartPanel() {
     setEditingCategoryId(c.id);
     setCategoryForm({ name: c.name, basePrice: String(c.basePrice) });
     setCategoryError('');
+    categoryErrors.clear();
   };
 
   const cancelEditCategory = () => {
     setEditingCategoryId(null);
     setCategoryForm(emptyCategoryForm);
     setCategoryError('');
+    categoryErrors.clear();
   };
 
   const handleSubmitCategory = async (e) => {
     e.preventDefault();
     setCategoryError('');
-    if (!categoryForm.name.trim() || !categoryForm.basePrice || Number(categoryForm.basePrice) <= 0) {
-      setCategoryError('Enter a name and a base price greater than 0.');
+    categoryErrors.clear();
+    if (!categoryForm.name.trim()) {
+      categoryErrors.failOn('categoryName', 'Enter a category name.');
+      return;
+    }
+    if (!categoryForm.basePrice || Number(categoryForm.basePrice) <= 0) {
+      categoryErrors.failOn('categoryBasePrice', 'Enter a base price greater than 0.');
       return;
     }
     setCategorySubmitting(true);
@@ -152,9 +198,13 @@ export default function PriceChartPanel() {
       setCategoryForm(emptyCategoryForm);
       loadAll();
     } catch (err) {
-      setCategoryError(
-        err instanceof ApiError ? err.message : `Could not ${editingCategoryId ? 'save' : 'add'} the category.`
-      );
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        categoryErrors.failOn(err.field, err.message);
+      } else {
+        categoryErrors.reportError(
+          err instanceof ApiError ? err.message : `Could not ${editingCategoryId ? 'save' : 'add'} the category.`
+        );
+      }
     } finally {
       setCategorySubmitting(false);
     }
@@ -202,19 +252,26 @@ export default function PriceChartPanel() {
     setEditingChargeId(c.id);
     setChargeForm({ name: c.name, chargePerNight: String(c.chargePerNight) });
     setChargeError('');
+    chargeErrors.clear();
   };
 
   const cancelEditCharge = () => {
     setEditingChargeId(null);
     setChargeForm(emptyChargeForm);
     setChargeError('');
+    chargeErrors.clear();
   };
 
   const handleSubmitCharge = async (e) => {
     e.preventDefault();
     setChargeError('');
-    if (!chargeForm.name.trim() || !chargeForm.chargePerNight || Number(chargeForm.chargePerNight) <= 0) {
-      setChargeError('Enter a name and an amount greater than 0.');
+    chargeErrors.clear();
+    if (!chargeForm.name.trim()) {
+      chargeErrors.failOn('chargeName', 'Enter a charge name.');
+      return;
+    }
+    if (!chargeForm.chargePerNight || Number(chargeForm.chargePerNight) <= 0) {
+      chargeErrors.failOn('chargeAmount', 'Enter an amount greater than 0.');
       return;
     }
     setChargeSubmitting(true);
@@ -229,9 +286,13 @@ export default function PriceChartPanel() {
       setChargeForm(emptyChargeForm);
       loadAll();
     } catch (err) {
-      setChargeError(
-        err instanceof ApiError ? err.message : `Could not ${editingChargeId ? 'save' : 'add'} the extra.`
-      );
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        chargeErrors.failOn(err.field, err.message);
+      } else {
+        chargeErrors.reportError(
+          err instanceof ApiError ? err.message : `Could not ${editingChargeId ? 'save' : 'add'} the extra.`
+        );
+      }
     } finally {
       setChargeSubmitting(false);
     }
@@ -285,23 +346,30 @@ export default function PriceChartPanel() {
       adjustmentPercent: String(s.adjustmentPercent),
     });
     setSeasonError('');
+    seasonErrors.clear();
   };
 
   const cancelEditSeason = () => {
     setEditingSeasonId(null);
     setSeasonForm(emptySeasonForm());
     setSeasonError('');
+    seasonErrors.clear();
   };
 
   const handleSubmitSeason = async (e) => {
     e.preventDefault();
     setSeasonError('');
-    if (!seasonForm.name.trim() || seasonForm.adjustmentPercent === '') {
-      setSeasonError('Enter a name and an adjustment percentage.');
+    seasonErrors.clear();
+    if (!seasonForm.name.trim()) {
+      seasonErrors.failOn('seasonName', 'Enter a season name.');
+      return;
+    }
+    if (seasonForm.adjustmentPercent === '') {
+      seasonErrors.failOn('seasonAdjustment', 'Enter an adjustment percentage.');
       return;
     }
     if (seasonForm.endDate < seasonForm.startDate) {
-      setSeasonError('End date must be on or after the start date.');
+      seasonErrors.failOn('seasonEndDate', 'End date must be on or after the start date.');
       return;
     }
     setSeasonSubmitting(true);
@@ -321,9 +389,13 @@ export default function PriceChartPanel() {
       setSeasonForm(emptySeasonForm());
       loadAll();
     } catch (err) {
-      setSeasonError(
-        err instanceof ApiError ? err.message : `Could not ${editingSeasonId ? 'save' : 'add'} the season.`
-      );
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        seasonErrors.failOn(err.field, err.message);
+      } else {
+        seasonErrors.reportError(
+          err instanceof ApiError ? err.message : `Could not ${editingSeasonId ? 'save' : 'add'} the season.`
+        );
+      }
     } finally {
       setSeasonSubmitting(false);
     }
@@ -331,13 +403,14 @@ export default function PriceChartPanel() {
 
   const handleDeleteSeason = async (s) => {
     setSeasonError('');
+    seasonErrors.clear();
     setSeasonDeletingId(s.id);
     try {
       await apiDelete(`/seasons/${s.id}`, { token: session?.token });
       setConfirmDeleteSeasonId(null);
       loadAll();
     } catch (err) {
-      setSeasonError(err instanceof ApiError ? err.message : 'Could not delete this season.');
+      seasonErrors.reportError(err instanceof ApiError ? err.message : 'Could not delete this season.');
     } finally {
       setSeasonDeletingId(null);
     }
@@ -395,27 +468,41 @@ export default function PriceChartPanel() {
           </div>
         )}
         <form className="inline-add-form" onSubmit={handleSubmitCategory}>
-          {categoryError && <div className="form-banner form-banner--error">{categoryError}</div>}
+          {categoryError && (
+            <div ref={categoryErrorRef} className="form-banner form-banner--error form-banner--flash">
+              {categoryError}
+            </div>
+          )}
           <div className="inline-add-form__row">
             {/* These add-rows have no room for a label, so the asterisk rides
                 the placeholder and the accessible name carries the word — the
                 same two readings the marked labels elsewhere give, in the only
                 place this layout has to put them. Both boxes are refused when
                 blank, so both are marked. */}
-            <input
-              value={categoryForm.name}
-              onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Deluxe *"
-              aria-label="Category name (required)"
-            />
-            <input
-              type="number"
-              min="1"
-              value={categoryForm.basePrice}
-              onChange={(e) => setCategoryForm((f) => ({ ...f, basePrice: e.target.value }))}
-              placeholder="Base price ₹ *"
-              aria-label="Base price in rupees (required)"
-            />
+            <div>
+              <input
+                id="categoryName"
+                aria-invalid={categoryErrors.invalid('categoryName')}
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Deluxe *"
+                aria-label="Category name (required)"
+              />
+              {categoryErrors.fieldErr('categoryName')}
+            </div>
+            <div>
+              <input
+                id="categoryBasePrice"
+                type="number"
+                min="1"
+                aria-invalid={categoryErrors.invalid('categoryBasePrice')}
+                value={categoryForm.basePrice}
+                onChange={(e) => setCategoryForm((f) => ({ ...f, basePrice: e.target.value }))}
+                placeholder="Base price ₹ *"
+                aria-label="Base price in rupees (required)"
+              />
+              {categoryErrors.fieldErr('categoryBasePrice')}
+            </div>
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={categorySubmitting}>
                 {editingCategoryId
@@ -469,22 +556,36 @@ export default function PriceChartPanel() {
           </div>
         )}
         <form className="inline-add-form" onSubmit={handleSubmitCharge}>
-          {chargeError && <div className="form-banner form-banner--error">{chargeError}</div>}
+          {chargeError && (
+            <div ref={chargeErrorRef} className="form-banner form-banner--error form-banner--flash">
+              {chargeError}
+            </div>
+          )}
           <div className="inline-add-form__row">
-            <input
-              value={chargeForm.name}
-              onChange={(e) => setChargeForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="AC *"
-              aria-label="Charge name (required)"
-            />
-            <input
-              type="number"
-              min="1"
-              value={chargeForm.chargePerNight}
-              onChange={(e) => setChargeForm((f) => ({ ...f, chargePerNight: e.target.value }))}
-              placeholder="Amount ₹/night *"
-              aria-label="Amount per night in rupees (required)"
-            />
+            <div>
+              <input
+                id="chargeName"
+                aria-invalid={chargeErrors.invalid('chargeName')}
+                value={chargeForm.name}
+                onChange={(e) => setChargeForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="AC *"
+                aria-label="Charge name (required)"
+              />
+              {chargeErrors.fieldErr('chargeName')}
+            </div>
+            <div>
+              <input
+                id="chargeAmount"
+                type="number"
+                min="1"
+                aria-invalid={chargeErrors.invalid('chargeAmount')}
+                value={chargeForm.chargePerNight}
+                onChange={(e) => setChargeForm((f) => ({ ...f, chargePerNight: e.target.value }))}
+                placeholder="Amount ₹/night *"
+                aria-label="Amount per night in rupees (required)"
+              />
+              {chargeErrors.fieldErr('chargeAmount')}
+            </div>
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={chargeSubmitting}>
                 {editingChargeId
@@ -562,36 +663,55 @@ export default function PriceChartPanel() {
           </div>
         )}
         <form className="inline-add-form" onSubmit={handleSubmitSeason}>
-          {seasonError && <div className="form-banner form-banner--error">{seasonError}</div>}
+          {seasonError && (
+            <div ref={seasonErrorRef} className="form-banner form-banner--error form-banner--flash">
+              {seasonError}
+            </div>
+          )}
           <div className="inline-add-form__row inline-add-form__row--seasons">
             {/* Name and the percentage are the two the submit stops on; the
                 dates come prefilled and are only checked against each other,
                 so they are named but not marked. */}
-            <input
-              value={seasonForm.name}
-              onChange={(e) => setSeasonForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Diwali *"
-              aria-label="Season name (required)"
-            />
+            <div>
+              <input
+                id="seasonName"
+                aria-invalid={seasonErrors.invalid('seasonName')}
+                value={seasonForm.name}
+                onChange={(e) => setSeasonForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Diwali *"
+                aria-label="Season name (required)"
+              />
+              {seasonErrors.fieldErr('seasonName')}
+            </div>
             <input
               type="date"
               value={seasonForm.startDate}
               onChange={(e) => setSeasonForm((f) => ({ ...f, startDate: e.target.value }))}
               aria-label="Season start date"
             />
-            <input
-              type="date"
-              value={seasonForm.endDate}
-              onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))}
-              aria-label="Season end date"
-            />
-            <input
-              type="number"
-              value={seasonForm.adjustmentPercent}
-              onChange={(e) => setSeasonForm((f) => ({ ...f, adjustmentPercent: e.target.value }))}
-              placeholder="+% *"
-              aria-label="Price adjustment percentage (required)"
-            />
+            <div>
+              <input
+                id="seasonEndDate"
+                type="date"
+                aria-invalid={seasonErrors.invalid('seasonEndDate')}
+                value={seasonForm.endDate}
+                onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))}
+                aria-label="Season end date"
+              />
+              {seasonErrors.fieldErr('seasonEndDate')}
+            </div>
+            <div>
+              <input
+                id="seasonAdjustment"
+                type="number"
+                aria-invalid={seasonErrors.invalid('seasonAdjustment')}
+                value={seasonForm.adjustmentPercent}
+                onChange={(e) => setSeasonForm((f) => ({ ...f, adjustmentPercent: e.target.value }))}
+                placeholder="+% *"
+                aria-label="Price adjustment percentage (required)"
+              />
+              {seasonErrors.fieldErr('seasonAdjustment')}
+            </div>
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={seasonSubmitting}>
                 {editingSeasonId

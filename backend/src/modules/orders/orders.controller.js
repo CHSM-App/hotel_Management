@@ -59,6 +59,58 @@ async function resolveRoomBooking(lodgeId, roomId) {
   return result.recordset[0]?.id ?? null;
 }
 
+// Who the desk is about to charge. Staff pick a room from the dropdown and
+// see the name and phone of whoever is actually checked into it, so a walk-in
+// claiming "room 12, put it on my bill" is checked against the register before
+// the food is charged to a stranger's stay.
+//
+// Deliberately not the guest's food PIN. The PIN authenticates an anonymous
+// phone as being in a room; staff are already authenticated, and asking them
+// to type it would let a desk typo trip the guest's own 15-minute lockout.
+// This answers the question staff actually have — "is this the right guest?" —
+// and answers it by showing them the register rather than by taking a secret.
+async function roomOccupancyHandler(req, res, next) {
+  try {
+    const lodgeId = req.user.lodgeId;
+    const roomId = Number(req.params.roomId);
+    if (!Number.isSafeInteger(roomId) || roomId <= 0) {
+      throw new ApiError('Unknown room.', 400);
+    }
+
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('roomId', sql.BigInt, roomId)
+      .query(`
+        SELECT TOP 1 r.room_number, b.id AS booking_id, b.guest_name, b.guest_phone
+        FROM dbo.rooms r
+        LEFT JOIN dbo.bookings b
+          ON b.room_id = r.id AND b.lodge_id = @lodgeId AND b.status = 'CHECKED_IN'
+        WHERE r.id = @roomId AND r.lodge_id = @lodgeId
+        ORDER BY b.actual_check_in_at DESC
+      `);
+
+    const row = result.recordset[0];
+    if (!row) {
+      throw new ApiError('Room not found.', 404);
+    }
+
+    // An empty room is a normal answer, not an error: the desk may still serve
+    // food to it, and the screen says "nobody checked in" rather than failing.
+    res.json({
+      occupancy: {
+        roomNumber: row.room_number,
+        occupied: !!row.booking_id,
+        guestName: row.guest_name || '',
+        guestPhone: row.guest_phone || '',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createCounterOrderHandler(req, res, next) {
   try {
     const input = parse(counterOrderSchema, req.body);
@@ -78,9 +130,15 @@ async function createCounterOrderHandler(req, res, next) {
       if (roomResult.recordset.length === 0) {
         throw new ApiError('Room not found.', 404);
       }
+      bookingId = await resolveRoomBooking(lodgeId, input.roomId);
+      // No active booking on the room, so there is nobody to charge the food
+      // to. Refused here rather than just noted on the screen — the client
+      // check is only a courtesy, and a direct API call has to obey this too.
+      if (!bookingId) {
+        throw new ApiError('This room has no guest checked in — a food order can’t be placed for it.', 409);
+      }
       source = 'ROOM';
       roomId = input.roomId;
-      bookingId = await resolveRoomBooking(lodgeId, input.roomId);
     } else if (input.tableId) {
       const tableResult = await (await getPool())
         .request()
@@ -165,6 +223,7 @@ module.exports = {
   listQueueHandler,
   getOrderHandler,
   createCounterOrderHandler,
+  roomOccupancyHandler,
   updateStatusHandler,
   updateItemReadyHandler,
   clearPinLockoutHandler,

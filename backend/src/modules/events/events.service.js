@@ -370,9 +370,22 @@ async function quote(lodgeId, input, { pool = null, request = null } = {}) {
   });
   const overCapacity =
     venue.capacityPax != null && pricing.billablePax > venue.capacityPax
-      ? `${venue.name} seats ${venue.capacityPax}; this party is ${pricing.billablePax}.`
+      ? `${venue.name} seats ${venue.capacityPax}; this party is ${pricing.billablePax}. Lower the count or pick a larger venue.`
       : null;
   return { venue, addons, pricing, overCapacity, capabilities };
+}
+
+// A party the venue cannot seat is refused, not filed with a note on it.
+// /events/quote still returns overCapacity as a message so the form can say so
+// while the desk is typing; this is the same rule at the point it is saved, so
+// a request that never went near the form cannot get past it either.
+//
+// Exactly at capacity is fine — a 300-seat hall seats 300. Only above it is
+// over. And a venue with no capacity recorded holds whatever it is told to:
+// quote() leaves overCapacity null there, and an unknown limit must not become
+// a limit of zero.
+function assertWithinCapacity(overCapacity) {
+  if (overCapacity) throw new ApiError(overCapacity, 409);
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +542,9 @@ function mapEvent(row) {
     holdExpiresAt: toIso(row.hold_expires_at),
     cancelReason: row.cancel_reason ?? null,
     refundAmount: row.refund_amount == null ? null : Number(row.refund_amount),
+    // The other half of the same settlement: what the house kept of the
+    // advance. NULL until a cancellation settles the money.
+    cancellationCharge: row.cancellation_charge == null ? null : Number(row.cancellation_charge),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     addons,
@@ -644,7 +660,8 @@ function bindPricing(request, pricing, input) {
 // one thing this feature must never allow.
 async function createEventBooking(lodgeId, userId, input) {
   const pool = await getPool();
-  const { addons, pricing, capabilities } = await quote(lodgeId, input, { pool });
+  const { addons, pricing, capabilities, overCapacity } = await quote(lodgeId, input, { pool });
+  assertWithinCapacity(overCapacity);
   const blocks = BLOCKING.includes(input.status);
 
   if (blocks) {
@@ -758,7 +775,8 @@ async function updateEventBooking(lodgeId, id, input) {
     throw new ApiError('The function must end after it starts.', 400);
   }
 
-  const { addons, pricing, capabilities } = await quote(lodgeId, merged, { pool });
+  const { addons, pricing, capabilities, overCapacity } = await quote(lodgeId, merged, { pool });
+  assertWithinCapacity(overCapacity);
   // The rooms need travels as a set: sent, it replaces; absent, it stays.
   const roomsGiven = input.roomsRequired !== undefined;
   const moved =
@@ -975,12 +993,23 @@ function releaseEventBooking(lodgeId, id) {
 // Money already taken is not touched here: the refund, if any, is recorded
 // as a figure and the advance receipts stay as the paper trail of what was
 // held. A cancelled function with an advance is exactly the case an owner
-// wants to be able to look back at.
-function cancelEventBooking(lodgeId, id, { reason, refundAmount = null }) {
+// wants to be able to look back at. What the refund leaves behind is kept as
+// the cancellation charge — computed in the UPDATE against the advance as it
+// stands there, so the split can never drift from the advance it divides. A
+// cancel with no refund figure leaves both NULL: "not settled", not "kept
+// nothing".
+async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null }) {
+  if (refundAmount != null) {
+    const current = await getEventBooking(lodgeId, id);
+    if (round2(Number(refundAmount)) > round2(current.advanceAmount || 0)) {
+      throw new ApiError('The refund can’t be more than the advance held on this function.', 400);
+    }
+  }
   return transition(lodgeId, id, {
     from: ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'],
     to: 'CANCELLED',
-    set: ', hold_expires_at = NULL, cancel_reason = @reason, refund_amount = @refund',
+    set: `, hold_expires_at = NULL, cancel_reason = @reason, refund_amount = @refund, cancelled_at = SYSDATETIMEOFFSET(),
+          cancellation_charge = CASE WHEN @refund IS NULL THEN NULL ELSE ISNULL(advance_amount, 0) - @refund END`,
     bind: (r) =>
       r.input('reason', sql.NVarChar(200), reason).input('refund', sql.Decimal(10, 2), refundAmount ?? null),
   });

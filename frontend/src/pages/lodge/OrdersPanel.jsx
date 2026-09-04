@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
 import './OrdersPanel.css';
@@ -603,7 +604,33 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const [query, setQuery] = useState('');
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [error, setError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // The banner sits above a menu that can run to a hundred dishes, so a
+  // failure caught on submit — a missing guest name, the server refusing —
+  // has to bring itself back into view rather than rely on already being in
+  // it. Same shape as the booking form's failOn/reportFormError.
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
+  // Who is checked into the selected room, so staff can eyeball the register
+  // before charging food to somebody's stay. null while nothing is selected.
+  const [occupancy, setOccupancy] = useState(null);
+  const [occupancyLoading, setOccupancyLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -627,6 +654,43 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, submitting]);
+
+  // Selecting a room asks the server who is in it. Resolved server-side against
+  // the live booking rather than read off the room list, so what staff verify
+  // against is the register itself and not a stale cached payload.
+  //
+  // The room id is captured per-run and checked before the result is applied:
+  // a quick change of selection can land two responses out of order, and the
+  // wrong guest shown next to the wrong room is exactly the error this is here
+  // to prevent.
+  useEffect(() => {
+    // Cleared by the destination handler rather than here, so this effect only
+    // ever runs for a room it is actually going to look up.
+    if (target.kind !== 'ROOM' || !target.id) return undefined;
+
+    let cancelled = false;
+    const roomId = target.id;
+
+    apiGet(`/orders/room-occupancy/${roomId}`, { token: session?.token })
+      .then((data) => {
+        if (cancelled) return;
+        setOccupancy(data.occupancy);
+      })
+      .catch(() => {
+        // A lookup failure must not block the order — the desk can still take
+        // it. The panel just says it couldn't check rather than asserting the
+        // room is empty, which would be a worse lie than saying nothing.
+        if (!cancelled) setOccupancy({ failed: true });
+      })
+      .finally(() => {
+        if (!cancelled) setOccupancyLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.kind, target.id]);
 
   // A half plate and a full plate of the same dish are two lines, so the key is
   // the pair — the same shape the guest's own page uses.
@@ -702,9 +766,32 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldError(null);
+
+    // Checked in the order the fields sit on the form — guest details before
+    // the menu — the same order every other form here checks in, so the
+    // first thing reported is the first thing the eye would reach scrolling
+    // down from the top rather than whichever check happens to run first.
+    if (target.kind === 'COUNTER') {
+      if (!guestName.trim()) {
+        failOn('orderGuest', 'Add the guest’s name for a counter order.');
+        return;
+      }
+      if (!guestPhone.trim()) {
+        failOn('orderPhone', 'Add a phone number for a counter order.');
+        return;
+      }
+    }
+
+    // No banner here: the note beside the room picker already says this, and
+    // the button reaching this point at all means it was bypassed rather than
+    // clicked — nothing new to tell the user that isn't on screen already.
+    if (target.kind === 'ROOM' && occupancy && !occupancy.failed && !occupancy.occupied) {
+      return;
+    }
 
     if (lines.length === 0) {
-      setError('Add at least one item.');
+      reportError('Add at least one item.');
       return;
     }
 
@@ -715,8 +802,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
         {
           roomId: target.kind === 'ROOM' ? target.id : null,
           tableId: target.kind === 'TABLE' ? target.id : null,
-          guestName,
-          guestPhone,
+          // Typed at the counter and then switched to a room, these would
+          // otherwise ride along on an order whose payer is the booking.
+          guestName: target.kind === 'COUNTER' ? guestName : '',
+          guestPhone: target.kind === 'COUNTER' ? guestPhone : '',
           note,
           items: lines.map((l) => ({
             itemId: l.itemId,
@@ -728,7 +817,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
       );
       onPlaced();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not place the order.');
+      reportError(err instanceof ApiError ? err.message : 'Could not place the order.');
     } finally {
       setSubmitting(false);
     }
@@ -763,7 +852,11 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
 
         <form className="counter-form" onSubmit={handleSubmit} noValidate>
           <div className="counter-form__scroll">
-            {error && <div className="form-banner form-banner--error">{error}</div>}
+            {error && (
+              <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+                {error}
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="orderTarget">Where&apos;s it going?</label>
@@ -773,6 +866,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
                 onChange={(e) => {
                   const [kind, id] = e.target.value.split(':');
                   setTarget({ kind, id });
+                  // Reset here, where the choice is made, so the previous
+                  // room's guest never lingers beside a new selection.
+                  setOccupancy(null);
+                  setOccupancyLoading(kind === 'ROOM' && !!id);
                 }}
               >
                 <option value="COUNTER:">Counter / takeaway</option>
@@ -789,30 +886,75 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
               </select>
             </div>
 
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="orderGuest">
-                  Guest name <span className="field__optional">optional</span>
-                </label>
-                <input
-                  id="orderGuest"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                />
+            {target.kind === 'ROOM' && (
+              <div className="occupancy" aria-live="polite">
+                {occupancyLoading && <p className="occupancy__muted">Checking who&apos;s in this room…</p>}
+
+                {!occupancyLoading && occupancy?.failed && (
+                  <p className="occupancy__muted">
+                    Couldn&apos;t check the register just now — confirm the guest at the desk.
+                  </p>
+                )}
+
+                {!occupancyLoading && occupancy && !occupancy.failed && occupancy.occupied && (
+                  <>
+                    <p className="occupancy__label">Checked in to this room</p>
+                    <p className="occupancy__name">{occupancy.guestName || 'Name not on the booking'}</p>
+                    {occupancy.guestPhone && <p className="occupancy__phone">{occupancy.guestPhone}</p>}
+                    <p className="occupancy__hint">
+                      Check this matches the guest ordering before you charge it to the room.
+                    </p>
+                  </>
+                )}
+
+                {!occupancyLoading && occupancy && !occupancy.failed && !occupancy.occupied && (
+                  <p className="occupancy__vacant occupancy__vacant--error" role="alert">
+                    Nobody is checked in to this room. Select a different room, or the counter, to place
+                    this order.
+                  </p>
+                )}
               </div>
-              <div className="field">
-                <label htmlFor="orderPhone">
-                  Phone <span className="field__optional">optional</span>
-                </label>
-                <input
-                  id="orderPhone"
-                  inputMode="tel"
-                  value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value)}
-                  placeholder="For a phone order"
-                />
+            )}
+
+            {/* Only the counter asks for these. A room or a table already
+                identifies the payer — the booking above, or the table the
+                party is sitting at — so re-typing a name there would be a
+                second, weaker record of something the register already knows.
+                A takeaway has neither: this is the only trace of who the food
+                is for, so it is required rather than optional. */}
+            {target.kind === 'COUNTER' && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="orderGuest">
+                    Guest name
+                    <Req />
+                  </label>
+                  <input
+                    id="orderGuest"
+                    aria-invalid={invalid('orderGuest')}
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Who's collecting"
+                  />
+                  {fieldErr('orderGuest')}
+                </div>
+                <div className="field">
+                  <label htmlFor="orderPhone">
+                    Phone
+                    <Req />
+                  </label>
+                  <input
+                    id="orderPhone"
+                    inputMode="tel"
+                    aria-invalid={invalid('orderPhone')}
+                    value={guestPhone}
+                    onChange={(e) => setGuestPhone(e.target.value)}
+                    placeholder="To call when it's ready"
+                  />
+                  {fieldErr('orderPhone')}
+                </div>
               </div>
-            </div>
+            )}
 
             {!sections && <p className="menu-panel__hint">Loading the menu…</p>}
 
@@ -947,10 +1089,20 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
               <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
                 Cancel
               </button>
+              {/* Not disabled on an empty cart: a disabled button gives no
+                  feedback at all when pressed, which is why "Add at least one
+                  item" was never seen. Left enabled, the click reaches
+                  handleSubmit and its own check reports the problem instead.
+                  An unoccupied room is different — there is no way to fix that
+                  from this form, so the button is blocked outright rather than
+                  handing back an error the guest-name field can't fix. */}
               <button
                 type="submit"
                 className="btn-accent"
-                disabled={submitting || lines.length === 0}
+                disabled={
+                  submitting ||
+                  (target.kind === 'ROOM' && occupancy && !occupancy.failed && !occupancy.occupied)
+                }
               >
                 {submitting ? 'Placing…' : 'Place order'}
               </button>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -14,6 +14,25 @@ import './InventoryPanel.css';
 // somebody will notice it.
 const emptyMaterialForm = { name: '', unit: 'KG', category: 'OTHER', quantity: '', lowStockThreshold: '' };
 const emptyAdjustForm = { mode: 'ADD', quantity: '', note: '' };
+
+// Maps the names validateMaterial and the server both use onto the DOM ids
+// their inputs actually carry, so a failure against either can find and
+// scroll to the right box — the boxes are named "materialName" etc. to stay
+// unique in a page with more than one form.
+const MATERIAL_FIELD_IDS = {
+  name: 'materialName',
+  quantity: 'materialQty',
+  lowStockThreshold: 'materialLow',
+};
+
+function focusFirstError(errors, fieldIds) {
+  const first = Object.keys(fieldIds).find((key) => errors[key]);
+  if (!first) return;
+  const el = document.getElementById(fieldIds[first]);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
 
 function validateMaterial(form, isEditing) {
   const errors = {};
@@ -65,6 +84,13 @@ export default function InventoryPanel() {
 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   const load = () =>
     apiGet('/inventory/materials', { token: session?.token })
@@ -152,7 +178,10 @@ export default function InventoryPanel() {
     e.preventDefault();
     const errors = validateMaterial(form, editingId !== null);
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, MATERIAL_FIELD_IDS);
+      return;
+    }
 
     setSubmitting(true);
     setFormError('');
@@ -180,7 +209,16 @@ export default function InventoryPanel() {
       setShowForm(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save that. Try again.');
+      // A duplicate name is the commonest refusal here, and the server now
+      // names the field it's about — so it lands under Material name, focused
+      // and scrolled to, instead of a banner the desk has to go looking for.
+      if (err instanceof ApiError && err.field && MATERIAL_FIELD_IDS[err.field]) {
+        const nextErrors = { [err.field]: err.message };
+        setFieldErrors(nextErrors);
+        focusFirstError(nextErrors, MATERIAL_FIELD_IDS);
+      } else {
+        reportFormError(err instanceof ApiError ? err.message : 'Could not save that. Try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -196,7 +234,7 @@ export default function InventoryPanel() {
     e.preventDefault();
     const raw = String(adjustForm.quantity).trim();
     if (raw === '' || !Number.isFinite(Number(raw))) {
-      setFormError('Enter a quantity.');
+      reportFormError('Enter a quantity.');
       return;
     }
 
@@ -211,7 +249,7 @@ export default function InventoryPanel() {
       setAdjusting(null);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not record that. Try again.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not record that. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -273,6 +311,20 @@ export default function InventoryPanel() {
   if (!materials) {
     return <p className="inv-panel__hint">Loading the store cupboard…</p>;
   }
+
+  // Where the adjustment dialog's footer figure comes from: what the shelf
+  // reads once this is recorded. Display only — handleAdjust still sends the
+  // typed number and the mode, and the server does the arithmetic it always
+  // did. Null until a usable number is typed, so the footer shows a dash
+  // rather than NaN.
+  const adjustedTotal = (() => {
+    if (!adjusting) return null;
+    const raw = String(adjustForm.quantity).trim();
+    if (raw === '') return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return adjustForm.mode === 'ADD' ? adjusting.quantity + n : n;
+  })();
 
   return (
     <div>
@@ -458,27 +510,42 @@ export default function InventoryPanel() {
       {showForm && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowForm(false)}>
           <div
-            className="glass-panel inv-panel__modal"
+            className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="materialModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="inv-modal__head">
-              <h3 id="materialModalTitle">{editingId ? 'Edit material' : 'New raw material'}</h3>
-              <button
-                type="button"
-                className="inv-modal__close"
-                onClick={() => setShowForm(false)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
+            <form className="modal-form" onSubmit={handleSubmit} noValidate>
+              {/* Header and footer stay put while only the fields scroll, so
+                  the title and Save are always on screen. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="materialModalTitle">{editingId ? 'Edit material' : 'New raw material'}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {editingId
+                    ? 'What this material is called and when to warn about it. The unit it is counted in is fixed.'
+                    : 'Something the kitchen buys and counts — rice, oil, gas. Recipes draw down against it.'}
+                </p>
+              </div>
 
-            <form className="inv-modal__body" onSubmit={handleSubmit} noValidate>
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              <div className="modal-form__body">
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="field">
                 <label htmlFor="materialName">
@@ -487,6 +554,7 @@ export default function InventoryPanel() {
                 </label>
                 <input
                   id="materialName"
+                  aria-invalid={Boolean(fieldErrors.name)}
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="Basmati rice"
@@ -578,19 +646,30 @@ export default function InventoryPanel() {
                   <span className="field__error">{fieldErrors.lowStockThreshold}</span>
                 )}
               </div>
+              </div>
 
-              <div className="inv-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowForm(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {form.name.trim() || 'New material'}
+                  </span>
+                  <span className="modal-form__summary-value modal-form__summary-value--text">
+                    Counted in {UNITS.find((u) => u.key === form.unit)?.name || '—'}
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -600,32 +679,39 @@ export default function InventoryPanel() {
       {adjusting && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setAdjusting(null)}>
           <div
-            className="glass-panel inv-panel__modal"
+            className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="adjustModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="inv-modal__head">
-              <div>
-                <h3 id="adjustModalTitle">{adjusting.name}</h3>
-                <p className="inv-modal__sub">
-                  {formatQty(adjusting.quantity)} {UNIT_LABEL[adjusting.unit]} on the books
+            <form className="modal-form" onSubmit={handleAdjust} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="adjustModalTitle">{adjusting.name}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setAdjusting(null)}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {formatQty(adjusting.quantity)} {UNIT_LABEL[adjusting.unit]} on the books. Record what
+                  came in, or correct the figure to a shelf count.
                 </p>
               </div>
-              <button
-                type="button"
-                className="inv-modal__close"
-                onClick={() => setAdjusting(null)}
-                disabled={submitting}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
 
-            <form className="inv-modal__body" onSubmit={handleAdjust} noValidate>
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              <div className="modal-form__body">
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="inv-mode">
                 <button
@@ -681,19 +767,34 @@ export default function InventoryPanel() {
                   maxLength={200}
                 />
               </div>
+              </div>
 
-              <div className="inv-panel__modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setAdjusting(null)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-accent" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Record'}
-                </button>
+              {/* Where this leaves the shelf. The whole point of the dialog is
+                  changing that figure, so it is the figure that stays on
+                  screen while the number is typed. */}
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {adjustForm.mode === 'ADD' ? 'Stock after this' : 'Corrected to'}
+                  </span>
+                  <span className="modal-form__summary-value">
+                    {adjustedTotal == null ? '—' : formatQty(adjustedTotal)}
+                    <span className="modal-form__summary-unit"> {UNIT_LABEL[adjusting.unit]}</span>
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setAdjusting(null)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Record'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

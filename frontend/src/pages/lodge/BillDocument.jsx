@@ -888,10 +888,16 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           issued on. A preview that filled them in would be showing the desk a
           number the bill will not actually carry. */}
       <div className="memo__row">
-        <span className="memo__label">{T.no}</span>
-        <Filled narrow>
-          {invoice.invoiceNumber || (isPreview ? <em className="memo__pending">{T.onIssue}</em> : null)}
-        </Filled>
+        {/* Function bills don't print a bill number at all — the desk asked
+            for it to stay off the sheet, not just moved elsewhere. */}
+        {!isEventBill && (
+          <>
+            <span className="memo__label">{T.no}</span>
+            <Filled narrow>
+              {invoice.invoiceNumber || (isPreview ? <em className="memo__pending">{T.onIssue}</em> : null)}
+            </Filled>
+          </>
+        )}
         <span className="memo__label">{T.date}</span>
         <Filled narrow>
           {formatDate(invoice.createdAt) || (isPreview ? <em className="memo__pending">{T.onIssue}</em> : null)}
@@ -900,7 +906,11 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
 
       <div className="memo__row">
         <span className="memo__label">{T.name}</span>
-        <Filled>{isFoodBill ? invoice.tableLabel || T.counter : invoice.guestName}</Filled>
+        {/* A room tab is running for whoever is actually staying there, and a
+            counter/takeaway order carries whatever name staff typed in at
+            the till — both print like a stay bill's guest. Only a table tab
+            has no guest behind it at all, and falls back to naming the table. */}
+        <Filled>{isFoodBill ? invoice.guestName || invoice.tableLabel || T.counter : invoice.guestName}</Filled>
         <span className="memo__label">{T.mobNo}</span>
         <Filled narrow>{invoice.guestPhone}</Filled>
       </div>
@@ -914,8 +924,6 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
       <div className="memo__row memo__row--split">
         {isEventBill ? (
           <>
-            <span className="memo__label">{T.billNo}</span>
-            <Filled narrow>{invoice.invoiceNumber}</Filled>
             <span className="memo__label">{T.venue}</span>
             <Filled narrow>{invoice.venueName}</Filled>
             <span className="memo__label">{T.plates}</span>

@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { useSearchTerm, matchesSearch } from '../../lib/searchContext';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import IconButton from '../../components/IconButton';
 import { EditIcon, TrashIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
+import StepNum from '../../components/StepNum';
 import './forms.css';
 import './RoomsPanel.css';
 
@@ -21,7 +23,7 @@ function bedSummary(room) {
   if (beds.length === 0) return null;
   return beds.map((b) => `${b.count} ${bedSizeLabel[b.size] || b.size}`).join(' + ');
 }
-const bathroomTypeLabel = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
+const bathroomTypeLabel = { ATTACHED: 'Attached Bathroom', COMMON: 'Common Bathroom' };
 
 const initialForm = {
   mode: 'single',
@@ -45,7 +47,7 @@ function GuestIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.4"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -54,6 +56,28 @@ function GuestIcon() {
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+/* Same 12px box and stroke weight as GuestIcon, so the two chip icons sit at
+   the same optical size in a row. */
+function BathIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 12V5.5a2.5 2.5 0 0 1 5 0V6" />
+      <path d="M2 12h20v2a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5v-2Z" />
+      <path d="M7 19l-1 2M17 19l1 2" />
     </svg>
   );
 }
@@ -71,7 +95,33 @@ export default function RoomsPanel() {
   const [editingRoomId, setEditingRoomId] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [formError, setFormError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // The add-room form scrolls (beds, occupancy, photos below the fold), so a
+  // failure caught on Save — a blank required field, or the server rejecting
+  // the room number as already taken — has to bring itself to the eye rather
+  // than rely on already being in view. failOn does that for a single field:
+  // it puts the message under the control that caused it, marks the control
+  // itself, and scrolls there. reportFormError is the same idea for a failure
+  // that isn't any one field's fault (a save that fails after the request is
+  // already sent).
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
   const [deleteModalRoom, setDeleteModalRoom] = useState(null);
   const [deleteModalError, setDeleteModalError] = useState('');
   const [deleteModalBusy, setDeleteModalBusy] = useState(false);
@@ -262,37 +312,44 @@ export default function RoomsPanel() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
+    setFieldError(null);
 
     if (!form.categoryId) {
-      setFormError('Choose a category.');
+      failOn('categoryId', 'Choose a category.');
       return;
     }
     if ((form.mode === 'single' || editingRoomId) && !form.roomNumber.trim()) {
-      setFormError('Enter a room number.');
+      failOn('roomNumber', 'Enter a room number.');
       return;
     }
-    if (!editingRoomId && form.mode === 'bulk' && (!form.rangeStart || !form.rangeEnd)) {
-      setFormError('Enter the start and end of the range.');
+    if (!editingRoomId && form.mode === 'bulk' && !form.rangeStart) {
+      failOn('rangeStart', 'Enter the start of the range.');
+      return;
+    }
+    if (!editingRoomId && form.mode === 'bulk' && !form.rangeEnd) {
+      failOn('rangeEnd', 'Enter the end of the range.');
       return;
     }
     if (!form.floor.trim()) {
-      setFormError('Enter the floor.');
+      failOn('floor', 'Enter the floor.');
       return;
     }
-    if (form.beds.length === 0 || form.beds.some((b) => !b.size)) {
-      setFormError('Choose a size for every bed.');
+    const missingBedSize = form.beds.findIndex((b) => !b.size);
+    if (form.beds.length === 0 || missingBedSize !== -1) {
+      failOn(`bed-size-${missingBedSize === -1 ? 0 : missingBedSize}`, 'Choose a size for every bed.');
       return;
     }
-    if (form.beds.some((b) => !b.count || Number(b.count) < 1)) {
-      setFormError('Each bed needs a count of 1 or more.');
+    const badBedCount = form.beds.findIndex((b) => !b.count || Number(b.count) < 1);
+    if (badBedCount !== -1) {
+      failOn(`bed-size-${badBedCount}`, 'Each bed needs a count of 1 or more.');
       return;
     }
     if (!form.bathroomType) {
-      setFormError('Choose a bathroom type.');
+      failOn('bathroomType', 'Choose a bathroom type.');
       return;
     }
     if (!form.maxOccupancy || Number(form.maxOccupancy) <= 0) {
-      setFormError('Enter a max occupancy greater than 0.');
+      failOn('maxOccupancy', 'Enter a max occupancy greater than 0.');
       return;
     }
 
@@ -325,7 +382,17 @@ export default function RoomsPanel() {
       setShowForm(false);
       loadAll();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : `Could not ${editingRoomId ? 'save' : 'add'} the room.`);
+      // A room number (or range) already taken, or a category that stopped
+      // being valid between opening the form and saving it, both name the
+      // field they're about — so they land under it, focused and scrolled to,
+      // the same as a blank field caught before the request ever went out.
+      // Anything else (a dropped connection, a permission error) names no
+      // field and goes to the banner instead.
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOn(err.field, err.message);
+      } else {
+        reportFormError(err instanceof ApiError ? err.message : `Could not ${editingRoomId ? 'save' : 'add'} the room.`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -333,6 +400,90 @@ export default function RoomsPanel() {
 
   const loading = !error && (!rooms || !categories);
   const noCategories = categories && categories.length === 0;
+
+  // The app bar's search box, narrowed against what the card actually shows —
+  // number, category, floor, bed, bathroom, occupancy and the active/inactive
+  // word. Matching what is on the card is the point: someone types "deluxe" or
+  // "inactive" because they can see it, and a match they cannot see reads as
+  // the filter being broken.
+  // A card only earns the tall photo band if there is a photo to put in it. A
+  // room whose only image 404s counts as photoless, same as one with none at
+  // all — otherwise the card holds open 132px for a broken <img>.
+  const hasCover = (room) =>
+    room.images.length > 0 && !brokenPhotos.has(room.images[0].filename);
+
+  const searchTerm = useSearchTerm();
+  // A hotel with dozens of rooms turns "find the deluxe rooms" into a lot of
+  // scrolling through the grid, or typing the category name into the search
+  // box and hoping it's spelled the way the card shows it. A dropdown next to
+  // the room count answers the same question in one click.
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const visibleRooms = (rooms || [])
+    .filter((room) => !categoryFilter || String(room.category?.id) === categoryFilter)
+    .filter((room) =>
+      matchesSearch(
+        searchTerm,
+        room.roomNumber,
+        room.category?.name,
+        room.floor && `Floor ${room.floor}`,
+        bedSummary(room),
+        room.bathroomType && bathroomTypeLabel[room.bathroomType],
+        room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
+        room.isActive ? 'Active' : 'Inactive',
+        room.description
+      )
+    );
+  // A search that matched nothing is a different state from a lodge with no
+  // rooms yet, and the two need different words — one is a dead end you fix by
+  // clearing the box, the other by adding a room.
+  const searching = searchTerm.trim().length > 0 || categoryFilter !== '';
+
+  // --- what the add/edit form shows about itself ---
+
+  // The category carries the rate, and the rate is what the form is really
+  // setting — the chips beside the select and the figure in the footer both
+  // read off it.
+  const selectedCategory =
+    (categories || []).find((c) => String(c.id) === String(form.categoryId)) || null;
+
+  const photoCount = existingImages.length + form.imageFiles.length;
+
+  // How many rooms this submit will actually create. A bulk range whose ends
+  // aren't both filled in yet has no count to give, so it says so rather than
+  // showing a wrong one.
+  const bulkCount = (() => {
+    const from = Number(form.rangeStart);
+    const to = Number(form.rangeEnd);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+    if (!form.rangeStart || !form.rangeEnd || to < from) return null;
+    return to - from + 1;
+  })();
+
+  const roomCountLabel = editingRoomId
+    ? `Room ${form.roomNumber || '—'}`
+    : form.mode === 'bulk'
+      ? bulkCount
+        ? `${bulkCount} room${bulkCount === 1 ? '' : 's'}`
+        : 'Room range'
+      : form.roomNumber.trim()
+        ? `Room ${form.roomNumber.trim()}`
+        : '1 room';
+
+  // Which of the four blocks are answered. Same signal the booking form uses:
+  // the badge swaps its digit for a tick, so a tall form can be re-read by
+  // scrolling rather than by re-checking every field.
+  const numberDone =
+    editingRoomId || form.mode === 'single' ? form.roomNumber.trim() !== '' : bulkCount !== null;
+  const stepDone = {
+    1: numberDone,
+    2: form.categoryId !== '',
+    3:
+      form.floor.trim() !== '' &&
+      form.bathroomType !== '' &&
+      form.beds.some((b) => b.size !== '') &&
+      form.maxOccupancy !== '',
+    4: photoCount > 0,
+  };
 
   return (
     <div className="rooms-panel">
@@ -342,8 +493,27 @@ export default function RoomsPanel() {
 
       <div className="rooms-panel__toolbar">
         <span className="rooms-panel__count">
-          {rooms ? `${rooms.length} room${rooms.length === 1 ? '' : 's'}` : ' '}
+          {rooms
+            ? searching
+              ? `${visibleRooms.length} of ${rooms.length} room${rooms.length === 1 ? '' : 's'}`
+              : `${rooms.length} room${rooms.length === 1 ? '' : 's'}`
+            : ' '}
         </span>
+        {categories && categories.length > 0 && (
+          <select
+            className="rooms-panel__type-filter"
+            aria-label="Filter by room type"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="">All room types</option>
+            {categories.map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
         <button type="button" className="btn-accent" onClick={openForm} disabled={noCategories}>
           + Add room
         </button>
@@ -367,12 +537,26 @@ export default function RoomsPanel() {
         </div>
       )}
 
-      {!error && rooms && rooms.length > 0 && (
+      {!error && rooms && rooms.length > 0 && visibleRooms.length === 0 && (
+        <div className="dash-card">
+          <div className="dash-state">
+            {searchTerm.trim()
+              ? `No rooms match "${searchTerm.trim()}".`
+              : 'No rooms of this type.'}
+          </div>
+        </div>
+      )}
+
+      {!error && rooms && visibleRooms.length > 0 && (
         <div className="room-grid">
-          {rooms.map((room) => (
+          {visibleRooms.map((room) => (
             <div className="room-card" key={room.id}>
-              <div className="room-card__cover">
-                {room.images.length > 0 && !brokenPhotos.has(room.images[0].filename) ? (
+              <div
+                className={`room-card__cover${
+                  hasCover(room) ? '' : ' room-card__cover--empty'
+                }`}
+              >
+                {hasCover(room) ? (
                   <button
                     type="button"
                     className="room-card__cover-btn"
@@ -409,7 +593,13 @@ export default function RoomsPanel() {
 
               <div className="room-card__body">
                 <div className="room-card__top">
-                  <span className="room-card__number">{room.roomNumber}</span>
+                  {/* On a photoless card the band above already carries the room
+                      number at 30px, so repeating it here is the card saying the
+                      same word twice. A photo card has no such band, and needs
+                      it. */}
+                  {hasCover(room) && (
+                    <span className="room-card__number">{room.roomNumber}</span>
+                  )}
                   <span className="room-card__rate">
                     {formatPrice(room.price)}
                     <span className="room-card__rate-unit"> /night</span>
@@ -422,12 +612,15 @@ export default function RoomsPanel() {
                     {room.floor && <span className="room-card__chip">Floor {room.floor}</span>}
                     {bedSummary(room) && <span className="room-card__chip">{bedSummary(room)}</span>}
                     {room.bathroomType && (
-                      <span className="room-card__chip">{bathroomTypeLabel[room.bathroomType]}</span>
+                      <span className="room-card__chip">
+                        <BathIcon />
+                        {bathroomTypeLabel[room.bathroomType]}
+                      </span>
                     )}
                     {room.maxOccupancy && (
                       <span className="room-card__chip room-card__chip--occupancy">
                         <GuestIcon />
-                        Max {room.maxOccupancy} guest{room.maxOccupancy === 1 ? '' : 's'}
+                        Max {room.maxOccupancy} Guest{room.maxOccupancy === 1 ? '' : 's'}
                       </span>
                     )}
                   </div>
@@ -456,33 +649,71 @@ export default function RoomsPanel() {
 
       {showForm && (
         <div className="glass-backdrop rooms-panel__backdrop" onClick={closeForm}>
-          <div className="glass-panel rooms-panel__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{editingRoomId ? 'Edit room' : 'Add room'}</h3>
+          <div
+            className="glass-panel rooms-panel__modal rooms-panel__modal--form modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSubmit} noValidate>
+              {/* Header stays put while the body scrolls: single against bulk
+                  changes what the rest of the form asks for, so it shouldn't
+                  scroll out of sight. Same shape as the new-booking form. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{editingRoomId ? `Edit room · ${form.roomNumber}` : 'Add room'}</h3>
+                  {/* One room or a floor's worth is the first decision, so it
+                      belongs beside the title. An edit is always one room. */}
+                  {!editingRoomId && (
+                    <div className="toggle-group">
+                      <button
+                        type="button"
+                        aria-pressed={form.mode === 'single'}
+                        onClick={() => setForm((f) => ({ ...f, mode: 'single' }))}
+                      >
+                        Single
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={form.mode === 'bulk'}
+                        onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
+                      >
+                        Bulk range
+                      </button>
+                    </div>
+                  )}
+                  {/* The way out, visible without scrolling to the bottom of a
+                      form this tall. The one in the footer is the same door. */}
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={closeForm}
+                    disabled={submitting}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {editingRoomId
+                    ? 'Corrections apply to this room only — its bookings and history stay as they are.'
+                    : form.mode === 'bulk'
+                      ? 'Creates every room in the range at once, all sharing these details. Photos are added per room afterwards.'
+                      : 'Adds one room to the chart. Everything but the description and photos is needed before it can be booked.'}
+                </p>
+              </div>
 
-            <form onSubmit={handleSubmit} noValidate>
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              <div className="modal-form__body">
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="form-section">
-                <div className="form-section__title">Room number</div>
-
-                {!editingRoomId && (
-                  <div className="toggle-group">
-                    <button
-                      type="button"
-                      aria-pressed={form.mode === 'single'}
-                      onClick={() => setForm((f) => ({ ...f, mode: 'single' }))}
-                    >
-                      Single
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={form.mode === 'bulk'}
-                      onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
-                    >
-                      Bulk range
-                    </button>
-                  </div>
-                )}
+                <div className="form-section__title">
+                  <StepNum n={1} done={stepDone[1]} />
+                  {editingRoomId || form.mode === 'single' ? 'Room number' : 'Room range'}
+                </div>
 
                 {editingRoomId || form.mode === 'single' ? (
                   <div className="field">
@@ -492,11 +723,13 @@ export default function RoomsPanel() {
                     </label>
                     <input
                       id="roomNumber"
+                      aria-invalid={invalid('roomNumber')}
                       value={form.roomNumber}
                       onChange={(e) => setForm((f) => ({ ...f, roomNumber: e.target.value }))}
                       placeholder="101"
                       autoFocus
                     />
+                    {fieldErr('roomNumber')}
                   </div>
                 ) : (
                   <div className="field-row">
@@ -508,10 +741,12 @@ export default function RoomsPanel() {
                       <input
                         id="rangeStart"
                         type="number"
+                        aria-invalid={invalid('rangeStart')}
                         value={form.rangeStart}
                         onChange={(e) => setForm((f) => ({ ...f, rangeStart: e.target.value }))}
                         placeholder="101"
                       />
+                      {fieldErr('rangeStart')}
                     </div>
                     <div className="field">
                       <label htmlFor="rangeEnd">
@@ -521,17 +756,21 @@ export default function RoomsPanel() {
                       <input
                         id="rangeEnd"
                         type="number"
+                        aria-invalid={invalid('rangeEnd')}
                         value={form.rangeEnd}
                         onChange={(e) => setForm((f) => ({ ...f, rangeEnd: e.target.value }))}
                         placeholder="110"
                       />
+                      {fieldErr('rangeEnd')}
                     </div>
                   </div>
                 )}
               </div>
 
               <div className="form-section">
-                <div className="form-section__title">Pricing</div>
+                <div className="form-section__title">
+                  <StepNum n={2} done={stepDone[2]} />Pricing
+                </div>
 
                 <div className="field">
                   <label htmlFor="categoryId">
@@ -540,6 +779,7 @@ export default function RoomsPanel() {
                   </label>
                   <select
                     id="categoryId"
+                    aria-invalid={invalid('categoryId')}
                     value={form.categoryId}
                     onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
                   >
@@ -550,11 +790,26 @@ export default function RoomsPanel() {
                       </option>
                     ))}
                   </select>
+                  {fieldErr('categoryId')}
                 </div>
+
+                {/* What the category actually means in money, once picked. The
+                    rate is the thing being set here, and reading it back off a
+                    dropdown option is the wrong place to check it. */}
+                {selectedCategory && (
+                  <div className="modal-form__chips">
+                    <span className="modal-form__chip modal-form__chip--rate">
+                      {formatPrice(selectedCategory.basePrice)} /night
+                    </span>
+                    <span className="modal-form__chip">{selectedCategory.name}</span>
+                  </div>
+                )}
               </div>
 
               <div className="form-section">
-                <div className="form-section__title">Room details</div>
+                <div className="form-section__title">
+                  <StepNum n={3} done={stepDone[3]} />Room details
+                </div>
                 <div className="field-row">
                   <div className="field">
                     <label htmlFor="floor">
@@ -563,10 +818,12 @@ export default function RoomsPanel() {
                     </label>
                     <input
                       id="floor"
+                      aria-invalid={invalid('floor')}
                       value={form.floor}
                       onChange={(e) => setForm((f) => ({ ...f, floor: e.target.value }))}
                       placeholder="1"
                     />
+                    {fieldErr('floor')}
                   </div>
                   <div className="field">
                     <label htmlFor="bathroomType">
@@ -575,6 +832,7 @@ export default function RoomsPanel() {
                     </label>
                     <select
                       id="bathroomType"
+                      aria-invalid={invalid('bathroomType')}
                       value={form.bathroomType}
                       onChange={(e) => setForm((f) => ({ ...f, bathroomType: e.target.value }))}
                     >
@@ -585,6 +843,7 @@ export default function RoomsPanel() {
                         </option>
                       ))}
                     </select>
+                    {fieldErr('bathroomType')}
                   </div>
                 </div>
                   <div className="field field--beds">
@@ -596,51 +855,56 @@ export default function RoomsPanel() {
                         and two singles — storing whichever one the desk picked
                         first was losing the other half of the room. */}
                     {form.beds.map((bed, i) => (
-                      <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`} key={i}>
-                        <select
-                          id={`bed-size-${i}`}
-                          value={bed.size}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
-                            }))
-                          }
-                        >
-                          <option value="">Choose one</option>
-                          {BED_SIZES.map((size) => (
-                            <option key={size} value={size}>
-                              {bedSizeLabel[size]}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min="1"
-                          className="bed-row__count"
-                          aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
-                          value={bed.count}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
-                            }))
-                          }
-                        />
-                        {/* The last row has no remove button: a room with no
-                            beds is not a room, and the server rejects it. */}
-                        {form.beds.length > 1 && (
-                          <button
-                            type="button"
-                            className="bed-row__remove"
-                            aria-label="Remove this bed"
-                            onClick={() =>
-                              setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                      <div key={i}>
+                        <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`}>
+                          <select
+                            id={`bed-size-${i}`}
+                            aria-invalid={invalid(`bed-size-${i}`)}
+                            value={bed.size}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
+                              }))
                             }
                           >
-                            ×
-                          </button>
-                        )}
+                            <option value="">Choose one</option>
+                            {BED_SIZES.map((size) => (
+                              <option key={size} value={size}>
+                                {bedSizeLabel[size]}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            className="bed-row__count"
+                            aria-invalid={invalid(`bed-size-${i}`)}
+                            aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
+                            value={bed.count}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
+                              }))
+                            }
+                          />
+                          {/* The last row has no remove button: a room with no
+                              beds is not a room, and the server rejects it. */}
+                          {form.beds.length > 1 && (
+                            <button
+                              type="button"
+                              className="bed-row__remove"
+                              aria-label="Remove this bed"
+                              onClick={() =>
+                                setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                              }
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        {fieldErr(`bed-size-${i}`)}
                       </div>
                     ))}
                     <button
@@ -663,10 +927,12 @@ export default function RoomsPanel() {
                     id="maxOccupancy"
                     type="number"
                     min="1"
+                    aria-invalid={invalid('maxOccupancy')}
                     value={form.maxOccupancy}
                     onChange={(e) => setForm((f) => ({ ...f, maxOccupancy: e.target.value }))}
                     placeholder="2"
                   />
+                  {fieldErr('maxOccupancy')}
                 </div>
 
                 <div className="field">
@@ -682,8 +948,12 @@ export default function RoomsPanel() {
               </div>
 
               {(editingRoomId || form.mode === 'single') && (
-                <div className="form-section">
-                  <div className="form-section__title">Photos (optional)</div>
+                <details className="form-section form-section--collapsible" open>
+                  <summary>
+                    <StepNum n={4} done={stepDone[4]} />
+                    Photos
+                    {photoCount > 0 && <span className="form-section__badge">{photoCount}</span>}
+                  </summary>
 
                   {existingImages.length > 0 && (
                     <div className="room-form__photo-grid">
@@ -726,26 +996,47 @@ export default function RoomsPanel() {
                         e.target.value = '';
                       }}
                     />
-                    <p className="bookings-panel__hint">
+                    <p className="modal-form__hint">
                       Up to {MAX_ROOM_IMAGES} photos, JPG/PNG/WEBP, 5MB each.
                     </p>
                   </div>
-                </div>
+                </details>
               )}
+              </div>
 
-              <div className="rooms-panel__actions">
-                <button type="button" className="btn-secondary" onClick={closeForm} disabled={submitting}>
-                  Cancel
-                </button>
-                <button className="btn-accent" type="submit" disabled={submitting}>
-                  {editingRoomId
-                    ? submitting
-                      ? 'Saving…'
-                      : 'Save changes'
-                    : submitting
-                      ? 'Adding…'
-                      : 'Add room'}
-                </button>
+              {/* Rate and actions pinned below the scroll area, the way the
+                  booking form pins its total: the figure the room will be sold
+                  at has to stay visible while the details are filled in. */}
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  {selectedCategory ? (
+                    <>
+                      <span className="modal-form__summary-label">
+                        {roomCountLabel} · {selectedCategory.name}
+                      </span>
+                      <span className="modal-form__summary-value">
+                        {formatPrice(selectedCategory.basePrice)}
+                        <span className="modal-form__summary-unit"> /night</span>
+                      </span>
+                    </>
+                  ) : (
+                    <span className="modal-form__summary-label">Pick a category to set the rate</span>
+                  )}
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button type="button" className="btn-secondary" onClick={closeForm} disabled={submitting}>
+                    Cancel
+                  </button>
+                  <button className="btn-accent" type="submit" disabled={submitting}>
+                    {editingRoomId
+                      ? submitting
+                        ? 'Saving…'
+                        : 'Save changes'
+                      : submitting
+                        ? 'Adding…'
+                        : 'Add room'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

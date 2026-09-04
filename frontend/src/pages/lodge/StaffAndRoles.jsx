@@ -77,7 +77,25 @@ export default function StaffAndRoles() {
   const [staffModal, setStaffModal] = useState(null); // { mode: 'create' | 'edit', user }
   const [staffForm, setStaffForm] = useState(emptyStaffForm);
   const [staffError, setStaffError] = useState('');
+  const [staffFieldError, setStaffFieldError] = useState(null);
   const [staffBusy, setStaffBusy] = useState(false);
+  const staffErrorRef = useRef(null);
+  const reportStaffError = (message) => {
+    setStaffError(message);
+    requestAnimationFrame(() => {
+      staffErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  const failOnStaff = (id, message) => {
+    setStaffFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const staffFieldErr = (id) =>
+    id && staffFieldError?.id === id ? <p className="field__error">{staffFieldError.message}</p> : null;
+  const staffInvalid = (id) => Boolean(id) && staffFieldError?.id === id;
 
   // Opened with no role picked, not with the first role in the list. The list
   // happens to start at Owner, so pre-selecting it hands every new staff member
@@ -86,6 +104,7 @@ export default function StaffAndRoles() {
   const openCreateStaff = () => {
     setStaffForm(emptyStaffForm);
     setStaffError('');
+    setStaffFieldError(null);
     setStaffModal({ mode: 'create' });
   };
 
@@ -98,6 +117,7 @@ export default function StaffAndRoles() {
       tempPassword: '',
     });
     setStaffError('');
+    setStaffFieldError(null);
     setStaffModal({ mode: 'edit', user });
   };
 
@@ -109,17 +129,29 @@ export default function StaffAndRoles() {
   const handleSaveStaff = async (e) => {
     e.preventDefault();
     setStaffError('');
-    if (!staffForm.name.trim()) return setStaffError('Enter a name.');
-    if (!staffForm.phone.trim()) return setStaffError('Enter a phone number.');
+    setStaffFieldError(null);
+    if (!staffForm.name.trim()) {
+      failOnStaff('staffName', 'Enter a name.');
+      return;
+    }
+    if (!staffForm.phone.trim()) {
+      failOnStaff('staffPhone', 'Enter a phone number.');
+      return;
+    }
     // The input already refuses anything but ten digits, so this only catches a
     // number left half-typed — but it is what stops a nine-digit number being
     // saved as though it were a phone number.
     if (!PHONE_TEN.test(staffForm.phone.trim())) {
-      return setStaffError('Enter a 10-digit mobile number.');
+      failOnStaff('staffPhone', 'Enter a 10-digit mobile number.');
+      return;
     }
-    if (!staffForm.roleKey) return setStaffError('Choose a role.');
+    if (!staffForm.roleKey) {
+      failOnStaff('staffRole', 'Choose a role.');
+      return;
+    }
     if (staffModal.mode === 'create' && staffForm.tempPassword.length < 8) {
-      return setStaffError('Temporary password must be at least 8 characters.');
+      failOnStaff('staffPassword', 'Temporary password must be at least 8 characters.');
+      return;
     }
 
     setStaffBusy(true);
@@ -138,7 +170,11 @@ export default function StaffAndRoles() {
       setStaffModal(null);
       loadAll();
     } catch (err) {
-      setStaffError(err instanceof ApiError ? err.message : 'Could not save this staff member.');
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOnStaff(err.field, err.message);
+      } else {
+        reportStaffError(err instanceof ApiError ? err.message : 'Could not save this staff member.');
+      }
     } finally {
       setStaffBusy(false);
     }
@@ -160,17 +196,24 @@ export default function StaffAndRoles() {
   const [pwError, setPwError] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
   const [pwDone, setPwDone] = useState(false);
+  const pwErrorRef = useRef(null);
+  const reportPwError = (message) => {
+    setPwError(message);
+    requestAnimationFrame(() => {
+      pwErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setPwError('');
-    if (pwValue.length < 8) return setPwError('Temporary password must be at least 8 characters.');
+    if (pwValue.length < 8) return reportPwError('Temporary password must be at least 8 characters.');
     setPwBusy(true);
     try {
       await apiPatch(`/staff/${pwUser.id}/password`, { tempPassword: pwValue }, { token });
       setPwDone(true);
     } catch (err) {
-      setPwError(err instanceof ApiError ? err.message : 'Could not reset the password.');
+      reportPwError(err instanceof ApiError ? err.message : 'Could not reset the password.');
     } finally {
       setPwBusy(false);
     }
@@ -187,6 +230,13 @@ export default function StaffAndRoles() {
   const [roleBusy, setRoleBusy] = useState(false);
   const roleNameRef = useRef(null);
   const rolePermsRef = useRef(null);
+  const roleErrorRef = useRef(null);
+  const reportRoleError = (message) => {
+    setRoleError(message);
+    requestAnimationFrame(() => {
+      roleErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   const openCreateRole = () => {
     setRoleForm(emptyRoleForm);
@@ -274,7 +324,13 @@ export default function StaffAndRoles() {
       setRoleModal(null);
       loadAll();
     } catch (err) {
-      setRoleError(err instanceof ApiError ? err.message : 'Could not save this role.');
+      if (err instanceof ApiError && err.field === 'roleName') {
+        setRoleError(err.message);
+        setRoleInvalid('name');
+        focusRoleField('name');
+      } else {
+        reportRoleError(err instanceof ApiError ? err.message : 'Could not save this role.');
+      }
     } finally {
       setRoleBusy(false);
     }
@@ -477,13 +533,18 @@ export default function StaffAndRoles() {
                             >
                               Reset password
                             </button>
-                            <button
-                              type="button"
-                              className="chart-row__link-btn chart-row__link-btn--danger"
-                              onClick={() => toggleStaffActive(u)}
-                            >
-                              {u.isActive ? 'Disable' : 'Enable'}
-                            </button>
+                            {/* Owners can't be disabled from here — the backend
+                                refuses the last active owner anyway, and the
+                                button only ever offered an error. */}
+                            {u.roleKey !== 'OWNER' && (
+                              <button
+                                type="button"
+                                className="chart-row__link-btn chart-row__link-btn--danger"
+                                onClick={() => toggleStaffActive(u)}
+                              >
+                                {u.isActive ? 'Disable' : 'Enable'}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -573,10 +634,38 @@ export default function StaffAndRoles() {
       {/* Staff create / edit */}
       {staffModal && (
         <div className="glass-backdrop staff-roles__backdrop" onClick={closeStaffModal}>
-          <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{staffModal.mode === 'create' ? 'Add staff' : 'Edit staff'}</h3>
-            <form onSubmit={handleSaveStaff} noValidate>
-              {staffError && <div className="form-banner form-banner--error">{staffError}</div>}
+          <div
+            className="glass-panel staff-roles__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSaveStaff} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{staffModal.mode === 'create' ? 'Add staff' : 'Edit staff'}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={closeStaffModal}
+                    disabled={staffBusy}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  {staffModal.mode === 'create'
+                    ? 'They sign in with their phone number and the temporary password you set here.'
+                    : 'Their details and what they can reach. Changing the role changes it immediately.'}
+                </p>
+              </div>
+
+              <div className="modal-form__body">
+              {staffError && (
+                <div ref={staffErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {staffError}
+                </div>
+              )}
               <div className="field-row">
                 <div className="field">
                   <label htmlFor="staffName">
@@ -585,9 +674,11 @@ export default function StaffAndRoles() {
                   </label>
                   <input
                     id="staffName"
+                    aria-invalid={staffInvalid('staffName')}
                     value={staffForm.name}
                     onChange={(e) => setStaffForm((f) => ({ ...f, name: e.target.value }))}
                   />
+                  {staffFieldErr('staffName')}
                 </div>
                 <div className="field">
                   <label htmlFor="staffPhone">
@@ -599,6 +690,7 @@ export default function StaffAndRoles() {
                     type="tel"
                     inputMode="numeric"
                     maxLength={PHONE_MAX}
+                    aria-invalid={staffInvalid('staffPhone')}
                     value={staffForm.phone}
                     onChange={(e) =>
                       setStaffForm((f) => ({
@@ -612,6 +704,7 @@ export default function StaffAndRoles() {
                     }
                     placeholder="9876543210"
                   />
+                  {staffFieldErr('staffPhone')}
                 </div>
               </div>
               <div className="field-row">
@@ -630,6 +723,7 @@ export default function StaffAndRoles() {
                   </label>
                   <select
                     id="staffRole"
+                    aria-invalid={staffInvalid('staffRole')}
                     value={staffForm.roleKey}
                     onChange={(e) => setStaffForm((f) => ({ ...f, roleKey: e.target.value }))}
                   >
@@ -640,6 +734,7 @@ export default function StaffAndRoles() {
                       </option>
                     ))}
                   </select>
+                  {staffFieldErr('staffRole')}
                 </div>
               </div>
 
@@ -654,23 +749,41 @@ export default function StaffAndRoles() {
                   <input
                     id="staffPassword"
                     type="text"
+                    aria-invalid={staffInvalid('staffPassword')}
                     value={staffForm.tempPassword}
                     onChange={(e) => setStaffForm((f) => ({ ...f, tempPassword: e.target.value }))}
                     placeholder="At least 8 characters"
                   />
+                  {staffFieldErr('staffPassword')}
                   <p className="staff-roles__sub">
                     Share this with them — they&apos;ll be asked to set their own after signing in.
                   </p>
                 </div>
               )}
+              </div>
 
-              <div className="staff-roles__actions">
-                <button type="button" className="btn-secondary" onClick={closeStaffModal} disabled={staffBusy}>
-                  Cancel
-                </button>
-                <button className="btn-accent" type="submit" disabled={staffBusy}>
-                  {staffBusy ? 'Saving…' : 'Save'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {staffForm.name.trim() || 'New staff member'}
+                  </span>
+                  <span className="modal-form__summary-value modal-form__summary-value--text">
+                    {roles.find((r) => r.roleKey === staffForm.roleKey)?.name || 'No role yet'}
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeStaffModal}
+                    disabled={staffBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button className="btn-accent" type="submit" disabled={staffBusy}>
+                    {staffBusy ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -680,22 +793,67 @@ export default function StaffAndRoles() {
       {/* Reset password */}
       {pwUser && (
         <div className="glass-backdrop staff-roles__backdrop" onClick={() => !pwBusy && setPwUser(null)}>
-          <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Reset password</h3>
+          <div
+            className="glass-panel staff-roles__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
             {pwDone ? (
-              <>
-                <div className="form-banner form-banner--info">
-                  Done. {pwUser.name} can sign in with this password and will be asked to change it.
+              <div className="modal-form">
+                <div className="modal-form__head">
+                  <div className="modal-form__head-row">
+                    <h3>Reset password</h3>
+                    <button
+                      type="button"
+                      className="modal-form__close"
+                      onClick={() => setPwUser(null)}
+                      aria-label="Close"
+                      title="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
-                <div className="staff-roles__actions">
-                  <button type="button" className="btn-accent" onClick={() => setPwUser(null)}>
-                    Close
-                  </button>
+                <div className="modal-form__body">
+                  <div className="form-banner form-banner--info">
+                    Done. {pwUser.name} can sign in with this password and will be asked to change it.
+                  </div>
                 </div>
-              </>
+                <div className="modal-form__foot">
+                  <div className="modal-form__foot-actions">
+                    <button type="button" className="btn-accent" onClick={() => setPwUser(null)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <form onSubmit={handleResetPassword} noValidate>
-                {pwError && <div className="form-banner form-banner--error">{pwError}</div>}
+              <form className="modal-form" onSubmit={handleResetPassword} noValidate>
+                <div className="modal-form__head">
+                  <div className="modal-form__head-row">
+                    <h3>Reset password</h3>
+                    <button
+                      type="button"
+                      className="modal-form__close"
+                      onClick={() => setPwUser(null)}
+                      disabled={pwBusy}
+                      aria-label="Close"
+                      title="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <p className="modal-form__sub">
+                    Sets a password for {pwUser.name} to sign in with once. They are asked to choose
+                    their own straight after.
+                  </p>
+                </div>
+
+                <div className="modal-form__body">
+                {pwError && (
+                  <div ref={pwErrorRef} className="form-banner form-banner--error form-banner--flash">
+                    {pwError}
+                  </div>
+                )}
                 <div className="field">
                   <label htmlFor="pwValue">
                     Temporary password for {pwUser.name}
@@ -710,13 +868,22 @@ export default function StaffAndRoles() {
                     autoFocus
                   />
                 </div>
-                <div className="staff-roles__actions">
-                  <button type="button" className="btn-secondary" onClick={() => setPwUser(null)} disabled={pwBusy}>
-                    Cancel
-                  </button>
-                  <button className="btn-accent" type="submit" disabled={pwBusy}>
-                    {pwBusy ? 'Saving…' : 'Reset password'}
-                  </button>
+                </div>
+
+                <div className="modal-form__foot">
+                  <div className="modal-form__foot-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setPwUser(null)}
+                      disabled={pwBusy}
+                    >
+                      Cancel
+                    </button>
+                    <button className="btn-accent" type="submit" disabled={pwBusy}>
+                      {pwBusy ? 'Saving…' : 'Reset password'}
+                    </button>
+                  </div>
                 </div>
               </form>
             )}
@@ -727,11 +894,41 @@ export default function StaffAndRoles() {
       {/* Role create / edit */}
       {roleModal && (
         <div className="glass-backdrop staff-roles__backdrop" onClick={closeRoleModal}>
-          <div className="glass-panel staff-roles__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{roleModal.mode === 'create' ? 'Add role' : `Edit ${roleModal.role.name}`}</h3>
-            <form onSubmit={handleSaveRole} noValidate>
+          <div
+            className="glass-panel staff-roles__modal modal-form__panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleSaveRole} noValidate>
+              {/* The access list is the tall part, so the title and Save are
+                  pinned and only the checkboxes scroll. */}
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>{roleModal.mode === 'create' ? 'Add role' : `Edit ${roleModal.role.name}`}</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={closeRoleModal}
+                    disabled={roleBusy}
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="modal-form__sub">
+                  A job title and what it can reach. Staff are given a role rather than individual
+                  permissions, so changing it here changes it for everyone who holds it.
+                </p>
+              </div>
+
+              <div className="modal-form__body">
               {roleError && (
-                <div id="roleFormError" className="form-banner form-banner--error" role="alert">
+                <div
+                  ref={roleErrorRef}
+                  id="roleFormError"
+                  className="form-banner form-banner--error form-banner--flash"
+                  role="alert"
+                >
                   {roleError}
                 </div>
               )}
@@ -810,14 +1007,31 @@ export default function StaffAndRoles() {
                   ))}
                 </div>
               </div>
+              </div>
 
-              <div className="staff-roles__actions">
-                <button type="button" className="btn-secondary" onClick={closeRoleModal} disabled={roleBusy}>
-                  Cancel
-                </button>
-                <button className="btn-accent" type="submit" disabled={roleBusy}>
-                  {roleBusy ? 'Saving…' : 'Save access'}
-                </button>
+              <div className="modal-form__foot">
+                <div className="modal-form__summary">
+                  <span className="modal-form__summary-label">
+                    {roleForm.name.trim() || 'New role'} · access
+                  </span>
+                  <span className="modal-form__summary-value">
+                    {roleForm.permissions.length}
+                    <span className="modal-form__summary-unit"> of {catalog.length}</span>
+                  </span>
+                </div>
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeRoleModal}
+                    disabled={roleBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button className="btn-accent" type="submit" disabled={roleBusy}>
+                    {roleBusy ? 'Saving…' : 'Save access'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

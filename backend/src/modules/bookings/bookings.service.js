@@ -540,8 +540,11 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
 
 // Completed stays are on the chart alongside live ones so a month that has
 // already happened reads as what happened, not as a month of empty rooms.
-// CANCELLED is left off: it held nothing, and drawing it would report a room
-// as taken on a night it was always on sale.
+// CANCELLED is kept out of `bookings`: it holds nothing, and drawing it as a
+// stay would report a room as taken on a night it was always on sale. It
+// comes back in its own `cancelled` list instead — the chart marks the nights
+// it would have held with a border, not a fill, so the desk can see a booking
+// fell through there while the night itself still reads as sellable.
 //
 // A checked-out stay never blocks a night, though — hasOverlap() and the room
 // pickers both ignore CHECKED_OUT — so the chart only paints its nights that
@@ -602,6 +605,24 @@ async function getTapeChart(lodgeId, startDate, endDate) {
   // stand in for a stay.
   const drafts = await draftsService.listDraftsForRange(pool, lodgeId, startDate, endDate);
 
+  // Cancelled stays, apart for the same reason drafts are: they hold no
+  // night, and a live booking can sit on the very dates one fell through on.
+  // Only what the border mark and its hover card say — the full record is a
+  // click away in the register's Cancelled cut.
+  const cancelledResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('startDate', sql.Date, startDate)
+    .input('endDate', sql.Date, endDate)
+    .query(`
+      SELECT b.id, b.room_id, b.guest_name, b.check_in_date, b.check_out_date,
+             b.cancelled_at, b.refund_amount, b.cancellation_charge
+      FROM dbo.bookings b
+      WHERE b.lodge_id = @lodgeId AND b.status = 'CANCELLED'
+        AND b.check_in_date < @endDate AND b.check_out_date > @startDate
+      ORDER BY b.check_in_date ASC
+    `);
+
   return {
     rooms: roomsResult.recordset.map((r) => ({
       id: r.id,
@@ -627,6 +648,16 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       checkOutDate: toIsoDate(b.check_out_date),
       status: b.status,
       totalPrice: Number(b.total_price),
+    })),
+    cancelled: cancelledResult.recordset.map((b) => ({
+      id: b.id,
+      roomId: b.room_id,
+      guestName: b.guest_name,
+      checkInDate: toIsoDate(b.check_in_date),
+      checkOutDate: toIsoDate(b.check_out_date),
+      cancelledAt: b.cancelled_at ?? null,
+      refundAmount: b.refund_amount != null ? Number(b.refund_amount) : null,
+      cancellationCharge: b.cancellation_charge != null ? Number(b.cancellation_charge) : null,
     })),
   };
 }
@@ -689,6 +720,17 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     status: row.status,
     actualCheckInAt: row.actual_check_in_at,
     actualCheckOutAt: row.actual_check_out_at,
+    // The settlement a cancellation recorded: what went back to the guest and
+    // what the house kept as the cancellation charge. All NULL on a live stay,
+    // and on a cancellation that never settled the question.
+    cancelReason: row.cancel_reason ?? null,
+    refundAmount: row.refund_amount != null ? Number(row.refund_amount) : null,
+    refundPaymentMethod: row.refund_payment_method ?? null,
+    cancellationCharge: row.cancellation_charge != null ? Number(row.cancellation_charge) : null,
+    // Set only on a charge collected at the desk — a charge kept from an
+    // advance has no tender of its own.
+    cancellationChargePaymentMethod: row.cancellation_charge_payment_method ?? null,
+    cancelledAt: row.cancelled_at ?? null,
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : null,
     // The first tender, kept as it always was. A stay whose advance arrived two
     // ways still has one method here, which is why advancePaymentLines exists.
@@ -1865,19 +1907,85 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   return getBooking(lodgeId, bookingId);
 }
 
-async function cancelBooking(lodgeId, bookingId) {
+// Cancelling settles the money as well as the room, and the settlement takes
+// one of two shapes, decided by whether an advance is held:
+//
+//   - An advance held: the desk says how much goes back to the guest, and
+//     whatever it holds on to is the cancellation charge — computed against
+//     the advance as it stands inside the same statement, so the split can
+//     never drift from the advance even if a receipt lands between the screen
+//     and the click. The charge has no tender of its own: the money arrived
+//     when the advance did.
+//   - No advance: there is nothing to refund, but the desk may collect a
+//     cancellation charge from the guest on the spot — money coming in, so it
+//     carries its own tender. Capped at the stay's price: a fee larger than
+//     the booking it is for is a typo, not a policy.
+//
+// The two shapes are mutually exclusive and the WHERE clause holds each to
+// its side. Money already taken is never touched: the advance and its
+// receipts stay as the paper trail, and the settlement columns say where the
+// money went. No settlement figures at all (an old client) leaves the columns
+// NULL — "not settled", not "kept nothing".
+async function cancelBooking(
+  lodgeId,
+  bookingId,
+  { reason = null, refundAmount = null, refundPaymentMethod = null, cancellationCharge = null, cancellationChargePaymentMethod = null } = {}
+) {
   const pool = await getPool();
+  const refund = refundAmount != null ? round2(Number(refundAmount)) : null;
+  const charge = cancellationCharge != null ? round2(Number(cancellationCharge)) : null;
+  if (refund != null && charge != null) {
+    throw new ApiError('Settle either the advance or a collected charge — not both.', 400);
+  }
+  if (charge > 0 && !cancellationChargePaymentMethod) {
+    throw new ApiError('Choose how the cancellation charge was collected.', 400);
+  }
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
+    .input('reason', sql.NVarChar(200), reason ?? null)
+    .input('refund', sql.Decimal(10, 2), refund)
+    // A tender only means anything against money that actually moved — a
+    // zero refund keeps none and a zero charge collects none, whatever the
+    // screen had selected.
+    .input('refundMethod', sql.NVarChar(20), refund > 0 ? (refundPaymentMethod ?? null) : null)
+    .input('charge', sql.Decimal(10, 2), charge)
+    .input('chargeMethod', sql.NVarChar(20), charge > 0 ? (cancellationChargePaymentMethod ?? null) : null)
     .query(`
       UPDATE dbo.bookings
-      SET status = 'CANCELLED'
+      SET status = 'CANCELLED',
+          cancel_reason = @reason,
+          cancelled_at = SYSDATETIMEOFFSET(),
+          refund_amount = @refund,
+          refund_payment_method = @refundMethod,
+          cancellation_charge = CASE WHEN @charge IS NOT NULL THEN @charge
+                                     WHEN @refund IS NULL THEN NULL
+                                     ELSE ISNULL(advance_amount, 0) - @refund END,
+          cancellation_charge_payment_method = @chargeMethod
       OUTPUT inserted.id
       WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'BOOKED'
+        AND (@refund IS NULL OR @refund <= ISNULL(advance_amount, 0))
+        AND (@charge IS NULL OR (ISNULL(advance_amount, 0) = 0 AND @charge <= total_price))
     `);
   if (result.recordset.length === 0) {
+    // The guard refuses several different things; tell the desk which one it
+    // hit rather than making it guess.
+    const check = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`SELECT advance_amount, total_price FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'BOOKED'`);
+    const row = check.recordset[0];
+    if (row) {
+      if (charge != null && Number(row.advance_amount) > 0) {
+        throw new ApiError('This booking holds an advance — settle it as a refund, keeping the charge from it.', 400);
+      }
+      if (charge != null && charge > Number(row.total_price)) {
+        throw new ApiError('The cancellation charge can’t be more than the stay’s price.', 400);
+      }
+      throw new ApiError('The refund can’t be more than the advance held on this booking.', 400);
+    }
     throw new ApiError('Booking not found or cannot be cancelled.', 409);
   }
   return getBooking(lodgeId, bookingId);
