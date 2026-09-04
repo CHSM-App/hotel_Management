@@ -1128,13 +1128,6 @@
   }
 }
 
-/* A past vacant night is a button now — a stay can be recorded against it
-   after the fact. It keeps its muted look, because an empty night that has
-   gone is a fact first and an offer second, but it has to answer the pointer
-   like something that can be pressed. */
-.tape-tile--past {
-  cursor: pointer;
-}
 /* ---------------------------------------------------------------------------
    The month boundary
    ---------------------------------------------------------------------------

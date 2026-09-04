@@ -1450,7 +1450,11 @@ async function listOpenFoodTabs(lodgeId) {
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
                CASE WHEN o.source = 'COUNTER' THEN o.id END,
                rb.guest_name, rb.guest_phone
-      ORDER BY MIN(o.placed_at) ASC
+      -- Newest activity first: a fresh order on a table that already has an
+      -- open tab is what the desk needs to see next, so the row has to jump
+      -- to the top on that order rather than stay pinned to when the tab was
+      -- first opened.
+      ORDER BY MAX(o.placed_at) DESC
     `);
 
   return result.recordset.map((row) => ({

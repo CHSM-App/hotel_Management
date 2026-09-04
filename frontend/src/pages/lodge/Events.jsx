@@ -65,7 +65,9 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const [hover, setHover] = useState(null);
 
   const dates = useMemo(() => Array.from({ length: windowDays }, (_, i) => addDays(windowStart, i)), [windowStart, windowDays]);
-  const label = formatWindowLabel(dates[0], dates[dates.length - 1]);
+  // Always the first page's span, even once the chart has grown from
+  // scrolling — the way the room chart's label holds steady too.
+  const label = formatWindowLabel(windowStart, addDays(windowStart, WINDOW_DAYS - 1));
 
   useEffect(() => {
     const q = new URLSearchParams({ fromDate: dates[0], toDate: dates[dates.length - 1], includeClosed: 'true' });
@@ -120,7 +122,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
     setWindowStart(start);
     setWindowDays(WINDOW_DAYS);
   };
-  const step = (n) => goTo(addDays(windowStart, n * windowDays));
+  const step = (n) => goTo(addDays(windowStart, n * WINDOW_DAYS));
   const goToday = () => goTo(addDays(today, -WINDOW_PAST_DAYS));
 
   // --- growing the window as it is scrolled ---------------------------------
@@ -200,20 +202,26 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const renderCell = (venue, d) => {
     const cell = cells.get(venue.id)?.get(d) || [];
     if (cell.length === 0) {
+      const isPast = d < today;
       const classes = ['tape-tile', 'tape-tile--vacant'];
       if (isWeekend(d)) classes.push('tape-tile--weekend');
-      if (d < today) classes.push('tape-tile--past');
+      if (isPast) classes.push('tape-tile--past');
       return (
         <button
           key={d}
           type="button"
           className={classes.join(' ')}
-          onClick={() => onNew(d, venue.id)}
-          onMouseEnter={(e) => showHover(e, { venue, date: d, ev: null })}
-          onFocus={(e) => showHover(e, { venue, date: d, ev: null })}
+          disabled={isPast}
+          onClick={() => !isPast && onNew(d, venue.id)}
+          onMouseEnter={(e) => showHover(e, { venue, date: d, ev: null, past: isPast })}
+          onFocus={(e) => showHover(e, { venue, date: d, ev: null, past: isPast })}
           onMouseLeave={hide}
           onBlur={hide}
-          aria-label={`${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start an enquiry`}
+          aria-label={
+            isPast
+              ? `${venue.name} on ${formatEventDate(`${d}T00:00:00`)} — past date`
+              : `${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start an enquiry`
+          }
         />
       );
     }
@@ -408,7 +416,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               </span>
               <strong>{hover.venue.name}</strong>
               <span className="tape-tooltip__dates">{formatEventDate(`${hover.date}T00:00:00`)}</span>
-              <span className="tape-tooltip__hint">Click to start an enquiry</span>
+              <span className="tape-tooltip__hint">{hover.past ? 'Past date — bookings are closed' : 'Click to start an enquiry'}</span>
             </>
           )}
         </div>

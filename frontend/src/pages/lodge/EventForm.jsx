@@ -640,6 +640,9 @@ export default function EventForm({
                 <input
                   id="ev-startDate"
                   type="date"
+                  // A new enquiry can't be backdated; editing an existing function
+                  // leaves its date open so a past record can still be corrected.
+                  min={isEdit ? undefined : toDateKey(new Date())}
                   value={form.startDate}
                   onChange={(e) => {
                     const d = e.target.value;
@@ -932,7 +935,7 @@ export default function EventForm({
         </div>
 
         {!isEdit && (
-          <details className="form-section form-section--collapsible" open={advanceTouched}>
+          <details className="form-section form-section--collapsible" open>
             <summary>
               Advance payment
               {advanceAmount > 0 && <span className="form-section__badge">{formatPrice(advanceAmount)}</span>}

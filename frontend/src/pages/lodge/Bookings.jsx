@@ -879,9 +879,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setWindowDays(WINDOW_DAYS);
   };
 
-  // A whole window at a time, so stepping forward shows thirty nights nobody
-  // has looked at rather than re-showing twenty-six of them.
-  const stepWindow = (n) => goToMonth(addDays(month, n * windowDays));
+  // A whole page at a time — WINDOW_DAYS, not the current (possibly grown)
+  // windowDays, since goToMonth always resets the landing view back to a
+  // page. Stepping by the grown size would skip the days in between.
+  const stepWindow = (n) => goToMonth(addDays(month, n * WINDOW_DAYS));
 
   // Rooms are shown category by category rather than in one long list, so the
   // desk can see at a glance which grade of room is still sellable. Insertion
@@ -1550,12 +1551,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // fact — the backend refuses to change it, and this keeps the box from
   // offering something the save would reject.
   const canEditCheckIn = !editing || editTarget?.status === 'BOOKED';
-  // A night that has already gone can't be sold — flagged, not refused. Asked
-  // wherever the date is actually being chosen: a new booking, or a reservation
-  // being re-dated. Never of a stay whose check-in is fixed, where the date in
-  // the box is simply the day the guest arrived and a stay that ended last week
-  // must go on being editable.
-  const isPastCheckIn = canEditCheckIn && bookingForm.checkInDate < today;
 
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
@@ -2771,26 +2766,21 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           }
 
           // A night that has already gone, with nothing recorded against it.
-          // Still a button: it cannot be *sold* now, but it can be *recorded* —
-          // a stay taken on paper over the weekend, or one being entered after
-          // the fact, has to be enterable against the night it actually
-          // happened on. It stays visually muted, because an empty past night
-          // is a fact first and an offer second.
+          // Shown only — not a button: it cannot be *sold* now, and a new
+          // booking cannot be backdated onto it either, so there is nothing a
+          // click here should do. It stays visually muted, because an empty
+          // past night is a fact, not an offer.
           if (!booking && past) {
             const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
-              <button
+              <div
                 key={d}
-                type="button"
                 className={classes.join(' ')}
-                onClick={() => openNewBooking(room.id, d)}
                 onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
                 onMouseLeave={() => setHoverTile(null)}
-                onBlur={() => setHoverTile(null)}
-                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)} — record a stay`}
+                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)}`}
               />
             );
           }
@@ -3570,15 +3560,14 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                       id="checkInDate"
                       type="date"
                       value={bookingForm.checkInDate}
-                      // No floor. A past night cannot be *sold*, but it can be
-                      // recorded: a stay taken on paper over the weekend, or one
-                      // the desk is entering after the fact, is a real booking
-                      // that happened and the register has to be able to hold
-                      // it. The warning below says which case this is.
+                      // Today is the floor: a past night cannot be sold, and a
+                      // new or moved booking cannot be backdated onto one
+                      // either — the date has already gone.
                       // Editable on a reservation that hasn't been checked in
                       // yet — moving a booked stay to different dates is an
                       // ordinary correction. Fixed once the guest has arrived:
                       // by then the day they did is a recorded fact.
+                      min={today}
                       disabled={!canEditCheckIn}
                       aria-invalid={invalid('checkInDate')}
                       onChange={(e) => {
@@ -3596,33 +3585,21 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             checkInDate && f.checkOutDate && f.checkOutDate <= checkInDate
                               ? addDays(checkInDate, Math.max(1, daysBetween(f.checkInDate, f.checkOutDate)))
                               : f.checkOutDate,
-                          // A future date can only be a reservation. A past one
-                          // can only be a stay that already started, so it is
-                          // recorded as a walk-in and checks itself in on save —
-                          // which is what "this happened" means. An edit is
-                          // neither: the stay already exists, and its type is
-                          // not something this box gets to rewrite.
+                          // A future date can only be a reservation; today can
+                          // only be a walk-in. An edit is neither: the stay
+                          // already exists, and its type is not something this
+                          // box gets to rewrite.
                           bookingType: editing
                             ? f.bookingType
                             : checkInDate > today
                               ? 'RESERVATION'
-                              : checkInDate < today
+                              : checkInDate === today
                                 ? 'WALK_IN'
                                 : f.bookingType,
                         }));
                       }}
                     />
-                    {/* Flagged as it is typed, and deliberately not an error:
-                        a backdated stay is allowed, it is just rarely what
-                        someone means to type. Saying so under the date keeps
-                        the slip visible without standing in the way of the desk
-                        that meant it. */}
-                    {fieldErr('checkInDate') ||
-                      (isPastCheckIn && (
-                        <p className="bookings-panel__note">
-                          Backdated — this records a stay that has already begun.
-                        </p>
-                      ))}
+                    {fieldErr('checkInDate')}
                   </div>
                   <div className="field">
                     <label htmlFor="checkOutDate">
