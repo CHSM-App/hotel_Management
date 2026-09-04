@@ -211,7 +211,13 @@ export default function ReportsPanel() {
           </div>
           <div className="field">
             <label htmlFor="reportsToDate">To</label>
-            <input id="reportsToDate" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            <input
+              id="reportsToDate"
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(e) => setToDate(e.target.value)}
+            />
           </div>
         </div>
         {!validRange ? (

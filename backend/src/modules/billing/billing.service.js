@@ -1419,7 +1419,7 @@ async function listOpenFoodTabs(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
+      SELECT o.source, o.table_id, o.room_id, o.booking_id, t.label AS table_label, r.room_number,
              -- A counter order pays for itself, so it groups alone: the id is
              -- part of its key, and null for the two tabs that do accumulate.
              CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
@@ -1427,9 +1427,16 @@ async function listOpenFoodTabs(lodgeId) {
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
              MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at,
              -- Who a room tab is actually running for — the same guest the bill
-             -- itself will name. A table tab has nobody behind it. A counter tab
-             -- is always exactly one order (see tabIdentity), so MAX here is just
-             -- that order's own guest_name/guest_phone, typed in at the till.
+             -- itself will name. Looked up by the order's own booking_id, not
+             -- by "whoever is checked into the room right now": a room is
+             -- reused by every guest who stays in it, and a later guest's
+             -- name must never be attached to an earlier guest's unpaid tab
+             -- (they're already split into separate tabs by booking_id — see
+             -- tabIdentity — but this name lookup has to follow that split
+             -- too, or the label alone would misname the payer). A table tab
+             -- has nobody behind it. A counter tab is always exactly one
+             -- order (see tabIdentity), so MAX here is just that order's own
+             -- guest_name/guest_phone, typed in at the till.
              COALESCE(rb.guest_name, MAX(o.guest_name)) AS guest_name,
              COALESCE(rb.guest_phone, MAX(o.guest_phone)) AS guest_phone
       FROM dbo.food_orders o
@@ -1438,8 +1445,7 @@ async function listOpenFoodTabs(lodgeId) {
       OUTER APPLY (
         SELECT TOP 1 b.guest_name, b.guest_phone
         FROM dbo.bookings b
-        WHERE o.source = 'ROOM' AND b.room_id = o.room_id AND b.status = 'CHECKED_IN'
-        ORDER BY b.actual_check_in_at DESC
+        WHERE o.source = 'ROOM' AND b.id = o.booking_id
       ) rb
       WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
         -- Every delivered, unbilled order is an open tab, including room
@@ -1447,7 +1453,10 @@ async function listOpenFoodTabs(lodgeId) {
         -- stay bill, so a checked-in guest's room order has no other document
         -- to ride on: this queue is where it gets billed, and leaving it out
         -- would strand the charge with no way to collect it.
-      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
+        -- booking_id is in the GROUP BY so two stays in the same room — one
+        -- already checked out with an unpaid order, one just checked in and
+        -- ordering now — group into two rows, not one shared tab.
+      GROUP BY o.source, o.table_id, o.room_id, o.booking_id, t.label, r.room_number,
                CASE WHEN o.source = 'COUNTER' THEN o.id END,
                rb.guest_name, rb.guest_phone
       -- Newest activity first: a fresh order on a table that already has an
@@ -1503,8 +1512,16 @@ function tabIdentity(row) {
     return { tab: `table-${row.table_id}`, tableId: row.table_id, roomId: null, tableLabel: row.table_label };
   }
   if (row.source === 'ROOM') {
+    // Keyed on the stay, not the room. A room is reused by every guest who
+    // ever checks into it, and its orders carry the booking_id of whichever
+    // stay placed them (see 028_food_orders.sql). Keying on room_id alone
+    // means an earlier guest's unpaid order and the current guest's order
+    // are indistinguishable — the room's next occupant would inherit the
+    // last one's unpaid food. booking_id splits them back into one tab per
+    // stay; only food served before anyone had checked in (booking_id NULL)
+    // still keys on the room itself.
     return {
-      tab: `room-${row.room_id}`,
+      tab: row.booking_id != null ? `room-booking-${row.booking_id}` : `room-${row.room_id}`,
       tableId: null,
       roomId: row.room_id,
       tableLabel: `Room ${row.room_number}`,
@@ -1527,7 +1544,7 @@ function tabIdentity(row) {
 // server fault — rejected here rather than reaching the driver as a NaN bound
 // to a BigInt, which is what surfaced as a 500.
 function tabScope(request, tab) {
-  const match = /^(table|room|counter)-(\d+)$/.exec(String(tab ?? ''));
+  const match = /^(table|room|room-booking|counter)-(\d+)$/.exec(String(tab ?? ''));
   const id = match ? Number(match[2]) : NaN;
   if (!match || !Number.isSafeInteger(id) || id <= 0) {
     throw new ApiError('Unknown tab.', 400);
@@ -1537,9 +1554,21 @@ function tabScope(request, tab) {
     request.input('tableId', sql.BigInt, id);
     return "AND o.source = 'TABLE' AND o.table_id = @tableId";
   }
+  if (match[1] === 'room-booking') {
+    // One stay, one tab — see tabIdentity. Pinned to the booking rather than
+    // the room, so a later guest in the same room never sweeps up an earlier
+    // guest's unpaid order, and an earlier guest's order stays reachable
+    // (and billable) under their own stay after they've checked out.
+    request.input('bookingId', sql.BigInt, id);
+    return "AND o.source = 'ROOM' AND o.booking_id = @bookingId";
+  }
   if (match[1] === 'room') {
+    // Food served to a room with nobody checked in has no stay to key on, so
+    // it still keys on the room itself. booking_id IS NULL keeps this tab
+    // from also picking up a booked stay's orders (those key on
+    // room-booking-<id> instead — see tabIdentity).
     request.input('roomId', sql.BigInt, id);
-    return "AND o.source = 'ROOM' AND o.room_id = @roomId";
+    return "AND o.source = 'ROOM' AND o.room_id = @roomId AND o.booking_id IS NULL";
   }
   // One takeaway, one bill. Pinned to the order id rather than to
   // source='COUNTER', which would sweep every other walk-in still unbilled.
@@ -1569,6 +1598,12 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     subtotal: Number(row.subtotal),
     placedAt: row.placed_at,
     tableLabel: tabIdentity(row).tableLabel,
+    // Carried through so issueFoodInvoice can stamp the invoice with the
+    // table/room the orders actually came from, without re-parsing the tab
+    // string — which stopped being a reliable source once a room tab could
+    // read room-booking-<id> as well as room-<id>.
+    tableId: row.table_id ?? null,
+    roomId: row.room_id ?? null,
     // Only a counter/takeaway order carries its own name and phone — typed in
     // at the till because there is no booking or table to name it instead.
     guestName: row.guest_name ?? null,
@@ -1620,15 +1655,30 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
     throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
   }
 
-  // A room tab is food charged to whoever is actually staying there — the
-  // same guest the checkout bill would name — so the preview looks the
-  // guest up the same way resolveRoomBooking() does for the order itself.
-  // A counter/takeaway tab has no booking behind it, but staff typed a name
-  // and phone in at the till when the order was placed, and that travels
-  // with the order itself. A table tab has neither, and stays blank.
+  // A room tab is food charged to whoever ran it up — the same guest the
+  // stay bill would name — so the preview looks the guest up the same way
+  // resolveRoomBooking() does for the order itself. A counter/takeaway tab
+  // has no booking behind it, but staff typed a name and phone in at the
+  // till when the order was placed, and that travels with the order itself.
+  // A table tab has neither, and stays blank.
+  const roomBookingMatch = /^room-booking-(\d+)$/.exec(String(tab ?? ''));
   const roomMatch = /^room-(\d+)$/.exec(String(tab ?? ''));
   let guest = null;
-  if (roomMatch) {
+  if (roomBookingMatch) {
+    // This tab is pinned to one stay (see tabIdentity/tabScope), which may
+    // since have checked out — the food it ran up is still billed to that
+    // guest, so the lookup is by booking id alone, not status = CHECKED_IN.
+    const guestResult = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('bookingId', sql.BigInt, Number(roomBookingMatch[1]))
+      .query(`
+        SELECT TOP 1 guest_name, guest_phone, num_guests
+        FROM dbo.bookings
+        WHERE lodge_id = @lodgeId AND id = @bookingId
+      `);
+    guest = guestResult.recordset[0] ?? null;
+  } else if (roomMatch) {
     const guestResult = await pool
       .request()
       .input('lodgeId', sql.BigInt, lodgeId)
@@ -1712,12 +1762,13 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
       throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
     }
 
-    // Which of the three the tab is, so the document can name it. Derived from
-    // the same segment the orders were selected by, so the bill can never claim
-    // a table it did not sweep.
-    const tabMatch = /^(table|room)-(\d+)$/.exec(String(tab ?? ''));
-    const tabTableId = tabMatch?.[1] === 'table' ? Number(tabMatch[2]) : null;
-    const tabRoomId = tabMatch?.[1] === 'room' ? Number(tabMatch[2]) : null;
+    // Which of the three the tab is, so the document can name it. Read off
+    // the orders actually swept rather than re-parsed from the tab string —
+    // every order in the batch shares one table_id/room_id by construction
+    // (tabScope selected exactly one tab), and this stays correct regardless
+    // of the tab id's own shape (room-<id> vs room-booking-<id>).
+    const tabTableId = orders[0].tableId;
+    const tabRoomId = orders[0].roomId;
 
     const bill = await buildFoodBill(pool, lodge, orders, input.discountAmount ?? 0);
     const { documentType, ...breakdown } = billingSide === 'GST' ? bill.gst : bill.nonGst;

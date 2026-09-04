@@ -752,14 +752,25 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
           <div className="guest-register__range">
             <div className="field guest-register__range-field">
               <label htmlFor="fromDate">From</label>
-              <input id="fromDate" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <input
+                id="fromDate"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
             </div>
             <span className="guest-register__range-dash" aria-hidden="true">
               –
             </span>
             <div className="field guest-register__range-field">
               <label htmlFor="toDate">To</label>
-              <input id="toDate" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              <input
+                id="toDate"
+                type="date"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => setToDate(e.target.value)}
+              />
             </div>
           </div>
 

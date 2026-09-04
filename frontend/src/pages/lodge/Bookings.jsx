@@ -914,7 +914,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       // Clamped to the visible window: a stay can start before it or run past
       // the end of it, and neither needs walking day by day.
       const from = booking.checkInDate > rangeStart ? booking.checkInDate : rangeStart;
-      let to = booking.checkOutDate < rangeEnd ? booking.checkOutDate : rangeEnd;
+      let bookingEnd = booking.checkOutDate;
+      // A guest still checked in past their sold checkout date hasn't given the
+      // room back — it stays occupied through today (and blocks the picker,
+      // matching the server's overlap check) until an actual checkout happens.
+      if (booking.status === 'CHECKED_IN' && bookingEnd <= today) bookingEnd = addDays(today, 1);
+      let to = bookingEnd < rangeEnd ? bookingEnd : rangeEnd;
       // A completed stay holds no night from today on — the room pickers stop
       // counting it the moment the guest checks out. Someone who left early
       // would otherwise leave the nights they didn't use looking sold here
@@ -2822,7 +2827,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           const lastNight =
             booking.status === 'CHECKED_OUT' && booking.checkOutDate > today
               ? addDays(today, -1)
-              : addDays(booking.checkOutDate, -1);
+              : booking.status === 'CHECKED_IN' && booking.checkOutDate <= today
+                ? today
+                : addDays(booking.checkOutDate, -1);
           if (d === lastNight) classes.push('tape-tile--end');
           if (d === today) classes.push('tape-tile--today');
           // Pointing at any night of a stay lifts the whole stay, so its real
