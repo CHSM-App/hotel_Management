@@ -8,6 +8,8 @@ import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'booking_detail_screen.dart';
+import 'check_in_sheet.dart';
 import 'take_booking_screen.dart';
 
 /// The register, and the way in to taking a booking.
@@ -47,6 +49,29 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
   Future<void> _load() =>
       ref.read(bookingViewModelProvider.notifier).loadRegister();
 
+  /// Which nights the register should cover.
+  ///
+  /// Unlike the status chips this refetches, because the dates decide which
+  /// rows the server sends at all — a stay outside the window is not on the
+  /// phone waiting to be filtered back in.
+  Future<void> _pickRange() async {
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final state = ref.read(bookingViewModelProvider);
+    final now = DateTime.now();
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 2),
+      initialDateRange: state.registerFrom != null && state.registerTo != null
+          ? DateTimeRange(start: state.registerFrom!, end: state.registerTo!)
+          : null,
+      helpText: 'Stays between',
+    );
+    if (picked == null) return;
+    await vm.setRegisterRange(picked.start, picked.end);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(bookingViewModelProvider);
@@ -76,6 +101,8 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                     .read(bookingViewModelProvider.notifier)
                     .setStatusFilter,
               ),
+              const SizedBox(height: AppTheme.s12),
+              _DateRangeBar(state: state, onPick: _pickRange),
               const SizedBox(height: AppTheme.s16),
               ..._rows(state),
             ],
@@ -205,6 +232,79 @@ class _FilterRow extends StatelessWidget {
   }
 }
 
+// ── Which nights ────────────────────────────────────────────────────────────
+
+/// The window the register is showing, and the way to change it.
+///
+/// Says "the server's own window" rather than inventing a date pair to display,
+/// because until the desk picks something that is genuinely what is on screen —
+/// naming a range the request never sent would be a lie about what was asked.
+class _DateRangeBar extends ConsumerWidget {
+  final BookingState state;
+  final Future<void> Function() onPick;
+
+  const _DateRangeBar({required this.state, required this.onPick});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final label = state.hasRegisterRange
+        ? '${formatDate(state.registerFrom)} → ${formatDate(state.registerTo)}'
+        : 'All recent stays';
+
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: onPick,
+            child: NeuCard(
+              radius: AppTheme.rSmall,
+              shadow: AppTheme.subtle,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: AppTheme.s8,
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.date_range_rounded,
+                    size: 15,
+                    color: AppTheme.muted,
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 13,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (state.hasRegisterRange) ...[
+          const SizedBox(width: AppTheme.s8),
+          GestureDetector(
+            onTap: () => ref
+                .read(bookingViewModelProvider.notifier)
+                .clearRegisterRange(),
+            child: const NeuCard(
+              radius: AppTheme.rSmall,
+              shadow: AppTheme.subtle,
+              padding: EdgeInsets.all(AppTheme.s8),
+              child: Icon(Icons.close_rounded, size: 16, color: AppTheme.muted),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 // ── One stay ────────────────────────────────────────────────────────────────
 
 class _BookingRow extends ConsumerWidget {
@@ -245,8 +345,13 @@ class _BookingRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colour = _statusColor(booking.status);
 
-    return NeuCard(
-      child: Column(
+    return GestureDetector(
+      // The row opens the stay in full. A register row carries far less than
+      // the detail endpoint does — every tender behind the advance, the agreed
+      // rate — and there was previously no way to reach any of it.
+      onTap: () => _openDetail(context),
+      child: NeuCard(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -306,8 +411,56 @@ class _BookingRow extends ConsumerWidget {
               _Money(label: 'Due', value: booking.balanceDue, strong: true),
             ],
           ),
+          // A reservation waits until somebody walks through the door — or
+          // until it is clear nobody will.
+          if (booking.status == 'BOOKED') ...[
+            const SizedBox(height: AppTheme.s12),
+            if (_checkInOpen)
+              Row(
+                children: [
+                  Expanded(
+                    child: NeuButton(
+                      primary: true,
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s12,
+                      ),
+                      onPressed: () => _checkIn(context, ref),
+                      child: const Text('Check in'),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: NeuButton(
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s12,
+                      ),
+                      onPressed: () => _cancel(context, ref),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              // Said rather than shown as a dead button: the server opens
+              // check-in on the reserved date and refuses before it, so the
+              // action would fail every time it was offered.
+              Text(
+                'Check-in opens ${formatIsoDate(booking.checkInDate)}.',
+                style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              NeuButton(
+                expand: true,
+                padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                onPressed: () => _cancel(context, ref),
+                child: const Text('Cancel booking'),
+              ),
+            ],
+          ]
           // Only a guest who is actually in the room can leave it.
-          if (booking.status == 'CHECKED_IN') ...[
+          else if (booking.status == 'CHECKED_IN') ...[
             const SizedBox(height: AppTheme.s12),
             NeuButton(
               expand: true,
@@ -317,8 +470,106 @@ class _BookingRow extends ConsumerWidget {
             ),
           ],
         ],
+        ),
       ),
     );
+  }
+
+  /// Whether the reserved date has arrived.
+  ///
+  /// The server opens check-in from the reserved date onward and answers 409
+  /// before it, so this decides whether the action is offered at all.
+  bool get _checkInOpen {
+    final iso = booking.checkInDate;
+    if (iso == null) return false;
+    final start = DateTime.tryParse(iso);
+    if (start == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return !DateTime(start.year, start.month, start.day).isAfter(today);
+  }
+
+  Future<void> _openDetail(BuildContext context) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => BookingDetailScreen(bookingId: booking.id),
+      ),
+    );
+    if (changed == true) await onCheckedOut();
+  }
+
+  /// Check a reservation in at the door.
+  ///
+  /// The sheet asks for an ID proof and any further advance, both optional
+  /// here: a stay booked on this app already sent an ID, and the server only
+  /// insists when nothing is on file. Its refusal is shown as it was worded.
+  Future<void> _checkIn(BuildContext context, WidgetRef ref) async {
+    final result = await showCheckInSheet(context, booking);
+    if (result == null || !context.mounted) return;
+
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final done = await vm.checkInReservation(
+      booking.id,
+      idProofType: result.idProofType,
+      idProofNumber: result.idProofNumber,
+      advanceLines: result.advanceLines,
+    );
+    if (!context.mounted) return;
+    if (done == null) {
+      _say(
+        context,
+        ref.read(bookingViewModelProvider).error ?? 'Could not check in.',
+      );
+      return;
+    }
+    await onCheckedOut();
+    if (!context.mounted) return;
+    _say(context, '${booking.guestName ?? 'The guest'} is checked in.');
+  }
+
+  /// Call off a reservation, once reception has confirmed they mean it.
+  Future<void> _cancel(BuildContext context, WidgetRef ref) async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.bg,
+        title: const Text(
+          'Cancel this booking?',
+          style: TextStyle(color: AppTheme.heading),
+        ),
+        content: Text(
+          'Room ${booking.roomNumber ?? '—'} goes back on sale for '
+          '${formatIsoDate(booking.checkInDate)}. The stay stays on the '
+          'register, marked cancelled.',
+          style: const TextStyle(color: AppTheme.text, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep it'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cancel booking'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true || !context.mounted) return;
+
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final done = await vm.cancelBooking(booking.id);
+    if (!context.mounted) return;
+    if (done == null) {
+      _say(
+        context,
+        ref.read(bookingViewModelProvider).error ?? 'Could not cancel.',
+      );
+      return;
+    }
+    await onCheckedOut();
+    if (!context.mounted) return;
+    _say(context, 'Booking cancelled.');
   }
 
   /// Checking out, in the web's two steps.

@@ -46,8 +46,8 @@ class BookingImpl implements BookingRepository {
   );
 
   @override
-  Future<List<Booking>> bookings({String? status}) =>
-      api.bookings(status: status);
+  Future<List<Booking>> bookings({String? fromDate, String? toDate}) =>
+      api.bookings(fromDate: fromDate, toDate: toDate);
 
   @override
   Future<Booking> booking(int id) => api.booking(id);
@@ -64,4 +64,7 @@ class BookingImpl implements BookingRepository {
   @override
   Future<Booking> checkOut(int id, Map<String, dynamic> body) =>
       api.checkOut(id, body);
+
+  @override
+  Future<Booking> cancel(int id) => api.cancelBooking(id);
 }

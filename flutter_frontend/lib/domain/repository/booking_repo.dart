@@ -17,7 +17,9 @@ abstract class BookingRepository {
     num? discountAmount,
   });
 
-  Future<List<Booking>> bookings({String? status});
+  /// The register over a date range. Both ends optional; omitting them asks
+  /// for the server's own default window.
+  Future<List<Booking>> bookings({String? fromDate, String? toDate});
 
   Future<Booking> booking(int id);
 
@@ -28,4 +30,7 @@ abstract class BookingRepository {
   Future<LateCheckout> lateCheckout(int id);
 
   Future<Booking> checkOut(int id, Map<String, dynamic> body);
+
+  /// Call off a reservation. Only a BOOKED stay can be cancelled.
+  Future<Booking> cancel(int id);
 }

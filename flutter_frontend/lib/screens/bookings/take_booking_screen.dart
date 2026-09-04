@@ -7,6 +7,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/payment_row.dart';
 import '../theme.dart';
 
 /// Taking a booking, in the order the desk actually does it: which nights,
@@ -690,6 +691,26 @@ class _QuoteCard extends ConsumerWidget {
                 ],
               ),
             ),
+          // A concession off the whole stay, not a re-negotiated nightly rate —
+          // that is the box on the room line above. Kept beside the total it
+          // comes off so the two are read together.
+          const Divider(height: AppTheme.s16),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Concession',
+                  style: TextStyle(color: AppTheme.text, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              _AmountBox(
+                value: state.discount,
+                shown: quote.discountAmount,
+                onChanged: vm.setDiscount,
+              ),
+            ],
+          ),
           const Divider(height: AppTheme.s16),
           Row(
             children: [
@@ -1027,7 +1048,7 @@ class _AdvanceCard extends StatelessWidget {
           for (var i = 0; i < lines.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s12),
-              child: _PaymentRow(
+              child: PaymentRow(
                 line: lines[i],
                 // Nothing to remove down to on a single payment, so the bin is
                 // dead there rather than gone — the row would jump sideways.
@@ -1069,116 +1090,3 @@ class _AdvanceCard extends StatelessWidget {
   }
 }
 
-class _PaymentRow extends StatefulWidget {
-  final PaymentDraft line;
-  final VoidCallback? onRemove;
-  final VoidCallback onChanged;
-
-  const _PaymentRow({
-    required this.line,
-    required this.onRemove,
-    required this.onChanged,
-  });
-
-  @override
-  State<_PaymentRow> createState() => _PaymentRowState();
-}
-
-class _PaymentRowState extends State<_PaymentRow> {
-  late final _amount = TextEditingController(text: widget.line.amount);
-  late final _reference = TextEditingController(text: widget.line.reference);
-
-  @override
-  void dispose() {
-    _amount.dispose();
-    _reference.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: widget.line.method,
-                    isExpanded: true,
-                    dropdownColor: AppTheme.bg,
-                    hint: const Text(
-                      'Choose one',
-                      style: TextStyle(color: AppTheme.muted, fontSize: 14),
-                    ),
-                    items: [
-                      for (final e in kPaymentMethods.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ],
-                    onChanged: (m) {
-                      setState(() => widget.line.method = m);
-                      widget.onChanged();
-                    },
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            SizedBox(
-              width: 96,
-              child: NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: TextField(
-                  controller: _amount,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.right,
-                  onTap: () => _amount.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: _amount.text.length,
-                  ),
-                  onChanged: (v) {
-                    widget.line.amount = v;
-                    widget.onChanged();
-                  },
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 13,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: '0',
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 10),
-                  ),
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              color: widget.onRemove == null
-                  ? AppTheme.muted.withValues(alpha: 0.4)
-                  : AppTheme.danger,
-              onPressed: widget.onRemove,
-            ),
-          ],
-        ),
-        // Only for money that left a trail — asking for a reference against
-        // cash is asking for one to be invented.
-        if (needsPaymentReference(widget.line.method)) ...[
-          const SizedBox(height: AppTheme.s8),
-          NeuField(
-            controller: _reference,
-            label: 'Transaction number',
-            hint: widget.line.method == 'UPI'
-                ? 'UPI reference / UTR'
-                : 'Approval code',
-            maxLength: 64,
-            onChanged: (v) => widget.line.reference = v,
-          ),
-        ],
-      ],
-    );
-  }
-}
