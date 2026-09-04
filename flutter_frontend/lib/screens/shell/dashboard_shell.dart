@@ -7,6 +7,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../billing/billing_screen.dart';
 import '../bookings/bookings_screen.dart';
+import '../food/orders_screen.dart';
 import '../placeholder_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
@@ -89,6 +90,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     switch (active.key) {
       case 'bookings':
         return const BookingsScreen();
+      case 'food':
+        return const OrdersScreen();
       case 'billing':
         return const BillingScreen();
       default:

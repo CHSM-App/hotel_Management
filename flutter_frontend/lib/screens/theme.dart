@@ -96,10 +96,13 @@ class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
-      // Inter is the reference face. Falling back to the platform default
-      // rather than bundling it: the weights matter more than the face, and a
-      // missing font file renders as boxes.
-      fontFamily: 'Inter',
+      // No fontFamily on purpose: the platform default is the face.
+      //
+      // Inter is the reference in the web client, but naming it here without
+      // bundling the file did nothing at all — Flutter resolves an unknown
+      // family to the default, so the line read as a choice while having no
+      // effect. The weights below are what actually carry the design; bundle
+      // Inter and name it here if the face itself ever has to match the web.
       textTheme: const TextTheme(
         headlineSmall: TextStyle(
           color: heading,

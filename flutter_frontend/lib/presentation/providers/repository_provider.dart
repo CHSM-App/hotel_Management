@@ -4,9 +4,11 @@ import '../../core/network/dio_provider.dart';
 import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
 import '../../data/repositories/billing_impl.dart';
+import '../../data/repositories/orders_impl.dart';
 import '../../domain/repository/auth_repo.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../../domain/repository/billing_repo.dart';
+import '../../domain/repository/orders_repo.dart';
 
 /// api → repository.
 ///
@@ -26,4 +28,8 @@ final bookingRepositoryProvider = Provider<BookingRepository>(
 
 final billingRepositoryProvider = Provider<BillingRepository>(
   (ref) => BillingImpl(ref.watch(apiServiceProvider)),
+);
+
+final ordersRepositoryProvider = Provider<OrdersRepository>(
+  (ref) => OrdersImpl(ref.watch(apiServiceProvider)),
 );

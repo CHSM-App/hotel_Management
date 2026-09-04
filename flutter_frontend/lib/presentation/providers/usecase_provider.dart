@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/usecase/auth_usecase.dart';
 import '../../domain/usecase/booking_usecase.dart';
 import '../../domain/usecase/billing_usecase.dart';
+import '../../domain/usecase/orders_usecase.dart';
 import 'repository_provider.dart';
 
 /// repository → usecase.
@@ -16,4 +17,8 @@ final bookingUsecaseProvider = Provider<BookingUsecase>(
 
 final billingUsecaseProvider = Provider<BillingUsecase>(
   (ref) => BillingUsecase(ref.watch(billingRepositoryProvider)),
+);
+
+final ordersUsecaseProvider = Provider<OrdersUsecase>(
+  (ref) => OrdersUsecase(ref.watch(ordersRepositoryProvider)),
 );

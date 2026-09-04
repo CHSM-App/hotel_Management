@@ -41,7 +41,11 @@ class _FakeBookings implements BookingRepository {
   _FakeBookings(this.rows);
 
   @override
-  Future<List<Booking>> bookings({String? status}) async => rows;
+  Future<List<Booking>> bookings({String? fromDate, String? toDate}) async =>
+      rows;
+
+  @override
+  Future<Booking> cancel(int id) async => Booking(id: id, status: 'CANCELLED');
 
   @override
   Future<List<Room>> availableRooms(String a, String b) async => const [];
@@ -173,4 +177,91 @@ void main() {
 
     expect(find.textContaining('not on the phone yet'), findsOneWidget);
   });
+
+  // ── Advancing a reservation ───────────────────────────────────────────────
+  //
+  // A reservation used to be a dead end here: it could never be checked in, so
+  // it could never be checked out, so it could never be billed. These pin the
+  // actions to the states the server will actually accept them in.
+
+  testWidgets('a reservation whose date has come offers check in and cancel', (
+    tester,
+  ) async {
+    final today = DateTime.now();
+    await tester.pumpWidget(
+      _app(_owner(), [
+        Booking.fromJson({
+          'id': '70',
+          'guestName': 'Nikhil Parab',
+          'roomNumber': '101',
+          'checkInDate': _iso(today),
+          'checkOutDate': _iso(today.add(const Duration(days: 2))),
+          'status': 'BOOKED',
+          'totalPrice': 3000,
+        }),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check in'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Check out'), findsNothing);
+  });
+
+  testWidgets('a reservation for a later date cannot be checked in yet', (
+    tester,
+  ) async {
+    final later = DateTime.now().add(const Duration(days: 10));
+    await tester.pumpWidget(
+      _app(_owner(), [
+        Booking.fromJson({
+          'id': '71',
+          'guestName': 'Asha Redkar',
+          'roomNumber': '102',
+          'checkInDate': _iso(later),
+          'checkOutDate': _iso(later.add(const Duration(days: 1))),
+          'status': 'BOOKED',
+          'totalPrice': 1500,
+        }),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    // The server opens check-in on the reserved date and answers 409 before
+    // it, so the button is not offered — the date it opens is said instead.
+    expect(find.text('Check in'), findsNothing);
+    expect(find.textContaining('Check-in opens'), findsOneWidget);
+    expect(find.text('Cancel booking'), findsOneWidget);
+  });
+
+  testWidgets('a guest already in the room is checked out, not checked in', (
+    tester,
+  ) async {
+    final today = DateTime.now();
+    await tester.pumpWidget(
+      _app(_owner(), [
+        Booking.fromJson({
+          'id': '72',
+          'guestName': 'Rohan Sawant',
+          'roomNumber': '103',
+          'checkInDate': _iso(today.subtract(const Duration(days: 1))),
+          'checkOutDate': _iso(today.add(const Duration(days: 1))),
+          'status': 'CHECKED_IN',
+          'totalPrice': 2000,
+        }),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    // Cancel is absent on purpose: the server only cancels a BOOKED stay, and
+    // a guest who is already in the room leaves by checking out.
+    expect(find.text('Check out'), findsOneWidget);
+    expect(find.text('Check in'), findsNothing);
+    expect(find.text('Cancel'), findsNothing);
+  });
 }
+
+String _iso(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';

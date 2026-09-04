@@ -27,6 +27,13 @@ class BookingState {
   final AsyncValue<List<Booking>> register;
   final String statusFilter;
 
+  /// The nights the register is asking the server about. Null at both ends
+  /// means "whatever the server shows by default" — the state this opens in.
+  /// Unlike the status filter these are sent, because the row set itself
+  /// changes: a stay outside the window is not on the phone to be filtered.
+  final DateTime? registerFrom;
+  final DateTime? registerTo;
+
   // ── Taking a booking ─────────────────────────────────────────────────────
   final DateTime? checkIn;
   final DateTime? checkOut;
@@ -40,6 +47,13 @@ class BookingState {
   /// own. Held as typed text; blank means the category price.
   final String roomTotal;
 
+  /// A concession off the whole quote, as typed. Blank means none.
+  ///
+  /// Not a re-negotiated nightly rate — that is [roomTotal]. This comes off
+  /// the total after the nights and extras are priced, which is why it is sent
+  /// whole rather than divided by the nights the way an agreed total is.
+  final String discount;
+
   final Quote? quote;
   final bool quoting;
   final bool submitting;
@@ -49,12 +63,15 @@ class BookingState {
     this.error,
     this.register = const AsyncValue.loading(),
     this.statusFilter = 'ALL',
+    this.registerFrom,
+    this.registerTo,
     this.checkIn,
     this.checkOut,
     this.rooms,
     this.room,
     this.extras = const {},
     this.roomTotal = '',
+    this.discount = '',
     this.quote,
     this.quoting = false,
     this.submitting = false,
@@ -66,6 +83,12 @@ class BookingState {
     bool clearError = false,
     AsyncValue<List<Booking>>? register,
     String? statusFilter,
+    DateTime? registerFrom,
+    DateTime? registerTo,
+    /// Back to the server's default window. Needed because a null argument
+    /// above means "leave it alone", so there is otherwise no way to say
+    /// "no dates" once a range has been set.
+    bool clearRegisterRange = false,
     DateTime? checkIn,
     DateTime? checkOut,
     AsyncValue<List<Room>>? rooms,
@@ -73,6 +96,7 @@ class BookingState {
     bool clearRoom = false,
     Map<int, ExtraDraft>? extras,
     String? roomTotal,
+    String? discount,
     Quote? quote,
     bool clearQuote = false,
     bool? quoting,
@@ -82,12 +106,17 @@ class BookingState {
     error: clearError ? null : (error ?? this.error),
     register: register ?? this.register,
     statusFilter: statusFilter ?? this.statusFilter,
+    registerFrom: clearRegisterRange
+        ? null
+        : (registerFrom ?? this.registerFrom),
+    registerTo: clearRegisterRange ? null : (registerTo ?? this.registerTo),
     checkIn: checkIn ?? this.checkIn,
     checkOut: checkOut ?? this.checkOut,
     rooms: rooms ?? this.rooms,
     room: clearRoom ? null : (room ?? this.room),
     extras: extras ?? this.extras,
     roomTotal: roomTotal ?? this.roomTotal,
+    discount: discount ?? this.discount,
     quote: clearQuote ? null : (quote ?? this.quote),
     quoting: quoting ?? this.quoting,
     submitting: submitting ?? this.submitting,
@@ -120,6 +149,9 @@ class BookingState {
   String get bookingType => isFutureCheckIn ? 'RESERVATION' : 'WALK_IN';
 
   bool get isWalkIn => bookingType == 'WALK_IN';
+
+  /// Whether the desk has narrowed the register to particular nights.
+  bool get hasRegisterRange => registerFrom != null || registerTo != null;
 
   /// The register as the desk asked to see it.
   List<Booking> get visibleRegister {
@@ -154,11 +186,16 @@ class BookingViewModel extends StateNotifier<BookingState> {
 
   // ── The register ─────────────────────────────────────────────────────────
 
-  /// Load every stay. Filtering is done on what comes back.
+  /// Load the stays in the chosen window. Status filtering is done on what
+  /// comes back; the dates are the server's job, because they decide which
+  /// rows exist at all.
   Future<void> loadRegister() async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final list = await usecase.bookings();
+      final list = await usecase.bookings(
+        fromDate: state.registerFrom == null ? null : iso(state.registerFrom!),
+        toDate: state.registerTo == null ? null : iso(state.registerTo!),
+      );
       state = state.copyWith(
         isLoading: false,
         register: AsyncValue.data(list),
@@ -175,6 +212,19 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// Show only these. No refetch: the server would return the same rows.
   void setStatusFilter(String status) =>
       state = state.copyWith(statusFilter: status);
+
+  /// Ask the server for a different stretch of nights. Refetches, because
+  /// these rows are not on the phone yet.
+  Future<void> setRegisterRange(DateTime from, DateTime to) async {
+    state = state.copyWith(registerFrom: from, registerTo: to);
+    await loadRegister();
+  }
+
+  /// Back to the server's default window.
+  Future<void> clearRegisterRange() async {
+    state = state.copyWith(clearRegisterRange: true);
+    await loadRegister();
+  }
 
   // ── Checking out ─────────────────────────────────────────────────────────
 
@@ -205,6 +255,85 @@ class BookingViewModel extends StateNotifier<BookingState> {
       return booking;
     } catch (e) {
       state = state.copyWith(submitting: false, error: messageFor(e));
+      return null;
+    }
+  }
+
+  // ── Advancing a reservation ──────────────────────────────────────────────
+
+  /// Check a reservation in at the door.
+  ///
+  /// A walk-in is checked in by [submit] the moment it is created, but a
+  /// reservation waits — and without this it waited forever: it could never
+  /// reach CHECKED_IN, so it could never be checked out, so it could never be
+  /// billed. The phone could take a booking it had no way to finish.
+  ///
+  /// The ID proof is optional here and mandatory at the server, which is not a
+  /// contradiction: a stay booked on this app already sent one, and the server
+  /// only insists when nothing is on file. Sending blanks would overwrite what
+  /// is there, so untouched fields are left out entirely.
+  Future<Booking?> checkInReservation(
+    int bookingId, {
+    String? idProofType,
+    String? idProofNumber,
+    List<PaymentDraft> advanceLines = const [],
+  }) async {
+    if (state.submitting) return null;
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final paid = advanceLines.where((l) => l.value > 0).toList();
+      final advance = sumPayments(paid);
+
+      final form = FormData.fromMap({
+        if (idProofType != null) 'idProofType': idProofType,
+        if (idProofNumber != null && idProofNumber.trim().isNotEmpty)
+          'idProofNumber': idProofNumber.trim(),
+        if (advance > 0) ...{
+          'advanceAmount': '$advance',
+          'advancePaymentMethod': paid.first.method!,
+          if (needsPaymentReference(paid.first.method) &&
+              paid.first.reference.trim().isNotEmpty)
+            'advanceReference': paid.first.reference.trim(),
+          if (paid.length > 1)
+            'advanceLines': _jsonList(paid.map((l) => l.toJson())),
+        },
+      });
+
+      final booking = await usecase.checkIn(bookingId, form);
+      state = state.copyWith(submitting: false);
+      await loadRegister();
+      return booking;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: messageFor(e));
+      return null;
+    }
+  }
+
+  /// Call off a reservation nobody came for.
+  ///
+  /// Only offered on a stay still at BOOKED — the server refuses anything
+  /// further along, and a guest already in the room leaves by checking out.
+  Future<Booking?> cancelBooking(int bookingId) async {
+    if (state.submitting) return null;
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final booking = await usecase.cancel(bookingId);
+      state = state.copyWith(submitting: false);
+      await loadRegister();
+      return booking;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: messageFor(e));
+      return null;
+    }
+  }
+
+  /// One stay, in full — the detail endpoint carries what a register row does
+  /// not, such as every tender the advance actually arrived by.
+  Future<Booking?> loadBooking(int id) async {
+    try {
+      return await usecase.booking(id);
+    } catch (e) {
+      state = state.copyWith(error: messageFor(e));
       return null;
     }
   }
@@ -301,6 +430,22 @@ class BookingViewModel extends StateNotifier<BookingState> {
     await refreshQuote();
   }
 
+  /// Take a concession off the whole stay. Blank means none.
+  Future<void> setDiscount(String amount) async {
+    state = state.copyWith(discount: amount);
+    await refreshQuote();
+  }
+
+  /// The concession as a number, or null when nothing was typed.
+  ///
+  /// Whole, not per night: a concession is against the total the nights and
+  /// extras came to, which is why it does not go through [perNight] the way an
+  /// agreed room total does.
+  static num? wholeAmount(String typed) {
+    final value = num.tryParse(typed.trim());
+    return (value == null || value <= 0) ? null : value;
+  }
+
   /// Ask the server what it costs.
   ///
   /// Never worked out here. Taking money off can move a night into a different
@@ -318,6 +463,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         checkOutDate: iso(state.checkOut!),
         chargeIds: chargeIdsParam(),
         basePriceOverride: perNight(state.roomTotal, state.nights),
+        discountAmount: wholeAmount(state.discount),
       );
       state = state.copyWith(quoting: false, quote: quote);
     } catch (e) {
@@ -362,6 +508,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final paid = advanceLines.where((l) => l.value > 0).toList();
       final advance = sumPayments(paid);
       final rate = perNight(state.roomTotal, state.nights);
+      final discount = wholeAmount(state.discount);
 
       final form = FormData.fromMap({
         'roomId': '${room.id}',
@@ -374,6 +521,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,
         if (rate != null) 'basePriceOverride': '$rate',
+        // Sent whole. The quote the desk agreed to was priced with this off
+        // it, so leaving it out here would book the stay at a total nobody
+        // was shown.
+        if (discount != null) 'discountAmount': '$discount',
         if (idProofType != null) 'idProofType': idProofType,
         if (idProofNumber != null && idProofNumber.trim().isNotEmpty)
           'idProofNumber': idProofNumber.trim(),
@@ -463,6 +614,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
   void reset() => state = BookingState(
     register: state.register,
     statusFilter: state.statusFilter,
+    registerFrom: state.registerFrom,
+    registerTo: state.registerTo,
   );
 
   /// The server's own words where it sent any — "This room is already booked

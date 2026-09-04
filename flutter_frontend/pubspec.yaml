@@ -11,9 +11,12 @@ dependencies:
     sdk: flutter
 
   # State & storage
+  #
+  # The session is the only thing persisted, and it is a bearer token, so it
+  # goes in the keystore. shared_preferences used to sit here too and was never
+  # imported — nothing in this app has a preference worth keeping in plaintext.
   flutter_riverpod: ^2.6.1
   flutter_secure_storage: ^9.2.2
-  shared_preferences: ^2.5.4
 
   # Networking
   dio: ^5.9.0
