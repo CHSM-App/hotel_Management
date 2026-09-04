@@ -288,6 +288,62 @@
   margin-top: 6px;
 }
 
+.field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field__aux-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 6px;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.field__aux-link:hover {
+  text-decoration: underline;
+}
+
+.field__input-wrap {
+  position: relative;
+}
+
+.field__input-wrap input {
+  padding-right: 42px;
+}
+
+.field__eye-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.field__eye-toggle:hover {
+  color: var(--ink);
+}
+
+.field__eye-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* The asterisk marking a field these forms won't submit without. Same markup
    and same reading as the mark on the lodge screens — kept in step with the
    .field__req block in pages/lodge/forms.css, which this sheet can't reach
@@ -389,6 +445,40 @@
   background: var(--text-muted);
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 12px 16px;
+  min-height: 44px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.btn-secondary:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.auth-card__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.auth-card__actions .btn-secondary,
+.auth-card__actions .btn-primary {
+  flex: 1;
 }
 
 .form-banner {

@@ -4,6 +4,8 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const loginLockout = require('./loginLockout');
 
+const LODGE_ROLES = ['OWNER', 'RECEPTION', 'KITCHEN'];
+
 // A real bcrypt hash of a value nobody can supply, compared against when the
 // identifier matched no account. Its only job is to make the failing path cost
 // the same as the succeeding one — see the note in loginWithRoles. Generated at
@@ -80,7 +82,40 @@ async function loginWithRoles({ identifier, password }, allowedRoles, door) {
 
 // Lodge staff only — the public-facing /login page.
 function login(credentials) {
-  return loginWithRoles(credentials, ['OWNER', 'RECEPTION', 'KITCHEN'], 'STAFF');
+  return loginWithRoles(credentials, LODGE_ROLES, 'STAFF');
+}
+
+// Forgot-password, reached from the same login page by someone who cannot
+// sign in at all — so unlike me.service.js's changePassword, nothing proves
+// this is the account owner beyond knowing the phone or email on file. Takes
+// the same identifier shape as login() (phone or email), scoped to the same
+// lodge-only roles, so this can never touch a SUPERADMIN account.
+//
+// Same "don't say which part failed" shape as loginWithRoles: whether the
+// identifier matched no account or an inactive/wrong-role one, the caller
+// sees one generic error either way.
+async function resetPasswordByIdentifier(identifier, newPassword) {
+  // Same durable per-identifier lockout the login doors use, on its own
+  // "door" name — this is the only check standing between knowing a phone
+  // or email and taking over that account, so it gets the same defence a
+  // wrong password would.
+  await loginLockout.assertNotLockedOut(identifier, 'FORGOT');
+
+  const user = await findUserByIdentifier(identifier);
+  if (!user || !user.is_active || !LODGE_ROLES.includes(user.role)) {
+    await loginLockout.recordFailure(identifier, 'FORGOT');
+    throw new ApiError('No account found for that phone or email.', 404);
+  }
+
+  const pool = await getPool();
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await pool
+    .request()
+    .input('userId', sql.BigInt, user.id)
+    .input('passwordHash', sql.NVarChar, passwordHash)
+    .query('UPDATE dbo.users SET password_hash = @passwordHash, must_reset_password = 0 WHERE id = @userId');
+
+  await loginLockout.clearFailures(identifier, 'FORGOT');
 }
 
 // Vengurla Tech only — the hidden /vtadmin page. Counted separately from the
@@ -90,4 +125,4 @@ function adminLogin(credentials) {
   return loginWithRoles(credentials, ['SUPERADMIN'], 'ADMIN');
 }
 
-module.exports = { login, adminLogin };
+module.exports = { login, adminLogin, resetPasswordByIdentifier };

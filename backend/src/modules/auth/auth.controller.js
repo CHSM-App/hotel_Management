@@ -1,4 +1,4 @@
-const { loginSchema } = require('./auth.schema');
+const { loginSchema, forgotPasswordSchema } = require('./auth.schema');
 const authService = require('./auth.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -28,4 +28,17 @@ async function adminLoginHandler(req, res, next) {
   }
 }
 
-module.exports = { loginHandler, adminLoginHandler };
+async function forgotPasswordHandler(req, res, next) {
+  try {
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    await authService.resetPasswordByIdentifier(parsed.data.identifier.trim(), parsed.data.newPassword);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { loginHandler, adminLoginHandler, forgotPasswordHandler };
