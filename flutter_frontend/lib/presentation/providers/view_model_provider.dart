@@ -4,6 +4,7 @@ import '../view_models/auth_viewmodel.dart';
 import '../view_models/booking_viewmodel.dart';
 import '../view_models/billing_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
+import '../view_models/rooms_viewmodel.dart';
 import 'usecase_provider.dart';
 
 /// usecase → viewModel.
@@ -33,4 +34,9 @@ final billingViewModelProvider =
 final ordersViewModelProvider =
     StateNotifierProvider.autoDispose<OrdersViewModel, OrdersState>(
       (ref) => OrdersViewModel(ref.watch(ordersUsecaseProvider)),
+    );
+
+final roomsViewModelProvider =
+    StateNotifierProvider<RoomsViewModel, RoomsState>(
+      (ref) => RoomsViewModel(ref.watch(roomsUsecaseProvider)),
     );

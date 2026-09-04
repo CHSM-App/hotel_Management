@@ -9,6 +9,7 @@ import '../billing/billing_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../food/orders_screen.dart';
 import '../placeholder_screen.dart';
+import '../rooms/rooms_rates_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
 
@@ -94,6 +95,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const OrdersScreen();
       case 'billing':
         return const BillingScreen();
+      case 'rooms':
+        return const RoomsRatesScreen();
       default:
         // Every other section is deliberately still a stub — see the file.
         return PlaceholderScreen(feature: active);

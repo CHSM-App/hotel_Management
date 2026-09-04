@@ -69,14 +69,9 @@ const kFeatures = <Feature>[
     icon: Icons.receipt_long_rounded,
     permission: 'billing.manage',
   ),
-  Feature(
-    key: 'guests',
-    title: 'Guest register',
-    tabLabel: 'Guests',
-    icon: Icons.people_alt_rounded,
-    permission: 'guests.view',
-    capability: 'hasRooms',
-  ),
+  // Guest register ('guests', permission 'guests.view') is deliberately not
+  // listed: it has no phone screen, and Rooms & rates now does (see
+  // dashboard_shell.dart), so that tab took its primary-bar slot instead.
   Feature(
     key: 'food',
     title: 'Food orders',
@@ -85,8 +80,6 @@ const kFeatures = <Feature>[
     permission: 'orders.manage',
     capability: 'servesFood',
   ),
-
-  // ── Setup ────────────────────────────────────────────────────────────────
   Feature(
     key: 'rooms',
     title: 'Rooms & rates',
@@ -95,6 +88,8 @@ const kFeatures = <Feature>[
     permission: 'rooms.manage',
     capability: 'hasRooms',
   ),
+
+  // ── Setup ────────────────────────────────────────────────────────────────
   Feature(
     key: 'menu',
     title: 'Menu & QR codes',

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/category.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/late_checkout.dart';
@@ -8,7 +9,9 @@ import '../../domain/models/me.dart';
 import '../../domain/models/menu.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
+import '../../domain/models/switchable_charge_listing.dart';
 
 /// Every endpoint the app talks to, in one place.
 ///
@@ -316,6 +319,154 @@ class ApiService {
       (_map(data)['orders'] as List? ?? [])
           .map((e) => FoodOrder.fromJson(e as Map<String, dynamic>))
           .toList();
+
+  // ===== ROOMS & RATES (rooms.manage) =====
+
+  /// Every room on the setup screen — status, photos and all, not just what is
+  /// free for a chosen stay.
+  Future<List<RoomListing>> rooms() async {
+    final res = await _dio.get('/rooms');
+    return (_map(res.data)['rooms'] as List? ?? [])
+        .map((e) => RoomListing.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Add one room, or a bulk range. Multipart because photos ride along on a
+  /// single-room add.
+  Future<void> createRoom(FormData form) async {
+    await _dio.post('/rooms', data: form);
+  }
+
+  Future<void> updateRoom(int id, FormData form) async {
+    await _dio.patch('/rooms/$id', data: form);
+  }
+
+  Future<void> setRoomActive(int id, bool isActive) async {
+    await _dio.patch('/rooms/$id/status', data: {'isActive': isActive});
+  }
+
+  Future<void> deleteRoom(int id) async {
+    await _dio.delete('/rooms/$id');
+  }
+
+  Future<void> deleteRoomImage(int roomId, int imageId) async {
+    await _dio.delete('/rooms/$roomId/images/$imageId');
+  }
+
+  // ===== CATEGORIES (rate plans) =====
+
+  Future<List<RoomCategory>> categories() async {
+    final res = await _dio.get('/categories');
+    return (_map(res.data)['categories'] as List? ?? [])
+        .map((e) => RoomCategory.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createCategory({required String name, required num basePrice}) async {
+    await _dio.post('/categories', data: {'name': name, 'basePrice': basePrice});
+  }
+
+  Future<void> updateCategory(
+    int id, {
+    required String name,
+    required num basePrice,
+  }) async {
+    await _dio.patch('/categories/$id', data: {'name': name, 'basePrice': basePrice});
+  }
+
+  Future<void> setCategoryActive(int id, bool isActive) async {
+    await _dio.patch('/categories/$id/status', data: {'isActive': isActive});
+  }
+
+  Future<void> deleteCategory(int id) async {
+    await _dio.delete('/categories/$id');
+  }
+
+  // ===== SWITCHABLE CHARGES (booking extras) =====
+
+  Future<List<SwitchableChargeListing>> switchableCharges() async {
+    final res = await _dio.get('/switchable-charges');
+    return (_map(res.data)['switchableCharges'] as List? ?? [])
+        .map((e) => SwitchableChargeListing.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createSwitchableCharge({
+    required String name,
+    required num chargePerNight,
+  }) async {
+    await _dio.post(
+      '/switchable-charges',
+      data: {'name': name, 'chargePerNight': chargePerNight},
+    );
+  }
+
+  Future<void> updateSwitchableCharge(
+    int id, {
+    required String name,
+    required num chargePerNight,
+  }) async {
+    await _dio.patch(
+      '/switchable-charges/$id',
+      data: {'name': name, 'chargePerNight': chargePerNight},
+    );
+  }
+
+  Future<void> setSwitchableChargeActive(int id, bool isActive) async {
+    await _dio.patch('/switchable-charges/$id/status', data: {'isActive': isActive});
+  }
+
+  Future<void> deleteSwitchableCharge(int id) async {
+    await _dio.delete('/switchable-charges/$id');
+  }
+
+  // ===== SEASONS =====
+
+  Future<List<Season>> seasons() async {
+    final res = await _dio.get('/seasons');
+    return (_map(res.data)['seasons'] as List? ?? [])
+        .map((e) => Season.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createSeason({
+    required String name,
+    required String startDate,
+    required String endDate,
+    required num adjustmentPercent,
+  }) async {
+    await _dio.post(
+      '/seasons',
+      data: {
+        'name': name,
+        'startDate': startDate,
+        'endDate': endDate,
+        'adjustmentPercent': adjustmentPercent,
+      },
+    );
+  }
+
+  Future<void> updateSeason(
+    int id, {
+    required String name,
+    required String startDate,
+    required String endDate,
+    required num adjustmentPercent,
+  }) async {
+    await _dio.patch(
+      '/seasons/$id',
+      data: {
+        'name': name,
+        'startDate': startDate,
+        'endDate': endDate,
+        'adjustmentPercent': adjustmentPercent,
+      },
+    );
+  }
+
+  Future<void> deleteSeason(int id) async {
+    await _dio.delete('/seasons/$id');
+  }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an
   /// object. Narrowed in one place so no call site has to cast.
