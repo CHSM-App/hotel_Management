@@ -72,14 +72,14 @@ const kFeatures = <Feature>[
   // Guest register ('guests', permission 'guests.view') is deliberately not
   // listed: it has no phone screen, and Rooms & rates now does (see
   // dashboard_shell.dart), so that tab took its primary-bar slot instead.
-  Feature(
-    key: 'food',
-    title: 'Food orders',
-    tabLabel: 'Food',
-    icon: Icons.room_service_rounded,
-    permission: 'orders.manage',
-    capability: 'servesFood',
-  ),
+  // Feature(
+  //   key: 'food',
+  //   title: 'Food orders',
+  //   tabLabel: 'Food',
+  //   icon: Icons.room_service_rounded,
+  //   permission: 'orders.manage',
+  //   capability: 'servesFood',
+  // ),
   Feature(
     key: 'rooms',
     title: 'Rooms & rates',
@@ -90,21 +90,21 @@ const kFeatures = <Feature>[
   ),
 
   // ── Setup ────────────────────────────────────────────────────────────────
-  Feature(
-    key: 'menu',
-    title: 'Menu & QR codes',
-    tabLabel: 'Menu',
-    icon: Icons.restaurant_menu_rounded,
-    permission: 'food.manage',
-    capability: 'servesFood',
-  ),
-  Feature(
-    key: 'staff',
-    title: 'Staff & roles',
-    tabLabel: 'Staff',
-    icon: Icons.badge_rounded,
-    permission: 'staff.manage',
-  ),
+  // Feature(
+  //   key: 'menu',
+  //   title: 'Menu & QR codes',
+  //   tabLabel: 'Menu',
+  //   icon: Icons.restaurant_menu_rounded,
+  //   permission: 'food.manage',
+  //   capability: 'servesFood',
+  // ),
+  // Feature(
+  //   key: 'staff',
+  //   title: 'Staff & roles',
+  //   tabLabel: 'Staff',
+  //   icon: Icons.badge_rounded,
+  //   permission: 'staff.manage',
+  // ),
 
   // ── Insights ─────────────────────────────────────────────────────────────
   Feature(

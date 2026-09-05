@@ -5,11 +5,13 @@ import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
 import '../../data/repositories/billing_impl.dart';
 import '../../data/repositories/orders_impl.dart';
+import '../../data/repositories/reports_impl.dart';
 import '../../data/repositories/rooms_impl.dart';
 import '../../domain/repository/auth_repo.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../../domain/repository/billing_repo.dart';
 import '../../domain/repository/orders_repo.dart';
+import '../../domain/repository/reports_repo.dart';
 import '../../domain/repository/rooms_repo.dart';
 
 /// api → repository.
@@ -38,4 +40,8 @@ final ordersRepositoryProvider = Provider<OrdersRepository>(
 
 final roomsRepositoryProvider = Provider<RoomsRepository>(
   (ref) => RoomsImpl(ref.watch(apiServiceProvider)),
+);
+
+final reportsRepositoryProvider = Provider<ReportsRepository>(
+  (ref) => ReportsImpl(ref.watch(apiServiceProvider)),
 );

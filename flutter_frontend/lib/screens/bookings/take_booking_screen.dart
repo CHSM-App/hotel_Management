@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/draft.dart';
-import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
@@ -173,35 +172,44 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             AppTheme.s32,
           ),
           children: [
-            const _Step(number: 1, title: 'Nights'),
-            _DatesCard(state: state, onTap: _pickDates),
-            if (state.datesChosen) ...[
-              const SizedBox(height: AppTheme.s8),
-              _KindNote(state: state),
-            ],
+            // Everything the desk fills in lives on one card — the numbered
+            // steps used to be separate cards with headings; a section label
+            // plus a hairline divider says the same thing in less height.
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _SectionLabel('Nights'),
+                  const SizedBox(height: AppTheme.s8),
+                  _DatesField(state: state, onTap: _pickDates),
+                  if (state.datesChosen) ...[
+                    const SizedBox(height: AppTheme.s12),
+                    _KindNote(state: state),
+                  ],
 
-            if (state.datesChosen) ...[
-              const SizedBox(height: AppTheme.s24),
-              const _Step(number: 2, title: 'Room'),
-              _RoomPicker(state: state),
-            ],
+                  if (state.datesChosen) ...[
+                    const _SectionDivider(),
+                    const _SectionLabel('Room'),
+                    const SizedBox(height: AppTheme.s8),
+                    _RoomPicker(state: state),
+                  ],
 
-            if (state.room != null) ...[
-              if (state.room!.switchableCharges.isNotEmpty) ...[
-                const SizedBox(height: AppTheme.s24),
-                const _Step(number: 3, title: 'Extras'),
-                _ExtrasCard(state: state),
-              ],
+                  if (state.room != null) ...[
+                    if (state.room!.switchableCharges.isNotEmpty) ...[
+                      const _SectionDivider(),
+                      const _SectionLabel('Extras'),
+                      const SizedBox(height: AppTheme.s8),
+                      _ExtrasCard(state: state),
+                    ],
 
-              const SizedBox(height: AppTheme.s24),
-              const _Step(number: 4, title: 'What it costs'),
-              _QuoteCard(state: state),
+                    const _SectionDivider(),
+                    const _SectionLabel('What it costs'),
+                    const SizedBox(height: AppTheme.s8),
+                    _QuoteCard(state: state),
 
-              const SizedBox(height: AppTheme.s24),
-              const _Step(number: 5, title: 'Guest'),
-              NeuCard(
-                child: Column(
-                  children: [
+                    const _SectionDivider(),
+                    const _SectionLabel('Guest'),
+                    const SizedBox(height: AppTheme.s12),
                     NeuField(controller: _name, label: 'Name'),
                     const SizedBox(height: AppTheme.s16),
                     NeuField(
@@ -219,33 +227,36 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       required: state.isWalkIn,
                       onType: (t) => setState(() => _idProofType = t),
                     ),
+
+                    const _SectionDivider(),
+                    _SectionLabel(
+                      'Others in the room',
+                      trailing: _guests.isEmpty ? null : '${_guests.length}',
+                    ),
+                    const SizedBox(height: AppTheme.s8),
+                    _GuestList(
+                      guests: _guests,
+                      onAdd: () => setState(() => _guests.add(GuestDraft())),
+                      onRemove: (i) => setState(() => _guests.removeAt(i)),
+                      onChanged: () => setState(() {}),
+                    ),
+
+                    const _SectionDivider(),
+                    const _SectionLabel('Advance (optional)'),
+                    const SizedBox(height: AppTheme.s8),
+                    _AdvanceCard(
+                      lines: _advance,
+                      onAdd: () => setState(() => _advance.add(PaymentDraft())),
+                      onRemove: (i) => setState(() => _advance.removeAt(i)),
+                      onChanged: () => setState(() {}),
+                    ),
                   ],
-                ),
+                ],
               ),
+            ),
 
+            if (state.room != null) ...[
               const SizedBox(height: AppTheme.s24),
-              _Step(
-                number: 6,
-                title: 'Others in the room',
-                trailing: _guests.isEmpty ? null : '${_guests.length}',
-              ),
-              _GuestList(
-                guests: _guests,
-                onAdd: () => setState(() => _guests.add(GuestDraft())),
-                onRemove: (i) => setState(() => _guests.removeAt(i)),
-                onChanged: () => setState(() {}),
-              ),
-
-              const SizedBox(height: AppTheme.s24),
-              const _Step(number: 7, title: 'Advance (optional)'),
-              _AdvanceCard(
-                lines: _advance,
-                onAdd: () => setState(() => _advance.add(PaymentDraft())),
-                onRemove: (i) => setState(() => _advance.removeAt(i)),
-                onChanged: () => setState(() {}),
-              ),
-
-              const SizedBox(height: AppTheme.s32),
               NeuButton(
                 primary: true,
                 expand: true,
@@ -272,92 +283,106 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   }
 }
 
-// ── Step heading ────────────────────────────────────────────────────────────
+// ── Section framing ─────────────────────────────────────────────────────────
+//
+// The form used to be a stack of separate cards, each with its own numbered
+// heading. It is one card now, so a section only needs a small label — the
+// divider between sections is what used to be the gap between cards.
 
-class _Step extends StatelessWidget {
-  final int number;
+class _SectionLabel extends StatelessWidget {
   final String title;
   final String? trailing;
 
-  const _Step({required this.number, required this.title, this.trailing});
+  const _SectionLabel(this.title, {this.trailing});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s12),
-      child: Row(
-        children: [
-          Container(
-            width: 22,
-            height: 22,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: AppTheme.accent,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              '$number',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
             ),
           ),
-          const SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-          ),
-          if (trailing != null)
-            Text(trailing!, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
+        ),
+        if (trailing != null)
+          Text(trailing!, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _SectionDivider extends StatelessWidget {
+  const _SectionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
+      child: Divider(height: 1, color: AppTheme.border),
     );
   }
 }
 
 // ── Dates ───────────────────────────────────────────────────────────────────
 
-class _DatesCard extends StatelessWidget {
+class _DatesField extends StatelessWidget {
   final BookingState state;
   final VoidCallback onTap;
 
-  const _DatesCard({required this.state, required this.onTap});
+  const _DatesField({required this.state, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    return GestureDetector(
       onTap: onTap,
-      child: Row(
-        children: [
-          const Icon(Icons.date_range_rounded, color: AppTheme.accent),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
-            child: state.datesChosen
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${formatDate(state.checkIn)}  →  '
-                        '${formatDate(state.checkOut)}',
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontWeight: FontWeight.w500,
+      child: NeuPressed(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: AppTheme.s4,
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.date_range_rounded,
+              color: AppTheme.accent,
+              size: 18,
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: state.datesChosen
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${formatDate(state.checkIn)}  →  '
+                          '${formatDate(state.checkOut)}',
+                          style: const TextStyle(
+                            color: AppTheme.heading,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13.5,
+                          ),
                         ),
-                      ),
-                      Text(
-                        nightsLabel(state.nights),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  )
-                : const Text(
-                    'Choose the nights',
-                    style: TextStyle(color: AppTheme.muted),
-                  ),
-          ),
-          const Icon(Icons.chevron_right, color: AppTheme.muted),
-        ],
+                        Text(
+                          nightsLabel(state.nights),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    )
+                  : const Text(
+                      'Choose the nights',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                    ),
+            ),
+            const Icon(Icons.chevron_right, color: AppTheme.muted, size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -411,6 +436,11 @@ class _KindNote extends StatelessWidget {
 }
 
 // ── Rooms ───────────────────────────────────────────────────────────────────
+//
+// A dropdown rather than a tile per room: the tiles read fine at three or
+// four rooms, but a property with a real inventory turned this section into
+// most of the form's height. One row, open only while choosing, keeps the
+// form the same size whether there are three rooms free or thirty.
 
 class _RoomPicker extends ConsumerWidget {
   final BookingState state;
@@ -444,81 +474,46 @@ class _RoomPicker extends ConsumerWidget {
                 'Try a different range.',
           );
         }
-        return Column(
-          children: [
-            for (final room in list)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.s12),
-                child: _RoomTile(
-                  room: room,
-                  selected: state.room?.id == room.id,
-                  onTap: () => ref
-                      .read(bookingViewModelProvider.notifier)
-                      .selectRoom(room),
-                ),
+        return NeuPressed(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: state.room?.id,
+              isExpanded: true,
+              dropdownColor: AppTheme.card,
+              hint: const Text(
+                'Choose a room',
+                style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
               ),
-          ],
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AppTheme.muted,
+              ),
+              items: [
+                for (final room in list)
+                  DropdownMenuItem<int>(
+                    value: room.id,
+                    child: Text(
+                      'Room ${room.roomNumber} · ${room.categoryName} · '
+                      '${formatPrice(room.categoryBasePrice)}/night',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ),
+              ],
+              onChanged: (id) {
+                if (id == null) return;
+                final room = list.firstWhere((r) => r.id == id);
+                ref.read(bookingViewModelProvider.notifier).selectRoom(room);
+              },
+            ),
+          ),
         );
       },
-    );
-  }
-}
-
-class _RoomTile extends StatelessWidget {
-  final Room room;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _RoomTile({
-    required this.room,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final body = Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Room ${room.roomNumber}',
-                style: TextStyle(
-                  color: selected ? AppTheme.accent : AppTheme.heading,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                [
-                  room.categoryName,
-                  if (room.floor != null) 'Floor ${room.floor}',
-                  if (room.maxOccupancy != null) 'Sleeps ${room.maxOccupancy}',
-                ].join(' · '),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
-        Text(
-          '${formatPrice(room.categoryBasePrice)}/night',
-          style: const TextStyle(color: AppTheme.text, fontSize: 13),
-        ),
-      ],
-    );
-
-    return GestureDetector(
-      onTap: onTap,
-      child: selected
-          ? NeuPressed(
-              radius: AppTheme.rMedium,
-              padding: const EdgeInsets.all(AppTheme.s16),
-              child: body,
-            )
-          : NeuCard(shadow: AppTheme.subtle, child: body),
     );
   }
 }

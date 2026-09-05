@@ -202,26 +202,20 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const renderCell = (venue, d) => {
     const cell = cells.get(venue.id)?.get(d) || [];
     if (cell.length === 0) {
-      const isPast = d < today;
       const classes = ['tape-tile', 'tape-tile--vacant'];
       if (isWeekend(d)) classes.push('tape-tile--weekend');
-      if (isPast) classes.push('tape-tile--past');
+      if (d < today) classes.push('tape-tile--past');
       return (
         <button
           key={d}
           type="button"
           className={classes.join(' ')}
-          disabled={isPast}
-          onClick={() => !isPast && onNew(d, venue.id)}
-          onMouseEnter={(e) => showHover(e, { venue, date: d, ev: null, past: isPast })}
-          onFocus={(e) => showHover(e, { venue, date: d, ev: null, past: isPast })}
+          onClick={() => onNew(d, venue.id)}
+          onMouseEnter={(e) => showHover(e, { venue, date: d, ev: null })}
+          onFocus={(e) => showHover(e, { venue, date: d, ev: null })}
           onMouseLeave={hide}
           onBlur={hide}
-          aria-label={
-            isPast
-              ? `${venue.name} on ${formatEventDate(`${d}T00:00:00`)} — past date`
-              : `${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start an enquiry`
-          }
+          aria-label={`${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start an enquiry`}
         />
       );
     }

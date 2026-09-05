@@ -4,6 +4,7 @@ import '../../domain/usecase/auth_usecase.dart';
 import '../../domain/usecase/booking_usecase.dart';
 import '../../domain/usecase/billing_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
+import '../../domain/usecase/reports_usecase.dart';
 import '../../domain/usecase/rooms_usecase.dart';
 import 'repository_provider.dart';
 
@@ -26,4 +27,8 @@ final ordersUsecaseProvider = Provider<OrdersUsecase>(
 
 final roomsUsecaseProvider = Provider<RoomsUsecase>(
   (ref) => RoomsUsecase(ref.watch(roomsRepositoryProvider)),
+);
+
+final reportsUsecaseProvider = Provider<ReportsUsecase>(
+  (ref) => ReportsUsecase(ref.watch(reportsRepositoryProvider)),
 );

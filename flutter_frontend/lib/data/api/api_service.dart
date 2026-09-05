@@ -8,6 +8,7 @@ import '../../domain/models/late_checkout.dart';
 import '../../domain/models/me.dart';
 import '../../domain/models/menu.dart';
 import '../../domain/models/quote.dart';
+import '../../domain/models/report.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
@@ -466,6 +467,45 @@ class ApiService {
 
   Future<void> deleteSeason(int id) async {
     await _dio.delete('/seasons/$id');
+  }
+
+  // ===== REPORTS (reports.view) =====
+
+  /// The booking register over a date range — the same figures the web
+  /// dashboard's Reports > Bookings tab shows and the Excel/PDF export uses.
+  Future<BookingsReport> bookingsReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/bookings',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return BookingsReport.fromJson(_map(res.data));
+  }
+
+  /// Day-by-day occupancy over a date range.
+  Future<OccupancyReport> occupancyReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/occupancy',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return OccupancyReport.fromJson(_map(res.data));
+  }
+
+  /// The GST filing summary — invoice-wise totals grouped by document type.
+  Future<GstSummaryReport> gstSummary({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/gst-summary',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return GstSummaryReport.fromJson(_map(res.data));
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

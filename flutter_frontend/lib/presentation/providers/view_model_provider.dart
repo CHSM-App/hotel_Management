@@ -4,6 +4,7 @@ import '../view_models/auth_viewmodel.dart';
 import '../view_models/booking_viewmodel.dart';
 import '../view_models/billing_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
+import '../view_models/reports_viewmodel.dart';
 import '../view_models/rooms_viewmodel.dart';
 import 'usecase_provider.dart';
 
@@ -39,4 +40,11 @@ final ordersViewModelProvider =
 final roomsViewModelProvider =
     StateNotifierProvider<RoomsViewModel, RoomsState>(
       (ref) => RoomsViewModel(ref.watch(roomsUsecaseProvider)),
+    );
+
+/// autoDispose: an owner who leaves Reports should not keep four report
+/// queries warm in memory for a section they may not reopen this session.
+final reportsViewModelProvider =
+    StateNotifierProvider.autoDispose<ReportsViewModel, ReportsState>(
+      (ref) => ReportsViewModel(ref.watch(reportsUsecaseProvider)),
     );

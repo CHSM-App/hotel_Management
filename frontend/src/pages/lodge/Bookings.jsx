@@ -2770,31 +2770,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             );
           }
 
-          // A night that has already gone, with nothing recorded against it.
-          // Shown only — not a button: it cannot be *sold* now, and a new
-          // booking cannot be backdated onto it either, so there is nothing a
-          // click here should do. It stays visually muted, because an empty
-          // past night is a fact, not an offer.
-          if (!booking && past) {
-            const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
-            if (isWeekend(d)) classes.push('tape-tile--weekend');
-            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
-            return (
-              <div
-                key={d}
-                className={classes.join(' ')}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
-                onMouseLeave={() => setHoverTile(null)}
-                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)}`}
-              />
-            );
-          }
-
           // A vacant night is a plain grey slot that starts a booking for that
           // room and date.
           if (!booking) {
             const classes = ['tape-tile', 'tape-tile--vacant'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
+            if (past) classes.push('tape-tile--past');
             if (d === today) classes.push('tape-tile--today');
             // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (

@@ -109,19 +109,28 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
           ),
         ),
         Positioned(
-          left: AppTheme.s16,
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: NeuButton(
             primary: true,
-            expand: true,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s24,
+              vertical: AppTheme.s16,
+            ),
             onPressed: () async {
               final booked = await Navigator.of(context).push<bool>(
                 MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
               );
               if (booked == true) _load();
             },
-            child: const Text('Take a booking'),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                SizedBox(width: AppTheme.s8),
+                Text('Take a booking'),
+              ],
+            ),
           ),
         ),
       ],

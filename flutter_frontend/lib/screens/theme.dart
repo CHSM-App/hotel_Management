@@ -1,29 +1,32 @@
 import 'package:flutter/material.dart';
 
-/// The Neuphorism palette and the shadows that carry it.
+/// The flat palette: a grey-50 surface with white cards sitting on it.
 ///
-/// Neumorphism has no borders — depth is simulated light. Every raised surface
-/// casts a dark shadow down-right and a light one up-left, from a single light
-/// source at the top-left; pressing one inverts both shadows inward so the
-/// element reads as pushed into the surface rather than sitting on it.
-///
-/// The consequence, and the reason this file is a set of tokens rather than a
-/// pile of BoxDecorations: the shadow colours are only correct against the one
-/// background they were derived from. A card on a white surface with these
-/// shadows looks like a smudge. Everything is drawn on [bg].
+/// Depth comes from a plain surface change and a soft drop shadow, not
+/// simulated light — a raised element is simply a white [card] on top of
+/// [bg], edged with a hairline [border] and a shadow cast straight down.
+/// There is no pressed/inset state to fake here; a tap is shown by opacity or
+/// a filled variant instead. Named `shadowDark`/`shadowLight` are kept as
+/// aliases so call sites built against the old neumorphic tokens still
+/// resolve to the right flat colours without per-screen edits.
 class AppTheme {
   // ── Surface ───────────────────────────────────────────────────────────────
-  static const Color bg = Color(0xFFE6E8ED);
-  static const Color shadowDark = Color(0xFFC5C8CE);
+  static const Color bg = Color(0xFFFAFAFA);
+  static const Color card = Color(0xFFFFFFFF);
+  static const Color border = Color(0xFFF0F1F3);
+
+  /// Aliases for the old neumorphic tokens — still referenced by shadow
+  /// lists and a handful of screens' `Border.all(color: ...)` calls.
+  static const Color shadowDark = Color(0xFFE4E6EA);
   static const Color shadowLight = Color(0xFFFFFFFF);
 
   // ── Text ──────────────────────────────────────────────────────────────────
   static const Color text = Color(0xFF4A5568);
-  static const Color heading = Color(0xFF2D3748);
-  static const Color muted = Color(0xFF8B95A5);
+  static const Color heading = Color(0xFF1A1D23);
+  static const Color muted = Color(0xFF8B8F99);
 
   // ── Accent ────────────────────────────────────────────────────────────────
-  static const Color accent = Color(0xFF667EEA);
+  static const Color accent = Color(0xFF5A67D8);
 
   // ── Status ────────────────────────────────────────────────────────────────
   // The tape chart's own vocabulary, carried over so a room reads the same on
@@ -56,31 +59,25 @@ class AppTheme {
 
   // ── Shadows ───────────────────────────────────────────────────────────────
   //
-  // Scaled down from the reference's 12/24px. Those were written for a desktop
-  // page; at phone scale a 24px blur on a list of cards turns the whole screen
-  // to fog, and the tokens stop reading as separate surfaces.
+  // A single soft shadow cast straight down, the way a card sitting a few
+  // millimetres off a flat surface actually reads — no counter-highlight,
+  // no dual light source.
 
   /// Raised — the default state of anything sitting on the surface.
   static const List<BoxShadow> extruded = [
-    BoxShadow(color: shadowDark, offset: Offset(6, 6), blurRadius: 12),
-    BoxShadow(color: shadowLight, offset: Offset(-6, -6), blurRadius: 12),
+    BoxShadow(color: Color(0x0A101828), offset: Offset(0, 1), blurRadius: 2),
+    BoxShadow(color: Color(0x08101828), offset: Offset(0, 1), blurRadius: 3),
   ];
 
   /// Raised further — a card being dragged or otherwise lifted.
   static const List<BoxShadow> elevated = [
-    BoxShadow(color: shadowDark, offset: Offset(8, 8), blurRadius: 16),
-    BoxShadow(color: shadowLight, offset: Offset(-8, -8), blurRadius: 16),
+    BoxShadow(color: Color(0x14101828), offset: Offset(0, 8), blurRadius: 20),
   ];
 
   /// Barely raised — list rows, where full extrusion on every row is noise.
   static const List<BoxShadow> subtle = [
-    BoxShadow(color: shadowDark, offset: Offset(3, 3), blurRadius: 6),
-    BoxShadow(color: shadowLight, offset: Offset(-3, -3), blurRadius: 6),
+    BoxShadow(color: Color(0x06101828), offset: Offset(0, 1), blurRadius: 2),
   ];
-
-  /// Pressed. Flutter has no inset box-shadow, so a pressed surface is drawn by
-  /// [NeuPressed] with a gradient and an inner border instead — see that widget
-  /// for why, rather than expecting a token here.
 
   static ThemeData get light {
     const scheme = ColorScheme.light(
