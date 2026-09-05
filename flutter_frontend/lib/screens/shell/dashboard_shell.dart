@@ -271,30 +271,80 @@ class _TopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
+    final lodgeName = me?.lodge.name ?? 'Loading…';
+    final initial = lodgeName.isNotEmpty ? lodgeName[0].toUpperCase() : '?';
+
+    return Container(
       padding: const EdgeInsets.fromLTRB(
         AppTheme.s16,
-        AppTheme.s12,
         AppTheme.s16,
-        AppTheme.s8,
+        AppTheme.s12,
+        AppTheme.s24,
+      ),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.accent, Color(0xFF434190)],
+        ),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(AppTheme.rLarge),
+          bottomRight: Radius.circular(AppTheme.rLarge),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x265A67D8),
+            offset: Offset(0, 6),
+            blurRadius: 16,
+          ),
+        ],
       ),
       child: Row(
         children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  me?.lodge.name ?? 'Loading…',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  lodgeName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (me != null)
+                if (me != null) ...[
+                  const SizedBox(height: 2),
                   Text(
                     '${me!.user.name} · ${me!.user.roleName ?? me!.user.role}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
+                ],
               ],
             ),
           ),
@@ -316,7 +366,7 @@ class _SignOutButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return IconButton(
       tooltip: 'Sign out',
-      icon: const Icon(Icons.logout_rounded, color: AppTheme.text),
+      icon: const Icon(Icons.logout_rounded, color: Colors.white),
       onPressed: () async {
         final ok = await showDialog<bool>(
           context: context,

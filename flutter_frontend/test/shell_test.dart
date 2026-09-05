@@ -8,6 +8,7 @@ import 'package:hotel_manager/domain/models/me.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
 import 'package:hotel_manager/domain/models/room.dart';
 import 'package:hotel_manager/domain/models/session.dart';
+import 'package:hotel_manager/domain/models/tape_chart.dart';
 import 'package:hotel_manager/domain/repository/auth_repo.dart';
 import 'package:hotel_manager/domain/repository/booking_repo.dart';
 import 'package:hotel_manager/domain/usecase/auth_usecase.dart';
@@ -16,7 +17,7 @@ import 'package:hotel_manager/presentation/providers/usecase_provider.dart';
 import 'package:hotel_manager/screens/shell/dashboard_shell.dart';
 import 'package:hotel_manager/screens/theme.dart';
 
-/// Renders the signed-in app against a canned /me and register.
+/// Renders the signed-in app against a canned /me and tape chart.
 ///
 /// The point is not to assert pixels. It is that a screen which throws while
 /// building shows as an empty page on a device and says nothing about why —
@@ -36,13 +37,53 @@ class _FakeAuth implements AuthRepository {
       const Session(token: 't', role: 'OWNER');
 }
 
+/// One stay for the chart, and the room it sits on. The chart needs both a
+/// room roster and a booking list — a fixture built from bookings alone would
+/// have no way to say a room is vacant.
+class _Stay {
+  final Booking booking;
+  final String categoryName;
+
+  const _Stay(this.booking, {this.categoryName = 'Standard'});
+}
+
 class _FakeBookings implements BookingRepository {
-  final List<Booking> rows;
-  _FakeBookings(this.rows);
+  final List<_Stay> stays;
+  _FakeBookings(this.stays);
+
+  List<Booking> get rows => stays.map((s) => s.booking).toList();
 
   @override
   Future<List<Booking>> bookings({String? fromDate, String? toDate}) async =>
       rows;
+
+  @override
+  Future<TapeChartData> tapeChart({
+    required String startDate,
+    required String endDate,
+  }) async => TapeChartData(
+    rooms: [
+      for (final s in stays)
+        TapeChartRoom(
+          id: s.booking.roomId ?? s.booking.id,
+          roomNumber: s.booking.roomNumber ?? '?',
+          categoryName: s.categoryName,
+        ),
+    ],
+    bookings: [
+      for (final s in stays)
+        TapeChartBooking(
+          id: s.booking.id,
+          roomId: s.booking.roomId ?? s.booking.id,
+          guestName: s.booking.guestName,
+          guestPhone: s.booking.guestPhone,
+          checkInDate: s.booking.checkInDate,
+          checkOutDate: s.booking.checkOutDate,
+          status: s.booking.status,
+          totalPrice: s.booking.totalPrice,
+        ),
+    ],
+  );
 
   @override
   Future<Booking> cancel(int id) async => Booking(id: id, status: 'CANCELLED');
@@ -61,13 +102,15 @@ class _FakeBookings implements BookingRepository {
   }) async => const Quote();
 
   @override
-  Future<Booking> booking(int id) async => Booking(id: id);
+  Future<Booking> booking(int id) async =>
+      rows.firstWhere((b) => b.id == id, orElse: () => Booking(id: id));
 
   @override
   Future<Booking> createBooking(FormData form) async => const Booking(id: 1);
 
   @override
-  Future<Booking> checkIn(int id, FormData form) async => Booking(id: id);
+  Future<Booking> checkIn(int id, FormData form) async =>
+      Booking(id: id, status: 'CHECKED_IN');
 
   @override
   Future<LateCheckout> lateCheckout(int id) async =>
@@ -75,7 +118,7 @@ class _FakeBookings implements BookingRepository {
 
   @override
   Future<Booking> checkOut(int id, Map<String, dynamic> body) async =>
-      Booking(id: id);
+      Booking(id: id, status: 'CHECKED_OUT');
 }
 
 /// The real payload for this property: an owner with every permission, rooms
@@ -105,34 +148,37 @@ Me _owner() => Me.fromJson(const {
   },
 });
 
-Widget _app(Me me, List<Booking> rows) => ProviderScope(
+Widget _app(Me me, List<_Stay> stays) => ProviderScope(
   overrides: [
     authUsecaseProvider.overrideWithValue(AuthUsecase(_FakeAuth(me))),
     bookingUsecaseProvider.overrideWithValue(
-      BookingUsecase(_FakeBookings(rows)),
+      BookingUsecase(_FakeBookings(stays)),
     ),
   ],
   child: MaterialApp(theme: AppTheme.light, home: const DashboardShell()),
 );
 
 void main() {
-  testWidgets('the shell draws the property, the tabs and the register', (
+  testWidgets('the shell draws the property, the tabs and the chart', (
     tester,
   ) async {
     await tester.pumpWidget(
       _app(_owner(), [
-        Booking.fromJson(const {
-          'id': '66',
-          'guestName': 'Sukhada Kudalkar',
-          'roomNumber': '202',
-          'checkInDate': '2026-08-27',
-          'checkOutDate': '2026-08-29',
-          'status': 'BOOKED',
-          'totalPrice': 6400,
-        }),
+        _Stay(
+          Booking.fromJson(const {
+            'id': '66',
+            'roomId': '202',
+            'guestName': 'Sukhada Kudalkar',
+            'roomNumber': '202',
+            'checkInDate': '2026-08-27',
+            'checkOutDate': '2026-08-29',
+            'status': 'BOOKED',
+            'totalPrice': 6400,
+          }),
+        ),
       ]),
     );
-    // Two pumps: one for the microtask that loads /me, one for the register.
+    // Two pumps: one for the microtask that loads /me, one for the chart.
     await tester.pumpAndSettle();
 
     // The property is named.
@@ -148,19 +194,20 @@ void main() {
     expect(find.text('Food'), findsNothing);
     expect(find.text('Menu'), findsNothing);
 
-    // And the body is the register, not an empty page.
-    expect(find.text('Sukhada Kudalkar'), findsOneWidget);
-    expect(find.text('Take a booking'), findsOneWidget);
+    // And the body is the chart, not an empty page — the room this stay is
+    // on is drawn, and the way in to a new one is offered.
+    expect(find.text('202'), findsOneWidget);
+    expect(find.text('New booking'), findsOneWidget);
   });
 
-  testWidgets('an empty register still draws the bar and the way in', (
+  testWidgets('a lodge with no rooms yet still draws the bar and the way in', (
     tester,
   ) async {
     await tester.pumpWidget(_app(_owner(), const []));
     await tester.pumpAndSettle();
 
-    expect(find.text('No stays here yet.'), findsOneWidget);
-    expect(find.text('Take a booking'), findsOneWidget);
+    expect(find.text('No active rooms yet.'), findsOneWidget);
+    expect(find.text('New booking'), findsOneWidget);
     expect(find.text('More'), findsOneWidget);
   });
 
@@ -182,7 +229,9 @@ void main() {
   //
   // A reservation used to be a dead end here: it could never be checked in, so
   // it could never be checked out, so it could never be billed. These pin the
-  // actions to the states the server will actually accept them in.
+  // actions to the states the server will actually accept them in. The tape
+  // chart keeps them behind a tap on the stay's own tile rather than showing
+  // every action on the screen at once, so each test opens that sheet first.
 
   testWidgets('a reservation whose date has come offers check in and cancel', (
     tester,
@@ -190,17 +239,23 @@ void main() {
     final today = DateTime.now();
     await tester.pumpWidget(
       _app(_owner(), [
-        Booking.fromJson({
-          'id': '70',
-          'guestName': 'Nikhil Parab',
-          'roomNumber': '101',
-          'checkInDate': _iso(today),
-          'checkOutDate': _iso(today.add(const Duration(days: 2))),
-          'status': 'BOOKED',
-          'totalPrice': 3000,
-        }),
+        _Stay(
+          Booking.fromJson({
+            'id': '70',
+            'roomId': '101',
+            'guestName': 'Nikhil Parab',
+            'roomNumber': '101',
+            'checkInDate': _iso(today),
+            'checkOutDate': _iso(today.add(const Duration(days: 2))),
+            'status': 'BOOKED',
+            'totalPrice': 3000,
+          }),
+        ),
       ]),
     );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('101'));
     await tester.pumpAndSettle();
 
     expect(find.text('Check in'), findsOneWidget);
@@ -214,17 +269,23 @@ void main() {
     final later = DateTime.now().add(const Duration(days: 10));
     await tester.pumpWidget(
       _app(_owner(), [
-        Booking.fromJson({
-          'id': '71',
-          'guestName': 'Asha Redkar',
-          'roomNumber': '102',
-          'checkInDate': _iso(later),
-          'checkOutDate': _iso(later.add(const Duration(days: 1))),
-          'status': 'BOOKED',
-          'totalPrice': 1500,
-        }),
+        _Stay(
+          Booking.fromJson({
+            'id': '71',
+            'roomId': '102',
+            'guestName': 'Asha Redkar',
+            'roomNumber': '102',
+            'checkInDate': _iso(later),
+            'checkOutDate': _iso(later.add(const Duration(days: 1))),
+            'status': 'BOOKED',
+            'totalPrice': 1500,
+          }),
+        ),
       ]),
     );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('102'));
     await tester.pumpAndSettle();
 
     // The server opens check-in on the reserved date and answers 409 before
@@ -240,17 +301,23 @@ void main() {
     final today = DateTime.now();
     await tester.pumpWidget(
       _app(_owner(), [
-        Booking.fromJson({
-          'id': '72',
-          'guestName': 'Rohan Sawant',
-          'roomNumber': '103',
-          'checkInDate': _iso(today.subtract(const Duration(days: 1))),
-          'checkOutDate': _iso(today.add(const Duration(days: 1))),
-          'status': 'CHECKED_IN',
-          'totalPrice': 2000,
-        }),
+        _Stay(
+          Booking.fromJson({
+            'id': '72',
+            'roomId': '103',
+            'guestName': 'Rohan Sawant',
+            'roomNumber': '103',
+            'checkInDate': _iso(today.subtract(const Duration(days: 1))),
+            'checkOutDate': _iso(today.add(const Duration(days: 1))),
+            'status': 'CHECKED_IN',
+            'totalPrice': 2000,
+          }),
+        ),
       ]),
     );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('103'));
     await tester.pumpAndSettle();
 
     // Cancel is absent on purpose: the server only cancels a BOOKED stay, and

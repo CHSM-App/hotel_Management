@@ -17,7 +17,13 @@ import '../theme.dart';
 /// and a wizard makes going back a chore. Every later step simply stays shut
 /// until the one before it is answered.
 class TakeBookingScreen extends ConsumerStatefulWidget {
-  const TakeBookingScreen({super.key});
+  /// Where the tape chart was tapped, if it was — a click on a vacant tile
+  /// starts the form already on that room and night, the same way the web
+  /// tape chart's own click-to-book does.
+  final int? presetRoomId;
+  final DateTime? presetCheckIn;
+
+  const TakeBookingScreen({super.key, this.presetRoomId, this.presetCheckIn});
 
   @override
   ConsumerState<TakeBookingScreen> createState() => _TakeBookingScreenState();
@@ -40,7 +46,25 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(bookingViewModelProvider.notifier).reset());
+    Future.microtask(_start);
+  }
+
+  /// A plain reset for the FAB; a preset room and night for a tape-chart tap,
+  /// which fills the dates and — once the free-room list answers — the room
+  /// itself, provided the room the desk tapped is still on it.
+  Future<void> _start() async {
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    vm.reset();
+    final checkIn = widget.presetCheckIn;
+    final roomId = widget.presetRoomId;
+    if (checkIn == null) return;
+
+    await vm.setDates(checkIn, checkIn.add(const Duration(days: 1)));
+    if (roomId == null || !mounted) return;
+
+    final rooms = ref.read(bookingViewModelProvider).rooms?.valueOrNull;
+    final match = rooms?.where((r) => r.id == roomId).firstOrNull;
+    if (match != null) await vm.selectRoom(match);
   }
 
   @override

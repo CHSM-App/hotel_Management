@@ -1,6 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hotel_manager/domain/models/booking.dart';
 import 'package:hotel_manager/domain/models/draft.dart';
 import 'package:hotel_manager/domain/repository/booking_repo.dart';
 import 'package:hotel_manager/domain/usecase/booking_usecase.dart';
@@ -169,45 +167,26 @@ void main() {
     });
   });
 
-  // ── The register filter ──────────────────────────────────────────────────
+  // ── Resetting the take-a-booking flow ────────────────────────────────────
   //
-  // GET /bookings takes a date range and nothing else. The status the desk
-  // picks is applied to what came back, not sent — a `status` query parameter
-  // was silently ignored, so every chip showed the same list.
-  group('the register filter', () {
-    BookingState withRows() => BookingState(
-      register: AsyncValue.data([
-        const Booking(id: 1, status: 'BOOKED'),
-        const Booking(id: 2, status: 'CHECKED_IN'),
-        const Booking(id: 3, status: 'CHECKED_OUT'),
-        const Booking(id: 4, status: 'BOOKED'),
-      ]),
-    );
-
-    test('ALL shows everything', () {
-      expect(withRows().visibleRegister.length, 4);
-    });
-
-    test('a status shows only its own', () {
-      final booked = withRows().copyWith(statusFilter: 'BOOKED');
-      expect(booked.visibleRegister.map((b) => b.id), [1, 4]);
-
-      final stayed = withRows().copyWith(statusFilter: 'CHECKED_OUT');
-      expect(stayed.visibleRegister.map((b) => b.id), [3]);
-    });
-
-    test('a filter matching nothing is empty, not everything', () {
-      final none = withRows().copyWith(statusFilter: 'CANCELLED');
-      expect(none.visibleRegister, isEmpty);
-    });
-
-    test('the filter survives a reload', () {
-      // reset() clears the take-a-booking flow and keeps the register and the
-      // chip the desk chose — otherwise every save would snap it back to All.
+  // reset() clears everything the form gathered so far, but the tape chart
+  // behind it is a different screen's data — a save should not throw away
+  // which nights the chart was showing.
+  group('resetting after a save', () {
+    test('keeps the chart window, not the dates just booked', () {
       final vm = BookingViewModel(BookingUsecase(_UnusedRepo()));
-      vm.setStatusFilter('CHECKED_IN');
+      final chartFrom = vm.state.chartFrom;
+      final chartTo = vm.state.chartTo;
+
+      vm.state = vm.state.copyWith(
+        checkIn: DateTime(2026, 1, 1),
+        checkOut: DateTime(2026, 1, 2),
+      );
       vm.reset();
-      expect(vm.state.statusFilter, 'CHECKED_IN');
+
+      expect(vm.state.checkIn, isNull);
+      expect(vm.state.chartFrom, chartFrom);
+      expect(vm.state.chartTo, chartTo);
     });
   });
 
@@ -260,7 +239,7 @@ void main() {
     });
 
     test('no dates yet is not a future check-in', () {
-      expect(const BookingState().isFutureCheckIn, isFalse);
+      expect(BookingState().isFutureCheckIn, isFalse);
     });
   });
 }

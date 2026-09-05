@@ -4,9 +4,17 @@ import '../models/booking.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/tape_chart.dart';
 
 abstract class BookingRepository {
   Future<List<Room>> availableRooms(String checkInDate, String checkOutDate);
+
+  /// The tape chart's own fetch — every active room plus every stay, draft
+  /// and cancellation touching [startDate, endDate).
+  Future<TapeChartData> tapeChart({
+    required String startDate,
+    required String endDate,
+  });
 
   Future<Quote> priceQuote({
     required int roomId,

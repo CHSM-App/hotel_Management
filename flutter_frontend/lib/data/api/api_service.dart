@@ -13,6 +13,7 @@ import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
 import '../../domain/models/switchable_charge_listing.dart';
+import '../../domain/models/tape_chart.dart';
 
 /// Every endpoint the app talks to, in one place.
 ///
@@ -116,6 +117,20 @@ class ApiService {
   Future<Booking> booking(int id) async {
     final res = await _dio.get('/bookings/$id');
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
+  /// The tape chart's own fetch: every active room plus every stay, draft and
+  /// cancellation touching [startDate, endDate) in one call, rather than the
+  /// setup screen's room list and the register's own fetch composed together.
+  Future<TapeChartData> tapeChart({
+    required String startDate,
+    required String endDate,
+  }) async {
+    final res = await _dio.get(
+      '/bookings/tape-chart',
+      queryParameters: {'startDate': startDate, 'endDate': endDate},
+    );
+    return TapeChartData.fromJson(_map(res.data));
   }
 
   /// Take a booking. Multipart, for the reason in the class comment.

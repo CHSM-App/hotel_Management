@@ -4,6 +4,7 @@ import '../../domain/models/booking.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/tape_chart.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../api/api_service.dart';
 
@@ -27,6 +28,12 @@ class BookingImpl implements BookingRepository {
       api
           .availableRooms(checkInDate: checkInDate, checkOutDate: checkOutDate)
           .then((r) => r.rooms);
+
+  @override
+  Future<TapeChartData> tapeChart({
+    required String startDate,
+    required String endDate,
+  }) => api.tapeChart(startDate: startDate, endDate: endDate);
 
   @override
   Future<Quote> priceQuote({
