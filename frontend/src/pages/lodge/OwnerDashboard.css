@@ -31,7 +31,13 @@
 .dash-sidebar {
   width: 240px;
   flex-shrink: 0;
-  min-height: calc(100svh - var(--dash-topbar-h));
+  /* Capped to the viewport rather than only floored at it — a rail with more
+     groups than a laptop screen is tall used to grow past 100svh, and a sticky
+     element taller than the viewport scrolls with the page instead of staying
+     put. Sign out lives outside .dash-sidebar__scroll below, as a sibling flex
+     child, so it stays fixed at the floor of the rail rather than scrolling
+     away with either the page or the section list. */
+  height: calc(100svh - var(--dash-topbar-h));
   background: var(--surface);
   border-right: none;
   /* Directional rather than a full extrusion: the sidebar runs the height of
@@ -41,15 +47,23 @@
   padding: 18px 14px;
   position: sticky;
   top: 0;
-  /* A column so the footer can be pushed to the floor of the rail. The rail is
-     already at least viewport height, so on a short menu Sign out sits at the
-     bottom of the screen rather than trailing the last section. */
+  /* A column so the footer can be pinned to the floor of the rail. */
   display: flex;
   flex-direction: column;
 }
 
+/* The scrolling part of the rail: every section group plus the user guide
+   link. Sized to whatever the footer below it leaves over, and scrolling on
+   its own rather than the rail as a whole — that is what keeps Sign out
+   always in view instead of requiring a scroll to reach it. */
+.dash-sidebar__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .dash-sidebar__footer {
-  margin-top: auto;
+  flex-shrink: 0;
   /* Its own space above the rule — without it a tall menu that fills the rail
      would put Sign out directly against the last section, which is exactly the
      misread ("another section") the separator is there to prevent. */
@@ -236,6 +250,7 @@
 
   .dash-sidebar {
     width: 100%;
+    height: auto;
     min-height: 0;
     position: static;
     border-right: none;
@@ -244,7 +259,16 @@
     display: flex;
     flex-direction: row;
     overflow-x: auto;
+    overflow-y: visible;
     gap: 6px;
+  }
+
+  /* Dissolves into the row rather than boxing the sections it wraps — its own
+     scroll is a desktop-only affordance for a rail taller than the viewport,
+     which doesn't apply once the rail is this horizontal strip. */
+  .dash-sidebar__scroll {
+    display: contents;
+    overflow: visible;
   }
 
   /* Dissolve each group wrapper on mobile so its list joins one flat,
@@ -344,7 +368,7 @@
    group label above it is what gets clipped. */
 .dash-sidebar {
   top: var(--dash-topbar-h);
-  min-height: calc(100svh - var(--dash-topbar-h));
+  height: calc(100svh - var(--dash-topbar-h));
 }
 
 /* Group labels were the same muted grey as body copy at 11px, which left the

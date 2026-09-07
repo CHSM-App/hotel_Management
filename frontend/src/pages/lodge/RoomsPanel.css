@@ -6,6 +6,43 @@
   margin-bottom: 12px;
 }
 
+/* Sits between the room count and "+ Add room". Pushed against the button by
+   the same margin-left:auto trick the rate uses on the card, so the filter
+   stays next to the button it affects the view above rather than drifting to
+   the middle of the bar. */
+.rooms-panel__type-filter {
+  margin-left: auto;
+  min-height: 34px;
+  padding: 6px 28px 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.rooms-panel__type-filter:hover {
+  border-color: var(--brand);
+}
+
+.rooms-panel__type-filter:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .rooms-panel__toolbar {
+    flex-wrap: wrap;
+  }
+
+  .rooms-panel__type-filter {
+    margin-left: 0;
+    flex: 1;
+  }
+}
+
 /* The toolbar has no page heading above it, so this line is the closest thing
    the panel has to one. Ink and semibold rather than muted 13px: it reads as
    "what you are looking at" instead of as a caption under nothing. */

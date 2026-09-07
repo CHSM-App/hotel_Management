@@ -342,11 +342,20 @@ export default function MenuPanel() {
   const [showItemForm, setShowItemForm] = useState(false);
 
   // The banner is now only for failures with no field to sit under; anything
-  // the server pins to a field goes into the errors map beside it.
+  // the server pins to a field goes into the errors map beside it. Rare, but
+  // still worth reaching: a save that fails for no field's fault otherwise
+  // lands silently at the top of a form that can run well below the fold.
   const [formError, setFormError] = useState('');
   const [itemErrors, setItemErrors] = useState({});
   const [sectionErrors, setSectionErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // A dish's sizes, typed on the dish. Empty means one price and nothing to
   // choose, which is what every dish looks like until a size is added.
@@ -473,7 +482,8 @@ export default function MenuPanel() {
         'Could not save the section.'
       );
       setSectionErrors(fieldErrors);
-      setFormError(banner);
+      if (banner) reportFormError(banner);
+      else setFormError('');
       focusFirstError(fieldErrors, SECTION_FIELD_IDS);
     } finally {
       setSubmitting(false);
@@ -562,7 +572,8 @@ export default function MenuPanel() {
     } catch (err) {
       const { fieldErrors, banner } = splitApiError(err, ITEM_FIELD_IDS, 'Could not save the item.');
       setItemErrors(fieldErrors);
-      setFormError(banner);
+      if (banner) reportFormError(banner);
+      else setFormError('');
       focusFirstError(fieldErrors, ITEM_FIELD_IDS);
     } finally {
       setSubmitting(false);
@@ -1044,7 +1055,11 @@ export default function MenuPanel() {
                   nothing to scroll, and a scroll box is what would clip the
                   name field's suggestions list at the dialog's bottom edge. */}
               <div className="modal-form__body modal-form__body--fixed">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="field">
                 <label htmlFor="sectionName">
@@ -1135,7 +1150,11 @@ export default function MenuPanel() {
               </div>
 
               <div className="modal-form__body">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="form-section">
                 <div className="form-section__title">

@@ -49,10 +49,22 @@ test('there is no by-booking food loader left to put food on a stay bill', () =>
   );
 });
 
-test('nothing selects food orders by booking_id any more', () => {
+// This used to assert that nothing selects food orders by booking_id at all
+// — booking_id-scoping was how food used to reach the main stay bill. That
+// blanket claim stopped being true on purpose: a room is reused by every
+// guest who stays in it, and a food *tab* keyed on room_id alone can't tell
+// a checked-out guest's unpaid order from the next guest's (see
+// foodTabSeparation.test.js, "a room is reused"). tabScope now also scopes a
+// room-booking-<id> tab by booking_id — but only inside tabScope/tabIdentity,
+// for splitting tabs between stays, never inside the stay-bill loaders this
+// file actually guards.
+test('nothing outside tabScope/tabIdentity selects food orders by booking_id', () => {
+  const outsideTabHelpers = service
+    .replace(bodyOf('tabScope'), '')
+    .replace(bodyOf('tabIdentity'), '');
   assert.ok(
-    !/o\.booking_id = @bookingId/.test(service),
-    'a query still scopes food orders to a booking, which is how food reached the main bill'
+    !/o\.booking_id = @bookingId/.test(outsideTabHelpers),
+    'a query outside tabScope still scopes food orders to a booking, which is how food reached the main bill'
   );
 });
 

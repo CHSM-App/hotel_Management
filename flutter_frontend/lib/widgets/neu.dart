@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../screens/theme.dart';
 
-/// A raised surface — the neumorphic card.
+/// A raised surface — a white card on the grey-50 page.
 class NeuCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -23,14 +23,13 @@ class NeuCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final body = AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
+    final body = Container(
       padding: padding,
       margin: margin,
       decoration: BoxDecoration(
-        color: AppTheme.bg,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: AppTheme.border),
         boxShadow: shadow,
       ),
       child: child,
@@ -41,15 +40,12 @@ class NeuCard extends StatelessWidget {
   }
 }
 
-/// A pressed-in surface — inputs, selected states, wells.
+/// A sunken well — inputs and other surfaces that read as "inside" a card.
 ///
-/// Flutter has no `inset` box-shadow, which is what the reference design system
-/// uses for this. Faking it with a real inner shadow needs a custom painter per
-/// corner radius; a two-stop gradient plus a hairline border reads as the same
-/// depression at a fraction of the cost, and is what every Flutter neumorphism
-/// implementation settles on. The illusion holds because the light source is
-/// fixed top-left: darker at the top-left edge, lighter at the bottom-right,
-/// exactly inverted from [NeuCard].
+/// The neumorphic version faked an inset shadow with a gradient; flat design
+/// has no light source to fake, so this is just the page's own [AppTheme.bg]
+/// dropped inside a card, with a hairline border to separate it from the
+/// white surface around it.
 class NeuPressed extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -70,25 +66,20 @@ class NeuPressed extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(radius),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFD9DCE2), Color(0xFFEFF1F5)],
-        ),
-        border: Border.all(color: AppTheme.shadowDark.withValues(alpha: 0.5)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: child,
     );
   }
 }
 
-/// A button that actually presses.
+/// A button — solid accent when [primary], a light grey fill otherwise.
 ///
-/// The extruded → pressed swap on touch-down is the whole point of the design
-/// system; a neumorphic button that does not move on contact reads as a picture
-/// of a button. Held for the duration of the press rather than animated on tap,
-/// so a long press stays down.
+/// Pressed state is a plain opacity dip rather than a shadow inversion — flat
+/// surfaces don't have a light source to invert. Held for the duration of the
+/// press rather than animated on tap, so a long press stays dimmed.
 class NeuButton extends StatefulWidget {
   final Widget child;
   final VoidCallback? onPressed;
@@ -124,13 +115,13 @@ class _NeuButtonState extends State<NeuButton> {
       style: TextStyle(
         color: widget.primary ? Colors.white : AppTheme.heading,
         fontSize: 15,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w600,
       ),
       child: Center(child: widget.child),
     );
 
     return Opacity(
-      opacity: enabled ? 1 : 0.5,
+      opacity: enabled ? (_down ? 0.85 : 1) : 0.5,
       child: GestureDetector(
         onTapDown: enabled ? (_) => setState(() => _down = true) : null,
         onTapUp: enabled ? (_) => setState(() => _down = false) : null,
@@ -143,12 +134,10 @@ class _NeuButtonState extends State<NeuButton> {
           constraints: const BoxConstraints(minHeight: 44),
           padding: widget.padding,
           decoration: BoxDecoration(
-            color: widget.primary ? AppTheme.accent : AppTheme.bg,
+            color: widget.primary ? AppTheme.accent : AppTheme.card,
             borderRadius: BorderRadius.circular(AppTheme.rMedium),
-            boxShadow: _down ? const [] : AppTheme.extruded,
-            border: _down
-                ? Border.all(color: AppTheme.shadowDark.withValues(alpha: 0.6))
-                : null,
+            border: widget.primary ? null : Border.all(color: AppTheme.border),
+            boxShadow: widget.primary ? AppTheme.subtle : null,
           ),
           child: label,
         ),

@@ -127,10 +127,10 @@ async function createRole(lodgeId, input) {
   // read the same way as the built-ins in the users table.
   const base = input.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
   if (!base) {
-    throw new ApiError('Enter a role name using letters or numbers.', 400);
+    throw new ApiError('Enter a role name using letters or numbers.', 400, 'roleName');
   }
   if (SYSTEM_ROLE_KEYS.includes(base)) {
-    throw new ApiError('That name is reserved for a built-in role.', 409);
+    throw new ApiError('That name is reserved for a built-in role.', 409, 'roleName');
   }
 
   const clash = await pool
@@ -139,7 +139,7 @@ async function createRole(lodgeId, input) {
     .input('roleKey', sql.NVarChar, base)
     .query('SELECT id FROM dbo.roles WHERE lodge_id = @lodgeId AND role_key = @roleKey');
   if (clash.recordset.length > 0) {
-    throw new ApiError('A role with that name already exists.', 409);
+    throw new ApiError('A role with that name already exists.', 409, 'roleName');
   }
 
   const inserted = await pool

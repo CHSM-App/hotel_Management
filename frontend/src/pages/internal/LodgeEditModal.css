@@ -101,6 +101,22 @@
   font: inherit;
 }
 
+/* A field the submit refused — same red as .form-banner--error below, so a
+   failure caught before the request goes out reads as the same problem as
+   one the server sent back. */
+.lodge-edit .field__error {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b91c1c;
+}
+
+.lodge-edit .field input[aria-invalid='true'],
+.lodge-edit .field select[aria-invalid='true'] {
+  border-color: #b91c1c;
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.12);
+}
+
 .lodge-edit .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -155,6 +171,20 @@
 .lodge-edit .form-banner--error {
   background: #fef2f2;
   color: #b91c1c;
+}
+
+/* A failure caught after the round trip to the server lands its answer here,
+   but on a form this tall the desk is usually scrolled well past the top by
+   the time Save is pressed — the same reason the lodge-side forms pulse
+   their banner (forms.css). Runs once on mount, so it doesn't restart on
+   every re-render while the banner is up. */
+@keyframes lodge-edit-banner-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); }
+  20%, 60% { box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.3); }
+}
+
+.lodge-edit .form-banner--flash {
+  animation: lodge-edit-banner-flash 1.1s ease-out 2;
 }
 
 @media (max-width: 600px) {

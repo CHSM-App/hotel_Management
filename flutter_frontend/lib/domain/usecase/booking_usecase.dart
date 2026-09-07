@@ -4,6 +4,7 @@ import '../models/booking.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/tape_chart.dart';
 import '../repository/booking_repo.dart';
 
 class BookingUsecase {
@@ -14,6 +15,12 @@ class BookingUsecase {
   /// Which rooms are free across these nights.
   Future<List<Room>> availableRooms(String checkIn, String checkOut) =>
       repository.availableRooms(checkIn, checkOut);
+
+  /// The tape chart's own fetch.
+  Future<TapeChartData> tapeChart({
+    required String startDate,
+    required String endDate,
+  }) => repository.tapeChart(startDate: startDate, endDate: endDate);
 
   /// What this stay would cost.
   Future<Quote> priceQuote({
@@ -32,9 +39,9 @@ class BookingUsecase {
     discountAmount: discountAmount,
   );
 
-  /// The register.
-  Future<List<Booking>> bookings({String? status}) =>
-      repository.bookings(status: status);
+  /// The register, over the nights the desk asked about.
+  Future<List<Booking>> bookings({String? fromDate, String? toDate}) =>
+      repository.bookings(fromDate: fromDate, toDate: toDate);
 
   /// One stay, in full.
   Future<Booking> booking(int id) => repository.booking(id);
@@ -54,4 +61,8 @@ class BookingUsecase {
   /// overstay — zero when they were on time or it was waived.
   Future<Booking> checkOut(int id, {num lateCharge = 0}) =>
       repository.checkOut(id, {'lateCharge': lateCharge});
+
+  /// Call off a reservation. Only a stay still sitting at BOOKED can be
+  /// cancelled; the server answers 409 for anything further along.
+  Future<Booking> cancel(int id) => repository.cancel(id);
 }

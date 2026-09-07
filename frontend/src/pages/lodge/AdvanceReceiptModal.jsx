@@ -104,6 +104,17 @@ export default function AdvanceReceiptModal({
   const [error, setError] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  // The take-advance form and the printed receipt below it can push a
+  // failure's banner off the bottom of a short modal on a small screen — same
+  // reason every other form in the app scrolls its banner into view rather
+  // than relying on it already being visible.
+  const errorRef = useRef(null);
+  const reportError = (message) => {
+    setError(message);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
   // Whether this device has a share sheet to hand the file to. A property of
   // the browser, not of the receipt, so it is asked once.
   const deviceShare = useMemo(() => canShareFiles(), []);
@@ -132,6 +143,13 @@ export default function AdvanceReceiptModal({
   const [voidReason, setVoidReason] = useState('');
   const [voidError, setVoidError] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
+  const voidErrorRef = useRef(null);
+  const reportVoidError = (message) => {
+    setVoidError(message);
+    requestAnimationFrame(() => {
+      voidErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   const previewRef = useRef(null);
   const captureRef = useRef(null);
@@ -218,7 +236,7 @@ export default function AdvanceReceiptModal({
   const handleVoid = async (e) => {
     e.preventDefault();
     if (voidReason.trim() === '') {
-      setVoidError('Enter a reason for voiding this receipt.');
+      reportVoidError('Enter a reason for voiding this receipt.');
       return;
     }
     setVoidError('');
@@ -234,7 +252,7 @@ export default function AdvanceReceiptModal({
       setVoidReason('');
       onVoided?.(data.receipt);
     } catch (err) {
-      setVoidError(err instanceof ApiError ? err.message : 'Could not void this receipt.');
+      reportVoidError(err instanceof ApiError ? err.message : 'Could not void this receipt.');
     } finally {
       setVoidSubmitting(false);
     }
@@ -314,14 +332,14 @@ export default function AdvanceReceiptModal({
     e.preventDefault();
     const amount = Number(form.amountReceived);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Enter the amount received from the guest.');
+      reportError('Enter the amount received from the guest.');
       return;
     }
     // Covers the single-payment case unchanged — one line with no method is
     // still "choose how this was paid" — and every line of a split besides.
     const lineProblem = paymentLinesError(payLines);
     if (lineProblem) {
-      setError(
+      reportError(
         payLines.length === 1 && !payLines[0].method
           ? 'Choose how the advance was paid.'
           : lineProblem
@@ -353,7 +371,7 @@ export default function AdvanceReceiptModal({
       setReceipt(data.receipt);
       onTaken?.(data.receipt);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not record this advance.');
+      reportError(err instanceof ApiError ? err.message : 'Could not record this advance.');
     } finally {
       setTaking(false);
     }
@@ -434,7 +452,11 @@ export default function AdvanceReceiptModal({
           </p>
         )}
 
-        {error && <div className="form-banner form-banner--error">{error}</div>}
+        {error && (
+          <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+            {error}
+          </div>
+        )}
 
         {/* Why this receipt was voided, said plainly and in the danger colour.
             The small "Void" chip up in the header said the state but never the
@@ -589,7 +611,11 @@ export default function AdvanceReceiptModal({
 
         {pdfError && <div className="form-banner form-banner--error">{pdfError}</div>}
 
-        {voidError && <div className="form-banner form-banner--error">{voidError}</div>}
+        {voidError && (
+          <div ref={voidErrorRef} className="form-banner form-banner--error form-banner--flash">
+            {voidError}
+          </div>
+        )}
 
         {existing && showVoidForm && (
           <form onSubmit={handleVoid} className="form-section">

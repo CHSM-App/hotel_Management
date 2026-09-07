@@ -137,10 +137,22 @@ const otpSendLimiter = createRateLimiter({
   countWhen: (res) => res.statusCode < 400,
 });
 
+// Guards the no-OTP forgot-password endpoint. Whoever can reach it can set
+// any staff member's password by phone or email alone, so unlike the
+// limiters above this charges every attempt, success included — a source
+// that resets six different accounts in quick succession is exactly the
+// pattern worth slowing down, not just its failures.
+const forgotPasswordLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  message: 'Too many password reset attempts. Please wait a few minutes and try again.',
+});
+
 module.exports = {
   createRateLimiter,
   pinAttemptLimiter,
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
   otpSendLimiter,
+  forgotPasswordLimiter,
 };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPut, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -50,6 +50,13 @@ export default function RecipesPanel() {
 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   const load = () =>
     Promise.all([
@@ -200,19 +207,19 @@ export default function RecipesPanel() {
         if (!row.materialId && String(row.quantity).trim() === '') continue;
 
         if (!row.materialId) {
-          setFormError('Choose a raw material for every ingredient, or clear the row.');
+          reportFormError('Choose a raw material for every ingredient, or clear the row.');
           return;
         }
         const material = materialById.get(row.materialId);
         const value = Number(row.quantity);
         if (String(row.quantity).trim() === '' || !Number.isFinite(value) || value <= 0) {
           const name = material?.name || 'that ingredient';
-          setFormError(`How much ${name} does it take? Quantities have to be above zero.`);
+          reportFormError(`How much ${name} does it take? Quantities have to be above zero.`);
           return;
         }
         if (seen.has(row.materialId)) {
           const name = material?.name || 'That material';
-          setFormError(`${name} is listed twice for the same size.`);
+          reportFormError(`${name} is listed twice for the same size.`);
           return;
         }
         seen.add(row.materialId);
@@ -223,7 +230,7 @@ export default function RecipesPanel() {
         // as nothing at all. Said here rather than silently saving a zero.
         const stored = material ? toStockQty(value, material.unit) : value;
         if (stored <= 0) {
-          setFormError(
+          reportFormError(
             `${material?.name || 'That ingredient'} is too small to record — ` +
               `the smallest a recipe can hold is 1 ${recipeUnitLabel(material?.unit)}.`
           );
@@ -244,7 +251,7 @@ export default function RecipesPanel() {
       setEditing(null);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save that recipe.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not save that recipe.');
     } finally {
       setSubmitting(false);
     }
@@ -385,7 +392,11 @@ export default function RecipesPanel() {
               </div>
 
               <div className="modal-form__body">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               {editing.portions.length > 0 && (
                 <>

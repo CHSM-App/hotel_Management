@@ -4,6 +4,7 @@ import '../../domain/models/booking.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/tape_chart.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../api/api_service.dart';
 
@@ -29,6 +30,12 @@ class BookingImpl implements BookingRepository {
           .then((r) => r.rooms);
 
   @override
+  Future<TapeChartData> tapeChart({
+    required String startDate,
+    required String endDate,
+  }) => api.tapeChart(startDate: startDate, endDate: endDate);
+
+  @override
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
@@ -46,8 +53,8 @@ class BookingImpl implements BookingRepository {
   );
 
   @override
-  Future<List<Booking>> bookings({String? status}) =>
-      api.bookings(status: status);
+  Future<List<Booking>> bookings({String? fromDate, String? toDate}) =>
+      api.bookings(fromDate: fromDate, toDate: toDate);
 
   @override
   Future<Booking> booking(int id) => api.booking(id);
@@ -64,4 +71,7 @@ class BookingImpl implements BookingRepository {
   @override
   Future<Booking> checkOut(int id, Map<String, dynamic> body) =>
       api.checkOut(id, body);
+
+  @override
+  Future<Booking> cancel(int id) => api.cancelBooking(id);
 }

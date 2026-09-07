@@ -1364,7 +1364,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.num_guests, b.id_proof_type, b.check_in_date,
+      SELECT b.room_id, b.num_guests, b.id_proof_type, b.check_in_date,
              b.total_price, b.advance_amount,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
@@ -1381,6 +1381,28 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
   // always booked for today, so this never blocks the common case.
   if (toIsoDate(bookingRow.check_in_date) > todayIsoIST()) {
     throw new ApiError('This booking is for a future date — check-in opens on the reserved date.', 409);
+  }
+
+  // The date ranges not overlapping was already enforced when this booking was
+  // made — but that only promises the room by the *reserved* checkout date.
+  // A guest who overstays leaves the room physically occupied past that date,
+  // so the next party can't actually walk in yet even though their own
+  // reservation is valid. This is the same case a hotel desk calls "room not
+  // vacated" — check-in has to wait for the previous occupant's real checkout,
+  // not just their booked one.
+  const stillOccupiedResult = await pool
+    .request()
+    .input('roomId', sql.BigInt, bookingRow.room_id)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT TOP 1 id FROM dbo.bookings
+      WHERE room_id = @roomId AND id <> @bookingId AND status = 'CHECKED_IN'
+    `);
+  if (stillOccupiedResult.recordset.length > 0) {
+    throw new ApiError(
+      'This room’s current guest hasn’t checked out yet — check them out before checking in the next booking.',
+      409
+    );
   }
 
   // A walk-in booking already has its ID proof on file; a pre-reservation

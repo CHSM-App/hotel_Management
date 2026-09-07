@@ -780,12 +780,20 @@ label.order-card__item:has(.order-card__tick:disabled) {
   color: var(--text-muted);
 }
 
-/* Not an error — an empty room is billable. Stated plainly so nobody reads a
-   blank panel as "lookup failed" and charges the wrong stay to be safe. */
 .occupancy__vacant {
   margin: 0;
   font-size: 13px;
   color: var(--ink);
+}
+
+/* A vacant room blocks the order outright, so this reads as a validation
+   error rather than an FYI — same treatment as the form's other error text. */
+.occupancy__vacant--error {
+  padding: 8px 10px;
+  border-radius: var(--radius-tile);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .counter-find {

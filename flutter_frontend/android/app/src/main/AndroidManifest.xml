@@ -1,8 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app is useless without this: every screen is a call to the same API
+         the web front desk uses. The Flutter template declares it only in the
+         debug and profile manifests, which is enough for hot reload and nothing
+         else — a release build without this line installs fine and then fails
+         every request. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="hotel_manager"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

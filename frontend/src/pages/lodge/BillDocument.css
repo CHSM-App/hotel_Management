@@ -536,8 +536,15 @@
      a marked ancestor rather than to `.bill-doc` itself: the billing modal can
      hold several copies of the document at once — the offscreen PDF source and
      a thumbnail per paper size — and a bare `.bill-doc` rule would make every
-     one of them visible and print each on its own page. */
-  body * {
+     one of them visible and print each on its own page.
+
+     Vite bundles every page's CSS into one file, so an unscoped `body *` here
+     was live on every screen in the app, not just billing — printing the QR
+     codes panel (or anything else) hid the entire page and printed blank
+     paper, because there was no `.bill-print-target` on it to put back. Gated
+     on `:has()` so the blanket hide only ever engages on the page that
+     actually has a bill open to print. */
+  body:has(.bill-print-target) * {
     visibility: hidden;
   }
 

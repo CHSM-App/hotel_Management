@@ -879,9 +879,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setWindowDays(WINDOW_DAYS);
   };
 
-  // A whole window at a time, so stepping forward shows thirty nights nobody
-  // has looked at rather than re-showing twenty-six of them.
-  const stepWindow = (n) => goToMonth(addDays(month, n * windowDays));
+  // A whole page at a time — WINDOW_DAYS, not the current (possibly grown)
+  // windowDays, since goToMonth always resets the landing view back to a
+  // page. Stepping by the grown size would skip the days in between.
+  const stepWindow = (n) => goToMonth(addDays(month, n * WINDOW_DAYS));
 
   // Rooms are shown category by category rather than in one long list, so the
   // desk can see at a glance which grade of room is still sellable. Insertion
@@ -913,7 +914,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       // Clamped to the visible window: a stay can start before it or run past
       // the end of it, and neither needs walking day by day.
       const from = booking.checkInDate > rangeStart ? booking.checkInDate : rangeStart;
-      let to = booking.checkOutDate < rangeEnd ? booking.checkOutDate : rangeEnd;
+      let bookingEnd = booking.checkOutDate;
+      // A guest still checked in past their sold checkout date hasn't given the
+      // room back — it stays occupied through today (and blocks the picker,
+      // matching the server's overlap check) until an actual checkout happens.
+      if (booking.status === 'CHECKED_IN' && bookingEnd <= today) bookingEnd = addDays(today, 1);
+      let to = bookingEnd < rangeEnd ? bookingEnd : rangeEnd;
       // A completed stay holds no night from today on — the room pickers stop
       // counting it the moment the guest checks out. Someone who left early
       // would otherwise leave the nights they didn't use looking sold here
@@ -1336,6 +1342,20 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const [formError, setFormError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // A save can fail for a reason no single field owns — the room got taken
+  // while this form was open, the phone number is already on another guest —
+  // and that answer only comes back after the server round-trip, so it can't
+  // be caught by failOn on the way in. The banner it lands in sits at the top
+  // of a form long enough that the desk is often scrolled well past it by the
+  // time Save is pressed, so the failure has to bring the eye to itself the
+  // same way a field failure does.
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
 
   // Reports a failure against the control that caused it and takes the cursor
   // there. The form is tall enough that a message about the guest's phone is
@@ -1446,7 +1466,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const saveDraft = async () => {
     if (submitting) return;
     if (!hasFormContent(bookingForm)) {
-      setFormError('There is nothing to save yet — fill in a detail or two first.');
+      reportFormError('There is nothing to save yet — fill in a detail or two first.');
       return;
     }
     setSubmitting(true);
@@ -1462,7 +1482,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       loadTapeChart();
       returnToRegisterIfCame();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
     } finally {
       setSubmitting(false);
     }
@@ -1518,7 +1538,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       loadDrafts();
       loadTapeChart();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
+      reportFormError(err instanceof ApiError ? err.message : 'Could not delete this draft.');
     } finally {
       setSubmitting(false);
     }
@@ -1536,12 +1556,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // fact — the backend refuses to change it, and this keeps the box from
   // offering something the save would reject.
   const canEditCheckIn = !editing || editTarget?.status === 'BOOKED';
-  // A night that has already gone can't be sold — flagged, not refused. Asked
-  // wherever the date is actually being chosen: a new booking, or a reservation
-  // being re-dated. Never of a stay whose check-in is fixed, where the date in
-  // the box is simply the day the guest arrived and a stay that ended last week
-  // must go on being editable.
-  const isPastCheckIn = canEditCheckIn && bookingForm.checkInDate < today;
 
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
@@ -2088,7 +2102,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       cameFromRegister.current = false;
       loadTapeChart();
     } catch (err) {
-      setFormError(
+      reportFormError(
         err instanceof ApiError
           ? err.message
           : editing
@@ -2740,7 +2754,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             if (d === addDays(draft.checkOutDate, -1)) classes.push('tape-tile--end');
             if (d === today) classes.push('tape-tile--today');
             if (hoverTile?.draft?.id === draft.id) classes.push('tape-tile--active');
-            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
@@ -2756,38 +2770,14 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             );
           }
 
-          // A night that has already gone, with nothing recorded against it.
-          // Still a button: it cannot be *sold* now, but it can be *recorded* —
-          // a stay taken on paper over the weekend, or one being entered after
-          // the fact, has to be enterable against the night it actually
-          // happened on. It stays visually muted, because an empty past night
-          // is a fact first and an offer second.
-          if (!booking && past) {
-            const classes = ['tape-tile', 'tape-tile--vacant', 'tape-tile--past'];
-            if (isWeekend(d)) classes.push('tape-tile--weekend');
-            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
-            return (
-              <button
-                key={d}
-                type="button"
-                className={classes.join(' ')}
-                onClick={() => openNewBooking(room.id, d)}
-                onMouseEnter={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
-                onFocus={(e) => showTileHover(e, { room, date: d, booking: null, past: true, cancelled: cancelledStay })}
-                onMouseLeave={() => setHoverTile(null)}
-                onBlur={() => setHoverTile(null)}
-                aria-label={`${room.roomNumber} was empty on ${formatDateLong(d)} — record a stay`}
-              />
-            );
-          }
-
           // A vacant night is a plain grey slot that starts a booking for that
           // room and date.
           if (!booking) {
             const classes = ['tape-tile', 'tape-tile--vacant'];
             if (isWeekend(d)) classes.push('tape-tile--weekend');
+            if (past) classes.push('tape-tile--past');
             if (d === today) classes.push('tape-tile--today');
-            if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+            // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
                 key={d}
@@ -2818,7 +2808,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           const lastNight =
             booking.status === 'CHECKED_OUT' && booking.checkOutDate > today
               ? addDays(today, -1)
-              : addDays(booking.checkOutDate, -1);
+              : booking.status === 'CHECKED_IN' && booking.checkOutDate <= today
+                ? today
+                : addDays(booking.checkOutDate, -1);
           if (d === lastNight) classes.push('tape-tile--end');
           if (d === today) classes.push('tape-tile--today');
           // Pointing at any night of a stay lifts the whole stay, so its real
@@ -2831,7 +2823,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           if (draft) classes.push('tape-tile--has-draft');
           // A night let again after an earlier booking fell through on it. The
           // live stay keeps its fill; the cancellation rides as the border.
-          if (cancelledStay) classes.push('tape-tile--cancelled-mark');
+          // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
           // A stay the search found. Every night of it is marked, so the whole
           // strip lights up rather than one tile of it — the desk is looking
           // for a guest, and the answer to "where are they?" is the stay, not
@@ -2931,6 +2923,43 @@ export default function Bookings({ onBillStay, onShowRegister }) {
             </button>
           </div>
         </div>
+
+        {/* The status chips share the top row with the month stepper: the
+            colour legend for the chart belongs beside the control that moves
+            through it. Wrapped in one container so they wrap and space as a
+            group rather than each chip being its own child of the toolbar. */}
+        <div className="bookings-panel__toolbar-chips">
+          <span className="tape-legend__item">
+            <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
+          </span>
+          {LEGEND_LINKS.map((item) => (
+            <button
+              key={item.status}
+              type="button"
+              className="tape-legend__item tape-legend__item--link"
+              onClick={() => onShowRegister?.(item.status)}
+              title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
+            >
+              <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
+              {item.label}
+            </button>
+          ))}
+          {/* Draft lands in the register beside the other three rather than in
+              the toolbar's modal. The register carries a Draft cut of its own,
+              so following the yellow gets the desk the same kind of page the red
+              and the blue do — a filtered list it can search and sort. The modal
+              stays where it is, on the toolbar button, for a quick look without
+              leaving the chart. */}
+          <button
+            type="button"
+            className="tape-legend__item tape-legend__item--link"
+            onClick={() => onShowRegister?.('DRAFT')}
+            title="Show drafts in Booking Details"
+          >
+            <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
+          </button>
+        </div>
+
         <div className="bookings-panel__toolbar-actions">
           {/* Drafts that name a room and dates are on the chart already; this
               is how the rest are reached, and how a desk sees at a glance that
@@ -2959,26 +2988,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         </div>
       </div>
 
-      {/* Four of the five lead somewhere — the colour on the chart and the pile
-          of stays wearing it are the same question asked two ways. Three of them
-          cut the register by status; Draft opens the parked forms, which are
-          their own pile because a draft never reaches the register at all.
-
-          Vacant stays plain text: a vacant night is the absence of a booking,
-          and there is no list of nothing to point at. */}
+      {/* Search and the category jumps share the second row: both are ways of
+          finding a place on the chart to land, rather than a way of reading
+          the colours already on it. */}
       <div className="tape-legend">
-        {/* Guest names are kept off the tiles on purpose, which leaves the
-            chart unable to answer the question the desk asks it most often:
-            "which room is this guest in?" This is that answer. It searches what
-            the register searches — the party's names, their ID numbers, the
-            bill, the phone — and replies on the chart itself, by lighting up
-            the stays rather than by opening a list somewhere else.
-
-            First on the legend's line, with the status chips following it.
-            The two belong together: the chips say what the colours on the chart
-            mean, and the search is how a particular stay among them is found —
-            both are ways of reading the same grid, and the row now runs
-            find-then-filter from left to right. */}
         <div className={`tape-search${searchHits.length > 0 ? ' tape-search--found' : ''}`}>
           <div className="tape-search__box">
           <svg
@@ -3029,41 +3042,20 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           )}
         </div>
 
-        {/* The answer, hung directly under the field that asked the question.
-
-            It sat out on the legend's line before, at the far end of the strip
-            from the box — so the eye had to travel the width of the toolbar to
-            read the reply to what it had just typed, and the guest's name was
-            squeezed into whatever space the legend chips had left over
-            ("Aniket Mestry" arriving as "Aniket"). Anchored to the field, it
-            gets the field's whole width and reads as one control: type at the
-            top, the result appears below it.
-
-            Absolutely positioned so it hangs over the chart rather than pushing
-            it down — the strip keeps its height whether or not a search is
-            running, and the rows below never jump as results come and go. */}
         {search.trim() !== '' && (
           <div className="tape-search__result" role="status" aria-live="polite">
             {searchHits.length === 0 ? (
               <span className="tape-search__empty">
-                {/* Named back, so a mistyped search is obvious as a mistyped
-                    search rather than as an absent guest. */}
                 No stay matching &ldquo;{search.trim()}&rdquo;
               </span>
             ) : (
               <>
-                {/* The count as a fraction, stacked tight: the position is the
-                    number that changes as the desk steps, so it leads. */}
                 <span className="tape-search__count">
                   <strong>{Math.min(hitIndex, searchHits.length - 1) + 1}</strong>
                   <span className="tape-search__count-sep">/</span>
                   {searchHits.length}
                 </span>
 
-                {/* Who the arrows are parked on, and where they are. This is
-                    the line that turns "3 of 12" into an answer — the desk
-                    asked which room a guest is in, and this says it outright
-                    instead of leaving them to find the ring on the chart. */}
                 <span className="tape-search__who">
                   <strong>{activeHit?.booking.guestName}</strong>
                   {activeHit && (
@@ -3072,17 +3064,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                         Room {activeHit.roomNumber} ·{' '}
                         {formatDateLong(activeHit.booking.checkInDate)}
                       </span>
-                      {/* The two things the desk uses to be sure it has the
-                          right person. A property will have several Sharmas
-                          across a month and two of them can share a first name;
-                          the phone and the ID number are what settle it, and
-                          they are already searchable — showing them closes the
-                          loop on a search that matched one of them, where the
-                          name alone left the desk wondering which it hit.
-
-                          Both are optional on a booking, so the line renders
-                          only what is on file rather than printing a dash for
-                          whatever is missing. */}
                       {(activeHit.booking.guestPhone || activeHit.booking.idProofNumber) && (
                         <span className="tape-search__ids">
                           {activeHit.booking.guestPhone && (
@@ -3108,9 +3089,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     type="button"
                     className="tape-search__arrow"
                     onClick={() => stepHit(-1)}
-                    // Disabled only when stepping would be a no-op. With a
-                    // single match the arrows would spin on the spot, which
-                    // reads as a broken control rather than a finished search.
                     disabled={searchHits.length < 2}
                     aria-label="Previous match"
                     title="Previous match (Shift+Enter)"
@@ -3137,71 +3115,43 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           </div>
         )}
         </div>
-        <span className="tape-legend__item">
-          <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
-        </span>
-        {LEGEND_LINKS.map((item) => (
-          <button
-            key={item.status}
-            type="button"
-            className="tape-legend__item tape-legend__item--link"
-            onClick={() => onShowRegister?.(item.status)}
-            title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
-          >
-            <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
-            {item.label}
-          </button>
-        ))}
-        {/* Draft lands in the register beside the other three rather than in
-            the toolbar's modal. The register carries a Draft cut of its own,
-            so following the yellow gets the desk the same kind of page the red
-            and the blue do — a filtered list it can search and sort. The modal
-            stays where it is, on the toolbar button, for a quick look without
-            leaving the chart. */}
-        <button
-          type="button"
-          className="tape-legend__item tape-legend__item--link"
-          onClick={() => onShowRegister?.('DRAFT')}
-          title="Show drafts in Booking Details"
-        >
-          <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
-        </button>
+
+        {/* One chip per grade of room, in the same shape as the legend's, so the
+            strip reads as one row of ways into the chart: the status chips cut it
+            by colour, these jump it by category.
+
+            Only worth showing when there is somewhere to jump to — with a single
+            category the chip would scroll to the card already filling the screen.
+            The sold figure rides along because it is the number the desk opens
+            this screen for, and it saves them the trip to read it. */}
+        {!tapeError && categorySections.length > 1 && (
+          <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
+            {categorySections.map((section) => {
+              const stats = categoryStats.get(section.categoryName);
+              const active = activeCategory === section.categoryName;
+              return (
+                <button
+                  key={section.categoryName}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
+                  onClick={() => jumpToCategory(section.categoryName)}
+                  title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
+                    section.rooms.length === 1 ? '' : 's'
+                  }`}
+                >
+                  {section.categoryName}
+                  <span className="tape-cats__count">{section.rooms.length}</span>
+                  {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
-
-      {/* One chip per grade of room, in the same shape as the legend's, so the
-          strip reads as one row of ways into the chart: the status chips cut it
-          by colour, these jump it by category.
-
-          Only worth showing when there is somewhere to jump to — with a single
-          category the chip would scroll to the card already filling the screen.
-          The sold figure rides along because it is the number the desk opens
-          this screen for, and it saves them the trip to read it. */}
-      {!tapeError && categorySections.length > 1 && (
-        <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
-          {categorySections.map((section) => {
-            const stats = categoryStats.get(section.categoryName);
-            const active = activeCategory === section.categoryName;
-            return (
-              <button
-                key={section.categoryName}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
-                onClick={() => jumpToCategory(section.categoryName)}
-                title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
-                  section.rooms.length === 1 ? '' : 's'
-                }`}
-              >
-                {section.categoryName}
-                <span className="tape-cats__count">{section.rooms.length}</span>
-                {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
       </div>
 
       {tapeError && (
@@ -3340,11 +3290,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               )}
               {/* The night was let again after an earlier booking fell
                   through on it — that is what the red border on the tile is. */}
-              {hoverTile.cancelled && (
+              {/* {hoverTile.cancelled && (
                 <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
                   {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
                 </span>
-              )}
+              )} */}
             </>
           ) : hoverTile.draft ? (
             <>
@@ -3366,13 +3316,13 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               <span className="tape-tooltip__hint">
                 Not booked — this room is still free. Click to finish or delete it.
               </span>
-              {hoverTile.cancelled && (
+              {/* {hoverTile.cancelled && (
                 <span className="tape-tooltip__hint tape-tooltip__hint--cancelled">
                   {hoverTile.cancelled.guestName}’s booking for this night was cancelled.
                 </span>
-              )}
+              )} */}
             </>
-          ) : hoverTile.cancelled ? (
+          ) : false && hoverTile.cancelled ? (
             <>
               {/* An empty night with a red border: the story is the booking
                   that fell through, so the card leads with it — while the
@@ -3560,7 +3510,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               </div>
 
               <div className="booking-form__body">
-                {formError && <div className="form-banner form-banner--error">{formError}</div>}
+                {formError && (
+                  <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                    {formError}
+                  </div>
+                )}
 
                 {/* Says which draft this is and offers the way out of it —
                     a parked booking that can't be thrown away accumulates. */}
@@ -3594,15 +3548,14 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                       id="checkInDate"
                       type="date"
                       value={bookingForm.checkInDate}
-                      // No floor. A past night cannot be *sold*, but it can be
-                      // recorded: a stay taken on paper over the weekend, or one
-                      // the desk is entering after the fact, is a real booking
-                      // that happened and the register has to be able to hold
-                      // it. The warning below says which case this is.
+                      // Today is the floor: a past night cannot be sold, and a
+                      // new or moved booking cannot be backdated onto one
+                      // either — the date has already gone.
                       // Editable on a reservation that hasn't been checked in
                       // yet — moving a booked stay to different dates is an
                       // ordinary correction. Fixed once the guest has arrived:
                       // by then the day they did is a recorded fact.
+                      min={today}
                       disabled={!canEditCheckIn}
                       aria-invalid={invalid('checkInDate')}
                       onChange={(e) => {
@@ -3620,33 +3573,21 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                             checkInDate && f.checkOutDate && f.checkOutDate <= checkInDate
                               ? addDays(checkInDate, Math.max(1, daysBetween(f.checkInDate, f.checkOutDate)))
                               : f.checkOutDate,
-                          // A future date can only be a reservation. A past one
-                          // can only be a stay that already started, so it is
-                          // recorded as a walk-in and checks itself in on save —
-                          // which is what "this happened" means. An edit is
-                          // neither: the stay already exists, and its type is
-                          // not something this box gets to rewrite.
+                          // A future date can only be a reservation; today can
+                          // only be a walk-in. An edit is neither: the stay
+                          // already exists, and its type is not something this
+                          // box gets to rewrite.
                           bookingType: editing
                             ? f.bookingType
                             : checkInDate > today
                               ? 'RESERVATION'
-                              : checkInDate < today
+                              : checkInDate === today
                                 ? 'WALK_IN'
                                 : f.bookingType,
                         }));
                       }}
                     />
-                    {/* Flagged as it is typed, and deliberately not an error:
-                        a backdated stay is allowed, it is just rarely what
-                        someone means to type. Saying so under the date keeps
-                        the slip visible without standing in the way of the desk
-                        that meant it. */}
-                    {fieldErr('checkInDate') ||
-                      (isPastCheckIn && (
-                        <p className="bookings-panel__note">
-                          Backdated — this records a stay that has already begun.
-                        </p>
-                      ))}
+                    {fieldErr('checkInDate')}
                   </div>
                   <div className="field">
                     <label htmlFor="checkOutDate">

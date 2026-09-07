@@ -104,6 +104,68 @@ test('two different rooms are two different tabs', () => {
   assert.notStrictEqual(a.tab, b.tab);
 });
 
+// ---------------------------------------------------------------------------
+// A room is reused: the tab belongs to the stay, not the room
+// ---------------------------------------------------------------------------
+//
+// The regression this section guards: Ram checks into room 1, orders food,
+// and checks out without paying for it. Sham then checks into the same room
+// and orders food of his own. Keying the room tab on room_id alone made both
+// men's orders one running total — Sham's bill silently absorbed Ram's
+// unpaid food the moment reception opened "Room 1". A room order carries the
+// booking_id of the stay that placed it (captured for exactly this reason —
+// see 028_food_orders.sql), so the tab is keyed on that instead.
+
+test('a booked room order is keyed on the stay, not the room', () => {
+  const id = tabIdentity(row({ source: 'ROOM', room_id: 1, room_number: '1', booking_id: 900 }));
+  assert.strictEqual(id.tab, 'room-booking-900');
+  assert.strictEqual(id.roomId, 1);
+});
+
+test('two different stays in the same room are two different tabs', () => {
+  // Ram, then Sham, both in room 1.
+  const ram = tabIdentity(row({ source: 'ROOM', room_id: 1, room_number: '1', booking_id: 900 }));
+  const sham = tabIdentity(row({ source: 'ROOM', room_id: 1, room_number: '1', booking_id: 901 }));
+  assert.notStrictEqual(ram.tab, sham.tab);
+  assert.strictEqual(ram.tab, 'room-booking-900');
+  assert.strictEqual(sham.tab, 'room-booking-901');
+});
+
+test('an unbooked room order still keys on the room, distinct from any stay', () => {
+  const unbooked = tabIdentity(row({ source: 'ROOM', room_id: 1, room_number: '1', booking_id: null }));
+  const booked = tabIdentity(row({ source: 'ROOM', room_id: 1, room_number: '1', booking_id: 900 }));
+  assert.strictEqual(unbooked.tab, 'room-1');
+  assert.notStrictEqual(unbooked.tab, booked.tab);
+});
+
+test('a room-booking scope is pinned to that booking, not the room', () => {
+  const request = fakeRequest();
+  const scope = tabScope(request, 'room-booking-900');
+  assert.match(scope, /o\.source = 'ROOM'/);
+  assert.match(scope, /o\.booking_id = @bookingId/);
+  assert.strictEqual(request.inputs.bookingId, 900);
+  assert.ok(!scope.includes('room_id'), scope);
+});
+
+// The bug itself, expressed as scope SQL: billing "room-1" (the plain,
+// unbooked-room tab) must never also sweep up a booked stay's orders in that
+// same room, and vice versa.
+test('a bare room scope excludes any booked stay in that room', () => {
+  const scope = tabScope(fakeRequest(), 'room-1');
+  assert.match(scope, /o\.room_id = @roomId/);
+  assert.match(scope, /o\.booking_id IS NULL/);
+});
+
+test('a room-booking scope for one stay never matches another stay in the same room', () => {
+  const ramScope = tabScope(fakeRequest(), 'room-booking-900');
+  const shamRequest = fakeRequest();
+  tabScope(shamRequest, 'room-booking-901');
+  // Ram's scope binds Ram's booking id, not Sham's — proving the two stays'
+  // scopes bind different parameters even though both orders share room_id.
+  assert.strictEqual(ramScope.includes('@bookingId'), true);
+  assert.strictEqual(shamRequest.inputs.bookingId, 901);
+});
+
 test('two different tables are two different tabs', () => {
   const a = tabIdentity(row({ source: 'TABLE', table_id: 7, table_label: 'Table 4' }));
   const b = tabIdentity(row({ source: 'TABLE', table_id: 8, table_label: 'Table 5' }));
@@ -158,7 +220,7 @@ test('a room scope never matches on table_id', () => {
 
 // 'counter' bare is in this list deliberately: it was the old shared tab, and
 // it must not silently fall back to sweeping every walk-in again.
-for (const bad of ['', 'nonsense', 'table-', 'table-abc', 'room-', 'room-abc', 'table-0', 'room-0', 'table--1', '7', 'counter', 'counter-', 'counter-abc', 'counter-0']) {
+for (const bad of ['', 'nonsense', 'table-', 'table-abc', 'room-', 'room-abc', 'table-0', 'room-0', 'table--1', '7', 'counter', 'counter-', 'counter-abc', 'counter-0', 'room-booking-', 'room-booking-abc', 'room-booking-0']) {
   test(`"${bad}" is rejected as a bad request rather than reaching the driver`, () => {
     assert.throws(
       () => tabScope(fakeRequest(), bad),

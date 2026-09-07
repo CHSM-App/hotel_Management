@@ -33,7 +33,7 @@ async function createCategory(lodgeId, input) {
     .query('SELECT id FROM dbo.room_categories WHERE lodge_id = @lodgeId AND name = @name');
 
   if (existing.recordset.length > 0) {
-    throw new ApiError('A category with that name already exists.', 409);
+    throw new ApiError('A category with that name already exists.', 409, 'categoryName');
   }
 
   const result = await pool
@@ -69,7 +69,7 @@ async function updateCategory(lodgeId, categoryId, input) {
     .input('name', sql.NVarChar, input.name)
     .query('SELECT id FROM dbo.room_categories WHERE lodge_id = @lodgeId AND name = @name AND id <> @categoryId');
   if (nameConflict.recordset.length > 0) {
-    throw new ApiError('A category with that name already exists.', 409);
+    throw new ApiError('A category with that name already exists.', 409, 'categoryName');
   }
 
   await pool

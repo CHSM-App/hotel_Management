@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
@@ -314,6 +314,16 @@ export default function OwnerDashboard() {
   const search = searchState.section === activeFeature?.key ? searchState.term : '';
   const setSearch = (term) => setSearchState({ section: activeFeature?.key, term });
 
+  // The rail keeps whatever scroll position it was at when a section was
+  // opened from a group further down the list. Without this, switching to a
+  // short screen after scrolling the rail to reach a group near the bottom
+  // left the rail scrolled away from the current section instead of showing
+  // it selected at the top.
+  const sidebarScrollRef = useRef(null);
+  useEffect(() => {
+    sidebarScrollRef.current?.scrollTo(0, 0);
+  }, [activeFeature?.key]);
+
   const sidebarGroups = SIDEBAR_GROUP_ORDER.map((group) => ({
     group,
     features: visibleFeatures.filter((f) => f.group === group),
@@ -407,64 +417,70 @@ export default function OwnerDashboard() {
           className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}`}
           aria-label="Dashboard sections"
         >
-          {sidebarGroups.map(({ group, features }) => (
-            <div className="dash-sidebar__group" key={group}>
-              <div className="dash-sidebar__label">{group}</div>
-              <ul className="dash-sidebar__list">
-                {features.map((feature) => (
-                  <li key={feature.key}>
-                    <button
-                      type="button"
-                      className="dash-sidebar__item"
-                      aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
-                      onClick={() => {
-                        setBillNowBookingId(null);
+          {/* Only this region scrolls when the section list runs past the
+              viewport — Sign out sits outside it, in its own flex child below,
+              so it stays pinned at the floor of the rail instead of scrolling
+              out of view with the sections. */}
+          <div className="dash-sidebar__scroll" ref={sidebarScrollRef}>
+            {sidebarGroups.map(({ group, features }) => (
+              <div className="dash-sidebar__group" key={group}>
+                <div className="dash-sidebar__label">{group}</div>
+                <ul className="dash-sidebar__list">
+                  {features.map((feature) => (
+                    <li key={feature.key}>
+                      <button
+                        type="button"
+                        className="dash-sidebar__item"
+                        aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
+                        onClick={() => {
+                          setBillNowBookingId(null);
     setBillNowEventId(null);
-                        // Cleared for the same reason billNowBookingId is: the
-                        // status cut belongs to the register, and reaching it
-                        // from the sidebar means asking for the whole list
-                        // rather than resuming a cut the legend made earlier.
-                        // The sub-tab goes too — see showSection for why a
-                        // ?tab= carried across sections rendered a blank panel.
-                        setSearchParams(
-                          (prev) => {
-                            const updated = new URLSearchParams(prev);
-                            updated.set('section', feature.key);
-                            updated.delete('tab');
-                            updated.delete('status');
-                            return updated;
-                          },
-                          { replace: true }
-                        );
-                      }}
-                    >
-                      <Icon name={feature.icon} />
-                      {feature.title}
-                      {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
-                    </button>
-                  </li>
-                ))}
+                          // Cleared for the same reason billNowBookingId is: the
+                          // status cut belongs to the register, and reaching it
+                          // from the sidebar means asking for the whole list
+                          // rather than resuming a cut the legend made earlier.
+                          // The sub-tab goes too — see showSection for why a
+                          // ?tab= carried across sections rendered a blank panel.
+                          setSearchParams(
+                            (prev) => {
+                              const updated = new URLSearchParams(prev);
+                              updated.set('section', feature.key);
+                              updated.delete('tab');
+                              updated.delete('status');
+                              return updated;
+                            },
+                            { replace: true }
+                          );
+                        }}
+                      >
+                        <Icon name={feature.icon} />
+                        {feature.title}
+                        {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {/* Last, and set apart by a rule: every section above is part of the
+                property, this is help about all of them. Ungated by permission —
+                the guide shows whatever sections the user can actually reach, so
+                there is nothing here for a limited role to leak. */}
+            <div className="dash-sidebar__group dash-sidebar__guide">
+              <ul className="dash-sidebar__list">
+                <li>
+                  <button
+                    type="button"
+                    className="dash-sidebar__item"
+                    onClick={() => navigate('/guide')}
+                  >
+                    <Icon name="help" />
+                    User guide
+                  </button>
+                </li>
               </ul>
             </div>
-          ))}
-
-          {/* Last, and set apart by a rule: every section above is part of the
-              property, this is help about all of them. Ungated by permission —
-              the guide shows whatever sections the user can actually reach, so
-              there is nothing here for a limited role to leak. */}
-          <div className="dash-sidebar__group dash-sidebar__guide">
-            <ul className="dash-sidebar__list">
-              <li>
-                <button
-                  type="button"
-                  className="dash-sidebar__item"
-                  onClick={() => navigate('/guide')}
-                >
-                  <Icon name="help" />
-                  User guide
-                </button>
-              </li>
-            </ul>
           </div>
 
           {/* Signing out lived only behind the topbar avatar, which is the last

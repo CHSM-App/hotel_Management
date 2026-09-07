@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { useSearchTerm, matchesSearch } from '../../lib/searchContext';
@@ -95,7 +95,33 @@ export default function RoomsPanel() {
   const [editingRoomId, setEditingRoomId] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [formError, setFormError] = useState('');
+  const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // The add-room form scrolls (beds, occupancy, photos below the fold), so a
+  // failure caught on Save — a blank required field, or the server rejecting
+  // the room number as already taken — has to bring itself to the eye rather
+  // than rely on already being in view. failOn does that for a single field:
+  // it puts the message under the control that caused it, marks the control
+  // itself, and scrolls there. reportFormError is the same idea for a failure
+  // that isn't any one field's fault (a save that fails after the request is
+  // already sent).
+  const formErrorRef = useRef(null);
+  const reportFormError = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  const failOn = (id, message) => {
+    setFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const fieldErr = (id) =>
+    id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
+  const invalid = (id) => Boolean(id) && fieldError?.id === id;
   const [deleteModalRoom, setDeleteModalRoom] = useState(null);
   const [deleteModalError, setDeleteModalError] = useState('');
   const [deleteModalBusy, setDeleteModalBusy] = useState(false);
@@ -286,37 +312,44 @@ export default function RoomsPanel() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
+    setFieldError(null);
 
     if (!form.categoryId) {
-      setFormError('Choose a category.');
+      failOn('categoryId', 'Choose a category.');
       return;
     }
     if ((form.mode === 'single' || editingRoomId) && !form.roomNumber.trim()) {
-      setFormError('Enter a room number.');
+      failOn('roomNumber', 'Enter a room number.');
       return;
     }
-    if (!editingRoomId && form.mode === 'bulk' && (!form.rangeStart || !form.rangeEnd)) {
-      setFormError('Enter the start and end of the range.');
+    if (!editingRoomId && form.mode === 'bulk' && !form.rangeStart) {
+      failOn('rangeStart', 'Enter the start of the range.');
+      return;
+    }
+    if (!editingRoomId && form.mode === 'bulk' && !form.rangeEnd) {
+      failOn('rangeEnd', 'Enter the end of the range.');
       return;
     }
     if (!form.floor.trim()) {
-      setFormError('Enter the floor.');
+      failOn('floor', 'Enter the floor.');
       return;
     }
-    if (form.beds.length === 0 || form.beds.some((b) => !b.size)) {
-      setFormError('Choose a size for every bed.');
+    const missingBedSize = form.beds.findIndex((b) => !b.size);
+    if (form.beds.length === 0 || missingBedSize !== -1) {
+      failOn(`bed-size-${missingBedSize === -1 ? 0 : missingBedSize}`, 'Choose a size for every bed.');
       return;
     }
-    if (form.beds.some((b) => !b.count || Number(b.count) < 1)) {
-      setFormError('Each bed needs a count of 1 or more.');
+    const badBedCount = form.beds.findIndex((b) => !b.count || Number(b.count) < 1);
+    if (badBedCount !== -1) {
+      failOn(`bed-size-${badBedCount}`, 'Each bed needs a count of 1 or more.');
       return;
     }
     if (!form.bathroomType) {
-      setFormError('Choose a bathroom type.');
+      failOn('bathroomType', 'Choose a bathroom type.');
       return;
     }
     if (!form.maxOccupancy || Number(form.maxOccupancy) <= 0) {
-      setFormError('Enter a max occupancy greater than 0.');
+      failOn('maxOccupancy', 'Enter a max occupancy greater than 0.');
       return;
     }
 
@@ -349,7 +382,17 @@ export default function RoomsPanel() {
       setShowForm(false);
       loadAll();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : `Could not ${editingRoomId ? 'save' : 'add'} the room.`);
+      // A room number (or range) already taken, or a category that stopped
+      // being valid between opening the form and saving it, both name the
+      // field they're about — so they land under it, focused and scrolled to,
+      // the same as a blank field caught before the request ever went out.
+      // Anything else (a dropped connection, a permission error) names no
+      // field and goes to the banner instead.
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOn(err.field, err.message);
+      } else {
+        reportFormError(err instanceof ApiError ? err.message : `Could not ${editingRoomId ? 'save' : 'add'} the room.`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -370,23 +413,30 @@ export default function RoomsPanel() {
     room.images.length > 0 && !brokenPhotos.has(room.images[0].filename);
 
   const searchTerm = useSearchTerm();
-  const visibleRooms = (rooms || []).filter((room) =>
-    matchesSearch(
-      searchTerm,
-      room.roomNumber,
-      room.category?.name,
-      room.floor && `Floor ${room.floor}`,
-      bedSummary(room),
-      room.bathroomType && bathroomTypeLabel[room.bathroomType],
-      room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
-      room.isActive ? 'Active' : 'Inactive',
-      room.description
-    )
-  );
+  // A hotel with dozens of rooms turns "find the deluxe rooms" into a lot of
+  // scrolling through the grid, or typing the category name into the search
+  // box and hoping it's spelled the way the card shows it. A dropdown next to
+  // the room count answers the same question in one click.
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const visibleRooms = (rooms || [])
+    .filter((room) => !categoryFilter || String(room.category?.id) === categoryFilter)
+    .filter((room) =>
+      matchesSearch(
+        searchTerm,
+        room.roomNumber,
+        room.category?.name,
+        room.floor && `Floor ${room.floor}`,
+        bedSummary(room),
+        room.bathroomType && bathroomTypeLabel[room.bathroomType],
+        room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
+        room.isActive ? 'Active' : 'Inactive',
+        room.description
+      )
+    );
   // A search that matched nothing is a different state from a lodge with no
   // rooms yet, and the two need different words — one is a dead end you fix by
   // clearing the box, the other by adding a room.
-  const searching = searchTerm.trim().length > 0;
+  const searching = searchTerm.trim().length > 0 || categoryFilter !== '';
 
   // --- what the add/edit form shows about itself ---
 
@@ -449,6 +499,21 @@ export default function RoomsPanel() {
               : `${rooms.length} room${rooms.length === 1 ? '' : 's'}`
             : ' '}
         </span>
+        {categories && categories.length > 0 && (
+          <select
+            className="rooms-panel__type-filter"
+            aria-label="Filter by room type"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="">All room types</option>
+            {categories.map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
         <button type="button" className="btn-accent" onClick={openForm} disabled={noCategories}>
           + Add room
         </button>
@@ -474,7 +539,11 @@ export default function RoomsPanel() {
 
       {!error && rooms && rooms.length > 0 && visibleRooms.length === 0 && (
         <div className="dash-card">
-          <div className="dash-state">No rooms match “{searchTerm.trim()}”.</div>
+          <div className="dash-state">
+            {searchTerm.trim()
+              ? `No rooms match "${searchTerm.trim()}".`
+              : 'No rooms of this type.'}
+          </div>
         </div>
       )}
 
@@ -634,7 +703,11 @@ export default function RoomsPanel() {
               </div>
 
               <div className="modal-form__body">
-              {formError && <div className="form-banner form-banner--error">{formError}</div>}
+              {formError && (
+                <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  {formError}
+                </div>
+              )}
 
               <div className="form-section">
                 <div className="form-section__title">
@@ -650,11 +723,13 @@ export default function RoomsPanel() {
                     </label>
                     <input
                       id="roomNumber"
+                      aria-invalid={invalid('roomNumber')}
                       value={form.roomNumber}
                       onChange={(e) => setForm((f) => ({ ...f, roomNumber: e.target.value }))}
                       placeholder="101"
                       autoFocus
                     />
+                    {fieldErr('roomNumber')}
                   </div>
                 ) : (
                   <div className="field-row">
@@ -666,10 +741,12 @@ export default function RoomsPanel() {
                       <input
                         id="rangeStart"
                         type="number"
+                        aria-invalid={invalid('rangeStart')}
                         value={form.rangeStart}
                         onChange={(e) => setForm((f) => ({ ...f, rangeStart: e.target.value }))}
                         placeholder="101"
                       />
+                      {fieldErr('rangeStart')}
                     </div>
                     <div className="field">
                       <label htmlFor="rangeEnd">
@@ -679,10 +756,12 @@ export default function RoomsPanel() {
                       <input
                         id="rangeEnd"
                         type="number"
+                        aria-invalid={invalid('rangeEnd')}
                         value={form.rangeEnd}
                         onChange={(e) => setForm((f) => ({ ...f, rangeEnd: e.target.value }))}
                         placeholder="110"
                       />
+                      {fieldErr('rangeEnd')}
                     </div>
                   </div>
                 )}
@@ -700,6 +779,7 @@ export default function RoomsPanel() {
                   </label>
                   <select
                     id="categoryId"
+                    aria-invalid={invalid('categoryId')}
                     value={form.categoryId}
                     onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
                   >
@@ -710,6 +790,7 @@ export default function RoomsPanel() {
                       </option>
                     ))}
                   </select>
+                  {fieldErr('categoryId')}
                 </div>
 
                 {/* What the category actually means in money, once picked. The
@@ -737,10 +818,12 @@ export default function RoomsPanel() {
                     </label>
                     <input
                       id="floor"
+                      aria-invalid={invalid('floor')}
                       value={form.floor}
                       onChange={(e) => setForm((f) => ({ ...f, floor: e.target.value }))}
                       placeholder="1"
                     />
+                    {fieldErr('floor')}
                   </div>
                   <div className="field">
                     <label htmlFor="bathroomType">
@@ -749,6 +832,7 @@ export default function RoomsPanel() {
                     </label>
                     <select
                       id="bathroomType"
+                      aria-invalid={invalid('bathroomType')}
                       value={form.bathroomType}
                       onChange={(e) => setForm((f) => ({ ...f, bathroomType: e.target.value }))}
                     >
@@ -759,6 +843,7 @@ export default function RoomsPanel() {
                         </option>
                       ))}
                     </select>
+                    {fieldErr('bathroomType')}
                   </div>
                 </div>
                   <div className="field field--beds">
@@ -770,51 +855,56 @@ export default function RoomsPanel() {
                         and two singles — storing whichever one the desk picked
                         first was losing the other half of the room. */}
                     {form.beds.map((bed, i) => (
-                      <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`} key={i}>
-                        <select
-                          id={`bed-size-${i}`}
-                          value={bed.size}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
-                            }))
-                          }
-                        >
-                          <option value="">Choose one</option>
-                          {BED_SIZES.map((size) => (
-                            <option key={size} value={size}>
-                              {bedSizeLabel[size]}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min="1"
-                          className="bed-row__count"
-                          aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
-                          value={bed.count}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
-                            }))
-                          }
-                        />
-                        {/* The last row has no remove button: a room with no
-                            beds is not a room, and the server rejects it. */}
-                        {form.beds.length > 1 && (
-                          <button
-                            type="button"
-                            className="bed-row__remove"
-                            aria-label="Remove this bed"
-                            onClick={() =>
-                              setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                      <div key={i}>
+                        <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`}>
+                          <select
+                            id={`bed-size-${i}`}
+                            aria-invalid={invalid(`bed-size-${i}`)}
+                            value={bed.size}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
+                              }))
                             }
                           >
-                            ×
-                          </button>
-                        )}
+                            <option value="">Choose one</option>
+                            {BED_SIZES.map((size) => (
+                              <option key={size} value={size}>
+                                {bedSizeLabel[size]}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            className="bed-row__count"
+                            aria-invalid={invalid(`bed-size-${i}`)}
+                            aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
+                            value={bed.count}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
+                              }))
+                            }
+                          />
+                          {/* The last row has no remove button: a room with no
+                              beds is not a room, and the server rejects it. */}
+                          {form.beds.length > 1 && (
+                            <button
+                              type="button"
+                              className="bed-row__remove"
+                              aria-label="Remove this bed"
+                              onClick={() =>
+                                setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                              }
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        {fieldErr(`bed-size-${i}`)}
                       </div>
                     ))}
                     <button
@@ -837,10 +927,12 @@ export default function RoomsPanel() {
                     id="maxOccupancy"
                     type="number"
                     min="1"
+                    aria-invalid={invalid('maxOccupancy')}
                     value={form.maxOccupancy}
                     onChange={(e) => setForm((f) => ({ ...f, maxOccupancy: e.target.value }))}
                     placeholder="2"
                   />
+                  {fieldErr('maxOccupancy')}
                 </div>
 
                 <div className="field">

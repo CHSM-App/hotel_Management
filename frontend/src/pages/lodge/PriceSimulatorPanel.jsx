@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -60,7 +60,28 @@ export default function PriceSimulatorPanel() {
   const [simChargeIds, setSimChargeIds] = useState([]);
   const [simResult, setSimResult] = useState(null);
   const [simError, setSimError] = useState('');
+  const [simFieldError, setSimFieldError] = useState(null);
   const [simulating, setSimulating] = useState(false);
+  const simErrorRef = useRef(null);
+  const reportSimError = (message) => {
+    setSimError(message);
+    setSimFieldError(null);
+    requestAnimationFrame(() => {
+      simErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+  // Field-only: the message goes under the box that caused it, and must not
+  // also land in the banner above — that rendered the same line twice.
+  const failSim = (id, message) => {
+    setSimFieldError({ id, message });
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const simFieldErr = (id) =>
+    id && simFieldError?.id === id ? <p className="field__error">{simFieldError.message}</p> : null;
+  const simInvalid = (id) => Boolean(id) && simFieldError?.id === id;
 
   const selectedRoom = rooms?.find((r) => String(r.id) === simRoomId);
   const activeCharges = charges?.filter((c) => c.isActive) || [];
@@ -99,17 +120,22 @@ export default function PriceSimulatorPanel() {
   const handleSimulate = async (e) => {
     e.preventDefault();
     setSimError('');
+    setSimFieldError(null);
     setSimResult(null);
     if (!simRoomId) {
-      setSimError('Choose a room.');
+      failSim('simRoom', 'Choose a room.');
       return;
     }
-    if (!simFromDate || !simToDate) {
-      setSimError('Pick a from and a to date.');
+    if (!simFromDate) {
+      failSim('simFrom', 'Pick a from date.');
+      return;
+    }
+    if (!simToDate) {
+      failSim('simTo', 'Pick a to date.');
       return;
     }
     if (nights < 1) {
-      setSimError('The to date must be after the from date.');
+      failSim('simTo', 'The to date must be after the from date.');
       return;
     }
     setSimulating(true);
@@ -121,7 +147,7 @@ export default function PriceSimulatorPanel() {
       );
       setSimResult(result);
     } catch (err) {
-      setSimError(err instanceof ApiError ? err.message : 'Could not run the simulator.');
+      reportSimError(err instanceof ApiError ? err.message : 'Could not run the simulator.');
     } finally {
       setSimulating(false);
     }
@@ -147,11 +173,20 @@ export default function PriceSimulatorPanel() {
     <div className="price-chart">
       <ChartSection title="Price simulator" hint="Line-by-line breakdown for a room and a stay">
         <form className="inline-add-form" onSubmit={handleSimulate}>
-          {simError && <div className="form-banner form-banner--error">{simError}</div>}
+          {simError && (
+            <div ref={simErrorRef} className="form-banner form-banner--error form-banner--flash">
+              {simError}
+            </div>
+          )}
           <div className="sim-fields">
             <div className="field">
               <label htmlFor="simRoom">Room</label>
-              <select id="simRoom" value={simRoomId} onChange={(e) => setSimRoomId(e.target.value)}>
+              <select
+                id="simRoom"
+                aria-invalid={simInvalid('simRoom')}
+                value={simRoomId}
+                onChange={(e) => setSimRoomId(e.target.value)}
+              >
                 <option value="">Choose a room</option>
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -159,25 +194,30 @@ export default function PriceSimulatorPanel() {
                   </option>
                 ))}
               </select>
+              {simFieldErr('simRoom')}
             </div>
             <div className="field">
               <label htmlFor="simFrom">From (check-in)</label>
               <input
                 id="simFrom"
                 type="date"
+                aria-invalid={simInvalid('simFrom')}
                 value={simFromDate}
                 onChange={(e) => handleFromDateChange(e.target.value)}
               />
+              {simFieldErr('simFrom')}
             </div>
             <div className="field">
               <label htmlFor="simTo">To (check-out)</label>
               <input
                 id="simTo"
                 type="date"
+                aria-invalid={simInvalid('simTo')}
                 value={simToDate}
                 min={addDays(simFromDate, 1)}
                 onChange={(e) => setSimToDate(e.target.value)}
               />
+              {simFieldErr('simTo')}
             </div>
             <div className="field sim-fields__action">
               <button className="btn-accent" type="submit" disabled={simulating}>
