@@ -512,7 +512,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
       ORDER BY created_at DESC
     ) i
     WHERE b.lodge_id = @lodgeId ${dateFilter}
-    ORDER BY b.check_in_date DESC, b.id DESC
+    ORDER BY b.created_at DESC, b.id DESC
   `);
 
   return result.recordset.map((row) => ({

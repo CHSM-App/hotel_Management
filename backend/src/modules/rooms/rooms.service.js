@@ -35,9 +35,14 @@ async function listRooms(lodgeId) {
     .query(`
       SELECT r.id, r.room_number, r.floor, r.bed_size, r.beds, r.bathroom_type, r.max_occupancy, r.description,
              r.is_active, r.created_at,
-             c.id AS category_id, c.name AS category_name, c.base_price AS category_base_price
+             c.id AS category_id, c.name AS category_name, c.base_price AS category_base_price,
+             CASE WHEN b.id IS NULL THEN 0 ELSE 1 END AS is_occupied
       FROM dbo.rooms r
       JOIN dbo.room_categories c ON c.id = r.category_id
+      OUTER APPLY (
+        SELECT TOP 1 id FROM dbo.bookings
+        WHERE room_id = r.id AND lodge_id = @lodgeId AND status = 'CHECKED_IN'
+      ) b
       WHERE r.lodge_id = @lodgeId
       ORDER BY r.room_number ASC
     `);
@@ -88,6 +93,7 @@ async function listRooms(lodgeId) {
     maxOccupancy: row.max_occupancy,
     description: row.description,
     isActive: !!row.is_active,
+    isOccupied: !!row.is_occupied,
     createdAt: row.created_at,
     category: { id: row.category_id, name: row.category_name, basePrice: Number(row.category_base_price) },
     switchableCharges: switchableChargesByRoom.get(row.id) || [],

@@ -4,21 +4,111 @@
   gap: 20px;
 }
 
+/* Row hover and a sticky head, scoped to this panel's own tables — the
+   register and the GST/food/event lists all run long enough that knowing
+   which columns you're reading, and which row your eye is on, earns its
+   keep. */
+.reports-panel .dash-table-scroll {
+  max-height: 640px;
+}
+
+.reports-panel .dash-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+  /* thead th already carries the table's own padding; the sort button fills
+     it edge-to-edge instead so the whole cell — not just the label text — is
+     the click target. */
+  padding: 0;
+}
+
+.reports-panel__sort-th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 14px 20px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.reports-panel__sort-th:hover {
+  color: var(--text);
+}
+
+.reports-panel__sort-th[aria-sort='ascending'],
+.reports-panel__sort-th[aria-sort='descending'] {
+  color: var(--brand-ink);
+}
+
+.reports-panel__sort-icon {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.reports-panel__sort-th[aria-sort='ascending'] .reports-panel__sort-icon,
+.reports-panel__sort-th[aria-sort='descending'] .reports-panel__sort-icon {
+  color: var(--brand);
+  opacity: 1;
+}
+
+.reports-panel .dash-table tbody tr:hover {
+  background: var(--neu-sunken);
+}
+
 .reports-panel__filters {
-  padding: 18px 20px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reports-panel__filters-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+}
+
+/* This filter bar is a single row with nothing below it, so the bottom
+   margin .field normally carries (spacing one row of a form from the next)
+   just pads the card for no reason here. */
+.reports-panel__filters .field {
+  margin-bottom: 0;
 }
 
 .reports-panel__hint {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+.reports-panel__hint strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .reports-panel__subtabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: -8px;
-  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  padding: 4px;
+  background: var(--neu-sunken);
+  border-radius: 12px;
+  width: fit-content;
+  max-width: 100%;
   /* Slides at every width, not just below a breakpoint — see the note on
      .subtabs in RoomsAndRates.css. */
   overflow-x: auto;
@@ -34,16 +124,16 @@
 .reports-panel__subtabs-item {
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  padding: 10px 4px;
-  margin-right: 20px;
-  font-size: 14px;
+  border-radius: 9px;
+  padding: 8px 16px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
   flex: 0 0 auto;
   white-space: nowrap;
   scroll-snap-align: start;
+  transition: var(--neu-transition);
 }
 
 .reports-panel__subtabs-item:hover {
@@ -52,7 +142,8 @@
 
 .reports-panel__subtabs-item[aria-current='page'] {
   color: var(--brand-ink);
-  border-bottom-color: var(--brand);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
 }
 
 .reports-panel__download {
@@ -62,12 +153,13 @@
   justify-content: space-between;
   gap: 12px 20px;
   padding: 16px 20px;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--paper) 180%);
 }
 
 .reports-panel__download-title {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .reports-panel__download .reports-panel__hint {
@@ -86,38 +178,59 @@
 
 .reports-panel__stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 8px;
 }
 
 .reports-panel__stat {
+  position: relative;
   background: var(--surface);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
+  transition: var(--neu-transition), transform 200ms ease;
 }
 
-.reports-panel__stat--accent {
-  background: #eef4f2;
-  border-color: var(--brand);
+.reports-panel__stat:hover {
+  box-shadow: var(--shadow-raised-hover);
+  transform: translateY(-1px);
 }
 
+/* Wraps rather than forcing its tile wider than its neighbours — "Cancellation
+   charges" is the longest label in the grid, and at eight tiles per row there
+   isn't width to spare for one tile alone; two short lines keep every tile
+   the same size and the row from wrapping onto a second line. */
 .reports-panel__stat-label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   color: var(--text-muted);
+  white-space: normal;
+  line-height: 1.25;
 }
 
 .reports-panel__stat-value {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reports-panel__stat--accent .reports-panel__stat-value {
   color: var(--brand-ink);
+}
+
+.reports-panel__stat--positive .reports-panel__stat-value {
+  color: var(--color-success);
 }
 
 @media (max-width: 640px) {
@@ -138,7 +251,15 @@
   }
 
   .reports-panel__stat {
-    padding: 12px 14px;
+    padding: 10px 12px 10px 14px;
+  }
+
+  .reports-panel__stat-label {
+    white-space: normal;
+  }
+
+  .reports-panel__subtabs {
+    width: 100%;
   }
 
   /* Full-width buttons on a phone — the download card's text and its two
@@ -152,7 +273,7 @@
   }
 
   .reports-panel__stat-value {
-    font-size: 18px;
+    font-size: 15px;
   }
 }
 
@@ -164,8 +285,20 @@
   width: 100%;
   height: 70vh;
   min-height: 420px;
-  margin-top: 12px;
+  margin-top: 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
+  box-shadow: var(--shadow-inset);
+}
+
+/* A small caption row above a table — names what's below without the weight
+   of a card header, so a tab with one table doesn't feel like it needed one. */
+.reports-panel__section-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 4px 2px;
 }

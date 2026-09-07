@@ -1,7 +1,12 @@
 const { Router } = require('express');
-const { authenticate, requireLodgeUser } = require('../../middleware/authenticate');
+const { authenticate, requireLodgeUser, requireRole } = require('../../middleware/authenticate');
 const { otpSendLimiter } = require('../../middleware/rateLimit');
-const { getMeHandler, sendPasswordOtpHandler, changePasswordHandler } = require('./me.controller');
+const {
+  getMeHandler,
+  sendPasswordOtpHandler,
+  changePasswordHandler,
+  updateMyLodgeHandler,
+} = require('./me.controller');
 
 const router = Router();
 
@@ -17,5 +22,11 @@ router.get('/', authenticate, staff, getMeHandler);
 // password it is signed in with. See me.service.js.
 router.post('/password/otp', authenticate, staff, otpSendLimiter, sendPasswordOtpHandler);
 router.patch('/password', authenticate, staff, changePasswordHandler);
+
+// The property's own contact/location details, edited from the profile menu.
+// Owner-only rather than gated by a permission key: this isn't a section a
+// lodge-defined role is ever handed, it's the account holder correcting their
+// own listing.
+router.patch('/lodge', authenticate, requireRole('OWNER'), updateMyLodgeHandler);
 
 module.exports = router;

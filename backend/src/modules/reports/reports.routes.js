@@ -4,6 +4,8 @@ const {
   getOccupancyHandler,
   getGstSummaryHandler,
   getBookingsReportHandler,
+  getEventsReportHandler,
+  getFoodOrdersReportHandler,
 } = require('./reports.controller');
 
 const router = Router();
@@ -14,5 +16,7 @@ const owner = requirePermission('reports.view');
 router.get('/occupancy', authenticate, owner, getOccupancyHandler);
 router.get('/gst-summary', authenticate, owner, getGstSummaryHandler);
 router.get('/bookings', authenticate, owner, getBookingsReportHandler);
+router.get('/events', authenticate, owner, getEventsReportHandler);
+router.get('/food-orders', authenticate, owner, getFoodOrdersReportHandler);
 
 module.exports = router;

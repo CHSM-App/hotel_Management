@@ -1,4 +1,5 @@
 const { logger } = require('../config/logger');
+const sql = require('mssql');
 
 // `field` names the form input a validation message belongs to, when the error
 // is about one — it lets a form put the message under the offending field and
@@ -26,7 +27,19 @@ const GENERIC = {
   413: 'That upload is too large.',
   415: 'That file type is not accepted.',
   429: 'Too many requests. Please wait a moment and try again.',
+  503: 'Could not reach the database. Wait a moment and try again.',
 };
+
+// mssql.ConnectionError covers everything getPool() throws when it can't reach
+// the server at all (ESOCKET, ETIMEOUT, the backoff window's cached rejection).
+// Worth telling apart from every other 500: the database being briefly
+// unreachable over the network is not "the app is broken" and the fix is to
+// wait and retry, not to report a bug. Login failures (ELOGIN) throw the same
+// class but aren't transient, so they're excluded and fall through as a
+// generic 500 instead of telling a user to "try again" forever.
+function isTransientDbError(err) {
+  return err instanceof sql.ConnectionError && err.code !== 'ELOGIN';
+}
 
 function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
   // Only messages this codebase wrote are safe to repeat back. Everything else
@@ -43,11 +56,12 @@ function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-va
   //
   // So the test is what raised the error, not what status it carries.
   const trusted = err instanceof ApiError;
+  const transientDb = !trusted && isTransientDbError(err);
 
   // err.status as well as err.statusCode: http-errors sets both, other
   // libraries set only one, and losing a real 404 to a 500 makes the client
   // retry something that will never succeed.
-  const statusCode = (trusted ? err.statusCode : err.statusCode || err.status) || 500;
+  const statusCode = transientDb ? 503 : (trusted ? err.statusCode : err.statusCode || err.status) || 500;
 
   // Anything not deliberately raised is unexpected, whatever status it wears.
   // Logging only 500s would have made this exact bug invisible: the leak went

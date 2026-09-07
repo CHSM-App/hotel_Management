@@ -19,6 +19,7 @@ async function getMe(userId) {
         u.id, u.name, u.email, u.phone, u.role, u.must_reset_password,
         l.id AS lodge_id, l.name AS lodge_name, l.slug, l.phone AS lodge_phone,
         l.whatsapp_number, l.address, l.city, l.state, l.checkin_mode,
+        l.name_mr, l.address_mr, l.latitude, l.longitude,
         l.is_gst_registered, l.gstin, l.is_specified_premises,
         l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events
       FROM dbo.users u
@@ -55,6 +56,10 @@ async function getMe(userId) {
       address: row.address,
       city: row.city,
       state: row.state,
+      nameMr: row.name_mr,
+      addressMr: row.address_mr,
+      latitude: row.latitude,
+      longitude: row.longitude,
       checkinMode: row.checkin_mode,
       isGstRegistered: row.is_gst_registered,
       gstin: row.gstin,
@@ -159,4 +164,46 @@ async function changePassword(userId, currentPassword, newPassword, otp) {
     .query('UPDATE dbo.users SET password_hash = @passwordHash, must_reset_password = 0 WHERE id = @userId');
 }
 
-module.exports = { getMe, changePassword, sendPasswordChangeOtp };
+// The owner correcting their own property's contact/location details from the
+// dashboard's profile menu. Narrower than internal's lodges.service#updateLodge:
+// nothing here can change the slug, GST-registered status, check-in mode, or
+// what the property sells — only the facts printed on a bill's masthead and
+// the pin on the map. A GSTIN can only be *edited*, never turned on for a
+// property that never registered — is_gst_registered stays whatever internal
+// set it to.
+async function updateMyLodge(lodgeId, input) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, lodgeId).query('SELECT * FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) {
+    throw new ApiError('Lodge not found.', 404);
+  }
+
+  const gstin = current.is_gst_registered ? input.gstin || null : current.gstin;
+
+  await pool
+    .request()
+    .input('id', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, input.lodgeName)
+    .input('phone', sql.NVarChar, input.phone || null)
+    .input('whatsappNumber', sql.NVarChar, input.whatsappNumber || null)
+    .input('address', sql.NVarChar, input.address || null)
+    .input('nameMr', sql.NVarChar, input.lodgeNameMr || null)
+    .input('addressMr', sql.NVarChar, input.addressMr || null)
+    .input('city', sql.NVarChar, input.city || null)
+    .input('state', sql.NVarChar, input.state || null)
+    .input('latitude', sql.Decimal(9, 6), input.latitude)
+    .input('longitude', sql.Decimal(9, 6), input.longitude)
+    .input('gstin', sql.NVarChar, gstin)
+    .query(`
+      UPDATE dbo.lodges
+      SET name = @name, phone = @phone, whatsapp_number = @whatsappNumber,
+          address = @address, name_mr = @nameMr, address_mr = @addressMr,
+          city = @city, state = @state, latitude = @latitude, longitude = @longitude,
+          gstin = @gstin
+      WHERE id = @id
+    `);
+}
+
+module.exports = { getMe, changePassword, sendPasswordChangeOtp, updateMyLodge };

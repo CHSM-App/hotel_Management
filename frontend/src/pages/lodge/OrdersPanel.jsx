@@ -595,7 +595,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
   const session = getSession();
   const [sections, setSections] = useState(null);
   const [tables, setTables] = useState(() => readCache('/tables:active') ?? []);
-  const [rooms, setRooms] = useState(() => readCache('/rooms:active') ?? []);
+  const [rooms, setRooms] = useState(() => readCache('/rooms:occupied') ?? []);
   const [cart, setCart] = useState({});
   const [target, setTarget] = useState({ kind: 'COUNTER', id: '' });
   const [note, setNote] = useState('');
@@ -641,7 +641,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
       .then(([menuData, tablesData, roomsData]) => {
         setSections(menuData.sections);
         setTables(writeCache('/tables:active', tablesData.tables.filter((t) => t.isActive)));
-        setRooms(writeCache('/rooms:active', roomsData.rooms.filter((r) => r.isActive)));
+        setRooms(writeCache('/rooms:occupied', roomsData.rooms.filter((r) => r.isActive && r.isOccupied)));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load the menu.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps

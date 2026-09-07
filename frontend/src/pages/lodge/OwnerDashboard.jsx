@@ -293,7 +293,11 @@ export default function OwnerDashboard() {
   // show the right menu without the frontend knowing the role exists. The
   // capability check on top of it is about the property, not the person.
   const permissions = me?.user.permissions || [];
-  const hasCapability = (item) => !item.capability || Boolean(me?.lodge[item.capability]);
+  const hasCapability = (item) => {
+    if (!item.capability) return true;
+    const keys = Array.isArray(item.capability) ? item.capability : [item.capability];
+    return keys.some((key) => Boolean(me?.lodge[key]));
+  };
   const visibleFeatures = FEATURES.filter((f) => permissions.includes(f.permission) && hasCapability(f));
   // Resolved rather than stored, so the landing section is whatever the loaded
   // permissions allow without a second render to correct a wrong first guess.
@@ -394,7 +398,12 @@ export default function OwnerDashboard() {
 
         <div className="dash-topbar__actions">
           {me?.user ? (
-            <ProfileMenu user={me.user} lodge={me.lodge} onSignOut={() => setConfirmSignOut(true)} />
+            <ProfileMenu
+              user={me.user}
+              lodge={me.lodge}
+              onLodgeChange={(lodge) => setMe((m) => ({ ...m, lodge: { ...m.lodge, ...lodge } }))}
+              onSignOut={() => setConfirmSignOut(true)}
+            />
           ) : (
             // The profile menu is built from /me, so when that call fails there
             // is no menu — and signing out lived only inside it. That left a
@@ -609,7 +618,7 @@ export default function OwnerDashboard() {
                 <GuestRegister onOpenDraft={openDraftInChart} onOpenSection={showSection} />
               )}
 
-              {activeFeature && activeFeature.key === 'reports' && <ReportsPanel />}
+              {activeFeature && activeFeature.key === 'reports' && <ReportsPanel lodge={me?.lodge} />}
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 

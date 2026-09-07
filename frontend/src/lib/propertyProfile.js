@@ -158,9 +158,11 @@ export const FEATURES = [
   {
     key: 'reports',
     title: 'Report & Analytics',
-    description: 'Downloadable booking reports, occupancy and a GST filing summary.',
+    description: 'Booking, occupancy, GST, events and food order reports — whichever this property sells.',
     permission: 'reports.view',
-    capability: 'hasRooms',
+    // Any one of these earns the section; ReportsPanel itself only shows the
+    // sub-tabs the property's own capabilities back.
+    capability: ['hasRooms', 'servesFood', 'hasEvents'],
     icon: 'barChart',
     group: 'Insights',
   },
@@ -168,10 +170,15 @@ export const FEATURES = [
 
 export const SIDEBAR_GROUP_ORDER = ['Front desk', 'Setup', 'Insights'];
 
-// A section exists for a property if the property has the capability it needs.
-// Features with no `capability` (staff and roles) are universal.
+// A section exists for a property if the property has the capability it needs
+// — any one of them, when a feature (like Reports) is earned by more than
+// one. Features with no `capability` (staff and roles) are universal.
 export function featuresForCapabilities(capabilities) {
-  return FEATURES.filter((f) => !f.capability || Boolean(capabilities[f.capability]));
+  return FEATURES.filter((f) => {
+    if (!f.capability) return true;
+    const keys = Array.isArray(f.capability) ? f.capability : [f.capability];
+    return keys.some((key) => Boolean(capabilities[key]));
+  });
 }
 
 // Reads a set of flags back as a property type, for describing lodges that

@@ -60,4 +60,30 @@ async function getBookingsReportHandler(req, res, next) {
   }
 }
 
-module.exports = { getOccupancyHandler, getGstSummaryHandler, getBookingsReportHandler };
+async function getEventsReportHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const report = await reportsService.getEventsReport(req.user.lodgeId, fromDate, toDate);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getFoodOrdersReportHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const report = await reportsService.getFoodOrdersReport(req.user.lodgeId, fromDate, toDate);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  getOccupancyHandler,
+  getGstSummaryHandler,
+  getBookingsReportHandler,
+  getEventsReportHandler,
+  getFoodOrdersReportHandler,
+};

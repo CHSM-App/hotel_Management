@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiPatch, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
-import { copyText } from '../../lib/clipboard';
+import HotelProfileModal from './HotelProfileModal';
 import './forms.css';
 import './ProfileMenu.css';
 
@@ -9,33 +9,14 @@ function roleLabel(role) {
   return role.charAt(0) + role.slice(1).toLowerCase();
 }
 
-const CHECKIN_LABEL = {
-  HOUR_24: '24-hour cycle',
-  NIGHT_BASED: 'Night-based',
-  CYCLE: 'Fixed check-in / checkout',
-};
-
-// Lodge facts that are worth reading but never worth acting on from here —
-// they're what someone opens this menu to check ("what's our GSTIN again?"),
-// not something they edit. Anything with no value on file is left out rather
-// than shown empty; a blank row is noise in a list this short.
-function Fact({ label, value }) {
-  if (!value) return null;
-  return (
-    <div className="profile-menu__fact">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
-}
-
 const initialPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', otp: '' };
 
-export default function ProfileMenu({ user, lodge, onSignOut }) {
+export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
   const token = getSession()?.token;
   const rootRef = useRef(null);
 
   const [open, setOpen] = useState(false);
+  const [showHotelProfile, setShowHotelProfile] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [form, setForm] = useState(initialPasswordForm);
   const [error, setError] = useState('');
@@ -52,7 +33,6 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
       errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   };
-  const [linkCopied, setLinkCopied] = useState('');
   // Which half of the password change is on screen. "details" collects the
   // passwords, "code" collects the one-time code that authorises the change.
   const [passwordStep, setPasswordStep] = useState('details');
@@ -165,20 +145,6 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
     }
   };
 
-  // A property with no rooms has no room brochure to link to, so its public
-  // link is the menu instead — that's the only thing a guest can do with it.
-  const publicUrl = lodge
-    ? `${window.location.origin}${lodge.hasRooms ? `/lodge/${lodge.slug}` : `/order/${lodge.slug}`}`
-    : '';
-
-  const handleCopyPublicLink = async () => {
-    const copied = await copyText(publicUrl);
-    // A button that shows "Copied!" when nothing reached the clipboard is worse
-    // than one that admits it — the owner would paste stale text into WhatsApp.
-    setLinkCopied(copied ? 'copied' : 'failed');
-    setTimeout(() => setLinkCopied(''), 2000);
-  };
-
   const initial = user.name ? user.name.charAt(0).toUpperCase() : '?';
 
   return (
@@ -192,13 +158,11 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
         aria-label="Account menu"
       >
         <span className="profile-menu__trigger-avatar" aria-hidden="true">{initial}</span>
-        {/* The name and role read out of the topbar rather than only from inside
-            the menu — at a shared front desk, "who is this machine signed in
-            as?" is worth answering without a click. Hidden on narrow screens,
-            where the topbar has no room for it and the avatar stands alone. */}
+        {/* Just "Profile" — who is actually signed in, and every hotel fact
+            that used to sit beside it, are a click away inside the menu
+            instead of parked in the topbar all day. */}
         <span className="profile-menu__trigger-text">
-          <span className="profile-menu__trigger-name">{user.name}</span>
-          <span className="profile-menu__trigger-role">{roleLabel(user.role)}</span>
+          <span className="profile-menu__trigger-name">Profile</span>
         </span>
         <svg
           className="profile-menu__trigger-chevron"
@@ -238,55 +202,16 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
           {lodge && (
             <>
               <div className="profile-menu__divider" />
-
-              <div className="profile-menu__lodge">
-                <div className="profile-menu__lodge-head">
-                  <div className="profile-menu__monogram" aria-hidden="true">
-                    {lodge.name.charAt(0)}
-                  </div>
-                  <div className="profile-menu__lodge-title">
-                    <div className="profile-menu__lodge-name">{lodge.name}</div>
-                    <div className="profile-menu__badges">
-                      <span className={`badge ${lodge.isGstRegistered ? 'badge--on' : 'badge--off'}`}>
-                        {lodge.isGstRegistered ? `GST · ${lodge.gstin || 'Registered'}` : 'Non-GST'}
-                      </span>
-                      {lodge.isSpecifiedPremises && (
-                        <span className="badge badge--accent">Specified premises</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <dl className="profile-menu__facts">
-                  <Fact
-                    label="Location"
-                    value={[lodge.city, lodge.state].filter(Boolean).join(', ')}
-                  />
-                  <Fact label="Address" value={lodge.address} />
-                  <Fact
-                    label="Check-in"
-                    value={CHECKIN_LABEL[lodge.checkinMode] || lodge.checkinMode}
-                  />
-                  <Fact label="Phone" value={lodge.phone} />
-                  <Fact label="WhatsApp" value={lodge.whatsappNumber} />
-                </dl>
-
-                <div className="profile-menu__link">
-                  <div className="profile-menu__link-head">
-                    <span>Public link</span>
-                    <button
-                      type="button"
-                      className="profile-menu__copy-link"
-                      onClick={handleCopyPublicLink}
-                    >
-                      {linkCopied === 'copied' && 'Copied!'}
-                      {linkCopied === 'failed' && 'Press Ctrl+C'}
-                      {!linkCopied && 'Copy'}
-                    </button>
-                  </div>
-                  <code>{publicUrl}</code>
-                </div>
-              </div>
+              <button
+                type="button"
+                className="profile-menu__action"
+                onClick={() => {
+                  setShowHotelProfile(true);
+                  closeMenu();
+                }}
+              >
+                Hotel profile
+              </button>
             </>
           )}
 
@@ -427,6 +352,18 @@ export default function ProfileMenu({ user, lodge, onSignOut }) {
             Sign out
           </button>
         </div>
+      )}
+
+      {showHotelProfile && lodge && (
+        <HotelProfileModal
+          lodge={lodge}
+          onClose={() => setShowHotelProfile(false)}
+          // A successful save flips the modal itself back to its read-only
+          // view (see HotelProfileModal's setEditing(false) before this
+          // fires) — closing it here too would undo that and dump the owner
+          // back on the dashboard with no chance to see what was just saved.
+          onSaved={(nextLodge) => onLodgeChange?.(nextLodge)}
+        />
       )}
     </div>
   );

@@ -598,7 +598,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       WHERE b.lodge_id = @lodgeId
         AND b.check_in_date BETWEEN @fromDate AND @toDate
         ${billingFilter}
-      ORDER BY b.check_in_date ASC, r.room_number ASC
+      ORDER BY b.created_at DESC, b.id DESC
     `);
 
   const tenders = await getTendersForBookings(
@@ -797,10 +797,264 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   };
 }
 
+const EVENT_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED'];
+
+function emptyEventTotals() {
+  return { count: 0, venueCharge: 0, cateringAmount: 0, addonsTotal: 0, discountAmount: 0, totalAmount: 0, advanceAmount: 0, balanceDue: 0 };
+}
+
+function addEventTotals(totals, ev) {
+  totals.count += 1;
+  totals.venueCharge = round2(totals.venueCharge + ev.venueCharge);
+  totals.cateringAmount = round2(totals.cateringAmount + ev.cateringAmount);
+  totals.addonsTotal = round2(totals.addonsTotal + ev.addonsTotal);
+  totals.discountAmount = round2(totals.discountAmount + ev.discountAmount);
+  totals.totalAmount = round2(totals.totalAmount + ev.totalAmount);
+  totals.advanceAmount = round2(totals.advanceAmount + ev.advanceAmount);
+  totals.balanceDue = round2(totals.balanceDue + ev.balanceDue);
+}
+
+// A function belongs to the period it *starts* in, the same reading the
+// booking register gives a stay: a function running past midnight is counted
+// once, on the evening it begins, not on every day it touches.
+async function getEventsReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
+
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.DateTimeOffset, new Date(`${fromDate}T00:00:00+05:30`))
+    .input('toDate', sql.DateTimeOffset, (() => {
+      const after = new Date(`${toDate}T00:00:00+05:30`);
+      after.setUTCDate(after.getUTCDate() + 1);
+      return after;
+    })())
+    .query(`
+      SELECT e.id, e.event_type, e.title, e.organiser_name, e.organiser_phone,
+             e.start_at, e.end_at, e.expected_pax, e.guaranteed_pax, e.final_pax,
+             e.venue_charge, e.catering_amount, e.addons_total, e.discount_amount,
+             e.total_amount, e.advance_amount, e.advance_payment_method,
+             e.status, e.cancel_reason, e.refund_amount, e.cancellation_charge,
+             v.name AS venue_name,
+             i.invoice_number, i.document_type, i.created_at AS invoice_created_at
+      FROM dbo.event_bookings e
+      JOIN dbo.event_venues v ON v.id = e.venue_id
+      OUTER APPLY (
+        SELECT TOP 1 invoice_number, document_type, created_at
+        FROM dbo.invoices
+        WHERE event_booking_id = e.id AND status = 'ISSUED'
+        ORDER BY created_at DESC
+      ) i
+      WHERE e.lodge_id = @lodgeId AND e.start_at >= @fromDate AND e.start_at < @toDate
+      ORDER BY e.start_at ASC
+    `);
+
+  const events = result.recordset.map((row) => {
+    const advanceAmount = row.advance_amount != null ? Number(row.advance_amount) : 0;
+    const totalAmount = Number(row.total_amount);
+    return {
+      id: row.id,
+      eventType: row.event_type,
+      title: row.title,
+      organiserName: row.organiser_name,
+      organiserPhone: row.organiser_phone,
+      venueName: row.venue_name,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      expectedPax: Number(row.expected_pax),
+      guaranteedPax: Number(row.guaranteed_pax),
+      finalPax: row.final_pax == null ? null : Number(row.final_pax),
+      venueCharge: Number(row.venue_charge),
+      cateringAmount: Number(row.catering_amount),
+      addonsTotal: Number(row.addons_total),
+      discountAmount: Number(row.discount_amount),
+      totalAmount,
+      advanceAmount,
+      advancePaymentMethod: row.advance_payment_method || null,
+      balanceDue: round2(totalAmount - advanceAmount),
+      status: row.status,
+      cancelReason: row.cancel_reason || null,
+      refundAmount: row.refund_amount != null ? Number(row.refund_amount) : null,
+      cancellationCharge: row.cancellation_charge != null ? Number(row.cancellation_charge) : null,
+      invoiceNumber: row.invoice_number || null,
+      documentType: row.document_type || null,
+      invoiceDate: row.invoice_created_at || null,
+    };
+  });
+
+  const byStatus = Object.fromEntries(EVENT_STATUSES.map((s) => [s, 0]));
+  const cancelled = { count: 0, advanceHeld: 0, refunded: 0, chargesKept: 0 };
+  const totals = emptyEventTotals();
+  const byEventType = {};
+
+  for (const ev of events) {
+    if (byStatus[ev.status] === undefined) byStatus[ev.status] = 0;
+    byStatus[ev.status] += 1;
+
+    if (ev.status === 'CANCELLED') {
+      cancelled.count += 1;
+      cancelled.advanceHeld = round2(cancelled.advanceHeld + ev.advanceAmount);
+      cancelled.refunded = round2(cancelled.refunded + (ev.refundAmount ?? 0));
+      cancelled.chargesKept = round2(cancelled.chargesKept + (ev.cancellationCharge ?? 0));
+      continue;
+    }
+    if (ev.status === 'EXPIRED') continue;
+
+    addEventTotals(totals, ev);
+    if (!byEventType[ev.eventType]) byEventType[ev.eventType] = emptyEventTotals();
+    addEventTotals(byEventType[ev.eventType], ev);
+  }
+
+  return {
+    fromDate,
+    toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
+    summary: {
+      totalEvents: events.length,
+      byStatus,
+      cancelled,
+      totals,
+      byEventType,
+    },
+    events,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Food orders
+// ---------------------------------------------------------------------------
+
+const ORDER_STATUSES = ['PENDING', 'QUEUED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'];
+const ORDER_SOURCES = ['ROOM', 'TABLE', 'COUNTER'];
+
+// An order belongs to the period by its order_date — the IST calendar day it
+// was placed on, the same day the kitchen's own counters key off of. Delivered
+// and cancelled orders are counted; a live order still in the queue when this
+// report is pulled counts too, under whatever status it is currently in.
+async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
+
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT o.id, o.order_number, o.order_date, o.source, o.guest_name, o.guest_phone,
+             o.status, o.subtotal, o.placed_at, o.delivered_at, o.cancelled_at, o.cancel_reason,
+             r.room_number, t.label AS table_label,
+             i.invoice_number, i.document_type
+      FROM dbo.food_orders o
+      LEFT JOIN dbo.rooms r ON r.id = o.room_id
+      LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.invoices i ON i.id = o.invoice_id AND i.status = 'ISSUED'
+      WHERE o.lodge_id = @lodgeId AND o.order_date BETWEEN @fromDate AND @toDate
+      ORDER BY o.placed_at ASC
+    `);
+
+  const orderIds = result.recordset.map((row) => row.id);
+  const itemCounts = new Map();
+  if (orderIds.length > 0) {
+    const itemsRequest = pool.request();
+    orderIds.forEach((id, i) => itemsRequest.input(`o${i}`, sql.BigInt, id));
+    const itemsResult = await itemsRequest.query(`
+      SELECT order_id, SUM(quantity) AS qty
+      FROM dbo.food_order_items
+      WHERE order_id IN (${orderIds.map((_, i) => `@o${i}`).join(', ')})
+      GROUP BY order_id
+    `);
+    for (const row of itemsResult.recordset) itemCounts.set(String(row.order_id), Number(row.qty));
+  }
+
+  const orders = result.recordset.map((row) => ({
+    id: row.id,
+    orderNumber: row.order_number,
+    orderDate: toIsoDate(row.order_date),
+    source: row.source,
+    roomNumber: row.room_number || null,
+    tableLabel: row.table_label || null,
+    guestName: row.guest_name || null,
+    guestPhone: row.guest_phone || null,
+    status: row.status,
+    itemCount: itemCounts.get(String(row.id)) || 0,
+    subtotal: Number(row.subtotal),
+    placedAt: row.placed_at,
+    deliveredAt: row.delivered_at || null,
+    cancelledAt: row.cancelled_at || null,
+    cancelReason: row.cancel_reason || null,
+    invoiceNumber: row.invoice_number || null,
+    documentType: row.document_type || null,
+    billed: row.invoice_number != null,
+  }));
+
+  const byStatus = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
+  const bySource = Object.fromEntries(ORDER_SOURCES.map((s) => [s, 0]));
+  let deliveredCount = 0;
+  let deliveredValue = 0;
+  let cancelledCount = 0;
+  let billedCount = 0;
+  let billedValue = 0;
+  let unbilledDeliveredValue = 0;
+
+  for (const order of orders) {
+    if (byStatus[order.status] === undefined) byStatus[order.status] = 0;
+    byStatus[order.status] += 1;
+    if (bySource[order.source] === undefined) bySource[order.source] = 0;
+    bySource[order.source] += 1;
+
+    if (order.status === 'CANCELLED') {
+      cancelledCount += 1;
+      continue;
+    }
+    if (order.status === 'DELIVERED') {
+      deliveredCount += 1;
+      deliveredValue = round2(deliveredValue + order.subtotal);
+    }
+    if (order.billed) {
+      billedCount += 1;
+      billedValue = round2(billedValue + order.subtotal);
+    } else if (order.status === 'DELIVERED') {
+      unbilledDeliveredValue = round2(unbilledDeliveredValue + order.subtotal);
+    }
+  }
+
+  return {
+    fromDate,
+    toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
+    summary: {
+      totalOrders: orders.length,
+      byStatus,
+      bySource,
+      deliveredCount,
+      deliveredValue,
+      cancelledCount,
+      billedCount,
+      billedValue,
+      unbilledDeliveredValue,
+    },
+    orders,
+  };
+}
+
 module.exports = {
   getOccupancyReport,
   getGstSummary,
   getBookingsReport,
+  getEventsReport,
+  getFoodOrdersReport,
   splitAcross,
   billFigures,
   mergeTenders,

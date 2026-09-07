@@ -2,9 +2,10 @@
   position: relative;
 }
 
-/* A chip rather than a bare circle: avatar, then who is signed in and in what
-   role, then the chevron that says the whole thing opens. Capped in width so a
-   long name shortens itself instead of squeezing the lodge name beside it. */
+/* A chip rather than a bare circle: avatar, the word "Profile", then the
+   chevron that says the whole thing opens. Who is actually signed in — and
+   every hotel fact that used to sit beside it — lives a click away inside the
+   menu instead of parked in the topbar all day. */
 .profile-menu__trigger {
   display: flex;
   align-items: center;
@@ -47,26 +48,14 @@
   text-align: left;
 }
 
-.profile-menu__trigger-name,
-.profile-menu__trigger-role {
+.profile-menu__trigger-name {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.profile-menu__trigger-name {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.25;
-}
-
-.profile-menu__trigger-role {
-  font-size: 11px;
-  line-height: 1.25;
-  /* Secondary to the name, but on a saturated header anything under ~0.7
-     opacity stops being readable rather than reading as quiet. */
-  opacity: 0.78;
 }
 
 .profile-menu__trigger-chevron {
@@ -91,9 +80,9 @@
   padding: 16px;
   z-index: 50;
   color: var(--text);
-  /* The lodge's details live in here now, so on a short window — a laptop with
-     the browser chrome eating half of it — the menu can outgrow the viewport.
-     Scroll it rather than let the bottom of it, where Sign out is, fall off. */
+  /* A short window — a laptop with the browser chrome eating half of it — can
+     still outgrow this with the password form open. Scroll it rather than let
+     the bottom of it, where Sign out is, fall off. */
   max-height: min(78vh, 620px);
   overflow-y: auto;
 }
@@ -133,129 +122,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.profile-menu__lodge-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.profile-menu__monogram {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
-  color: #ffffff;
-  font-family: var(--serif);
-  font-size: 16px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.profile-menu__lodge-title {
-  min-width: 0;
-}
-
-.profile-menu__lodge-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 4px;
-}
-
-.profile-menu__badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.profile-menu__badges .badge {
-  font-size: 10px;
-  /* GSTINs are 15 characters and the menu is 320px wide — let the badge wrap
-     rather than push the dropdown open or clip the number halfway. */
-  white-space: normal;
-  word-break: break-all;
-}
-
-.profile-menu__facts {
-  margin: 14px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.profile-menu__fact {
-  display: grid;
-  grid-template-columns: 76px 1fr;
-  gap: 10px;
-  align-items: baseline;
-}
-
-.profile-menu__fact dt {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.profile-menu__fact dd {
-  margin: 0;
-  font-size: 13px;
-  color: var(--ink);
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.profile-menu__link {
-  margin-top: 14px;
-  background: var(--paper);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-
-.profile-menu__link-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
-.profile-menu__copy-link {
-  flex-shrink: 0;
-  background: var(--surface);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  color: var(--brand-ink);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  padding: 2px 9px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.profile-menu__copy-link:hover {
-  background: var(--border);
-}
-
-.profile-menu__link code {
-  display: block;
-  font-size: 12px;
-  color: var(--brand-ink);
-  font-weight: 600;
-  word-break: break-all;
 }
 
 .profile-menu__divider {
@@ -362,8 +228,8 @@
 
 @media (max-width: 640px) {
   /* Below this the topbar is carrying the lodge name too, and there is not
-     room for both. The chip drops back to the avatar alone — the name and role
-     are a step away inside the menu, which is where they were before. */
+     room for both. The chip drops back to the avatar alone — "Profile" is a
+     step away inside the menu, which is where it was before. */
   .profile-menu__trigger {
     padding: 0;
     border-radius: 999px;
@@ -385,21 +251,13 @@
     width: calc(100vw - 32px);
     max-width: 320px;
   }
-
-  /* Under ~300px of usable width a fixed label column leaves the address
-     three words to a line. Stack the label above its value instead. */
-  .profile-menu__fact {
-    grid-template-columns: 1fr;
-    gap: 1px;
-  }
 }
 
 /* --- Menu refinements -----------------------------------------------------
-   The dropdown carries more information than anything else in the chrome —
-   identity, the property, its registration details, a share link and three
-   actions — and it was presenting all of it at one weight inside a single
-   16px box. These rules give it a top-to-bottom reading order without adding
-   any new colour to the system. */
+   The dropdown carries more than one weight of information — identity, then
+   a handful of actions — and a single flat 16px box didn't separate them.
+   These rules give it a top-to-bottom reading order without adding any new
+   colour to the system. */
 
 /* The panel is a floating surface over content, so it gets the card radius
    rather than the tile radius the flat 12px was giving it, and it loses the
@@ -424,12 +282,10 @@
 }
 
 /* Everything after the identity band keeps the padding the panel gave up.
-   Applied to the blocks that are genuinely direct children of the dropdown:
-   .profile-menu__lodge wraps the head, the facts list and the share link, and
-   the password form wraps its own banner and hints — padding those two
-   containers indents their contents once rather than twice. */
+   Applied to the blocks that are genuinely direct children of the dropdown —
+   the password form wraps its own banner and hints, so padding it here
+   indents its contents once rather than twice. */
 .profile-menu__contact,
-.profile-menu__lodge,
 .profile-menu__password-form,
 .profile-menu__banner {
   padding-left: 16px;
@@ -475,27 +331,4 @@
 .profile-menu__action--danger:hover {
   background: var(--danger-bg);
   box-shadow: none;
-}
-
-/* The share link is the one thing in here anyone copies, so it earns a real
-   well rather than a raised chip — it is a value to be read, not a control. */
-.profile-menu__link {
-  background: var(--paper);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-well);
-  border-radius: 10px;
-  padding: 10px;
-}
-
-.profile-menu__copy-link:hover {
-  background: var(--brand-wash);
-  color: var(--brand-ink);
-}
-
-/* The label column was uppercase muted at 11px against 13px values — correct
-   in weight, but the two columns shared a baseline and read as one run of
-   text. A hair more tracking separates them. */
-.profile-menu__fact dt {
-  letter-spacing: 0.05em;
-  font-weight: 600;
 }

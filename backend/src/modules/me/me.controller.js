@@ -1,9 +1,23 @@
 const meService = require('./me.service');
-const { changePasswordSchema, sendPasswordOtpSchema } = require('./me.schema');
+const { changePasswordSchema, sendPasswordOtpSchema, updateMyLodgeSchema } = require('./me.schema');
 const { ApiError } = require('../../middleware/errorHandler');
 
 async function getMeHandler(req, res, next) {
   try {
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateMyLodgeHandler(req, res, next) {
+  try {
+    const parsed = updateMyLodgeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    await meService.updateMyLodge(req.user.lodgeId, parsed.data);
     const me = await meService.getMe(req.user.sub);
     res.json(me);
   } catch (err) {
@@ -45,4 +59,4 @@ async function changePasswordHandler(req, res, next) {
   }
 }
 
-module.exports = { getMeHandler, sendPasswordOtpHandler, changePasswordHandler };
+module.exports = { getMeHandler, sendPasswordOtpHandler, changePasswordHandler, updateMyLodgeHandler };
