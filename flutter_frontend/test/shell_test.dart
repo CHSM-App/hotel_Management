@@ -86,7 +86,8 @@ class _FakeBookings implements BookingRepository {
   );
 
   @override
-  Future<Booking> cancel(int id) async => Booking(id: id, status: 'CANCELLED');
+  Future<Booking> cancel(int id, [Map<String, dynamic>? body]) async =>
+      Booking(id: id, status: 'CANCELLED');
 
   @override
   Future<List<Room>> availableRooms(String a, String b) async => const [];
@@ -111,6 +112,17 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> checkIn(int id, FormData form) async =>
       Booking(id: id, status: 'CHECKED_IN');
+
+  @override
+  Future<List<Room>> availableRoomsForBooking(
+    int bookingId, {
+    required String checkOutDate,
+    String? checkInDate,
+  }) async => const [];
+
+  @override
+  Future<Booking> updateBooking(int id, FormData form) async =>
+      Booking(id: id);
 
   @override
   Future<LateCheckout> lateCheckout(int id) async =>
@@ -259,7 +271,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Check in'), findsOneWidget);
-    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Cancel booking'), findsOneWidget);
     expect(find.text('Check out'), findsNothing);
   });
 
@@ -324,7 +336,7 @@ void main() {
     // a guest who is already in the room leaves by checking out.
     expect(find.text('Check out'), findsOneWidget);
     expect(find.text('Check in'), findsNothing);
-    expect(find.text('Cancel'), findsNothing);
+    expect(find.text('Cancel booking'), findsNothing);
   });
 }
 

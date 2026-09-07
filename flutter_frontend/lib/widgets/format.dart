@@ -26,3 +26,13 @@ String formatIsoDate(String? iso) {
 
 /// "3 nights", "1 night".
 String nightsLabel(int nights) => '$nights night${nights == 1 ? '' : 's'}';
+
+/// When something actually happened, not just which night it was booked
+/// against — "27 Aug, 4:10 pm" for an actual check-in or check-out instant,
+/// the same precision `formatIsoDate` deliberately drops for a plain date.
+String formatDateTime(String? iso) {
+  if (iso == null || iso.isEmpty) return '—';
+  final parsed = DateTime.tryParse(iso)?.toLocal();
+  if (parsed == null) return iso;
+  return DateFormat('d MMM, h:mm a').format(parsed);
+}

@@ -10,4 +10,13 @@ abstract class BillingRepository {
   Future<List<Invoice>> invoices();
 
   Future<Invoice> voidInvoice(int id, String reason);
+
+  Future<List<AdvanceReceipt>> advanceReceipts(int bookingId);
+
+  Future<AdvanceReceipt> issueAdvanceReceipt(
+    int bookingId,
+    Map<String, dynamic> body,
+  );
+
+  Future<AdvanceReceipt> voidAdvanceReceipt(int id, String reason);
 }

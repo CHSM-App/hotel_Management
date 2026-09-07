@@ -35,6 +35,12 @@ bool needsPaymentReference(String? method) =>
 /// that has to produce a register does not get to record only one of the four
 /// people who slept in the room.
 class GuestDraft {
+  /// Set only when this row already exists on the booking being edited —
+  /// carrying it forward is what keeps an edit an edit rather than a delete
+  /// and re-insert, so the row keeps whatever ID proof was already uploaded
+  /// against it. Null on a new booking, and on a row added during an edit.
+  int? id;
+
   String name;
   String phone;
   String? idProofType;
@@ -42,6 +48,7 @@ class GuestDraft {
   bool isChild;
 
   GuestDraft({
+    this.id,
     this.name = '',
     this.phone = '',
     this.idProofType,
@@ -51,10 +58,12 @@ class GuestDraft {
 
   bool get isEmpty => name.trim().isEmpty;
 
-  /// The shape bookingGuestSchema takes. Optional fields are left out entirely
-  /// rather than sent empty — an empty string fails the enum and the length
-  /// checks, where an absent key is simply "not recorded".
+  /// The shape bookingGuestSchema (or editBookingGuestSchema, which only
+  /// adds the optional id above) takes. Optional fields are left out
+  /// entirely rather than sent empty — an empty string fails the enum and
+  /// the length checks, where an absent key is simply "not recorded".
   Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
     'name': name.trim(),
     if (phone.trim().isNotEmpty) 'phone': phone.trim(),
     if (idProofType != null) 'idProofType': idProofType,
@@ -119,4 +128,26 @@ class ExtraDraft {
   String agreedTotal;
 
   ExtraDraft({this.quantity = 1, this.agreedTotal = ''});
+}
+
+/// Mirrors VEHICLE_TYPES in bookings.schema.js.
+const kVehicleTypes = <String, String>{
+  'TWO_WHEELER': 'Two wheeler',
+  'FOUR_WHEELER': 'Four wheeler',
+  'TRAVELLER': 'Traveller',
+  'BUS': 'Bus',
+};
+
+/// A vehicle parked against the stay — only ever editable, since the create
+/// form never asked for one and the backend's own create schema carries no
+/// field for it either.
+class VehicleDraft {
+  String number;
+  String? type;
+
+  VehicleDraft({this.number = '', this.type});
+
+  bool get isEmpty => number.trim().isEmpty;
+
+  Map<String, dynamic> toJson() => {'number': number.trim(), 'type': type};
 }

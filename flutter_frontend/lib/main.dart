@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -38,9 +39,28 @@ class FrontDeskApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       themeMode: ThemeMode.light,
+      scrollBehavior: _AppScrollBehavior(),
       home: const AuthGate(),
     );
   }
+}
+
+/// Lets a mouse drag scroll the same way a finger or a trackpad does.
+///
+/// Flutter's own default leaves the mouse out of `dragDevices` — a plain
+/// click-and-drag on a scroll view does nothing with it, only the wheel
+/// does. That is invisible on a phone, but on the desktop and web builds
+/// this app also ships it meant the tape chart's own horizontal drag never
+/// even started: not a bug in the chart's own paging logic, just a gesture
+/// Flutter was never told to recognise.
+class _AppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 }
 
 /// Which app to show: the login screen, or the signed-in one.

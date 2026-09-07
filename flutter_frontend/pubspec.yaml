@@ -31,6 +31,14 @@ dependencies:
   # fraction of the size.
   pdf: ^3.11.1
   printing: ^5.13.4
+  # Where a downloaded receipt actually lands — printing's own Printing class
+  # only knows how to hand a file to the print dialog or the share sheet,
+  # neither of which is a download in its own right.
+  path_provider: ^2.1.5
+  # A real browser download on the web build — dart:io has no file system to
+  # write to there, so "Download" landing anywhere at all on that platform
+  # needs the browser's own Blob-and-anchor trick instead.
+  web: ^1.1.1
 
   intl: ^0.20.2
   cupertino_icons: ^1.0.8

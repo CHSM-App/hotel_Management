@@ -8,6 +8,8 @@ import 'package:printing/printing.dart';
 
 import '../../domain/models/booking.dart' show PaymentLine;
 import '../../domain/models/invoice.dart';
+import '../bookings/receipt_download.dart';
+import '../bookings/receipt_share.dart';
 
 /// The bill, as the property's own memo.
 ///
@@ -32,15 +34,35 @@ class BillPdf {
   static const _rs = 'Rs.';
   static const _ps = 'Ps.';
 
-  /// Hand the finished file to the platform: the share sheet on a phone, where
-  /// "Save to Files", WhatsApp and Print all live.
-  static Future<bool> share(Invoice invoice, {String? lodgeName}) async {
+  /// Hand the finished file to the real OS share sheet — see
+  /// `receipt_share.dart` for why this is not simply `Printing.sharePdf`:
+  /// on the web that never attempts the browser's own share API at all and
+  /// just downloads the file, which made this look identical to [download].
+  static Future<void> share(Invoice invoice, {String? lodgeName}) async {
     final bytes = await build(invoice, lodgeName: lodgeName);
     final safe = (invoice.invoiceNumber ?? '${invoice.id}').replaceAll(
       RegExp(r'[\\/]'),
       '-',
     );
-    return Printing.sharePdf(bytes: bytes, filename: '$safe.pdf');
+    await shareBytesFromDevice(bytes, '$safe.pdf');
+  }
+
+  /// Hand the finished file to the platform's own print dialog.
+  static Future<bool> print(Invoice invoice, {String? lodgeName}) =>
+      Printing.layoutPdf(
+        onLayout: (format) => build(invoice, lodgeName: lodgeName),
+        name: '${invoice.invoiceNumber ?? invoice.id}.pdf',
+      );
+
+  /// Save the file to the device itself — a real download, distinct from
+  /// [share] and [print]. Returns where it landed.
+  static Future<String> download(Invoice invoice, {String? lodgeName}) async {
+    final bytes = await build(invoice, lodgeName: lodgeName);
+    final safe = (invoice.invoiceNumber ?? '${invoice.id}').replaceAll(
+      RegExp(r'[\\/]'),
+      '-',
+    );
+    return saveBytesToDevice(bytes, '$safe.pdf');
   }
 
   static Future<Uint8List> build(

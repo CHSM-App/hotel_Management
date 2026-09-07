@@ -159,6 +159,10 @@ class NeuField extends StatelessWidget {
   final bool readOnly;
   final VoidCallback? onTap;
 
+  /// Marks the label with the same red asterisk the web form's own `<Req/>`
+  /// carries — the field the submit stops on if it is left empty.
+  final bool required;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -171,6 +175,7 @@ class NeuField extends StatelessWidget {
     this.onChanged,
     this.readOnly = false,
     this.onTap,
+    this.required = false,
   });
 
   @override
@@ -178,7 +183,23 @@ class NeuField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text.rich(
+          TextSpan(
+            text: label,
+            style: Theme.of(context).textTheme.bodySmall,
+            children: required
+                ? const [
+                    TextSpan(
+                      text: ' *',
+                      style: TextStyle(
+                        color: AppTheme.danger,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ]
+                : null,
+          ),
+        ),
         const SizedBox(height: AppTheme.s8),
         NeuPressed(
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
