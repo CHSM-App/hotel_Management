@@ -243,14 +243,46 @@ class ChartRoom {
 
   /// The stay covering this night, if any. [day] is a bare date — nights are
   /// compared as whole days, never as instants.
+  ///
+  /// The room a booking occupies is not always exactly `[checkInDate,
+  /// checkOutDate)` — the same two adjustments the web tape chart's own
+  /// occupancy map makes:
+  ///  - A guest still CHECKED_IN past their sold checkout date has not given
+  ///    the room back. It reads as occupied through tonight, not vacant from
+  ///    the date they were meant to leave, until an actual checkout happens.
+  ///  - A CHECKED_OUT stay holds no night from today on, even if it was sold
+  ///    further — someone who left early should not still tint nights they
+  ///    never used.
+  ///
+  /// Where two stays both technically claim a night — an old booking nobody
+  /// ever checked out stretched, by the rule above, across a gap a newer
+  /// booking now legitimately occupies — the later one in [stays] wins, the
+  /// same way the web tape chart's own occupancy map does: it writes one
+  /// booking per day into a map in server order, so whichever booking is
+  /// listed later simply overwrites the earlier one's claim on a shared
+  /// night. The last match here is that same overwrite, without building a
+  /// map of its own.
   TapeChartBooking? stayOn(DateTime day) {
+    final today = _today();
+    TapeChartBooking? found;
     for (final b in stays) {
       final inDate = DateTime.tryParse(b.checkInDate ?? '');
-      final outDate = DateTime.tryParse(b.checkOutDate ?? '');
+      var outDate = DateTime.tryParse(b.checkOutDate ?? '');
       if (inDate == null || outDate == null) continue;
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) return b;
+      if (b.status == 'CHECKED_IN' && !outDate.isAfter(today)) {
+        outDate = today.add(const Duration(days: 1));
+      }
+      if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
+        outDate = today;
+      }
+      if (!day.isBefore(inDate) && day.isBefore(outDate)) found = b;
     }
-    return null;
+    return found;
+  }
+
+  static DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
   }
 }
 
@@ -307,8 +339,18 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// than cached past its first load: a room added or retired on the setup
   /// screen, or a stay taken since, should show up without the desk needing
   /// to know to come back here.
-  Future<void> loadChart() async {
-    state = state.copyWith(chart: const AsyncValue.loading());
+  ///
+  /// [silent] keeps whatever is already drawn on screen while the fetch is
+  /// in flight instead of swapping the whole chart for a spinner — a window
+  /// grown from scrolling near an edge only adds a few more days to what is
+  /// already there, and tearing the whole tree down for that would unmount
+  /// every row's `ScrollController` mid-drag, snapping the chart back to its
+  /// start and making the scroll that asked for more nights look like it did
+  /// nothing at all.
+  Future<void> loadChart({bool silent = false}) async {
+    if (!silent || !state.chart.hasValue) {
+      state = state.copyWith(chart: const AsyncValue.loading());
+    }
     try {
       final data = await usecase.tapeChart(
         startDate: iso(state.chartFrom),
@@ -321,9 +363,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
   }
 
   /// Slide the chart to a different window and refetch.
-  Future<void> setChartRange(DateTime from, DateTime to) async {
+  Future<void> setChartRange(DateTime from, DateTime to, {bool silent = false}) async {
     state = state.copyWith(chartFrom: from, chartTo: to);
-    await loadChart();
+    await loadChart(silent: silent);
   }
 
   /// What the desk has typed into the chart's own search box. Resets the
@@ -364,6 +406,26 @@ class BookingViewModel extends StateNotifier<BookingState> {
     return setChartRange(
       state.chartFrom.subtract(Duration(days: grow)),
       state.chartTo,
+      silent: true,
+    );
+  }
+
+  /// Push the window's end further into the future, growing the span rather
+  /// than sliding it — the same way the web tape chart appends later nights
+  /// once scrolled hard against its right edge, so scrolling forward keeps
+  /// opening more nights the same way scrolling back does, rather than
+  /// stopping dead at whatever the window opened on. Kept the same nights
+  /// already on screen, and does nothing once the span has already grown to
+  /// [chartMaxSpanDays].
+  Future<void> growFuture() {
+    final span = state.chartTo.difference(state.chartFrom).inDays;
+    final remaining = chartMaxSpanDays - span;
+    if (remaining <= 0) return Future.value();
+    final grow = remaining < chartWindowDays ? remaining : chartWindowDays;
+    return setChartRange(
+      state.chartFrom,
+      state.chartTo.add(Duration(days: grow)),
+      silent: true,
     );
   }
 

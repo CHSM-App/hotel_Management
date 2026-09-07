@@ -28,9 +28,11 @@ class TapeChart extends ConsumerStatefulWidget {
 class _TapeChartState extends ConsumerState<TapeChart> {
   final _vScroll = ScrollController();
 
-  /// Guards against a single drag past the left edge firing [growPast] many
-  /// times over — one continuous overscroll emits a notification per frame.
+  /// Guards against a single drag past an edge firing [growPast] or
+  /// [growFuture] many times over — one continuous overscroll emits a
+  /// notification per frame.
   bool _growingPast = false;
+  bool _growingFuture = false;
 
   /// The date header and every category's grid all scroll horizontally
   /// together, but each room row is its own draggable surface — several
@@ -39,6 +41,11 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   /// drag onto every other row and the header instead of attaching them all
   /// to the same controller.
   final _hSync = _HorizontalSync();
+
+  /// The current tile width, kept from the last build's `LayoutBuilder` so
+  /// [_growPast]'s scroll compensation can convert prepended days into
+  /// pixels without a `LayoutBuilder` of its own.
+  double _tile = 40;
 
   /// One key per category band, so a chip tap can scroll straight to it — the
   /// same jump the web tape chart's own category chips do.
@@ -66,6 +73,39 @@ class _TapeChartState extends ConsumerState<TapeChart> {
     );
   }
 
+  static const _growWithinPx = 90.0;
+
+  void _handleNearEdge(ScrollMetrics metrics, bool towardEnd) {
+    if (towardEnd) {
+      if (_growingFuture) return;
+      _growingFuture = true;
+      ref
+          .read(bookingViewModelProvider.notifier)
+          .growFuture()
+          .whenComplete(() => _growingFuture = false);
+      return;
+    }
+    if (_growingPast) return;
+    _growingPast = true;
+    final beforeFrom = ref.read(bookingViewModelProvider).chartFrom;
+    ref
+        .read(bookingViewModelProvider.notifier)
+        .growPast()
+        .whenComplete(() => _growingPast = false);
+    // The chart's own `chartFrom` moves synchronously, ahead of the network
+    // fetch it kicks off — so by the next frame the header and every row
+    // already carry the earlier nights. Nudging the scroll offset there,
+    // rather than after the fetch resolves, keeps the nights the desk was
+    // already looking at in place instead of letting them jump to the newly
+    // opened start for the length of the fetch.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final afterFrom = ref.read(bookingViewModelProvider).chartFrom;
+      final addedDays = beforeFrom.difference(afterFrom).inDays;
+      if (addedDays > 0) _hSync.shiftAllBy(addedDays * _tile);
+    });
+  }
+
   @override
   void dispose() {
     _vScroll.dispose();
@@ -87,12 +127,12 @@ class _TapeChartState extends ConsumerState<TapeChart> {
         final tile = wide ? 56.0 : 40.0;
         final roomCol = wide ? 96.0 : 72.0;
         final rowHeight = wide ? 52.0 : 44.0;
+        _tile = tile;
 
         return Column(
           children: [
             _ChartHeader(
               from: state.chartFrom,
-              to: state.chartTo,
               onPrev: () => vm.shiftChart(-1),
               onNext: () => vm.shiftChart(1),
             ),
@@ -152,27 +192,32 @@ class _TapeChartState extends ConsumerState<TapeChart> {
     // grid below it, via the shared controller — scrolling one moves them
     // all together, the way a single strip would, without actually being one.
     //
-    // Pulling any room row past its own left edge (a negative, horizontal
-    // overscroll) reaches all the way up here as a bubbled notification,
-    // regardless of which row's own ScrollController it came from — the same
-    // way the web tape chart prepends earlier nights once scrolled hard
-    // against its own start, for a stay entered against a night further back
-    // than the window opened on.
-    return NotificationListener<OverscrollNotification>(
+    // Whichever row's own `SingleChildScrollView` is actually being dragged
+    // bubbles its scroll notifications up through here regardless — Flutter
+    // notifications always climb to the nearest listener above them in the
+    // tree, so this one `NotificationListener` sees every row's movement
+    // without needing a controller of its own. [_handleNearEdge] fires the
+    // moment any of them reads within a tile or so of an edge, the same way
+    // the web tape chart's own onScroll grows the window before the desk
+    // has scrolled all the way into the wall — waiting for an actual
+    // overscroll never fires at all on a chart wide enough to fill the
+    // screen with room to spare, and looks like scrolling has simply
+    // stopped instead of continuing to open more nights.
+    return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification.metrics.axis == Axis.horizontal &&
-            notification.overscroll < 0 &&
-            !_growingPast) {
-          _growingPast = true;
-          ref
-              .read(bookingViewModelProvider.notifier)
-              .growPast()
-              .whenComplete(() => _growingPast = false);
+        final metrics = notification.metrics;
+        if (metrics.axis != Axis.horizontal || metrics.maxScrollExtent <= 0) {
+          return false;
+        }
+        if (metrics.extentAfter < _growWithinPx) {
+          _handleNearEdge(metrics, true);
+        } else if (metrics.extentBefore < _growWithinPx) {
+          _handleNearEdge(metrics, false);
         }
         return false;
       },
       child: Column(
-        children: [
+      children: [
         Container(
           decoration: BoxDecoration(
             color: AppTheme.card,
@@ -281,13 +326,11 @@ class _TapeChartState extends ConsumerState<TapeChart> {
 /// question is "show me the next 30 days," repeatable either direction.
 class _ChartHeader extends StatelessWidget {
   final DateTime from;
-  final DateTime to;
   final VoidCallback onPrev;
   final VoidCallback onNext;
 
   const _ChartHeader({
     required this.from,
-    required this.to,
     required this.onPrev,
     required this.onNext,
   });
@@ -301,7 +344,17 @@ class _ChartHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final last = to.subtract(const Duration(days: 1));
+    // Always a fixed thirty-day page from `from`, the same way the web tape
+    // chart's own pill reads off its `month` anchor rather than the actual
+    // (possibly scroll-grown) end of the fetched window — `to` moves every
+    // time the desk drags near the far edge for more nights, and showing
+    // that here would make the date pill visibly crawl forward on its own
+    // mid-drag instead of only on a deliberate prev/next or a pull past the
+    // near edge, which is the one direction the web pill does follow (it
+    // opens on an earlier page, the same way prev does).
+    final last = from
+        .add(const Duration(days: BookingViewModel.chartWindowDays))
+        .subtract(const Duration(days: 1));
     final sameYear = from.year == last.year;
 
     return Row(
@@ -310,13 +363,14 @@ class _ChartHeader extends StatelessWidget {
           icon: Icons.chevron_left_rounded,
           onTap: onPrev,
           semanticLabel: 'Previous ${BookingViewModel.chartWindowDays} days',
+          size: 32,
         ),
         const SizedBox(width: AppTheme.s8),
         Expanded(
           child: Container(
             padding: const EdgeInsets.symmetric(
               horizontal: AppTheme.s12,
-              vertical: AppTheme.s12,
+              vertical: AppTheme.s8,
             ),
             decoration: BoxDecoration(
               color: AppTheme.card,
@@ -324,17 +378,20 @@ class _ChartHeader extends StatelessWidget {
               border: Border.all(color: AppTheme.border),
               boxShadow: AppTheme.subtle,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
               children: [
                 Text(
                   '${_label(from)} – ${_label(last)}',
                   style: const TextStyle(
                     color: AppTheme.heading,
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: 13,
                   ),
                 ),
+                const SizedBox(width: AppTheme.s4),
                 Text(
                   sameYear ? '${from.year}' : '${from.year} – ${last.year}',
                   style: const TextStyle(color: AppTheme.muted, fontSize: 11),
@@ -348,6 +405,7 @@ class _ChartHeader extends StatelessWidget {
           icon: Icons.chevron_right_rounded,
           onTap: onNext,
           semanticLabel: 'Next ${BookingViewModel.chartWindowDays} days',
+          size: 32,
         ),
       ],
     );
@@ -358,11 +416,13 @@ class _RoundIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final String? semanticLabel;
+  final double size;
 
   const _RoundIconButton({
     required this.icon,
     required this.onTap,
     this.semanticLabel,
+    this.size = 40,
   });
 
   @override
@@ -373,15 +433,15 @@ class _RoundIconButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 40,
-          height: 40,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             color: AppTheme.card,
             shape: BoxShape.circle,
             border: Border.all(color: AppTheme.border),
             boxShadow: AppTheme.subtle,
           ),
-          child: Icon(icon, size: 20, color: AppTheme.heading),
+          child: Icon(icon, size: size * 0.5, color: AppTheme.heading),
         ),
       ),
     );
@@ -655,6 +715,22 @@ class _HorizontalSync {
     _syncing = false;
   }
 
+  /// Nudge every strip's offset by [delta] without touching what is on
+  /// screen — used the moment more nights are prepended in front of what is
+  /// currently visible, the same way the web tape chart adds the width it
+  /// just prepended onto `scrollLeft` so the view does not leap back to the
+  /// very start on every pull past the left edge.
+  void shiftAllBy(double delta) {
+    if (delta == 0) return;
+    _syncing = true;
+    for (final c in _controllers) {
+      if (!c.hasClients) continue;
+      final target = (c.offset + delta).clamp(0.0, c.position.maxScrollExtent);
+      c.jumpTo(target);
+    }
+    _syncing = false;
+  }
+
   void dispose() {
     for (final c in _controllers) {
       c.dispose();
@@ -708,79 +784,166 @@ class _DateHeader extends StatelessWidget {
     required this.hSync,
   });
 
-  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _weekdayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  static const _months = [
+    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+    'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+  ];
+
+  bool _isWeekend(DateTime d) =>
+      d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    // One label per distinct month in the window, spanning exactly the
+    // dates that fall in it — the same banner the web tape chart draws over
+    // its own header row, so a page that crosses a month boundary shows both.
+    final monthSpans = <(String, int)>[];
+    for (final d in dates) {
+      final label = '${_months[d.month - 1]} ${d.year}';
+      if (monthSpans.isNotEmpty && monthSpans.last.$1 == label) {
+        monthSpans[monthSpans.length - 1] = (label, monthSpans.last.$2 + 1);
+      } else {
+        monthSpans.add((label, 1));
+      }
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: roomCol,
-          height: 44,
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.only(left: AppTheme.s12),
-          decoration: const BoxDecoration(
-            color: AppTheme.bg,
-            border: Border(right: BorderSide(color: AppTheme.border)),
-          ),
-          child: const Text(
-            'Room',
-            style: TextStyle(
-              color: AppTheme.muted,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Expanded(
-          child: _SyncedController(
-            sync: hSync,
-            builder: (context, controller) => SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              controller: controller,
-              // The header follows whichever row the desk actually dragged —
-              // it does not itself need to be draggable.
-              physics: const NeverScrollableScrollPhysics(),
-              child: Row(
-                children: [
-                  for (final d in dates)
-                    Container(
-                      width: tile,
-                      height: 44,
-                      color: _isSameDay(d, today)
-                          ? AppTheme.accent.withValues(alpha: 0.08)
-                          : (d.weekday == DateTime.saturday ||
-                                d.weekday == DateTime.sunday)
-                          ? AppTheme.muted.withValues(alpha: 0.06)
-                          : AppTheme.bg,
-                      alignment: Alignment.center,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            _weekdays[d.weekday - 1],
+        Row(
+          children: [
+            Container(width: roomCol, height: 26, color: AppTheme.bg),
+            Expanded(
+              child: _SyncedController(
+                sync: hSync,
+                builder: (context, controller) => SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  controller: controller,
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Row(
+                    children: [
+                      for (final span in monthSpans)
+                        Container(
+                          width: tile * span.$2,
+                          height: 26,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.bg,
+                            border: Border(
+                              bottom: BorderSide(color: AppTheme.border),
+                            ),
+                          ),
+                          child: Text(
+                            span.$1,
                             style: const TextStyle(
                               color: AppTheme.muted,
-                              fontSize: 9,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          Text(
-                            '${d.day}',
-                            style: TextStyle(
-                              color: _isSameDay(d, today)
-                                  ? AppTheme.accent
-                                  : AppTheme.heading,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
+        ),
+        Row(
+          children: [
+            Container(
+              width: roomCol,
+              height: 44,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: AppTheme.s12),
+              decoration: const BoxDecoration(
+                color: AppTheme.bg,
+                border: Border(right: BorderSide(color: AppTheme.border)),
+              ),
+              child: const Text(
+                'Room',
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Expanded(
+              child: _SyncedController(
+                sync: hSync,
+                builder: (context, controller) => SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  controller: controller,
+                  // The header follows whichever row the desk actually
+                  // dragged — it does not itself need to be draggable.
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Row(
+                    children: [
+                      for (final d in dates)
+                        Container(
+                          width: tile,
+                          height: 44,
+                          color: _isSameDay(d, today)
+                              ? AppTheme.accent.withValues(alpha: 0.08)
+                              : _isWeekend(d)
+                              ? AppTheme.muted.withValues(alpha: 0.06)
+                              : AppTheme.bg,
+                          alignment: Alignment.center,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                _weekdayLetters[d.weekday - 1],
+                                style: TextStyle(
+                                  color: _isWeekend(d)
+                                      ? AppTheme.draft
+                                      : AppTheme.muted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              _isSameDay(d, today)
+                                  ? Container(
+                                      width: 22,
+                                      height: 22,
+                                      alignment: Alignment.center,
+                                      decoration: const BoxDecoration(
+                                        color: AppTheme.accent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Text(
+                                        '${d.day}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    )
+                                  : Text(
+                                      '${d.day}',
+                                      style: TextStyle(
+                                        color: _isWeekend(d)
+                                            ? AppTheme.draft
+                                            : AppTheme.heading,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -880,6 +1043,51 @@ class _CategoryBand extends StatelessWidget {
             hitIds: hitIds,
             activeHitId: activeHitId,
           ),
+        // The web tape chart's own scroller is a plain `overflow-x: auto`
+        // div, so the browser draws its own thumb under it for free — there
+        // is nothing else marking a card as horizontally scrollable there.
+        // Flutter draws nothing on its own, so without this a card gave no
+        // sign it had more nights off to the side at all. A dedicated strip
+        // rather than a `Scrollbar` wrapped around a room row: the thumb
+        // would otherwise sit on top of that row's own tiles instead of in
+        // a lane of its own underneath them.
+        Padding(
+          padding: const EdgeInsets.only(
+            left: AppTheme.s4,
+            right: AppTheme.s4,
+            bottom: AppTheme.s4,
+          ),
+          child: SizedBox(
+            height: 14,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(width: roomCol),
+                Expanded(
+                  child: _SyncedController(
+                    sync: hSync,
+                    builder: (context, controller) => Scrollbar(
+                      controller: controller,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      thickness: 6,
+                      radius: const Radius.circular(3),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        controller: controller,
+                        // A track exactly `dates.length * tile` wide, the
+                        // same width every row's own strip already scrolls
+                        // — the scrollbar is what this exists to draw, not
+                        // content of its own.
+                        child: SizedBox(width: tile * dates.length),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -928,14 +1136,29 @@ class _RoomRow extends StatelessWidget {
             decoration: const BoxDecoration(
               border: Border(right: BorderSide(color: AppTheme.border)),
             ),
-            child: Text(
-              room.room.roomNumber,
-              style: const TextStyle(
-                color: AppTheme.heading,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  room.room.roomNumber,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if ((room.room.floor ?? '').isNotEmpty)
+                  Text(
+                    'Floor ${room.room.floor}',
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 10,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
             ),
           ),
           Expanded(
@@ -949,6 +1172,16 @@ class _RoomRow extends StatelessWidget {
                     for (final d in dates)
                       _Tile(
                         stay: room.stayOn(d),
+                        // A run of nights on the same stay draws as one
+                        // unbroken bar — rounded only where the bar itself
+                        // starts or ends, square everywhere it butts against
+                        // its own next or previous night — the same
+                        // continuous block the web tape chart draws, rather
+                        // than a row of separately rounded, gapped boxes.
+                        isRunStart: room.stayOn(d.subtract(const Duration(days: 1)))?.id !=
+                            room.stayOn(d)?.id,
+                        isRunEnd: room.stayOn(d.add(const Duration(days: 1)))?.id !=
+                            room.stayOn(d)?.id,
                         isToday: _isSameDay(d, today),
                         isPast: d.isBefore(today),
                         isWeekend: d.weekday == DateTime.saturday ||
@@ -979,6 +1212,8 @@ class _RoomRow extends StatelessWidget {
 
 class _Tile extends StatelessWidget {
   final TapeChartBooking? stay;
+  final bool isRunStart;
+  final bool isRunEnd;
   final bool isToday;
   final bool isPast;
   final bool isWeekend;
@@ -991,6 +1226,8 @@ class _Tile extends StatelessWidget {
 
   const _Tile({
     required this.stay,
+    required this.isRunStart,
+    required this.isRunEnd,
     required this.isToday,
     required this.isPast,
     required this.isWeekend,
@@ -1026,6 +1263,13 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = stay;
+    // A vacant night stands alone — each is its own small rounded box, the
+    // way the web tape chart draws an empty grid. A stay's own nights are
+    // never rounded or gapped except at the two ends of the run itself, so
+    // they read as one continuous bar the whole length of the booking
+    // rather than a row of separately boxed nights.
+    final roundLeft = s == null || isRunStart;
+    final roundRight = s == null || isRunEnd;
     // A vacant night in the past still opens a booking, exactly as the web
     // tape chart's own click does — a stay taken on paper over the weekend
     // has to be enterable against the nights it actually happened on. Past
@@ -1035,14 +1279,26 @@ class _Tile extends StatelessWidget {
       child: Container(
         width: size,
         height: height,
-        padding: const EdgeInsets.all(3),
+        padding: EdgeInsets.only(
+          top: 3,
+          bottom: 3,
+          left: roundLeft ? 3 : 0,
+          right: roundRight ? 3 : 0,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: _fill,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.horizontal(
+              left: roundLeft ? const Radius.circular(6) : Radius.zero,
+              right: roundRight ? const Radius.circular(6) : Radius.zero,
+            ),
             // A search hit rings violet — a colour nothing else on the chart
             // uses, the same way the web tape chart marks it — brighter and
-            // thicker on the one hit the stepper is actually on.
+            // thicker on the one hit the stepper is actually on. Today's own
+            // ring is skipped once a stay already fills the night: the fill
+            // colour already says the room is taken, and a ring drawn on
+            // just one night of a run would cut a notch into an otherwise
+            // unbroken bar.
             border: isActiveHit
                 ? Border.all(color: const Color(0xFF7C3AED), width: 2.2)
                 : isHit
@@ -1050,7 +1306,7 @@ class _Tile extends StatelessWidget {
                     color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
                     width: 1.6,
                   )
-                : isToday
+                : (isToday && s == null)
                 ? Border.all(color: AppTheme.accent, width: 1.4)
                 : null,
           ),
