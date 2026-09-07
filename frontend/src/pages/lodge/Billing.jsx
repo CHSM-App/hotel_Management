@@ -1261,13 +1261,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               {foodTabs.map((t) => (
                 <div className="chart-row billing-panel__queue-row" key={t.tab}>
                   <span className="chart-row__name">
-                    {t.tableLabel}
+                    {/* A takeaway carries a name — required at the counter to
+                        place it (see OrdersPanel) — so the row says who it is
+                        for rather than just which order. A table or room tab is
+                        more than one payer, or belongs to whoever is already
+                        checked into that room, so neither has one to show. */}
+                    {t.customerName ? `${t.tableLabel} — ${t.customerName}` : t.tableLabel}
                     <span className="chart-row__dates">
                       {/* "since" belongs to a tab that is still filling up. A
                           takeaway is one finished order, so it reads as the
                           time it was placed, not the start of a running total. */}
                       {t.tab.startsWith('counter-')
-                        ? `Placed ${timeOf(t.openedAt)}`
+                        ? [t.customerPhone, `Placed ${timeOf(t.openedAt)}`].filter(Boolean).join(' · ')
                         : `${t.orderCount} order${t.orderCount === 1 ? '' : 's'} · since ${timeOf(t.openedAt)}`}
                     </span>
                   </span>
@@ -1796,6 +1801,27 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         <StayDetails booking={detailStay} showOutstanding={false} />
                       )}
                     </details>
+                  </div>
+                )}
+
+                {/* Who a takeaway is for — required at the counter to place
+                    it, so it exists on every counter tab and never on a table
+                    or room one, which is more than one payer or belongs to
+                    whoever is already checked in. Shown once, above the items,
+                    rather than folded into the section title: the biller reads
+                    it to confirm the walk-in in front of them before the bill
+                    is cut, the same way the STAY section confirms the guest. */}
+                {billTarget.kind === 'FOOD' && preview.customerName && (
+                  <div className="form-section">
+                    <div className="chart-list">
+                      <div className="chart-row">
+                        <span className="chart-row__name">Customer</span>
+                        <span className="chart-row__value">
+                          {preview.customerName}
+                          {preview.customerPhone ? ` · ${preview.customerPhone}` : ''}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
 

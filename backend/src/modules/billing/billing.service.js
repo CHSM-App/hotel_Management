@@ -1025,8 +1025,14 @@ function mapInvoice(row) {
     venueName: row.venue_name ?? null,
     eventStartAt: row.event_start_at ?? null,
     eventEndAt: row.event_end_at ?? null,
-    guestName: row.guest_name,
-    guestPhone: row.guest_phone,
+    // guest_name/guest_phone come from COALESCE(b.guest_name, eb.organiser_name)
+    // in the query that produced this row — always null for a food bill, which
+    // has neither. customer_name/customer_phone are that bill's own columns,
+    // set at issue time for a counter takeaway (see issueFoodInvoice) and null
+    // for everything else, so preferring them here changes nothing for a stay
+    // or event bill and fills in the one case that had nothing before.
+    guestName: row.customer_name ?? row.guest_name,
+    guestPhone: row.customer_phone ?? row.guest_phone,
     numGuests: row.num_guests,
     roomNumber: row.room_number,
     categoryName: row.category_name,
@@ -1116,7 +1122,22 @@ function mapInvoice(row) {
 // The number and the date are the two things a preview genuinely doesn't have.
 // The series is allocated at issue time on purpose, so abandoned previews
 // don't burn invoice numbers out of a sequence that has to be gapless.
-function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutCharge, kind, tableLabel, discountReason = null }) {
+function buildPreviewDocument({
+  row,
+  side,
+  billingSide,
+  foodItems,
+  lateCheckoutCharge,
+  kind,
+  tableLabel,
+  discountReason = null,
+  // Only the food-bill call site passes these — `row` there is the lodge, not
+  // a booking or a function, so it has no guest of its own to read. Undefined
+  // everywhere else, which leaves row.guest_name (a stay) and the null the
+  // event branch already prints (an event's preview doesn't call this) alone.
+  guestName,
+  guestPhone,
+}) {
   const roomSubtotal = side.subtotal;
   return {
     kind,
@@ -1141,8 +1162,8 @@ function buildPreviewDocument({ row, side, billingSide, foodItems, lateCheckoutC
     checkinMode: row.checkin_mode ?? null,
     checkOutTime: toClockTime(row.check_out_time),
 
-    guestName: row.guest_name ?? null,
-    guestPhone: row.guest_phone ?? null,
+    guestName: guestName ?? row.guest_name ?? null,
+    guestPhone: guestPhone ?? row.guest_phone ?? null,
     numGuests: row.num_guests ?? null,
     roomNumber: row.room_number ?? null,
     categoryName: row.category_name ?? null,
@@ -1386,7 +1407,12 @@ async function listOpenFoodTabs(lodgeId) {
              CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
              MAX(o.order_number) AS order_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
-             MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at
+             MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at,
+             -- Single-valued and safe to group by: a counter tab is exactly one
+             -- order (see the comment above), so there is only ever one name
+             -- and phone behind it. Null for a table or room tab, both grouped
+             -- across possibly several orders with no one payer to name.
+             o.guest_name, o.guest_phone
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
@@ -1397,7 +1423,8 @@ async function listOpenFoodTabs(lodgeId) {
         -- to ride on: this queue is where it gets billed, and leaving it out
         -- would strand the charge with no way to collect it.
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
-               CASE WHEN o.source = 'COUNTER' THEN o.id END
+               CASE WHEN o.source = 'COUNTER' THEN o.id END,
+               o.guest_name, o.guest_phone
       ORDER BY MIN(o.placed_at) ASC
     `);
 
@@ -1407,6 +1434,8 @@ async function listOpenFoodTabs(lodgeId) {
     subtotal: Number(row.subtotal),
     openedAt: row.opened_at,
     lastDeliveredAt: row.last_delivered_at,
+    customerName: row.source === 'COUNTER' ? row.guest_name : null,
+    customerPhone: row.source === 'COUNTER' ? row.guest_phone : null,
   }));
 }
 
@@ -1495,7 +1524,8 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
 
   const result = await request.query(`
     SELECT o.id, o.order_number, o.subtotal, o.placed_at, o.source,
-           o.table_id, o.room_id, t.label AS table_label, r.room_number
+           o.table_id, o.room_id, t.label AS table_label, r.room_number,
+           o.guest_name, o.guest_phone
     FROM dbo.food_orders o
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
@@ -1510,6 +1540,11 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     subtotal: Number(row.subtotal),
     placedAt: row.placed_at,
     tableLabel: tabIdentity(row).tableLabel,
+    // Only a counter order carries these — a table or room order's guest_name
+    // is null (see the ck_food_orders_target check), because a table is more
+    // than one payer and a room's tab belongs to whoever is checked in there.
+    customerName: row.source === 'COUNTER' ? row.guest_name : null,
+    customerPhone: row.source === 'COUNTER' ? row.guest_phone : null,
   }));
 }
 
@@ -1580,6 +1615,11 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
   return {
     tab,
     tableLabel: orders[0].tableLabel,
+    // Every order on a tab carries the same customer fields (see
+    // loadUnbilledTabOrders — null for a table or room tab, the counter
+    // order's own guest for one of those), so the first is every one of them.
+    customerName: orders[0].customerName,
+    customerPhone: orders[0].customerPhone,
     orders,
     foodItems,
     isGstRegistered: !!lodge.is_gst_registered,
@@ -1598,6 +1638,11 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
       lateCheckoutCharge: 0,
       kind: 'FOOD',
       tableLabel: orders[0].tableLabel,
+      // A counter takeaway's own guest — null on a table or room tab (see
+      // loadUnbilledTabOrders), which leaves this preview showing the table or
+      // room exactly as before.
+      guestName: orders[0].customerName,
+      guestPhone: orders[0].customerPhone,
     }),
   };
 }
@@ -1682,6 +1727,11 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
       .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
       .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
       .input('createdBy', sql.BigInt, userId ?? null)
+      // Every order on this tab agrees (see loadUnbilledTabOrders), so the
+      // first one's is the tab's — null unless this is a counter takeaway,
+      // which is the one food tab with a single named customer behind it.
+      .input('customerName', sql.NVarChar, orders[0].customerName || null)
+      .input('customerPhone', sql.NVarChar, orders[0].customerPhone || null)
       .query(`
         INSERT INTO dbo.invoices
           (lodge_id, booking_id, table_id, room_id, document_type, billing_side, invoice_number,
@@ -1689,7 +1739,8 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
            food_subtotal, food_cgst_amount, food_sgst_amount,
            discount_amount, discount_percent,
            round_off, total_amount, advance_paid, balance_collected,
-           balance_payment_method, balance_reference, created_by)
+           balance_payment_method, balance_reference, created_by,
+           customer_name, customer_phone)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, NULL, @tableId, @roomId, @documentType, @billingSide, @invoiceNumber,
@@ -1697,7 +1748,8 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
            @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
            @discountAmount, @discountPercent,
            @roundOff, @totalAmount, 0, @balanceCollected,
-           @balancePaymentMethod, @balanceReference, @createdBy)
+           @balancePaymentMethod, @balanceReference, @createdBy,
+           @customerName, @customerPhone)
       `);
 
     const invoiceId = inserted.recordset[0].id;
@@ -1721,6 +1773,10 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
 
 module.exports = {
   readPaymentLines,
+  // Pure, and exported for the same reason tabIdentity is: a test can hand it
+  // a row shape without a database and check what the screens actually render.
+  mapInvoice,
+  buildPreviewDocument,
   // Shared with eventBilling.service.js: a function's bill is the same
   // document as a stay's, built by the same arithmetic.
   buildBreakdown,

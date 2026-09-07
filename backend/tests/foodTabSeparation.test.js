@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { tabIdentity, tabScope } = require('../src/modules/billing/billing.service');
+const { tabIdentity, tabScope, mapInvoice, buildPreviewDocument } = require('../src/modules/billing/billing.service');
 
 // An open food tab is one payer's running total, and there are three kinds: a
 // dining table, a room being served with nobody checked into it, and the
@@ -179,4 +179,215 @@ test('a non-numeric id never becomes a bound NaN', () => {
   const request = fakeRequest();
   assert.throws(() => tabScope(request, 'table-abc'));
   assert.deepStrictEqual(request.inputs, {});
+});
+
+// ---------------------------------------------------------------------------
+// A takeaway carries its own customer; a table or room does not
+// ---------------------------------------------------------------------------
+
+// loadUnbilledTabOrders and listOpenFoodTabs both derive customerName /
+// customerPhone the same way: read guest_name / guest_phone off the row, but
+// only report them for source === 'COUNTER'. This is that rule, checked
+// against the identity function both call — not the SQL itself, which needs a
+// database, but the same branch either query's mapping runs.
+function customerOf(r) {
+  return {
+    customerName: r.source === 'COUNTER' ? r.guest_name : null,
+    customerPhone: r.source === 'COUNTER' ? r.guest_phone : null,
+  };
+}
+
+test('a counter order reports the name and phone it was placed with', () => {
+  const c = customerOf(row({ order_id: 41, order_number: 7, guest_name: 'Anil Kumar', guest_phone: '9876500000' }));
+  assert.strictEqual(c.customerName, 'Anil Kumar');
+  assert.strictEqual(c.customerPhone, '9876500000');
+});
+
+// The regression this guards: a table is a party, not one payer, and a room's
+// tab belongs to whoever is checked in there — food_orders.guest_name is null
+// on both by the ck_food_orders_target constraint, but the mapping has to
+// agree and actually suppress it rather than print a stray value some other
+// order on the same tab happened to carry.
+test('a table or room order never reports a customer, even if the column carries one', () => {
+  const table = customerOf(row({ source: 'TABLE', table_id: 7, table_label: 'Table 4', guest_name: 'Should not appear' }));
+  const roomTab = customerOf(row({ source: 'ROOM', room_id: 12, room_number: '203', guest_name: 'Should not appear' }));
+  assert.strictEqual(table.customerName, null);
+  assert.strictEqual(table.customerPhone, null);
+  assert.strictEqual(roomTab.customerName, null);
+  assert.strictEqual(roomTab.customerPhone, null);
+});
+
+// ---------------------------------------------------------------------------
+// mapInvoice prints a takeaway's own customer, not a stay's or an event's
+// ---------------------------------------------------------------------------
+
+// The shape getInvoice/listInvoices hand to mapInvoice: SELECT i.* (which now
+// includes the invoice's own customer_name/customer_phone) plus the
+// COALESCE(b.guest_name, eb.organiser_name) columns the join adds. A minimal
+// invoice row good enough for mapInvoice to run without crashing on an
+// unrelated field.
+const invoiceRow = (over) => ({
+  id: 501,
+  booking_id: null,
+  event_booking_id: null,
+  table_label: null,
+  tab_room_number: null,
+  takeaway_order_number: null,
+  guest_name: null,
+  guest_phone: null,
+  customer_name: null,
+  customer_phone: null,
+  num_guests: null,
+  room_number: null,
+  category_name: null,
+  check_in_date: null,
+  check_out_date: null,
+  actual_check_in_at: null,
+  actual_check_out_at: null,
+  late_checkout_minutes: null,
+  nightly_breakdown: null,
+  document_type: 'CASH_RECEIPT',
+  billing_side: 'NON_GST',
+  invoice_number: 'CR/1',
+  room_subtotal: 0,
+  late_checkout_charge: 0,
+  cgst_amount: 0,
+  sgst_amount: 0,
+  food_subtotal: 0,
+  food_cgst_amount: 0,
+  food_sgst_amount: 0,
+  discount_amount: 0,
+  discount_percent: 0,
+  discount_reason: null,
+  round_off: 0,
+  ...over,
+});
+
+// The bug this closes: a takeaway's bill had a name and phone at the counter
+// (required to place the order — see orders.schema.js) and printed neither,
+// because guestName/guestPhone came only from COALESCE(b.guest_name,
+// eb.organiser_name) and a food bill has no b or eb.
+test('a counter takeaway bill shows the customer it was placed for', () => {
+  const invoice = mapInvoice(
+    invoiceRow({
+      takeaway_order_number: 7,
+      customer_name: 'Anil Kumar',
+      customer_phone: '9876500000',
+    })
+  );
+  assert.strictEqual(invoice.kind, 'FOOD');
+  assert.strictEqual(invoice.guestName, 'Anil Kumar');
+  assert.strictEqual(invoice.guestPhone, '9876500000');
+});
+
+// A table or room tab's invoice has no customer_name at all (issueFoodInvoice
+// only sets it for a counter order), and mapInvoice must not invent one from
+// some other coincidentally-null field.
+test('a table or room food bill has no customer, and none is invented', () => {
+  const invoice = mapInvoice(invoiceRow({ table_label: 'Table 4' }));
+  assert.strictEqual(invoice.kind, 'FOOD');
+  assert.strictEqual(invoice.guestName, null);
+  assert.strictEqual(invoice.guestPhone, null);
+});
+
+// A stay bill's guest still comes from the booking, unaffected by a column
+// that is always null on it.
+test('a stay bill still shows the booking guest, not a food customer field', () => {
+  const invoice = mapInvoice(
+    invoiceRow({
+      booking_id: 9,
+      guest_name: 'Priya Shah',
+      guest_phone: '9123456780',
+      room_number: '101',
+    })
+  );
+  assert.strictEqual(invoice.kind, 'STAY');
+  assert.strictEqual(invoice.guestName, 'Priya Shah');
+  assert.strictEqual(invoice.guestPhone, '9123456780');
+});
+
+// ---------------------------------------------------------------------------
+// The bill preview says who a takeaway is for, same as the issued document
+// ---------------------------------------------------------------------------
+
+// The exact bug reported against a real screen: the preview shown before a
+// bill is issued (BillDocument fed from previewFoodBill's `document`, built by
+// this function) named the takeaway "Takeaway #1" instead of the guest, even
+// though loadUnbilledTabOrders and the issued invoice both already had the
+// name. buildPreviewDocument's `row` is the lodge for a food bill — it has no
+// guest of its own — so guestName/guestPhone must come in as their own
+// parameters, not off row.guest_name the way a stay bill's does.
+//
+// A blank side, good enough to exercise the fields buildPreviewDocument reads
+// off it without reconstructing a real tax breakdown.
+const blankSide = {
+  documentType: 'CASH_RECEIPT',
+  subtotal: 0,
+  cgstAmount: 0,
+  sgstAmount: 0,
+  cgstRatePercent: 0,
+  sgstRatePercent: 0,
+  roomTaxable: 0,
+  foodSubtotal: 42.86,
+  foodCgstAmount: 1.07,
+  foodSgstAmount: 1.07,
+  foodCgstRatePercent: 2.5,
+  foodSgstRatePercent: 2.5,
+  foodTaxable: 40.72,
+  discountAmount: 0,
+  discountPercent: 0,
+  roundOff: 0,
+  totalAmount: 45,
+};
+const lodgeRow = { lodge_name: 'Hotel Renuka Palace', is_gst_registered: 0 };
+
+test('a takeaway bill preview shows the customer it was placed for', () => {
+  const doc = buildPreviewDocument({
+    row: lodgeRow,
+    side: blankSide,
+    billingSide: 'NON_GST',
+    foodItems: [],
+    lateCheckoutCharge: 0,
+    kind: 'FOOD',
+    tableLabel: 'Takeaway #1',
+    guestName: 'Anil Kumar',
+    guestPhone: '9876500000',
+  });
+  assert.strictEqual(doc.guestName, 'Anil Kumar');
+  assert.strictEqual(doc.guestPhone, '9876500000');
+});
+
+// A table or room preview passes no guestName/guestPhone at all (see
+// previewFoodBill), so the parameter is undefined rather than null — this
+// checks the fallback chain handles that, not just an explicit null.
+test('a table or room bill preview has no customer when none was passed', () => {
+  const doc = buildPreviewDocument({
+    row: lodgeRow,
+    side: blankSide,
+    billingSide: 'NON_GST',
+    foodItems: [],
+    lateCheckoutCharge: 0,
+    kind: 'FOOD',
+    tableLabel: 'Table 4',
+  });
+  assert.strictEqual(doc.guestName, null);
+  assert.strictEqual(doc.guestPhone, null);
+});
+
+// The stay-bill call site passes no guestName/guestPhone override either — it
+// relies on row.guest_name, same as before this change. This is the one that
+// would have broken if the override parameter shadowed row.guest_name instead
+// of falling back to it.
+test('a stay bill preview still reads the guest off the booking row', () => {
+  const doc = buildPreviewDocument({
+    row: { ...lodgeRow, guest_name: 'Priya Shah', guest_phone: '9123456780' },
+    side: blankSide,
+    billingSide: 'NON_GST',
+    foodItems: [],
+    lateCheckoutCharge: 0,
+    kind: 'STAY',
+    tableLabel: null,
+  });
+  assert.strictEqual(doc.guestName, 'Priya Shah');
+  assert.strictEqual(doc.guestPhone, '9123456780');
 });

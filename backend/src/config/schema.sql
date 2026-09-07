@@ -481,7 +481,11 @@ IF OBJECT_ID('dbo.invoices', 'U') IS NULL
 CREATE TABLE dbo.invoices (
     id                    BIGINT IDENTITY(1,1) PRIMARY KEY,
     lodge_id              BIGINT NOT NULL REFERENCES dbo.lodges(id),
-    booking_id            BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    -- NULL, not NOT NULL: a food bill (see food_orders below) has no booking
+    -- behind it at all, and issueFoodInvoice inserts this column NULL for one.
+    -- uq_invoices_booking_active is built to expect that (see its own comment,
+    -- just below), so it and this column have to agree.
+    booking_id            BIGINT NULL REFERENCES dbo.bookings(id),
     document_type         NVARCHAR(20) NOT NULL
         CONSTRAINT ck_invoices_document_type CHECK (document_type IN ('TAX_INVOICE', 'BILL_OF_SUPPLY', 'CASH_RECEIPT')),
     billing_side          NVARCHAR(10) NOT NULL
@@ -501,7 +505,15 @@ CREATE TABLE dbo.invoices (
     void_reason           NVARCHAR(200) NULL,
     voided_at             DATETIMEOFFSET NULL,
     created_by            BIGINT NULL REFERENCES dbo.users(id),
-    created_at            DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+    created_at            DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    -- Who a food-only bill was cut for, on a tab with no booking or function to
+    -- read a name off (migration 059). Set only when the tab being closed is a
+    -- counter takeaway — a table or room tab is more than one payer, or belongs
+    -- to whoever is already checked into that room, so neither has one name to
+    -- store here. Copied at issue time from food_orders.guest_name/guest_phone,
+    -- which a counter order already requires at placement.
+    customer_name         NVARCHAR(200) NULL,
+    customer_phone        NVARCHAR(20) NULL
 );
 
 -- One active invoice per booking. The `booking_id IS NOT NULL` half is not
