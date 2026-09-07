@@ -1,3 +1,4 @@
+import 'invoice.dart';
 import 'json.dart';
 
 /// A stay.
@@ -36,6 +37,45 @@ class Booking {
   /// own — null on most stays.
   final num? basePriceOverride;
 
+  // ── Only on the detail endpoint — everything the tape chart's own lean
+  // fetch leaves out, and everything the desk reads this whole page for.
+  final String? idProofType;
+  final String? idProofNumber;
+  final bool hasIdProofDocument;
+
+  /// When the guest actually walked in and actually left — separate from the
+  /// dates booked, which are what was sold, not what happened.
+  final String? actualCheckInAt;
+  final String? actualCheckOutAt;
+
+  final int? lateCheckoutMinutes;
+  final num lateCheckoutCharge;
+
+  final String? cancelReason;
+  final num? refundAmount;
+  final String? refundPaymentMethod;
+  final num? cancellationCharge;
+  final String? cancellationChargePaymentMethod;
+
+  final List<SwitchableCharge> switchableCharges;
+  final List<GuestInfo> guests;
+  final int childCount;
+  final List<Vehicle> vehicles;
+
+  /// What the room charge is made of — base rate, season, each extra, summed
+  /// across the nights each applied to, from the snapshot frozen at booking
+  /// time. Empty on a stay taken before the snapshot existed.
+  final List<RoomChargeLine> roomCharges;
+
+  /// The bill, once one has been issued — null on every stay still unbilled.
+  final Invoice? invoice;
+
+  /// A stay stays editable right up until its bill is issued — extend it,
+  /// move rooms, correct the party, fix a detail. Once this is true only the
+  /// server's own further guards (room and check-out date edits close once
+  /// checked out) narrow what is left.
+  final bool hasIssuedInvoice;
+
   const Booking({
     required this.id,
     this.roomId,
@@ -54,6 +94,25 @@ class Booking {
     this.advancePaymentLines,
     this.advanceReference,
     this.basePriceOverride,
+    this.idProofType,
+    this.idProofNumber,
+    this.hasIdProofDocument = false,
+    this.actualCheckInAt,
+    this.actualCheckOutAt,
+    this.lateCheckoutMinutes,
+    this.lateCheckoutCharge = 0,
+    this.cancelReason,
+    this.refundAmount,
+    this.refundPaymentMethod,
+    this.cancellationCharge,
+    this.cancellationChargePaymentMethod,
+    this.switchableCharges = const [],
+    this.guests = const [],
+    this.childCount = 0,
+    this.vehicles = const [],
+    this.roomCharges = const [],
+    this.invoice,
+    this.hasIssuedInvoice = false,
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
@@ -78,10 +137,63 @@ class Booking {
         .toList(),
     advanceReference: asStringOrNull(json['advanceReference']),
     basePriceOverride: asNumOrNull(json['basePriceOverride']),
+    idProofType: asStringOrNull(json['idProofType']),
+    idProofNumber: asStringOrNull(json['idProofNumber']),
+    hasIdProofDocument: asBool(json['hasIdProofDocument']),
+    actualCheckInAt: asStringOrNull(json['actualCheckInAt']),
+    actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
+    lateCheckoutMinutes: asIntOrNull(json['lateCheckoutMinutes']),
+    lateCheckoutCharge: asNum(json['lateCheckoutCharge']),
+    cancelReason: asStringOrNull(json['cancelReason']),
+    refundAmount: asNumOrNull(json['refundAmount']),
+    refundPaymentMethod: asStringOrNull(json['refundPaymentMethod']),
+    cancellationCharge: asNumOrNull(json['cancellationCharge']),
+    cancellationChargePaymentMethod: asStringOrNull(
+      json['cancellationChargePaymentMethod'],
+    ),
+    switchableCharges: (json['switchableCharges'] as List?)
+            ?.map((e) => SwitchableCharge.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    guests: (json['guests'] as List?)
+            ?.map((e) => GuestInfo.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    childCount: asInt(json['childCount']),
+    vehicles: (json['vehicles'] as List?)
+            ?.map((e) => Vehicle.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    roomCharges: (json['roomCharges'] as List?)
+            ?.map((e) => RoomChargeLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    invoice: json['invoice'] == null
+        ? null
+        : Invoice.fromJson(json['invoice'] as Map<String, dynamic>),
+    hasIssuedInvoice: asBool(json['hasIssuedInvoice']),
   );
 
-  /// What is still to collect, before the bill is cut.
+  /// What is still to collect, before the bill is cut — the room charge and
+  /// whatever was agreed for leaving late, less the advance. Deliberately
+  /// before tax and rounding: the bill works out GST per night against its
+  /// own slabs, so a figure worked out here would differ from the one the
+  /// guest is eventually handed.
+  num get outstandingBeforeTax =>
+      (totalPrice ?? 0) + lateCheckoutCharge - (advanceAmount ?? 0);
+
+  /// Kept for the places that still ask for a plain figure rather than the
+  /// pre-tax breakdown above.
   num get balanceDue => (totalPrice ?? 0) - (advanceAmount ?? 0);
+
+  /// Whether what was taken at booking already covers the whole stay — read
+  /// off the two figures rather than stored, since the server allows an
+  /// advance equal to the stay and once it is, "advance" is the wrong word
+  /// for it everywhere this reads.
+  bool get paidInFull =>
+      advanceAmount != null &&
+      totalPrice != null &&
+      (advanceAmount! * 100).round() >= (totalPrice! * 100).round();
 
   /// How the advance reads on screen. One method prints as its own name; a
   /// split names each with what arrived that way, because "CASH" alone against
@@ -92,6 +204,13 @@ class Booking {
     if (lines == null || lines.isEmpty) return advancePaymentMethod ?? '';
     if (lines.length == 1) return lines.first.method;
     return lines.map((l) => '${l.method} ₹${l.amount}').join(' · ');
+  }
+
+  int? get nights {
+    final a = DateTime.tryParse(checkInDate ?? '');
+    final b = DateTime.tryParse(checkOutDate ?? '');
+    if (a == null || b == null) return null;
+    return b.difference(a).inDays;
   }
 }
 
@@ -125,4 +244,96 @@ class PaymentLine {
     'amount': amount,
     if (reference != null && reference!.isNotEmpty) 'reference': reference,
   };
+}
+
+/// An extra switched on for this stay — AC, an extra bed, whatever the lodge
+/// sells beyond the room itself.
+class SwitchableCharge {
+  final int id;
+  final String name;
+  final num chargePerNight;
+  final num? agreedAmount;
+  final num quantity;
+
+  const SwitchableCharge({
+    required this.id,
+    required this.name,
+    required this.chargePerNight,
+    this.agreedAmount,
+    this.quantity = 1,
+  });
+
+  factory SwitchableCharge.fromJson(Map<String, dynamic> json) =>
+      SwitchableCharge(
+        id: asInt(json['id']),
+        name: json['name']?.toString() ?? '',
+        chargePerNight: asNum(json['chargePerNight']),
+        agreedAmount: asNumOrNull(json['agreedAmount']),
+        quantity: asNum(json['quantity'], fallback: 1),
+      );
+}
+
+/// A co-guest on the party, beyond the primary guest the booking is named
+/// for.
+class GuestInfo {
+  final int id;
+  final String name;
+  final String? phone;
+  final String? idProofType;
+  final String? idProofNumber;
+  final bool hasIdProofDocument;
+  final bool isChild;
+
+  const GuestInfo({
+    required this.id,
+    required this.name,
+    this.phone,
+    this.idProofType,
+    this.idProofNumber,
+    this.hasIdProofDocument = false,
+    this.isChild = false,
+  });
+
+  factory GuestInfo.fromJson(Map<String, dynamic> json) => GuestInfo(
+    id: asInt(json['id']),
+    name: json['name']?.toString() ?? '',
+    phone: asStringOrNull(json['phone']),
+    idProofType: asStringOrNull(json['idProofType']),
+    idProofNumber: asStringOrNull(json['idProofNumber']),
+    hasIdProofDocument: asBool(json['hasIdProofDocument']),
+    isChild: asBool(json['isChild']),
+  );
+}
+
+class Vehicle {
+  final String number;
+  final String? type;
+
+  const Vehicle({required this.number, this.type});
+
+  factory Vehicle.fromJson(Map<String, dynamic> json) => Vehicle(
+    number: json['number']?.toString() ?? '',
+    type: asStringOrNull(json['type']),
+  );
+}
+
+/// One line of what the room charge is made of — the base rate, a season
+/// uplift, one extra — summed across every night it applied to.
+class RoomChargeLine {
+  final String label;
+  final num amount;
+  final int nights;
+
+  const RoomChargeLine({
+    required this.label,
+    required this.amount,
+    required this.nights,
+  });
+
+  factory RoomChargeLine.fromJson(Map<String, dynamic> json) =>
+      RoomChargeLine(
+        label: json['label']?.toString() ?? '',
+        amount: asNum(json['amount']),
+        nights: asInt(json['nights']),
+      );
 }

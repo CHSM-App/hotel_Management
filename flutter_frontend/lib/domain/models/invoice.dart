@@ -438,3 +438,141 @@ const kDocumentLabels = <String, String>{
   'RECEIPT_VOUCHER': 'Receipt voucher',
   'ADVANCE_RECEIPT': 'Advance receipt',
 };
+
+/// Paper for money taken before the bill exists — a deposit on a
+/// reservation, or a top-up while the guest is in house. One booking can
+/// hold several, one per handover.
+class AdvanceReceipt {
+  final int id;
+  final String? receiptNumber;
+  final String? documentType;
+  final String? billingSide;
+  final num amountReceived;
+  final num cgstAmount;
+  final num sgstAmount;
+  final num cgstRatePercent;
+  final num sgstRatePercent;
+  final num stayTotal;
+  final num roundOff;
+  final num balanceDue;
+  final String? paymentMethod;
+  final String? paymentReference;
+  final List<PaymentLine> paymentLines;
+  final String? status;
+  final String? voidReason;
+  final String? createdAt;
+
+  // ── What the printed receipt names beyond the money ─────────────────────
+  final String? guestName;
+  final String? guestPhone;
+  final int? numGuests;
+  final String? roomNumber;
+  final String? categoryName;
+  final String? checkInDate;
+  final String? checkOutDate;
+
+  // ── The property, as it prints on the document ───────────────────────────
+  final String? gstin;
+  final bool isGstRegistered;
+  final String? lodgeName;
+  final String? lodgePhone;
+  final String? lodgeAddress;
+  final String? lodgeCity;
+  final String? lodgeState;
+
+  const AdvanceReceipt({
+    required this.id,
+    this.receiptNumber,
+    this.documentType,
+    this.billingSide,
+    this.amountReceived = 0,
+    this.cgstAmount = 0,
+    this.sgstAmount = 0,
+    this.cgstRatePercent = 0,
+    this.sgstRatePercent = 0,
+    this.stayTotal = 0,
+    this.roundOff = 0,
+    this.balanceDue = 0,
+    this.paymentMethod,
+    this.paymentReference,
+    this.paymentLines = const [],
+    this.status,
+    this.voidReason,
+    this.createdAt,
+    this.guestName,
+    this.guestPhone,
+    this.numGuests,
+    this.roomNumber,
+    this.categoryName,
+    this.checkInDate,
+    this.checkOutDate,
+    this.gstin,
+    this.isGstRegistered = false,
+    this.lodgeName,
+    this.lodgePhone,
+    this.lodgeAddress,
+    this.lodgeCity,
+    this.lodgeState,
+  });
+
+  factory AdvanceReceipt.fromJson(Map<String, dynamic> json) => AdvanceReceipt(
+    id: asInt(json['id']),
+    receiptNumber: asStringOrNull(json['receiptNumber']),
+    documentType: asStringOrNull(json['documentType']),
+    billingSide: asStringOrNull(json['billingSide']),
+    amountReceived: asNum(json['amountReceived']),
+    cgstAmount: asNum(json['cgstAmount']),
+    sgstAmount: asNum(json['sgstAmount']),
+    cgstRatePercent: asNum(json['cgstRatePercent']),
+    sgstRatePercent: asNum(json['sgstRatePercent']),
+    stayTotal: asNum(json['stayTotal']),
+    roundOff: asNum(json['roundOff']),
+    balanceDue: asNum(json['balanceDue']),
+    paymentMethod: asStringOrNull(json['paymentMethod']),
+    paymentReference: asStringOrNull(json['paymentReference']),
+    paymentLines:
+        (json['paymentLines'] as List?)
+            ?.map((e) => PaymentLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    status: asStringOrNull(json['status']),
+    voidReason: asStringOrNull(json['voidReason']),
+    createdAt: asStringOrNull(json['createdAt']),
+    guestName: asStringOrNull(json['guestName']),
+    guestPhone: asStringOrNull(json['guestPhone']),
+    numGuests: asIntOrNull(json['numGuests']),
+    roomNumber: asStringOrNull(json['roomNumber']),
+    categoryName: asStringOrNull(json['categoryName']),
+    checkInDate: asStringOrNull(json['checkInDate']),
+    checkOutDate: asStringOrNull(json['checkOutDate']),
+    gstin: asStringOrNull(json['gstin']),
+    isGstRegistered: asBool(json['isGstRegistered']),
+    lodgeName: asStringOrNull(json['lodgeName']),
+    lodgePhone: asStringOrNull(json['lodgePhone']),
+    lodgeAddress: asStringOrNull(json['lodgeAddress']),
+    lodgeCity: asStringOrNull(json['lodgeCity']),
+    lodgeState: asStringOrNull(json['lodgeState']),
+  );
+
+  bool get isVoid => status == 'VOID';
+
+  /// Whether this advance already covers the whole stay — read off the
+  /// figures rather than a flag, the same way the printed document decides
+  /// which closing line to print.
+  bool get paidInFull => balanceDue <= 0.005;
+
+  /// Every way this arrived, as a list — a receipt taken before split
+  /// payments existed, or paid a single way, still reads as one line built
+  /// from its own scalar columns, so there is one rendering path rather than
+  /// two.
+  List<PaymentLine> get tenders => paymentLines.isNotEmpty
+      ? paymentLines
+      : [
+          if (paymentMethod != null)
+            PaymentLine(
+              method: paymentMethod!,
+              amount: amountReceived,
+              reference: paymentReference,
+            ),
+        ];
+}

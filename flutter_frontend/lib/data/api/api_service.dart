@@ -150,6 +150,33 @@ class ApiService {
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
+  /// Rooms free for an edit — the same shape [availableRooms] answers, but
+  /// asked against this booking's own occupancy excluded, so the room it is
+  /// already in reads as free rather than conflicting with itself.
+  Future<AvailableRooms> availableRoomsForBooking(
+    int bookingId, {
+    required String checkOutDate,
+    String? checkInDate,
+  }) async {
+    final res = await _dio.get(
+      '/bookings/$bookingId/available-rooms',
+      queryParameters: {
+        'checkOutDate': checkOutDate,
+        if (checkInDate != null && checkInDate.isNotEmpty)
+          'checkInDate': checkInDate,
+      },
+    );
+    return AvailableRooms.fromJson(_map(res.data));
+  }
+
+  /// Correct a booking already on file — any of its fields, independently.
+  /// Multipart for the same reason [createBooking] is: an ID proof scan can
+  /// ride along with it.
+  Future<Booking> updateBooking(int id, FormData form) async {
+    final res = await _dio.patch('/bookings/$id', data: form);
+    return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
   /// How late the guest is, and what the policy says that is worth. Asked
   /// before every checkout — one that is on time answers isChargeable false
   /// and the desk is never detained.
@@ -167,12 +194,13 @@ class ApiService {
 
   /// Call off a reservation nobody came for.
   ///
-  /// No body: the handler takes the id and nothing else, and the UPDATE behind
-  /// it matches `status = 'BOOKED'` — a stay that has already been checked in
-  /// cannot be cancelled, only checked out. The server answers 409 in that
-  /// case rather than silently doing nothing.
-  Future<Booking> cancelBooking(int id) async {
-    final res = await _dio.patch('/bookings/$id/cancel');
+  /// The UPDATE behind it matches `status = 'BOOKED'` — a stay that has
+  /// already been checked in cannot be cancelled, only checked out. The
+  /// server answers 409 in that case rather than silently doing nothing.
+  /// [body] settles whatever advance was on file: a refund back to the
+  /// guest, or — on a stay that held none — a charge taken on the spot.
+  Future<Booking> cancelBooking(int id, [Map<String, dynamic>? body]) async {
+    final res = await _dio.patch('/bookings/$id/cancel', data: body);
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
@@ -244,6 +272,45 @@ class ApiService {
     final invoice = map['invoice'];
     return Invoice.fromJson(
       invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
+  /// Every advance receipt written against this stay, newest first.
+  Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) async {
+    final res = await _dio.get('/billing/bookings/$bookingId/advance-receipts');
+    return (_map(res.data)['receipts'] as List? ?? [])
+        .map((e) => AdvanceReceipt.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Write one — money handed over now, while the stay is still reserved or
+  /// in house. Burns a serial the same way an invoice does.
+  Future<AdvanceReceipt> issueAdvanceReceipt(
+    int bookingId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post(
+      '/billing/bookings/$bookingId/advance-receipt',
+      data: body,
+    );
+    final map = _map(res.data);
+    final receipt = map['receipt'];
+    return AdvanceReceipt.fromJson(
+      receipt is Map<String, dynamic> ? receipt : map,
+    );
+  }
+
+  /// Cancel a receipt that should not have been issued. Stays on file marked
+  /// void — a serial is never reused and a row is never deleted.
+  Future<AdvanceReceipt> voidAdvanceReceipt(int id, String reason) async {
+    final res = await _dio.post(
+      '/billing/advance-receipts/$id/void',
+      data: {'reason': reason},
+    );
+    final map = _map(res.data);
+    final receipt = map['receipt'];
+    return AdvanceReceipt.fromJson(
+      receipt is Map<String, dynamic> ? receipt : map,
     );
   }
 

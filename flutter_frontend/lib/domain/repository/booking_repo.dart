@@ -35,10 +35,23 @@ abstract class BookingRepository {
 
   Future<Booking> checkIn(int id, FormData form);
 
+  /// Rooms free for an edit — this booking's own occupancy excluded, so the
+  /// room it is already in reads as free rather than conflicting with
+  /// itself.
+  Future<List<Room>> availableRoomsForBooking(
+    int bookingId, {
+    required String checkOutDate,
+    String? checkInDate,
+  });
+
+  /// Correct a booking already on file.
+  Future<Booking> updateBooking(int id, FormData form);
+
   Future<LateCheckout> lateCheckout(int id);
 
   Future<Booking> checkOut(int id, Map<String, dynamic> body);
 
-  /// Call off a reservation. Only a BOOKED stay can be cancelled.
-  Future<Booking> cancel(int id);
+  /// Call off a reservation. Only a BOOKED stay can be cancelled. [body]
+  /// settles whatever advance was on file.
+  Future<Booking> cancel(int id, [Map<String, dynamic>? body]);
 }

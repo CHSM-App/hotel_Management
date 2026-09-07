@@ -43,6 +43,13 @@ class BookingState {
   final int chartHitIndex;
 
   // ── Taking a booking ─────────────────────────────────────────────────────
+
+  /// Non-null once this whole flow is correcting an existing booking rather
+  /// than taking a new one. Changes what [loadRooms] asks for — an edit's
+  /// own room stays free rather than reading as conflicting with itself —
+  /// and what [submit] eventually does with the answers.
+  final int? editBookingId;
+
   final DateTime? checkIn;
   final DateTime? checkOut;
   final AsyncValue<List<Room>>? rooms;
@@ -66,6 +73,13 @@ class BookingState {
   final bool quoting;
   final bool submitting;
 
+  /// The desk's own choice between the two pills, where the dates leave room
+  /// for one — null means nothing has been chosen and [bookingType] falls
+  /// back to what the dates say. Cleared on every date change: the web
+  /// form's own toggle re-derives from scratch each time the dates move
+  /// rather than carrying a stale choice onto a different stay.
+  final bool? bookingTypeOverride;
+
   BookingState({
     this.isLoading = false,
     this.error,
@@ -74,6 +88,7 @@ class BookingState {
     DateTime? chartTo,
     this.chartSearch = '',
     this.chartHitIndex = 0,
+    this.editBookingId,
     this.checkIn,
     this.checkOut,
     this.rooms,
@@ -84,6 +99,7 @@ class BookingState {
     this.quote,
     this.quoting = false,
     this.submitting = false,
+    this.bookingTypeOverride,
   }) : chartFrom = chartFrom ?? _today().subtract(const Duration(days: BookingViewModel.chartPastDays)),
        chartTo = chartTo ??
            _today()
@@ -104,6 +120,8 @@ class BookingState {
     DateTime? chartTo,
     String? chartSearch,
     int? chartHitIndex,
+    int? editBookingId,
+    bool clearEditBookingId = false,
     DateTime? checkIn,
     DateTime? checkOut,
     AsyncValue<List<Room>>? rooms,
@@ -116,6 +134,8 @@ class BookingState {
     bool clearQuote = false,
     bool? quoting,
     bool? submitting,
+    bool? bookingTypeOverride,
+    bool clearBookingTypeOverride = false,
   }) => BookingState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
@@ -124,6 +144,9 @@ class BookingState {
     chartTo: chartTo ?? this.chartTo,
     chartSearch: chartSearch ?? this.chartSearch,
     chartHitIndex: chartHitIndex ?? this.chartHitIndex,
+    editBookingId: clearEditBookingId
+        ? null
+        : (editBookingId ?? this.editBookingId),
     checkIn: checkIn ?? this.checkIn,
     checkOut: checkOut ?? this.checkOut,
     rooms: rooms ?? this.rooms,
@@ -134,6 +157,9 @@ class BookingState {
     quote: clearQuote ? null : (quote ?? this.quote),
     quoting: quoting ?? this.quoting,
     submitting: submitting ?? this.submitting,
+    bookingTypeOverride: clearBookingTypeOverride
+        ? null
+        : (bookingTypeOverride ?? this.bookingTypeOverride),
   );
 
   int get nights => (checkIn != null && checkOut != null)
@@ -154,13 +180,21 @@ class BookingState {
     return DateTime(start.year, start.month, start.day).isAfter(today);
   }
 
-  /// What kind of stay this is, decided by the date rather than asked.
+  /// What kind of stay this is.
   ///
-  /// A booking whose first night is tonight is somebody standing at the desk —
-  /// the web form flips to WALK_IN the moment the check-in date is today or
-  /// earlier, and a walk-in is checked in as soon as it is created. Only a
-  /// stay that starts on a later date is a reservation.
-  String get bookingType => isFutureCheckIn ? 'RESERVATION' : 'WALK_IN';
+  /// The dates decide the default the moment they are chosen — a stay whose
+  /// first night is tonight defaults to somebody standing at the desk, and one
+  /// starting later defaults to a reservation — but the desk can still flip
+  /// the pill between them the same way the web form's own toggle does,
+  /// except onto Walk-in for a future date: that one is never on offer,
+  /// because a walk-in is checked in the moment it is created.
+  String get bookingType {
+    if (isFutureCheckIn) return 'RESERVATION';
+    if (bookingTypeOverride != null) {
+      return bookingTypeOverride! ? 'WALK_IN' : 'RESERVATION';
+    }
+    return 'WALK_IN';
+  }
 
   bool get isWalkIn => bookingType == 'WALK_IN';
 
@@ -516,11 +550,37 @@ class BookingViewModel extends StateNotifier<BookingState> {
   ///
   /// Only offered on a stay still at BOOKED — the server refuses anything
   /// further along, and a guest already in the room leaves by checking out.
-  Future<Booking?> cancelBooking(int bookingId) async {
+  ///
+  /// [refundAmount]/[refundMethod] settle an advance that was on file — what
+  /// goes back to the guest; whatever is left of it is kept as the
+  /// cancellation charge automatically, by the server's own arithmetic, not
+  /// sent as a separate figure. [cancellationCharge]/[chargeMethod] are the
+  /// other shape of the same settlement, for a stay that held no advance to
+  /// refund and is instead charged a fee on the spot.
+  Future<Booking?> cancelBooking(
+    int bookingId, {
+    String? reason,
+    num? refundAmount,
+    String? refundMethod,
+    num? cancellationCharge,
+    String? chargeMethod,
+  }) async {
     if (state.submitting) return null;
     state = state.copyWith(submitting: true, clearError: true);
     try {
-      final booking = await usecase.cancel(bookingId);
+      final body = <String, dynamic>{
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        if (refundAmount != null) 'refundAmount': refundAmount,
+        if (refundAmount != null && refundAmount > 0 && refundMethod != null)
+          'refundPaymentMethod': refundMethod,
+        if (cancellationCharge != null) 'cancellationCharge': cancellationCharge,
+        if (cancellationCharge != null && chargeMethod != null)
+          'cancellationChargePaymentMethod': chargeMethod,
+      };
+      final booking = await usecase.cancel(
+        bookingId,
+        body.isEmpty ? null : body,
+      );
       state = state.copyWith(submitting: false);
       await loadChart();
       return booking;
@@ -555,18 +615,76 @@ class BookingViewModel extends StateNotifier<BookingState> {
       extras: const {},
       roomTotal: '',
       clearError: true,
+      clearBookingTypeOverride: true,
     );
     await loadRooms();
+  }
+
+  /// The desk overriding which pill applies — only meaningful where both are
+  /// on offer, so an attempt to force Walk-in onto a future check-in date
+  /// (never shown as a button, but reachable if the dates moved out from
+  /// under an already-open toggle) is simply ignored.
+  void setBookingType(String type) {
+    if (state.isFutureCheckIn) return;
+    state = state.copyWith(bookingTypeOverride: type == 'WALK_IN');
+  }
+
+  /// Open this whole flow onto a booking that already exists — the room, the
+  /// nights and the extras it was taken with, ready to change. Same state,
+  /// same fields [submit] already reads, because an edit is a booking whose
+  /// questions have been answered once already; the only real difference is
+  /// what happens at the end.
+  Future<void> startEdit(Booking booking) async {
+    final checkIn = DateTime.tryParse(booking.checkInDate ?? '');
+    final checkOut = DateTime.tryParse(booking.checkOutDate ?? '');
+    if (checkIn == null || checkOut == null) return;
+
+    final extras = <int, ExtraDraft>{
+      for (final c in booking.switchableCharges)
+        c.id: ExtraDraft(
+          quantity: c.quantity.round(),
+          agreedTotal: c.agreedAmount == null ? '' : '${c.agreedAmount}',
+        ),
+    };
+
+    state = state.copyWith(
+      editBookingId: booking.id,
+      checkIn: checkIn,
+      checkOut: checkOut,
+      clearRoom: true,
+      clearQuote: true,
+      extras: extras,
+      roomTotal: booking.basePriceOverride == null
+          ? ''
+          : '${booking.basePriceOverride}',
+      discount: booking.discountAmount == null || booking.discountAmount == 0
+          ? ''
+          : '${booking.discountAmount}',
+      clearError: true,
+    );
+    await loadRooms();
+    if (!state.isLoading) {
+      final rooms = state.rooms?.valueOrNull;
+      final match = rooms?.where((r) => r.id == booking.roomId).firstOrNull;
+      if (match != null) await selectRoom(match);
+    }
   }
 
   Future<void> loadRooms() async {
     if (!state.datesChosen) return;
     state = state.copyWith(rooms: const AsyncValue.loading());
     try {
-      final rooms = await usecase.availableRooms(
-        iso(state.checkIn!),
-        iso(state.checkOut!),
-      );
+      final editId = state.editBookingId;
+      final rooms = editId == null
+          ? await usecase.availableRooms(
+              iso(state.checkIn!),
+              iso(state.checkOut!),
+            )
+          : await usecase.availableRoomsForBooking(
+              editId,
+              checkOutDate: iso(state.checkOut!),
+              checkInDate: iso(state.checkIn!),
+            );
       state = state.copyWith(rooms: AsyncValue.data(rooms));
     } catch (e, st) {
       state = state.copyWith(
@@ -700,6 +818,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     String? idProofType,
     String? idProofNumber,
     List<GuestDraft> guests = const [],
+    List<VehicleDraft> vehicles = const [],
     List<PaymentDraft> advanceLines = const [],
   }) async {
     if (state.submitting) return null;
@@ -734,7 +853,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // The array parts of this multipart body ride as JSON strings, which is
         // how the controller parses them.
         'guests': _jsonList(guests.map((g) => g.toJson())),
-        'vehicles': '[]',
+        'vehicles': _jsonList(
+          vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
+        ),
         'switchableCharges': _extrasJson(),
         if (advance > 0) ...{
           'advanceAmount': '$advance',
@@ -773,6 +894,63 @@ class BookingViewModel extends StateNotifier<BookingState> {
       }
 
       state = state.copyWith(submitting: false);
+      return booking;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: messageFor(e));
+      return null;
+    }
+  }
+
+  /// Save the corrections against a booking already on file.
+  ///
+  /// Every field rides independently — omitted means "leave this alone",
+  /// which is why this sends only what an edit actually touches rather than
+  /// the whole shape [submit] always does: a save that only fixed a phone
+  /// number must not also silently clear the vehicles nobody was shown.
+  Future<Booking?> updateBooking({
+    required int bookingId,
+    required String guestName,
+    required String guestPhone,
+    required int numGuests,
+    String? idProofType,
+    String? idProofNumber,
+    List<GuestDraft> guests = const [],
+    List<VehicleDraft> vehicles = const [],
+  }) async {
+    if (state.submitting) return null;
+    final room = state.room;
+    if (room == null || !state.datesChosen) return null;
+
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final rate = perNight(state.roomTotal, state.nights);
+      final discount = wholeAmount(state.discount);
+
+      final form = FormData.fromMap({
+        'roomId': '${room.id}',
+        'checkInDate': iso(state.checkIn!),
+        'checkOutDate': iso(state.checkOut!),
+        'numGuests': '$numGuests',
+        'guestName': guestName.trim(),
+        'guestPhone': guestPhone.trim(),
+        // Set either way, never omitted — blank is how a concession already
+        // agreed gets taken back, and that has to reach the server as an
+        // explicit 0 rather than being read as "leave it alone".
+        'discountAmount': '${discount ?? 0}',
+        if (rate != null) 'basePriceOverride': '$rate',
+        if (idProofType != null) 'idProofType': idProofType,
+        if (idProofNumber != null && idProofNumber.trim().isNotEmpty)
+          'idProofNumber': idProofNumber.trim(),
+        'guests': _jsonList(guests.map((g) => g.toJson())),
+        'vehicles': _jsonList(
+          vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
+        ),
+        'switchableCharges': _extrasJson(),
+      });
+
+      final booking = await usecase.updateBooking(bookingId, form);
+      state = state.copyWith(submitting: false);
+      await loadChart();
       return booking;
     } catch (e) {
       state = state.copyWith(submitting: false, error: messageFor(e));

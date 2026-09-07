@@ -54,6 +54,21 @@ class BookingUsecase {
   Future<Booking> checkIn(int id, FormData form) =>
       repository.checkIn(id, form);
 
+  /// Rooms free for an edit of this booking.
+  Future<List<Room>> availableRoomsForBooking(
+    int bookingId, {
+    required String checkOutDate,
+    String? checkInDate,
+  }) => repository.availableRoomsForBooking(
+    bookingId,
+    checkOutDate: checkOutDate,
+    checkInDate: checkInDate,
+  );
+
+  /// Correct a booking already on file.
+  Future<Booking> updateBooking(int id, FormData form) =>
+      repository.updateBooking(id, form);
+
   /// How late the guest is, and what that is worth.
   Future<LateCheckout> lateCheckout(int id) => repository.lateCheckout(id);
 
@@ -64,5 +79,6 @@ class BookingUsecase {
 
   /// Call off a reservation. Only a stay still sitting at BOOKED can be
   /// cancelled; the server answers 409 for anything further along.
-  Future<Booking> cancel(int id) => repository.cancel(id);
+  Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
+      repository.cancel(id, body);
 }

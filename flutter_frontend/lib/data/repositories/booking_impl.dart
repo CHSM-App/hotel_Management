@@ -66,6 +66,23 @@ class BookingImpl implements BookingRepository {
   Future<Booking> checkIn(int id, FormData form) => api.checkIn(id, form);
 
   @override
+  Future<List<Room>> availableRoomsForBooking(
+    int bookingId, {
+    required String checkOutDate,
+    String? checkInDate,
+  }) => api
+      .availableRoomsForBooking(
+        bookingId,
+        checkOutDate: checkOutDate,
+        checkInDate: checkInDate,
+      )
+      .then((r) => r.rooms);
+
+  @override
+  Future<Booking> updateBooking(int id, FormData form) =>
+      api.updateBooking(id, form);
+
+  @override
   Future<LateCheckout> lateCheckout(int id) => api.lateCheckout(id);
 
   @override
@@ -73,5 +90,6 @@ class BookingImpl implements BookingRepository {
       api.checkOut(id, body);
 
   @override
-  Future<Booking> cancel(int id) => api.cancelBooking(id);
+  Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
+      api.cancelBooking(id, body);
 }

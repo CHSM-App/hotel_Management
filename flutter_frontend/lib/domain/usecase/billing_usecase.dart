@@ -23,4 +23,18 @@ class BillingUsecase {
   /// Cancel one that should not have been issued.
   Future<Invoice> voidInvoice(int id, String reason) =>
       repository.voidInvoice(id, reason);
+
+  /// Every advance receipt written against this stay.
+  Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) =>
+      repository.advanceReceipts(bookingId);
+
+  /// Write one.
+  Future<AdvanceReceipt> issueAdvanceReceipt(
+    int bookingId,
+    Map<String, dynamic> body,
+  ) => repository.issueAdvanceReceipt(bookingId, body);
+
+  /// Cancel one that should not have been issued.
+  Future<AdvanceReceipt> voidAdvanceReceipt(int id, String reason) =>
+      repository.voidAdvanceReceipt(id, reason);
 }

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:printing/printing.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/invoice.dart';
+import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../billing/bill_pdf.dart';
 import '../theme.dart';
+import 'advance_receipt_screen.dart';
+import 'booking_actions.dart';
+import 'take_booking_screen.dart';
 
 /// One stay, in full.
 ///
@@ -13,6 +20,11 @@ import '../theme.dart';
 /// The list endpoint returns a summary — it has no advancePaymentLines, so a
 /// deposit that arrived part cash and part UPI reads on the register as whatever
 /// the first tender was. This asks the detail endpoint, which carries the rest.
+///
+/// Laid out as the same five numbered sections the web tape chart's own stay
+/// panel reads in — stay & room, guest details, advance payment, vehicles,
+/// charges & discount — so a desk that already knows that screen finds
+/// everything in the place it expects it, down to which facts share a card.
 class BookingDetailScreen extends ConsumerStatefulWidget {
   final int bookingId;
 
@@ -27,6 +39,25 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   Booking? _booking;
   bool _loading = true;
   String? _error;
+  bool _busy = false;
+
+  /// Null while it hasn't loaded (or failed to) — the button shows no count
+  /// rather than "(0)" either way, the same way the web page's own button
+  /// prints nothing before its own fetch answers.
+  int? _receiptCount;
+
+  /// Run a check-in, check-out or cancel and reload this stay's own detail
+  /// on success — the same page the desk is already looking at, rather than
+  /// leaving it stale once the status it names has changed underneath it.
+  Future<void> _run(Future<bool> Function(BookingActions) action) async {
+    setState(() => _busy = true);
+    final changed = await action(BookingActions(context, ref));
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (changed) await _load();
+  }
+
+  Future<bool> _cancel(BookingActions actions) => actions.cancel(widget.bookingId);
 
   @override
   void initState() {
@@ -51,262 +82,892 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 'Could not open this stay.')
           : null;
     });
+
+    // A side note on the stay, so a failure here is swallowed rather than
+    // replacing the booking on screen with an error — the worst case is a
+    // button that shows no count.
+    ref
+        .read(billingUsecaseProvider)
+        .advanceReceipts(widget.bookingId)
+        .then((receipts) {
+          if (mounted) setState(() => _receiptCount = receipts.length);
+        })
+        .catchError((_) {});
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.bg,
-      appBar: AppBar(
-        backgroundColor: AppTheme.bg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: AppTheme.heading,
-        title: const Text('Stay'),
-      ),
-      body: SafeArea(child: _body()),
-    );
-  }
-
-  Widget _body() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
+  Future<void> _openAdvanceReceipts() async {
     final booking = _booking;
-    if (booking == null) {
-      return Padding(
-        padding: const EdgeInsets.all(AppTheme.s16),
-        child: NeuNotice(
-          icon: Icons.cloud_off_rounded,
-          message: _error ?? 'Could not open this stay.',
-          action: NeuButton(onPressed: _load, child: const Text('Try again')),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.all(AppTheme.s16),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          _GuestCard(booking: booking),
-          const SizedBox(height: AppTheme.s12),
-          _StayCard(booking: booking),
-          const SizedBox(height: AppTheme.s12),
-          _MoneyCard(booking: booking),
-        ],
-      ),
-    );
+    if (booking == null) return;
+    final changed = await openAdvanceReceiptScreen(context, booking);
+    if (changed == true) await _load();
   }
-}
 
-// ── Who ─────────────────────────────────────────────────────────────────────
-
-class _GuestCard extends StatelessWidget {
-  final Booking booking;
-
-  const _GuestCard({required this.booking});
+  Future<void> _openEdit() async {
+    final booking = _booking;
+    if (booking == null) return;
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => TakeBookingScreen(editBooking: booking)),
+    );
+    if (saved == true) await _load();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  booking.guestName ?? 'Guest',
-                  style: Theme.of(context).textTheme.headlineSmall,
+    final booking = _booking;
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : booking == null
+            ? Padding(
+                padding: const EdgeInsets.all(AppTheme.s16),
+                child: NeuNotice(
+                  icon: Icons.cloud_off_rounded,
+                  message: _error ?? 'Could not open this stay.',
+                  action: NeuButton(
+                    onPressed: _load,
+                    child: const Text('Try again'),
+                  ),
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _load,
+                color: AppTheme.accent,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s16,
+                    AppTheme.s12,
+                    AppTheme.s16,
+                    AppTheme.s32,
+                  ),
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  children: [
+                    _TopBar(booking: booking),
+                    const SizedBox(height: AppTheme.s16),
+                    _StayRoomSection(booking: booking),
+                    const SizedBox(height: AppTheme.s16),
+                    _GuestSection(booking: booking),
+                    const SizedBox(height: AppTheme.s16),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Side by side above a phone's own width, the way the
+                        // web panel pairs them — both are usually short, and
+                        // stacked they push the money section further down
+                        // than either earns.
+                        final wide = constraints.maxWidth >= 480;
+                        final advance = _AdvanceSection(booking: booking);
+                        final vehicles = _VehiclesSection(booking: booking);
+                        return wide
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: advance),
+                                  const SizedBox(width: AppTheme.s16),
+                                  Expanded(child: vehicles),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  advance,
+                                  const SizedBox(height: AppTheme.s16),
+                                  vehicles,
+                                ],
+                              );
+                      },
+                    ),
+                    const SizedBox(height: AppTheme.s16),
+                    _ChargesSection(booking: booking),
+                    if (booking.invoice != null) ...[
+                      const SizedBox(height: AppTheme.s16),
+                      _BillSection(invoice: booking.invoice!),
+                    ],
+                    if (booking.status == 'BOOKED' ||
+                        booking.status == 'CHECKED_IN') ...[
+                      const SizedBox(height: AppTheme.s24),
+                      _actions(booking),
+                    ],
+                  ],
                 ),
               ),
-              _StatusTag(status: booking.status),
-            ],
-          ),
-          if ((booking.guestPhone ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s8),
-            _Line(label: 'Phone', value: booking.guestPhone!),
-          ],
-          if (booking.numGuests != null)
-            _Line(
-              label: 'Party',
-              value: '${booking.numGuests} '
-                  '${booking.numGuests == 1 ? 'guest' : 'guests'}',
-            ),
-        ],
       ),
+    );
+  }
+
+  // The same order the web page's own footer row uses: cancelling first and
+  // set apart as a plain danger link rather than a peer of the others (it is
+  // the one irreversible move here), then advance receipt, then edit, then
+  // whichever status move — check in or check out — actually applies.
+  Widget _actions(Booking booking) {
+    final checkInOpen = BookingActions.checkInOpen(booking.checkInDate);
+    final reserved = booking.status == 'BOOKED';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (reserved) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: _busy ? null : () => _run(_cancel),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+              child: const Text('Cancel booking'),
+            ),
+          ),
+          const SizedBox(height: AppTheme.s8),
+        ],
+
+        // An advance can be taken while a stay is reserved or in house — the
+        // same window the web page's own button is offered in, gated one
+        // level up by [_load]'s BOOKED-or-CHECKED_IN condition.
+        NeuButton(
+          expand: true,
+          onPressed: _openAdvanceReceipts,
+          child: Text(
+            _receiptCount != null && _receiptCount! > 0
+                ? 'Advance receipt ($_receiptCount)'
+                : 'Advance receipt',
+          ),
+        ),
+
+        // A stay stays editable right up until its own bill is issued — the
+        // same window the web page's own "Edit booking" button is offered
+        // in. Only offered on a stay that has not been billed: once it has,
+        // there is no stay left to move or extend, only the register entry
+        // for it.
+        if (!booking.hasIssuedInvoice) ...[
+          const SizedBox(height: AppTheme.s12),
+          NeuButton(
+            expand: true,
+            onPressed: _openEdit,
+            child: const Text('Edit booking'),
+          ),
+        ],
+
+        const SizedBox(height: AppTheme.s12),
+        if (reserved) ...[
+          if (checkInOpen)
+            NeuButton(
+              primary: true,
+              expand: true,
+              onPressed: _busy
+                  ? null
+                  : () => _run(
+                      (a) => a.checkIn(
+                        widget.bookingId,
+                        guestName: booking.guestName,
+                      ),
+                    ),
+              child: const Text('Check in'),
+            )
+          else
+            Text(
+              'Check-in opens ${formatIsoDate(booking.checkInDate)}.',
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+        ] else
+          NeuButton(
+            expand: true,
+            onPressed: _busy
+                ? null
+                : () => _run((a) => a.checkOut(widget.bookingId, booking: booking)),
+            child: const Text('Check out'),
+          ),
+      ],
     );
   }
 }
 
-// ── Which nights, which room ────────────────────────────────────────────────
+// ── The top bar: who, their status, and the way out ─────────────────────────
 
-class _StayCard extends StatelessWidget {
+class _TopBar extends StatelessWidget {
   final Booking booking;
 
-  const _StayCard({required this.booking});
+  const _TopBar({required this.booking});
 
   @override
   Widget build(BuildContext context) {
-    final nights = _nights;
+    final checkedIn = booking.status == 'CHECKED_IN';
 
-    return NeuCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Stay', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppTheme.s12),
-          _Line(
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            (booking.guestName ?? '').trim().isEmpty
+                ? 'Guest'
+                : booking.guestName!,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: checkedIn
+                ? const Color(0xFFE3F6E9)
+                : AppTheme.border.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            BookingActions.statusLabel(booking.status),
+            style: TextStyle(
+              color: checkedIn ? const Color(0xFF1E824C) : AppTheme.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        InkResponse(
+          onTap: () => Navigator.of(context).pop(),
+          radius: 20,
+          child: const Padding(
+            padding: EdgeInsets.all(4),
+            child: Icon(Icons.close_rounded, color: AppTheme.muted, size: 22),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── 1 · Stay & room ──────────────────────────────────────────────────────────
+
+class _StayRoomSection extends StatelessWidget {
+  final Booking booking;
+
+  const _StayRoomSection({required this.booking});
+
+  @override
+  Widget build(BuildContext context) {
+    final nights = booking.nights;
+    final lateBy = _formatLateBy(booking.lateCheckoutMinutes);
+
+    return _Section(
+      number: 1,
+      title: 'Stay & room',
+      child: _FactBox(
+        facts: [
+          _Fact(
             label: 'Room',
             value: 'Room ${booking.roomNumber ?? '—'}'
                 '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}',
           ),
-          _Line(label: 'Arrives', value: formatIsoDate(booking.checkInDate)),
-          _Line(label: 'Leaves', value: formatIsoDate(booking.checkOutDate)),
-          if (nights != null) _Line(label: 'Nights', value: nightsLabel(nights)),
-          if (booking.basePriceOverride != null)
-            _Line(
-              label: 'Agreed rate',
-              // Flagged as agreed rather than shown as a plain figure: it is
-              // the one number on the stay that somebody chose by hand, and
-              // the reason the total does not match the category's own price.
-              value: '${formatPrice(booking.basePriceOverride)} a night',
+          _Fact(
+            label: 'Dates',
+            value: '${formatIsoDate(booking.checkInDate)} – '
+                '${formatIsoDate(booking.checkOutDate)}',
+            note: nights == null ? null : nightsLabel(nights),
+          ),
+          _Fact(
+            label: 'Came in',
+            value: booking.actualCheckInAt == null
+                ? 'Not arrived yet'
+                : formatDateTime(booking.actualCheckInAt!),
+          ),
+          _Fact(
+            label: 'Left',
+            value: booking.actualCheckOutAt != null
+                ? formatDateTime(booking.actualCheckOutAt!)
+                : booking.actualCheckInAt != null
+                ? 'Still staying'
+                : 'Not arrived yet',
+          ),
+          if (lateBy != null)
+            _Fact(
+              label: 'Left late by',
+              value: lateBy,
+              note: booking.lateCheckoutCharge > 0
+                  ? '${formatPrice(booking.lateCheckoutCharge)} agreed'
+                  : 'no charge taken',
+            ),
+          if (booking.switchableCharges.isNotEmpty)
+            _Fact(
+              label: 'Extras',
+              value: booking.switchableCharges
+                  .map((c) => c.quantity > 1
+                      ? '${c.name} ×${c.quantity.toStringAsFixed(0)}'
+                      : c.name)
+                  .join(' · '),
+              wide: true,
             ),
         ],
       ),
     );
   }
 
-  int? get _nights {
-    final a = DateTime.tryParse(booking.checkInDate ?? '');
-    final b = DateTime.tryParse(booking.checkOutDate ?? '');
-    if (a == null || b == null) return null;
-    return b.difference(a).inDays;
+  static String? _formatLateBy(int? minutes) {
+    if (minutes == null || minutes <= 0) return null;
+    if (minutes < 60) return '$minutes minutes';
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    return mins == 0 ? '$hours hours' : '${hours}h ${mins}m';
   }
 }
 
-// ── What it comes to ────────────────────────────────────────────────────────
+// ── 2 · Guest details ────────────────────────────────────────────────────────
 
-class _MoneyCard extends StatelessWidget {
+class _GuestSection extends StatelessWidget {
   final Booking booking;
 
-  const _MoneyCard({required this.booking});
+  const _GuestSection({required this.booking});
 
   @override
   Widget build(BuildContext context) {
-    final lines = booking.advancePaymentLines ?? const [];
+    final adults = (booking.numGuests ?? 1) - booking.childCount;
+    final split = booking.childCount == 0
+        ? '$adults ${adults == 1 ? 'adult' : 'adults'}'
+        : '$adults ${adults == 1 ? 'adult' : 'adults'} and '
+              '${booking.childCount} ${booking.childCount == 1 ? 'child' : 'children'}';
 
-    return NeuCard(
+    return _Section(
+      number: 2,
+      title: 'Guest details',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Money', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppTheme.s12),
-          _Line(label: 'Stay total', value: formatPrice(booking.totalPrice)),
-          if ((booking.discountAmount ?? 0) > 0)
-            _Line(
-              label: 'Concession',
-              value: '− ${formatPrice(booking.discountAmount)}',
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s12,
             ),
-          _Line(label: 'Advance', value: formatPrice(booking.advanceAmount)),
-
-          // Every tender, not just the first. This is the whole reason the
-          // detail endpoint is worth fetching: the register row can only ever
-          // name one method, and a split deposit shown as its first tender is
-          // something the guest who paid it can see is wrong.
-          if (lines.length > 1) ...[
-            const SizedBox(height: AppTheme.s8),
-            for (final line in lines)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Row(
-                  children: [
-                    const SizedBox(width: AppTheme.s12),
-                    Expanded(
-                      child: Text(
-                        line.reference == null || line.reference!.isEmpty
-                            ? line.method
-                            : '${line.method} · ${line.reference}',
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      formatPrice(line.amount),
-                      style: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  '${booking.numGuests ?? 1} '
+                  '${(booking.numGuests ?? 1) == 1 ? 'guest' : 'guests'}',
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-          ] else if (booking.advanceDescription.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: AppTheme.s12),
-              child: Text(
-                booking.advanceDescription,
-                style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-              ),
+                const SizedBox(width: AppTheme.s8),
+                Text(
+                  split,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(height: AppTheme.s8),
+          _PersonRow(
+            name: (booking.guestName ?? '').trim().isEmpty
+                ? 'Guest'
+                : booking.guestName!,
+            role: 'Primary guest',
+            meta: [
+              if ((booking.guestPhone ?? '').isNotEmpty) booking.guestPhone!,
+              if (booking.idProofType != null)
+                _idProofLabel(booking.idProofType!),
+            ].join(' · '),
+          ),
+          for (final g in booking.guests)
+            _PersonRow(
+              name: g.name,
+              role: g.isChild ? 'Child' : null,
+              meta: [
+                if ((g.phone ?? '').isNotEmpty) g.phone!,
+                if (g.idProofType != null) _idProofLabel(g.idProofType!),
+              ].join(' · '),
+            ),
+        ],
+      ),
+    );
+  }
 
-          const Divider(height: AppTheme.s24),
+  static String _idProofLabel(String type) {
+    if (type.isEmpty) return type;
+    final lower = type.substring(1).toLowerCase().replaceAll('_', ' ');
+    return '${type[0]}$lower';
+  }
+}
+
+class _PersonRow extends StatelessWidget {
+  final String name;
+  final String? role;
+  final String meta;
+
+  const _PersonRow({required this.name, this.role, required this.meta});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: AppTheme.s8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: AppTheme.s12,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  'Still to pay',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
               Text(
-                formatPrice(booking.balanceDue),
+                name,
                 style: const TextStyle(
                   color: AppTheme.heading,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              if (role != null) ...[
+                const SizedBox(width: AppTheme.s8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    role!.toUpperCase(),
+                    style: const TextStyle(
+                      color: AppTheme.accent,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
+          if (meta.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              meta,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-// ── Bits ────────────────────────────────────────────────────────────────────
+// ── 3 · Advance payment ──────────────────────────────────────────────────────
 
-class _Line extends StatelessWidget {
+class _AdvanceSection extends StatelessWidget {
+  final Booking booking;
+
+  const _AdvanceSection({required this.booking});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Section(
+      number: 3,
+      title: booking.paidInFull ? 'Payment' : 'Advance payment',
+      child: booking.advanceAmount == null
+          ? const _EmptyBox(message: 'No advance taken.')
+          : _FactBox(
+              facts: [
+                _Fact(
+                  label: booking.paidInFull ? 'Paid in full' : 'Taken',
+                  value: formatPrice(booking.advanceAmount),
+                  note: booking.advanceDescription,
+                  wide: true,
+                ),
+                if ((booking.advanceReference ?? '').isNotEmpty)
+                  _Fact(
+                    label: 'Transaction no.',
+                    value: booking.advanceReference!,
+                    wide: true,
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+// ── 4 · Vehicles ─────────────────────────────────────────────────────────────
+
+class _VehiclesSection extends StatelessWidget {
+  final Booking booking;
+
+  const _VehiclesSection({required this.booking});
+
+  static const _typeLabel = {
+    'TWO_WHEELER': 'Two wheeler',
+    'FOUR_WHEELER': 'Four wheeler',
+    'TRAVELLER': 'Traveller',
+    'BUS': 'Bus',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return _Section(
+      number: 4,
+      title: 'Vehicles',
+      child: booking.vehicles.isEmpty
+          ? const _EmptyBox(message: 'None on file.')
+          : Column(
+              children: [
+                for (final v in booking.vehicles)
+                  _PersonRow(
+                    name: v.number,
+                    meta: v.type != null
+                        ? (_typeLabel[v.type] ?? v.type!)
+                        : 'Type not recorded',
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+// ── 5 · Charges & discount ───────────────────────────────────────────────────
+
+class _ChargesSection extends StatelessWidget {
+  final Booking booking;
+
+  const _ChargesSection({required this.booking});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Section(
+      number: 5,
+      title: 'Charges & discount',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppTheme.s16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final line in booking.roomCharges)
+              _MoneyLine(
+                label: line.nights > 1 && line.amount > 0
+                    ? '${line.label}  ×${line.nights} nights'
+                    : line.label,
+                value: formatPrice(line.amount),
+              ),
+            const Divider(height: AppTheme.s16),
+            _MoneyLine(
+              label: 'Room charge for '
+                  '${(booking.nights ?? 0) == 1 ? 'the night' : 'all nights'}',
+              value: formatPrice(booking.totalPrice),
+              strong: true,
+            ),
+            if (booking.lateCheckoutCharge > 0)
+              _MoneyLine(
+                label: 'Agreed for leaving late',
+                value: formatPrice(booking.lateCheckoutCharge),
+              ),
+            if (booking.advanceAmount != null)
+              _MoneyLine(
+                label: booking.paidInFull
+                    ? 'Paid in full at booking'
+                    : 'Advance already paid',
+                note: booking.advanceDescription,
+                value: '− ${formatPrice(booking.advanceAmount)}',
+              ),
+            const Divider(height: AppTheme.s16),
+            _MoneyLine(
+              label: 'Still to collect',
+              value: formatPrice(booking.outstandingBeforeTax),
+              strong: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── The bill, once one has been issued ──────────────────────────────────────
+
+/// A summary of the printed document first — invoice number, the tax it
+/// carries, what was collected — then the document itself, drawn the way
+/// the printed pad draws it, the same way the web tape chart's own stay
+/// panel shows the bill under `Bill <number>`. "Extras are locked" once a
+/// bill exists, the same rule that gates the edit button above it.
+class _BillSection extends StatefulWidget {
+  final Invoice invoice;
+
+  const _BillSection({required this.invoice});
+
+  @override
+  State<_BillSection> createState() => _BillSectionState();
+}
+
+class _BillSectionState extends State<_BillSection> {
+  bool _pdfBusy = false;
+  String? _pdfError;
+
+  Invoice get _invoice => widget.invoice;
+
+  /// What is left once the advance and whatever was taken at checkout are
+  /// both off the total — 0 on a bill fully settled at the desk, negative on
+  /// one that took a refund.
+  num get _net =>
+      _invoice.totalAmount - _invoice.advancePaid - _invoice.balanceCollected;
+
+  Future<void> _runPdfAction(Future<void> Function() action) async {
+    setState(() {
+      _pdfBusy = true;
+      _pdfError = null;
+    });
+    try {
+      await action();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _pdfError = 'Could not prepare the bill PDF.');
+    } finally {
+      if (mounted) setState(() => _pdfBusy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final invoice = _invoice;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.receipt_long_rounded, color: AppTheme.accent, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
+              '${invoice.invoiceNumber ?? ''}',
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (invoice.isVoid) ...[
+              const SizedBox(width: AppTheme.s8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'VOID',
+                  style: TextStyle(
+                    color: AppTheme.danger,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: AppTheme.s8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppTheme.s16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (invoice.discountAmount > 0)
+                _MoneyLine(
+                  label: 'Discount',
+                  value: '− ${formatPrice(invoice.discountAmount)}',
+                ),
+              if (invoice.cgstAmount > 0)
+                _MoneyLine(
+                  label: 'CGST (${invoice.cgstRatePercent}%)',
+                  value: formatPrice(invoice.cgstAmount),
+                  note: 'included in total',
+                ),
+              if (invoice.sgstAmount > 0)
+                _MoneyLine(
+                  label: 'SGST (${invoice.sgstRatePercent}%)',
+                  value: formatPrice(invoice.sgstAmount),
+                  note: 'included in total',
+                ),
+              const Divider(height: AppTheme.s16),
+              _MoneyLine(
+                label: 'Grand total',
+                value: formatPrice(invoice.totalAmount),
+                strong: true,
+              ),
+              if (invoice.advancePaid > 0)
+                _MoneyLine(
+                  label: 'Advance already paid',
+                  value: '− ${formatPrice(invoice.advancePaid)}',
+                ),
+              if (invoice.balanceCollected > 0)
+                _MoneyLine(
+                  label: 'Collected at checkout',
+                  note: invoice.tenders.length > 1
+                      ? invoice.tenders.map((l) => l.method).join(' · ')
+                      : invoice.balancePaymentMethod,
+                  value: '− ${formatPrice(invoice.balanceCollected)}',
+                ),
+              const Divider(height: AppTheme.s16),
+              _MoneyLine(
+                label: _net < 0 ? 'Net refund' : 'Net payment',
+                value: formatPrice(_net.abs()),
+                strong: true,
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: AppTheme.s12),
+        Container(
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: PdfPreview(
+            key: ValueKey(invoice.id),
+            build: (format) => BillPdf.build(invoice),
+            canChangePageFormat: false,
+            canChangeOrientation: false,
+            canDebug: false,
+            useActions: false,
+            pdfFileName: '${invoice.invoiceNumber ?? invoice.id}.pdf',
+          ),
+        ),
+
+        const SizedBox(height: AppTheme.s12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              tooltip: 'Print',
+              onPressed: _pdfBusy
+                  ? null
+                  : () => _runPdfAction(() => BillPdf.print(invoice)),
+              icon: const Icon(Icons.print_rounded),
+              color: AppTheme.text,
+            ),
+            IconButton(
+              tooltip: 'Download',
+              onPressed: _pdfBusy
+                  ? null
+                  : () => _runPdfAction(() async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final where = await BillPdf.download(invoice);
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Saved to $where'),
+                          backgroundColor: AppTheme.heading,
+                        ),
+                      );
+                    }),
+              icon: const Icon(Icons.download_rounded),
+              color: Colors.white,
+              style: IconButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Share',
+              onPressed: _pdfBusy
+                  ? null
+                  : () => _runPdfAction(() => BillPdf.share(invoice)),
+              icon: const Icon(Icons.share_rounded),
+              color: AppTheme.text,
+            ),
+          ],
+        ),
+        if (_pdfError != null)
+          Center(
+            child: Text(
+              _pdfError!,
+              style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+            ),
+          ),
+
+        const SizedBox(height: AppTheme.s8),
+        const Text(
+          'This stay has been billed — extras are locked.',
+          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+class _MoneyLine extends StatelessWidget {
   final String label;
+  final String? note;
   final String value;
+  final bool strong;
 
-  const _Line({required this.label, required this.value});
+  const _MoneyLine({
+    required this.label,
+    this.note,
+    required this.value,
+    this.strong = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 110,
-            child: Text(
-              label,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: strong ? 14 : 13,
+                  fontWeight: strong ? FontWeight.w700 : FontWeight.w400,
+                ),
+                children: [
+                  TextSpan(text: label),
+                  if (note != null && note!.isNotEmpty)
+                    TextSpan(
+                      text: '  · $note',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: AppTheme.text, fontSize: 13),
+          Text(
+            value,
+            style: TextStyle(
+              color: AppTheme.heading,
+              fontSize: strong ? 14 : 13,
+              fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
         ],
@@ -315,33 +976,160 @@ class _Line extends StatelessWidget {
   }
 }
 
-class _StatusTag extends StatelessWidget {
-  final String? status;
+// ── Shared shells ─────────────────────────────────────────────────────────
 
-  const _StatusTag({required this.status});
+/// A numbered header — the small purple badge and caps title every section
+/// on the web panel opens with — over whatever that section's own body is.
+class _Section extends StatelessWidget {
+  final int number;
+  final String title;
+  final Widget child;
+
+  const _Section({required this.number, required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final (label, colour) = switch (status) {
-      'CHECKED_IN' => ('Checked in', AppTheme.checkedIn),
-      'CHECKED_OUT' => ('Stayed', AppTheme.stayed),
-      'CANCELLED' => ('Cancelled', AppTheme.muted),
-      _ => ('Reserved', AppTheme.reserved),
-    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 20,
+              height: 20,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: AppTheme.accent,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$number',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Text(
+              title.toUpperCase(),
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s8),
+        child,
+      ],
+    );
+  }
+}
 
+/// The light grey rounded card a section's own facts sit in — label in small
+/// caps above a bold value, wrapped so a narrow phone stacks what a tablet
+/// lays out in a row.
+class _FactBox extends StatelessWidget {
+  final List<_Fact> facts;
+
+  const _FactBox({required this.facts});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.s16),
       decoration: BoxDecoration(
-        color: colour.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        spacing: AppTheme.s24,
+        runSpacing: AppTheme.s16,
+        children: [for (final f in facts) f],
+      ),
+    );
+  }
+}
+
+class _Fact extends StatelessWidget {
+  final String label;
+  final String value;
+  final String? note;
+
+  /// Takes the whole row rather than sharing it — a long value like a list
+  /// of extras would otherwise be squeezed into whatever width the wrap left
+  /// over.
+  final bool wide;
+
+  const _Fact({
+    required this.label,
+    required this.value,
+    this.note,
+    this.wide = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: wide ? double.infinity : 150,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (note != null && note!.isNotEmpty)
+            Text(
+              note!,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyBox extends StatelessWidget {
+  final String message;
+
+  const _EmptyBox({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: AppTheme.s16,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        label,
-        style: TextStyle(
-          color: colour,
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-        ),
+        message,
+        style: const TextStyle(color: AppTheme.muted, fontSize: 13),
       ),
     );
   }

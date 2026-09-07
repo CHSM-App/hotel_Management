@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/booking.dart';
+import '../../domain/models/invoice.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../billing/issue_bill_screen.dart';
 import '../theme.dart';
+import 'cancel_booking_sheet.dart';
 import 'check_in_sheet.dart';
 
 /// Check in, check out, or cancel a stay — the three moves the register and
@@ -43,11 +47,11 @@ class BookingActions {
       case 'CHECKED_IN':
         return 'Checked in';
       case 'CHECKED_OUT':
-        return 'Stayed';
+        return 'Checked out';
       case 'CANCELLED':
         return 'Cancelled';
       default:
-        return 'Reserved';
+        return 'Booked';
     }
   }
 
@@ -92,42 +96,30 @@ class BookingActions {
     return true;
   }
 
-  /// Call off a reservation, once reception has confirmed they mean it.
-  Future<bool> cancel(
-    int bookingId, {
-    required String? roomNumber,
-    required String? checkInDate,
-  }) async {
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text(
-          'Cancel this booking?',
-          style: TextStyle(color: AppTheme.heading),
-        ),
-        content: Text(
-          'Room ${roomNumber ?? '—'} goes back on sale for '
-          '${formatIsoDate(checkInDate)}. The stay stays on the '
-          'register, marked cancelled.',
-          style: const TextStyle(color: AppTheme.text, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep it'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancel booking'),
-          ),
-        ],
-      ),
-    );
-    if (sure != true || !context.mounted) return false;
-
+  /// Call off a reservation, once reception has settled whatever advance is
+  /// on file. Fetches the booking in full first, the same reason [checkIn]
+  /// does — the settlement sheet has to state a real advance and a real
+  /// stay total, and only the server's own figures for those can be trusted.
+  Future<bool> cancel(int bookingId) async {
     final vm = ref.read(bookingViewModelProvider.notifier);
-    final done = await vm.cancelBooking(bookingId);
+    final full = await vm.loadBooking(bookingId);
+    if (!context.mounted) return false;
+    if (full == null) {
+      _say(ref.read(bookingViewModelProvider).error ?? 'Could not open this stay.');
+      return false;
+    }
+
+    final settlement = await showCancelBookingSheet(context, full);
+    if (settlement == null || !context.mounted) return false;
+
+    final done = await vm.cancelBooking(
+      bookingId,
+      reason: settlement.reason,
+      refundAmount: settlement.refundAmount,
+      refundMethod: settlement.refundMethod,
+      cancellationCharge: settlement.cancellationCharge,
+      chargeMethod: settlement.chargeMethod,
+    );
     if (!context.mounted) return false;
     if (done == null) {
       _say(ref.read(bookingViewModelProvider).error ?? 'Could not cancel.');
@@ -139,7 +131,13 @@ class BookingActions {
 
   /// Checking out, in the web's two steps: ask how late the guest is, then —
   /// only if that is chargeable — let reception settle what it is worth.
-  Future<bool> checkOut(int bookingId) async {
+  ///
+  /// On success this hands off to Billing directly, the way the web page's
+  /// own `onBillStay` does: the stay panel closes — there is nothing left on
+  /// it to look at, the stay is over — and the bill for it opens in its
+  /// place, already loaded, rather than leaving the desk to find it again in
+  /// the billing queue.
+  Future<bool> checkOut(int bookingId, {required Booking booking}) async {
     final vm = ref.read(bookingViewModelProvider.notifier);
 
     final late = await vm.askLateCheckout(bookingId);
@@ -162,8 +160,25 @@ class BookingActions {
       _say(ref.read(bookingViewModelProvider).error ?? 'Could not check out.');
       return false;
     }
-    _say('Checked out. The stay is now waiting in Billing.');
-    return true;
+
+    final navigator = Navigator.of(context);
+    await ref.read(billingViewModelProvider.notifier).open(
+      BillableStay(
+        id: bookingId,
+        guestName: done.guestName ?? booking.guestName,
+        guestPhone: done.guestPhone ?? booking.guestPhone,
+        roomNumber: done.roomNumber ?? booking.roomNumber,
+        categoryName: booking.categoryName,
+        checkInDate: done.checkInDate ?? booking.checkInDate,
+        checkOutDate: done.checkOutDate ?? booking.checkOutDate,
+        totalPrice: done.totalPrice ?? booking.totalPrice,
+        advanceAmount: done.advanceAmount ?? booking.advanceAmount,
+        actualCheckOutAt: done.actualCheckOutAt,
+      ),
+    );
+    navigator.pop();
+    navigator.push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
+    return false;
   }
 
   Future<num?> _askLateCharge(LateCheckout late) {

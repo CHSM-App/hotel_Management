@@ -4,10 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/tape_chart.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
-import '../../widgets/format.dart';
-import '../../widgets/neu.dart';
 import '../theme.dart';
-import 'booking_actions.dart';
 import 'booking_detail_screen.dart';
 import 'take_booking_screen.dart';
 
@@ -263,7 +260,7 @@ class _TapeChartState extends ConsumerState<TapeChart> {
                       roomCol: roomCol,
                       rowHeight: rowHeight,
                       hSync: _hSync,
-                      onTapStay: (b, room) => _openStaySheet(context, b, room),
+                      onTapStay: (b, room) => _openBookingDetail(context, b),
                       onTapVacant: (roomId, day) =>
                           _takeBooking(context, roomId: roomId, checkIn: day),
                       hitIds: hitIds,
@@ -281,21 +278,20 @@ class _TapeChartState extends ConsumerState<TapeChart> {
     );
   }
 
-  /// A quick-actions sheet over the chart itself — check in, check out or
-  /// cancel right where the stay was tapped, the way the web tape chart's own
-  /// hover card leads straight into the same actions.
-  Future<void> _openStaySheet(
+  /// Tapping a stay opens its full detail directly — the same one click the
+  /// web tape chart's own tile takes the desk to, rather than a quick-action
+  /// sheet that only leads there itself on a second tap. The detail screen
+  /// refreshes the chart itself once an action there actually changes
+  /// anything, so nothing further is needed here on the way back.
+  Future<void> _openBookingDetail(
     BuildContext context,
     TapeChartBooking booking,
-    ChartRoom room,
-  ) async {
-    final changed = await showDialog<bool>(
-      context: context,
-      builder: (_) => _StaySheet(booking: booking, room: room),
+  ) {
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => BookingDetailScreen(bookingId: booking.id),
+      ),
     );
-    if (changed == true) {
-      ref.read(bookingViewModelProvider.notifier).loadChart();
-    }
   }
 
   Future<void> _takeBooking(
@@ -1325,315 +1321,6 @@ class _Tile extends StatelessWidget {
               : null,
         ),
       ),
-    );
-  }
-}
-
-// ── The stay, tapped off the chart ──────────────────────────────────────────
-
-/// What a tapped tile opens: the stay's own numbers, and whichever of
-/// check-in, check-out or cancel applies to it right now — the same three
-/// moves the register's list view used to be the only way to reach.
-class _StaySheet extends ConsumerStatefulWidget {
-  final TapeChartBooking booking;
-  final ChartRoom room;
-
-  const _StaySheet({required this.booking, required this.room});
-
-  @override
-  ConsumerState<_StaySheet> createState() => _StaySheetState();
-}
-
-class _StaySheetState extends ConsumerState<_StaySheet> {
-  bool _busy = false;
-
-  Future<void> _run(Future<bool> Function(BookingActions) action) async {
-    setState(() => _busy = true);
-    final changed = await action(BookingActions(context, ref));
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (changed) Navigator.of(context).pop(true);
-  }
-
-  Future<bool> _cancel(BookingActions actions) => actions.cancel(
-    widget.booking.id,
-    roomNumber: widget.room.room.roomNumber,
-    checkInDate: widget.booking.checkInDate,
-  );
-
-  /// A stay's nights — the last night before checkout, not checkout itself,
-  /// the same count the web tooltip's own "N nights" line gives.
-  int _nights(TapeChartBooking booking) {
-    final inD = DateTime.tryParse(booking.checkInDate ?? '');
-    final outD = DateTime.tryParse(booking.checkOutDate ?? '');
-    if (inD == null || outD == null) return 0;
-    return outD.difference(inD).inDays;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final booking = widget.booking;
-    final room = widget.room.room;
-    final checkInOpen = BookingActions.checkInOpen(booking.checkInDate);
-    final nights = _nights(booking);
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.s16,
-        vertical: AppTheme.s24,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.circular(AppTheme.rLarge),
-            boxShadow: AppTheme.elevated,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // The stay's own identity card, styled exactly as the web tape
-              // chart's hover tooltip is: a deep violet-ink surface rather
-              // than a neutral dark, because this floats over a chart whose
-              // every other colour is either the brand violet or a status
-              // hue — a plain black card would read as a system popup rather
-              // than a surface belonging to this screen.
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  AppTheme.s16,
-                  AppTheme.s16,
-                  AppTheme.s12,
-                ),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(AppTheme.s16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1B1436),
-                    borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(right: 6),
-                            decoration: BoxDecoration(
-                              color: BookingActions.statusColor(booking.status),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          Text(
-                            BookingActions.statusLabel(booking.status)
-                                .toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.1,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        booking.guestName ?? 'Guest',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Room ${room.roomNumber} · ${room.categoryName}',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Container(
-                        margin: const EdgeInsets.only(top: 6),
-                        padding: const EdgeInsets.only(top: 6),
-                        decoration: const BoxDecoration(
-                          border: Border(
-                            top: BorderSide(color: Colors.white24),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              formatIsoDate(booking.checkInDate),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                            const Text(
-                              '  →  ',
-                              style: TextStyle(color: Colors.white54, fontSize: 12),
-                            ),
-                            Text(
-                              formatIsoDate(booking.checkOutDate),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${nightsLabel(nights)}'
-                        '${booking.guestPhone != null ? ' · ${booking.guestPhone}' : ''}',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  0,
-                  AppTheme.s16,
-                  AppTheme.s16,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-              // Advance and balance aren't on the chart's own lean fetch —
-              // only the total is. "View full details" below is where the
-              // rest of the money (and everything else the register knows)
-              // actually lives.
-              _Money(label: 'Total', value: booking.totalPrice),
-              const SizedBox(height: AppTheme.s16),
-              if (booking.status == 'BOOKED') ...[
-                if (checkInOpen)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: NeuButton(
-                          primary: true,
-                          expand: true,
-                          onPressed: _busy
-                              ? null
-                              : () => _run(
-                                  (a) => a.checkIn(
-                                    booking.id,
-                                    guestName: booking.guestName,
-                                  ),
-                                ),
-                          child: const Text('Check in'),
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.s8),
-                      Expanded(
-                        child: NeuButton(
-                          expand: true,
-                          onPressed: _busy ? null : () => _run(_cancel),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                    ],
-                  )
-                else ...[
-                  Text(
-                    'Check-in opens ${formatIsoDate(booking.checkInDate)}.',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                  ),
-                  const SizedBox(height: AppTheme.s8),
-                  NeuButton(
-                    expand: true,
-                    onPressed: _busy ? null : () => _run(_cancel),
-                    child: const Text('Cancel booking'),
-                  ),
-                ],
-              ] else if (booking.status == 'CHECKED_IN') ...[
-                NeuButton(
-                  expand: true,
-                  onPressed: _busy
-                      ? null
-                      : () => _run((a) => a.checkOut(booking.id)),
-                  child: const Text('Check out'),
-                ),
-              ],
-              const SizedBox(height: AppTheme.s8),
-              Center(
-                child: TextButton(
-                  onPressed: () async {
-                    final changed = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            BookingDetailScreen(bookingId: booking.id),
-                      ),
-                    );
-                    if (changed == true && context.mounted) {
-                      Navigator.of(context).pop(true);
-                    }
-                  },
-                  child: const Text('View full details'),
-                ),
-              ),
-                ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Money extends StatelessWidget {
-  final String label;
-  final num? value;
-  final String? note;
-  final bool strong;
-
-  const _Money({
-    required this.label,
-    required this.value,
-    this.note,
-    this.strong = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        Text(
-          formatPrice(value),
-          style: TextStyle(
-            color: strong ? AppTheme.heading : AppTheme.text,
-            fontSize: strong ? 16 : 14,
-            fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
-          ),
-        ),
-        if (note != null && note!.isNotEmpty)
-          Text(
-            note!,
-            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-          ),
-      ],
     );
   }
 }

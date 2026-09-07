@@ -67,6 +67,17 @@ class _FakeBookingRepository implements BookingRepository {
   Future<Booking> checkIn(int id, FormData form) => throw UnimplementedError();
 
   @override
+  Future<List<Room>> availableRoomsForBooking(
+    int bookingId, {
+    required String checkOutDate,
+    String? checkInDate,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<Booking> updateBooking(int id, FormData form) =>
+      throw UnimplementedError();
+
+  @override
   Future<LateCheckout> lateCheckout(int id) => throw UnimplementedError();
 
   @override
@@ -74,7 +85,8 @@ class _FakeBookingRepository implements BookingRepository {
       throw UnimplementedError();
 
   @override
-  Future<Booking> cancel(int id) => throw UnimplementedError();
+  Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
+      throw UnimplementedError();
 }
 
 /// A horizontally scrollable strip that a desk could actually drag: not the
