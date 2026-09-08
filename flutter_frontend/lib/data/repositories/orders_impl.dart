@@ -37,4 +37,8 @@ class OrdersImpl implements OrdersRepository {
 
   @override
   Future<List<DiningTable>> tables() => api.tables();
+
+  @override
+  Future<void> clearFoodPinLockout(String roomNumber) =>
+      api.clearFoodPinLockout(roomNumber);
 }

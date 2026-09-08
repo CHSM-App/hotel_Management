@@ -17,4 +17,8 @@ abstract class OrdersRepository {
   Future<List<MenuSection>> menu();
 
   Future<List<DiningTable>> tables();
+
+  /// Clear a room's food-PIN lockout so the guest can order again without
+  /// waiting out the timer.
+  Future<void> clearFoodPinLockout(String roomNumber);
 }

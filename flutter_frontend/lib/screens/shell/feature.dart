@@ -62,6 +62,18 @@ const kFeatures = <Feature>[
     permission: 'bookings.manage',
     capability: 'hasRooms',
   ),
+  // The web's own Guest register — every stay's booking details in one
+  // searchable, filterable list, with the same summary tiles that page opens
+  // on. Placed right beside Bookings, which only ever shows the phone's own
+  // take-a-booking flow and one stay at a time.
+  Feature(
+    key: 'register',
+    title: 'Booking Details',
+    tabLabel: 'Register',
+    icon: Icons.fact_check_outlined,
+    permission: 'bookings.manage',
+    capability: 'hasRooms',
+  ),
   Feature(
     key: 'billing',
     title: 'Billing & GST',
@@ -119,7 +131,7 @@ const kFeatures = <Feature>[
 
 /// How many sections get their own tab before the rest go behind "More".
 ///
-/// Four plus More. Five is the practical ceiling for a bottom bar — past that
+/// Five plus More. Five is the practical ceiling for a bottom bar — past that
 /// the labels truncate and the targets fall under the 44px a thumb needs — and
 /// the web sidebar has eight sections, so something has to fold.
-const int kPrimaryTabs = 4;
+const int kPrimaryTabs = 5;

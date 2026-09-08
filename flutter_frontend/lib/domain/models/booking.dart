@@ -23,6 +23,17 @@ class Booking {
   final num? discountAmount;
   final num? advanceAmount;
 
+  /// The register's own two fields — only on the list endpoint. The number of
+  /// whatever bill was last issued against this stay, and what it came to (or
+  /// [totalPrice] where none has been raised yet).
+  final String? invoiceNumber;
+  final num? billAmount;
+
+  /// The rest of the party, by name — only on the register's own fetch, for
+  /// its search box to find a stay by anyone travelling on it, not only by
+  /// whoever's name the booking was taken under.
+  final List<String> coGuestNames;
+
   /// The first tender. A stay whose advance arrived two ways still has one
   /// method here — [advancePaymentLines] is what says the rest.
   final String? advancePaymentMethod;
@@ -50,6 +61,14 @@ class Booking {
 
   final int? lateCheckoutMinutes;
   final num lateCheckoutCharge;
+
+  /// Read out to a checked-in guest so they can order food from the room's
+  /// QR code. Null once checked out, or on a property with no food service.
+  final String? foodPin;
+
+  /// Set once the guest has failed that PIN too many times — non-null means
+  /// ordering is blocked for the room until reception clears it.
+  final String? foodOrderingLockedUntil;
 
   final String? cancelReason;
   final num? refundAmount;
@@ -90,6 +109,9 @@ class Booking {
     this.totalPrice,
     this.discountAmount,
     this.advanceAmount,
+    this.invoiceNumber,
+    this.billAmount,
+    this.coGuestNames = const [],
     this.advancePaymentMethod,
     this.advancePaymentLines,
     this.advanceReference,
@@ -101,6 +123,8 @@ class Booking {
     this.actualCheckOutAt,
     this.lateCheckoutMinutes,
     this.lateCheckoutCharge = 0,
+    this.foodPin,
+    this.foodOrderingLockedUntil,
     this.cancelReason,
     this.refundAmount,
     this.refundPaymentMethod,
@@ -131,6 +155,12 @@ class Booking {
     totalPrice: asNumOrNull(json['totalPrice']),
     discountAmount: asNumOrNull(json['discountAmount']),
     advanceAmount: asNumOrNull(json['advanceAmount']),
+    invoiceNumber: asStringOrNull(json['invoiceNumber']),
+    billAmount: asNumOrNull(json['billAmount']),
+    coGuestNames: (json['coGuestNames'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const [],
     advancePaymentMethod: asStringOrNull(json['advancePaymentMethod']),
     advancePaymentLines: (json['advancePaymentLines'] as List?)
         ?.map((e) => PaymentLine.fromJson(e as Map<String, dynamic>))
@@ -144,6 +174,8 @@ class Booking {
     actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
     lateCheckoutMinutes: asIntOrNull(json['lateCheckoutMinutes']),
     lateCheckoutCharge: asNum(json['lateCheckoutCharge']),
+    foodPin: asStringOrNull(json['foodPin']),
+    foodOrderingLockedUntil: asStringOrNull(json['foodOrderingLockedUntil']),
     cancelReason: asStringOrNull(json['cancelReason']),
     refundAmount: asNumOrNull(json['refundAmount']),
     refundPaymentMethod: asStringOrNull(json['refundPaymentMethod']),

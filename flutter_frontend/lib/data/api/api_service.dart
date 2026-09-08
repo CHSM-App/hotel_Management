@@ -192,6 +192,20 @@ class ApiService {
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
+  /// The primary guest's uploaded ID proof — an image or a PDF, whichever
+  /// they handed over at check-in. Raw bytes plus the content type the
+  /// server sent, so the viewer can tell a photo from a scanned PDF.
+  Future<Response<List<int>>> idProof(int bookingId) => _dio.get<List<int>>(
+    '/bookings/$bookingId/id-proof',
+    options: Options(responseType: ResponseType.bytes),
+  );
+
+  Future<Response<List<int>>> guestIdProof(int bookingId, int guestId) =>
+      _dio.get<List<int>>(
+        '/bookings/$bookingId/guests/$guestId/id-proof',
+        options: Options(responseType: ResponseType.bytes),
+      );
+
   /// Call off a reservation nobody came for.
   ///
   /// The UPDATE behind it matches `status = 'BOOKED'` — a stay that has
@@ -377,6 +391,13 @@ class ApiService {
     return FoodOrder.fromJson(
       order is Map<String, dynamic> ? order : map,
     );
+  }
+
+  /// A guest who mistypes their room's food PIN five times locks it out of
+  /// ordering for fifteen minutes. Reception clears it from here rather than
+  /// waiting out the timer.
+  Future<void> clearFoodPinLockout(String roomNumber) async {
+    await _dio.delete('/orders/pin-lockouts/${Uri.encodeComponent(roomNumber)}');
   }
 
   // ===== MENU (read-only, for taking an order) =====

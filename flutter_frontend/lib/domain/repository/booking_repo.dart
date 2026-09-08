@@ -31,6 +31,11 @@ abstract class BookingRepository {
 
   Future<Booking> booking(int id);
 
+  /// The primary guest's uploaded ID proof, raw bytes plus content type.
+  Future<Response<List<int>>> idProof(int bookingId);
+
+  Future<Response<List<int>>> guestIdProof(int bookingId, int guestId);
+
   Future<Booking> createBooking(FormData form);
 
   Future<Booking> checkIn(int id, FormData form);

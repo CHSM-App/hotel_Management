@@ -341,10 +341,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// window mostly behind the desk.
   static const chartPastDays = 4;
 
-  /// How far the window can grow from repeated pulls into the past — the web
-  /// tape chart's own MAX_WINDOW_DAYS. Nobody plans half a year of nights by
-  /// scrolling, so growth stops there rather than fetching an unbounded span.
-  static const chartMaxSpanDays = 180;
+  /// How far the window can grow from repeated pulls into the past or future
+  /// — the web tape chart's own MAX_WINDOW_DAYS. A season's worth of nights
+  /// (April through October, say) is a real desk question, so growth stops
+  /// well past that rather than fetching an unbounded span.
+  static const chartMaxSpanDays = 400;
 
   BookingViewModel(this.usecase) : super(BookingState());
 
