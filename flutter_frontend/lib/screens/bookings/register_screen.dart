@@ -136,8 +136,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   /// so choosing a chip and seeing the list answer it happen in the same
   /// place, one tap apart.
   bool _filterOpen = false;
+  final LayerLink _filterLink = LayerLink();
+  final OverlayPortalController _filterPortalController = OverlayPortalController();
 
-  void _toggleFilterOpen() => setState(() => _filterOpen = !_filterOpen);
+  void _toggleFilterOpen() {
+    setState(() => _filterOpen = !_filterOpen);
+    if (_filterOpen) {
+      _filterPortalController.show();
+    } else {
+      _filterPortalController.hide();
+    }
+  }
 
   List<Booking> get _searched {
     final rows = _bookings;
@@ -187,20 +196,48 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             searchNotEmpty: _search.isNotEmpty,
             activeFilterCount: _statuses.length,
             filterOpen: _filterOpen,
+            filterLink: _filterLink,
+            filterPortalController: _filterPortalController,
+            filterOverlayBuilder: (context) => Stack(
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _toggleFilterOpen,
+                  ),
+                ),
+                CompositedTransformFollower(
+                  link: _filterLink,
+                  showWhenUnlinked: false,
+                  targetAnchor: Alignment.bottomRight,
+                  followerAnchor: Alignment.topRight,
+                  offset: const Offset(0, AppTheme.s8),
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: _StatusChips(
+                        selected: _statuses,
+                        counts: counts,
+                        allCount: _searched.length,
+                        onToggle: (key) {
+                          _toggleStatus(key);
+                          _toggleFilterOpen();
+                        },
+                        onClearAll: () {
+                          _clearStatuses();
+                          _toggleFilterOpen();
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             onFromTo: _setRange,
             onSearch: (v) => setState(() => _search = v),
             onToggleFilter: _toggleFilterOpen,
           ),
-          if (_filterOpen) ...[
-            const SizedBox(height: AppTheme.s8),
-            _StatusChips(
-              selected: _statuses,
-              counts: counts,
-              allCount: _searched.length,
-              onToggle: _toggleStatus,
-              onClearAll: _clearStatuses,
-            ),
-          ],
           const SizedBox(height: AppTheme.s16),
           if (_loading)
             const ReportLoading()
@@ -446,6 +483,9 @@ class _RangeAndSearch extends StatelessWidget {
   final bool searchNotEmpty;
   final int activeFilterCount;
   final bool filterOpen;
+  final LayerLink filterLink;
+  final OverlayPortalController filterPortalController;
+  final WidgetBuilder filterOverlayBuilder;
   final void Function(String from, String to) onFromTo;
   final ValueChanged<String> onSearch;
   final VoidCallback onToggleFilter;
@@ -455,6 +495,9 @@ class _RangeAndSearch extends StatelessWidget {
     required this.toDate,
     required this.searchController,
     required this.searchNotEmpty,
+    required this.filterLink,
+    required this.filterPortalController,
+    required this.filterOverlayBuilder,
     required this.activeFilterCount,
     required this.filterOpen,
     required this.onFromTo,
@@ -462,37 +505,12 @@ class _RangeAndSearch extends StatelessWidget {
     required this.onToggleFilter,
   });
 
-  static String _todayIso() => _RegisterScreenState._today();
-
-  static String _addDays(String iso, int days) {
-    final d = DateTime.parse(iso).add(Duration(days: days));
-    return _RegisterScreenState._iso(d);
-  }
-
-  static (String, String) _preset(String key) {
-    final today = _todayIso();
-    switch (key) {
-      case 'today':
-        return (today, today);
-      case 'week':
-        return (_addDays(today, -6), today);
-      case 'month':
-        return (_RegisterScreenState._startOfMonth(), today);
-      case 'prev':
-        final now = DateTime.now();
-        final first = DateTime(now.year, now.month - 1, 1);
-        final last = DateTime(now.year, now.month, 0);
-        return (_RegisterScreenState._iso(first), _RegisterScreenState._iso(last));
-    }
-    return (today, today);
-  }
-
   @override
   Widget build(BuildContext context) {
     return NeuCard(
       radius: AppTheme.rMedium,
       shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s12),
+      padding: const EdgeInsets.all(AppTheme.s8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -516,7 +534,7 @@ class _RangeAndSearch extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -524,13 +542,13 @@ class _RangeAndSearch extends StatelessWidget {
                 Expanded(
                   child: NeuPressed(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s16,
-                      vertical: 4,
+                      horizontal: AppTheme.s12,
+                      vertical: 2,
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.search_rounded, size: 22, color: AppTheme.muted),
-                        const SizedBox(width: AppTheme.s12),
+                        const Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
+                        const SizedBox(width: AppTheme.s8),
                         Expanded(
                           child: TextField(
                             onChanged: onSearch,
@@ -539,9 +557,9 @@ class _RangeAndSearch extends StatelessWidget {
                               isDense: true,
                               border: InputBorder.none,
                               hintText: 'Name, room, phone or bill number',
-                              hintStyle: TextStyle(color: AppTheme.muted, fontSize: 15),
+                              hintStyle: TextStyle(color: AppTheme.muted, fontSize: 13),
                             ),
-                            style: const TextStyle(color: AppTheme.heading, fontSize: 15),
+                            style: const TextStyle(color: AppTheme.heading, fontSize: 13),
                           ),
                         ),
                         if (searchNotEmpty)
@@ -553,7 +571,7 @@ class _RangeAndSearch extends StatelessWidget {
                             radius: 18,
                             child: const Icon(
                               Icons.close_rounded,
-                              size: 20,
+                              size: 18,
                               color: AppTheme.muted,
                             ),
                           ),
@@ -562,34 +580,20 @@ class _RangeAndSearch extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppTheme.s8),
-                _FilterButton(
-                  count: activeFilterCount,
-                  open: filterOpen,
-                  onTap: onToggleFilter,
+                CompositedTransformTarget(
+                  link: filterLink,
+                  child: OverlayPortal(
+                    controller: filterPortalController,
+                    overlayChildBuilder: filterOverlayBuilder,
+                    child: _FilterButton(
+                      count: activeFilterCount,
+                      open: filterOpen,
+                      onTap: onToggleFilter,
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: AppTheme.s12),
-          Wrap(
-            spacing: AppTheme.s8,
-            runSpacing: AppTheme.s8,
-            children: [
-              for (final preset in const [
-                ('today', 'Today'),
-                ('week', 'Last 7 days'),
-                ('month', 'This month'),
-                ('prev', 'Last month'),
-              ])
-                _PresetChip(
-                  label: preset.$2,
-                  selected: _preset(preset.$1) == (fromDate, toDate),
-                  onTap: () {
-                    final (f, t) = _preset(preset.$1);
-                    onFromTo(f, t);
-                  },
-                ),
-            ],
           ),
         ],
       ),
@@ -619,16 +623,16 @@ class _FilterButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: NeuPressed(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
         child: SizedBox(
-          width: 22,
+          width: 18,
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
               Icon(
                 Icons.filter_alt_rounded,
-                size: 22,
+                size: 18,
                 color: on ? AppTheme.accent : AppTheme.muted,
               ),
               if (count > 0)
@@ -654,40 +658,6 @@ class _FilterButton extends StatelessWidget {
                   ),
                 ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PresetChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PresetChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent.withValues(alpha: 0.12) : AppTheme.border,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? AppTheme.accent : AppTheme.text,
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),
@@ -733,23 +703,23 @@ class _DateField extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
           const SizedBox(height: 2),
           NeuPressed(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s12,
-              vertical: 10,
+              horizontal: AppTheme.s8,
+              vertical: 6,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.event_rounded, size: 14, color: AppTheme.muted),
-                const SizedBox(width: AppTheme.s8),
+                const Icon(Icons.event_rounded, size: 13, color: AppTheme.muted),
+                const SizedBox(width: 6),
                 Text(
                   parsed == null
                       ? value
                       : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 12),
                 ),
               ],
             ),
@@ -779,27 +749,35 @@ class _StatusChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppTheme.s8,
-      runSpacing: AppTheme.s8,
-      children: [
-        _Chip(
-          label: 'All',
-          count: allCount,
-          on: selected.isEmpty,
-          icon: Icons.apps_rounded,
-          onTap: onClearAll,
-        ),
-        for (final key in _kStatusOrder)
+    return Container(
+      width: 190,
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        boxShadow: AppTheme.subtle,
+      ),
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           _Chip(
-            label: kRegisterStatusLabel[key]!,
-            count: counts[key] ?? 0,
-            on: selected.contains(key),
-            color: BookingActions.statusColor(key),
-            icon: _kStatusIcon[key]!,
-            onTap: () => onToggle(key),
+            label: 'All',
+            count: allCount,
+            on: selected.isEmpty,
+            icon: Icons.apps_rounded,
+            onTap: onClearAll,
           ),
-      ],
+          for (final key in _kStatusOrder)
+            _Chip(
+              label: kRegisterStatusLabel[key]!,
+              count: counts[key] ?? 0,
+              on: selected.contains(key),
+              color: BookingActions.statusColor(key),
+              icon: _kStatusIcon[key]!,
+              onTap: () => onToggle(key),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -824,34 +802,38 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tint = color ?? AppTheme.accent;
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
         decoration: BoxDecoration(
-          color: on ? tint.withValues(alpha: 0.12) : AppTheme.border,
-          borderRadius: BorderRadius.circular(999),
-          border: on ? Border.all(color: tint.withValues(alpha: 0.4)) : null,
+          color: on ? tint.withValues(alpha: 0.10) : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: on ? tint : Colors.transparent,
+              width: 3,
+            ),
+          ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 15, color: on ? tint : AppTheme.muted),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: on ? tint : AppTheme.text,
-                fontSize: 12,
-                fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+            Icon(icon, size: 16, color: on ? tint : AppTheme.muted),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: on ? tint : AppTheme.text,
+                  fontSize: 13,
+                  fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                ),
               ),
             ),
-            const SizedBox(width: 4),
             Text(
               '$count',
               style: TextStyle(
                 color: on ? tint : AppTheme.muted,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
