@@ -13,36 +13,33 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'room_form_pieces.dart';
 
-/// Edit an existing room. Multipart under the hood — the same route takes
-/// photos alongside the text fields, so even an edit with no new photo
-/// submits as a form.
-///
-/// Adding a room is a separate, full-page screen (see add_room_page.dart) —
-/// this sheet now only ever opens with a room to edit.
+/// Edit an existing room, as its own full-page screen rather than a sheet —
+/// the same treatment as Add room (see add_room_page.dart), so both forms
+/// read as one system instead of one being a full page and the other a
+/// partial-height sheet squeezed under the status bar.
 Future<void> showRoomFormSheet(
   BuildContext context, {
   required List<RoomCategory> categories,
   required RoomListing room,
 }) {
-  return showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (context) => _RoomFormSheet(categories: categories, room: room),
+  return Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (context) => EditRoomPage(categories: categories, room: room),
+    ),
   );
 }
 
-class _RoomFormSheet extends ConsumerStatefulWidget {
+class EditRoomPage extends ConsumerStatefulWidget {
   final List<RoomCategory> categories;
   final RoomListing room;
 
-  const _RoomFormSheet({required this.categories, required this.room});
+  const EditRoomPage({super.key, required this.categories, required this.room});
 
   @override
-  ConsumerState<_RoomFormSheet> createState() => _RoomFormSheetState();
+  ConsumerState<EditRoomPage> createState() => _EditRoomPageState();
 }
 
-class _RoomFormSheetState extends ConsumerState<_RoomFormSheet> {
+class _EditRoomPageState extends ConsumerState<EditRoomPage> {
   late final _roomNumber = TextEditingController(text: widget.room.roomNumber);
   late final _floor = TextEditingController(text: widget.room.floor ?? '');
   late final _maxOccupancy = TextEditingController(
@@ -85,253 +82,228 @@ class _RoomFormSheetState extends ConsumerState<_RoomFormSheet> {
   @override
   Widget build(BuildContext context) {
     final submitting = ref.watch(roomsViewModelProvider).submitting;
-    final mq = MediaQuery.of(context);
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        expand: false,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: AppTheme.bg,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
+    return Scaffold(
+      appBar: AppBar(title: Text('Edit room · ${widget.room.roomNumber}')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.s16,
+            AppTheme.s8,
+            AppTheme.s16,
+            AppTheme.s32,
           ),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  AppTheme.s16,
-                  AppTheme.s8,
-                  AppTheme.s8,
-                ),
-                child: Row(
-                  children: [
+          children: [
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_error != null) ...[
                     Container(
-                      width: 36,
-                      height: 36,
+                      padding: const EdgeInsets.all(AppTheme.s12),
                       decoration: BoxDecoration(
-                        color: AppTheme.accent.withValues(alpha: 0.1),
+                        color: AppTheme.danger.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(AppTheme.rSmall),
                       ),
-                      child: const Icon(
-                        Icons.edit_outlined,
-                        color: AppTheme.accent,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.s12),
-                    Expanded(
-                      child: Text(
-                        'Edit room · ${widget.room.roomNumber}',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: submitting ? null : () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppTheme.s16),
-                child: Divider(height: 1, color: AppTheme.border),
-              ),
-              const SizedBox(height: AppTheme.s4),
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTheme.s16,
-                    0,
-                    AppTheme.s16,
-                    AppTheme.s24,
-                  ),
-                  children: [
-                    if (_error != null) ...[
-                      NeuCard(
-                        shadow: AppTheme.subtle,
-                        child: Text(_error!, style: const TextStyle(color: AppTheme.danger)),
-                      ),
-                      const SizedBox(height: AppTheme.s16),
-                    ],
-                    NeuField(
-                      controller: _roomNumber,
-                      label: 'Room number',
-                      hint: '101',
-                      keyboardType: TextInputType.text,
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-
-                    const FieldLabel('Category', Icons.category_outlined),
-                    const SizedBox(height: AppTheme.s8),
-                    CategoryPicker(
-                      categories: widget.categories,
-                      selectedId: _categoryId,
-                      onSelect: (id) => setState(() => _categoryId = id),
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-
-                    NeuField(
-                      controller: _floor,
-                      label: 'Floor',
-                      hint: '1',
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-
-                    const FieldLabel('Bathroom', Icons.bathtub_outlined),
-                    const SizedBox(height: AppTheme.s8),
-                    Wrap(
-                      spacing: AppTheme.s8,
-                      children: [
-                        for (final type in bathroomTypes)
-                          RoomChoiceChip(
-                            label: bathroomLabel[type]!,
-                            selected: _bathroomType == type,
-                            onTap: () => setState(() => _bathroomType = type),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-
-                    NeuCard(
-                      shadow: AppTheme.subtle,
-                      padding: const EdgeInsets.all(AppTheme.s12),
-                      child: Column(
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.bed_outlined, size: 16, color: AppTheme.accent),
-                              const SizedBox(width: AppTheme.s8),
-                              Expanded(
-                                child: Text(
-                                  'BEDS'.toUpperCase(),
-                                  style: const TextStyle(
-                                    color: AppTheme.muted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.4,
-                                  ),
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: () => setState(() => _beds.add(BedDraft())),
-                                icon: const Icon(Icons.add_rounded, size: 16),
-                                label: const Text('Add bed'),
-                              ),
-                            ],
+                          const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
+                          const SizedBox(width: AppTheme.s8),
+                          Expanded(
+                            child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
                           ),
-                          const SizedBox(height: AppTheme.s8),
-                          for (var i = 0; i < _beds.length; i++)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: NeuPressed(
-                                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                                      child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<String>(
-                                          isExpanded: true,
-                                          value: _beds[i].size.isEmpty ? null : _beds[i].size,
-                                          hint: const Text('Size', style: TextStyle(color: AppTheme.muted)),
-                                          items: [
-                                            for (final s in bedSizes)
-                                              DropdownMenuItem(value: s, child: Text(bedSizeLabel[s]!)),
-                                          ],
-                                          onChanged: (v) => setState(() => _beds[i].size = v ?? ''),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.s16),
+                  ],
+
+                  const SectionLabel('Numbering', number: 1),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(
+                    controller: _roomNumber,
+                    label: 'Room number',
+                    hint: '101',
+                    keyboardType: TextInputType.text,
+                  ),
+                  const SizedBox(height: AppTheme.s16),
+                  NeuField(
+                    controller: _floor,
+                    label: 'Floor',
+                    hint: '1',
+                  ),
+
+                  const SectionDivider(),
+                  const SectionLabel('Category', number: 2),
+                  const SizedBox(height: AppTheme.s12),
+                  CategoryDropdown(
+                    categories: widget.categories,
+                    selectedId: _categoryId,
+                    onSelect: (id) => setState(() => _categoryId = id),
+                  ),
+
+                  const SectionDivider(),
+                  const SectionLabel('Bathroom', number: 3),
+                  const SizedBox(height: AppTheme.s12),
+                  Wrap(
+                    spacing: AppTheme.s8,
+                    children: [
+                      for (final type in bathroomTypes)
+                        RoomChoiceChip(
+                          label: bathroomLabel[type]!,
+                          selected: _bathroomType == type,
+                          onTap: () => setState(() => _bathroomType = type),
+                        ),
+                    ],
+                  ),
+
+                  const SectionDivider(),
+                  SectionLabel(
+                    'Beds',
+                    number: 4,
+                    trailing: _beds.length == 1 ? null : '${_beds.length}',
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  for (var i = 0; i < _beds.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: NeuPressed(
+                              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  isExpanded: true,
+                                  value: _beds[i].size.isEmpty ? null : _beds[i].size,
+                                  dropdownColor: AppTheme.card,
+                                  hint: const Text(
+                                    'Choose bed size',
+                                    style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                                  ),
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+                                  items: [
+                                    for (final s in bedSizes)
+                                      DropdownMenuItem(
+                                        value: s,
+                                        child: Text(
+                                          bedSizeLabel[s]!,
+                                          style: const TextStyle(
+                                            color: AppTheme.heading,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13.5,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: AppTheme.s8),
-                                  SizedBox(
-                                    width: 72,
-                                    child: NeuField(
-                                      controller: _beds[i].countController,
-                                      label: '',
-                                      keyboardType: TextInputType.number,
-                                      onChanged: (v) =>
-                                          _beds[i].count = int.tryParse(v) ?? 1,
-                                    ),
-                                  ),
-                                  if (_beds.length > 1)
-                                    IconButton(
-                                      icon: const Icon(Icons.close_rounded, size: 18),
-                                      color: AppTheme.muted,
-                                      onPressed: () => setState(() {
-                                        _beds[i].countController.dispose();
-                                        _beds.removeAt(i);
-                                      }),
-                                    ),
-                                ],
+                                  ],
+                                  onChanged: (v) => setState(() => _beds[i].size = v ?? ''),
+                                ),
                               ),
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                          SizedBox(
+                            width: 72,
+                            child: NeuField(
+                              controller: _beds[i].countController,
+                              label: '',
+                              keyboardType: TextInputType.number,
+                              onChanged: (v) => _beds[i].count = int.tryParse(v) ?? 1,
+                            ),
+                          ),
+                          if (_beds.length > 1)
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              color: AppTheme.muted,
+                              onPressed: () => setState(() {
+                                _beds[i].countController.dispose();
+                                _beds.removeAt(i);
+                              }),
                             ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppTheme.s8),
+                  NeuButton(
+                    expand: true,
+                    onPressed: () => setState(() => _beds.add(BedDraft())),
+                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                    child: const Text('+ Add another bed'),
+                  ),
+                  const SizedBox(height: AppTheme.s16),
+                  NeuField(
+                    controller: _maxOccupancy,
+                    label: 'Max occupancy',
+                    hint: '2',
+                    keyboardType: TextInputType.number,
+                  ),
 
-                    NeuField(
-                      controller: _maxOccupancy,
-                      label: 'Max occupancy',
-                      hint: '2',
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: AppTheme.s16),
+                  const SectionDivider(),
+                  const SectionLabel('Details', number: 5),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(
+                    controller: _description,
+                    label: 'Description (optional)',
+                    hint: 'Corner room, quiet side',
+                    maxLength: 200,
+                  ),
 
-                    NeuField(
-                      controller: _description,
-                      label: 'Description (optional)',
-                      hint: 'Corner room, quiet side',
-                      maxLength: 200,
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-
-                    FieldLabel('Photos (up to $maxRoomImages)', Icons.photo_library_outlined),
-                    const SizedBox(height: AppTheme.s8),
-                    Wrap(
-                      spacing: AppTheme.s8,
-                      runSpacing: AppTheme.s8,
-                      children: [
-                        for (final img in _existingPhotos)
-                          PhotoThumb(
-                            imageProvider: NetworkImage('$baseUrl/room-images/${img.filename}'),
-                            onRemove: () => _removeExistingPhoto(img),
-                          ),
-                        for (final file in _newPhotos)
-                          PhotoThumb(
-                            imageProvider: FileImage(File(file.path)),
-                            onRemove: () => setState(() => _newPhotos.remove(file)),
-                          ),
-                        if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
-                      ],
-                    ),
-                    const SizedBox(height: AppTheme.s24),
-                  ],
-                ),
+                  const SectionDivider(),
+                  SectionLabel(
+                    'Photos',
+                    number: 6,
+                    trailing: 'up to $maxRoomImages',
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  Wrap(
+                    spacing: AppTheme.s8,
+                    runSpacing: AppTheme.s8,
+                    children: [
+                      for (final img in _existingPhotos)
+                        PhotoThumb(
+                          imageProvider: NetworkImage('$baseUrl/room-images/${img.filename}'),
+                          onRemove: () => _removeExistingPhoto(img),
+                        ),
+                      for (final file in _newPhotos)
+                        PhotoThumb(
+                          imageProvider: FileImage(File(file.path)),
+                          onRemove: () => setState(() => _newPhotos.remove(file)),
+                        ),
+                      if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
+                    ],
+                  ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  AppTheme.s8,
-                  AppTheme.s16,
-                  AppTheme.s16,
+            ),
+
+            const SizedBox(height: AppTheme.s24),
+            Row(
+              children: [
+                Expanded(
+                  child: NeuButton(
+                    onPressed: submitting ? null : () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
                 ),
-                child: NeuButton(
-                  primary: true,
-                  expand: true,
-                  onPressed: submitting ? null : _submit,
-                  child: Text(submitting ? 'Saving…' : 'Save changes'),
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  flex: 2,
+                  child: NeuButton(
+                    primary: true,
+                    expand: true,
+                    onPressed: submitting ? null : _submit,
+                    child: submitting
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save changes'),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );

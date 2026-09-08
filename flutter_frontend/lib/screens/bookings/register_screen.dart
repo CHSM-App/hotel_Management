@@ -286,7 +286,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             else
               for (final b in filtered)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
                   child: _RegisterCard(
                     booking: b,
                     onTap: () async {
@@ -858,98 +858,152 @@ class _RegisterCard extends StatelessWidget {
     final cameIn = b.actualCheckInAt;
     final left = b.actualCheckOutAt;
     final amount = b.billAmount ?? b.totalPrice;
+    final statusColor = BookingActions.statusColor(b.status);
 
     return GestureDetector(
       onTap: onTap,
       child: NeuCard(
-        padding: const EdgeInsets.all(AppTheme.s16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.zero,
+        child: IntrinsicHeight(
+          child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    (b.guestName ?? '').trim().isEmpty ? 'Guest' : b.guestName!,
-                    style: const TextStyle(
-                      color: AppTheme.heading,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
+            // A colour bar down the left edge — the status reads at a glance
+            // even before the eye lands on the chip, the same way a coloured
+            // spine helps a stack of folders sort itself without reading
+            // every label.
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: statusColor,
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(AppTheme.rMedium),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s8,
+                  AppTheme.s8,
+                  AppTheme.s8,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (b.guestName ?? '').trim().isEmpty
+                                ? 'Guest'
+                                : b.guestName!,
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            kRegisterStatusLabel[b.status] ?? b.status ?? '',
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        // The whole card already opens the same detail page
+                        // on tap, but a card this dense reads as a block of
+                        // text with no obvious click target — an explicit
+                        // eye button gives the desk something to actually
+                        // aim for, the way a "View" link would on the web.
+                        const SizedBox(width: 4),
+                        InkResponse(
+                          onTap: onTap,
+                          radius: 18,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.10),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.visibility_outlined,
+                              size: 15,
+                              color: AppTheme.accent,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.s8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: BookingActions.statusColor(b.status)
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                  ),
-                  child: Text(
-                    kRegisterStatusLabel[b.status] ?? b.status ?? '',
-                    style: TextStyle(
-                      color: BookingActions.statusColor(b.status),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(height: 1),
+                    Text(
+                      'Room ${b.roomNumber ?? '—'}'
+                      '${b.categoryName != null ? ' · ${b.categoryName}' : ''}'
+                      '${(b.guestPhone ?? '').isNotEmpty ? ' · ${b.guestPhone}' : ''}',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
+                    const SizedBox(height: AppTheme.s8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _Field(
+                            label: 'Came in',
+                            value: cameIn != null
+                                ? formatDateTime(cameIn)
+                                : 'Due ${formatIsoDate(b.checkInDate)}',
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(
+                          flex: 3,
+                          child: _Field(
+                            label: 'Left',
+                            value: left != null
+                                ? formatDateTime(left)
+                                : cameIn != null
+                                ? 'Still staying'
+                                : 'Due ${formatIsoDate(b.checkOutDate)}',
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(
+                          flex: 2,
+                          child: _Field(
+                            label: 'Amount',
+                            value: formatPrice(amount),
+                            accent: true,
+                            alignEnd: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Room ${b.roomNumber ?? '—'}'
-              '${b.categoryName != null ? ' · ${b.categoryName}' : ''}'
-              '${(b.guestPhone ?? '').isNotEmpty ? ' · ${b.guestPhone}' : ''}',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-            ),
-            const SizedBox(height: AppTheme.s12),
-            Row(
-              children: [
-                Expanded(
-                  child: _Field(
-                    label: 'Came in',
-                    value: cameIn != null
-                        ? formatDateTime(cameIn)
-                        : 'Due ${formatIsoDate(b.checkInDate)}',
-                  ),
-                ),
-                Expanded(
-                  child: _Field(
-                    label: 'Left',
-                    value: left != null
-                        ? formatDateTime(left)
-                        : cameIn != null
-                        ? 'Still staying'
-                        : 'Due ${formatIsoDate(b.checkOutDate)}',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.s8),
-            Row(
-              children: [
-                Expanded(
-                  child: _Field(
-                    label: 'Bill no.',
-                    value: (b.invoiceNumber ?? '').isEmpty
-                        ? 'Not billed'
-                        : b.invoiceNumber!,
-                  ),
-                ),
-                Expanded(
-                  child: _Field(
-                    label: 'Amount',
-                    value: formatPrice(amount),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -959,22 +1013,33 @@ class _RegisterCard extends StatelessWidget {
 class _Field extends StatelessWidget {
   final String label;
   final String value;
+  final bool accent;
+  final bool alignEnd;
 
-  const _Field({required this.label, required this.value});
+  const _Field({
+    required this.label,
+    required this.value,
+    this.accent = false,
+    this.alignEnd = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment:
+          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
-        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
+        const SizedBox(height: 1),
         Text(
           value,
-          style: const TextStyle(
-            color: AppTheme.heading,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+          style: TextStyle(
+            color: accent ? AppTheme.accent : AppTheme.heading,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],

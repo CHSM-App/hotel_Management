@@ -75,15 +75,23 @@ class _Section extends StatelessWidget {
   }
 }
 
+/// A compact, card-styled item row — an icon badge, a name (with an
+/// "Inactive" pill when relevant) and an optional subtitle on the left, the
+/// value on the right, and edit/delete tucked into one overflow menu instead
+/// of two separate icon buttons crowding the row.
 class _Row extends StatelessWidget {
+  final IconData icon;
   final String name;
+  final String? subtitle;
   final bool? isActive;
   final String value;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _Row({
+    required this.icon,
     required this.name,
+    this.subtitle,
     this.isActive,
     required this.value,
     required this.onEdit,
@@ -92,47 +100,77 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: Border.all(color: AppTheme.border),
+      ),
       child: Row(
         children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
+            ),
+            child: Icon(icon, size: 15, color: AppTheme.accent),
+          ),
+          const SizedBox(width: 10),
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Flexible(
-                  child: Text(
-                    name,
-                    style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isActive == false) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppTheme.muted.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text('Inactive', style: TextStyle(color: AppTheme.muted, fontSize: 9.5)),
+                      ),
+                    ],
+                  ],
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                if (isActive == false) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppTheme.muted.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text('Inactive', style: TextStyle(color: AppTheme.muted, fontSize: 10)),
-                  ),
-                ],
               ],
             ),
           ),
-          Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13)),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.edit_outlined, size: 16),
-            color: AppTheme.muted,
-            onPressed: onEdit,
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontWeight: FontWeight.w600,
+              fontSize: 12.5,
+            ),
           ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.delete_outline_rounded, size: 16),
-            color: AppTheme.danger,
-            onPressed: onDelete,
-          ),
+          NeuRowMenu(onEdit: onEdit, onDelete: onDelete),
         ],
       ),
     );
@@ -262,6 +300,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
       children: [
         for (final c in widget.categories)
           _Row(
+            icon: Icons.category_outlined,
             name: c.name,
             isActive: c.isActive,
             value: formatPrice(c.basePrice),
@@ -386,6 +425,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
       children: [
         for (final c in widget.charges)
           _Row(
+            icon: Icons.local_offer_outlined,
             name: c.name,
             isActive: c.isActive,
             value: '${formatPrice(c.chargePerNight)}/night',
@@ -558,40 +598,13 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final s in widget.seasons)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(s.name, style: const TextStyle(color: AppTheme.heading, fontSize: 13)),
-                      Text(
-                        '${s.startDate} → ${s.endDate}',
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  '${s.adjustmentPercent > 0 ? '+' : ''}${s.adjustmentPercent}%',
-                  style: const TextStyle(color: AppTheme.text, fontSize: 13),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  color: AppTheme.muted,
-                  onPressed: () => _edit(s),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                  color: AppTheme.danger,
-                  onPressed: () => _delete(s),
-                ),
-              ],
-            ),
+          _Row(
+            icon: Icons.calendar_month_outlined,
+            name: s.name,
+            subtitle: '${s.startDate} → ${s.endDate}',
+            value: '${s.adjustmentPercent > 0 ? '+' : ''}${s.adjustmentPercent}%',
+            onEdit: () => _edit(s),
+            onDelete: () => _delete(s),
           ),
         const SizedBox(height: AppTheme.s8),
         if (_error != null) ...[

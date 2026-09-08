@@ -44,6 +44,13 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   /// pixels without a `LayoutBuilder` of its own.
   double _tile = 40;
 
+  /// Set once the chart has auto-scrolled to today on this mount, so a
+  /// later rebuild (a search hit, a chip tap, the chart quietly regrowing
+  /// past an edge) never yanks the desk's own scroll position back to today
+  /// a second time — this only ever fires the once, right after the chart
+  /// first opens on the current month.
+  bool _scrolledToToday = false;
+
   /// One key per category band, so a chip tap can scroll straight to it — the
   /// same jump the web tape chart's own category chips do.
   final Map<String, GlobalKey> _sectionKeys = {};
@@ -65,9 +72,10 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(
-      () => ref.read(bookingViewModelProvider.notifier).loadChart(),
-    );
+    Future.microtask(() async {
+      final vm = ref.read(bookingViewModelProvider.notifier);
+      await vm.resetChartToCurrentMonth();
+    });
   }
 
   static const _growWithinPx = 90.0;
@@ -199,6 +207,32 @@ class _TapeChartState extends ConsumerState<TapeChart> {
 
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
+
+    // The chart opens on the current month, but a month drawn from day one
+    // still leaves today off to the right of a phone-width screen on any
+    // date past the first week — scrolling every strip to it once, the
+    // first time it appears in a loaded window, means the desk lands on
+    // today without having to drag there by hand, the same as opening a
+    // calendar app. Guarded so this never fires again on this mount: a
+    // search hit, a chip tap, or the window quietly regrowing past an edge
+    // all rebuild this same method, and none of those should yank the
+    // desk's own scroll position back to today mid-visit.
+    if (!_scrolledToToday) {
+      final todayIndex = dates.indexWhere(
+        (d) =>
+            d.year == todayDate.year &&
+            d.month == todayDate.month &&
+            d.day == todayDate.day,
+      );
+      if (todayIndex != -1) {
+        _scrolledToToday = true;
+        final offset = (todayIndex - 1).clamp(0, dates.length - 1) * tile;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _hSync.jumpAllTo(offset);
+        });
+      }
+    }
+
     final hitIds = state.chartSearchHits.map((b) => b.id).toSet();
     final activeHitId = state.chartActiveHit?.id;
 
@@ -338,11 +372,11 @@ class _TapeChartState extends ConsumerState<TapeChart> {
 
 // ── Header: window label + pager ────────────────────────────────────────────
 
-/// The month stepper — a fixed 30-day page that moves a whole page at a time,
-/// the same way the web tape chart's own prev/next does. Not a date-range
-/// picker: the web chart has none, because a stay entered against an
-/// arbitrary custom range is not a question the desk actually asks — the
-/// question is "show me the next 30 days," repeatable either direction.
+/// The month stepper — a whole calendar month at a time, opening on the
+/// current month so the desk never has to scroll just to see today. Not a
+/// date-range picker: the web chart has none, because a stay entered against
+/// an arbitrary custom range is not a question the desk actually asks — the
+/// question is "show me next month," repeatable either direction.
 class _ChartHeader extends StatelessWidget {
   final DateTime from;
   final VoidCallback onPrev;
@@ -363,17 +397,19 @@ class _ChartHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Always a fixed thirty-day page from `from`, the same way the web tape
-    // chart's own pill reads off its `month` anchor rather than the actual
-    // (possibly scroll-grown) end of the fetched window — `to` moves every
-    // time the desk drags near the far edge for more nights, and showing
-    // that here would make the date pill visibly crawl forward on its own
-    // mid-drag instead of only on a deliberate prev/next or a pull past the
-    // near edge, which is the one direction the web pill does follow (it
-    // opens on an earlier page, the same way prev does).
-    final last = from
-        .add(const Duration(days: BookingViewModel.chartWindowDays))
-        .subtract(const Duration(days: 1));
+    // Always `from`'s own calendar month, the same way the web tape chart's
+    // own pill reads off its `month` anchor rather than the actual (possibly
+    // scroll-grown) end of the fetched window — `to` moves every time the
+    // desk drags near the far edge for more nights, and showing that here
+    // would make the date pill visibly crawl forward on its own mid-drag
+    // instead of only on a deliberate prev/next or a pull past the near
+    // edge, which is the one direction the web pill does follow (it opens
+    // on an earlier page, the same way prev does).
+    final last = DateTime(
+      from.year,
+      from.month + 1,
+      1,
+    ).subtract(const Duration(days: 1));
     final sameYear = from.year == last.year;
 
     return Row(
@@ -381,7 +417,7 @@ class _ChartHeader extends StatelessWidget {
         _RoundIconButton(
           icon: Icons.chevron_left_rounded,
           onTap: onPrev,
-          semanticLabel: 'Previous ${BookingViewModel.chartWindowDays} days',
+          semanticLabel: 'Previous month',
           size: 32,
         ),
         const SizedBox(width: AppTheme.s8),
@@ -423,7 +459,7 @@ class _ChartHeader extends StatelessWidget {
         _RoundIconButton(
           icon: Icons.chevron_right_rounded,
           onTap: onNext,
-          semanticLabel: 'Next ${BookingViewModel.chartWindowDays} days',
+          semanticLabel: 'Next month',
           size: 32,
         ),
       ],
@@ -746,6 +782,18 @@ class _HorizontalSync {
       if (!c.hasClients) continue;
       final target = (c.offset + delta).clamp(0.0, c.position.maxScrollExtent);
       c.jumpTo(target);
+    }
+    _syncing = false;
+  }
+
+  /// Jump every strip straight to [offset] — used once, right after the
+  /// chart opens, to land on today's column instead of the window's own
+  /// start. Unlike [shiftAllBy] this is an absolute position, not a delta.
+  void jumpAllTo(double offset) {
+    _syncing = true;
+    for (final c in _controllers) {
+      if (!c.hasClients) continue;
+      c.jumpTo(offset.clamp(0.0, c.position.maxScrollExtent));
     }
     _syncing = false;
   }

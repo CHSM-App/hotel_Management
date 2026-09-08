@@ -145,7 +145,7 @@ class _Mark extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        NeuCard(
+        NeuCard( 
           radius: AppTheme.rLarge,
           padding: const EdgeInsets.all(AppTheme.s24),
           child: const Icon(

@@ -32,10 +32,10 @@ class AppTheme {
   // The tape chart's own vocabulary, carried over so a room reads the same on
   // the phone as it does on the wall screen at the desk.
   static const Color vacant = Color(0xFF6FA57C);
-  static const Color reserved = Color(0xFFC0392B);
-  static const Color checkedIn = Color(0xFF2E6DA4);
-  static const Color stayed = Color(0xFF8A94A0);
-  static const Color draft = Color(0xFFD4A70C);
+  static const Color reserved = Color(0xFFE0453C);
+  static const Color checkedIn = Color(0xFF2F7FE4);
+  static const Color stayed = Color(0xFF8695A3);
+  static const Color draft = Color(0xFFF2C31D);
   static const Color danger = Color(0xFFB42318);
 
   // ── Spacing ───────────────────────────────────────────────────────────────
