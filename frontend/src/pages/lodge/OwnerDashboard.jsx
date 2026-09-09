@@ -355,12 +355,11 @@ export default function OwnerDashboard() {
             <Icon name="building" size={20} />
           </span>
           <span className="dash-brand__text">
-            <span className="dash-brand__name">Front Desk</span>
             {/* The name is whatever the owner typed, and the block is pinned to
                 the rail's width, so a long one clips. title= is what makes the
                 clipped half reachable — the full name is also in the profile
                 menu, but that is a click away and this is a hover. */}
-            <span className="dash-brand__sub" title={me?.lodge.name || undefined}>
+            <span className="dash-brand__name" title={me?.lodge.name || undefined}>
               {me?.lodge.name || 'Hotel Management'}
             </span>
           </span>

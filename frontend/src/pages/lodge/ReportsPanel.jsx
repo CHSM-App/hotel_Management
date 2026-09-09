@@ -23,9 +23,15 @@ import {
   buildFoodOrdersReportPdf,
   downloadFoodOrdersReportPdf,
 } from './foodOrderReportFile';
+import AnalyticsOverview from './AnalyticsOverview';
+import RoomsAnalytics from './RoomsAnalytics';
+import FunctionsAnalytics from './FunctionsAnalytics';
+import FoodAnalytics from './FoodAnalytics';
+import { BarList } from './AnalyticsCharts';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './ReportsPanel.css';
+import './AnalyticsCharts.css';
 
 const DOCUMENT_LABEL = {
   TAX_INVOICE: 'Tax invoice',
@@ -33,12 +39,14 @@ const DOCUMENT_LABEL = {
   CASH_RECEIPT: 'Cash receipt',
 };
 
+const STREAM_LABEL = { ROOMS: 'Rooms', FUNCTIONS: 'Functions', FOOD: 'Food' };
+
 const ALL_TABS = [
-  { key: 'bookings', label: 'Bookings', capability: 'hasRooms' },
-  { key: 'occupancy', label: 'Occupancy', capability: 'hasRooms' },
-  { key: 'gst', label: 'GST summary' },
+  { key: 'overview', label: 'Overview' },
+  { key: 'bookings', label: 'Room Bookings', capability: 'hasRooms' },
   { key: 'events', label: 'Events & functions', capability: 'hasEvents' },
   { key: 'food', label: 'Food orders', capability: 'servesFood' },
+  { key: 'gst', label: 'Tax & GST' },
 ];
 
 const EVENT_TYPE_LABEL = {
@@ -188,7 +196,7 @@ export default function ReportsPanel({ lodge }) {
   // restaurant with no rooms gets no Bookings tab, a lodge with no function
   // hall gets no Events tab. Same gate OwnerDashboard applies to the sidebar.
   const TABS = ALL_TABS.filter((t) => !t.capability || Boolean(lodge?.[t.capability]));
-  const [tab, setTab] = useUrlState('tab', 'bookings');
+  const [tab, setTab] = useUrlState('tab', 'overview');
   // A ?tab= this screen doesn't own falls back to the first available tab
   // rather than matching nothing and rendering an empty page under an
   // unselected strip.
@@ -197,8 +205,17 @@ export default function ReportsPanel({ lodge }) {
   const [toDate, setToDate] = useState(todayIso());
   const validRange = Boolean(fromDate && toDate && toDate >= fromDate);
 
+  // Overview's trend chart comparison — on by default (it's the more useful
+  // reading), against the previous period unless the owner asks for the same
+  // month a year back.
+  const [showComparison, setShowComparison] = useState(true);
+  const [compareMode, setCompareMode] = useState('previous_period');
+
   const [bookings, setBookings] = useState(null);
   const [bookingsError, setBookingsError] = useState('');
+  // The Bookings tab is the detailed register — every column shown by
+  // default; the toggle exists to hide the tax detail, not reveal it.
+  const [showTaxCols, setShowTaxCols] = useState(true);
   // Drives the fetch, not just the download — an owner should see on screen
   // exactly the rows the file will contain.
   const [downloadBusy, setDownloadBusy] = useState('');
@@ -392,7 +409,10 @@ export default function ReportsPanel({ lodge }) {
   }, [fromDate, toDate]);
 
   useEffect(() => {
-    if (!validRange || activeTab !== 'events') return;
+    if (!validRange || !lodge?.hasEvents) return;
+    // Events feed both their own tab and Overview's revenue tile, so they load
+    // whenever either is open, not only while the Events tab itself is active.
+    if (activeTab !== 'events' && activeTab !== 'overview') return;
     setEvents(null);
     setEventsError('');
     apiGet(`/reports/events?fromDate=${fromDate}&toDate=${toDate}`, { token })
@@ -402,7 +422,8 @@ export default function ReportsPanel({ lodge }) {
   }, [fromDate, toDate, activeTab]);
 
   useEffect(() => {
-    if (!validRange || activeTab !== 'food') return;
+    if (!validRange || !lodge?.servesFood) return;
+    if (activeTab !== 'food' && activeTab !== 'overview') return;
     setFoodOrders(null);
     setFoodOrdersError('');
     apiGet(`/reports/food-orders?fromDate=${fromDate}&toDate=${toDate}`, { token })
@@ -410,6 +431,23 @@ export default function ReportsPanel({ lodge }) {
       .catch((err) => setFoodOrdersError(err instanceof ApiError ? err.message : 'Could not load the food orders report.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, activeTab]);
+
+  // Cross-stream analytics (daily trend, revenue mix, functions pipeline,
+  // orders-by-hour, top items...) — one fetch shared by Overview, Events and
+  // Food, since all three need slices of the same aggregate rather than
+  // three narrower ones.
+  const [analyticsOverview, setAnalyticsOverview] = useState(null);
+  const [analyticsOverviewError, setAnalyticsOverviewError] = useState('');
+  useEffect(() => {
+    if (!validRange) return;
+    if (!['overview', 'events', 'food'].includes(activeTab)) return;
+    setAnalyticsOverview(null);
+    setAnalyticsOverviewError('');
+    apiGet(`/reports/analytics-overview?fromDate=${fromDate}&toDate=${toDate}&compareMode=${compareMode}`, { token })
+      .then((data) => setAnalyticsOverview(data))
+      .catch((err) => setAnalyticsOverviewError(err instanceof ApiError ? err.message : 'Could not load analytics.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab, compareMode]);
 
   const bookingSortAccessors = useMemo(
     () => ({
@@ -453,6 +491,12 @@ export default function ReportsPanel({ lodge }) {
     () => (gst ? Object.entries(gst.byDocumentType).map(([type, t]) => ({ type, ...t })) : []),
     [gst]
   );
+  const taxByStreamRows = useMemo(() => {
+    if (!gst?.byRevenueStream) return [];
+    return Object.entries(gst.byRevenueStream)
+      .map(([stream, t]) => ({ label: STREAM_LABEL[stream] || stream, value: t.cgstAmount + t.sgstAmount }))
+      .filter((row) => row.value > 0);
+  }, [gst]);
   const documentTypeSortAccessors = useMemo(
     () => ({
       type: (r) => DOCUMENT_LABEL[r.type] || r.type,
@@ -537,11 +581,10 @@ export default function ReportsPanel({ lodge }) {
         ))}
       </div>
 
-      <div className="dash-card reports-panel__filters">
-        <p className="reports-panel__filters-heading">Report period</p>
-        <div className="field-row field-row--triple">
-          <div className="field">
-            <label htmlFor="reportsMonth">Month</label>
+      <div className="dash-card reports-panel__compact-filters">
+        <div className="reports-panel__compact-row">
+          <div className="reports-panel__compact-field">
+            <span className="reports-panel__compact-label">Period</span>
             <input
               id="reportsMonth"
               type="month"
@@ -549,32 +592,146 @@ export default function ReportsPanel({ lodge }) {
               onChange={(e) => handleMonthChange(e.target.value)}
             />
           </div>
-          <div className="field">
-            <label htmlFor="reportsFromDate">From</label>
-            <input
-              id="reportsFromDate"
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="reportsToDate">To</label>
-            <input
-              id="reportsToDate"
-              type="date"
-              value={toDate}
-              min={fromDate || undefined}
-              onChange={(e) => setToDate(e.target.value)}
-            />
-          </div>
+
+          {activeTab === 'overview' && (
+            <>
+              <div className="reports-panel__compact-divider" />
+              <div className="reports-panel__compact-field">
+                <span className="reports-panel__compact-label">Compare to</span>
+                <select value={compareMode} onChange={(e) => setCompareMode(e.target.value)}>
+                  <option value="previous_period">Previous period</option>
+                  <option value="previous_year">Same period, last year</option>
+                </select>
+              </div>
+              <label className="reports-panel__compact-toggle">
+                <input
+                  type="checkbox"
+                  checked={showComparison}
+                  onChange={(e) => setShowComparison(e.target.checked)}
+                />
+                Show change vs. previous period
+              </label>
+            </>
+          )}
+
+          <div className="reports-panel__compact-spacer" />
+
+          {activeTab === 'bookings' && bookings && (
+            <div className="reports-panel__compact-actions">
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={previewBusy || Boolean(downloadBusy)}
+                onClick={handlePreview}
+              >
+                {previewBusy ? 'Building…' : previewUrl ? 'Hide preview' : 'Preview'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={Boolean(downloadBusy)}
+                onClick={() => handleDownload('excel')}
+              >
+                {downloadBusy === 'excel' ? 'Preparing…' : 'Excel'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={Boolean(downloadBusy)}
+                onClick={() => handleDownload('pdf')}
+              >
+                {downloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
+              </button>
+            </div>
+          )}
+          {activeTab === 'events' && events && (
+            <div className="reports-panel__compact-actions">
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={eventsPreviewBusy || Boolean(eventsDownloadBusy)}
+                onClick={handleEventsPreview}
+              >
+                {eventsPreviewBusy ? 'Building…' : eventsPreviewUrl ? 'Hide preview' : 'Preview'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={Boolean(eventsDownloadBusy)}
+                onClick={() => handleEventsDownload('excel')}
+              >
+                {eventsDownloadBusy === 'excel' ? 'Preparing…' : 'Excel'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={Boolean(eventsDownloadBusy)}
+                onClick={() => handleEventsDownload('pdf')}
+              >
+                {eventsDownloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
+              </button>
+            </div>
+          )}
+          {activeTab === 'food' && foodOrders && (
+            <div className="reports-panel__compact-actions">
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={foodPreviewBusy || Boolean(foodDownloadBusy)}
+                onClick={handleFoodPreview}
+              >
+                {foodPreviewBusy ? 'Building…' : foodPreviewUrl ? 'Hide preview' : 'Preview'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={Boolean(foodDownloadBusy)}
+                onClick={() => handleFoodDownload('excel')}
+              >
+                {foodDownloadBusy === 'excel' ? 'Preparing…' : 'Excel'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={Boolean(foodDownloadBusy)}
+                onClick={() => handleFoodDownload('pdf')}
+              >
+                {foodDownloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
+              </button>
+            </div>
+          )}
         </div>
+
+        <details className="reports-panel__compact-custom">
+          <summary>Custom range</summary>
+          <div className="field-row field-row--triple">
+            <div className="field">
+              <label htmlFor="reportsFromDate">From</label>
+              <input
+                id="reportsFromDate"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="reportsToDate">To</label>
+              <input
+                id="reportsToDate"
+                type="date"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+            </div>
+          </div>
+        </details>
+
         {!validRange ? (
           <p className="reports-panel__hint">Choose a valid date range.</p>
         ) : (
           <p className="reports-panel__hint">
-            Showing <strong>{reportPeriodLabel(fromDate, toDate)}</strong>. Pick a month for a full monthly
-            report, or set From and To for any other span.
+            Showing <strong>{reportPeriodLabel(fromDate, toDate)}</strong>.
           </p>
         )}
       </div>
@@ -593,6 +750,9 @@ export default function ReportsPanel({ lodge }) {
           )}
           {!bookingsError && bookings && (
             <>
+              <RoomsAnalytics fromDate={fromDate} toDate={toDate} validRange={validRange} bookings={bookings} />
+
+              <p className="reports-panel__section-label">This period at a glance</p>
               <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat">
                   <span className="reports-panel__stat-label">Bookings</span>
@@ -644,53 +804,30 @@ export default function ReportsPanel({ lodge }) {
                 )}
               </div>
 
-              <div className="dash-card reports-panel__download">
-                <div>
-                  <p className="reports-panel__download-title">
-                    Download the {reportPeriodLabel(fromDate, toDate)} booking report
-                  </p>
-                  <p className="reports-panel__hint">
-                    Excel has a Summary sheet and a Bookings sheet, with real numbers you can total.
-                    PDF is print-ready for filing or sharing.
-                  </p>
+              {(downloadError || previewUrl) && (
+                <div className="dash-card reports-panel__download">
+                  {downloadError && <p className="reports-panel__hint">{downloadError}</p>}
+                  {previewUrl && (
+                    <iframe
+                      className="reports-panel__preview"
+                      src={previewUrl}
+                      title="Booking report preview"
+                    />
+                  )}
                 </div>
-                <div className="reports-panel__download-actions">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={previewBusy || Boolean(downloadBusy)}
-                    onClick={handlePreview}
-                  >
-                    {previewBusy ? 'Building…' : previewUrl ? 'Hide preview' : 'Preview PDF'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={Boolean(downloadBusy)}
-                    onClick={() => handleDownload('excel')}
-                  >
-                    {downloadBusy === 'excel' ? 'Preparing…' : 'Download Excel'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={Boolean(downloadBusy)}
-                    onClick={() => handleDownload('pdf')}
-                  >
-                    {downloadBusy === 'pdf' ? 'Preparing…' : 'Download PDF'}
-                  </button>
-                </div>
-                {downloadError && <p className="reports-panel__hint">{downloadError}</p>}
-                {previewUrl && (
-                  <iframe
-                    className="reports-panel__preview"
-                    src={previewUrl}
-                    title="Booking report preview"
-                  />
-                )}
-              </div>
+              )}
 
-              <p className="reports-panel__section-label">Booking register</p>
+              <div className="reports-panel__table-bar">
+                <p className="reports-panel__section-label">Booking register</p>
+                <label className="reports-panel__tax-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showTaxCols}
+                    onChange={(e) => setShowTaxCols(e.target.checked)}
+                  />
+                  Tax columns
+                </label>
+              </div>
 
               {bookings.bookings.length === 0 ? (
                 <div className="dash-card">
@@ -712,11 +849,15 @@ export default function ReportsPanel({ lodge }) {
                           <SortTh label="Nights" sortKey="nights" sort={bookingSort} onSort={toggleBookingSort} />
                           <SortTh label="Status" sortKey="status" sort={bookingSort} onSort={toggleBookingSort} />
                           <SortTh label="Advance" sortKey="advanceAmount" sort={bookingSort} onSort={toggleBookingSort} />
-                          <SortTh label="Discount" sortKey="discountAmount" sort={bookingSort} onSort={toggleBookingSort} />
-                          <SortTh label="Taxable value" sortKey="taxableValue" sort={bookingSort} onSort={toggleBookingSort} />
-                          <SortTh label="CGST" sortKey="cgstAmount" sort={bookingSort} onSort={toggleBookingSort} />
-                          <SortTh label="SGST" sortKey="sgstAmount" sort={bookingSort} onSort={toggleBookingSort} />
-                          <SortTh label="Round off" sortKey="roundOff" sort={bookingSort} onSort={toggleBookingSort} />
+                          {showTaxCols && (
+                            <>
+                              <SortTh label="Discount" sortKey="discountAmount" sort={bookingSort} onSort={toggleBookingSort} />
+                              <SortTh label="Taxable value" sortKey="taxableValue" sort={bookingSort} onSort={toggleBookingSort} />
+                              <SortTh label="CGST" sortKey="cgstAmount" sort={bookingSort} onSort={toggleBookingSort} />
+                              <SortTh label="SGST" sortKey="sgstAmount" sort={bookingSort} onSort={toggleBookingSort} />
+                              <SortTh label="Round off" sortKey="roundOff" sort={bookingSort} onSort={toggleBookingSort} />
+                            </>
+                          )}
                           <SortTh label="Billed" sortKey="billedAmount" sort={bookingSort} onSort={toggleBookingSort} />
                           <SortTh label="Balance" sortKey="balanceCollected" sort={bookingSort} onSort={toggleBookingSort} />
                         </tr>
@@ -770,11 +911,15 @@ export default function ReportsPanel({ lodge }) {
                                 </>
                               )}
                             </td>
-                            <td>{b.discountAmount != null ? formatPrice(b.discountAmount) : '—'}</td>
-                            <td>{b.taxableValue != null ? formatPrice(b.taxableValue) : '—'}</td>
-                            <td>{b.cgstAmount != null ? formatPrice(b.cgstAmount) : '—'}</td>
-                            <td>{b.sgstAmount != null ? formatPrice(b.sgstAmount) : '—'}</td>
-                            <td>{b.roundOff != null ? formatPrice(b.roundOff) : '—'}</td>
+                            {showTaxCols && (
+                              <>
+                                <td>{b.discountAmount != null ? formatPrice(b.discountAmount) : '—'}</td>
+                                <td>{b.taxableValue != null ? formatPrice(b.taxableValue) : '—'}</td>
+                                <td>{b.cgstAmount != null ? formatPrice(b.cgstAmount) : '—'}</td>
+                                <td>{b.sgstAmount != null ? formatPrice(b.sgstAmount) : '—'}</td>
+                                <td>{b.roundOff != null ? formatPrice(b.roundOff) : '—'}</td>
+                              </>
+                            )}
                             <td>
                               {b.billedAmount != null ? (
                                 <>
@@ -783,6 +928,12 @@ export default function ReportsPanel({ lodge }) {
                                   <span className="reports-panel__muted">
                                     {DOCUMENT_TYPE_LABEL[b.documentType] || b.documentType}
                                   </span>
+                                </>
+                              ) : b.status === 'CANCELLED' ? (
+                                <>
+                                  —
+                                  <br />
+                                  <span className="reports-panel__muted">Cancelled · not billed</span>
                                 </>
                               ) : (
                                 <>
@@ -815,69 +966,37 @@ export default function ReportsPanel({ lodge }) {
         </>
       )}
 
-      {activeTab === 'occupancy' && (
+      {activeTab === 'overview' && (
         <>
-          {occupancyError && (
+          {(bookingsError || occupancyError || gstError) && (
             <div className="dash-card">
-              <div className="dash-state">{occupancyError}</div>
+              <div className="dash-state">
+                {bookingsError || occupancyError || gstError}
+              </div>
             </div>
           )}
-          {!occupancyError && validRange && !occupancy && (
+          {!bookingsError && !occupancyError && !gstError && validRange &&
+            (!bookings || !occupancy || !gst ||
+              (lodge?.hasEvents && !events && !eventsError) ||
+              (lodge?.servesFood && !foodOrders && !foodOrdersError)) && (
             <div className="dash-card">
               <div className="dash-state">Loading…</div>
             </div>
           )}
-          {!occupancyError && occupancy && (
+          {!bookingsError && !occupancyError && !gstError && bookings && occupancy && gst && (
             <>
-              <div className="reports-panel__stat-grid">
-                <div className="reports-panel__stat reports-panel__stat--accent">
-                  <span className="reports-panel__stat-label">Average occupancy</span>
-                  <span className="reports-panel__stat-value">{occupancy.summary.occupancyPercent}%</span>
-                </div>
-                <div className="reports-panel__stat">
-                  <span className="reports-panel__stat-label">Room-nights occupied</span>
-                  <span className="reports-panel__stat-value">
-                    {occupancy.summary.occupiedRoomNights} / {occupancy.summary.totalRoomNights}
-                  </span>
-                </div>
-                <div className="reports-panel__stat">
-                  <span className="reports-panel__stat-label">Active rooms</span>
-                  <span className="reports-panel__stat-value">{occupancy.totalRooms}</span>
-                </div>
-              </div>
+              <AnalyticsOverview
+                lodge={lodge}
+                bookings={bookings}
+                occupancy={occupancy}
+                gst={gst}
+                events={events}
+                foodOrders={foodOrders}
+                analytics={analyticsOverview}
+                analyticsError={analyticsOverviewError}
+                showComparison={showComparison}
+              />
 
-              <p className="reports-panel__section-label">Daily occupancy</p>
-
-              {occupancy.totalRooms === 0 ? (
-                <div className="dash-card">
-                  <div className="dash-state">Add rooms on the Rooms &amp; rates tab to see occupancy.</div>
-                </div>
-              ) : (
-                <div className="dash-card">
-                  <div className="dash-table-scroll">
-                    <table className="dash-table">
-                      <thead>
-                        <tr>
-                          <SortTh label="Date" sortKey="date" sort={occupancySort} onSort={toggleOccupancySort} />
-                          <SortTh label="Occupied" sortKey="occupiedRooms" sort={occupancySort} onSort={toggleOccupancySort} />
-                          <SortTh label="Occupancy" sortKey="occupancyPercent" sort={occupancySort} onSort={toggleOccupancySort} />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sortedOccupancyDays.map((d) => (
-                          <tr key={d.date}>
-                            <td>{formatDateOnly(d.date)}</td>
-                            <td>
-                              {d.occupiedRooms} / {d.totalRooms}
-                            </td>
-                            <td>{d.occupancyPercent}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </>
@@ -885,52 +1004,51 @@ export default function ReportsPanel({ lodge }) {
 
       {activeTab === 'gst' && (
         <>
-          {gstError && (
+          {(gstError || occupancyError) && (
             <div className="dash-card">
-              <div className="dash-state">{gstError}</div>
+              <div className="dash-state">{gstError || occupancyError}</div>
             </div>
           )}
-          {!gstError && validRange && !gst && (
+          {!gstError && !occupancyError && validRange && (!gst || !occupancy) && (
             <div className="dash-card">
               <div className="dash-state">Loading…</div>
             </div>
           )}
-          {!gstError && gst && (
+          {!gstError && !occupancyError && gst && occupancy && (
             <>
-              <div className="reports-panel__stat-grid">
-                <div className="reports-panel__stat">
-                  <span className="reports-panel__stat-label">Bills issued</span>
-                  <span className="reports-panel__stat-value">{gst.totals.count}</span>
+              <p className="reports-panel__section-label">GST totals — {reportPeriodLabel(fromDate, toDate)}</p>
+              <div className="reports-panel__gst-strip">
+                <div className="reports-panel__gst-cell">
+                  <span className="reports-panel__gst-cell-label">Bills issued</span>
+                  <span className="reports-panel__gst-cell-value">{gst.totals.count}</span>
                 </div>
-                <div className="reports-panel__stat">
-                  <span className="reports-panel__stat-label">Room charges</span>
-                  <span className="reports-panel__stat-value">{formatPrice(gst.totals.roomSubtotal)}</span>
+                <div className="reports-panel__gst-cell">
+                  <span className="reports-panel__gst-cell-label">Taxable value</span>
+                  <span className="reports-panel__gst-cell-value">{formatPrice(gst.totals.roomSubtotal)}</span>
                 </div>
-                <div className="reports-panel__stat">
-                  <span className="reports-panel__stat-label">CGST</span>
-                  <span className="reports-panel__stat-value">{formatPrice(gst.totals.cgstAmount)}</span>
+                <div className="reports-panel__gst-cell">
+                  <span className="reports-panel__gst-cell-label">CGST collected</span>
+                  <span className="reports-panel__gst-cell-value">{formatPrice(gst.totals.cgstAmount)}</span>
                 </div>
-                <div className="reports-panel__stat">
-                  <span className="reports-panel__stat-label">SGST</span>
-                  <span className="reports-panel__stat-value">{formatPrice(gst.totals.sgstAmount)}</span>
-                </div>
-                <div className="reports-panel__stat reports-panel__stat--accent">
-                  <span className="reports-panel__stat-label">Total revenue</span>
-                  <span className="reports-panel__stat-value">{formatPrice(gst.totals.totalAmount)}</span>
+                <div className="reports-panel__gst-cell">
+                  <span className="reports-panel__gst-cell-label">SGST collected</span>
+                  <span className="reports-panel__gst-cell-value">{formatPrice(gst.totals.sgstAmount)}</span>
                 </div>
               </div>
 
-              {documentTypeRowObjects.length > 0 && (
-                <>
-                  <p className="reports-panel__section-label">By document type</p>
-                  <div className="dash-card">
+              <div className="analytics-grid-2">
+                {documentTypeRowObjects.length > 0 && (
+                  <div className="analytics-card">
+                    <div className="analytics-card-head">
+                      <span className="analytics-card-title">Tax collected by document type</span>
+                    </div>
                     <div className="dash-table-scroll">
                       <table className="dash-table">
                         <thead>
                           <tr>
                             <SortTh label="Document type" sortKey="type" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="Count" sortKey="count" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
-                            <SortTh label="Room charges" sortKey="roomSubtotal" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
+                            <SortTh label="Taxable value" sortKey="roomSubtotal" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="CGST" sortKey="cgstAmount" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="SGST" sortKey="sgstAmount" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="Total" sortKey="totalAmount" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
@@ -939,7 +1057,7 @@ export default function ReportsPanel({ lodge }) {
                         <tbody>
                           {sortedDocumentTypeRows.map((t) => (
                             <tr key={t.type}>
-                              <td>{DOCUMENT_LABEL[t.type] || t.type}</td>
+                              <td><span className="reports-panel__doc-chip">{DOCUMENT_LABEL[t.type] || t.type}</span></td>
                               <td>{t.count}</td>
                               <td>{formatPrice(t.roomSubtotal)}</td>
                               <td>{formatPrice(t.cgstAmount)}</td>
@@ -951,8 +1069,22 @@ export default function ReportsPanel({ lodge }) {
                       </table>
                     </div>
                   </div>
-                </>
-              )}
+                )}
+
+                <div className="analytics-card">
+                  <div className="analytics-card-head">
+                    <span className="analytics-card-title">Tax collected by revenue stream</span>
+                  </div>
+                  {taxByStreamRows.length > 0 ? (
+                    <BarList rows={taxByStreamRows} tone="brand" formatValue={(v) => `${formatPrice(v)} tax`} />
+                  ) : (
+                    <p className="analytics-empty">No tax collected in this period.</p>
+                  )}
+                  <div className="analytics-card-meta">
+                    Room tax reconciles against the room register&apos;s Taxable value + CGST + SGST columns.
+                  </div>
+                </div>
+              </div>
 
               <p className="reports-panel__section-label">Bills issued</p>
 
@@ -981,7 +1113,7 @@ export default function ReportsPanel({ lodge }) {
                             <td>{inv.invoiceNumber}</td>
                             <td>{formatTimestamp(inv.createdAt)}</td>
                             <td>{inv.guestName}</td>
-                            <td>{DOCUMENT_LABEL[inv.documentType] || inv.documentType}</td>
+                            <td><span className="reports-panel__doc-chip">{DOCUMENT_LABEL[inv.documentType] || inv.documentType}</span></td>
                             <td>{formatPrice(inv.cgstAmount)}</td>
                             <td>{formatPrice(inv.sgstAmount)}</td>
                             <td>{formatPrice(inv.totalAmount)}</td>
@@ -991,6 +1123,36 @@ export default function ReportsPanel({ lodge }) {
                     </table>
                   </div>
                 </div>
+              )}
+
+              {occupancy.totalRooms > 0 && (
+                <>
+                  <p className="reports-panel__section-label">Daily occupancy</p>
+                  <div className="dash-card">
+                    <div className="dash-table-scroll">
+                      <table className="dash-table">
+                        <thead>
+                          <tr>
+                            <SortTh label="Date" sortKey="date" sort={occupancySort} onSort={toggleOccupancySort} />
+                            <SortTh label="Occupied" sortKey="occupiedRooms" sort={occupancySort} onSort={toggleOccupancySort} />
+                            <SortTh label="Occupancy" sortKey="occupancyPercent" sort={occupancySort} onSort={toggleOccupancySort} />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedOccupancyDays.map((d) => (
+                            <tr key={d.date}>
+                              <td>{formatDateOnly(d.date)}</td>
+                              <td>
+                                {d.occupiedRooms} / {d.totalRooms}
+                              </td>
+                              <td>{d.occupancyPercent}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               )}
             </>
           )}
@@ -1011,6 +1173,13 @@ export default function ReportsPanel({ lodge }) {
           )}
           {!eventsError && events && (
             <>
+              <FunctionsAnalytics
+                analytics={analyticsOverview}
+                loading={!analyticsOverview && !analyticsOverviewError}
+                error={analyticsOverviewError}
+              />
+
+              <p className="reports-panel__section-label">This period at a glance</p>
               <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat">
                   <span className="reports-panel__stat-label">Functions</span>
@@ -1038,51 +1207,18 @@ export default function ReportsPanel({ lodge }) {
                 </div>
               </div>
 
-              <div className="dash-card reports-panel__download">
-                <div>
-                  <p className="reports-panel__download-title">
-                    Download the {reportPeriodLabel(fromDate, toDate)} events &amp; functions report
-                  </p>
-                  <p className="reports-panel__hint">
-                    Excel has a Summary sheet and a Functions sheet, with real numbers you can total.
-                    PDF is print-ready for filing or sharing.
-                  </p>
+              {(eventsDownloadError || eventsPreviewUrl) && (
+                <div className="dash-card reports-panel__download">
+                  {eventsDownloadError && <p className="reports-panel__hint">{eventsDownloadError}</p>}
+                  {eventsPreviewUrl && (
+                    <iframe
+                      className="reports-panel__preview"
+                      src={eventsPreviewUrl}
+                      title="Events report preview"
+                    />
+                  )}
                 </div>
-                <div className="reports-panel__download-actions">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={eventsPreviewBusy || Boolean(eventsDownloadBusy)}
-                    onClick={handleEventsPreview}
-                  >
-                    {eventsPreviewBusy ? 'Building…' : eventsPreviewUrl ? 'Hide preview' : 'Preview PDF'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={Boolean(eventsDownloadBusy)}
-                    onClick={() => handleEventsDownload('excel')}
-                  >
-                    {eventsDownloadBusy === 'excel' ? 'Preparing…' : 'Download Excel'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={Boolean(eventsDownloadBusy)}
-                    onClick={() => handleEventsDownload('pdf')}
-                  >
-                    {eventsDownloadBusy === 'pdf' ? 'Preparing…' : 'Download PDF'}
-                  </button>
-                </div>
-                {eventsDownloadError && <p className="reports-panel__hint">{eventsDownloadError}</p>}
-                {eventsPreviewUrl && (
-                  <iframe
-                    className="reports-panel__preview"
-                    src={eventsPreviewUrl}
-                    title="Events report preview"
-                  />
-                )}
-              </div>
+              )}
 
               <p className="reports-panel__section-label">Functions &amp; events</p>
 
@@ -1163,6 +1299,7 @@ export default function ReportsPanel({ lodge }) {
           )}
           {!foodOrdersError && foodOrders && (
             <>
+              <p className="reports-panel__section-label">This period at a glance</p>
               <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat">
                   <span className="reports-panel__stat-label">Orders</span>
@@ -1176,63 +1313,34 @@ export default function ReportsPanel({ lodge }) {
                   <span className="reports-panel__stat-label">Cancelled</span>
                   <span className="reports-panel__stat-value">{foodOrders.summary.cancelledCount}</span>
                 </div>
-                <div className="reports-panel__stat reports-panel__stat--accent">
-                  <span className="reports-panel__stat-label">Delivered value</span>
-                  <span className="reports-panel__stat-value">{formatPrice(foodOrders.summary.deliveredValue)}</span>
-                </div>
                 <div className="reports-panel__stat reports-panel__stat--positive">
                   <span className="reports-panel__stat-label">Billed</span>
-                  <span className="reports-panel__stat-value">
-                    {foodOrders.summary.billedCount} · {formatPrice(foodOrders.summary.billedValue)}
+                  <span className="reports-panel__stat-value">{formatPrice(foodOrders.summary.billedValue)}</span>
+                  <span className="reports-panel__muted">
+                    {foodOrders.summary.billedCount} {foodOrders.summary.billedCount === 1 ? 'order' : 'orders'}
                   </span>
                 </div>
               </div>
 
-              <div className="dash-card reports-panel__download">
-                <div>
-                  <p className="reports-panel__download-title">
-                    Download the {reportPeriodLabel(fromDate, toDate)} food orders report
-                  </p>
-                  <p className="reports-panel__hint">
-                    Excel has a Summary sheet and an Orders sheet, with real numbers you can total.
-                    PDF is print-ready for filing or sharing.
-                  </p>
+              <FoodAnalytics
+                analytics={analyticsOverview}
+                loading={!analyticsOverview && !analyticsOverviewError}
+                error={analyticsOverviewError}
+                foodOrders={foodOrders}
+              />
+
+              {(foodDownloadError || foodPreviewUrl) && (
+                <div className="dash-card reports-panel__download">
+                  {foodDownloadError && <p className="reports-panel__hint">{foodDownloadError}</p>}
+                  {foodPreviewUrl && (
+                    <iframe
+                      className="reports-panel__preview"
+                      src={foodPreviewUrl}
+                      title="Food orders report preview"
+                    />
+                  )}
                 </div>
-                <div className="reports-panel__download-actions">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={foodPreviewBusy || Boolean(foodDownloadBusy)}
-                    onClick={handleFoodPreview}
-                  >
-                    {foodPreviewBusy ? 'Building…' : foodPreviewUrl ? 'Hide preview' : 'Preview PDF'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={Boolean(foodDownloadBusy)}
-                    onClick={() => handleFoodDownload('excel')}
-                  >
-                    {foodDownloadBusy === 'excel' ? 'Preparing…' : 'Download Excel'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={Boolean(foodDownloadBusy)}
-                    onClick={() => handleFoodDownload('pdf')}
-                  >
-                    {foodDownloadBusy === 'pdf' ? 'Preparing…' : 'Download PDF'}
-                  </button>
-                </div>
-                {foodDownloadError && <p className="reports-panel__hint">{foodDownloadError}</p>}
-                {foodPreviewUrl && (
-                  <iframe
-                    className="reports-panel__preview"
-                    src={foodPreviewUrl}
-                    title="Food orders report preview"
-                  />
-                )}
-              </div>
+              )}
 
               <p className="reports-panel__section-label">Food orders</p>
 

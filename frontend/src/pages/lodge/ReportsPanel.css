@@ -4,6 +4,65 @@
   gap: 20px;
 }
 
+/* ---------- Tax & GST tab: a totals strip of bordered cells (compliance
+   figures read as one filing, not a set of independent stat tiles) plus a
+   pill chip for document type wherever it appears in a table. ---------- */
+.reports-panel__gst-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-raised);
+}
+
+@media (max-width: 700px) {
+  .reports-panel__gst-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.reports-panel__gst-cell {
+  background: var(--surface);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.reports-panel__gst-cell-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.reports-panel__gst-cell-value {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reports-panel__doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  white-space: nowrap;
+}
+
 /* Row hover and a sticky head, scoped to this panel's own tables — the
    register and the GST/food/event lists all run long enough that knowing
    which columns you're reading, and which row your eye is on, earns its
@@ -67,27 +126,120 @@
   background: var(--neu-sunken);
 }
 
-.reports-panel__filters {
+/* Compact period/compare/export bar — one row on a desk monitor, wrapping
+   in place of scrolling on anything narrower. Replaces the old stacked
+   Month/From/To card; the custom From/To range now lives behind a
+   <details> disclosure since most visits just want the month picker. */
+.reports-panel__compact-filters {
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-.reports-panel__filters-heading {
-  font-size: 12px;
+.reports-panel__compact-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.reports-panel__compact-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reports-panel__compact-field input,
+.reports-panel__compact-field select {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--field-border, var(--border));
+  background: var(--field, var(--surface));
+  color: var(--ink);
+}
+
+.reports-panel__compact-label {
+  font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin: 0 0 8px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-/* This filter bar is a single row with nothing below it, so the bottom
-   margin .field normally carries (spacing one row of a form from the next)
-   just pads the card for no reason here. */
-.reports-panel__filters .field {
+.reports-panel__compact-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+
+.reports-panel__compact-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reports-panel__compact-toggle input {
+  cursor: pointer;
+}
+
+.reports-panel__compact-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.reports-panel__compact-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.reports-panel__compact-btn {
+  padding: 7px 14px;
+  font-size: 12.5px;
+}
+
+.reports-panel__compact-custom {
+  font-size: 12.5px;
+}
+
+.reports-panel__compact-custom summary {
+  color: var(--brand-ink);
+  font-weight: 600;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.reports-panel__compact-custom[open] summary {
+  margin-bottom: 8px;
+}
+
+.reports-panel__compact-custom .field-row--triple {
   margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .reports-panel__compact-row {
+    width: 100%;
+  }
+  .reports-panel__compact-spacer {
+    flex-basis: 100%;
+    height: 0;
+  }
+  .reports-panel__compact-actions {
+    width: 100%;
+  }
+  .reports-panel__compact-actions > * {
+    flex: 1;
+  }
 }
 
 .reports-panel__hint {
@@ -301,4 +453,270 @@
   letter-spacing: 0.04em;
   color: var(--text-muted);
   margin: 4px 2px;
+}
+
+/* Pairs the register's section label with the tax-columns switch on one row,
+   so turning on the detailed columns reads as an action on this table, not
+   a separate setting floating elsewhere on the tab. */
+.reports-panel__table-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reports-panel__table-bar .reports-panel__section-label {
+  margin: 0;
+}
+
+.reports-panel__tax-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.reports-panel__tax-toggle input {
+  cursor: pointer;
+}
+
+/* Overview's expandable tax/compliance section — collapsed by default so the
+   headline tiles are the whole story unless an owner asks for more. */
+.reports-panel__disclosure {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-raised);
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.reports-panel__disclosure:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.reports-panel__disclosure-chev {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 160ms ease;
+}
+
+.reports-panel__disclosure-chev.is-open {
+  transform: rotate(90deg);
+}
+
+.reports-panel__disclosure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 2px 0;
+}
+
+/* ---------- Overview hero: the one number the tab exists to answer,
+   with three supporting figures riding alongside it — not lined up as
+   equals in a stat grid, but framed as the headline and its context. ---------- */
+.reports-overview__hero {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: linear-gradient(135deg, var(--brand-lift) 0%, var(--brand-ink) 130%);
+  border-radius: var(--radius-card, 16px);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.reports-overview__hero-figure {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 22px 28px;
+  flex: 1 1 40%;
+  min-width: 200px;
+}
+
+.reports-overview__hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.reports-overview__hero-value {
+  font-size: clamp(26px, 4vw, 34px);
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.reports-overview__hero-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+/* Called out, not folded into the headline — money that hasn't been billed
+   yet isn't revenue, but an owner still needs to see it's sitting there. */
+.reports-overview__hero-unbilled {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 3px 10px;
+  width: fit-content;
+}
+
+.reports-overview__hero-metrics {
+  display: flex;
+  flex: 1 1 60%;
+  background: rgba(255, 255, 255, 0.1);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.reports-overview__hero-metric {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 22px 20px;
+}
+
+.reports-overview__hero-metric + .reports-overview__hero-metric {
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.reports-overview__hero-metric .k {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.reports-overview__hero-metric .v {
+  font-size: 19px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-overview__hero-metric .sub {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@media (max-width: 720px) {
+  .reports-overview__hero {
+    flex-direction: column;
+  }
+  .reports-overview__hero-metrics {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+  }
+  .reports-overview__hero-metric + .reports-overview__hero-metric {
+    border-left: none;
+  }
+}
+
+/* ---------- Revenue-by-operation cards: one per revenue stream, each its
+   own small ledger instead of every count and total from every stream
+   competing in one flat grid. ---------- */
+.reports-overview__streams {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.reports-overview__stream {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow-raised);
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reports-overview__stream-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.reports-overview__stream-name {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.reports-overview__stream-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-overview__stream-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reports-overview__stream-rows .row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.reports-overview__stream-rows .row span:first-child {
+  color: var(--text-muted);
+}
+
+.reports-overview__stream-rows .row span:last-child {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-overview__stream-error {
+  font-size: 12.5px;
+  color: var(--color-danger);
+  margin: 0;
+}
+
+.reports-overview__stream-loading {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.reports-overview__stream-unbilled {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-warning);
+  margin: 0;
 }

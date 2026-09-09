@@ -1253,6 +1253,17 @@ IF COL_LENGTH('dbo.food_orders', 'invoice_id') IS NULL
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_invoice' AND object_id = OBJECT_ID('dbo.food_orders'))
     EXEC('CREATE INDEX ix_food_orders_invoice ON dbo.food_orders(invoice_id) WHERE invoice_id IS NOT NULL');
 
+-- Records which invoice a void released the order from, purely for display —
+-- so a voided food bill still shows its items and guest name in the bills
+-- list and detail view instead of looking emptied out. Nothing that decides
+-- whether an order is billed reads this column; invoice_id IS NULL still
+-- means exactly what it always meant.
+IF COL_LENGTH('dbo.food_orders', 'voided_invoice_id') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD voided_invoice_id BIGINT NULL REFERENCES dbo.invoices(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_voided_invoice' AND object_id = OBJECT_ID('dbo.food_orders'))
+    EXEC('CREATE INDEX ix_food_orders_voided_invoice ON dbo.food_orders(voided_invoice_id) WHERE voided_invoice_id IS NOT NULL');
+
 -- ---------------------------------------------------------------------------
 -- Portions (half plate / full plate)
 -- ---------------------------------------------------------------------------

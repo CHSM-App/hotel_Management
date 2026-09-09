@@ -17,6 +17,7 @@
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 SET NOCOUNT ON;
+SET XACT_ABORT ON;
 
 DECLARE @LodgeName NVARCHAR(200) = N'Anand Executive Home Stay';
 DECLARE @Apply     BIT           = 0;   -- <<< set to 1 to delete for real
@@ -57,6 +58,7 @@ DELETE foi FROM dbo.food_order_items foi
     JOIN dbo.food_orders fo ON fo.id = foi.order_id WHERE fo.lodge_id = @LodgeId;
 DELETE FROM dbo.food_orders      WHERE lodge_id = @LodgeId;
 
+DELETE FROM dbo.payment_lines    WHERE lodge_id = @LodgeId;
 DELETE FROM dbo.advance_receipts WHERE lodge_id = @LodgeId;
 DELETE FROM dbo.invoices         WHERE lodge_id = @LodgeId;
 
