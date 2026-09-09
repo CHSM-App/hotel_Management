@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
@@ -12,6 +15,7 @@ import '../billing/bill_pdf.dart';
 import '../theme.dart';
 import 'advance_receipt_screen.dart';
 import 'booking_actions.dart';
+import 'id_proof_viewer_screen.dart';
 import 'take_booking_screen.dart';
 
 /// One stay, in full.
@@ -45,6 +49,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   /// rather than "(0)" either way, the same way the web page's own button
   /// prints nothing before its own fetch answers.
   int? _receiptCount;
+
+  /// True while a "clear lockout" request for the food PIN is in flight.
+  bool _clearingLockout = false;
 
   /// Run a check-in, check-out or cancel and reload this stay's own detail
   /// on success — the same page the desk is already looking at, rather than
@@ -111,6 +118,48 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     if (saved == true) await _load();
   }
 
+  /// A guest who mistypes their room's food PIN five times locks it out of
+  /// ordering for fifteen minutes. Reception clears it from here rather than
+  /// waiting out the timer.
+  Future<void> _clearFoodLockout() async {
+    final booking = _booking;
+    if (booking == null || booking.roomNumber == null) return;
+    setState(() => _clearingLockout = true);
+    try {
+      await ref
+          .read(ordersUsecaseProvider)
+          .clearFoodPinLockout(booking.roomNumber!);
+      if (!mounted) return;
+      await _load();
+    } catch (_) {
+      // Left as-is: a failed clear leaves the lockout on screen, which is
+      // itself the honest answer — the desk can simply try again.
+    } finally {
+      if (mounted) setState(() => _clearingLockout = false);
+    }
+  }
+
+  Future<(Uint8List, String?)> _fetchIdProof({int? guestId}) async {
+    final usecase = ref.read(bookingUsecaseProvider);
+    final res = guestId == null
+        ? await usecase.idProof(widget.bookingId)
+        : await usecase.guestIdProof(widget.bookingId, guestId);
+    final bytes = Uint8List.fromList(res.data ?? const []);
+    final contentType = res.headers.value(Headers.contentTypeHeader);
+    return (bytes, contentType);
+  }
+
+  void _viewIdProof(String title, {int? guestId}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => IdProofViewerScreen(
+          title: title,
+          load: () => _fetchIdProof(guestId: guestId),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final booking = _booking;
@@ -148,9 +197,19 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   children: [
                     _TopBar(booking: booking),
                     const SizedBox(height: AppTheme.s16),
-                    _StayRoomSection(booking: booking),
+                    _StayRoomSection(
+                      booking: booking,
+                      clearingLockout: _clearingLockout,
+                      onClearLockout: _clearFoodLockout,
+                    ),
                     const SizedBox(height: AppTheme.s16),
-                    _GuestSection(booking: booking),
+                    _GuestSection(
+                      booking: booking,
+                      onViewIdProof: () =>
+                          _viewIdProof('ID proof · ${booking.guestName ?? 'Guest'}'),
+                      onViewGuestIdProof: (g) =>
+                          _viewIdProof('ID proof · ${g.name}', guestId: g.id),
+                    ),
                     const SizedBox(height: AppTheme.s16),
                     LayoutBuilder(
                       builder: (context, constraints) {
@@ -344,8 +403,14 @@ class _TopBar extends StatelessWidget {
 
 class _StayRoomSection extends StatelessWidget {
   final Booking booking;
+  final bool clearingLockout;
+  final VoidCallback onClearLockout;
 
-  const _StayRoomSection({required this.booking});
+  const _StayRoomSection({
+    required this.booking,
+    required this.clearingLockout,
+    required this.onClearLockout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -355,8 +420,11 @@ class _StayRoomSection extends StatelessWidget {
     return _Section(
       number: 1,
       title: 'Stay & room',
-      child: _FactBox(
-        facts: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _FactBox(
+            facts: [
           _Fact(
             label: 'Room',
             value: 'Room ${booking.roomNumber ?? '—'}'
@@ -400,6 +468,16 @@ class _StayRoomSection extends StatelessWidget {
                   .join(' · '),
               wide: true,
             ),
+            ],
+          ),
+          if (booking.status == 'CHECKED_IN' && booking.foodPin != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            _FoodPinBox(
+              booking: booking,
+              clearingLockout: clearingLockout,
+              onClearLockout: onClearLockout,
+            ),
+          ],
         ],
       ),
     );
@@ -414,12 +492,120 @@ class _StayRoomSection extends StatelessWidget {
   }
 }
 
+/// The PIN a checked-in guest reads out to order food from the room's QR
+/// code, and the "Unlock now" the desk reaches for once they've mistyped it
+/// too many times.
+class _FoodPinBox extends StatelessWidget {
+  final Booking booking;
+  final bool clearingLockout;
+  final VoidCallback onClearLockout;
+
+  const _FoodPinBox({
+    required this.booking,
+    required this.clearingLockout,
+    required this.onClearLockout,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final locked = booking.foodOrderingLockedUntil != null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'FOOD PIN',
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Text(
+                booking.foodPin!,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2,
+                ),
+              ),
+              if (locked) ...[
+                const SizedBox(width: AppTheme.s8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.danger.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Locked',
+                    style: TextStyle(
+                      color: AppTheme.danger,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (locked)
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Too many wrong PINs — ordering is blocked for this room.',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                  ),
+                ),
+                TextButton(
+                  onPressed: clearingLockout ? null : onClearLockout,
+                  child: Text(
+                    clearingLockout ? 'Clearing…' : 'Unlock now',
+                  ),
+                ),
+              ],
+            )
+          else
+            const Text(
+              'Read this out to the guest — they need it to order food from '
+              'the QR code.',
+              style: TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── 2 · Guest details ────────────────────────────────────────────────────────
 
 class _GuestSection extends StatelessWidget {
   final Booking booking;
+  final VoidCallback onViewIdProof;
+  final void Function(GuestInfo guest) onViewGuestIdProof;
 
-  const _GuestSection({required this.booking});
+  const _GuestSection({
+    required this.booking,
+    required this.onViewIdProof,
+    required this.onViewGuestIdProof,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -475,6 +661,7 @@ class _GuestSection extends StatelessWidget {
               if (booking.idProofType != null)
                 _idProofLabel(booking.idProofType!),
             ].join(' · '),
+            onViewIdProof: booking.hasIdProofDocument ? onViewIdProof : null,
           ),
           for (final g in booking.guests)
             _PersonRow(
@@ -484,6 +671,9 @@ class _GuestSection extends StatelessWidget {
                 if ((g.phone ?? '').isNotEmpty) g.phone!,
                 if (g.idProofType != null) _idProofLabel(g.idProofType!),
               ].join(' · '),
+              onViewIdProof: g.hasIdProofDocument
+                  ? () => onViewGuestIdProof(g)
+                  : null,
             ),
         ],
       ),
@@ -502,7 +692,16 @@ class _PersonRow extends StatelessWidget {
   final String? role;
   final String meta;
 
-  const _PersonRow({required this.name, this.role, required this.meta});
+  /// Only offered when a document is actually on file — the same gate the
+  /// web page's own "View ID proof" link is drawn behind.
+  final VoidCallback? onViewIdProof;
+
+  const _PersonRow({
+    required this.name,
+    this.role,
+    required this.meta,
+    this.onViewIdProof,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -523,36 +722,59 @@ class _PersonRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (role != null) ...[
+                      const SizedBox(width: AppTheme.s8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          role!.toUpperCase(),
+                          style: const TextStyle(
+                            color: AppTheme.accent,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (role != null) ...[
-                const SizedBox(width: AppTheme.s8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.accent.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    role!.toUpperCase(),
-                    style: const TextStyle(
+              if (onViewIdProof != null)
+                InkResponse(
+                  onTap: onViewIdProof,
+                  radius: 18,
+                  child: const Padding(
+                    padding: EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.visibility_outlined,
                       color: AppTheme.accent,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
+                      size: 18,
                     ),
                   ),
                 ),
-              ],
             ],
           ),
           if (meta.isNotEmpty) ...[
@@ -577,11 +799,39 @@ class _AdvanceSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cancelled = booking.status == 'CANCELLED';
+
     return _Section(
       number: 3,
       title: booking.paidInFull ? 'Payment' : 'Advance payment',
       child: booking.advanceAmount == null
-          ? const _EmptyBox(message: 'No advance taken.')
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _EmptyBox(message: 'No advance taken.'),
+                if (cancelled &&
+                    (booking.cancelReason != null ||
+                        (booking.cancellationCharge ?? 0) > 0)) ...[
+                  const SizedBox(height: AppTheme.s8),
+                  _FactBox(
+                    facts: [
+                      if ((booking.cancellationCharge ?? 0) > 0)
+                        _Fact(
+                          label: 'Cancellation charge',
+                          value: formatPrice(booking.cancellationCharge),
+                          note: booking.cancellationChargePaymentMethod,
+                        ),
+                      if (booking.cancelReason != null)
+                        _Fact(
+                          label: 'Cancelled because',
+                          value: booking.cancelReason!,
+                          wide: true,
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            )
           : _FactBox(
               facts: [
                 _Fact(
@@ -594,6 +844,23 @@ class _AdvanceSection extends StatelessWidget {
                   _Fact(
                     label: 'Transaction no.',
                     value: booking.advanceReference!,
+                    wide: true,
+                  ),
+                if (cancelled && booking.refundAmount != null) ...[
+                  _Fact(
+                    label: 'Refunded',
+                    value: formatPrice(booking.refundAmount),
+                    note: booking.refundPaymentMethod,
+                  ),
+                  _Fact(
+                    label: 'Cancellation charge',
+                    value: formatPrice(booking.cancellationCharge ?? 0),
+                  ),
+                ],
+                if (cancelled && booking.cancelReason != null)
+                  _Fact(
+                    label: 'Cancelled because',
+                    value: booking.cancelReason!,
                     wide: true,
                   ),
               ],

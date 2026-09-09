@@ -181,140 +181,146 @@ class _RoomCard extends ConsumerWidget {
       ),
       child: NeuCard(
         padding: EdgeInsets.zero,
-        radius: AppTheme.rLarge,
-        child: Column(
+        radius: AppTheme.rMedium,
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _CoverImage(room: room),
-            Padding(
-              padding: const EdgeInsets.all(AppTheme.s16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Room ${room.roomNumber}',
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 17,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              room.category.name,
-                              style: const TextStyle(
-                                color: AppTheme.accent,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            formatPrice(room.price),
-                            style: const TextStyle(
-                              color: AppTheme.heading,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 17,
-                            ),
-                          ),
-                          const Text(
-                            'per night',
-                            style: TextStyle(color: AppTheme.muted, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  Wrap(
-                    spacing: AppTheme.s8,
-                    runSpacing: AppTheme.s8,
-                    children: [
-                      if (room.floor != null && room.floor!.isNotEmpty)
-                        _Chip(Icons.layers_outlined, 'Floor ${room.floor}'),
-                      if (_bedSummary != null) _Chip(Icons.bed_outlined, _bedSummary!),
-                      if (_bathroomLabel != null) _Chip(Icons.bathtub_outlined, _bathroomLabel!),
-                      if (room.maxOccupancy != null)
-                        _Chip(Icons.people_alt_outlined, 'Max ${room.maxOccupancy} guests'),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  const Divider(height: 1, color: AppTheme.border),
-                  const SizedBox(height: AppTheme.s12),
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => _confirmDelete(context, ref),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: (room.isActive ? AppTheme.vacant : AppTheme.muted)
-                                .withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Row(
+            _CoverImage(
+              room: room,
+              size: 64,
+              onToggleActive: () => _confirmToggleActive(context, ref),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s8,
+                  AppTheme.s8,
+                  AppTheme.s8,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                room.isActive ? Icons.check_circle_rounded : Icons.pause_circle_outline_rounded,
-                                size: 12,
-                                color: room.isActive ? AppTheme.vacant : AppTheme.muted,
-                              ),
-                              const SizedBox(width: 4),
                               Text(
-                                room.isActive ? 'Active' : 'Inactive',
-                                style: TextStyle(
-                                  color: room.isActive ? AppTheme.vacant : AppTheme.muted,
-                                  fontSize: 11,
+                                'Room ${room.roomNumber}',
+                                style: const TextStyle(
+                                  color: AppTheme.heading,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                room.category.name,
+                                style: const TextStyle(
+                                  color: AppTheme.accent,
                                   fontWeight: FontWeight.w500,
+                                  fontSize: 11.5,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.edit_outlined, size: 19),
-                        color: AppTheme.muted,
-                        onPressed: () => showRoomFormSheet(
-                          context,
-                          categories: ref.read(roomsViewModelProvider).categories,
-                          room: room,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              formatPrice(room.price),
+                              style: const TextStyle(
+                                color: AppTheme.heading,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const Text(
+                              'per night',
+                              style: TextStyle(color: AppTheme.muted, fontSize: 9.5),
+                            ),
+                          ],
                         ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                        color: AppTheme.danger,
-                        onPressed: () => _confirmDelete(context, ref),
-                      ),
-                    ],
-                  ),
-                ],
+                        NeuRowMenu(
+                          onEdit: () => showRoomFormSheet(
+                            context,
+                            categories: ref.read(roomsViewModelProvider).categories,
+                            room: room,
+                          ),
+                          onDelete: () => _confirmDelete(context, ref),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (room.floor != null && room.floor!.isNotEmpty)
+                          _Chip(Icons.layers_outlined, 'Floor ${room.floor}'),
+                        if (_bedSummary != null) _Chip(Icons.bed_outlined, _bedSummary!),
+                        if (_bathroomLabel != null) _Chip(Icons.bathtub_outlined, _bathroomLabel!),
+                        if (room.maxOccupancy != null)
+                          _Chip(Icons.people_alt_outlined, 'Max ${room.maxOccupancy}'),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Tapping the Active/Inactive badge on the photo — the same spot the web
+  /// room card puts it — asks to flip just that one flag, separately from
+  /// the fuller delete sheet which also offers a permanent delete.
+  Future<void> _confirmToggleActive(BuildContext context, WidgetRef ref) async {
+    final activating = !room.isActive;
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.bg,
+        title: Text(
+          '${activating ? 'Activate' : 'Deactivate'} room ${room.roomNumber}?',
+          style: const TextStyle(color: AppTheme.heading),
+        ),
+        content: Text(
+          activating
+              ? 'Make it available for new bookings again.'
+              : 'Hide it from new bookings, but keep its history.',
+          style: const TextStyle(color: AppTheme.text, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(activating ? 'Activate' : 'Deactivate'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true || !context.mounted) return;
+
+    final ok = await ref
+        .read(roomsViewModelProvider.notifier)
+        .setRoomActive(room.id, activating);
+    if (!context.mounted) return;
+    if (!ok) {
+      _say(context, ref.read(roomsViewModelProvider).error ?? 'Could not update this room.');
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
@@ -381,24 +387,29 @@ class _RoomCard extends ConsumerWidget {
       );
 }
 
-/// The room's photo, the way a booking site's listing card leads with one —
-/// full width, a fixed height so the grid stays even whether a room has six
-/// photos or none, and a count badge when there is more than one to see.
-/// A room with no photo yet gets a placeholder rather than collapsing to a
-/// bare text card, so an empty gallery doesn't read as a broken listing.
+/// The room's photo as a small square thumbnail alongside the card's details
+/// — compact rather than a full-width banner, with a count badge when there
+/// is more than one photo. A room with no photo yet gets a placeholder
+/// rather than collapsing to a bare text card.
 class _CoverImage extends StatelessWidget {
   final RoomListing room;
+  final double size;
+  final VoidCallback onToggleActive;
 
-  const _CoverImage({required this.room});
+  const _CoverImage({
+    required this.room,
+    required this.size,
+    required this.onToggleActive,
+  });
 
   @override
   Widget build(BuildContext context) {
     final hasPhoto = room.images.isNotEmpty;
     return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
+      borderRadius: const BorderRadius.horizontal(left: Radius.circular(AppTheme.rMedium)),
       child: SizedBox(
-        height: 168,
-        width: double.infinity,
+        height: size,
+        width: size,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -406,52 +417,57 @@ class _CoverImage extends StatelessWidget {
               Image.network(
                 '$baseUrl/room-images/${room.images.first.filename}',
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const _CoverPlaceholder(),
+                errorBuilder: (_, __, ___) => _CoverPlaceholder(roomNumber: room.roomNumber),
               )
             else
-              const _CoverPlaceholder(),
-
-            // A soft gradient under the count badge so a light photo doesn't
-            // wash it out.
-            if (hasPhoto && room.images.length > 1)
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0x33000000), Colors.transparent],
-                    stops: [0, 0.35],
-                  ),
-                ),
-              ),
+              _CoverPlaceholder(roomNumber: room.roomNumber),
 
             if (room.images.length > 1)
               Positioned(
-                top: AppTheme.s12,
-                right: AppTheme.s12,
+                right: 3,
+                bottom: 3,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.photo_library_rounded, size: 12, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${room.images.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '${room.images.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
+
+            // Tappable status badge over the photo — the same spot and the
+            // same one-tap toggle the web room card's own "Active"/"Inactive"
+            // badge offers, rather than a dot too small to read or hit.
+            Positioned(
+              left: 2,
+              top: 2,
+              child: GestureDetector(
+                onTap: onToggleActive,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: room.isActive ? AppTheme.vacant : AppTheme.muted,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    room.isActive ? 'Active' : 'Inactive',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 7.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -460,11 +476,14 @@ class _CoverImage extends StatelessWidget {
 }
 
 class _CoverPlaceholder extends StatelessWidget {
-  const _CoverPlaceholder();
+  final String roomNumber;
+
+  const _CoverPlaceholder({required this.roomNumber});
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -475,8 +494,15 @@ class _CoverPlaceholder extends StatelessWidget {
           ],
         ),
       ),
-      child: const Center(
-        child: Icon(Icons.bed_rounded, size: 40, color: AppTheme.accent),
+      child: Text(
+        roomNumber,
+        style: const TextStyle(
+          color: AppTheme.accent,
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+        ),
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
       ),
     );
   }
@@ -491,7 +517,7 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(999),
@@ -500,9 +526,9 @@ class _Chip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: AppTheme.muted),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(color: AppTheme.text, fontSize: 11)),
+          Icon(icon, size: 10, color: AppTheme.muted),
+          const SizedBox(width: 3),
+          Text(label, style: const TextStyle(color: AppTheme.text, fontSize: 9.5)),
         ],
       ),
     );

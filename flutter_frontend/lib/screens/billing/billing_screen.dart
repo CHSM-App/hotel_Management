@@ -89,8 +89,12 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       return [
         for (final stay in rows)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
             child: NeuCard(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: AppTheme.s12,
+              ),
               // The State's own mounted, not the closure's context — this
               // widget is rebuilt by the list around it, and checking the
               // wrong one is checking whether a context that has already been
@@ -104,41 +108,76 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 if (!mounted) return;
                 await _load();
               },
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
+                  // Room number as a small badge — the one fact worth
+                  // reading at a glance before the guest's name.
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppTheme.bg,
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: Text(
+                      stay.roomNumber ?? '—',
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
                           stay.guestName ?? 'Guest',
                           style: Theme.of(context).textTheme.titleMedium,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const Icon(Icons.chevron_right, color: AppTheme.muted),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            if (stay.categoryName != null) stay.categoryName!,
+                            'Stay ${formatPrice(stay.totalPrice)}',
+                            if ((stay.advanceAmount ?? 0) > 0)
+                              'Adv ${formatPrice(stay.advanceAmount)}',
+                          ].join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Room ${stay.roomNumber ?? '—'}'
-                    '${stay.categoryName != null ? ' · ${stay.categoryName}' : ''}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  Row(
+                  const SizedBox(width: AppTheme.s8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _Figure(label: 'Stay', value: stay.totalPrice),
-                      const SizedBox(width: AppTheme.s24),
-                      if ((stay.advanceAmount ?? 0) > 0)
-                        _Figure(label: 'Advance', value: stay.advanceAmount),
-                      const Spacer(),
-                      _Figure(
-                        label: 'To collect',
-                        value: stay.balanceDue,
-                        strong: true,
+                      Text(
+                        'To collect',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      Text(
+                        formatPrice(stay.balanceDue),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
                       ),
                     ],
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(
+                    Icons.chevron_right,
+                    color: AppTheme.muted,
+                    size: 20,
                   ),
                 ],
               ),
@@ -175,7 +214,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       return [
         for (final invoice in rows)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
             child: _InvoiceCard(invoice: invoice),
           ),
       ];
@@ -196,53 +235,74 @@ class _Toggle extends StatelessWidget {
     required this.onChanged,
   });
 
+  static const double _height = 44;
+
   @override
   Widget build(BuildContext context) {
-    Widget tab(String label, bool selected, VoidCallback onTap) =>
+    final toBillLabel =
+        queueCount == null ? 'To bill' : 'To bill ($queueCount)';
+
+    Widget segment(String label, bool selected, VoidCallback onTap) =>
         Expanded(
           child: GestureDetector(
             onTap: onTap,
-            child: selected
-                ? NeuPressed(
-                    radius: AppTheme.rMedium,
-                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                    child: Center(
-                      child: Text(
-                        label,
-                        style: const TextStyle(
-                          color: AppTheme.accent,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  )
-                : NeuCard(
-                    shadow: AppTheme.subtle,
-                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                    child: Center(
-                      child: Text(
-                        label,
-                        style: const TextStyle(
-                          color: AppTheme.text,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              height: _height,
+              child: Center(
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  style: TextStyle(
+                    color: selected ? AppTheme.accent : AppTheme.muted,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 13,
                   ),
+                  child: Text(label, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ),
           ),
         );
 
-    return Row(
-      children: [
-        tab(
-          queueCount == null ? 'To bill' : 'To bill ($queueCount)',
-          !showIssued,
-          () => onChanged(false),
-        ),
-        const SizedBox(width: AppTheme.s8),
-        tab('Issued', showIssued, () => onChanged(true)),
-      ],
+    return Container(
+      height: _height,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Stack(
+        children: [
+          // The sliding "pill" behind the active label — the one thing the
+          // old pressed-vs-card pair lacked: a state that reads as selected
+          // even when it sits on a page that's nearly the same shade.
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment:
+                showIssued ? Alignment.centerRight : Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: 0.5,
+              child: Container(
+                height: _height - 8,
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+                  boxShadow: AppTheme.extruded,
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              segment(toBillLabel, !showIssued, () => onChanged(false)),
+              segment('Issued', showIssued, () => onChanged(true)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -257,6 +317,10 @@ class _InvoiceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return NeuCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: AppTheme.s12,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -267,6 +331,7 @@ class _InvoiceCard extends ConsumerWidget {
                   '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
                   '${invoice.invoiceNumber ?? ''}',
                   style: Theme.of(context).textTheme.titleMedium,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (invoice.isVoid)
@@ -298,12 +363,13 @@ class _InvoiceCard extends ConsumerWidget {
               formatIsoDate(invoice.createdAt),
             ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
             style: Theme.of(context).textTheme.bodySmall,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           Row(
             children: [
               _Figure(label: 'Total', value: invoice.totalAmount),
-              const SizedBox(width: AppTheme.s24),
+              const SizedBox(width: AppTheme.s16),
               if (invoice.advancePaid > 0)
                 _Figure(label: 'Advance', value: invoice.advancePaid),
               const Spacer(),
@@ -318,7 +384,7 @@ class _InvoiceCard extends ConsumerWidget {
           // cash, part UPI says both — a single method against a split is a
           // statement the guest can see is wrong.
           if (invoice.tenders.length > 1) ...[
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             for (final t in invoice.tenders)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
@@ -330,13 +396,13 @@ class _InvoiceCard extends ConsumerWidget {
               ),
           ],
           if (invoice.isVoid && invoice.voidReason != null) ...[
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             Text(
               'Voided: ${invoice.voidReason}',
               style: const TextStyle(color: AppTheme.danger, fontSize: 11),
             ),
           ],
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           Row(
             children: [
               // Offered on a void bill too: the desk still has to be able to
@@ -345,19 +411,19 @@ class _InvoiceCard extends ConsumerWidget {
               NeuButton(
                 onPressed: () => _sharePdf(context, ref),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s16,
-                  vertical: AppTheme.s8,
+                  horizontal: AppTheme.s12,
+                  vertical: AppTheme.s4,
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       Icons.download_rounded,
-                      size: 16,
+                      size: 15,
                       color: AppTheme.heading,
                     ),
                     SizedBox(width: 6),
-                    Text('PDF'),
+                    Text('PDF', style: TextStyle(fontSize: 13)),
                   ],
                 ),
               ),

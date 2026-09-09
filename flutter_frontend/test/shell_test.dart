@@ -107,6 +107,14 @@ class _FakeBookings implements BookingRepository {
       rows.firstWhere((b) => b.id == id, orElse: () => Booking(id: id));
 
   @override
+  Future<Response<List<int>>> idProof(int bookingId) async =>
+      Response(requestOptions: RequestOptions(path: ''), data: const []);
+
+  @override
+  Future<Response<List<int>>> guestIdProof(int bookingId, int guestId) async =>
+      Response(requestOptions: RequestOptions(path: ''), data: const []);
+
+  @override
   Future<Booking> createBooking(FormData form) async => const Booking(id: 1);
 
   @override

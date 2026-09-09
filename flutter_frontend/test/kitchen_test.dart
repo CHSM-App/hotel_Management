@@ -72,6 +72,9 @@ class _FakeOrders implements OrdersRepository {
 
   @override
   Future<List<DiningTable>> tables() async => const [];
+
+  @override
+  Future<void> clearFoodPinLockout(String roomNumber) async {}
 }
 
 /// A cook: one permission, at a property that serves food.

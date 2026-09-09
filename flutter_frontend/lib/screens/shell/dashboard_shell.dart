@@ -7,6 +7,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../billing/billing_screen.dart';
 import '../bookings/bookings_screen.dart';
+import '../bookings/register_screen.dart';
 import '../food/orders_screen.dart';
 import '../placeholder_screen.dart';
 import '../reports/reports_screen.dart';
@@ -92,6 +93,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     switch (active.key) {
       case 'bookings':
         return const BookingsScreen();
+      case 'register':
+        return const RegisterScreen();
       case 'food':
         return const OrdersScreen();
       case 'billing':
@@ -276,10 +279,10 @@ class _TopBar extends ConsumerWidget {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(
-        AppTheme.s16,
-        AppTheme.s16,
         AppTheme.s12,
-        AppTheme.s24,
+        AppTheme.s8,
+        AppTheme.s8,
+        AppTheme.s12,
       ),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -294,16 +297,16 @@ class _TopBar extends ConsumerWidget {
         boxShadow: [
           BoxShadow(
             color: Color(0x265A67D8),
-            offset: Offset(0, 6),
-            blurRadius: 16,
+            offset: Offset(0, 4),
+            blurRadius: 10,
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.16),
@@ -314,32 +317,33 @@ class _TopBar extends ConsumerWidget {
               initial,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 18,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(width: AppTheme.s12),
+          const SizedBox(width: AppTheme.s8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   lodgeName,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 17,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (me != null) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     '${me!.user.name} · ${me!.user.roleName ?? me!.user.role}',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w400,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -366,7 +370,10 @@ class _SignOutButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return IconButton(
       tooltip: 'Sign out',
-      icon: const Icon(Icons.logout_rounded, color: Colors.white),
+      icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 20),
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(),
+      padding: const EdgeInsets.all(8),
       onPressed: () async {
         final ok = await showDialog<bool>(
           context: context,

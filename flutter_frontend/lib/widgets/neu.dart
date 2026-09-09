@@ -40,6 +40,65 @@ class NeuCard extends StatelessWidget {
   }
 }
 
+/// A compact overflow menu for a card or row's own edit/delete pair — one
+/// icon-and-label item each, a rounded surface with a soft shadow, and the
+/// destructive item in [AppTheme.danger] — used in place of two bare
+/// [IconButton]s wherever a row needs to save the horizontal space.
+class NeuRowMenu extends StatelessWidget {
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final double iconSize;
+
+  const NeuRowMenu({
+    super.key,
+    required this.onEdit,
+    required this.onDelete,
+    this.iconSize = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      splashRadius: 18,
+      icon: Icon(Icons.more_vert_rounded, size: iconSize, color: AppTheme.muted),
+      elevation: 3,
+      color: AppTheme.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      onSelected: (v) => v == 'edit' ? onEdit() : onDelete(),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'edit',
+          height: 40,
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_outlined, size: 17, color: AppTheme.heading),
+              SizedBox(width: 10),
+              Text('Edit', style: TextStyle(color: AppTheme.heading, fontSize: 13.5)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          height: 40,
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.delete_outline_rounded, size: 17, color: AppTheme.danger),
+              SizedBox(width: 10),
+              Text('Delete', style: TextStyle(color: AppTheme.danger, fontSize: 13.5)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// A sunken well — inputs and other surfaces that read as "inside" a card.
 ///
 /// The neumorphic version faked an inset shadow with a gradient; flat design

@@ -46,6 +46,13 @@ class BookingUsecase {
   /// One stay, in full.
   Future<Booking> booking(int id) => repository.booking(id);
 
+  /// The primary guest's uploaded ID proof, raw bytes plus content type.
+  Future<Response<List<int>>> idProof(int bookingId) =>
+      repository.idProof(bookingId);
+
+  Future<Response<List<int>>> guestIdProof(int bookingId, int guestId) =>
+      repository.guestIdProof(bookingId, guestId);
+
   /// Take the booking.
   Future<Booking> createBooking(FormData form) =>
       repository.createBooking(form);

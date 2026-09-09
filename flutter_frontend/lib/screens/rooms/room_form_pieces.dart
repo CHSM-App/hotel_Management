@@ -39,13 +39,38 @@ class SectionLabel extends StatelessWidget {
   final String? trailing;
   final IconData? icon;
 
-  const SectionLabel(this.title, {super.key, this.trailing, this.icon});
+  /// The circled step number — the same numbered-step framing the booking
+  /// form's own section heads carry — for a form read as a short sequence
+  /// rather than a stack of unrelated fields. Takes precedence over [icon]
+  /// when both are given.
+  final int? number;
+
+  const SectionLabel(this.title, {super.key, this.trailing, this.icon, this.number});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        if (icon != null) ...[
+        if (number != null) ...[
+          Container(
+            width: 18,
+            height: 18,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppTheme.accent,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTheme.s8),
+        ] else if (icon != null) ...[
           Icon(icon, size: 14, color: AppTheme.accent),
           const SizedBox(width: AppTheme.s8),
         ],
@@ -63,6 +88,130 @@ class SectionLabel extends StatelessWidget {
         if (trailing != null)
           Text(trailing!, style: Theme.of(context).textTheme.bodySmall),
       ],
+    );
+  }
+}
+
+/// A plain field label with the same red asterisk a required [NeuField]
+/// carries — for fields (dropdowns, pickers) that aren't a [NeuField] itself.
+class RequiredLabel extends StatelessWidget {
+  final String label;
+
+  const RequiredLabel(this.label, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        text: label,
+        style: Theme.of(context).textTheme.bodySmall,
+        children: const [
+          TextSpan(
+            text: ' *',
+            style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A compact two-way pill switch — the same "Single / Bulk range" toggle the
+/// website puts beside the form title, rather than [ToggleGroup]'s full-width
+/// segments which need the whole row to themselves.
+class ModeToggle extends StatelessWidget {
+  final Map<String, String> options;
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const ModeToggle({super.key, required this.options, required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final entry in options.entries)
+            GestureDetector(
+              onTap: () => onSelect(entry.key),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: entry.key == selected ? AppTheme.accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  entry.value,
+                  style: TextStyle(
+                    color: entry.key == selected ? Colors.white : AppTheme.text,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A dropdown row for a short fixed set of options — the same footprint as
+/// [CategoryDropdown], for fields (bathroom type, bed size) that pick from a
+/// small enum rather than a category list.
+class OptionDropdown extends StatelessWidget {
+  final List<String> values;
+  final Map<String, String> labels;
+  final String? selected;
+  final String hint;
+  final ValueChanged<String> onSelect;
+
+  const OptionDropdown({
+    super.key,
+    required this.values,
+    required this.labels,
+    required this.selected,
+    required this.onSelect,
+    this.hint = 'Choose one',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuPressed(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: selected,
+          isExpanded: true,
+          dropdownColor: AppTheme.card,
+          hint: Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+          items: [
+            for (final v in values)
+              DropdownMenuItem(
+                value: v,
+                child: Text(
+                  labels[v] ?? v,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+          ],
+          onChanged: (v) {
+            if (v != null) onSelect(v);
+          },
+        ),
+      ),
     );
   }
 }

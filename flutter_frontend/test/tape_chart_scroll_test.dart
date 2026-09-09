@@ -61,6 +61,14 @@ class _FakeBookingRepository implements BookingRepository {
   Future<Booking> booking(int id) => throw UnimplementedError();
 
   @override
+  Future<Response<List<int>>> idProof(int bookingId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Response<List<int>>> guestIdProof(int bookingId, int guestId) =>
+      throw UnimplementedError();
+
+  @override
   Future<Booking> createBooking(FormData form) => throw UnimplementedError();
 
   @override

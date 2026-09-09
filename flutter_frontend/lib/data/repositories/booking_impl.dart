@@ -60,6 +60,13 @@ class BookingImpl implements BookingRepository {
   Future<Booking> booking(int id) => api.booking(id);
 
   @override
+  Future<Response<List<int>>> idProof(int bookingId) => api.idProof(bookingId);
+
+  @override
+  Future<Response<List<int>>> guestIdProof(int bookingId, int guestId) =>
+      api.guestIdProof(bookingId, guestId);
+
+  @override
   Future<Booking> createBooking(FormData form) => api.createBooking(form);
 
   @override

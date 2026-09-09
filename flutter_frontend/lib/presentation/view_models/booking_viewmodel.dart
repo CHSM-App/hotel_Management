@@ -100,16 +100,18 @@ class BookingState {
     this.quoting = false,
     this.submitting = false,
     this.bookingTypeOverride,
-  }) : chartFrom = chartFrom ?? _today().subtract(const Duration(days: BookingViewModel.chartPastDays)),
-       chartTo = chartTo ??
-           _today()
-               .subtract(const Duration(days: BookingViewModel.chartPastDays))
-               .add(const Duration(days: BookingViewModel.chartWindowDays));
+  }) : chartFrom = chartFrom ?? _startOfMonth(_today()),
+       chartTo = chartTo ?? _startOfNextMonth(_today());
 
   static DateTime _today() {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
   }
+
+  static DateTime _startOfMonth(DateTime d) => DateTime(d.year, d.month, 1);
+
+  static DateTime _startOfNextMonth(DateTime d) =>
+      DateTime(d.year, d.month + 1, 1);
 
   BookingState copyWith({
     bool? isLoading,
@@ -336,15 +338,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// WINDOW_DAYS, so a step here lands on the same nights a step there would.
   static const chartWindowDays = 30;
 
-  /// How far back the chart opens by default: enough to see who is still in
-  /// house and to correct something taken yesterday, without opening on a
-  /// window mostly behind the desk.
-  static const chartPastDays = 4;
-
-  /// How far the window can grow from repeated pulls into the past — the web
-  /// tape chart's own MAX_WINDOW_DAYS. Nobody plans half a year of nights by
-  /// scrolling, so growth stops there rather than fetching an unbounded span.
-  static const chartMaxSpanDays = 180;
+  /// How far the window can grow from repeated pulls into the past or future
+  /// — the web tape chart's own MAX_WINDOW_DAYS. A season's worth of nights
+  /// (April through October, say) is a real desk question, so growth stops
+  /// well past that rather than fetching an unbounded span.
+  static const chartMaxSpanDays = 400;
 
   BookingViewModel(this.usecase) : super(BookingState());
 
@@ -396,6 +394,21 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
+  /// Snap the window back to whatever the current calendar month is right
+  /// now — [BookingState]'s own default only ever runs once, the moment the
+  /// provider is first created, so a chart left open (or a session merely
+  /// signed out and back into) across a month boundary would otherwise keep
+  /// showing the month it happened to open on rather than today's. Called
+  /// fresh each time the tape chart screen mounts, so leaving it and coming
+  /// back — another page, or a logout/login — reopens on today's month
+  /// exactly the way a cold app start does, while a prev/next the desk had
+  /// already made mid-visit still resets, the same as any other remount.
+  Future<void> resetChartToCurrentMonth() {
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, 1);
+    return setChartRange(from, DateTime(from.year, from.month + 1, 1));
+  }
+
   /// Slide the chart to a different window and refetch.
   Future<void> setChartRange(DateTime from, DateTime to, {bool silent = false}) async {
     state = state.copyWith(chartFrom: from, chartTo: to);
@@ -417,13 +430,15 @@ class BookingViewModel extends StateNotifier<BookingState> {
     state = state.copyWith(chartHitIndex: next < 0 ? next + count : next);
   }
 
-  /// Step to the previous or next 30-day page — the same page size the web
-  /// tape chart's own prev/next steps by, and always back to a page rather
-  /// than whatever span the desk had scrolled to, the way stepping there
-  /// resets a window that had grown from scrolling.
+  /// Step to the previous or next calendar month — the chart opens on the
+  /// current month by default, so paging keeps that same whole-month framing
+  /// rather than sliding by a fixed day count that would drift off the
+  /// month boundary, and always back to a full month rather than whatever
+  /// span the desk had scrolled to, the way stepping there resets a window
+  /// that had grown from scrolling.
   Future<void> shiftChart(int direction) {
-    final from = state.chartFrom.add(Duration(days: direction * chartWindowDays));
-    return setChartRange(from, from.add(const Duration(days: chartWindowDays)));
+    final from = DateTime(state.chartFrom.year, state.chartFrom.month + direction, 1);
+    return setChartRange(from, DateTime(from.year, from.month + 1, 1));
   }
 
   /// Pull the window's start further into the past, growing the span rather

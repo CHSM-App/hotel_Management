@@ -44,6 +44,13 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   /// pixels without a `LayoutBuilder` of its own.
   double _tile = 40;
 
+  /// Set once the chart has auto-scrolled to today on this mount, so a
+  /// later rebuild (a search hit, a chip tap, the chart quietly regrowing
+  /// past an edge) never yanks the desk's own scroll position back to today
+  /// a second time — this only ever fires the once, right after the chart
+  /// first opens on the current month.
+  bool _scrolledToToday = false;
+
   /// One key per category band, so a chip tap can scroll straight to it — the
   /// same jump the web tape chart's own category chips do.
   final Map<String, GlobalKey> _sectionKeys = {};
@@ -65,9 +72,10 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(
-      () => ref.read(bookingViewModelProvider.notifier).loadChart(),
-    );
+    Future.microtask(() async {
+      final vm = ref.read(bookingViewModelProvider.notifier);
+      await vm.resetChartToCurrentMonth();
+    });
   }
 
   static const _growWithinPx = 90.0;
@@ -121,67 +129,110 @@ class _TapeChartState extends ConsumerState<TapeChart> {
         // Compact on a phone, roomier on a tablet — the same breakpoint the
         // rest of the app uses for a two-column vs one-column body.
         final wide = constraints.maxWidth >= 700;
-        final tile = wide ? 56.0 : 40.0;
-        final roomCol = wide ? 96.0 : 72.0;
-        final rowHeight = wide ? 52.0 : 44.0;
+        final tile = wide ? 56.0 : 34.0;
+        final roomCol = wide ? 96.0 : 64.0;
+        final rowHeight = wide ? 52.0 : 38.0;
         _tile = tile;
 
-        return Column(
-          children: [
-            _ChartHeader(
-              from: state.chartFrom,
-              onPrev: () => vm.shiftChart(-1),
-              onNext: () => vm.shiftChart(1),
-            ),
-            const SizedBox(height: AppTheme.s8),
-            const _Legend(),
-            if (state.chartSections.length > 1) ...[
-              const SizedBox(height: AppTheme.s8),
-              _CategoryChips(
-                sections: state.chartSections,
-                dates: dates,
-                onTap: _jumpTo,
-              ),
-            ],
-            const SizedBox(height: AppTheme.s12),
-            Expanded(child: _buildBody(state, dates, tile, roomCol, rowHeight)),
-          ],
-        );
+        return _buildBody(state, vm, dates, tile, roomCol, rowHeight);
       },
     );
   }
 
   Widget _buildBody(
     BookingState state,
+    BookingViewModel vm,
     List<DateTime> dates,
     double tile,
     double roomCol,
     double rowHeight,
   ) {
+    // The date pill and legend are ordinary scrolling content above the
+    // chart itself while it is still loading, erroring, or empty — there is
+    // no grid underneath them yet for a pinned header to make sense against.
+    // The category chips stay out of this section even here, so the loading
+    // and error states don't flash them and then pin them a moment later.
+    Widget topSection() => Column(
+      children: [
+        _ChartHeader(
+          from: state.chartFrom,
+          onPrev: () => vm.shiftChart(-1),
+          onNext: () => vm.shiftChart(1),
+        ),
+        const SizedBox(height: AppTheme.s8),
+        const _Legend(),
+      ],
+    );
+
     if (state.chart.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Column(
+        children: [
+          topSection(),
+          const Expanded(child: Center(child: CircularProgressIndicator())),
+        ],
+      );
     }
     if (state.chart.hasError) {
-      return Center(
-        child: Text(
-          BookingViewModel.messageFor(state.chart.error!),
-          style: const TextStyle(color: AppTheme.muted),
-        ),
+      return Column(
+        children: [
+          topSection(),
+          Expanded(
+            child: Center(
+              child: Text(
+                BookingViewModel.messageFor(state.chart.error!),
+                style: const TextStyle(color: AppTheme.muted),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     final sections = state.chartSections;
     if (sections.isEmpty) {
-      return const Center(
-        child: Text(
-          'No active rooms yet.',
-          style: TextStyle(color: AppTheme.muted),
-        ),
+      return Column(
+        children: [
+          topSection(),
+          const Expanded(
+            child: Center(
+              child: Text(
+                'No active rooms yet.',
+                style: TextStyle(color: AppTheme.muted),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
+
+    // The chart opens on the current month, but a month drawn from day one
+    // still leaves today off to the right of a phone-width screen on any
+    // date past the first week — scrolling every strip to it once, the
+    // first time it appears in a loaded window, means the desk lands on
+    // today without having to drag there by hand, the same as opening a
+    // calendar app. Guarded so this never fires again on this mount: a
+    // search hit, a chip tap, or the window quietly regrowing past an edge
+    // all rebuild this same method, and none of those should yank the
+    // desk's own scroll position back to today mid-visit.
+    if (!_scrolledToToday) {
+      final todayIndex = dates.indexWhere(
+        (d) =>
+            d.year == todayDate.year &&
+            d.month == todayDate.month &&
+            d.day == todayDate.day,
+      );
+      if (todayIndex != -1) {
+        _scrolledToToday = true;
+        final offset = (todayIndex - 1).clamp(0, dates.length - 1) * tile;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _hSync.jumpAllTo(offset);
+        });
+      }
+    }
+
     final hitIds = state.chartSearchHits.map((b) => b.id).toSet();
     final activeHitId = state.chartActiveHit?.id;
 
@@ -213,35 +264,42 @@ class _TapeChartState extends ConsumerState<TapeChart> {
         }
         return false;
       },
-      child: Column(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.circular(AppTheme.rMedium),
-            border: Border.all(color: AppTheme.border),
-            boxShadow: AppTheme.extruded,
+      // The pill and legend scroll away like any other content above the
+      // grid — the category chips and the date header pin together at the
+      // top once the desk scrolls the room list up past them, the same way
+      // a spreadsheet freezes its own column headings rather than
+      // everything above the data.
+      child: CustomScrollView(
+        controller: _vScroll,
+        slivers: [
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                topSection(),
+                const SizedBox(height: AppTheme.s12),
+              ],
+            ),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: _DateHeader(
-            dates: dates,
-            today: todayDate,
-            tile: tile,
-            roomCol: roomCol,
-            hSync: _hSync,
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _DateHeaderDelegate(
+              sections: sections.length > 1 ? sections : null,
+              onTapChip: _jumpTo,
+              dates: dates,
+              today: todayDate,
+              tile: tile,
+              roomCol: roomCol,
+              hSync: _hSync,
+            ),
           ),
-        ),
-        const SizedBox(height: AppTheme.s12),
-        Expanded(
-          child: SingleChildScrollView(
-            controller: _vScroll,
+          SliverPadding(
             // Clears the floating New booking button — padding on the whole
             // chart would shrink the header and legend too and still leave
             // the last card's own scroll area squeezed against the button;
             // this instead gives only the trailing space the extra room.
-            padding: const EdgeInsets.only(bottom: 96),
-            child: Column(
-              children: [
+            padding: const EdgeInsets.only(top: AppTheme.s12, bottom: 96),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
                 for (final section in sections) ...[
                   Container(
                     key: _keyFor(section.categoryName),
@@ -269,11 +327,10 @@ class _TapeChartState extends ConsumerState<TapeChart> {
                   ),
                   const SizedBox(height: AppTheme.s12),
                 ],
-              ],
+              ]),
             ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
@@ -315,11 +372,11 @@ class _TapeChartState extends ConsumerState<TapeChart> {
 
 // ── Header: window label + pager ────────────────────────────────────────────
 
-/// The month stepper — a fixed 30-day page that moves a whole page at a time,
-/// the same way the web tape chart's own prev/next does. Not a date-range
-/// picker: the web chart has none, because a stay entered against an
-/// arbitrary custom range is not a question the desk actually asks — the
-/// question is "show me the next 30 days," repeatable either direction.
+/// The month stepper — a whole calendar month at a time, opening on the
+/// current month so the desk never has to scroll just to see today. Not a
+/// date-range picker: the web chart has none, because a stay entered against
+/// an arbitrary custom range is not a question the desk actually asks — the
+/// question is "show me next month," repeatable either direction.
 class _ChartHeader extends StatelessWidget {
   final DateTime from;
   final VoidCallback onPrev;
@@ -340,17 +397,19 @@ class _ChartHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Always a fixed thirty-day page from `from`, the same way the web tape
-    // chart's own pill reads off its `month` anchor rather than the actual
-    // (possibly scroll-grown) end of the fetched window — `to` moves every
-    // time the desk drags near the far edge for more nights, and showing
-    // that here would make the date pill visibly crawl forward on its own
-    // mid-drag instead of only on a deliberate prev/next or a pull past the
-    // near edge, which is the one direction the web pill does follow (it
-    // opens on an earlier page, the same way prev does).
-    final last = from
-        .add(const Duration(days: BookingViewModel.chartWindowDays))
-        .subtract(const Duration(days: 1));
+    // Always `from`'s own calendar month, the same way the web tape chart's
+    // own pill reads off its `month` anchor rather than the actual (possibly
+    // scroll-grown) end of the fetched window — `to` moves every time the
+    // desk drags near the far edge for more nights, and showing that here
+    // would make the date pill visibly crawl forward on its own mid-drag
+    // instead of only on a deliberate prev/next or a pull past the near
+    // edge, which is the one direction the web pill does follow (it opens
+    // on an earlier page, the same way prev does).
+    final last = DateTime(
+      from.year,
+      from.month + 1,
+      1,
+    ).subtract(const Duration(days: 1));
     final sameYear = from.year == last.year;
 
     return Row(
@@ -358,7 +417,7 @@ class _ChartHeader extends StatelessWidget {
         _RoundIconButton(
           icon: Icons.chevron_left_rounded,
           onTap: onPrev,
-          semanticLabel: 'Previous ${BookingViewModel.chartWindowDays} days',
+          semanticLabel: 'Previous month',
           size: 32,
         ),
         const SizedBox(width: AppTheme.s8),
@@ -400,7 +459,7 @@ class _ChartHeader extends StatelessWidget {
         _RoundIconButton(
           icon: Icons.chevron_right_rounded,
           onTap: onNext,
-          semanticLabel: 'Next ${BookingViewModel.chartWindowDays} days',
+          semanticLabel: 'Next month',
           size: 32,
         ),
       ],
@@ -727,6 +786,18 @@ class _HorizontalSync {
     _syncing = false;
   }
 
+  /// Jump every strip straight to [offset] — used once, right after the
+  /// chart opens, to land on today's column instead of the window's own
+  /// start. Unlike [shiftAllBy] this is an absolute position, not a delta.
+  void jumpAllTo(double offset) {
+    _syncing = true;
+    for (final c in _controllers) {
+      if (!c.hasClients) continue;
+      c.jumpTo(offset.clamp(0.0, c.position.maxScrollExtent));
+    }
+    _syncing = false;
+  }
+
   void dispose() {
     for (final c in _controllers) {
       c.dispose();
@@ -764,6 +835,139 @@ class _SyncedControllerState extends State<_SyncedController> {
 }
 
 // ── Date header row ──────────────────────────────────────────────────────────
+
+/// Pins [_DateHeader] to the top of the chart's scroll view once the desk
+/// scrolls the room list up past it — the one part of the chart that stays
+/// put, the way a spreadsheet freezes its own column headings rather than
+/// everything above the data.
+class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
+  /// Null (or a single section) when there is nothing worth a chip row for
+  /// — the chip strip above the date header is skipped entirely rather than
+  /// pinning an empty sliver of its own height.
+  final List<ChartSection>? sections;
+  final ValueChanged<String>? onTapChip;
+  final List<DateTime> dates;
+  final DateTime today;
+  final double tile;
+  final double roomCol;
+  final _HorizontalSync hSync;
+
+  _DateHeaderDelegate({
+    required this.sections,
+    required this.onTapChip,
+    required this.dates,
+    required this.today,
+    required this.tile,
+    required this.roomCol,
+    required this.hSync,
+  });
+
+  // Both a little over the sum of `_DateHeader`'s own fixed row heights and
+  // the chip pill's own natural height — extra headroom so a real device's
+  // font metrics have room to differ from these numbers without visibly
+  // clipping into the chip text or the date tiles; [build] backs this with
+  // an `OverflowBox` regardless, so this only affects how much gets clipped
+  // rather than whether an overflow warning shows.
+  static const double _dateHeaderHeight = 78;
+  static const double _chipsHeight = 44;
+
+  bool get _hasChips => sections != null && sections!.isNotEmpty;
+
+  double get _height =>
+      _dateHeaderHeight + (_hasChips ? _chipsHeight + AppTheme.s8 : 0);
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    // A pinned sliver's height is fixed the moment it's laid out — it can't
+    // grow later the way a normal box can. The chip pills and the date
+    // header's own tiles are all sized off fixed pixel heights assuming a
+    // 1.0 text scale, so on a phone set to a larger system font size, that
+    // text no longer fits and the whole header overflows. Pinning the
+    // scale here keeps this one header legible-but-fixed rather than
+    // fluid-but-broken; nothing else on the chart is pinned, so everywhere
+    // else still respects the device's own text size.
+    final content = MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: const TextScaler.linear(1.0)),
+      // An opaque backdrop the full height of the pinned block — without
+      // one, the chip row (which has no background of its own) lets the
+      // room rows scrolling past underneath show straight through it,
+      // which reads as the chips sinking into the list instead of sitting
+      // fixed above it.
+      child: Container(
+        color: AppTheme.bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_hasChips) ...[
+              SizedBox(
+                height: _chipsHeight,
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _CategoryChips(
+                      sections: sections!,
+                      dates: dates,
+                      onTap: onTapChip!,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppTheme.s8),
+            ],
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                border: Border.all(color: AppTheme.border),
+                boxShadow: AppTheme.extruded,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: _DateHeader(
+                dates: dates,
+                today: today,
+                tile: tile,
+                roomCol: roomCol,
+                hSync: hSync,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // However tall this actually wants to be, the sliver above it was told
+    // exactly `_height` and won't ask again — an `OverflowBox` lets the
+    // content size itself free of that constraint instead of fighting it,
+    // and `ClipRect` trims anything past `_height` cleanly instead of the
+    // usual yellow-and-black overflow banner painting over the chart.
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.topCenter,
+        minHeight: 0,
+        maxHeight: double.infinity,
+        child: content,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _DateHeaderDelegate oldDelegate) {
+    return oldDelegate.sections != sections ||
+        oldDelegate.dates != dates ||
+        oldDelegate.today != today ||
+        oldDelegate.tile != tile ||
+        oldDelegate.roomCol != roomCol ||
+        oldDelegate.hSync != hSync;
+  }
+}
 
 class _DateHeader extends StatelessWidget {
   final List<DateTime> dates;

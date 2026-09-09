@@ -50,4 +50,8 @@ class OrdersUsecase {
   Future<List<MenuSection>> menu() => repository.menu();
 
   Future<List<DiningTable>> tables() => repository.tables();
+
+  /// Clear a room's food-PIN lockout.
+  Future<void> clearFoodPinLockout(String roomNumber) =>
+      repository.clearFoodPinLockout(roomNumber);
 }

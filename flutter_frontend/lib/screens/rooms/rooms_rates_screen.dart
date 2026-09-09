@@ -75,6 +75,9 @@ class _RoomsRatesScreenState extends ConsumerState<RoomsRatesScreen> {
   }
 }
 
+/// Same sliding-pill segmented control the billing screen's To-bill/Issued
+/// switch uses — one connected control with a moving highlight, rather than
+/// two separate boxes that don't read as a single tab bar.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
@@ -83,53 +86,74 @@ class _SubTabs extends StatelessWidget {
 
   static const _tabs = {'rooms': 'Rooms', 'chart': 'Price chart'};
 
+  static const double _height = 44;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (final entry in _tabs.entries) ...[
-          Expanded(
-            child: GestureDetector(
-              onTap: () => onSelect(entry.key),
-              child: entry.key == selected
-                  ? NeuPressed(
-                      radius: AppTheme.rMedium,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.s12,
-                      ),
-                      child: Center(
-                        child: Text(
-                          entry.value,
-                          style: const TextStyle(
-                            color: AppTheme.accent,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    )
-                  : NeuCard(
-                      radius: AppTheme.rMedium,
-                      shadow: AppTheme.subtle,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.s12,
-                      ),
-                      child: Center(
-                        child: Text(
-                          entry.value,
-                          style: const TextStyle(
-                            color: AppTheme.text,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
+    final keys = _tabs.keys.toList();
+    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
+
+    Widget segment(String key, String label) {
+      final isSelected = key == selected;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onSelect(key),
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: _height,
+            child: Center(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                style: TextStyle(
+                  color: isSelected ? AppTheme.accent : AppTheme.muted,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  fontSize: 14,
+                ),
+                child: Text(label, overflow: TextOverflow.ellipsis),
+              ),
             ),
           ),
-          if (entry.key != _tabs.keys.last)
-            const SizedBox(width: AppTheme.s8),
+        ),
+      );
+    }
+
+    return Container(
+      height: _height,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment(
+              -1 + (2 / (keys.length - 1)) * selectedIndex,
+              0,
+            ),
+            child: FractionallySizedBox(
+              widthFactor: 1 / keys.length,
+              child: Container(
+                height: _height - 8,
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+                  boxShadow: AppTheme.extruded,
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              for (final entry in _tabs.entries) segment(entry.key, entry.value),
+            ],
+          ),
         ],
-      ],
+      ),
     );
   }
 }
