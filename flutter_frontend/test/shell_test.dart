@@ -50,6 +50,12 @@ class _FakeAuth implements AuthRepository {
   @override
   Future<Me> updateMyLodge(Map<String, dynamic> body) async =>
       throw UnimplementedError();
+
+  @override
+  Future<void> forgotPassword({
+    required String identifier,
+    required String newPassword,
+  }) async => throw UnimplementedError();
 }
 
 /// One stay for the chart, and the room it sits on. The chart needs both a
