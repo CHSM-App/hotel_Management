@@ -80,10 +80,36 @@ async function getFoodOrdersReportHandler(req, res, next) {
   }
 }
 
+async function getAnalyticsOverviewHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const compareMode = String(req.query.compareMode || 'previous_period');
+    if (!reportsService.COMPARE_MODES.includes(compareMode)) {
+      throw new ApiError('Choose a valid comparison.', 400);
+    }
+    const report = await reportsService.getAnalyticsOverview(req.user.lodgeId, fromDate, toDate, compareMode);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getRoomsAnalyticsHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const report = await reportsService.getRoomsAnalytics(req.user.lodgeId, fromDate, toDate);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getOccupancyHandler,
   getGstSummaryHandler,
   getBookingsReportHandler,
   getEventsReportHandler,
   getFoodOrdersReportHandler,
+  getAnalyticsOverviewHandler,
+  getRoomsAnalyticsHandler,
 };

@@ -1,0 +1,265 @@
+/* Shared visual language for the analytics sections across Overview,
+   Bookings, Events and Food orders — KPI tiles, trend/donut charts, bar and
+   rank lists, an insights strip. Built on this app's existing tokens
+   (--brand, --surface, --shadow-raised, etc.) rather than introducing a
+   second palette. */
+
+.analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+/* ---------- KPI row ---------- */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 980px) {
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .kpi-row { grid-template-columns: 1fr; }
+}
+
+.kpi-card {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow-raised);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.kpi-card--primary {
+  background: linear-gradient(135deg, var(--brand-lift) 0%, var(--brand-ink) 130%);
+  box-shadow: var(--shadow-card);
+}
+
+.kpi-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.kpi-card--primary .kpi-label { color: rgba(255, 255, 255, 0.72); }
+
+.kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpi-card--primary .kpi-value { color: #fff; }
+
+.kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.kpi-delta--up { color: var(--color-success); }
+.kpi-delta--down { color: var(--color-danger); }
+.kpi-delta--flat { color: var(--text-muted); }
+.kpi-card--primary .kpi-delta--up { color: #C9F7DA; }
+.kpi-card--primary .kpi-delta--down { color: #FFD3CB; }
+
+.kpi-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.kpi-card--primary .kpi-sub { color: rgba(255, 255, 255, 0.65); }
+
+/* ---------- Card + grid scaffolding ---------- */
+.analytics-grid-2 {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+@media (max-width: 900px) {
+  .analytics-grid-2 { grid-template-columns: 1fr; }
+}
+
+.analytics-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .analytics-grid-3 { grid-template-columns: 1fr; }
+}
+
+.analytics-card {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow-raised);
+  padding: 16px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.analytics-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analytics-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.analytics-card-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.analytics-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.analytics-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.analytics-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.analytics-section svg text { fill: var(--text-muted); }
+.analytics-section svg .axis-line { stroke: var(--border); }
+
+/* ---------- Bar list ---------- */
+.bar-list { display: flex; flex-direction: column; gap: 10px; }
+.bar-row { display: flex; flex-direction: column; gap: 4px; }
+.bar-row-top { display: flex; justify-content: space-between; font-size: 12px; gap: 8px; }
+.bar-row-top .name { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row-top .val { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar-track { height: 7px; border-radius: 99px; background: var(--neu-sunken); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 99px; }
+.bar-fill--brand { background: linear-gradient(90deg, var(--brand-lift), var(--brand)); }
+.bar-fill--gold { background: linear-gradient(90deg, #E0BB63, var(--accent)); }
+.bar-fill--teal { background: linear-gradient(90deg, #5FC7C7, #2FA0A0); }
+
+/* ---------- Donut + mix rows ---------- */
+.donut-wrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.mix-rows { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 140px; }
+.mix-row { display: flex; align-items: center; gap: 8px; }
+.mix-dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
+.mix-name { font-size: 12px; color: var(--text); font-weight: 600; flex: 1; }
+.mix-val { font-size: 12px; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.mix-pct { font-size: 10.5px; color: var(--text-muted); width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- Rank list ---------- */
+.rank-list { display: flex; flex-direction: column; gap: 1px; }
+.rank-row { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 10px; padding: 7px 2px; }
+.rank-row .rank-n { font-size: 11.5px; font-weight: 700; color: var(--text-muted); text-align: center; }
+.rank-row:nth-child(-n+3) .rank-n { color: var(--brand-ink); }
+.rank-row .rank-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.rank-row .rank-sub { font-size: 10.5px; color: var(--text-muted); }
+.rank-row .rank-val { font-size: 12.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+/* ---------- Insights strip ---------- */
+.insight-list { display: flex; flex-direction: column; gap: 9px; }
+.insight-item {
+  display: flex; gap: 11px; align-items: flex-start; padding: 11px 13px; border-radius: 11px;
+  border: 1px solid var(--border); background: var(--paper);
+}
+.insight-item .ico {
+  width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.insight-item--warn .ico { background: #FDF3DC; color: var(--accent-ink); }
+.insight-item--good .ico { background: var(--success-bg); color: var(--color-success); }
+.insight-item--info .ico { background: var(--brand-wash); color: var(--brand-ink); }
+.insight-item .ico svg { width: 15px; height: 15px; }
+.insight-item .body strong { color: var(--ink); font-size: 12.5px; }
+.insight-item .body p { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+
+/* ---------- Pipeline (Functions) ---------- */
+.pipeline-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+@media (max-width: 900px) { .pipeline-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px) { .pipeline-row { grid-template-columns: repeat(2, 1fr); } }
+
+.pipe-stage {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+  min-width: 0;
+}
+.pipe-stage .dot { width: 8px; height: 8px; border-radius: 50%; position: absolute; top: 13px; right: 13px; }
+.pipe-stage .stage-name { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.pipe-stage .stage-count { font-size: 20px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pipe-stage .stage-val { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Upcoming functions list ---------- */
+.upcoming-list { display: flex; flex-direction: column; }
+.upcoming-row {
+  display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 2px; border-bottom: 1px solid var(--border);
+}
+.upcoming-row:last-child { border-bottom: none; }
+.upcoming-date {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: var(--brand-wash); border-radius: 9px; padding: 5px 0; line-height: 1.1;
+}
+.upcoming-date .d { font-size: 15px; font-weight: 700; color: var(--brand-ink); }
+.upcoming-date .m { font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--brand-ink); opacity: 0.8; }
+.upcoming-info .title { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.upcoming-info .sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.upcoming-amt { font-size: 12.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.upcoming-amt .sub { display: block; font-size: 10px; color: var(--text-muted); font-weight: 600; margin-top: 1px; }
+
+/* ---------- Ring stat (Food billed/unbilled) ---------- */
+.ring-stat { display: flex; align-items: center; gap: 14px; }
+.ring-stat .figures { display: flex; flex-direction: column; gap: 2px; }
+.ring-stat .figures .big { font-size: 20px; font-weight: 700; color: var(--ink); }
+.ring-stat .figures .lbl { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+
+/* ---------- Empty / loading state within a card ---------- */
+.analytics-empty {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 8px 2px;
+}

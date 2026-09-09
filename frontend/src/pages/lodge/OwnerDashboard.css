@@ -499,18 +499,17 @@
   justify-content: flex-start;
 }
 
-/* Locked to the rail's width and given the rail's right edge, so the brand
-   reads as the sidebar's header and the search field starts exactly where the
-   content column does. */
+/* No longer pinned to the rail's width — the brand block now sizes to the
+   lodge name so it can stay on one line instead of wrapping or clipping. The
+   search field simply starts after it rather than at a fixed content-column
+   edge. */
 .dash-brand {
-  width: var(--dash-brand-w);
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 14px;
   height: 100%;
-  min-width: 0;
 }
 
 .dash-brand__badge {
@@ -528,31 +527,18 @@
 }
 
 .dash-brand__text {
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
-/* Small, heavy and tracked out rather than large: it is a wordmark, not a page
-   heading, and the section title already lives in the rail below it. */
+/* The property's name is the whole brand label now, on a single line — the
+   block sizes to it rather than the other way around. */
 .dash-brand__name {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--brand-ink);
-  line-height: 1.2;
-}
-
-/* The property's name. It is whatever the owner typed, so it truncates rather
-   than pushing the search field sideways. */
-.dash-brand__sub {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
   white-space: nowrap;
 }
 
@@ -796,18 +782,6 @@
   gap: 2px;
 }
 
-/* Tracking is what makes a short uppercase wordmark read as a mark. At 0.08em
-   it was tight enough to look like ordinary caps; the extra air plus a slightly
-   larger size gives it the presence the block was missing. */
 .dash-brand__name {
-  font-size: 13.5px;
-  letter-spacing: 0.1em;
-}
-
-/* Stepped back from the wordmark rather than sitting level with it — it is the
-   property's name, not a second heading. */
-.dash-brand__sub {
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 16px;
 }

@@ -1405,7 +1405,7 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
     // itself stays put — issued documents are voided in place, never deleted.
     await new sql.Request(transaction)
       .input('invoiceId', sql.BigInt, invoiceId)
-      .query('UPDATE dbo.food_orders SET invoice_id = NULL WHERE invoice_id = @invoiceId');
+      .query('UPDATE dbo.food_orders SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId');
 
     // A function whose bill is voided goes back to confirmed, so it can be
     // billed again — the bill is what settled it.
