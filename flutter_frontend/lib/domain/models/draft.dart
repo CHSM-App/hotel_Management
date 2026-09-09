@@ -3,6 +3,8 @@
 /// builder all need the same shapes.
 library;
 
+import 'package:image_picker/image_picker.dart';
+
 // ── Constants the server enforces ───────────────────────────────────────────
 
 /// Mirrors ID_PROOF_TYPES in bookings.schema.js. Anything else is rejected.
@@ -47,6 +49,11 @@ class GuestDraft {
   String idProofNumber;
   bool isChild;
 
+  /// A photo of the document, taken or picked fresh in this session — never
+  /// carried over from an edit, since a guest whose document is already on
+  /// file has nothing here to re-send.
+  XFile? idProofFile;
+
   GuestDraft({
     this.id,
     this.name = '',
@@ -54,6 +61,7 @@ class GuestDraft {
     this.idProofType,
     this.idProofNumber = '',
     this.isChild = false,
+    this.idProofFile,
   });
 
   bool get isEmpty => name.trim().isEmpty;

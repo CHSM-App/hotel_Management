@@ -44,6 +44,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2
 
+  # The profile screen's map pin: reading the phone's own GPS for "use my
+  # current location", and handing a lat/lng off to Google Maps to view.
+  geolocator: ^13.0.2
+  url_launcher: ^6.3.1
+
   # Serialization is hand-written rather than generated.
   #
   # The blueprint calls for Retrofit + json_serializable, and that was the first

@@ -35,6 +35,21 @@ class _FakeAuth implements AuthRepository {
   @override
   Future<Session> login(Credentials credentials) async =>
       const Session(token: 't', role: 'OWNER');
+
+  @override
+  Future<Map<String, dynamic>> sendPasswordOtp(String currentPassword) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String otp,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodge(Map<String, dynamic> body) async =>
+      throw UnimplementedError();
 }
 
 /// One stay for the chart, and the room it sits on. The chart needs both a

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../../domain/models/booking.dart' show PaymentLine;
 import '../../domain/models/invoice.dart';
@@ -47,15 +46,8 @@ class BillPdf {
     await shareBytesFromDevice(bytes, '$safe.pdf');
   }
 
-  /// Hand the finished file to the platform's own print dialog.
-  static Future<bool> print(Invoice invoice, {String? lodgeName}) =>
-      Printing.layoutPdf(
-        onLayout: (format) => build(invoice, lodgeName: lodgeName),
-        name: '${invoice.invoiceNumber ?? invoice.id}.pdf',
-      );
-
   /// Save the file to the device itself — a real download, distinct from
-  /// [share] and [print]. Returns where it landed.
+  /// [share]. Returns where it landed.
   static Future<String> download(Invoice invoice, {String? lodgeName}) async {
     final bytes = await build(invoice, lodgeName: lodgeName);
     final safe = (invoice.invoiceNumber ?? '${invoice.id}').replaceAll(

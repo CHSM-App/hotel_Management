@@ -40,11 +40,58 @@ class ApiService {
     return Session.fromJson(_map(res.data));
   }
 
+  /// No OTP — resets the password for whoever's phone or email is given, the
+  /// same door the web login's "Forgot password?" link uses.
+  Future<void> forgotPassword({
+    required String identifier,
+    required String newPassword,
+  }) async {
+    await _dio.post(
+      '/auth/forgot-password',
+      data: {'identifier': identifier, 'newPassword': newPassword},
+    );
+  }
+
   // ===== SESSION =====
 
   /// Who is signed in, and what this property is.
   Future<Me> me() async {
     final res = await _dio.get('/me');
+    return Me.fromJson(_map(res.data));
+  }
+
+  /// Step 1 of changing a password: the server checks [currentPassword] and
+  /// texts a 6-digit code to the account's phone over WhatsApp. Answers with
+  /// the masked phone and when the code expires, for the confirmation step.
+  Future<Map<String, dynamic>> sendPasswordOtp(String currentPassword) async {
+    final res = await _dio.post(
+      '/me/password/otp',
+      data: {'currentPassword': currentPassword},
+    );
+    return _map(res.data);
+  }
+
+  /// Step 2: the current password again, the new one, and the code just
+  /// texted. All three travel together so a stolen code alone is useless.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String otp,
+  }) async {
+    await _dio.patch(
+      '/me/password',
+      data: {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+        'otp': otp,
+      },
+    );
+  }
+
+  /// What an owner may edit about their own property. Answers with the whole
+  /// `/me` payload; only the lodge half of it has changed.
+  Future<Me> updateMyLodge(Map<String, dynamic> body) async {
+    final res = await _dio.patch('/me/lodge', data: body);
     return Me.fromJson(_map(res.data));
   }
 

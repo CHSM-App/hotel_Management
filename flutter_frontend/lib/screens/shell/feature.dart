@@ -119,14 +119,14 @@ const kFeatures = <Feature>[
   // ),
 
   // ── Insights ─────────────────────────────────────────────────────────────
-  Feature(
-    key: 'reports',
-    title: 'Reports',
-    tabLabel: 'Reports',
-    icon: Icons.bar_chart_rounded,
-    permission: 'reports.view',
-    capability: 'hasRooms',
-  ),
+  // Feature(
+  //   key: 'reports',
+  //   title: 'Reports',
+  //   tabLabel: 'Reports',
+  //   icon: Icons.bar_chart_rounded,
+  //   permission: 'reports.view',
+  //   capability: 'hasRooms',
+  // ),
 ];
 
 /// How many sections get their own tab before the rest go behind "More".

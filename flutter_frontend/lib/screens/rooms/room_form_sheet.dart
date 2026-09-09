@@ -10,6 +10,7 @@ import '../../domain/models/category.dart';
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/photo_source_sheet.dart';
 import '../theme.dart';
 import 'room_form_pieces.dart';
 
@@ -312,11 +313,23 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
   bool get _photosFull => _existingPhotos.length + _newPhotos.length >= maxRoomImages;
 
   Future<void> _pickPhotos() async {
-    final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
-    if (picked.isEmpty) return;
     final room = _existingPhotos.length + _newPhotos.length;
     final allowed = maxRoomImages - room;
-    setState(() => _newPhotos.addAll(picked.take(allowed <= 0 ? 0 : allowed)));
+    if (allowed <= 0) return;
+    final source = await showPhotoSourceSheet(
+      context,
+      title: 'Add photos',
+      subtitle: 'Take a photo or pick some from your gallery',
+    );
+    if (source == null) return;
+    if (source == ImageSource.camera) {
+      final photo = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
+      if (photo != null) setState(() => _newPhotos.add(photo));
+      return;
+    }
+    final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
+    if (picked.isEmpty) return;
+    setState(() => _newPhotos.addAll(picked.take(allowed)));
   }
 
   Future<void> _removeExistingPhoto(RoomImage img) async {

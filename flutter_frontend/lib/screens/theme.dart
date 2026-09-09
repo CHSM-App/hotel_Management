@@ -28,6 +28,12 @@ class AppTheme {
   // ── Accent ────────────────────────────────────────────────────────────────
   static const Color accent = Color(0xFF5A67D8);
 
+  /// The booking-detail action row's own "edit" and "checkout" fills — kept
+  /// apart from [accent] and [danger] so all three action buttons read as
+  /// distinct at a glance.
+  static const Color edit = Color(0xFF319795);
+  static const Color checkout = Color(0xFFDD6B20);
+
   // ── Status ────────────────────────────────────────────────────────────────
   // The tape chart's own vocabulary, carried over so a room reads the same on
   // the phone as it does on the wall screen at the desk.

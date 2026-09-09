@@ -54,6 +54,20 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
   }
 
+  /// Reset a password with no OTP — the same door the web login's "Forgot
+  /// password?" link uses. Throws with [_message] on failure so the form can
+  /// show it inline — this does not touch [state].
+  Future<void> forgotPassword({
+    required String identifier,
+    required String newPassword,
+  }) async {
+    try {
+      await usecase.forgotPassword(identifier: identifier, newPassword: newPassword);
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
   /// Load who is signed in and what the property is.
   Future<void> loadMe() async {
     state = state.copyWith(isLoading: true, clearError: true);
@@ -70,6 +84,44 @@ class AuthViewModel extends StateNotifier<AuthState> {
     state = const AuthState();
   }
 
+  /// Step 1 of a password change. Throws with [_message] on failure so the
+  /// dialog can show it inline — this does not touch [state].
+  Future<Map<String, dynamic>> sendPasswordOtp(String currentPassword) async {
+    try {
+      return await usecase.sendPasswordOtp(currentPassword);
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
+  /// Step 2. Same error handling as [sendPasswordOtp].
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String otp,
+  }) async {
+    try {
+      await usecase.changePassword(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+        otp: otp,
+      );
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
+  /// Owner-only edit of the property's own details. On success the lodge
+  /// half of [state.me] is replaced with what the server saved.
+  Future<void> updateMyLodge(Map<String, dynamic> body) async {
+    try {
+      final me = await usecase.updateMyLodge(body);
+      state = state.copyWith(me: me);
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
   /// The server's own words where it sent any, because it says the useful
   /// thing — "That account is locked for 15 minutes" is worth far more to the
   /// desk than "Request failed with status code 429".
@@ -77,6 +129,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
     if (e is DioException) {
       final data = e.response?.data;
       if (data is Map && data['message'] is String) return data['message'];
+      if (data is Map && data['error'] is String) return data['error'];
       switch (e.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:

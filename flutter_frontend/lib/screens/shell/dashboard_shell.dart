@@ -10,7 +10,8 @@ import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
 import '../food/orders_screen.dart';
 import '../placeholder_screen.dart';
-import '../reports/reports_screen.dart';
+import '../profile/profile_screen.dart';
+// import '../reports/reports_screen.dart';
 import '../rooms/rooms_rates_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
@@ -101,8 +102,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const BillingScreen();
       case 'rooms':
         return const RoomsRatesScreen();
-      case 'reports':
-        return const ReportsScreen();
+      // case 'reports':
+      //   return const ReportsScreen();
       default:
         // Every other section is deliberately still a stub — see the file.
         return PlaceholderScreen(feature: active);
@@ -138,7 +139,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.s8,
-            vertical: AppTheme.s8,
+            vertical: 4,
           ),
           // The row is held to the height of a tab and no more.
           //
@@ -148,8 +149,12 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
           // tab happily took 600px, the bar took the lot, and the body was left
           // with nothing. Which is why the app looked like a navbar floating in
           // the middle of an empty page rather than like an error.
-          child: SizedBox(
-            height: 60,
+          //
+          // IntrinsicHeight (rather than a guessed fixed height) sizes the row
+          // to whatever the tabs actually need, so it doesn't overflow when
+          // text scale or label length pushes a tab taller than a hardcoded
+          // number would allow.
+          child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -290,10 +295,6 @@ class _TopBar extends ConsumerWidget {
           end: Alignment.bottomRight,
           colors: [AppTheme.accent, Color(0xFF434190)],
         ),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(AppTheme.rLarge),
-          bottomRight: Radius.circular(AppTheme.rLarge),
-        ),
         boxShadow: [
           BoxShadow(
             color: Color(0x265A67D8),
@@ -304,108 +305,94 @@ class _TopBar extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              initial,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+              onTap: me == null
+                  ? null
+                  : () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                      ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          lodgeName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (me != null) ...[
+                          const SizedBox(height: 1),
+                          Text(
+                            '${me!.user.name} · ${me!.user.roleName ?? me!.user.role}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  lodgeName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (me != null) ...[
-                  const SizedBox(height: 1),
-                  Text(
-                    '${me!.user.name} · ${me!.user.roleName ?? me!.user.role}',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w400,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          // Present whether or not /me loaded.
-          //
-          // On the web dashboard this control lived inside the profile menu,
-          // which is built from /me — so when that call failed there was no
-          // menu, and signing out was the one thing a stranded desk could not
-          // do. It is not going to be reachable only on the happy path here.
-          _SignOutButton(),
+          // Opens the profile screen, where account details and sign-out live.
+          _ProfileButton(me: me),
         ],
       ),
     );
   }
 }
 
-class _SignOutButton extends ConsumerWidget {
+class _ProfileButton extends StatelessWidget {
+  final Me? me;
+
+  const _ProfileButton({this.me});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return IconButton(
-      tooltip: 'Sign out',
-      icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 20),
+      tooltip: 'Profile & settings',
+      icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
       visualDensity: VisualDensity.compact,
       constraints: const BoxConstraints(),
       padding: const EdgeInsets.all(8),
-      onPressed: () async {
-        final ok = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: AppTheme.bg,
-            title: const Text(
-              'Sign out?',
-              style: TextStyle(color: AppTheme.heading),
-            ),
-            content: const Text(
-              'You will need your phone or email and password to get back in.',
-              style: TextStyle(color: AppTheme.text),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Stay signed in'),
+      onPressed: me == null
+          ? null
+          : () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  'Sign out',
-                  style: TextStyle(color: AppTheme.danger),
-                ),
-              ),
-            ],
-          ),
-        );
-        if (ok == true) {
-          await ref.read(authViewModelProvider.notifier).signOut();
-        }
-      },
     );
   }
 }
@@ -457,7 +444,7 @@ class _Tab extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         // 44px minimum for a thumb.
-        constraints: const BoxConstraints(minHeight: 52),
+        constraints: const BoxConstraints(minHeight: 44),
         margin: const EdgeInsets.symmetric(horizontal: 3),
         alignment: Alignment.center,
         child: selected
@@ -465,14 +452,14 @@ class _Tab extends StatelessWidget {
                 radius: AppTheme.rMedium,
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppTheme.s8,
-                  vertical: AppTheme.s8,
+                  vertical: 4,
                 ),
                 child: content,
               )
             : Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppTheme.s8,
-                  vertical: AppTheme.s8,
+                  vertical: 4,
                 ),
                 child: content,
               ),

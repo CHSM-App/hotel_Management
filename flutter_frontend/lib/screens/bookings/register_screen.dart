@@ -926,28 +926,6 @@ class _RegisterCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        // The whole card already opens the same detail page
-                        // on tap, but a card this dense reads as a block of
-                        // text with no obvious click target — an explicit
-                        // eye button gives the desk something to actually
-                        // aim for, the way a "View" link would on the web.
-                        const SizedBox(width: 4),
-                        InkResponse(
-                          onTap: onTap,
-                          radius: 18,
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accent.withValues(alpha: 0.10),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.visibility_outlined,
-                              size: 15,
-                              color: AppTheme.accent,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 1),

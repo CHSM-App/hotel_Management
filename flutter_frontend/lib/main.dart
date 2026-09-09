@@ -7,6 +7,12 @@ import 'screens/login_screen.dart';
 import 'screens/shell/dashboard_shell.dart';
 import 'screens/theme.dart';
 
+/// Lets a screen know when it's been covered by a pushed route and later
+/// uncovered again — the tape chart uses this to snap back to today the
+/// moment the desk returns from booking a room or opening a stay, rather
+/// than leaving it wherever a pushed screen found it.
+final routeObserver = RouteObserver<ModalRoute<void>>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -40,6 +46,7 @@ class FrontDeskApp extends StatelessWidget {
       theme: AppTheme.light,
       themeMode: ThemeMode.light,
       scrollBehavior: _AppScrollBehavior(),
+      navigatorObservers: [routeObserver],
       home: const AuthGate(),
     );
   }

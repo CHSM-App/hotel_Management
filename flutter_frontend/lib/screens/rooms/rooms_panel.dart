@@ -263,7 +263,7 @@ class _RoomCard extends ConsumerWidget {
                       runSpacing: 4,
                       children: [
                         if (room.floor != null && room.floor!.isNotEmpty)
-                          _Chip(Icons.layers_outlined, 'Floor ${room.floor}'),
+                          _Chip(Icons.layers_outlined, formatFloor(room.floor)),
                         if (_bedSummary != null) _Chip(Icons.bed_outlined, _bedSummary!),
                         if (_bathroomLabel != null) _Chip(Icons.bathtub_outlined, _bathroomLabel!),
                         if (room.maxOccupancy != null)

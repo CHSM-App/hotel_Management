@@ -2,6 +2,7 @@ library;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
@@ -403,10 +404,26 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// back — another page, or a logout/login — reopens on today's month
   /// exactly the way a cold app start does, while a prev/next the desk had
   /// already made mid-visit still resets, the same as any other remount.
+  ///
+  /// Silent, like a near-edge grow: this fires automatically on every
+  /// remount, not from the desk tapping prev/next, so it should revalidate
+  /// quietly rather than flashing a spinner. That flash was also swapping
+  /// the whole chart tree for one frame, which tore down and rebuilt every
+  /// row's `ScrollController` — the tape chart's own scroll-to-today, timed
+  /// against the pre-fetch render, would land the *old* controllers on
+  /// today just before they were replaced by fresh ones back at the start
+  /// of the month, leaving the desk to scroll there by hand. Keeping the
+  /// previous render (and its controllers) on screen until the fetch
+  /// resolves means there is only ever one set of controllers for
+  /// scroll-to-today to land on.
   Future<void> resetChartToCurrentMonth() {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, 1);
-    return setChartRange(from, DateTime(from.year, from.month + 1, 1));
+    return setChartRange(
+      from,
+      DateTime(from.year, from.month + 1, 1),
+      silent: true,
+    );
   }
 
   /// Slide the chart to a different window and refetch.
@@ -832,6 +849,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     required int numGuests,
     String? idProofType,
     String? idProofNumber,
+    XFile? idProofFile,
     List<GuestDraft> guests = const [],
     List<VehicleDraft> vehicles = const [],
     List<PaymentDraft> advanceLines = const [],
@@ -847,7 +865,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final rate = perNight(state.roomTotal, state.nights);
       final discount = wholeAmount(state.discount);
 
-      final form = FormData.fromMap({
+      final formMap = <String, dynamic>{
         'roomId': '${room.id}',
         'checkInDate': iso(state.checkIn!),
         'checkOutDate': iso(state.checkOut!),
@@ -885,7 +903,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
           if (paid.length > 1)
             'advanceLines': _jsonList(paid.map((l) => l.toJson())),
         },
-      });
+        ..._idProofParts(idProofFile, guests),
+      };
+
+      final form = FormData.fromMap(formMap);
 
       final booking = await usecase.createBooking(form);
 
@@ -912,6 +933,15 @@ class BookingViewModel extends StateNotifier<BookingState> {
       return booking;
     } catch (e) {
       state = state.copyWith(submitting: false, error: messageFor(e));
+      // A 409 here means someone else took this room out from under the
+      // desk between opening this form and pressing Save. Leaving it
+      // selected would let Save be pressed again against the very room that
+      // just failed, showing the same message forever — so it's dropped and
+      // the list refreshed, forcing a different room to be picked.
+      if (e is DioException && e.response?.statusCode == 409) {
+        state = state.copyWith(clearRoom: true, clearQuote: true);
+        await loadRooms();
+      }
       return null;
     }
   }
@@ -929,6 +959,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     required int numGuests,
     String? idProofType,
     String? idProofNumber,
+    XFile? idProofFile,
     List<GuestDraft> guests = const [],
     List<VehicleDraft> vehicles = const [],
   }) async {
@@ -941,7 +972,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final rate = perNight(state.roomTotal, state.nights);
       final discount = wholeAmount(state.discount);
 
-      final form = FormData.fromMap({
+      final formMap = <String, dynamic>{
         'roomId': '${room.id}',
         'checkInDate': iso(state.checkIn!),
         'checkOutDate': iso(state.checkOut!),
@@ -961,7 +992,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
           vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
         ),
         'switchableCharges': _extrasJson(),
-      });
+        ..._idProofParts(idProofFile, guests),
+      };
+
+      final form = FormData.fromMap(formMap);
 
       final booking = await usecase.updateBooking(bookingId, form);
       state = state.copyWith(submitting: false);
@@ -969,8 +1003,39 @@ class BookingViewModel extends StateNotifier<BookingState> {
       return booking;
     } catch (e) {
       state = state.copyWith(submitting: false, error: messageFor(e));
+      // Same as in submit(): a 409 means the room just chosen is no longer
+      // free, and refreshing the list is what drops it out of the picker so
+      // Save can't be pressed again against it unchanged.
+      if (e is DioException && e.response?.statusCode == 409) {
+        await loadRooms();
+      }
       return null;
     }
+  }
+
+  /// The multipart fields carrying whatever ID proof photos were taken or
+  /// picked this session — `idProofDocument` for the primary guest and
+  /// `guestIdProofDocument_<index>` for each additional one, matching the
+  /// position that guest holds in the `guests` JSON array itself, which is
+  /// the only thing that tells the server which row a file belongs to.
+  Map<String, dynamic> _idProofParts(XFile? primary, List<GuestDraft> guests) {
+    final parts = <String, dynamic>{
+      if (primary != null)
+        'idProofDocument': MultipartFile.fromFileSync(
+          primary.path,
+          filename: primary.name,
+        ),
+    };
+    for (var i = 0; i < guests.length; i++) {
+      final file = guests[i].idProofFile;
+      if (file != null) {
+        parts['guestIdProofDocument_$i'] = MultipartFile.fromFileSync(
+          file.path,
+          filename: file.name,
+        );
+      }
+    }
+    return parts;
   }
 
   /// Hand-rolled rather than dart:convert, so a string never lands unescaped.
@@ -1022,6 +1087,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     if (e is DioException) {
       final data = e.response?.data;
       if (data is Map && data['message'] is String) return data['message'];
+      if (data is Map && data['error'] is String) return data['error'];
       switch (e.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:

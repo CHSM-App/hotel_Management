@@ -53,12 +53,23 @@ class SectionLabel extends StatelessWidget {
       children: [
         if (number != null) ...[
           Container(
-            width: 18,
-            height: 18,
+            width: 20,
+            height: 20,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: AppTheme.accent,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppTheme.accent, AppTheme.accent.withValues(alpha: 0.75)],
+              ),
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.accent.withValues(alpha: 0.3),
+                  offset: const Offset(0, 2),
+                  blurRadius: 4,
+                ),
+              ],
             ),
             child: Text(
               '$number',
@@ -173,6 +184,11 @@ class OptionDropdown extends StatelessWidget {
   final String hint;
   final ValueChanged<String> onSelect;
 
+  /// Rings the dropdown in [AppTheme.danger] — the same treatment a
+  /// required [NeuField] gets — when a submit was tried and nothing was
+  /// chosen here.
+  final bool hasError;
+
   const OptionDropdown({
     super.key,
     required this.values,
@@ -180,11 +196,13 @@ class OptionDropdown extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     this.hint = 'Choose one',
+    this.hasError = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return NeuPressed(
+      hasError: hasError,
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
@@ -325,12 +343,23 @@ class CategoryDropdown extends StatelessWidget {
   final int? selectedId;
   final ValueChanged<int> onSelect;
 
-  const CategoryDropdown({super.key, required this.categories, required this.selectedId, required this.onSelect});
+  /// Rings the dropdown in [AppTheme.danger] when a submit was tried and no
+  /// category was chosen — the same cue a required [NeuField] gets.
+  final bool hasError;
+
+  const CategoryDropdown({
+    super.key,
+    required this.categories,
+    required this.selectedId,
+    required this.onSelect,
+    this.hasError = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final options = categories.where((c) => c.isActive || c.id == selectedId).toList();
     return NeuPressed(
+      hasError: hasError,
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<int>(

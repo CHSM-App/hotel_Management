@@ -16,5 +16,29 @@ class AuthImpl implements AuthRepository {
   Future<Session> login(Credentials credentials) => api.login(credentials);
 
   @override
+  Future<void> forgotPassword({
+    required String identifier,
+    required String newPassword,
+  }) => api.forgotPassword(identifier: identifier, newPassword: newPassword);
+
+  @override
   Future<Me> me() => api.me();
+
+  @override
+  Future<Map<String, dynamic>> sendPasswordOtp(String currentPassword) =>
+      api.sendPasswordOtp(currentPassword);
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String otp,
+  }) => api.changePassword(
+    currentPassword: currentPassword,
+    newPassword: newPassword,
+    otp: otp,
+  );
+
+  @override
+  Future<Me> updateMyLodge(Map<String, dynamic> body) => api.updateMyLodge(body);
 }

@@ -5,6 +5,12 @@
          else — a release build without this line installs fine and then fails
          every request. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- The profile screen's "use my current location" — filling the property's
+         map pin from the phone's own GPS instead of typing coordinates in. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Taking a photo of a guest's ID proof or a room, from the camera. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
 
     <application
         android:label="hotel_manager"
@@ -48,6 +54,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- url_launcher opening the map pin in Google Maps / a browser. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
         </intent>
     </queries>
 </manifest>

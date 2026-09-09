@@ -110,6 +110,15 @@ class NeuPressed extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final double radius;
 
+  /// Draws the accent border used to show a field is the one currently
+  /// focused — the cursor's location should always be visible, not just
+  /// inferable from where the keyboard is typing.
+  final bool focused;
+
+  /// Draws the field itself in [AppTheme.danger] — a small red line under
+  /// the field is easy to miss on submit; a red-ringed field is not.
+  final bool hasError;
+
   const NeuPressed({
     super.key,
     required this.child,
@@ -118,16 +127,25 @@ class NeuPressed extends StatelessWidget {
       vertical: AppTheme.s12,
     ),
     this.radius = AppTheme.rSmall,
+    this.focused = false,
+    this.hasError = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final color = hasError
+        ? AppTheme.danger
+        : (focused ? AppTheme.accent : AppTheme.border);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
       padding: padding,
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(
+          color: color,
+          width: (focused || hasError) ? 1.6 : 1,
+        ),
       ),
       child: child,
     );
@@ -146,6 +164,12 @@ class NeuButton extends StatefulWidget {
   final bool expand;
   final EdgeInsetsGeometry padding;
 
+  /// A solid fill to use instead of [AppTheme.accent] when [primary] is
+  /// true — lets callers pick a button's own color (e.g. distinguishing
+  /// "Advance receipt" from "Check out") without losing the filled,
+  /// white-on-color look that [primary] gives.
+  final Color? color;
+
   const NeuButton({
     super.key,
     required this.child,
@@ -156,6 +180,7 @@ class NeuButton extends StatefulWidget {
       horizontal: AppTheme.s24,
       vertical: AppTheme.s16,
     ),
+    this.color,
   });
 
   @override
@@ -193,7 +218,9 @@ class _NeuButtonState extends State<NeuButton> {
           constraints: const BoxConstraints(minHeight: 44),
           padding: widget.padding,
           decoration: BoxDecoration(
-            color: widget.primary ? AppTheme.accent : AppTheme.card,
+            color: widget.primary
+                ? (widget.color ?? AppTheme.accent)
+                : AppTheme.card,
             borderRadius: BorderRadius.circular(AppTheme.rMedium),
             border: widget.primary ? null : Border.all(color: AppTheme.border),
             boxShadow: widget.primary ? AppTheme.subtle : null,
@@ -206,7 +233,7 @@ class _NeuButtonState extends State<NeuButton> {
 }
 
 /// A text field sunk into the surface.
-class NeuField extends StatelessWidget {
+class NeuField extends StatefulWidget {
   final TextEditingController controller;
   final String label;
   final String? hint;
@@ -222,6 +249,19 @@ class NeuField extends StatelessWidget {
   /// carries — the field the submit stops on if it is left empty.
   final bool required;
 
+  /// A control sitting inside the field's own well, right-aligned — the
+  /// password eye toggle, mirroring the web login's `field__input-wrap`.
+  final Widget? suffix;
+
+  /// A second line under the label, right-aligned — the web login's
+  /// "Forgot password?" link, sitting in the same row as the label itself.
+  final Widget? labelAction;
+
+  /// An external focus node, for callers that need to control or observe
+  /// focus themselves (e.g. auto-focusing the first field on open). When
+  /// omitted, the field manages its own.
+  final FocusNode? focusNode;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -235,56 +275,107 @@ class NeuField extends StatelessWidget {
     this.readOnly = false,
     this.onTap,
     this.required = false,
+    this.suffix,
+    this.labelAction,
+    this.focusNode,
   });
+
+  @override
+  State<NeuField> createState() => _NeuFieldState();
+}
+
+class _NeuFieldState extends State<NeuField> {
+  FocusNode? _ownNode;
+  bool _focused = false;
+
+  FocusNode get _node => widget.focusNode ?? (_ownNode ??= FocusNode());
+
+  @override
+  void initState() {
+    super.initState();
+    _node.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() => _focused = _node.hasFocus);
+  }
+
+  @override
+  void dispose() {
+    _node.removeListener(_onFocusChange);
+    _ownNode?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text.rich(
-          TextSpan(
-            text: label,
-            style: Theme.of(context).textTheme.bodySmall,
-            children: required
-                ? const [
-                    TextSpan(
-                      text: ' *',
-                      style: TextStyle(
-                        color: AppTheme.danger,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ]
-                : null,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: widget.label,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  children: widget.required
+                      ? const [
+                          TextSpan(
+                            text: ' *',
+                            style: TextStyle(
+                              color: AppTheme.danger,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            ),
+            if (widget.labelAction != null) widget.labelAction!,
+          ],
         ),
         const SizedBox(height: AppTheme.s8),
         NeuPressed(
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
-          child: TextField(
-            controller: controller,
-            obscureText: obscure,
-            keyboardType: keyboardType,
-            maxLength: maxLength,
-            readOnly: readOnly,
-            onTap: onTap,
-            onChanged: onChanged,
-            style: const TextStyle(color: AppTheme.heading, fontSize: 15),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: AppTheme.muted),
-              border: InputBorder.none,
-              counterText: '',
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+          focused: _focused,
+          hasError: widget.errorText != null,
+          padding: EdgeInsets.only(
+            left: AppTheme.s16,
+            right: widget.suffix == null ? AppTheme.s16 : AppTheme.s4,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: _node,
+                  obscureText: widget.obscure,
+                  keyboardType: widget.keyboardType,
+                  maxLength: widget.maxLength,
+                  readOnly: widget.readOnly,
+                  onTap: widget.onTap,
+                  onChanged: widget.onChanged,
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 15),
+                  cursorColor: AppTheme.accent,
+                  decoration: InputDecoration(
+                    hintText: widget.hint,
+                    hintStyle: const TextStyle(color: AppTheme.muted),
+                    border: InputBorder.none,
+                    counterText: '',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+              if (widget.suffix != null) widget.suffix!,
+            ],
           ),
         ),
-        if (errorText != null) ...[
+        if (widget.errorText != null) ...[
           const SizedBox(height: AppTheme.s4),
           Text(
-            errorText!,
+            widget.errorText!,
             style: const TextStyle(color: AppTheme.danger, fontSize: 12),
           ),
         ],
