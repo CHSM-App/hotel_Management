@@ -9,6 +9,7 @@ import '../../domain/models/category.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/photo_source_sheet.dart';
 import '../theme.dart';
 import 'room_form_pieces.dart';
 
@@ -35,6 +36,18 @@ class AddRoomPage extends ConsumerStatefulWidget {
 }
 
 class _AddRoomPageState extends ConsumerState<AddRoomPage> {
+  final _scrollController = ScrollController();
+
+  // One key per required section, in the order the form asks them — so a
+  // failed submit can jump straight to the first thing wrong instead of
+  // leaving the desk to hunt for a red line it may not have noticed.
+  final _roomNumberKey = GlobalKey();
+  final _categoryKey = GlobalKey();
+  final _floorKey = GlobalKey();
+  final _bathroomKey = GlobalKey();
+  final _bedsKey = GlobalKey();
+  final _occupancyKey = GlobalKey();
+
   final _roomNumber = TextEditingController();
   final _rangeStart = TextEditingController();
   final _rangeEnd = TextEditingController();
@@ -50,6 +63,57 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 
   String? _error;
 
+  /// Whether Save has been pressed at least once — a field that hasn't been
+  /// submitted yet has nothing to be wrong about, so nothing turns red until
+  /// the desk actually tries to save.
+  bool _submitAttempted = false;
+
+  String? get _roomNumberError {
+    if (!_submitAttempted || _bulkMode) return null;
+    return _roomNumber.text.trim().isEmpty ? 'Enter a room number.' : null;
+  }
+
+  String? get _rangeError {
+    if (!_submitAttempted || !_bulkMode) return null;
+    return (_rangeStart.text.trim().isEmpty || _rangeEnd.text.trim().isEmpty)
+        ? 'Enter the room range.'
+        : null;
+  }
+
+  String? get _categoryError {
+    if (!_submitAttempted) return null;
+    return _categoryId == null ? 'Choose a category.' : null;
+  }
+
+  String? get _floorError {
+    if (!_submitAttempted) return null;
+    return _floor.text.trim().isEmpty ? 'Enter the floor.' : null;
+  }
+
+  String? get _bathroomError {
+    if (!_submitAttempted) return null;
+    return _bathroomType == null ? 'Choose a bathroom type.' : null;
+  }
+
+  String? get _bedsError {
+    if (!_submitAttempted) return null;
+    if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
+      return 'Choose a size for every bed.';
+    }
+    if (_beds.any((b) => b.count < 1)) {
+      return 'Each bed needs a count of 1 or more.';
+    }
+    return null;
+  }
+
+  String? get _occupancyError {
+    if (!_submitAttempted) return null;
+    final occupancy = int.tryParse(_maxOccupancy.text.trim());
+    return (occupancy == null || occupancy <= 0)
+        ? 'Enter a max occupancy greater than 0.'
+        : null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +122,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _roomNumber.dispose();
     _rangeStart.dispose();
     _rangeEnd.dispose();
@@ -68,6 +133,22 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
       bed.countController.dispose();
     }
     super.dispose();
+  }
+
+  /// Jumps the page to [key]'s section so a failed submit lands the desk on
+  /// the very box that stopped it, rather than trusting them to spot a red
+  /// line somewhere on the screen.
+  void _scrollToError(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: 0.1,
+      );
+    });
   }
 
   RoomCategory? get _selectedCategory =>
@@ -90,23 +171,28 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
     final submitting = ref.watch(roomsViewModelProvider).submitting;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add room'),
+      ),
       body: SafeArea(
-        child: Column(
+        child: ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.s16,
+            AppTheme.s16,
+            AppTheme.s16,
+            AppTheme.s24,
+          ),
           children: [
-            _Header(
-              bulkMode: _bulkMode,
-              onModeChanged: (bulk) => setState(() => _bulkMode = bulk),
-              submitting: submitting,
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  AppTheme.s16,
-                  AppTheme.s16,
-                  AppTheme.s24,
-                ),
-                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ModeToggle(
+                      options: const {'single': 'Single', 'bulk': 'Bulk range'},
+                      selected: _bulkMode ? 'bulk' : 'single',
+                      onSelect: submitting ? (_) {} : (v) => setState(() => _bulkMode = v == 'bulk'),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.s16),
                   if (_error != null) ...[
                     Container(
                       padding: const EdgeInsets.all(AppTheme.s12),
@@ -135,38 +221,55 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         const SizedBox(height: AppTheme.s12),
                         if (!_bulkMode)
                           NeuField(
+                            key: _roomNumberKey,
                             controller: _roomNumber,
                             label: 'Room number',
                             hint: '101',
                             required: true,
+                            errorText: _roomNumberError,
                             keyboardType: TextInputType.text,
                             onChanged: (_) => setState(() {}),
                           )
                         else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: NeuField(
-                                  controller: _rangeStart,
-                                  label: 'From',
-                                  hint: '101',
-                                  required: true,
-                                  keyboardType: TextInputType.number,
-                                  onChanged: (_) => setState(() {}),
+                          KeyedSubtree(
+                            key: _roomNumberKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: NeuField(
+                                        controller: _rangeStart,
+                                        label: 'From',
+                                        hint: '101',
+                                        required: true,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (_) => setState(() {}),
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppTheme.s12),
+                                    Expanded(
+                                      child: NeuField(
+                                        controller: _rangeEnd,
+                                        label: 'To',
+                                        hint: '110',
+                                        required: true,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (_) => setState(() {}),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(width: AppTheme.s12),
-                              Expanded(
-                                child: NeuField(
-                                  controller: _rangeEnd,
-                                  label: 'To',
-                                  hint: '110',
-                                  required: true,
-                                  keyboardType: TextInputType.number,
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                              ),
-                            ],
+                                if (_rangeError != null) ...[
+                                  const SizedBox(height: AppTheme.s4),
+                                  Text(
+                                    _rangeError!,
+                                    style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
                       ],
                     ),
@@ -181,11 +284,22 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         const SizedBox(height: AppTheme.s12),
                         const RequiredLabel('Category'),
                         const SizedBox(height: AppTheme.s8),
-                        CategoryDropdown(
-                          categories: widget.categories,
-                          selectedId: _categoryId,
-                          onSelect: (id) => setState(() => _categoryId = id),
+                        KeyedSubtree(
+                          key: _categoryKey,
+                          child: CategoryDropdown(
+                            categories: widget.categories,
+                            selectedId: _categoryId,
+                            hasError: _categoryError != null,
+                            onSelect: (id) => setState(() => _categoryId = id),
+                          ),
                         ),
+                        if (_categoryError != null) ...[
+                          const SizedBox(height: AppTheme.s4),
+                          Text(
+                            _categoryError!,
+                            style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                          ),
+                        ],
                         if (_selectedCategory != null) ...[
                           const SizedBox(height: AppTheme.s12),
                           Wrap(
@@ -216,10 +330,13 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           children: [
                             Expanded(
                               child: NeuField(
+                                key: _floorKey,
                                 controller: _floor,
                                 label: 'Floor',
                                 hint: '1',
                                 required: true,
+                                errorText: _floorError,
+                                onChanged: (_) => setState(() {}),
                               ),
                             ),
                             const SizedBox(width: AppTheme.s12),
@@ -229,12 +346,23 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                 children: [
                                   const RequiredLabel('Bathroom'),
                                   const SizedBox(height: AppTheme.s8),
-                                  OptionDropdown(
-                                    values: bathroomTypes,
-                                    labels: bathroomLabel,
-                                    selected: _bathroomType,
-                                    onSelect: (v) => setState(() => _bathroomType = v),
+                                  KeyedSubtree(
+                                    key: _bathroomKey,
+                                    child: OptionDropdown(
+                                      values: bathroomTypes,
+                                      labels: bathroomLabel,
+                                      selected: _bathroomType,
+                                      hasError: _bathroomError != null,
+                                      onSelect: (v) => setState(() => _bathroomType = v),
+                                    ),
                                   ),
+                                  if (_bathroomError != null) ...[
+                                    const SizedBox(height: AppTheme.s4),
+                                    Text(
+                                      _bathroomError!,
+                                      style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -244,6 +372,10 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 
                         const RequiredLabel('Beds'),
                         const SizedBox(height: AppTheme.s8),
+                        KeyedSubtree(
+                          key: _bedsKey,
+                          child: Column(
+                            children: [
                         for (var i = 0; i < _beds.length; i++)
                           Padding(
                             padding: const EdgeInsets.only(bottom: AppTheme.s8),
@@ -297,14 +429,27 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ),
                           ),
                         ),
+                        if (_bedsError != null) ...[
+                          const SizedBox(height: AppTheme.s4),
+                          Text(
+                            _bedsError!,
+                            style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                          ),
+                        ],
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: AppTheme.s12),
 
                         NeuField(
+                          key: _occupancyKey,
                           controller: _maxOccupancy,
                           label: 'Max occupancy',
                           hint: '2',
                           required: true,
+                          errorText: _occupancyError,
                           keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
                         ),
                         const SizedBox(height: AppTheme.s16),
 
@@ -352,69 +497,73 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                       ),
                     ),
                   ],
+                  const SizedBox(height: AppTheme.s16),
+                  _Footer(
+                    roomCountLabel: _roomCountLabel,
+                    category: _selectedCategory,
+                    submitting: submitting,
+                    onCancel: () => Navigator.of(context).pop(),
+                    onSubmit: _submit,
+                  ),
                 ],
-              ),
-            ),
-            _Footer(
-              roomCountLabel: _roomCountLabel,
-              category: _selectedCategory,
-              submitting: submitting,
-              onCancel: () => Navigator.of(context).pop(),
-              onSubmit: _submit,
-            ),
-          ],
         ),
       ),
     );
   }
 
   Future<void> _pickPhotos() async {
+    final allowed = maxRoomImages - _newPhotos.length;
+    if (allowed <= 0) return;
+    final source = await showPhotoSourceSheet(
+      context,
+      title: 'Add photos',
+      subtitle: 'Take a photo or pick some from your gallery',
+    );
+    if (source == null) return;
+    if (source == ImageSource.camera) {
+      final photo = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
+      if (photo != null) setState(() => _newPhotos.add(photo));
+      return;
+    }
     final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
     if (picked.isEmpty) return;
-    final allowed = maxRoomImages - _newPhotos.length;
-    setState(() => _newPhotos.addAll(picked.take(allowed <= 0 ? 0 : allowed)));
+    setState(() => _newPhotos.addAll(picked.take(allowed)));
   }
 
   Future<void> _submit() async {
-    setState(() => _error = null);
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
 
-    if (_categoryId == null) {
-      setState(() => _error = 'Choose a category.');
+    // Checked in the order the form asks them, so the scroll lands on
+    // whichever one the desk would hit first reading top to bottom.
+    if (_categoryError != null) {
+      _scrollToError(_categoryKey);
       return;
     }
-    if (!_bulkMode) {
-      if (_roomNumber.text.trim().isEmpty) {
-        setState(() => _error = 'Enter a room number.');
-        return;
-      }
-    } else {
-      if (_rangeStart.text.trim().isEmpty || _rangeEnd.text.trim().isEmpty) {
-        setState(() => _error = 'Enter the room range.');
-        return;
-      }
-    }
-    if (_floor.text.trim().isEmpty) {
-      setState(() => _error = 'Enter the floor.');
+    if (_roomNumberError != null || _rangeError != null) {
+      _scrollToError(_roomNumberKey);
       return;
     }
-    if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
-      setState(() => _error = 'Choose a size for every bed.');
+    if (_floorError != null) {
+      _scrollToError(_floorKey);
       return;
     }
-    if (_beds.any((b) => b.count < 1)) {
-      setState(() => _error = 'Each bed needs a count of 1 or more.');
+    if (_bathroomError != null) {
+      _scrollToError(_bathroomKey);
       return;
     }
-    if (_bathroomType == null) {
-      setState(() => _error = 'Choose a bathroom type.');
+    if (_bedsError != null) {
+      _scrollToError(_bedsKey);
       return;
     }
-    final occupancy = int.tryParse(_maxOccupancy.text.trim());
-    if (occupancy == null || occupancy <= 0) {
-      setState(() => _error = 'Enter a max occupancy greater than 0.');
+    if (_occupancyError != null) {
+      _scrollToError(_occupancyKey);
       return;
     }
 
+    final occupancy = int.parse(_maxOccupancy.text.trim());
     final bedsJson = _beds.map((b) => {'size': b.size, 'count': b.count}).toList();
 
     final formMap = <String, dynamic>{
@@ -474,10 +623,15 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s8, AppTheme.s12),
-      decoration: const BoxDecoration(
-        color: AppTheme.card,
-        border: Border(bottom: BorderSide(color: AppTheme.border)),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s8, AppTheme.s16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.accent.withValues(alpha: 0.08), AppTheme.card],
+        ),
+        border: const Border(bottom: BorderSide(color: AppTheme.border)),
+        boxShadow: AppTheme.subtle,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -490,7 +644,8 @@ class _Header extends StatelessWidget {
                   style: TextStyle(
                     color: AppTheme.heading,
                     fontWeight: FontWeight.w700,
-                    fontSize: 18,
+                    fontSize: 19,
+                    letterSpacing: -0.2,
                   ),
                 ),
               ),
@@ -505,15 +660,6 @@ class _Header extends StatelessWidget {
                 onPressed: submitting ? null : () => Navigator.of(context).pop(),
               ),
             ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            bulkMode
-                ? 'Creates every room in the range at once, all sharing these '
-                      'details. Photos are added per room afterwards.'
-                : 'Adds one room to the chart. Everything but the description '
-                      'and photos is needed before it can be booked.',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
           ),
         ],
       ),
@@ -553,41 +699,44 @@ class _Footer extends StatelessWidget {
         children: [
           Expanded(
             child: category == null
-                ? const Text(
-                    'Pick a category to set the rate',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$roomCountLabel · ${category!.name}',
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text.rich(
-                        TextSpan(
-                          text: formatPrice(category!.basePrice),
-                          style: const TextStyle(
-                            color: AppTheme.heading,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                          ),
-                          children: const [
-                            TextSpan(
-                              text: ' /night',
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontWeight: FontWeight.w400,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
+                ? const SizedBox.shrink()
+                : Container(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$roomCountLabel · ${category!.name}',
+                          style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        Text.rich(
+                          TextSpan(
+                            text: formatPrice(category!.basePrice),
+                            style: const TextStyle(
+                              color: AppTheme.accent,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                            ),
+                            children: const [
+                              TextSpan(
+                                text: ' /night',
+                                style: TextStyle(
+                                  color: AppTheme.muted,
+                                  fontWeight: FontWeight.w400,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
           ),
           const SizedBox(width: AppTheme.s12),
@@ -605,7 +754,14 @@ class _Footer extends StatelessWidget {
                     width: 16,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
-                : const Text('Add room'),
+                : const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                      SizedBox(width: 4),
+                      Text('Add room'),
+                    ],
+                  ),
           ),
         ],
       ),

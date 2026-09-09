@@ -62,15 +62,24 @@ class Lodge {
   final String name;
   final String? slug;
   final String? phone;
+  final String? whatsappNumber;
   final String? address;
   final String? city;
   final String? state;
+  final String? nameMr;
+  final String? addressMr;
+  final double? latitude;
+  final double? longitude;
+
+  /// HOUR_24, NIGHT_BASED or CYCLE — set by Vengurla Tech, not editable here.
+  final String? checkinMode;
 
   /// GST-registered properties issue tax invoices; the rest issue bills of
   /// supply. Every price here is GST-inclusive either way — tax is extracted
   /// from within the amount, never added on top.
   final bool isGstRegistered;
   final String? gstin;
+  final bool isSpecifiedPremises;
 
   // ── What this property is ────────────────────────────────────────────────
   final bool hasRooms;
@@ -83,11 +92,18 @@ class Lodge {
     required this.name,
     this.slug,
     this.phone,
+    this.whatsappNumber,
     this.address,
     this.city,
     this.state,
+    this.nameMr,
+    this.addressMr,
+    this.latitude,
+    this.longitude,
+    this.checkinMode,
     this.isGstRegistered = false,
     this.gstin,
+    this.isSpecifiedPremises = false,
     this.hasRooms = false,
     this.servesFood = false,
     this.foodRoomService = false,
@@ -99,14 +115,27 @@ class Lodge {
     name: json['name']?.toString() ?? '',
     slug: asStringOrNull(json['slug']),
     phone: asStringOrNull(json['phone']),
+    whatsappNumber: asStringOrNull(json['whatsappNumber']),
     address: asStringOrNull(json['address']),
     city: asStringOrNull(json['city']),
     state: asStringOrNull(json['state']),
+    nameMr: asStringOrNull(json['nameMr']),
+    addressMr: asStringOrNull(json['addressMr']),
+    latitude: _asDoubleOrNull(json['latitude']),
+    longitude: _asDoubleOrNull(json['longitude']),
+    checkinMode: asStringOrNull(json['checkinMode']),
     isGstRegistered: asBool(json['isGstRegistered']),
     gstin: asStringOrNull(json['gstin']),
+    isSpecifiedPremises: asBool(json['isSpecifiedPremises']),
     hasRooms: asBool(json['hasRooms']),
     servesFood: asBool(json['servesFood']),
     foodRoomService: asBool(json['foodRoomService']),
     foodTableService: asBool(json['foodTableService']),
   );
+}
+
+double? _asDoubleOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString());
 }

@@ -40,10 +40,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
           bottom: AppTheme.s16,
           child: NeuButton(
             primary: true,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s24,
-              vertical: AppTheme.s16,
-            ),
+            padding: const EdgeInsets.all(AppTheme.s16),
             onPressed: () async {
               final booked = await Navigator.of(context).push<bool>(
                 MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
@@ -52,14 +49,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                 ref.read(bookingViewModelProvider.notifier).loadChart();
               }
             },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                SizedBox(width: AppTheme.s8),
-                Text('New booking'),
-              ],
-            ),
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
           ),
         ),
       ],

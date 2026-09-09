@@ -8,6 +8,48 @@ import 'package:printing/printing.dart';
 import '../../domain/models/invoice.dart';
 import 'receipt_download.dart';
 
+/// The stock this receipt can print onto — the same table the web app's own
+/// paper picker offers (billPaper.js), so a desk that has learned the sizes
+/// there finds the same names and dimensions here.
+class ReceiptPaperSize {
+  final String id;
+  final String label;
+  final String hint;
+  final PdfPageFormat format;
+
+  /// The sheet margin, in points — 5mm/8mm/12mm converted, matching the web
+  /// table's own margins for the same stock.
+  final double margin;
+
+  const ReceiptPaperSize(this.id, this.label, this.hint, this.format, this.margin);
+
+  /// A6 — the slip size a desk actually prints on, same default as the web
+  /// app: a bill or receipt on A4 comes out a quarter-filled sheet that gets
+  /// folded, so the smallest legible stock is what both apps reach for first.
+  static const defaultId = 'a6';
+
+  static const List<ReceiptPaperSize> all = [
+    ReceiptPaperSize('a4', 'A4', '210 × 297 mm', PdfPageFormat.a4, 34),
+    ReceiptPaperSize('a5', 'A5', '148 × 210 mm', PdfPageFormat.a5, 23),
+    ReceiptPaperSize('a6', 'A6', '105 × 148 mm', PdfPageFormat.a6, 14),
+    ReceiptPaperSize('letter', 'Letter', '8.5 × 11 in', PdfPageFormat.letter, 34),
+    ReceiptPaperSize(
+      'half-letter',
+      'Half Letter',
+      '8.5 × 5.5 in',
+      PdfPageFormat(612, 396),
+      23,
+    ),
+  ];
+
+  static ReceiptPaperSize byId(String id) {
+    for (final p in all) {
+      if (p.id == id) return p;
+    }
+    return byId(defaultId);
+  }
+}
+
 /// The slip handed to a guest who pays an advance — deliberately the same
 /// printed form [BillPdf] draws (same masthead, same ruled register strip,
 /// same Rs./Ps. money column), because it comes off the same pad and the
@@ -23,8 +65,15 @@ class AdvanceReceiptPdf {
 
   static const _payLabel = {'CASH': 'Cash', 'UPI': 'UPI', 'CARD': 'Card'};
 
-  static Future<bool> share(AdvanceReceipt receipt) async {
-    final bytes = await build(receipt);
+  /// The design width the memo itself is laid out at, in points — the A5
+  /// pad's content column, unaffected by which stock this actually prints
+  /// to. [build] scales this whole thing onto whatever [ReceiptPaperSize]
+  /// was chosen, the same way the web's own paper picker scales one fixed
+  /// capture onto whichever sheet the desk selects.
+  static const double _designWidth = 419.53 - 36;
+
+  static Future<bool> share(AdvanceReceipt receipt, {String paperId = ReceiptPaperSize.defaultId}) async {
+    final bytes = await build(receipt, paperId: paperId);
     final safe = (receipt.receiptNumber ?? '${receipt.id}').replaceAll(
       RegExp(r'[\\/]'),
       '-',
@@ -32,19 +81,13 @@ class AdvanceReceiptPdf {
     return Printing.sharePdf(bytes: bytes, filename: '$safe.pdf');
   }
 
-  /// Hand the finished file to the platform's own print dialog.
-  static Future<bool> print(AdvanceReceipt receipt) => Printing.layoutPdf(
-    onLayout: (format) => build(receipt),
-    name: '${receipt.receiptNumber ?? receipt.id}.pdf',
-  );
-
   /// Save the file to the device itself — a real download, distinct from
   /// handing it to the printer or to the share sheet (which, on a browser
   /// with no share target of its own, otherwise looks identical to this).
   /// Returns where it landed: a filesystem path off the web, and a plain
   /// description of the browser's own downloads on it.
-  static Future<String> download(AdvanceReceipt receipt) async {
-    final bytes = await build(receipt);
+  static Future<String> download(AdvanceReceipt receipt, {String paperId = ReceiptPaperSize.defaultId}) async {
+    final bytes = await build(receipt, paperId: paperId);
     final safe = (receipt.receiptNumber ?? '${receipt.id}').replaceAll(
       RegExp(r'[\\/]'),
       '-',
@@ -52,17 +95,22 @@ class AdvanceReceiptPdf {
     return saveBytesToDevice(bytes, '$safe.pdf');
   }
 
-  static Future<Uint8List> build(AdvanceReceipt receipt) async {
+  static Future<Uint8List> build(AdvanceReceipt receipt, {String paperId = ReceiptPaperSize.defaultId}) async {
+    final paper = ReceiptPaperSize.byId(paperId);
     final doc = pw.Document();
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a5.copyWith(
-          marginTop: 18,
-          marginBottom: 18,
-          marginLeft: 18,
-          marginRight: 18,
+        pageFormat: paper.format.copyWith(
+          marginTop: paper.margin,
+          marginBottom: paper.margin,
+          marginLeft: paper.margin,
+          marginRight: paper.margin,
         ),
-        build: (context) => _memo(receipt),
+        build: (context) => pw.FittedBox(
+          fit: pw.BoxFit.contain,
+          alignment: pw.Alignment.topCenter,
+          child: pw.SizedBox(width: _designWidth, child: _memo(receipt)),
+        ),
       ),
     );
     return doc.save();

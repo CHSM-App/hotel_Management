@@ -31,6 +31,21 @@ class _FakeAuth implements AuthRepository {
   @override
   Future<Session> login(Credentials credentials) async =>
       const Session(token: 't', role: 'KITCHEN');
+
+  @override
+  Future<Map<String, dynamic>> sendPasswordOtp(String currentPassword) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String otp,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodge(Map<String, dynamic> body) async =>
+      throw UnimplementedError();
 }
 
 class _FakeOrders implements OrdersRepository {

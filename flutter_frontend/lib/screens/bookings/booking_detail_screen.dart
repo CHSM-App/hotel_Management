@@ -284,6 +284,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         // same window the web page's own button is offered in, gated one
         // level up by [_load]'s BOOKED-or-CHECKED_IN condition.
         NeuButton(
+          primary: true,
           expand: true,
           onPressed: _openAdvanceReceipts,
           child: Text(
@@ -330,6 +331,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             ),
         ] else
           NeuButton(
+            primary: true,
+            color: AppTheme.text,
             expand: true,
             onPressed: _busy
                 ? null
@@ -1129,14 +1132,6 @@ class _BillSectionState extends State<_BillSection> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            IconButton(
-              tooltip: 'Print',
-              onPressed: _pdfBusy
-                  ? null
-                  : () => _runPdfAction(() => BillPdf.print(invoice)),
-              icon: const Icon(Icons.print_rounded),
-              color: AppTheme.text,
-            ),
             IconButton(
               tooltip: 'Download',
               onPressed: _pdfBusy

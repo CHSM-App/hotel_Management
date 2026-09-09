@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/tape_chart.dart';
+import '../../main.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
+import '../../widgets/format.dart';
 import '../theme.dart';
 import 'booking_detail_screen.dart';
 import 'take_booking_screen.dart';
@@ -22,7 +24,8 @@ class TapeChart extends ConsumerStatefulWidget {
   ConsumerState<TapeChart> createState() => _TapeChartState();
 }
 
-class _TapeChartState extends ConsumerState<TapeChart> {
+class _TapeChartState extends ConsumerState<TapeChart>
+    with WidgetsBindingObserver, RouteAware {
   final _vScroll = ScrollController();
 
   /// Guards against a single drag past an edge firing [growPast] or
@@ -51,6 +54,29 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   /// first opens on the current month.
   bool _scrolledToToday = false;
 
+  /// True only for the instant [_jumpToToday] is actually moving every
+  /// strip — landing on today deliberately leaves just one tile of margin
+  /// before it, which sits inside [_growWithinPx] of the left edge, so the
+  /// jump's own scroll notification would otherwise read as a near-edge
+  /// drag and immediately fire [_handleNearEdge], growing the window
+  /// further into the past and fighting the very position the jump just
+  /// landed on. `jumpTo` dispatches its notification synchronously, so
+  /// setting this immediately before the jump and clearing it right after
+  /// brackets exactly that one dispatch.
+  bool _jumpingToToday = false;
+
+  /// The current-month start [initState] asked [resetChartToCurrentMonth]
+  /// for. The provider is shared app-wide rather than recreated with this
+  /// widget, so the very first build after a remount can still land on
+  /// whatever window a previous visit had grown or paged to — a stale window
+  /// that happens to contain today at some index is enough to fire the
+  /// scroll-to-today guard above against pixel offsets that make no sense
+  /// once the real reset lands moments later, stranding the desk on the
+  /// wrong nights until it scrolls there by hand. Comparing the loaded
+  /// window's start against this before ever consulting the guard makes sure
+  /// the auto-scroll only fires once the reset has actually taken effect.
+  late DateTime _resetTarget;
+
   /// One key per category band, so a chip tap can scroll straight to it — the
   /// same jump the web tape chart's own category chips do.
   final Map<String, GlobalKey> _sectionKeys = {};
@@ -58,29 +84,128 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   GlobalKey _keyFor(String category) =>
       _sectionKeys.putIfAbsent(category, () => GlobalKey());
 
+  /// Anchors the vertical `CustomScrollView` so a chip jump can measure a
+  /// section's actual painted position instead of asking `Scrollable.
+  /// ensureVisible` to work it out — that call reasons about the pinned
+  /// date-header sliver's *declared* extent, but the header's own content
+  /// (an `OverflowBox` sized off font metrics, not a fixed number) can paint
+  /// a little taller or shorter than that declared height, and against a
+  /// section already partway up the screen the mismatch reads as the chip
+  /// tap barely moving the chart at all. Measuring the header and the
+  /// section by their real on-screen positions sidesteps that mismatch
+  /// entirely.
+  final _scrollViewKey = GlobalKey();
+
   void _jumpTo(String category) {
-    final ctx = _sectionKeys[category]?.currentContext;
-    if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
+    if (!_vScroll.hasClients) return;
+    final targetBox = _sectionKeys[category]?.currentContext?.findRenderObject();
+    final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
+    if (targetBox is! RenderBox || !targetBox.attached) return;
+    if (viewportBox is! RenderBox || !viewportBox.attached) return;
+    // The section's current distance from the top of the scroll view as
+    // actually painted right now — this already reflects wherever the date
+    // header really ends, not where its declared sliver extent says it does.
+    final sectionTop = targetBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
+    final headerBox = _headerKey.currentContext?.findRenderObject();
+    final headerHeight = headerBox is RenderBox && headerBox.attached
+        ? headerBox.size.height
+        : 0.0;
+    final target = (_vScroll.offset + sectionTop - headerHeight).clamp(
+      _vScroll.position.minScrollExtent,
+      _vScroll.position.maxScrollExtent,
+    );
+    _vScroll.animateTo(
+      target,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
-      alignment: 0,
     );
   }
+
+  /// Marks the pinned date header's own rendered box, so [_jumpTo] can read
+  /// its real painted height rather than the sliver's declared one.
+  final _headerKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _snapToToday();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) routeObserver.subscribe(this, route);
+  }
+
+  /// Re-centres the chart on today and clears the auto-scroll guard so the
+  /// usual scroll-to-today logic in [_buildBody] fires again — used on first
+  /// open and every time the desk comes back to this screen, whether that's
+  /// from a pushed screen closing or the whole app returning from the
+  /// background, so a stale scroll position or a day boundary crossed while
+  /// away never leaves today off-screen.
+  void _snapToToday() {
+    final now = DateTime.now();
+    _resetTarget = DateTime(now.year, now.month, 1);
+    _scrolledToToday = false;
     Future.microtask(() async {
       final vm = ref.read(bookingViewModelProvider.notifier);
       await vm.resetChartToCurrentMonth();
     });
   }
 
+  /// Called when a screen pushed on top of this one (booking a room, opening
+  /// a stay) is popped and the tape chart is visible again.
+  @override
+  void didPopNext() {
+    if (mounted) setState(_snapToToday);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(_snapToToday);
+    }
+  }
+
+  /// Jumps every strip straight back to today, the same landing spot the
+  /// chart already picks for itself on first open. If today isn't in the
+  /// currently loaded window (the desk has paged away to some other month)
+  /// there is nothing to jump to yet, so this resets to the current month
+  /// first and lets the usual scroll-to-today guard in [_buildBody] land on
+  /// it once that reload actually arrives.
+  void _scrollToToday() {
+    final dates = ref.read(bookingViewModelProvider).chartDates;
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final index = dates.indexWhere(
+      (d) =>
+          d.year == todayDate.year &&
+          d.month == todayDate.month &&
+          d.day == todayDate.day,
+    );
+    if (index != -1) {
+      final offset = (index - 1).clamp(0, dates.length - 1) * _tile;
+      _jumpToToday(offset);
+    } else {
+      _scrolledToToday = false;
+      ref.read(bookingViewModelProvider.notifier).resetChartToCurrentMonth();
+    }
+  }
+
+  /// The one place every landing-on-today jump goes through, so the
+  /// near-edge suppression in [_jumpingToToday] always brackets it.
+  void _jumpToToday(double offset) {
+    _jumpingToToday = true;
+    _hSync.jumpAllTo(offset);
+    _jumpingToToday = false;
+  }
+
   static const _growWithinPx = 90.0;
 
   void _handleNearEdge(ScrollMetrics metrics, bool towardEnd) {
+    if (_jumpingToToday) return;
     if (towardEnd) {
       if (_growingFuture) return;
       _growingFuture = true;
@@ -113,6 +238,8 @@ class _TapeChartState extends ConsumerState<TapeChart> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    routeObserver.unsubscribe(this);
     _vScroll.dispose();
     _hSync.dispose();
     super.dispose();
@@ -121,7 +248,6 @@ class _TapeChartState extends ConsumerState<TapeChart> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(bookingViewModelProvider);
-    final vm = ref.read(bookingViewModelProvider.notifier);
     final dates = state.chartDates;
 
     return LayoutBuilder(
@@ -129,79 +255,45 @@ class _TapeChartState extends ConsumerState<TapeChart> {
         // Compact on a phone, roomier on a tablet — the same breakpoint the
         // rest of the app uses for a two-column vs one-column body.
         final wide = constraints.maxWidth >= 700;
-        final tile = wide ? 56.0 : 34.0;
-        final roomCol = wide ? 96.0 : 64.0;
-        final rowHeight = wide ? 52.0 : 38.0;
+        // The room cell needs room for two lines (number + floor), so the
+        // row height stays as before — the tile matches it to come out
+        // square, rather than the row being squeezed down to the tile.
+        final rowHeight = wide ? 41.6 : 32.0;
+        final tile = rowHeight;
+        final roomCol = wide ? 96.0 : 44.0;
         _tile = tile;
 
-        return _buildBody(state, vm, dates, tile, roomCol, rowHeight);
+        return _buildBody(state, dates, tile, roomCol, rowHeight);
       },
     );
   }
 
   Widget _buildBody(
     BookingState state,
-    BookingViewModel vm,
     List<DateTime> dates,
     double tile,
     double roomCol,
     double rowHeight,
   ) {
-    // The date pill and legend are ordinary scrolling content above the
-    // chart itself while it is still loading, erroring, or empty — there is
-    // no grid underneath them yet for a pinned header to make sense against.
-    // The category chips stay out of this section even here, so the loading
-    // and error states don't flash them and then pin them a moment later.
-    Widget topSection() => Column(
-      children: [
-        _ChartHeader(
-          from: state.chartFrom,
-          onPrev: () => vm.shiftChart(-1),
-          onNext: () => vm.shiftChart(1),
-        ),
-        const SizedBox(height: AppTheme.s8),
-        const _Legend(),
-      ],
-    );
-
     if (state.chart.isLoading) {
-      return Column(
-        children: [
-          topSection(),
-          const Expanded(child: Center(child: CircularProgressIndicator())),
-        ],
-      );
+      return const Center(child: CircularProgressIndicator());
     }
     if (state.chart.hasError) {
-      return Column(
-        children: [
-          topSection(),
-          Expanded(
-            child: Center(
-              child: Text(
-                BookingViewModel.messageFor(state.chart.error!),
-                style: const TextStyle(color: AppTheme.muted),
-              ),
-            ),
-          ),
-        ],
+      return Center(
+        child: Text(
+          BookingViewModel.messageFor(state.chart.error!),
+          style: const TextStyle(color: AppTheme.muted),
+        ),
       );
     }
 
     final sections = state.chartSections;
     if (sections.isEmpty) {
-      return Column(
-        children: [
-          topSection(),
-          const Expanded(
-            child: Center(
-              child: Text(
-                'No active rooms yet.',
-                style: TextStyle(color: AppTheme.muted),
-              ),
-            ),
-          ),
-        ],
+      return const Center(
+        child: Text(
+          'No active rooms yet.',
+          style: TextStyle(color: AppTheme.muted),
+        ),
       );
     }
 
@@ -217,7 +309,9 @@ class _TapeChartState extends ConsumerState<TapeChart> {
     // search hit, a chip tap, or the window quietly regrowing past an edge
     // all rebuild this same method, and none of those should yank the
     // desk's own scroll position back to today mid-visit.
-    if (!_scrolledToToday) {
+    if (!_scrolledToToday &&
+        state.chartFrom.year == _resetTarget.year &&
+        state.chartFrom.month == _resetTarget.month) {
       final todayIndex = dates.indexWhere(
         (d) =>
             d.year == todayDate.year &&
@@ -228,7 +322,7 @@ class _TapeChartState extends ConsumerState<TapeChart> {
         _scrolledToToday = true;
         final offset = (todayIndex - 1).clamp(0, dates.length - 1) * tile;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _hSync.jumpAllTo(offset);
+          if (mounted) _jumpToToday(offset);
         });
       }
     }
@@ -264,32 +358,22 @@ class _TapeChartState extends ConsumerState<TapeChart> {
         }
         return false;
       },
-      // The pill and legend scroll away like any other content above the
-      // grid — the category chips and the date header pin together at the
-      // top once the desk scrolls the room list up past them, the same way
-      // a spreadsheet freezes its own column headings rather than
-      // everything above the data.
       child: CustomScrollView(
+        key: _scrollViewKey,
         controller: _vScroll,
         slivers: [
-          SliverToBoxAdapter(
-            child: Column(
-              children: [
-                topSection(),
-                const SizedBox(height: AppTheme.s12),
-              ],
-            ),
-          ),
           SliverPersistentHeader(
             pinned: true,
             delegate: _DateHeaderDelegate(
               sections: sections.length > 1 ? sections : null,
               onTapChip: _jumpTo,
+              onTapToday: _scrollToToday,
               dates: dates,
               today: todayDate,
               tile: tile,
               roomCol: roomCol,
               hSync: _hSync,
+              headerKey: _headerKey,
             ),
           ),
           SliverPadding(
@@ -367,139 +451,6 @@ class _TapeChartState extends ConsumerState<TapeChart> {
     if (booked == true) {
       ref.read(bookingViewModelProvider.notifier).loadChart();
     }
-  }
-}
-
-// ── Header: window label + pager ────────────────────────────────────────────
-
-/// The month stepper — a whole calendar month at a time, opening on the
-/// current month so the desk never has to scroll just to see today. Not a
-/// date-range picker: the web chart has none, because a stay entered against
-/// an arbitrary custom range is not a question the desk actually asks — the
-/// question is "show me next month," repeatable either direction.
-class _ChartHeader extends StatelessWidget {
-  final DateTime from;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-
-  const _ChartHeader({
-    required this.from,
-    required this.onPrev,
-    required this.onNext,
-  });
-
-  static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-
-  String _label(DateTime d) => '${d.day} ${_months[d.month - 1]}';
-
-  @override
-  Widget build(BuildContext context) {
-    // Always `from`'s own calendar month, the same way the web tape chart's
-    // own pill reads off its `month` anchor rather than the actual (possibly
-    // scroll-grown) end of the fetched window — `to` moves every time the
-    // desk drags near the far edge for more nights, and showing that here
-    // would make the date pill visibly crawl forward on its own mid-drag
-    // instead of only on a deliberate prev/next or a pull past the near
-    // edge, which is the one direction the web pill does follow (it opens
-    // on an earlier page, the same way prev does).
-    final last = DateTime(
-      from.year,
-      from.month + 1,
-      1,
-    ).subtract(const Duration(days: 1));
-    final sameYear = from.year == last.year;
-
-    return Row(
-      children: [
-        _RoundIconButton(
-          icon: Icons.chevron_left_rounded,
-          onTap: onPrev,
-          semanticLabel: 'Previous month',
-          size: 32,
-        ),
-        const SizedBox(width: AppTheme.s8),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s12,
-              vertical: AppTheme.s8,
-            ),
-            decoration: BoxDecoration(
-              color: AppTheme.card,
-              borderRadius: BorderRadius.circular(AppTheme.rMedium),
-              border: Border.all(color: AppTheme.border),
-              boxShadow: AppTheme.subtle,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  '${_label(from)} – ${_label(last)}',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(width: AppTheme.s4),
-                Text(
-                  sameYear ? '${from.year}' : '${from.year} – ${last.year}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: AppTheme.s8),
-        _RoundIconButton(
-          icon: Icons.chevron_right_rounded,
-          onTap: onNext,
-          semanticLabel: 'Next month',
-          size: 32,
-        ),
-      ],
-    );
-  }
-}
-
-class _RoundIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final String? semanticLabel;
-  final double size;
-
-  const _RoundIconButton({
-    required this.icon,
-    required this.onTap,
-    this.semanticLabel,
-    this.size = 40,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: AppTheme.card,
-            shape: BoxShape.circle,
-            border: Border.all(color: AppTheme.border),
-            boxShadow: AppTheme.subtle,
-          ),
-          child: Icon(icon, size: size * 0.5, color: AppTheme.heading),
-        ),
-      ),
-    );
   }
 }
 
@@ -603,53 +554,15 @@ class _SearchBarState extends State<_SearchBar> {
   }
 }
 
-// ── Legend ───────────────────────────────────────────────────────────────────
-
-class _Legend extends StatelessWidget {
-  const _Legend();
-
-  static const _entries = [
-    (AppTheme.vacant, 'Vacant'),
-    (AppTheme.reserved, 'Reserved'),
-    (AppTheme.checkedIn, 'Checked in'),
-    (AppTheme.stayed, 'Stayed'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final e in _entries) ...[
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: e.$1,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              e.$2,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-            ),
-            const SizedBox(width: AppTheme.s16),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 // ── Category chips ───────────────────────────────────────────────────────────
 
 /// One chip per category — a name, a room count and how full it is over the
 /// visible nights — that scrolls the chart straight to that band. The web
 /// tape chart offers the same jump, and for the same reason: a long list of
 /// categories otherwise means scrolling past every one to reach the last.
-class _CategoryChips extends StatelessWidget {
+/// Tapping a chip also marks it active, the same highlight the web version
+/// gives its selected chip, so it's clear which band is on screen.
+class _CategoryChips extends StatefulWidget {
   final List<ChartSection> sections;
   final List<DateTime> dates;
   final ValueChanged<String> onTap;
@@ -660,14 +573,21 @@ class _CategoryChips extends StatelessWidget {
     required this.onTap,
   });
 
+  @override
+  State<_CategoryChips> createState() => _CategoryChipsState();
+}
+
+class _CategoryChipsState extends State<_CategoryChips> {
+  String? _active;
+
   /// Nights sold across every room in the section, over nights offered — the
   /// same occupancy figure the web chip badges with a percent.
   int _percentSold(ChartSection section) {
-    final capacity = section.rooms.length * dates.length;
+    final capacity = section.rooms.length * widget.dates.length;
     if (capacity == 0) return 0;
     var sold = 0;
     for (final room in section.rooms) {
-      for (final d in dates) {
+      for (final d in widget.dates) {
         final stay = room.stayOn(d);
         if (stay != null && stay.status != 'CANCELLED') sold++;
       }
@@ -681,54 +601,91 @@ class _CategoryChips extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          for (final section in sections) ...[
-            GestureDetector(
-              onTap: () => onTap(section.categoryName),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.card,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      section.categoryName,
-                      style: const TextStyle(
-                        color: AppTheme.heading,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${section.rooms.length}',
-                      style: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${_percentSold(section)}%',
-                      style: const TextStyle(
-                        color: AppTheme.accent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          for (final section in widget.sections) ...[
+            _CategoryChip(
+              label: section.categoryName,
+              count: section.rooms.length,
+              percent: _percentSold(section),
+              active: _active == section.categoryName,
+              onTap: () {
+                setState(() => _active = section.categoryName);
+                widget.onTap(section.categoryName);
+              },
             ),
             const SizedBox(width: AppTheme.s8),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final int percent;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _CategoryChip({
+    required this.label,
+    required this.count,
+    required this.percent,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: active ? AppTheme.accent.withValues(alpha: 0.12) : AppTheme.card,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.s12,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: active ? AppTheme.accent : AppTheme.border,
+              width: active ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? AppTheme.accent : AppTheme.heading,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$count',
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$percent%',
+                style: const TextStyle(
+                  color: AppTheme.accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -747,10 +704,34 @@ class _HorizontalSync {
   final List<ScrollController> _controllers = [];
   bool _syncing = false;
 
+  /// The offset every controller in the group is meant to share right now.
+  /// Kept up to date by every move, shift and jump so a controller that
+  /// attaches later — a category band mounted after the chart already
+  /// scrolled to today, say — has something to align to on its very first
+  /// frame instead of sitting at its own default zero until the desk
+  /// happens to drag it.
+  double _currentOffset = 0;
+
   ScrollController attach() {
     final controller = ScrollController();
     controller.addListener(() => _onMoved(controller));
     _controllers.add(controller);
+    // A fresh `ScrollController` has no clients until the `Scrollable` that
+    // owns it finishes laying out, so the alignment jump has to wait a
+    // frame. Without this, a row built after the rest of the chart already
+    // moved off the window's start — a category band that mounts once its
+    // card scrolls into view, or reattaches after a rebuild — opens at
+    // offset zero: the same night the header shows as scrolled off to the
+    // left, so its tiles quietly draw a different date under every column
+    // than the pinned header above them.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!controller.hasClients) return;
+      final target = _currentOffset.clamp(
+        0.0,
+        controller.position.maxScrollExtent,
+      );
+      if (controller.offset != target) controller.jumpTo(target);
+    });
     return controller;
   }
 
@@ -763,6 +744,7 @@ class _HorizontalSync {
     if (_syncing || !source.hasClients) return;
     _syncing = true;
     final offset = source.offset;
+    _currentOffset = offset;
     for (final other in _controllers) {
       if (identical(other, source) || !other.hasClients) continue;
       if (other.offset != offset) other.jumpTo(offset);
@@ -778,6 +760,7 @@ class _HorizontalSync {
   void shiftAllBy(double delta) {
     if (delta == 0) return;
     _syncing = true;
+    _currentOffset += delta;
     for (final c in _controllers) {
       if (!c.hasClients) continue;
       final target = (c.offset + delta).clamp(0.0, c.position.maxScrollExtent);
@@ -791,6 +774,7 @@ class _HorizontalSync {
   /// start. Unlike [shiftAllBy] this is an absolute position, not a delta.
   void jumpAllTo(double offset) {
     _syncing = true;
+    _currentOffset = offset;
     for (final c in _controllers) {
       if (!c.hasClients) continue;
       c.jumpTo(offset.clamp(0.0, c.position.maxScrollExtent));
@@ -846,20 +830,24 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   /// pinning an empty sliver of its own height.
   final List<ChartSection>? sections;
   final ValueChanged<String>? onTapChip;
+  final VoidCallback onTapToday;
   final List<DateTime> dates;
   final DateTime today;
   final double tile;
   final double roomCol;
   final _HorizontalSync hSync;
+  final GlobalKey headerKey;
 
   _DateHeaderDelegate({
     required this.sections,
     required this.onTapChip,
+    required this.onTapToday,
     required this.dates,
     required this.today,
     required this.tile,
     required this.roomCol,
     required this.hSync,
+    required this.headerKey,
   });
 
   // Both a little over the sum of `_DateHeader`'s own fixed row heights and
@@ -902,6 +890,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
       // which reads as the chips sinking into the list instead of sitting
       // fixed above it.
       child: Container(
+        key: headerKey,
         color: AppTheme.bg,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -936,6 +925,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
                 tile: tile,
                 roomCol: roomCol,
                 hSync: hSync,
+                onTapToday: onTapToday,
               ),
             ),
           ],
@@ -969,12 +959,13 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-class _DateHeader extends StatelessWidget {
+class _DateHeader extends StatefulWidget {
   final List<DateTime> dates;
   final DateTime today;
   final double tile;
   final double roomCol;
   final _HorizontalSync hSync;
+  final VoidCallback onTapToday;
 
   const _DateHeader({
     required this.dates,
@@ -982,6 +973,7 @@ class _DateHeader extends StatelessWidget {
     required this.tile,
     required this.roomCol,
     required this.hSync,
+    required this.onTapToday,
   });
 
   static const _weekdayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -990,23 +982,70 @@ class _DateHeader extends StatelessWidget {
     'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
   ];
 
+  @override
+  State<_DateHeader> createState() => _DateHeaderState();
+}
+
+class _DateHeaderState extends State<_DateHeader> {
+  // A controller of its own, synced like every strip's, purely to read the
+  // shared scroll offset — nothing ever drags this one directly. Without it
+  // the month banner would only be known at build time (the window's own
+  // start), and once the desk scrolls a month or more past that, the label
+  // overhead keeps naming a month no longer on screen at all.
+  late final ScrollController _tracker = widget.hSync.attach();
+
+  @override
+  void initState() {
+    super.initState();
+    _tracker.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _tracker.removeListener(_onScroll);
+    widget.hSync.detach(_tracker);
+    super.dispose();
+  }
+
+  void _onScroll() => setState(() {});
+
   bool _isWeekend(DateTime d) =>
       d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
 
   @override
   Widget build(BuildContext context) {
+    final dates = widget.dates;
+    final today = widget.today;
+    final tile = widget.tile;
+    final roomCol = widget.roomCol;
+    final hSync = widget.hSync;
+
     // One label per distinct month in the window, spanning exactly the
     // dates that fall in it — the same banner the web tape chart draws over
     // its own header row, so a page that crosses a month boundary shows both.
     final monthSpans = <(String, int)>[];
     for (final d in dates) {
-      final label = '${_months[d.month - 1]} ${d.year}';
+      final label = '${_DateHeader._months[d.month - 1]} ${d.year}';
       if (monthSpans.isNotEmpty && monthSpans.last.$1 == label) {
         monthSpans[monthSpans.length - 1] = (label, monthSpans.last.$2 + 1);
       } else {
         monthSpans.add((label, 1));
       }
     }
+
+    // Whichever date sits at the left edge of the visible window right now
+    // names the sticky label — the same date the room grid itself is
+    // scrolled to, so the two never disagree about what's on screen.
+    final offset = _tracker.hasClients ? _tracker.offset : 0.0;
+    final visibleIndex = dates.isEmpty
+        ? 0
+        : (offset / tile).floor().clamp(0, dates.length - 1);
+    final stickyLabel = dates.isEmpty
+        ? ''
+        : '${_DateHeader._months[dates[visibleIndex].month - 1]} '
+              '${dates[visibleIndex].year}';
+
+    final todayIndex = dates.indexWhere((d) => _isSameDay(d, today));
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1015,39 +1054,106 @@ class _DateHeader extends StatelessWidget {
           children: [
             Container(width: roomCol, height: 26, color: AppTheme.bg),
             Expanded(
-              child: _SyncedController(
-                sync: hSync,
-                builder: (context, controller) => SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  controller: controller,
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: Row(
-                    children: [
-                      for (final span in monthSpans)
-                        Container(
-                          width: tile * span.$2,
-                          height: 26,
-                          alignment: Alignment.center,
-                          decoration: const BoxDecoration(
-                            color: AppTheme.bg,
-                            border: Border(
-                              bottom: BorderSide(color: AppTheme.border),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Only worth a button once today has actually scrolled out
+                  // of the visible window — while it's still on screen the
+                  // ring drawn on its own tile already says where it is.
+                  final visibleCount = tile <= 0
+                      ? 0
+                      : (constraints.maxWidth / tile).ceil();
+                  final todayVisible = todayIndex != -1 &&
+                      todayIndex >= visibleIndex &&
+                      todayIndex < visibleIndex + visibleCount;
+                  return Stack(
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    controller: _tracker,
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: Row(
+                      children: [
+                        for (final span in monthSpans)
+                          Container(
+                            width: tile * span.$2,
+                            height: 26,
+                            decoration: const BoxDecoration(
+                              color: AppTheme.bg,
+                              border: Border(
+                                bottom: BorderSide(color: AppTheme.border),
+                              ),
                             ),
                           ),
-                          child: Text(
-                            span.$1,
-                            style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4,
+                      ],
+                    ),
+                  ),
+                  // The sticky label itself never scrolls — it sits pinned at
+                  // the left edge of this strip and simply changes text as
+                  // [_onScroll] fires, the same way a spreadsheet's own frozen
+                  // corner reads off whatever is scrolled beneath it rather
+                  // than moving with the data.
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        stickyLabel,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  // A quick way back once today has actually scrolled out of
+                  // view — sits pinned at the right for the same reason the
+                  // month label is pinned at the left, so it stays reachable
+                  // no matter how far the grid itself has scrolled.
+                  if (!todayVisible)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        color: AppTheme.bg,
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: widget.onTapToday,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppTheme.accent.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: const Text(
+                                'Today',
+                                style: TextStyle(
+                                  color: AppTheme.accent,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                ],
+                  );
+                },
               ),
             ),
           ],
@@ -1097,7 +1203,7 @@ class _DateHeader extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
-                                _weekdayLetters[d.weekday - 1],
+                                _DateHeader._weekdayLetters[d.weekday - 1],
                                 style: TextStyle(
                                   color: _isWeekend(d)
                                       ? AppTheme.draft
@@ -1338,6 +1444,7 @@ class _RoomRow extends StatelessWidget {
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -1346,15 +1453,17 @@ class _RoomRow extends StatelessWidget {
                     color: AppTheme.heading,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
+                    height: 1.1,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
                 if ((room.room.floor ?? '').isNotEmpty)
                   Text(
-                    'Floor ${room.room.floor}',
+                    formatFloor(room.room.floor),
                     style: const TextStyle(
                       color: AppTheme.muted,
-                      fontSize: 10,
+                      fontSize: 9,
+                      height: 1.1,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),

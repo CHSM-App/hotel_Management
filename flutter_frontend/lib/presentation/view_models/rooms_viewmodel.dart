@@ -272,6 +272,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
     if (e is DioException) {
       final data = e.response?.data;
       if (data is Map && data['message'] is String) return data['message'];
+      if (data is Map && data['error'] is String) return data['error'];
       switch (e.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:

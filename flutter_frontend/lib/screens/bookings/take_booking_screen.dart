@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
@@ -9,7 +12,24 @@ import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/payment_row.dart';
+import '../../widgets/photo_source_sheet.dart';
+import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
+import 'advance_receipt_screen.dart';
+
+/// Lets the desk take an ID proof photo with the camera or pull one from the
+/// gallery — the same either-or the web form gets from its file input's own
+/// camera affordance, offered explicitly here since a phone has both and no
+/// single tap picks between them.
+Future<XFile?> _pickIdProofPhoto(BuildContext context) async {
+  final source = await showPhotoSourceSheet(
+    context,
+    title: 'Upload ID proof',
+    subtitle: 'Take a photo or pick one from your gallery',
+  );
+  if (source == null) return null;
+  return ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+}
 
 /// Taking a booking, in the order the desk actually does it: which nights,
 /// which room, what it costs, who is staying, and what they paid.
@@ -45,10 +65,28 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
 }
 
 class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
+  final _scrollController = ScrollController();
+
+  // One key per required section, in the order the form asks them — so a
+  // failed submit can jump straight to the first thing wrong instead of
+  // leaving the desk to scroll around looking for a red line it may not
+  // have noticed.
+  final _datesKey = GlobalKey();
+  final _roomKey = GlobalKey();
+  final _nameKey = GlobalKey();
+  final _phoneKey = GlobalKey();
+  final _idProofKey = GlobalKey();
+  final _advanceKey = GlobalKey();
+
   final _name = TextEditingController();
   final _phone = TextEditingController();
   String? _idProofType;
   final _idProofNumber = TextEditingController();
+
+  /// A photo of the primary guest's document, taken or picked this session —
+  /// never pre-filled on an edit, since a stay with one already on file has
+  /// nothing here to re-send.
+  XFile? _idProofFile;
 
   /// Everybody else in the room. The one named above is the booking's own
   /// guest; these are the rest of the party, each with their own ID, because a
@@ -61,6 +99,41 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   /// Left untouched during an edit: an edit sets the record straight, it
   /// does not take money — that is what the advance-receipt screen is for.
   final List<PaymentDraft> _advance = [PaymentDraft()];
+
+  /// One remount counter per row in [_advance], bumped only when that row's
+  /// amount is set by [_recalcFullPayment] rather than typed — the signal
+  /// [PaymentRow] needs (via its key) to pull the new amount into its own
+  /// [TextEditingController], since a plain field mutation behind an
+  /// already-built controller wouldn't otherwise show up.
+  final List<int> _rowVersions = [0];
+
+  /// Mirrors the web form's "Collect full payment now" checkbox: while on,
+  /// the advance rows are kept summing to the stay total as it moves.
+  bool _collectFull = false;
+  num? _fullPaymentTotal;
+
+  /// Re-derives the last advance row so every row sums to [total] — the same
+  /// rule fullPaymentLines() applies on web. Earlier rows are left exactly as
+  /// typed, so a split the desk already carved up survives a full payment
+  /// being toggled on; only the remainder moves.
+  void _recalcFullPayment(num total) {
+    if (_advance.isEmpty) return;
+    final last = _advance.length - 1;
+    num others = 0;
+    for (var i = 0; i < last; i++) {
+      others += _advance[i].value;
+    }
+    final remainder = ((total - others) * 100).round() / 100;
+    final amount = remainder > 0
+        ? (remainder == remainder.roundToDouble()
+              ? remainder.toStringAsFixed(0)
+              : remainder.toString())
+        : '0';
+    if (_advance[last].amount != amount) {
+      _advance[last].amount = amount;
+      _rowVersions[last]++;
+    }
+  }
 
   bool get _editing => widget.editBooking != null;
 
@@ -99,10 +172,44 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     return state.room == null ? 'Choose a room.' : null;
   }
 
+  // Mirrors the web form's own client-side checks on the advance rows,
+  // measured against the quote's payable total — otherwise the desk only
+  // learns the advance was too big from the server's generic refusal.
+  String? get _advanceError {
+    if (!_submitAttempted) return null;
+    final paid = _advance.where((l) => l.value > 0).toList();
+    if (paid.isEmpty) return null;
+    final problem = paymentLinesError(paid);
+    if (problem != null) return problem;
+    final quoteTotal = ref.read(bookingViewModelProvider).quote?.totalPrice;
+    if (quoteTotal == null) return null;
+    final total = sumPayments(paid);
+    if (_collectFull) {
+      if ((total - quoteTotal).abs() > 0.005) {
+        return 'A full payment must equal the stay total of ${formatPrice(quoteTotal)}.';
+      }
+    } else if (total > quoteTotal) {
+      return "An advance can't be more than the stay total of ${formatPrice(quoteTotal)}.";
+    }
+    return null;
+  }
+
   String? get _idProofTypeError {
     if (!_submitAttempted || _editing) return null;
     final state = ref.read(bookingViewModelProvider);
     return (state.isWalkIn && _idProofType == null) ? 'Choose the ID type.' : null;
+  }
+
+  // Mirrors the web form: either the number or a photo of the document is
+  // enough, and this is the one field in the pair that carries the message.
+  String? get _idProofNumberError {
+    if (!_submitAttempted || _editing) return null;
+    final state = ref.read(bookingViewModelProvider);
+    return (state.isWalkIn &&
+            _idProofNumber.text.trim().isEmpty &&
+            _idProofFile == null)
+        ? 'Enter the ID number, or upload the document.'
+        : null;
   }
 
   @override
@@ -161,6 +268,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _name.dispose();
     _phone.dispose();
     _idProofNumber.dispose();
@@ -168,6 +276,22 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
+
+  /// Jumps the page to [key]'s section so a failed submit lands the desk on
+  /// the very box that stopped it, rather than trusting them to spot a red
+  /// line somewhere on the screen.
+  void _scrollToError(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: 0.1,
+      );
+    });
+  }
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
@@ -178,11 +302,30 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     // (or only says so in a snackbar the desk has to connect back to a box
     // themselves) is the thing this replaced.
     setState(() => _submitAttempted = true);
-    if (_nameError != null ||
-        _phoneError != null ||
-        _datesError != null ||
-        _roomError != null ||
-        _idProofTypeError != null) {
+    // Checked in the order the form asks them, so the scroll lands on
+    // whichever one the desk would hit first reading top to bottom.
+    if (_datesError != null) {
+      _scrollToError(_datesKey);
+      return;
+    }
+    if (_roomError != null) {
+      _scrollToError(_roomKey);
+      return;
+    }
+    if (_nameError != null) {
+      _scrollToError(_nameKey);
+      return;
+    }
+    if (_phoneError != null) {
+      _scrollToError(_phoneKey);
+      return;
+    }
+    if (_idProofTypeError != null || _idProofNumberError != null) {
+      _scrollToError(_idProofKey);
+      return;
+    }
+    if (_advanceError != null) {
+      _scrollToError(_advanceKey);
       return;
     }
 
@@ -197,18 +340,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       if (v.type == null) return _say('Choose a type for each vehicle.');
     }
 
-    final state = ref.read(bookingViewModelProvider);
-
-    // ID type passed the check above; the number is the one field the web
-    // form never marks required (either the number or the document is
-    // enough) but this app has no document upload, so the number is what
-    // has to be on file.
-    if (!_editing &&
-        state.isWalkIn &&
-        _idProofNumber.text.trim().isEmpty) {
-      return _say("Enter the guest's ID number.");
-    }
-
     final Booking? booking;
     if (_editing) {
       booking = await vm.updateBooking(
@@ -218,6 +349,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         numGuests: 1 + _guests.length,
         idProofType: _idProofType,
         idProofNumber: _idProofNumber.text,
+        idProofFile: _idProofFile,
         guests: _guests,
         vehicles: _vehicles,
       );
@@ -225,10 +357,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       // Only rows with money on them count; an untouched row is not a
       // payment.
       final paid = _advance.where((l) => l.value > 0).toList();
-      if (paid.isNotEmpty) {
-        final problem = paymentLinesError(paid);
-        if (problem != null) return _say(problem);
-      }
       booking = await vm.submit(
         guestName: _name.text,
         guestPhone: phone,
@@ -237,6 +365,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         numGuests: 1 + _guests.length,
         idProofType: _idProofType,
         idProofNumber: _idProofNumber.text,
+        idProofFile: _idProofFile,
         guests: _guests,
         vehicles: _vehicles,
         advanceLines: paid,
@@ -247,6 +376,13 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     if (booking == null) {
       return _say(ref.read(bookingViewModelProvider).error ?? 'Could not save.');
     }
+    // The web form's own "Booking saved" card, offered on a fresh booking
+    // only — an edit returns straight to the stay that was being corrected,
+    // which already shows what the save produced.
+    if (!_editing) {
+      await _showBookingSaved(booking);
+      return;
+    }
     Navigator.of(context).pop(true);
   }
 
@@ -254,6 +390,29 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppTheme.heading),
     );
+  }
+
+  Future<void> _showBookingSaved(Booking booking) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => _BookingSavedDialog(
+        booking: booking,
+        onPrintReceipt: () => Navigator.of(dialogContext).pop('print'),
+        onDone: () => Navigator.of(dialogContext).pop('done'),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'print') {
+      // Replaces this screen rather than stacking the receipt on top of it —
+      // the booking is already saved and done with, so closing the receipt
+      // should land back on the list, not on the form that made it.
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => AdvanceReceiptScreen(booking: booking)),
+        result: true,
+      );
+    } else {
+      Navigator.of(context).pop(true);
+    }
   }
 
   /// The additional adults — everyone in [_guests] who is not a child. The
@@ -273,6 +432,14 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(bookingViewModelProvider);
+    // A full payment follows the total it was promised against: dates, the
+    // room or an extra can move it after the checkbox is already on, and the
+    // rows have to be rebuilt against whatever the total now is.
+    final quoteTotal = state.quote?.totalPrice;
+    if (_collectFull && quoteTotal != null && quoteTotal != _fullPaymentTotal) {
+      _fullPaymentTotal = quoteTotal;
+      _recalcFullPayment(quoteTotal);
+    }
     final adults = _adultIndexes;
     final children = _childIndexes;
     final vehiclesNumber = _editing ? 3 : 4;
@@ -287,6 +454,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       ),
       body: SafeArea(
         child: ListView(
+          controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s16,
             AppTheme.s8,
@@ -311,7 +479,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 children: [
                   const _SectionLabel('Stay & room', number: 1),
                   const SizedBox(height: AppTheme.s12),
-                  _DatesRow(state: state, required: true),
+                  KeyedSubtree(
+                    key: _datesKey,
+                    child: _DatesRow(state: state, required: true),
+                  ),
                   if (_datesError != null) ...[
                     const SizedBox(height: AppTheme.s4),
                     Text(
@@ -324,7 +495,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     const SizedBox(height: AppTheme.s16),
                     _RequiredLabel('Available rooms'),
                     const SizedBox(height: AppTheme.s8),
-                    _RoomPicker(state: state),
+                    KeyedSubtree(key: _roomKey, child: _RoomPicker(state: state)),
                     if (_roomError != null) ...[
                       const SizedBox(height: AppTheme.s4),
                       Text(
@@ -371,15 +542,19 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       shadow: AppTheme.subtle,
                       child: Column(
                         children: [
-                          NeuField(
-                            controller: _name,
-                            label: 'Name (primary guest)',
-                            required: true,
-                            errorText: _nameError,
-                            onChanged: (_) => setState(() {}),
+                          KeyedSubtree(
+                            key: _nameKey,
+                            child: NeuField(
+                              controller: _name,
+                              label: 'Name (primary guest)',
+                              required: true,
+                              errorText: _nameError,
+                              onChanged: (_) => setState(() {}),
+                            ),
                           ),
                           const SizedBox(height: AppTheme.s12),
                           NeuField(
+                            key: _phoneKey,
                             controller: _phone,
                             label: 'Mobile',
                             hint: '10-digit mobile',
@@ -390,16 +565,22 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                             onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: AppTheme.s12),
-                          _IdProofFields(
-                            type: _idProofType,
-                            number: _idProofNumber,
-                            // Required on a walk-in, deferred on a
-                            // reservation — and never forced open on an
-                            // edit, where a stay that has one on file has
-                            // nothing to require.
-                            required: !_editing && state.isWalkIn,
-                            errorText: _idProofTypeError,
-                            onType: (t) => setState(() => _idProofType = t),
+                          KeyedSubtree(
+                            key: _idProofKey,
+                            child: _IdProofFields(
+                              type: _idProofType,
+                              number: _idProofNumber,
+                              // Required on a walk-in, deferred on a
+                              // reservation — and never forced open on an
+                              // edit, where a stay that has one on file has
+                              // nothing to require.
+                              required: !_editing && state.isWalkIn,
+                              errorText: _idProofTypeError,
+                              numberErrorText: _idProofNumberError,
+                              onType: (t) => setState(() => _idProofType = t),
+                              file: _idProofFile,
+                              onFile: (f) => setState(() => _idProofFile = f),
+                            ),
                           ),
                         ],
                       ),
@@ -453,7 +634,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       const SizedBox(height: AppTheme.s12),
                       const Text(
                         'A walk-in is checked in as it saves, so the primary '
-                        'guest needs an ID — an ID number is enough.',
+                        'guest needs an ID — an ID number or a photo of the '
+                        'document is enough.',
                         style: TextStyle(color: AppTheme.muted, fontSize: 11),
                       ),
                     ],
@@ -465,11 +647,42 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       const _SectionDivider(),
                       const _SectionLabel('Advance payment', number: 3),
                       const SizedBox(height: AppTheme.s8),
-                      _AdvanceCard(
-                        lines: _advance,
-                        onAdd: () => setState(() => _advance.add(PaymentDraft())),
-                        onRemove: (i) => setState(() => _advance.removeAt(i)),
-                        onChanged: () => setState(() {}),
+                      _FullPaymentCheckbox(
+                        quoteTotal: state.quote?.totalPrice,
+                        value: _collectFull,
+                        onChanged: (on) => setState(() {
+                          _collectFull = on;
+                          final total = state.quote?.totalPrice;
+                          if (on && total != null) {
+                            _fullPaymentTotal = total;
+                            _recalcFullPayment(total);
+                          }
+                        }),
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      KeyedSubtree(
+                        key: _advanceKey,
+                        child: _AdvanceCard(
+                          lines: _advance,
+                          rowVersions: _rowVersions,
+                          errorText: _advanceError,
+                          onAdd: () => setState(() {
+                            _advance.add(PaymentDraft());
+                            _rowVersions.add(0);
+                          }),
+                          onRemove: (i) => setState(() {
+                            _advance.removeAt(i);
+                            _rowVersions.removeAt(i);
+                            if (_collectFull && _fullPaymentTotal != null) {
+                              _recalcFullPayment(_fullPaymentTotal!);
+                            }
+                          }),
+                          onChanged: () => setState(() {
+                            if (_collectFull && _fullPaymentTotal != null) {
+                              _recalcFullPayment(_fullPaymentTotal!);
+                            }
+                          }),
+                        ),
                       ),
                     ],
 
@@ -635,6 +848,98 @@ class _SectionDivider extends StatelessWidget {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
       child: Divider(height: 1, color: AppTheme.border),
+    );
+  }
+}
+
+/// The web form's own "Booking saved" card — what to do next after a fresh
+/// booking, right where the desk is already looking, instead of leaving them
+/// to find the stay again from the list for the receipt a guest is waiting on.
+class _BookingSavedDialog extends StatelessWidget {
+  final Booking booking;
+  final VoidCallback onPrintReceipt;
+  final VoidCallback onDone;
+
+  const _BookingSavedDialog({
+    required this.booking,
+    required this.onPrintReceipt,
+    required this.onDone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final advance = booking.advanceAmount ?? 0;
+    final paidInFull =
+        booking.totalPrice != null && (booking.totalPrice! - advance).abs() < 0.01;
+
+    return Dialog(
+      backgroundColor: AppTheme.bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.s24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: const BoxDecoration(
+                color: AppTheme.accent,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check, color: Colors.white, size: 28),
+            ),
+            const SizedBox(height: AppTheme.s16),
+            Text('Booking saved', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: AppTheme.s8),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: booking.guestName ?? 'Guest',
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.heading),
+                  ),
+                  TextSpan(
+                    text: booking.roomNumber != null
+                        ? ' is booked into room ${booking.roomNumber}.'
+                        : ' is booked.',
+                  ),
+                ],
+                style: const TextStyle(color: AppTheme.text, fontSize: 14),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppTheme.s8),
+            Text(
+              advance > 0
+                  ? '${paidInFull ? 'Full payment of' : 'Advance of'} '
+                        '${formatPrice(advance)}'
+                        '${booking.advancePaymentMethod != null ? ' by ${booking.advancePaymentMethod!.toLowerCase()}' : ''} '
+                        'taken — its receipt has been issued automatically.'
+                  : 'No advance was taken, so there is nothing to receipt yet.',
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppTheme.s24),
+            if (advance > 0) ...[
+              NeuButton(
+                primary: true,
+                expand: true,
+                onPressed: onPrintReceipt,
+                child: const Text('Print advance receipt'),
+              ),
+              const SizedBox(height: AppTheme.s8),
+            ],
+            NeuButton(
+              expand: true,
+              onPressed: onDone,
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1375,9 +1680,21 @@ class _IdProofFields extends StatelessWidget {
 
   /// Shown under the dropdown once a submit was tried and no type was
   /// chosen — the web form marks the type itself required (not the number:
-  /// either the number or a document is enough, and this app has only the
-  /// number), so this is the one field in the pair that carries a message.
+  /// either the number or a document is enough), so this is the one field
+  /// in the pair that carries a message.
   final String? errorText;
+
+  /// Shown under the ID number box itself, once a submit was tried and a
+  /// walk-in was left without one — the same place every other required
+  /// field's message lands, rather than a snackbar the desk has to connect
+  /// back to the box themselves.
+  final String? numberErrorText;
+
+  /// A photo of the document, taken or picked this session. Either this or
+  /// [number] is enough — the same "one is enough, both is better" rule the
+  /// web form's own pair of fields carries.
+  final XFile? file;
+  final ValueChanged<XFile?>? onFile;
 
   const _IdProofFields({
     required this.type,
@@ -1386,6 +1703,9 @@ class _IdProofFields extends StatelessWidget {
     this.onNumber,
     this.required = false,
     this.errorText,
+    this.numberErrorText,
+    this.file,
+    this.onFile,
   });
 
   @override
@@ -1432,10 +1752,38 @@ class _IdProofFields extends StatelessWidget {
           NeuField(
             controller: number,
             label: 'ID number',
-            hint: 'As printed on the card',
+            required: required,
+            errorText: numberErrorText,
             maxLength: 40,
             onChanged: onNumber,
           ),
+          if (!required && numberErrorText == null) ...[
+            const SizedBox(height: AppTheme.s4),
+            const Text(
+              'Not required',
+              style: TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+          ],
+          if (onFile != null) ...[
+            const SizedBox(height: AppTheme.s12),
+            Text(
+              'Document photo (optional)',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppTheme.s8),
+            if (file != null)
+              PhotoThumb(
+                imageProvider: FileImage(File(file!.path)),
+                onRemove: () => onFile!(null),
+              )
+            else
+              AddPhotoTile(
+                onTap: () async {
+                  final picked = await _pickIdProofPhoto(context);
+                  if (picked != null) onFile!(picked);
+                },
+              ),
+          ],
         ],
       ],
     );
@@ -1516,6 +1864,11 @@ class _GuestCardState extends State<_GuestCard> {
             // listener registered inside build(), which re-registered on every
             // rebuild and was never removed.
             onNumber: (v) => widget.guest.idProofNumber = v,
+            file: widget.guest.idProofFile,
+            onFile: (f) {
+              setState(() => widget.guest.idProofFile = f);
+              widget.onChanged();
+            },
           ),
         ],
       ),
@@ -1639,6 +1992,82 @@ class _VehicleCardState extends State<_VehicleCard> {
   }
 }
 
+// ── Collect it all now ──────────────────────────────────────────────────────
+
+/// The same "Collect full payment now" chip the web form shows above its
+/// advance rows — checking it takes the whole stay total as the advance
+/// instead of a partial deposit. Disabled until there's a quote to promise
+/// against, the same as web.
+class _FullPaymentCheckbox extends StatelessWidget {
+  final num? quoteTotal;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _FullPaymentCheckbox({
+    required this.quoteTotal,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = quoteTotal != null;
+    return InkWell(
+      onTap: enabled ? () => onChanged(!value) : null,
+      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: AppTheme.bg,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: Checkbox(
+                value: value,
+                onChanged: enabled ? (v) => onChanged(v ?? false) : null,
+                activeColor: AppTheme.accent,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  children: [
+                    const TextSpan(text: 'Collect full payment now'),
+                    TextSpan(
+                      text: enabled
+                          ? ' · ${formatPrice(quoteTotal!)}'
+                          : ' · choose a room and dates first',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── The advance ─────────────────────────────────────────────────────────────
 
 /// One row per way the money came in.
@@ -1649,15 +2078,19 @@ class _VehicleCardState extends State<_VehicleCard> {
 /// files the other half under a method it never used.
 class _AdvanceCard extends StatelessWidget {
   final List<PaymentDraft> lines;
+  final List<int> rowVersions;
   final VoidCallback onAdd;
   final ValueChanged<int> onRemove;
   final VoidCallback onChanged;
+  final String? errorText;
 
   const _AdvanceCard({
     required this.lines,
+    required this.rowVersions,
     required this.onAdd,
     required this.onRemove,
     required this.onChanged,
+    this.errorText,
   });
 
   @override
@@ -1671,11 +2104,24 @@ class _AdvanceCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s12),
               child: PaymentRow(
+                // A "collect full payment" recalc mutates a row's amount
+                // behind an already-built TextEditingController, which
+                // wouldn't otherwise pick it up — bumping the key remounts
+                // just that row so its field re-reads the new amount.
+                key: ValueKey('advance-$i-${rowVersions[i]}'),
                 line: lines[i],
                 // Nothing to remove down to on a single payment, so the bin is
                 // dead there rather than gone — the row would jump sideways.
                 onRemove: lines.length == 1 ? null : () => onRemove(i),
                 onChanged: onChanged,
+              ),
+            ),
+          if (errorText != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              child: Text(
+                errorText!,
+                style: const TextStyle(color: AppTheme.danger, fontSize: 12),
               ),
             ),
           if (lines.length < 5)
