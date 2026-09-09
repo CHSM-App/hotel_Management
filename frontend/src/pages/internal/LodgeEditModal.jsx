@@ -41,6 +41,7 @@ function formFromLodge(lodge) {
     foodTableService: !!lodge.food_table_service,
     hasEvents: !!lodge.has_events,
     isActive: !!lodge.is_active,
+    showLogoOnReceipt: !!lodge.show_logo_on_receipt,
   };
 }
 
@@ -328,6 +329,15 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
             checked={form.isActive}
             onChange={update('isActive')}
           />
+          {lodge.logo_path && (
+            <Check
+              id="edit-show-logo"
+              label="Show the logo on printed bills"
+              note="Prints in the masthead above the hotel name. Upload or change the logo itself from the property page."
+              checked={form.showLogoOnReceipt}
+              onChange={update('showLogoOnReceipt')}
+            />
+          )}
         </section>
         </div>
 

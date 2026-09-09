@@ -1,11 +1,14 @@
 const { Router } = require('express');
 const { authenticate, requireLodgeUser, requireRole } = require('../../middleware/authenticate');
 const { otpSendLimiter } = require('../../middleware/rateLimit');
+const { logoUpload } = require('../../middleware/logoUpload');
 const {
   getMeHandler,
   sendPasswordOtpHandler,
   changePasswordHandler,
   updateMyLodgeHandler,
+  updateMyLodgeLogoHandler,
+  removeMyLodgeLogoHandler,
 } = require('./me.controller');
 
 const router = Router();
@@ -28,5 +31,10 @@ router.patch('/password', authenticate, staff, changePasswordHandler);
 // lodge-defined role is ever handed, it's the account holder correcting their
 // own listing.
 router.patch('/lodge', authenticate, requireRole('OWNER'), updateMyLodgeHandler);
+
+// The property's logo — a separate multipart endpoint from the JSON PATCH
+// above, matching the room/venue image upload pattern.
+router.put('/lodge/logo', authenticate, requireRole('OWNER'), logoUpload, updateMyLodgeLogoHandler);
+router.delete('/lodge/logo', authenticate, requireRole('OWNER'), removeMyLodgeLogoHandler);
 
 module.exports = router;

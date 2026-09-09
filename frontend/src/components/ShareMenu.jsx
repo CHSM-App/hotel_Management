@@ -2,35 +2,29 @@ import ShareIcon from './ShareIcon';
 
 // Sending a document to the guest on WhatsApp, in one press.
 //
-// The desk's own WhatsApp does the sending, not the server. Pressing this saves
-// the PDF and opens a chat with the guest, message already typed; the desk
-// attaches the file from the downloads folder and presses send. That attach is
-// a manual step and there is no way around it from a browser — wa.me carries
-// text and never a file, and no page can put a local PDF into someone else's
-// WhatsApp.
+// The server does the sending, not the desk's own phone. Pressing this
+// uploads the PDF, the server stores it behind a link and texts that link to
+// the guest's number through an approved SMSala template, and the toast that
+// follows reports the provider's own verdict — sent or failed. There is
+// nothing for the desk to attach and no other app to switch to.
 //
-// A server-side send does exist (see billShare.service.js on the backend) and
-// needs no attaching at all, but it can only go out through an approved SMSala
-// template. Until that template is approved this is the route that works, and
-// it works on any desk with WhatsApp installed or WhatsApp Web signed in.
-//
-// So this button is never disabled for configuration reasons: there is nothing
-// to configure. It greys out only while the PDF is being built.
+// Disabled where the guest has no number on file and none was entered on the
+// screen — see billShare.service.js on the backend for the same check.
 export default function ShareMenu({
   onShare,
   disabled = false,
   busy = false,
-  // Shown in the tooltip so the desk can see which number the chat will open
-  // on before pressing — the moment a wrong number is still cheap to fix.
+  // Shown in the tooltip so the desk can see which number the bill will go to
+  // before pressing — the moment a wrong number is still cheap to fix.
   guestPhone = '',
-  label = 'Send this document to the guest on WhatsApp',
+  label = 'Send this bill to the guest on WhatsApp',
   className = 'btn-secondary bill-actions__icon-btn',
 }) {
   const title = busy
-    ? 'Preparing…'
+    ? 'Sending…'
     : guestPhone
-      ? `Save the PDF and open WhatsApp to ${guestPhone}`
-      : 'Save the PDF and open WhatsApp';
+      ? `Send this bill on WhatsApp to ${guestPhone}`
+      : 'Send this bill on WhatsApp';
 
   // No wrapper element. The <span> that used to be here anchored a dropdown
   // that no longer exists, and it broke the action row's sizing: those rules

@@ -329,6 +329,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              l.city AS lodge_city, l.state AS lodge_state,
+             l.logo_path AS lodge_logo_path, l.show_logo_on_receipt,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
               WHERE ar.booking_id = b.id AND ar.status = 'ISSUED') AS advance_receipt_numbers
@@ -484,6 +485,10 @@ async function listBillableBookings(lodgeId) {
       JOIN dbo.room_categories c ON c.id = r.category_id
       WHERE b.lodge_id = @lodgeId AND b.status = 'CHECKED_OUT'
         AND NOT EXISTS (SELECT 1 FROM dbo.invoices i WHERE i.booking_id = b.id AND i.status = 'ISSUED')
+        -- Voiding puts a stay back in this queue on purpose, so a corrected
+        -- bill can be reissued — but not when the desk chose to close
+        -- billing instead, saying no bill follows this one.
+        AND NOT EXISTS (SELECT 1 FROM dbo.invoices i WHERE i.booking_id = b.id AND i.closed_billing = 1)
       ORDER BY b.actual_check_out_at DESC
     `);
   return result.recordset.map((row) => ({
@@ -1095,6 +1100,10 @@ function mapInvoice(row) {
     status: row.status,
     voidReason: row.void_reason,
     voidedAt: row.voided_at,
+    // Set only when voiding also removed the booking from "Ready to bill" —
+    // see voidInvoice. Distinguishes "voided, will be reissued" from "voided
+    // for good" on a bill that otherwise looks the same either way.
+    closedBilling: !!row.closed_billing,
     createdAt: row.created_at,
     gstin: row.gstin,
     isGstRegistered: !!row.is_gst_registered,
@@ -1107,6 +1116,9 @@ function mapInvoice(row) {
     lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
+    // Printed only when the owner opted in — a logo uploaded for the
+    // dashboard brand mark doesn't appear on a legal document until then.
+    lodgeLogoUrl: row.show_logo_on_receipt && row.lodge_logo_path ? `/hotel-logos/${row.lodge_logo_path}` : null,
     // The property's own checkout rule, so the terms printed on the bill are
     // the terms it actually enforces rather than a fixed line of text.
     checkinMode: row.checkin_mode ?? null,
@@ -1157,6 +1169,7 @@ function buildPreviewDocument({
     lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
+    lodgeLogoUrl: row.show_logo_on_receipt && row.lodge_logo_path ? `/hotel-logos/${row.lodge_logo_path}` : null,
     gstin: row.gstin,
     isGstRegistered: !!row.is_gst_registered,
     checkinMode: row.checkin_mode ?? null,
@@ -1231,6 +1244,7 @@ async function getInvoice(lodgeId, invoiceId) {
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
+             l.logo_path AS lodge_logo_path, l.show_logo_on_receipt,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
               WHERE (ar.booking_id = i.booking_id OR ar.event_booking_id = i.event_booking_id)
@@ -1316,6 +1330,7 @@ async function listInvoices(lodgeId) {
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
+             l.logo_path AS lodge_logo_path, l.show_logo_on_receipt,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
               WHERE (ar.booking_id = i.booking_id OR ar.event_booking_id = i.event_booking_id)
@@ -1391,7 +1406,7 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
       .input('reason', sql.NVarChar, reason)
       .query(`
         UPDATE dbo.invoices
-        SET status = 'VOID', void_reason = @reason, voided_at = SYSDATETIMEOFFSET()
+        SET status = 'VOID', void_reason = @reason, voided_at = SYSDATETIMEOFFSET(), closed_billing = 1
         OUTPUT inserted.id
         WHERE id = @invoiceId AND lodge_id = @lodgeId AND status = 'ISSUED'
       `);
@@ -1400,23 +1415,19 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
     }
 
     // Release the food back to unbilled. A void that left orders stamped would
-    // silently destroy the charge: the reissued bill wouldn't pick them up and
-    // the table would never be asked to pay for what it ate. The invoice row
-    // itself stays put — issued documents are voided in place, never deleted.
+    // silently destroy the charge: a food tab reopened elsewhere wouldn't pick
+    // them up and the table would never be asked to pay for what it ate. The
+    // invoice row itself stays put — issued documents are voided in place,
+    // never deleted.
     await new sql.Request(transaction)
       .input('invoiceId', sql.BigInt, invoiceId)
       .query('UPDATE dbo.food_orders SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId');
 
-    // A function whose bill is voided goes back to confirmed, so it can be
-    // billed again — the bill is what settled it.
-    await new sql.Request(transaction)
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .input('invoiceId', sql.BigInt, invoiceId)
-      .query(`
-        UPDATE dbo.event_bookings SET status = 'CONFIRMED', updated_at = SYSDATETIMEOFFSET()
-        WHERE lodge_id = @lodgeId AND status = 'SETTLED'
-          AND id = (SELECT event_booking_id FROM dbo.invoices WHERE id = @invoiceId AND lodge_id = @lodgeId)
-      `);
+    // Voiding used to send a settled function back to CONFIRMED so a fresh
+    // bill could be issued for it — closed_billing above now says the
+    // opposite on purpose: a void is a correction to a document already
+    // issued, not an undo of the stay or function it billed. It no longer
+    // reopens the function for a new invoice.
 
     await transaction.commit();
   } catch (err) {
@@ -1508,7 +1519,8 @@ async function loadLodgeForBilling(pool, lodgeId) {
       SELECT is_gst_registered, gstin, is_specified_premises,
              name AS lodge_name, phone AS lodge_phone, address AS lodge_address,
              name_mr AS lodge_name_mr, address_mr AS lodge_address_mr,
-             city AS lodge_city, state AS lodge_state
+             city AS lodge_city, state AS lodge_state,
+             logo_path AS lodge_logo_path, show_logo_on_receipt
       FROM dbo.lodges WHERE id = @lodgeId
     `);
   const row = result.recordset[0];

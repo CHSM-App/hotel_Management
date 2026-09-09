@@ -28,6 +28,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
 const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('./middleware/menuImageUpload');
 const { UPLOAD_DIR: VENUE_IMAGE_DIR } = require('./middleware/venueImageUpload');
+const { UPLOAD_DIR: LOGO_DIR } = require('./middleware/logoUpload');
 
 const app = express();
 
@@ -167,9 +168,23 @@ app.use(
   })
 );
 app.use(express.json());
-app.use('/room-images', express.static(ROOM_IMAGE_DIR));
-app.use('/menu-images', express.static(MENU_IMAGE_DIR));
-app.use('/venue-images', express.static(VENUE_IMAGE_DIR));
+
+// Helmet's default Cross-Origin-Resource-Policy is 'same-site', which an
+// <img> tag can trip even when the page and the image share a host — the
+// browser's site check treats a bare IP like 192.168.1.8 more strictly than
+// a registrable domain, and the request is silently blocked
+// (net::ERR_BLOCKED_BY_RESPONSE.NotSameSite) with no console error pointing
+// at the cause. These four routes serve nothing but public images meant to be
+// embedded, so they get the permissive policy that is normally reserved for
+// a CDN — every other route keeps the strict default above.
+const PUBLIC_IMAGE_CORP = (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+};
+app.use('/room-images', PUBLIC_IMAGE_CORP, express.static(ROOM_IMAGE_DIR));
+app.use('/menu-images', PUBLIC_IMAGE_CORP, express.static(MENU_IMAGE_DIR));
+app.use('/venue-images', PUBLIC_IMAGE_CORP, express.static(VENUE_IMAGE_DIR));
+app.use('/hotel-logos', PUBLIC_IMAGE_CORP, express.static(LOGO_DIR));
 
 // Built frontend (Vite output lands in src/public via CI). Serves index.html,
 // assets/*, favicon, etc. Static files take precedence over the SPA fallback below.
@@ -252,7 +267,7 @@ for (const [prefix, router] of API_ROUTES) {
 // static upload mounts and the health probes. They belong in the fallback
 // exclusion list for the same reason — a missing image should 404, not return
 // the SPA shell.
-const NON_ROUTER_API_PREFIXES = ['/room-images', '/menu-images', '/venue-images', '/health'];
+const NON_ROUTER_API_PREFIXES = ['/room-images', '/menu-images', '/venue-images', '/hotel-logos', '/health'];
 
 // '/internal/lodges' is mounted, but '/internal/anything-else' should also be
 // treated as API rather than handed to the SPA, so the first path segment is

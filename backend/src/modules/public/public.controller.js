@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const publicService = require('./public.service');
 const billShareService = require('../billing/billShare.service');
+const receiptShareService = require('../billing/receiptShare.service');
 const { orderItemsSchema } = require('../orders/orders.schema');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -185,25 +186,132 @@ async function getOrderStatusHandler(req, res, next) {
   }
 }
 
-// The bill a guest was sent on WhatsApp, fetched by the token in that link.
+// Escapes the handful of characters that would otherwise let a guest name or
+// invoice number break out of the HTML this handler writes by hand. The
+// landing page has no templating engine behind it — it's one static-shaped
+// string — so this is the whole of its defence against a stored value that
+// happens to contain '<' or '&'.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+// The page a guest lands on when they tap the bill link in WhatsApp.
 //
-// Served inline rather than as an attachment: the link is tapped inside a chat,
-// and a phone that is handed a PDF inline opens it in its viewer, where a guest
-// can read it and then save or forward it if they want to. `attachment` would
-// make the common case — "let me just look at my bill" — a download first.
+// A plain download button rather than serving the PDF at this address
+// directly: handed the PDF inline, a phone opens it in whatever viewer it
+// has, and the save/download control in that viewer varies by app and is
+// sometimes buried behind a menu. A page the property controls always has
+// one button in the same place.
 //
-// No-store, because this is one guest's bill and the one place it must not be
-// left is a shared proxy cache.
+// No-store — this is one guest's bill and the one place it must not be left
+// is a shared proxy cache — and no styling library: this loads in a chat's
+// in-app browser, on whatever connection the guest has, and has exactly one
+// job.
+// The one landing page both a shared bill and a shared receipt use, parked in
+// one place so the two never quietly diverge in markup while meaning the same
+// thing. `label` is what the page calls the document ("Bill" / "Receipt");
+// `downloadHref` is the forced-download route the one button points at.
+function shareLandingPage({ label, docNumber, lodgeName, downloadHref }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(docNumber)} — ${escapeHtml(lodgeName)}</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #f4f5f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 32px 28px;
+          width: 100%; max-width: 360px; text-align: center; margin: 16px; }
+  .card p.lodge { margin: 0 0 4px; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+  .card h1 { margin: 0 0 24px; font-size: 20px; color: #111827; }
+  .card a.btn { display: block; background: #111827; color: #fff; text-decoration: none; font-weight: 600;
+                font-size: 15px; padding: 14px 20px; border-radius: 8px; }
+  .card a.btn:active { background: #000; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <p class="lodge">${escapeHtml(lodgeName)}</p>
+    <h1>${escapeHtml(label)} ${escapeHtml(docNumber)}</h1>
+    <a class="btn" href="${downloadHref}">Download ${escapeHtml(label)} (PDF)</a>
+  </div>
+</body>
+</html>`;
+}
+
 async function getSharedBillHandler(req, res, next) {
+  try {
+    const { invoiceNumber, lodgeName } = await billShareService.readSharedBill(String(req.params.token || ''));
+    const token = String(req.params.token || '');
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(
+      shareLandingPage({
+        label: 'Bill',
+        docNumber: invoiceNumber,
+        lodgeName,
+        downloadHref: `/public/bills/${encodeURIComponent(token)}/download`,
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The PDF itself, as a forced download — the button on the landing page above
+// points here. `attachment` rather than `inline`: the guest already chose to
+// download from the page, so the phone should save it, not reopen the same
+// choice inside a PDF viewer.
+async function downloadSharedBillHandler(req, res, next) {
   try {
     const { filePath, invoiceNumber } = await billShareService.readSharedBill(String(req.params.token || ''));
     res.type('application/pdf');
     res.setHeader('Cache-Control', 'no-store');
-    // The bill's own number, so a guest who does save it gets a file named
-    // after the document rather than after our storage key.
+    // The bill's own number, so the saved file is named after the document
+    // rather than after our storage key.
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${String(invoiceNumber).replace(/[\/"]/g, '-')}.pdf"`
+      `attachment; filename="${String(invoiceNumber).replace(/[\/"]/g, '-')}.pdf"`
+    );
+    res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Same two-step landing as a shared bill, against a shared advance receipt.
+async function getSharedReceiptHandler(req, res, next) {
+  try {
+    const { receiptNumber, lodgeName } = await receiptShareService.readSharedReceipt(String(req.params.token || ''));
+    const token = String(req.params.token || '');
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(
+      shareLandingPage({
+        label: 'Receipt',
+        docNumber: receiptNumber,
+        lodgeName,
+        downloadHref: `/public/receipts/${encodeURIComponent(token)}/download`,
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function downloadSharedReceiptHandler(req, res, next) {
+  try {
+    const { filePath, receiptNumber } = await receiptShareService.readSharedReceipt(String(req.params.token || ''));
+    res.type('application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${String(receiptNumber).replace(/[\/"]/g, '-')}.pdf"`
     );
     res.sendFile(filePath);
   } catch (err) {
@@ -213,6 +321,9 @@ async function getSharedBillHandler(req, res, next) {
 
 module.exports = {
   getSharedBillHandler,
+  downloadSharedBillHandler,
+  getSharedReceiptHandler,
+  downloadSharedReceiptHandler,
   getLodgePageHandler,
   getMenuPageHandler,
   getTableOrderPageHandler,

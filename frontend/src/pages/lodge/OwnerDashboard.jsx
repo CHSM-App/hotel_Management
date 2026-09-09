@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { apiGet, ApiError } from '../../lib/api';
+import { apiGet, ApiError, API_BASE } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { clearSession, getSession } from '../../lib/auth';
 import { SearchContext } from '../../lib/searchContext';
@@ -351,9 +351,15 @@ export default function OwnerDashboard() {
             it is the sidebar's header, and lining it up with the rail below is
             what stops the bar reading as one undivided strip. */}
         <div className="dash-brand">
-          <span className="dash-brand__badge" aria-hidden="true">
-            <Icon name="building" size={20} />
-          </span>
+          {me?.lodge.logoUrl ? (
+            <span className="dash-brand__badge dash-brand__badge--logo" aria-hidden="true">
+              <img src={`${API_BASE}${me.lodge.logoUrl}`} alt="" />
+            </span>
+          ) : (
+            <span className="dash-brand__badge" aria-hidden="true">
+              <Icon name="building" size={20} />
+            </span>
+          )}
           <span className="dash-brand__text">
             {/* The name is whatever the owner typed, and the block is pinned to
                 the rail's width, so a long one clips. title= is what makes the

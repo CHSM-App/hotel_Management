@@ -52,6 +52,7 @@ async function loadEventForBilling(lodgeId, eventBookingId, request = null) {
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
              l.city AS lodge_city, l.state AS lodge_state,
+             l.logo_path AS lodge_logo_path, l.show_logo_on_receipt,
              (SELECT STRING_AGG(ar.receipt_number, ', ') WITHIN GROUP (ORDER BY ar.id)
               FROM dbo.advance_receipts ar
               WHERE ar.event_booking_id = e.id AND ar.status = 'ISSUED') AS advance_receipt_numbers,
@@ -184,6 +185,7 @@ function buildEventPreviewDocument({ row, side, billingSide, pricing, discountRe
     lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
+    lodgeLogoUrl: row.show_logo_on_receipt && row.lodge_logo_path ? `/hotel-logos/${row.lodge_logo_path}` : null,
     gstin: row.gstin,
     isGstRegistered: !!row.is_gst_registered,
     checkinMode: row.checkin_mode ?? null,

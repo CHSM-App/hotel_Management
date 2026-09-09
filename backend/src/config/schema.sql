@@ -711,6 +711,34 @@ CREATE UNIQUE INDEX uq_bill_shares_token ON dbo.bill_shares(token);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bill_shares_invoice' AND object_id = OBJECT_ID('dbo.bill_shares'))
 CREATE INDEX ix_bill_shares_invoice ON dbo.bill_shares(invoice_id, id DESC);
 
+-- The advance receipt's equivalent of bill_shares (see migration 062). A
+-- separate table rather than a nullable second FK on bill_shares: a receipt
+-- is not an invoice, and the two must never be confused at the database's
+-- own constraint level.
+IF OBJECT_ID('dbo.receipt_shares', 'U') IS NULL
+CREATE TABLE dbo.receipt_shares (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    receipt_id     BIGINT NOT NULL REFERENCES dbo.advance_receipts(id),
+    token          NVARCHAR(64) NOT NULL,
+    filename       NVARCHAR(120) NOT NULL,
+    phone          NVARCHAR(20) NULL,
+    channel        NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_receipt_shares_channel CHECK (channel IN ('WHATSAPP', 'EMAIL')),
+    status         NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_receipt_shares_status CHECK (status IN ('SENT', 'FAILED')),
+    error          NVARCHAR(400) NULL,
+    campaign_id    NVARCHAR(100) NULL,
+    sent_by        BIGINT NULL REFERENCES dbo.users(id),
+    created_at     DATETIME2(0) NOT NULL CONSTRAINT df_receipt_shares_created DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_receipt_shares_token' AND object_id = OBJECT_ID('dbo.receipt_shares'))
+CREATE UNIQUE INDEX uq_receipt_shares_token ON dbo.receipt_shares(token);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_receipt_shares_receipt' AND object_id = OBJECT_ID('dbo.receipt_shares'))
+CREATE INDEX ix_receipt_shares_receipt ON dbo.receipt_shares(receipt_id, id DESC);
+
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
 -- and, when its role_key matches a built-in, overrides it. That's what lets an
@@ -2009,3 +2037,29 @@ IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_lodges_coord
     EXEC('ALTER TABLE dbo.lodges WITH CHECK ADD CONSTRAINT ck_lodges_coordinates CHECK (
         (latitude IS NULL AND longitude IS NULL)
      OR (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180))');
+
+-- ---------------------------------------------------------------------------
+-- Hotel logo (migration 061)
+-- ---------------------------------------------------------------------------
+-- Shown before the property's name in the dashboard's brand mark, and on the
+-- bill masthead when the owner opts in. logo_path is relative to the uploads
+-- root, not a URL, matching room/venue images. Defaults off for receipts: a
+-- logo uploaded for the dashboard should not start appearing on a legal
+-- document until deliberately turned on.
+IF COL_LENGTH('dbo.lodges', 'logo_path') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD logo_path NVARCHAR(500) NULL');
+
+IF COL_LENGTH('dbo.lodges', 'show_logo_on_receipt') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD show_logo_on_receipt BIT NOT NULL CONSTRAINT df_lodges_show_logo_on_receipt DEFAULT 0');
+
+-- ---------------------------------------------------------------------------
+-- Invoice closed billing (migration 063)
+-- ---------------------------------------------------------------------------
+-- Whether a voided invoice's booking is done being billed for good, rather
+-- than going back into the "Ready to bill" queue to be reissued. VOID alone
+-- never implies this — a voided function or stay reappears in the queue on
+-- purpose, so a corrected bill can be reissued (see billing.service.js).
+-- This is the deliberate, separate choice: set only when staff pick "also
+-- remove from billing" at void time.
+IF COL_LENGTH('dbo.invoices', 'closed_billing') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD closed_billing BIT NOT NULL CONSTRAINT df_invoices_closed_billing DEFAULT 0');

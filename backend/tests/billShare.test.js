@@ -22,35 +22,62 @@ const invoice = {
   invoice_number: 'INV/2026/007',
   total_amount: 1234.5,
   lodge_name: 'Hotel Renuka Palace',
+  check_in_date: '2026-03-01',
+  check_out_date: '2026-03-03',
 };
 
 const LINK = 'https://hotel.example.com/public/bills/abc123';
 
 // The provider packs a template's variables into one comma-separated string, so
 // a comma inside any value shifts every variable after it along by one. That is
-// not a cosmetic bug: variable 5 is the link, so a guest name with a comma in it
-// sends a bill whose link slot holds the property name and whose link is gone.
+// not a cosmetic bug: variable 7 is the link, so a guest name with a comma in it
+// sends a bill whose link slot holds something else and whose link is gone.
 test('a comma in any value cannot shift the template variables', () => {
   const sample = billShare.buildBillSample(
     { ...invoice, guest_name: 'Kumar, Anil', lodge_name: 'Renuka Palace, Vengurla' },
     LINK
   );
   const parts = sample.split(',');
-  assert.strictEqual(parts.length, 5, `expected 5 variables, got ${parts.length}: ${sample}`);
+  assert.strictEqual(parts.length, 7, `expected 7 variables, got ${parts.length}: ${sample}`);
   assert.strictEqual(parts[0], 'Kumar - Anil');
-  assert.strictEqual(parts[3], 'Renuka Palace - Vengurla');
+  assert.strictEqual(parts[1], 'Renuka Palace - Vengurla');
   // The link arrives whole, which is the entire point of the exercise.
-  assert.strictEqual(parts[4], LINK);
+  assert.strictEqual(parts[6], LINK);
 });
 
 // A rupee amount rendered for humans (₹1,23,456.00) carries thousands
 // separators, and in the Indian grouping there are two of them. Formatted that
-// way this message would break into seven variables.
+// way this message would break into extra variables.
 test('the amount goes out without thousands separators', () => {
   const sample = billShare.buildBillSample({ ...invoice, total_amount: 123456.5 }, LINK);
   const parts = sample.split(',');
-  assert.strictEqual(parts.length, 5);
-  assert.strictEqual(parts[2], 'Rs 123456.50');
+  assert.strictEqual(parts.length, 7);
+  assert.strictEqual(parts[3], 'Rs 123456.50');
+});
+
+// The stay dates fill the checkin_date / checkout_date slots, in the format
+// used elsewhere in the app (bookingConfirmation.js).
+test('the stay dates fill the checkin/checkout slots', () => {
+  const sample = billShare.buildBillSample(invoice, LINK);
+  const parts = sample.split(',');
+  assert.strictEqual(parts[4], '1 Mar 2026');
+  assert.strictEqual(parts[5], '3 Mar 2026');
+});
+
+// A function's bill has no check_in_date/check_out_date, so the event's
+// start/end instants stand in for them instead of leaving the slots blank.
+test('an event bill uses the event start/end instants for the stay slots', () => {
+  const eventInvoice = {
+    ...invoice,
+    check_in_date: null,
+    check_out_date: null,
+    event_start_at: '2026-03-01T12:30:00.000Z',
+    event_end_at: '2026-03-01T16:30:00.000Z',
+  };
+  const sample = billShare.buildBillSample(eventInvoice, LINK);
+  const parts = sample.split(',');
+  assert.strictEqual(parts[4], '1 Mar 2026');
+  assert.strictEqual(parts[5], '1 Mar 2026');
 });
 
 // Two decimal places always: a bill for a round number is still money, and
@@ -114,9 +141,24 @@ test('the guest link points at the mounted public route', () => {
 
   const routes = read('src/modules/public/public.routes.js');
   assert.match(routes, /router\.get\('\/bills\/:token'/);
+  // The landing page's Download button posts here — a wrong path on this one
+  // is a working link that 404s the moment the guest presses the one button
+  // on the page.
+  assert.match(routes, /router\.get\('\/bills\/:token\/download'/);
 
   const app = read('src/app.js');
   assert.match(app, /\['\/public',\s*publicRoutes\]/);
+});
+
+// The link a guest is sent now opens a page, not the raw PDF — so the page
+// has to actually offer a way to the file, and that file has to come back
+// asking to be saved rather than reopening the same viewer the page was
+// trying to get past.
+test('the landing page links to the download route, and the download forces a save', () => {
+  const controller = read('src/modules/public/public.controller.js');
+  assert.match(controller, /\/public\/bills\/\$\{encodeURIComponent\(token\)\}\/download/);
+  const downloadFn = controller.slice(controller.indexOf('async function downloadSharedBillHandler'));
+  assert.match(downloadFn, /attachment; filename=/);
 });
 
 // A send that never happened leaves an uploaded PDF nobody can reach, because

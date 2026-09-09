@@ -1,6 +1,10 @@
+const fs = require('fs/promises');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { logger } = require('../../config/logger');
+const { UPLOAD_DIR: LOGO_DIR } = require('../../middleware/logoUpload');
 
 async function createLodgeWithOwner(input) {
   const pool = await getPool();
@@ -106,6 +110,7 @@ async function listLodges() {
       l.id, l.name, l.slug, l.city, l.state, l.latitude, l.longitude, l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
+      l.logo_path, l.show_logo_on_receipt,
       u.name AS owner_name, u.phone AS owner_phone
     FROM dbo.lodges l
     LEFT JOIN dbo.users u ON u.lodge_id = l.id AND u.role = 'OWNER'
@@ -133,6 +138,7 @@ async function getLodgeDetail(id) {
       has_rooms, serves_food, food_room_service, food_table_service, has_events,
       check_out_time, check_in_time, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
+      logo_path, show_logo_on_receipt,
       is_active, created_at
     FROM dbo.lodges
     WHERE id = @id;
@@ -249,6 +255,7 @@ async function updateLodge(id, input) {
     food_table_service: flag('foodTableService', 'food_table_service'),
     has_events: flag('hasEvents', 'has_events'),
     is_active: flag('isActive', 'is_active'),
+    show_logo_on_receipt: flag('showLogoOnReceipt', 'show_logo_on_receipt'),
   };
   assertProfileConsistent(next);
 
@@ -285,6 +292,7 @@ async function updateLodge(id, input) {
     .input('foodTableService', sql.Bit, next.food_table_service)
     .input('hasEvents', sql.Bit, next.has_events)
     .input('isActive', sql.Bit, next.is_active)
+    .input('showLogoOnReceipt', sql.Bit, next.show_logo_on_receipt)
     .query(`
       UPDATE dbo.lodges
       SET name = @name, slug = @slug, phone = @phone, whatsapp_number = @whatsappNumber,
@@ -293,11 +301,67 @@ async function updateLodge(id, input) {
           checkin_mode = @checkinMode, is_gst_registered = @isGstRegistered, gstin = @gstin,
           is_specified_premises = @isSpecifiedPremises,
           has_rooms = @hasRooms, serves_food = @servesFood, food_room_service = @foodRoomService,
-          food_table_service = @foodTableService, has_events = @hasEvents, is_active = @isActive
+          food_table_service = @foodTableService, has_events = @hasEvents, is_active = @isActive,
+          show_logo_on_receipt = @showLogoOnReceipt
       WHERE id = @id
     `);
 
   return getLodgeDetail(id);
 }
 
-module.exports = { createLodgeWithOwner, listLodges, getLodgeDetail, updateLodge };
+// Deletes the file backing a stored logo_path, best-effort — a file already
+// gone must not block replacing or clearing the row.
+async function deleteLogoFile(logoPath) {
+  if (!logoPath) return;
+  try {
+    await fs.unlink(path.join(LOGO_DIR, logoPath));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      logger.warn({ err, logoPath }, 'Could not delete old hotel logo file');
+    }
+  }
+}
+
+// Internal staff setting or replacing a property's logo, e.g. during
+// onboarding when the owner has handed it over but has no dashboard login yet.
+async function updateLodgeLogo(id, filename) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, id).query('SELECT logo_path FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  await pool
+    .request()
+    .input('id', sql.BigInt, id)
+    .input('logoPath', sql.NVarChar, filename)
+    .query('UPDATE dbo.lodges SET logo_path = @logoPath WHERE id = @id');
+
+  await deleteLogoFile(current.logo_path);
+  return getLodgeDetail(id);
+}
+
+async function removeLodgeLogo(id) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, id).query('SELECT logo_path FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  await pool
+    .request()
+    .input('id', sql.BigInt, id)
+    .query('UPDATE dbo.lodges SET logo_path = NULL, show_logo_on_receipt = 0 WHERE id = @id');
+
+  await deleteLogoFile(current.logo_path);
+  return getLodgeDetail(id);
+}
+
+module.exports = {
+  createLodgeWithOwner,
+  listLodges,
+  getLodgeDetail,
+  updateLodge,
+  updateLodgeLogo,
+  removeLodgeLogo,
+};

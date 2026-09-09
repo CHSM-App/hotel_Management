@@ -9,6 +9,7 @@ const advanceReceiptsService = require('./advanceReceipts.service');
 const eventBillingService = require('./eventBilling.service');
 const seriesService = require('./series.service');
 const billShareService = require('./billShare.service');
+const receiptShareService = require('./receiptShare.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
 async function listBillableBookingsHandler(req, res, next) {
@@ -367,9 +368,35 @@ async function listInvoiceSharesHandler(req, res, next) {
   }
 }
 
+// Same shape as shareInvoiceWhatsAppHandler, against an advance receipt.
+async function shareReceiptWhatsAppHandler(req, res, next) {
+  try {
+    const result = await receiptShareService.shareReceiptOnWhatsApp(
+      req.user.lodgeId,
+      req.user.sub,
+      Number(req.params.id),
+      { file: req.file, phone: req.body?.phone }
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listReceiptSharesHandler(req, res, next) {
+  try {
+    const shares = await receiptShareService.listShares(req.user.lodgeId, Number(req.params.id));
+    res.json({ shares, whatsAppAvailable: receiptShareService.whatsAppAvailable() });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   shareInvoiceWhatsAppHandler,
   listInvoiceSharesHandler,
+  shareReceiptWhatsAppHandler,
+  listReceiptSharesHandler,
   listBillableBookingsHandler,
   previewEventBillHandler,
   issueEventInvoiceHandler,

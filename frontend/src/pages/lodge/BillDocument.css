@@ -673,6 +673,10 @@
   /* Symmetric side padding wide enough to clear the pinned phone block, so
      the centred name stays truly centred instead of sliding under it. */
   padding: 8px 112px 6px;
+  /* The logo anchors to this box's own height (see .memo__logo's top: 50%),
+     so the box needs a floor to centre against on a short masthead —
+     otherwise "centred" collapses to wherever the text happens to end. */
+  min-height: 72px;
 }
 
 .memo__kind {
@@ -683,6 +687,24 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   color: #101820;
+}
+
+/* Pinned to the left edge and vertically centred on the masthead block, so it
+   sits level with the hotel name rather than floating at the sheet's top
+   corner above "Receipt Voucher". Mirrors the phone block pinned top-right,
+   which stays corner-anchored since it is two short lines, not a mark meant
+   to read as level with the name. print-color-adjust keeps the image from
+   being stripped by a browser's default "no backgrounds" print mode. */
+.memo__logo {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  height: 68px;
+  width: 68px;
+  object-fit: contain;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .memo__phones {

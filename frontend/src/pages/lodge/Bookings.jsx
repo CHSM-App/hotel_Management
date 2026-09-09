@@ -20,6 +20,7 @@ import PaymentLines from './PaymentLines';
 import IconButton from '../../components/IconButton';
 import Req from '../../components/RequiredMark';
 import StepNum from '../../components/StepNum';
+import { useToast } from '../../components/Toast';
 // Aliased: this file already has a local TrashIcon, drawn at 15px for the
 // inline row-remove buttons. The shared glyph is 18px, sized for the 34px
 // icon buttons, so the two can't be collapsed into one.
@@ -645,6 +646,7 @@ function hasFormContent(form) {
 export default function Bookings({ onBillStay, onShowRegister }) {
   const session = getSession();
   const token = session?.token;
+  const toast = useToast();
 
   // The line between what can still be sold and what only be looked at. Read
   // once here so the chart, the tiles and the form all draw it in the same
@@ -2619,9 +2621,21 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setActionError('');
     setActionSubmitting(true);
     try {
-      await apiPatch(`/bookings/${selectedBookingId}/cancel`, body, { token });
+      const { booking } = await apiPatch(`/bookings/${selectedBookingId}/cancel`, body, { token });
       setSelectedBookingId(null);
       loadTapeChart();
+      // The cancellation itself never depends on this — notifyBookingCancelled
+      // never throws — so the toast is purely informational: what happened to
+      // the guest's copy of the news, not whether the cancellation went through.
+      const wa = booking?.whatsapp;
+      if (wa?.status === 'sent') {
+        toast.show('Booking cancelled. WhatsApp notice sent to the guest.', 'success');
+      } else if (wa?.status === 'failed') {
+        toast.show(`Booking cancelled, but the WhatsApp notice failed: ${wa.error || 'unknown error'}.`, 'error');
+      } else {
+        // 'skipped' — not configured, no guest phone, or lodge missing. Nothing
+        // went wrong for the desk to act on, so no toast for this one.
+      }
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not cancel this booking.');
     } finally {
@@ -2736,7 +2750,14 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           {room.floor != null && <span>Floor {room.floor}</span>}
         </div>
         {dates.map((d) => {
-          const booking = byDate?.get(d);
+          // The occupancy map extends an overdue CHECKED_IN stay's nights
+          // through today so it keeps blocking the room for new bookings, but
+          // the strip on screen must not keep growing with it — it stays put
+          // at the sold checkout date until someone actually checks the guest
+          // out. Nights past that date read as their real state (vacant, or a
+          // vacated night from an early checkout) instead of more booking.
+          const rawBooking = byDate?.get(d);
+          const booking = rawBooking && d < rawBooking.checkOutDate ? rawBooking : null;
           const draft = draftsByDate?.get(d);
           // A stay that was cancelled for this night. Whatever else the tile
           // is — vacant, drafted on, or let again — it gets the cancelled
@@ -2805,12 +2826,14 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           // A stay that ended early stops where it stopped: the strip is capped
           // on its last occupied night, not on the checkout date it was sold
           // for, so it doesn't trail off into nights that are back on sale.
+          // An overdue guest (still CHECKED_IN past their sold checkout) still
+          // blocks the room in the availability map above, but the strip itself
+          // stays put at the booked period — it doesn't keep growing a day at a
+          // time until someone actually checks them out.
           const lastNight =
             booking.status === 'CHECKED_OUT' && booking.checkOutDate > today
               ? addDays(today, -1)
-              : booking.status === 'CHECKED_IN' && booking.checkOutDate <= today
-                ? today
-                : addDays(booking.checkOutDate, -1);
+              : addDays(booking.checkOutDate, -1);
           if (d === lastNight) classes.push('tape-tile--end');
           if (d === today) classes.push('tape-tile--today');
           // Pointing at any night of a stay lifts the whole stay, so its real

@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
 const { billShareUpload } = require('../../middleware/billShareUpload');
+const { receiptShareUpload } = require('../../middleware/receiptShareUpload');
 const {
   listBillableBookingsHandler,
   previewEventBillHandler,
@@ -26,6 +27,8 @@ const {
   voidAdvanceReceiptHandler,
   shareInvoiceWhatsAppHandler,
   listInvoiceSharesHandler,
+  shareReceiptWhatsAppHandler,
+  listReceiptSharesHandler,
 } = require('./billing.controller');
 
 const router = Router();
@@ -80,6 +83,17 @@ router.post('/invoices/:id/void', authenticate, staff, voidInvoiceHandler);
 // handler is responsible for removing it again on any path that does not send.
 router.post('/invoices/:id/share/whatsapp', authenticate, staff, billShareUpload, shareInvoiceWhatsAppHandler);
 router.get('/invoices/:id/shares', authenticate, staff, listInvoiceSharesHandler);
+
+// Same for an advance receipt — its own upload, its own template, its own
+// share log. See receiptShare.service.
+router.post(
+  '/advance-receipts/:id/share/whatsapp',
+  authenticate,
+  staff,
+  receiptShareUpload,
+  shareReceiptWhatsAppHandler
+);
+router.get('/advance-receipts/:id/shares', authenticate, staff, listReceiptSharesHandler);
 
 // The serials printed on bills and advance receipts. Behind billing.manage like
 // everything else here: whoever cuts the bills is who decides what they are

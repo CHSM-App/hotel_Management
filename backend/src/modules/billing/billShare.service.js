@@ -26,15 +26,54 @@ const whatsapp = require('../../config/whatsapp');
 // acceptance, not delivery to the handset, so a send recorded here as SENT is
 // "handed to the provider" — not "seen". Nothing in this file claims more.
 
-// The template's five variables, in order:
+// The template's seven variables, in order:
 //
-//   {{1}} customer      {{4}} property name
-//   {{2}} bill number   {{5}} link to the PDF
-//   {{3}} amount
+//   {{1}} name (guest)     {{5}} checkin_date
+//   {{2}} hotel_name       {{6}} checkout_date
+//   {{3}} booking_id       {{7}} link to the PDF
+//   {{4}} amt
 //
-// "Dear {{1}}, your bill {{2}} for {{3}} from {{4}} is ready. You can view and
-//  download it here: {{5}}"
+// "Dear {{1}}, [hotel_name] {{2}}, Thank you for staying with us! Your bill
+//  for Booking No. {{3}} is ready. Total Amount: {{4}} / Stay: {{5}} to {{6}}
+//  / View / Download Bill: {{7}}"
 const BILL_CAMPAIGN = 'bill_share';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+// A DATE column arrives from mssql as a Date at UTC midnight; the schemas
+// hand over 'YYYY-MM-DD'. Either way the calendar date is the UTC fields —
+// same convention as bookingConfirmation.js, kept in step with it.
+function dateParts(value) {
+  if (typeof value === 'string') {
+    const [y, m, d] = value.slice(0, 10).split('-').map(Number);
+    return { y, m, d };
+  }
+  return { y: value.getUTCFullYear(), m: value.getUTCMonth() + 1, d: value.getUTCDate() };
+}
+
+function formatDate(parts) {
+  return `${parts.d} ${MONTHS[parts.m - 1]} ${parts.y}`;
+}
+
+// An instant, said in IST — every property on this system is in India, and a
+// function's stay date must read as the IST calendar day, not the server's.
+function formatInstantIST(value) {
+  const shifted = new Date(new Date(value).getTime() + IST_OFFSET_MS);
+  return formatDate({ y: shifted.getUTCFullYear(), m: shifted.getUTCMonth() + 1, d: shifted.getUTCDate() });
+}
+
+// A room bill has DATE columns; a function's bill has no stay dates of its
+// own, so the event's start/end instants stand in for check-in/check-out.
+function stayDates(invoice) {
+  if (invoice.check_in_date && invoice.check_out_date) {
+    return { checkIn: formatDate(dateParts(invoice.check_in_date)), checkOut: formatDate(dateParts(invoice.check_out_date)) };
+  }
+  if (invoice.event_start_at && invoice.event_end_at) {
+    return { checkIn: formatInstantIST(invoice.event_start_at), checkOut: formatInstantIST(invoice.event_end_at) };
+  }
+  return { checkIn: '-', checkOut: '-' };
+}
 
 // How long a shared bill stays reachable. A guest who is sent a bill should be
 // able to open it again a week later from the same chat; past that the link is
@@ -82,11 +121,14 @@ function amountForTemplate(value) {
 }
 
 function buildBillSample(invoice, link) {
+  const dates = stayDates(invoice);
   return [
     clean(invoice.guest_name || 'Guest'),
+    clean(invoice.lodge_name),
     clean(invoice.invoice_number),
     clean(amountForTemplate(invoice.total_amount)),
-    clean(invoice.lodge_name),
+    clean(dates.checkIn),
+    clean(dates.checkOut),
     // Not cleaned: a URL has no commas and clean() would mangle one that did.
     link,
   ].join(',');
@@ -103,9 +145,15 @@ async function loadInvoice(lodgeId, invoiceId) {
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
       SELECT i.id, i.invoice_number, i.total_amount, i.status,
-             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
-             COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
-             l.name AS lodge_name
+             -- A counter food bill has neither a booking nor an event behind
+             -- it, only the name/phone the desk typed onto the invoice
+             -- itself — same fallback order as billing.service.js's own
+             -- mapper, so this agrees with what the bills list shows.
+             COALESCE(b.guest_name, eb.organiser_name, i.customer_name) AS guest_name,
+             COALESCE(b.guest_phone, eb.organiser_phone, i.customer_phone) AS guest_phone,
+             l.name AS lodge_name,
+             b.check_in_date, b.check_out_date,
+             eb.start_at AS event_start_at, eb.end_at AS event_end_at
       FROM dbo.invoices i
       -- LEFT on both, as everywhere else: a restaurant bill has no stay and a
       -- function's bill has no room.
@@ -260,9 +308,10 @@ async function readSharedBill(token) {
     .request()
     .input('token', sql.NVarChar(64), token)
     .query(`
-      SELECT s.filename, s.created_at, i.invoice_number
+      SELECT s.filename, s.created_at, i.invoice_number, l.name AS lodge_name
       FROM dbo.bill_shares s
       JOIN dbo.invoices i ON i.id = s.invoice_id
+      JOIN dbo.lodges l ON l.id = i.lodge_id
       -- A bill voided after it was sent stops being downloadable. The guest is
       -- holding a document the property has cancelled, and continuing to serve
       -- it is how a cancelled bill ends up being presented as a valid one.
@@ -287,7 +336,7 @@ async function readSharedBill(token) {
     throw new ApiError('This bill link is no longer available.', 404);
   }
 
-  return { filePath, invoiceNumber: row.invoice_number };
+  return { filePath, invoiceNumber: row.invoice_number, lodgeName: row.lodge_name };
 }
 
 // What has been sent for one bill, newest first. The billing screen shows it

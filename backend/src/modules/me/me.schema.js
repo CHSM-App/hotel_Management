@@ -55,6 +55,10 @@ const updateMyLodgeSchema = z.object({
   latitude: coordinate(-90, 90, 'Latitude').default(null),
   longitude: coordinate(-180, 180, 'Longitude').default(null),
   gstin: z.string().trim().max(20).optional().default(''),
+  // Whether the uploaded logo (if any) prints on the bill masthead. Separate
+  // from the upload itself so a logo can exist for the dashboard brand mark
+  // without appearing on a legal document until the owner opts in.
+  showLogoOnReceipt: z.boolean().optional(),
 })
   .refine(
     (data) => (data.latitude === null) === (data.longitude === null),

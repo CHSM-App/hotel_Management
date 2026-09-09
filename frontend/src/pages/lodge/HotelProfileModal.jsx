@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { apiPatch, ApiError } from '../../lib/api';
+import { apiPatch, apiPutForm, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { copyText } from '../../lib/clipboard';
 import { validateCoordinates } from '../../lib/coordinates';
@@ -32,6 +32,7 @@ function formFromLodge(lodge) {
     latitude: lodge.latitude == null ? '' : String(lodge.latitude),
     longitude: lodge.longitude == null ? '' : String(lodge.longitude),
     gstin: lodge.gstin ?? '',
+    showLogoOnReceipt: !!lodge.showLogoOnReceipt,
   };
 }
 
@@ -55,7 +56,41 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
   const [fieldError, setFieldError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [linkCopied, setLinkCopied] = useState('');
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState('');
   const errorRef = useRef(null);
+  const logoInputRef = useRef(null);
+
+  const handleLogoPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setLogoError('');
+    setLogoBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      const me = await apiPutForm('/me/lodge/logo', formData, { token });
+      onSaved(me.lodge);
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.message : 'Could not upload the logo.');
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleLogoRemove = async () => {
+    setLogoError('');
+    setLogoBusy(true);
+    try {
+      const me = await apiDelete('/me/lodge/logo', { token });
+      onSaved(me.lodge);
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.message : 'Could not remove the logo.');
+    } finally {
+      setLogoBusy(false);
+    }
+  };
 
   const reportError = (message) => {
     setError(message);
@@ -76,7 +111,7 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
   const invalid = (id) => Boolean(id) && fieldError?.id === id;
 
   const update = (key) => (e) => {
-    const value = e.target.value;
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [key]: value }));
   };
 
@@ -171,9 +206,13 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
 
             <div className="modal-form__body">
               <div className="hotel-profile__lodge-head">
-                <div className="hotel-profile__monogram" aria-hidden="true">
-                  {lodge.name.charAt(0)}
-                </div>
+                {lodge.logoUrl ? (
+                  <img className="hotel-profile__logo" src={`${API_BASE}${lodge.logoUrl}`} alt="" />
+                ) : (
+                  <div className="hotel-profile__monogram" aria-hidden="true">
+                    {lodge.name.charAt(0)}
+                  </div>
+                )}
                 <div className="hotel-profile__lodge-title">
                   <div className="hotel-profile__lodge-name">{lodge.name}</div>
                   <div className="hotel-profile__badges">
@@ -184,6 +223,39 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
                       <span className="badge badge--accent">Specified premises</span>
                     )}
                   </div>
+                </div>
+              </div>
+
+              <div className="hotel-profile__logo-section">
+                <div className="hotel-profile__logo-section-head">
+                  <span>Hotel logo</span>
+                  <span className="hotel-profile__logo-hint">
+                    Shown before the hotel name in the dashboard
+                    {lodge.showLogoOnReceipt ? ' and on printed bills.' : '.'}
+                  </span>
+                </div>
+                {logoError && <div className="form-banner form-banner--error">{logoError}</div>}
+                <div className="hotel-profile__logo-actions">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={handleLogoPick}
+                    hidden
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={logoBusy}
+                  >
+                    {logoBusy ? 'Uploading…' : lodge.logoUrl ? 'Replace logo' : 'Upload logo'}
+                  </button>
+                  {lodge.logoUrl && (
+                    <button type="button" className="btn-view" onClick={handleLogoRemove} disabled={logoBusy}>
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -328,6 +400,25 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
                   disabled={saving}
                 />
               </div>
+
+              {lodge.logoUrl && (
+                <div className="field checkbox-field">
+                  <input
+                    id="hp-show-logo"
+                    type="checkbox"
+                    checked={form.showLogoOnReceipt}
+                    onChange={update('showLogoOnReceipt')}
+                    disabled={saving}
+                  />
+                  <div>
+                    <label htmlFor="hp-show-logo">Show the logo on printed bills</label>
+                    <span className="checkbox-field__note">
+                      Prints in the masthead above the hotel name. Upload or change the logo itself from the
+                      profile screen — Close this form first.
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="field-row">
                 <div className="field">

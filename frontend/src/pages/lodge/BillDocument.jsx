@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import { amountInWords } from './numberToWords';
+import { API_BASE } from '../../lib/api';
 import './BillDocument.css';
 
 const DOCUMENT_LABEL = {
@@ -850,6 +851,9 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
       {/* Masthead. "Cash Memo" sits above the name on the printed book, with
           the phone numbers stacked in the corner beside it. */}
       <div className="memo__head">
+        {invoice.lodgeLogoUrl && (
+          <img className="memo__logo" src={`${API_BASE}${invoice.lodgeLogoUrl}`} alt="" />
+        )}
         <div className="memo__kind">{kindLabel}</div>
         {invoice.lodgePhone && (
           <div className="memo__phones">

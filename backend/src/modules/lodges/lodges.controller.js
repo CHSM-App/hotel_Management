@@ -58,4 +58,37 @@ async function updateLodgeHandler(req, res, next) {
   }
 }
 
-module.exports = { createLodgeHandler, listLodgesHandler, getLodgeHandler, updateLodgeHandler };
+async function updateLodgeLogoHandler(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new ApiError('Lodge not found.', 404);
+    }
+    const detail = await lodgesService.updateLodgeLogo(id, req.file.filename);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function removeLodgeLogoHandler(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new ApiError('Lodge not found.', 404);
+    }
+    const detail = await lodgesService.removeLodgeLogo(id);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  createLodgeHandler,
+  listLodgesHandler,
+  getLodgeHandler,
+  updateLodgeHandler,
+  updateLodgeLogoHandler,
+  removeLodgeLogoHandler,
+};

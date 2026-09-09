@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { apiPost, ApiError } from '../../lib/api';
+import { useRef, useState } from 'react';
+import { apiPost, apiPostForm, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import AdvanceReceiptDocument from './AdvanceReceiptDocument';
 import DownloadIcon from '../../components/DownloadIcon';
@@ -12,16 +12,8 @@ import {
   buildDocumentPdfBlob,
   printPdfBlob,
   downloadPdf,
-  sharePdf,
-  canShareFiles,
 } from './billPaper';
-import {
-  buildMailLink,
-  buildSmsLink,
-  buildWhatsAppLink,
-  openComposer,
-  openExternal,
-} from '../../lib/shareLinks';
+import { useToast } from '../../components/Toast';
 import { formatPrice } from './priceFormat';
 import PaymentLines from './PaymentLines';
 import {
@@ -96,13 +88,14 @@ export default function AdvanceReceiptModal({
   onTaken,
 }) {
   const token = getSession()?.token;
+  const toast = useToast();
 
   // The receipt on screen: a PREVIEW while the form is being filled, the issued
   // document once it exists. One piece of state because the printed sheet is
   // the same component either way — which is the point of previewing at all.
   const [receipt, setReceipt] = useState(initialReceipt);
   const [error, setError] = useState('');
-  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(null);
   const [pdfError, setPdfError] = useState('');
   // The take-advance form and the printed receipt below it can push a
   // failure's banner off the bottom of a short modal on a small screen — same
@@ -115,9 +108,6 @@ export default function AdvanceReceiptModal({
       errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   };
-  // Whether this device has a share sheet to hand the file to. A property of
-  // the browser, not of the receipt, so it is asked once.
-  const deviceShare = useMemo(() => canShareFiles(), []);
   const [paperSize, setPaperSize] = useState(DEFAULT_PAPER);
   const [lang, setLang] = useState('en');
   // Taking another advance. Blank rather than pre-filled with the booking's
@@ -258,12 +248,15 @@ export default function AdvanceReceiptModal({
     }
   };
 
-  // Print and share build the same file the same way and differ only in what
-  // they do with it, so the building — and the busy state, and the one error
-  // message — lives here once.
-  const runPdfAction = async (deliver) => {
+  // Print, download and share build the same file the same way and differ
+  // only in what they do with it, so the building — and the busy state, and
+  // the one error message — lives here once. `kind` distinguishes them only
+  // for the error toast: sending is the one action here with no visible trace
+  // on the receipt if it fails silently, so its failure is raised the same
+  // way its success is (see handleShare below).
+  const runPdfAction = async (kind, deliver) => {
     setPdfError('');
-    setPdfBusy(true);
+    setPdfBusy(kind);
     try {
       const blob = await buildDocumentPdfBlob(captureRef.current, {
         paperSize,
@@ -273,56 +266,48 @@ export default function AdvanceReceiptModal({
     } catch (err) {
       // An aborted share sheet is the user changing their mind, not a failure.
       if (err?.name !== 'AbortError') {
-        setPdfError('Could not generate the receipt PDF.');
+        // A server refusal carries a reason worth reading — "no WhatsApp
+        // number on file" and "template not approved" call for completely
+        // different fixes — so a share failure keeps the server's own words
+        // rather than the generic PDF message.
+        const message =
+          kind === 'share' && err instanceof ApiError ? err.message : 'Could not generate the receipt PDF.';
+        setPdfError(message);
+        if (kind === 'share') toast.show(message, 'error');
       }
     } finally {
-      setPdfBusy(false);
+      setPdfBusy(null);
     }
   };
 
   // Print is the PDF sent to the printer instead of to disk, so the printed
   // receipt is the downloaded one — see printPdfBlob for why the page's own
   // print stylesheet stopped being trusted with this.
-  const handlePrint = () => runPdfAction(printPdfBlob);
+  const handlePrint = () => runPdfAction('print', printPdfBlob);
 
   // Download is now only a download. It used to be shareOrDownloadPdf, which
   // opened the OS sheet where there was one — so on a tablet this button could
   // not save the file, and there was nothing else here that could. Sharing has
   // its own control beside it now, and each does the one thing it says.
-  const handleDownloadPdf = () => runPdfAction(downloadPdf);
+  const handleDownloadPdf = () => runPdfAction('download', downloadPdf);
 
-  // What the desk is sending, in the words they would use saying it aloud.
-  // An advance receipt is an acknowledgement of money already handed over, so
-  // it says what was received rather than what is owed — a guest reading "for
-  // ₹2,000" on a receipt would reasonably think they were being asked again.
-  const shareMessage = () =>
-    `${shownReceipt?.guestName ? `${shownReceipt.guestName}, here` : 'Here'} is your advance ` +
-    `receipt ${shownReceipt?.receiptNumber || ''}`.trimEnd() +
-    `${shownReceipt?.lodgeName ? ` from ${shownReceipt.lodgeName}` : ''}` +
-    ` for the ${formatPrice(shownReceipt?.amountReceived || 0)} received. Thank you.`;
-
-  const shareSubject = () =>
-    `Advance receipt ${shownReceipt?.receiptNumber || ''}`.trimEnd() +
-    `${shownReceipt?.lodgeName ? ` from ${shownReceipt.lodgeName}` : ''}`;
-
-  // The receipt shares the way the bill does — same channels, same menu, same
-  // save-then-compose order. It had no share control at all: the one icon here
-  // was a download, so a guest who wanted their advance receipt sent had to be
-  // mailed it by hand from the desk's own downloads folder.
-  const handleShare = (channel) =>
-    runPdfAction(async (blob, filename) => {
-      if (channel === 'device') {
-        await sharePdf(blob, filename);
-        return;
-      }
-      downloadPdf(blob, filename);
-      if (channel === 'email') {
-        openComposer(buildMailLink('', shareSubject(), shareMessage()));
-      } else if (channel === 'sms') {
-        openComposer(buildSmsLink(shownReceipt?.guestPhone, shareMessage()));
-      } else {
-        openExternal(buildWhatsAppLink(shownReceipt?.guestPhone, shareMessage()));
-      }
+  // Sent straight from the server, the same way a bill is (see Billing.jsx's
+  // handleShare): the PDF is uploaded, the server stores it behind a link and
+  // texts that link to the guest's number through the approved SMSala
+  // template, and the toast reports the provider's own verdict. It had no
+  // share control at all before this — the one icon here was a download, so a
+  // guest who wanted their advance receipt sent had to be mailed it by hand
+  // from the desk's own downloads folder.
+  const handleShare = () =>
+    runPdfAction('share', async (blob, filename) => {
+      const formData = new FormData();
+      formData.append('receipt', blob, filename);
+      const result = await apiPostForm(
+        `/billing/advance-receipts/${shownReceipt.id}/share/whatsapp`,
+        formData,
+        { token }
+      );
+      toast.show(`Receipt sent on WhatsApp to ${result.phone}.`, 'success');
     });
 
   // Records the money AND raises its receipt, in one call. The server adds the
@@ -535,10 +520,10 @@ export default function AdvanceReceiptModal({
                   type="button"
                   className="btn-secondary"
                   onClick={handlePrint}
-                  disabled={pdfBusy}
-                  title={pdfBusy ? 'Preparing…' : 'Print this receipt'}
+                  disabled={pdfBusy !== null}
+                  title={pdfBusy === 'print' ? 'Preparing…' : 'Print this receipt'}
                 >
-                  {pdfBusy ? 'Preparing…' : 'Print'}
+                  {pdfBusy === 'print' ? 'Preparing…' : 'Print'}
                 </button>
               )}
               {existing && (
@@ -546,25 +531,25 @@ export default function AdvanceReceiptModal({
                   type="button"
                   className="btn-accent bill-actions__icon-btn"
                   onClick={handleDownloadPdf}
-                  disabled={pdfBusy}
-                  aria-label={pdfBusy ? 'Preparing the PDF' : 'Download this receipt as a PDF'}
-                  title={pdfBusy ? 'Preparing…' : 'Download PDF'}
+                  disabled={pdfBusy !== null}
+                  aria-label={pdfBusy === 'download' ? 'Preparing the PDF' : 'Download this receipt as a PDF'}
+                  title={pdfBusy === 'download' ? 'Preparing…' : 'Download PDF'}
                 >
                   <DownloadIcon />
                 </button>
               )}
               {/* Sharing, which this modal simply did not offer. The receipt is
                   the document a guest asks to be sent more often than the bill
-                  is — it is proof they have already paid — and the only way to
-                  send one was to download it and attach it by hand from
-                  outside the app. Same control and same channels as the bill. */}
+                  is — it is proof they have already paid — and now goes out the
+                  same way a bill does: the server sends the link, no download
+                  and no other app to switch to. */}
               {existing && (
                 <ShareMenu
                   onShare={handleShare}
-                  disabled={pdfBusy}
-                  busy={pdfBusy}
-                  canShareFiles={deviceShare}
-                  label="Share this receipt"
+                  disabled={pdfBusy !== null}
+                  busy={pdfBusy === 'share'}
+                  guestPhone={shownReceipt?.guestPhone}
+                  label="Send this receipt to the guest on WhatsApp"
                 />
               )}
               {canTakeMore && (

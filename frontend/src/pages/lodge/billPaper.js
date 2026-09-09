@@ -198,7 +198,11 @@ export async function buildDocumentPdfBlob(node, { paperSize, shownWidth }) {
   } finally {
     node.style.removeProperty('--memo-stay-h');
   }
-  const imgData = canvas.toDataURL('image/png');
+  // JPEG, not PNG: the capture is text on a near-solid white ground, so lossy
+  // compression at high quality is visually identical to the lossless encode
+  // but a fraction of the size — the difference between a bill that clears a
+  // 10MB upload gate and one that doesn't, at 3x capture resolution.
+  const imgData = canvas.toDataURL('image/jpeg', 0.92);
 
   // A roll is cut to length, not folded to a page: its height is whatever the
   // document came to. A fixed length would either cut a long one off or spit
@@ -231,7 +235,7 @@ export async function buildDocumentPdfBlob(node, { paperSize, shownWidth }) {
   const imgHeight = canvas.height * scale;
   const x = (pageWidth - imgWidth) / 2;
 
-  pdf.addImage(imgData, 'PNG', x, margin, imgWidth, imgHeight);
+  pdf.addImage(imgData, 'JPEG', x, margin, imgWidth, imgHeight);
   return pdf.output('blob');
 }
 

@@ -52,6 +52,9 @@
 }
 
 .site-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--serif);
   font-size: 21px;
   font-weight: 600;
@@ -265,6 +268,15 @@
 
 .site-hero__copy {
   min-width: 0;
+}
+
+.site-nav__logo {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #ffffff;
 }
 
 /* The "at a glance" panel: frosted over the photo, one row per thing the

@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import { amountInWords } from './numberToWords';
+import { API_BASE } from '../../lib/api';
 import './BillDocument.css';
 
 // The receipt handed to a guest who pays an advance when the booking is taken.
@@ -237,6 +238,9 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   return (
     <div className="bill-doc memo" ref={ref}>
       <div className="memo__head">
+        {receipt.lodgeLogoUrl && (
+          <img className="memo__logo" src={`${API_BASE}${receipt.lodgeLogoUrl}`} alt="" />
+        )}
         <div className="memo__kind">{kindLabel}</div>
         {receipt.lodgePhone && (
           <div className="memo__phones">

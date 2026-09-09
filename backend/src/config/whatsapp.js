@@ -27,7 +27,31 @@ const BOOKING_TEMPLATE_ID = process.env.WHATSAPP_BOOKING_TEMPLATE_ID || '';
 // they say different things at different times and a property may have only
 // one of them approved. Left blank, the Share menu reports the channel as
 // unavailable rather than failing at the provider.
+//
+// Its seven variables, in order, are built by billShare.service.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} booking_id  {{4}} amt
+//   {{5}} checkin_date  {{6}} checkout_date  {{7}} link
 const BILL_TEMPLATE_ID = process.env.WHATSAPP_BILL_TEMPLATE_ID || '';
+// The approved "your booking is cancelled" template, sent when the desk
+// cancels a booking. A separate approval from the confirmation and bill
+// templates — cancellation says something different again, at a different
+// moment — so a property that hasn't had it approved yet just doesn't send
+// this one, same as the other two.
+//
+// Its seven variables, in order, are built by cancellationNotice.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} b_id  {{4}} check_in
+//   {{5}} checkout  {{6}} reason  {{7}} refund_mode_amount
+const CANCELLATION_TEMPLATE_ID = process.env.WHATSAPP_CANCELLATION_TEMPLATE_ID || '';
+// The approved "here is your receipt" template, sent from the advance-receipt
+// screen when the desk shares an advance/deposit receipt with a guest. Its
+// own approval, separate from the bill one: a receipt for money taken up
+// front reads differently from a final bill, and a property may have only
+// one of the two approved.
+//
+// Its six variables, in order, are built by billShare.service.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} receipt_number
+//   {{4}} amt  {{5}} payment_method  {{6}} link
+const RECEIPT_TEMPLATE_ID = process.env.WHATSAPP_RECEIPT_TEMPLATE_ID || '';
 
 // Indian numbers, in the shapes people actually type them: ten digits, ten with
 // a leading zero, or already carrying the 91 country code. Anything else is
@@ -118,6 +142,20 @@ function isBillTemplateConfigured() {
   return isConfigured() && !isPlaceholder(BILL_TEMPLATE_ID);
 }
 
+// The same question for the cancellation template. Asked by the cancellation
+// notifier before it reads anything, so an unconfigured install pays nothing
+// for the feature — same shape as the bill and booking checks above.
+function isCancellationTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(CANCELLATION_TEMPLATE_ID);
+}
+
+// The same question for the receipt template. Asked by the advance-receipt
+// screen before it offers WhatsApp as a channel, same shape as the bill check
+// above.
+function isReceiptTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(RECEIPT_TEMPLATE_ID);
+}
+
 async function sendOtp(phone, otpCode) {
   if (!isConfigured()) {
     throw new Error('WhatsApp API token is not configured.');
@@ -188,6 +226,10 @@ module.exports = {
   isConfigured,
   isBookingTemplateConfigured,
   isBillTemplateConfigured,
+  isCancellationTemplateConfigured,
+  isReceiptTemplateConfigured,
   BOOKING_TEMPLATE_ID,
   BILL_TEMPLATE_ID,
+  CANCELLATION_TEMPLATE_ID,
+  RECEIPT_TEMPLATE_ID,
 };

@@ -132,6 +132,7 @@ const updateLodgeSchema = z.object({
   foodTableService: z.boolean().optional(),
   hasEvents: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  showLogoOnReceipt: z.boolean().optional(),
 });
 
 module.exports = { createLodgeSchema, updateLodgeSchema };

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { apiGet, ApiError } from '../../lib/api';
+import { apiGet, apiPutForm, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import LodgeEditModal from './LodgeEditModal';
@@ -109,6 +109,40 @@ export default function LodgeDetail() {
   // where the button sits next to the profile menu people open all day.
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef(null);
+
+  const handleLogoPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setLogoError('');
+    setLogoBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      const detail = await apiPutForm(`/internal/lodges/${id}/logo`, formData, { token: session?.token });
+      setData(detail);
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.message : 'Could not upload the logo.');
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleLogoRemove = async () => {
+    setLogoError('');
+    setLogoBusy(true);
+    try {
+      const detail = await apiDelete(`/internal/lodges/${id}/logo`, { token: session?.token });
+      setData(detail);
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.message : 'Could not remove the logo.');
+    } finally {
+      setLogoBusy(false);
+    }
+  };
 
   const handleSignOut = () => {
     clearSession();
@@ -186,9 +220,39 @@ export default function LodgeDetail() {
         {!error && data && (
           <>
             <div className="detail-header">
-              <div>
-                <h1>{lodge.name}</h1>
-                <div className="detail-header__slug">/{lodge.slug}</div>
+              <div className="detail-header__brand">
+                {lodge.logo_path ? (
+                  <img className="detail-header__logo" src={`${API_BASE}/hotel-logos/${lodge.logo_path}`} alt="" />
+                ) : (
+                  <div className="detail-header__logo detail-header__logo--empty" aria-hidden="true" />
+                )}
+                <div>
+                  <h1>{lodge.name}</h1>
+                  <div className="detail-header__slug">/{lodge.slug}</div>
+                  <div className="detail-header__logo-actions">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={handleLogoPick}
+                      hidden
+                    />
+                    <button
+                      type="button"
+                      className="btn-view"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={logoBusy}
+                    >
+                      {logoBusy ? 'Uploading…' : lodge.logo_path ? 'Replace logo' : 'Upload logo'}
+                    </button>
+                    {lodge.logo_path && (
+                      <button type="button" className="btn-view" onClick={handleLogoRemove} disabled={logoBusy}>
+                        Remove
+                      </button>
+                    )}
+                    {logoError && <span className="detail-header__logo-error">{logoError}</span>}
+                  </div>
+                </div>
               </div>
               <div className="detail-header__badges">
                 {type && <span className="badge badge--accent">{type.label}</span>}

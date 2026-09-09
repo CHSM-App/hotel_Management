@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { apiGet, apiPost, apiPostForm, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import BillNumberingPanel from './BillNumberingPanel';
 import { getSession } from '../../lib/auth';
@@ -10,12 +10,7 @@ import BillDocument from './BillDocument';
 import DownloadIcon from '../../components/DownloadIcon';
 import ShareMenu from '../../components/ShareMenu';
 import Req from '../../components/RequiredMark';
-import {
-  buildMailLink,
-  buildWhatsAppLink,
-  openComposer,
-  openExternal,
-} from '../../lib/shareLinks';
+import { buildMailLink, openComposer } from '../../lib/shareLinks';
 import { useToast } from '../../components/Toast';
 import PaymentLines from './PaymentLines';
 import {
@@ -1162,26 +1157,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     `Bill ${detailInvoice.invoiceNumber}` +
     `${detailInvoice.lodgeName ? ` from ${detailInvoice.lodgeName}` : ''}`;
 
-  // Share, by channel. The two behave differently on purpose.
-  //
-  // Share means WhatsApp, and the desk's own WhatsApp is what sends it.
-  //
-  // The PDF is saved first and the chat opens second, in that order and
-  // deliberately: wa.me carries text and never a file, so the desk attaches the
-  // bill by hand once the chat is up, and doing the download first means the
-  // file is already waiting in the attach dialog rather than being fetched
-  // while WhatsApp has focus.
-  //
-  // The toast says the file was saved and does not claim the guest was sent
-  // anything, because at this point nobody has been: the message is sitting in
-  // a WhatsApp window that the desk still has to press send on. Overstating
-  // that would make the toast worse than no toast — a desk that reads "sent"
-  // and closes the tab has sent nothing.
-  //
-  // There is a server-side send too (billShare.service.js), which does deliver
-  // and does report delivery, but it can only go out through an approved SMSala
-  // template. This is the route that works today and on any desk with WhatsApp
-  // to hand.
+  // Share, by channel. WhatsApp now goes straight from the server: the PDF
+  // is uploaded, the server stores it behind a link and sends that link to
+  // the guest's number through the approved SMSala template, and what comes
+  // back is the provider's own verdict — sent or failed, in its own words —
+  // which is what the toast reports. Nothing here opens the desk's own
+  // WhatsApp or asks them to attach anything by hand.
   //
   // 'device' and 'email' are unreachable from this screen — the button goes
   // straight to WhatsApp rather than opening a list of channels. They are kept
@@ -1196,9 +1177,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         return;
       }
 
-      downloadPdf(blob, filename);
-
       if (channel === 'email') {
+        downloadPdf(blob, filename);
         openComposer(buildMailLink(options.email || '', shareSubject(), shareMessage()));
         toast.show(
           `Bill PDF saved. Attach it in the mail draft${options.email ? ` to ${options.email}` : ''}.`,
@@ -1207,15 +1187,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         return;
       }
 
-      // A new tab rather than this one: the bill modal stays open behind it, so
-      // closing WhatsApp puts the desk back on the bill they were sending.
-      openExternal(buildWhatsAppLink(detailInvoice.guestPhone, shareMessage()));
-      toast.show(
-        detailInvoice.guestPhone
-          ? `Bill PDF saved. Attach it in the WhatsApp chat that opened.`
-          : `Bill PDF saved. Pick the guest in WhatsApp and attach it there.`,
-        'info'
+      // channel === 'whatsapp': the server sends the link, no download and no
+      // wa.me tab — the desk stays on this screen for the whole action.
+      const formData = new FormData();
+      formData.append('bill', blob, filename);
+      if (options.phone) formData.append('phone', options.phone);
+
+      const result = await apiPostForm(
+        `/billing/invoices/${detailInvoiceId}/share/whatsapp`,
+        formData,
+        { token }
       );
+      toast.show(`Bill sent on WhatsApp to ${result.phone}.`, 'success');
     });
 
   const handleVoid = async (e) => {
@@ -1228,6 +1211,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     setVoidSubmitting(true);
     try {
       await apiPost(`/billing/invoices/${detailInvoiceId}/void`, { reason: voidReason.trim() }, { token });
+      setVoidReason('');
       setDetailInvoiceId(null);
       refreshAll();
     } catch (err) {
@@ -2321,8 +2305,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   >
                     <DownloadIcon />
                   </button>
-                  {/* One press: the bill is saved and a WhatsApp chat with
-                      the guest opens for the desk to attach it to. */}
+                  {/* One press: the bill is sent to the guest's WhatsApp
+                      number by the server, link only — no chat to attach it
+                      in. */}
                   <ShareMenu
                     onShare={handleShare}
                     disabled={pdfBusy !== null}

@@ -25,6 +25,26 @@ async function updateMyLodgeHandler(req, res, next) {
   }
 }
 
+async function updateMyLodgeLogoHandler(req, res, next) {
+  try {
+    await meService.updateMyLodgeLogo(req.user.lodgeId, req.file.filename);
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function removeMyLodgeLogoHandler(req, res, next) {
+  try {
+    await meService.removeMyLodgeLogo(req.user.lodgeId);
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function sendPasswordOtpHandler(req, res, next) {
   try {
     const parsed = sendPasswordOtpSchema.safeParse(req.body);
@@ -59,4 +79,11 @@ async function changePasswordHandler(req, res, next) {
   }
 }
 
-module.exports = { getMeHandler, sendPasswordOtpHandler, changePasswordHandler, updateMyLodgeHandler };
+module.exports = {
+  getMeHandler,
+  sendPasswordOtpHandler,
+  changePasswordHandler,
+  updateMyLodgeHandler,
+  updateMyLodgeLogoHandler,
+  removeMyLodgeLogoHandler,
+};

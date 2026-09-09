@@ -2,8 +2,8 @@ import { clearSession, getSession } from './auth';
 
 // Local development: points at the backend on port 8000 (PORT in backend/.env).
 // Swap to the production line below before building for deploy.
-export const API_BASE = 'https://hotel.vengurlatech.com';
-//export const API_BASE = 'http://192.168.1.8:5000';
+//export const API_BASE = 'https://hotel.vengurlatech.com';
+export const API_BASE = 'http://192.168.1.8:5000';
 
 
 // `field`, when the server sent one, names the form input the message is about,
@@ -151,6 +151,18 @@ export async function apiPut(path, body, { token } = {}) {
 export async function apiPatchForm(path, formData, { token } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'PATCH',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  return handleResponse(res, path);
+}
+
+export async function apiPutForm(path, formData, { token } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },

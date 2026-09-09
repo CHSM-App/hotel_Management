@@ -37,6 +37,40 @@
   margin-top: 4px;
 }
 
+.detail-header__brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.detail-header__logo {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  padding: 6px;
+}
+
+.detail-header__logo--empty {
+  border-style: dashed;
+}
+
+.detail-header__logo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.detail-header__logo-error {
+  font-size: 12px;
+  color: var(--danger, #dc2626);
+}
+
 .detail-header__badges {
   display: flex;
   gap: 8px;

@@ -7,6 +7,7 @@ const { parseBeds } = require('../rooms/rooms.service');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
 const notifications = require('../notifications/bookingConfirmation');
+const cancellationNotice = require('../notifications/cancellationNotice');
 const billingService = require('../billing/billing.service');
 const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
@@ -2010,7 +2011,14 @@ async function cancelBooking(
     }
     throw new ApiError('Booking not found or cannot be cancelled.', 409);
   }
-  return getBooking(lodgeId, bookingId);
+  const booking = await getBooking(lodgeId, bookingId);
+  // Awaited, unlike the booking confirmation: the desk asked to cancel and
+  // wants to know whether the guest was told, so the result rides back on
+  // the same response instead of only reaching the log. Still never throws —
+  // notifyBookingCancelled catches everything itself — so a WhatsApp outage
+  // cannot turn into an error for a cancellation that has already committed.
+  const whatsapp = await cancellationNotice.notifyBookingCancelled(lodgeId, booking);
+  return { ...booking, whatsapp };
 }
 
 module.exports = {

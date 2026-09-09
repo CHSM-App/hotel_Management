@@ -80,6 +80,9 @@ function availabilityOf(type) {
 const roomImageUrl = (filename) => `${API_BASE}/room-images/${filename}`;
 const venueImageUrl = (filename) => `${API_BASE}/venue-images/${filename}`;
 const menuImageUrl = (filename) => `${API_BASE}/menu-images/${filename}`;
+// logoUrl already carries the /hotel-logos/ prefix from the API (see
+// public.service.js), unlike the filenames above.
+const logoUrl = (lodge) => (lodge.logoUrl ? `${API_BASE}${lodge.logoUrl}` : null);
 
 // "Seats 300", "Up to 300 guests" — the capacity is advisory on the desk side
 // too, so the public page says it the soft way.
@@ -611,6 +614,7 @@ export default function LodgePublicPage() {
       <nav className="site-nav" aria-label="Site">
         <div className="site-container site-nav__inner">
           <a className="site-nav__brand" href="#top">
+            {logoUrl(lodge) && <img className="site-nav__logo" src={logoUrl(lodge)} alt="" />}
             {lodge.name}
           </a>
           <div className="site-nav__links">

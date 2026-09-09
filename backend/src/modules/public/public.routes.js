@@ -12,6 +12,9 @@ const {
   placeTableOrderHandler,
   getOrderStatusHandler,
   getSharedBillHandler,
+  downloadSharedBillHandler,
+  getSharedReceiptHandler,
+  downloadSharedReceiptHandler,
 } = require('./public.controller');
 
 const router = Router();
@@ -64,5 +67,10 @@ router.get('/orders/:token', getOrderStatusHandler);
 // a useful rate — the token is 32 hex characters — and a guest re-opening their
 // own bill from a chat several times is ordinary, not an attack.
 router.get('/bills/:token', getSharedBillHandler);
+router.get('/bills/:token/download', downloadSharedBillHandler);
+
+// Same for a shared advance receipt.
+router.get('/receipts/:token', getSharedReceiptHandler);
+router.get('/receipts/:token/download', downloadSharedReceiptHandler);
 
 module.exports = router;

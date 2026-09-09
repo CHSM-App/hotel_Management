@@ -73,7 +73,8 @@ const LODGE_COLUMNS = `
              l.is_gst_registered, l.gstin, l.checkin_mode, l.check_out_time,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
-             l.city AS lodge_city, l.state AS lodge_state`;
+             l.city AS lodge_city, l.state AS lodge_state,
+             l.logo_path AS lodge_logo_path, l.show_logo_on_receipt`;
 
 // The stay, the property, and everything the printed receipt puts in its head.
 // One query, because the document is rendered straight off this row.
@@ -214,6 +215,7 @@ function mapReceipt(row) {
     lodgeAddressMr: row.lodge_address_mr ?? null,
     lodgeCity: row.lodge_city,
     lodgeState: row.lodge_state,
+    lodgeLogoUrl: row.show_logo_on_receipt && row.lodge_logo_path ? `/hotel-logos/${row.lodge_logo_path}` : null,
     checkinMode: row.checkin_mode ?? null,
     checkOutTime: toClockTime(row.check_out_time),
   };
