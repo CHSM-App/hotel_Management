@@ -761,11 +761,17 @@ async function loadFoodItemsByInvoice(pool, invoiceIds) {
   const request = pool.request();
   invoiceIds.forEach((id, i) => request.input(`inv${i}`, sql.BigInt, id));
   const result = await request.query(`
-    SELECT o.invoice_id, ${FOOD_ITEM_COLUMNS}
+    -- COALESCE with voided_invoice_id: voiding a stay/event bill's room-service
+    -- orders clears their invoice_id (to put them back in "foods to bill") but
+    -- stamps voided_invoice_id with the bill they were released from, purely so
+    -- that voided bill can still show what it billed instead of coming up
+    -- empty — see 060_food_orders_voided_invoice and voidInvoice.
+    SELECT COALESCE(o.invoice_id, o.voided_invoice_id) AS invoice_id, ${FOOD_ITEM_COLUMNS}
     FROM dbo.food_order_items fi
     JOIN dbo.food_orders o ON o.id = fi.order_id
     WHERE o.invoice_id IN (${invoiceIds.map((_, i) => `@inv${i}`).join(', ')})
-    GROUP BY o.invoice_id, fi.item_name, fi.unit_price
+       OR o.voided_invoice_id IN (${invoiceIds.map((_, i) => `@inv${i}`).join(', ')})
+    GROUP BY COALESCE(o.invoice_id, o.voided_invoice_id), fi.item_name, fi.unit_price
     ORDER BY fi.item_name ASC
   `);
 
@@ -1287,15 +1293,18 @@ async function getInvoice(lodgeId, invoiceId) {
       -- name and phone staff typed in at the till, which is the only record of
       -- a walk-in's identity that exists anywhere.
       OUTER APPLY (
+        -- Matched on voided_invoice_id too: a void clears the order's own
+        -- invoice_id (see voidInvoice), so without this a voided takeaway
+        -- bill lost the only order it named itself after.
         SELECT TOP 1 fo.order_number, fo.guest_name, fo.guest_phone
         FROM dbo.food_orders fo
-        WHERE fo.invoice_id = i.id AND fo.source = 'COUNTER'
+        WHERE COALESCE(fo.invoice_id, fo.voided_invoice_id) = i.id AND fo.source = 'COUNTER'
         ORDER BY fo.id
       ) tko
       OUTER APPLY (
         SELECT TOP 1 fo2.guest_name, fo2.guest_phone
         FROM dbo.food_orders fo2
-        WHERE fo2.invoice_id = i.id AND fo2.guest_name IS NOT NULL
+        WHERE COALESCE(fo2.invoice_id, fo2.voided_invoice_id) = i.id AND fo2.guest_name IS NOT NULL
         ORDER BY fo2.id
       ) fo
       JOIN dbo.lodges l ON l.id = i.lodge_id
@@ -1368,15 +1377,18 @@ async function listInvoices(lodgeId) {
       -- invoice writes onto that order. The same order also carries whatever
       -- name and phone staff typed in at the till — see getInvoice().
       OUTER APPLY (
+        -- Matched on voided_invoice_id too: a void clears the order's own
+        -- invoice_id (see voidInvoice), so without this a voided takeaway
+        -- bill lost the only order it named itself after.
         SELECT TOP 1 fo.order_number, fo.guest_name, fo.guest_phone
         FROM dbo.food_orders fo
-        WHERE fo.invoice_id = i.id AND fo.source = 'COUNTER'
+        WHERE COALESCE(fo.invoice_id, fo.voided_invoice_id) = i.id AND fo.source = 'COUNTER'
         ORDER BY fo.id
       ) tko
       OUTER APPLY (
         SELECT TOP 1 fo2.guest_name, fo2.guest_phone
         FROM dbo.food_orders fo2
-        WHERE fo2.invoice_id = i.id AND fo2.guest_name IS NOT NULL
+        WHERE COALESCE(fo2.invoice_id, fo2.voided_invoice_id) = i.id AND fo2.guest_name IS NOT NULL
         ORDER BY fo2.id
       ) fo
       JOIN dbo.lodges l ON l.id = i.lodge_id
@@ -1407,21 +1419,37 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
       .query(`
         UPDATE dbo.invoices
         SET status = 'VOID', void_reason = @reason, voided_at = SYSDATETIMEOFFSET(), closed_billing = 1
-        OUTPUT inserted.id
+        OUTPUT inserted.id, inserted.booking_id, inserted.event_booking_id
         WHERE id = @invoiceId AND lodge_id = @lodgeId AND status = 'ISSUED'
       `);
     if (result.recordset.length === 0) {
       throw new ApiError('Bill not found or already void.', 409);
     }
+    // Same kind check mapInvoice uses: no booking and no event behind it means
+    // this is a dedicated food/table/counter bill rather than room service
+    // riding on a stay or function invoice.
+    const { booking_id: bookingId, event_booking_id: eventBookingId } = result.recordset[0];
+    const isFoodBill = bookingId == null && eventBookingId == null;
 
-    // Release the food back to unbilled. A void that left orders stamped would
-    // silently destroy the charge: a food tab reopened elsewhere wouldn't pick
-    // them up and the table would never be asked to pay for what it ate. The
-    // invoice row itself stays put — issued documents are voided in place,
-    // never deleted.
-    await new sql.Request(transaction)
-      .input('invoiceId', sql.BigInt, invoiceId)
-      .query('UPDATE dbo.food_orders SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId');
+    if (isFoodBill) {
+      // A dedicated food bill's orders stay voided for good: voiding is a
+      // correction to a document already issued, not a way to put the food
+      // back up for sale. voided_invoice_id keeps the link so the voided bill
+      // still shows what it billed instead of coming up empty.
+      await new sql.Request(transaction)
+        .input('invoiceId', sql.BigInt, invoiceId)
+        .query('UPDATE dbo.food_orders SET voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId');
+    } else {
+      // Room service riding on a stay or function bill: release it back to
+      // unbilled. A void that left it stamped would silently destroy the
+      // charge — a food tab reopened elsewhere wouldn't pick it up and the
+      // guest would never be asked to pay for what they ate. The invoice row
+      // itself stays put — issued documents are voided in place, never
+      // deleted.
+      await new sql.Request(transaction)
+        .input('invoiceId', sql.BigInt, invoiceId)
+        .query('UPDATE dbo.food_orders SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId');
+    }
 
     // Voiding used to send a settled function back to CONFIRMED so a fresh
     // bill could be issued for it — closed_billing above now says the

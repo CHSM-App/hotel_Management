@@ -751,7 +751,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 // on the function does this fall back to the billing screen.
                 onClick={() => (event.invoice?.id && onViewInvoice ? onViewInvoice(event.invoice.id) : onBillEvent?.(event.id))}
               >
-                View bill{event.invoice?.invoiceNumber ? ` ${event.invoice.invoiceNumber}` : ''}
+                View bill
               </button>
             )}
             {canEdit && status !== 'EXPIRED' && (

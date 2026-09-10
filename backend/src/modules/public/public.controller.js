@@ -54,7 +54,7 @@ async function getLodgePageHandler(req, res, next) {
     // Each part of the page is gated on what the property is: a rooms-only
     // lodge sends no venues and no menu, so the page has nothing to hide, and
     // the flags on `lodge` tell the client which sections to draw at all.
-    const [roomTypes, venues, addons, menu] = await Promise.all([
+    const [roomTypes, roomAddons, venues, addons, menu] = await Promise.all([
       lodge.hasRooms
         ? publicService.listPublicRoomTypes(
             lodge.id,
@@ -62,11 +62,12 @@ async function getLodgePageHandler(req, res, next) {
             hasValidRange ? checkOutDate : null
           )
         : [],
+      lodge.hasRooms ? publicService.listPublicRoomAddons(lodge.id) : [],
       lodge.hasEvents ? publicService.listPublicVenues(lodge.id) : [],
       lodge.hasEvents ? publicService.listPublicAddons(lodge.id) : [],
       lodge.servesFood ? publicService.getPublicMenu(lodge.id) : [],
     ]);
-    res.json({ lodge, roomTypes, venues, addons, menu });
+    res.json({ lodge, roomTypes, roomAddons, venues, addons, menu });
   } catch (err) {
     next(err);
   }
@@ -203,21 +204,37 @@ function escapeHtml(value) {
 
 // The page a guest lands on when they tap the bill link in WhatsApp.
 //
-// A plain download button rather than serving the PDF at this address
-// directly: handed the PDF inline, a phone opens it in whatever viewer it
-// has, and the save/download control in that viewer varies by app and is
-// sometimes buried behind a menu. A page the property controls always has
-// one button in the same place.
+// An embedded preview (like the desk's own billing screen shows before
+// sending) rather than just a download button: the guest can see the bill is
+// theirs and looks right before saving anything, the same way the desk does.
+// The download button stays alongside it — a phone's in-app browser PDF
+// viewer varies by app, and the save control inside it is sometimes buried
+// behind a menu, so a button the property controls is still the one place
+// guaranteed to save the file.
+//
+// The preview is drawn onto a <canvas> with pdf.js rather than embedded via
+// <iframe src="...pdf">: WhatsApp's in-app browser (and iOS Safari's
+// webview generally) has no built-in PDF renderer to hand an iframe, so an
+// iframe there shows a broken-file icon instead of the bill. Rendering the
+// first page to a canvas draws it as a plain image, which every browser can
+// do.
+//
+// pdf.js is vendored and served same-origin at /vendor/pdfjs (see app.js),
+// not pulled from a CDN — the app's CSP locks script-src to 'self' as its
+// XSS defence, so a <script src="https://cdnjs...">  (or an inline <script>
+// block) is silently dropped rather than loaded. bill-preview.mjs there does
+// the actual rendering; this page only points a module script at it.
 //
 // No-store — this is one guest's bill and the one place it must not be left
-// is a shared proxy cache — and no styling library: this loads in a chat's
-// in-app browser, on whatever connection the guest has, and has exactly one
-// job.
+// is a shared proxy cache — and no styling library beyond pdf.js itself:
+// this loads in a chat's in-app browser, on whatever connection the guest
+// has, and has exactly one job.
 // The one landing page both a shared bill and a shared receipt use, parked in
 // one place so the two never quietly diverge in markup while meaning the same
 // thing. `label` is what the page calls the document ("Bill" / "Receipt");
-// `downloadHref` is the forced-download route the one button points at.
-function shareLandingPage({ label, docNumber, lodgeName, downloadHref }) {
+// `viewHref` is the inline-PDF route the preview canvas fetches and renders;
+// `downloadHref` is the forced-download route the button points at.
+function shareLandingPage({ label, docNumber, lodgeName, viewHref, downloadHref }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -225,12 +242,18 @@ function shareLandingPage({ label, docNumber, lodgeName, downloadHref }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(docNumber)} — ${escapeHtml(lodgeName)}</title>
 <style>
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
          background: #f4f5f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 32px 28px;
-          width: 100%; max-width: 360px; text-align: center; margin: 16px; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 20px;
+          width: 100%; max-width: 480px; text-align: center; margin: 16px; }
   .card p.lodge { margin: 0 0 4px; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
-  .card h1 { margin: 0 0 24px; font-size: 20px; color: #111827; }
+  .card h1 { margin: 0 0 16px; font-size: 20px; color: #111827; }
+  .preview { position: relative; width: 100%; min-height: 360px; border-radius: 8px;
+             overflow: hidden; border: 1px solid #e5e7eb; margin-bottom: 16px; background: #f9fafb;
+             display: flex; align-items: center; justify-content: center; }
+  .preview canvas { display: block; max-width: 100%; height: auto; }
+  .preview .hint { font-size: 13px; color: #9ca3af; padding: 24px; }
   .card a.btn { display: block; background: #111827; color: #fff; text-decoration: none; font-weight: 600;
                 font-size: 15px; padding: 14px 20px; border-radius: 8px; }
   .card a.btn:active { background: #000; }
@@ -240,8 +263,12 @@ function shareLandingPage({ label, docNumber, lodgeName, downloadHref }) {
   <div class="card">
     <p class="lodge">${escapeHtml(lodgeName)}</p>
     <h1>${escapeHtml(label)} ${escapeHtml(docNumber)}</h1>
+    <div class="preview" id="preview" data-view-href="${escapeHtml(viewHref)}">
+      <p class="hint" id="previewHint">Loading preview…</p>
+    </div>
     <a class="btn" href="${downloadHref}">Download ${escapeHtml(label)} (PDF)</a>
   </div>
+  <script type="module" src="/vendor/pdfjs/bill-preview.mjs"></script>
 </body>
 </html>`;
 }
@@ -256,9 +283,26 @@ async function getSharedBillHandler(req, res, next) {
         label: 'Bill',
         docNumber: invoiceNumber,
         lodgeName,
+        viewHref: `/public/bills/${encodeURIComponent(token)}/view`,
         downloadHref: `/public/bills/${encodeURIComponent(token)}/download`,
       })
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The PDF rendered inline, for the preview frame on the landing page above.
+// `inline` rather than `attachment`: this is the document shown *in* the
+// page, not a save prompt — the download button below the frame is what
+// hands the guest the file.
+async function viewSharedBillHandler(req, res, next) {
+  try {
+    const { filePath } = await billShareService.readSharedBill(String(req.params.token || ''));
+    res.type('application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', 'inline');
+    res.sendFile(filePath);
   } catch (err) {
     next(err);
   }
@@ -296,9 +340,23 @@ async function getSharedReceiptHandler(req, res, next) {
         label: 'Receipt',
         docNumber: receiptNumber,
         lodgeName,
+        viewHref: `/public/receipts/${encodeURIComponent(token)}/view`,
         downloadHref: `/public/receipts/${encodeURIComponent(token)}/download`,
       })
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Same inline-preview handler as the bill's, against a shared advance receipt.
+async function viewSharedReceiptHandler(req, res, next) {
+  try {
+    const { filePath } = await receiptShareService.readSharedReceipt(String(req.params.token || ''));
+    res.type('application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', 'inline');
+    res.sendFile(filePath);
   } catch (err) {
     next(err);
   }
@@ -321,8 +379,10 @@ async function downloadSharedReceiptHandler(req, res, next) {
 
 module.exports = {
   getSharedBillHandler,
+  viewSharedBillHandler,
   downloadSharedBillHandler,
   getSharedReceiptHandler,
+  viewSharedReceiptHandler,
   downloadSharedReceiptHandler,
   getLodgePageHandler,
   getMenuPageHandler,

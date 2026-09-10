@@ -86,9 +86,14 @@ test('neither a refund nor a charge reads as "No refund due"', () => {
   );
 });
 
-test('a missing reason reads as "Not specified" rather than a dash', () => {
+test('a missing reason is sent as an empty slot, not a placeholder', () => {
   const sample = buildCancellationSample({ ...booking, cancelReason: null }, lodge);
-  assert.strictEqual(sample[5], 'Not specified');
+  assert.strictEqual(sample[5], '');
+});
+
+test('a blank or whitespace-only reason is also sent as an empty slot', () => {
+  const sample = buildCancellationSample({ ...booking, cancelReason: '   ' }, lodge);
+  assert.strictEqual(sample[5], '');
 });
 
 test('no value ever carries a comma — it is the variable separator', () => {

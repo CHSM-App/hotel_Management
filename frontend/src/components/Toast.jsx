@@ -69,7 +69,7 @@ export function ToastProvider({ children }) {
           of this is feedback for something that left no visible trace, and a
           user who cannot see the toast needs it most. Polite rather than
           assertive — it must not cut across what is being read. */}
-      <div className="toast-stack" role="status" aria-live="polite">
+      <div className="toast-stack" role="status" aria-live="polite" aria-atomic="true">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast--${toast.tone}`}>
             <span className="toast__message">{toast.message}</span>

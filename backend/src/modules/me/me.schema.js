@@ -24,6 +24,17 @@ const changePasswordSchema = z.object({
 // A map pin, same shape as lodges.schema's coordinate() — kept separate rather
 // than shared because this schema only ever touches the fields an owner is
 // allowed to change, not the property's structure.
+// Same shape as lodges.schema's GSTIN check: 15 characters, empty string
+// allowed through (an unregistered property has none to give).
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const gstin = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .refine((value) => value === '' || GSTIN_PATTERN.test(value), {
+    message: 'Enter a valid 15-character GSTIN.',
+  });
+
 const coordinate = (min, max, label) =>
   z.preprocess(
     (value) => {
@@ -54,7 +65,7 @@ const updateMyLodgeSchema = z.object({
   state: z.string().trim().max(100).optional().default(''),
   latitude: coordinate(-90, 90, 'Latitude').default(null),
   longitude: coordinate(-180, 180, 'Longitude').default(null),
-  gstin: z.string().trim().max(20).optional().default(''),
+  gstin: gstin.optional().default(''),
   // Whether the uploaded logo (if any) prints on the bill masthead. Separate
   // from the upload itself so a logo can exist for the dashboard brand mark
   // without appearing on a legal document until the owner opts in.

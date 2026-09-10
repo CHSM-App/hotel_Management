@@ -7,6 +7,8 @@ import LocationPicker from '../../components/LocationPicker';
 import './forms.css';
 import './HotelProfileModal.css';
 
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour cycle',
   NIGHT_BASED: 'Night-based',
@@ -152,6 +154,10 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
     }
     if (lodge.isGstRegistered && !form.gstin.trim()) {
       failOn('hp-gstin', 'Enter the GSTIN, or ask Vengurla Tech to turn off GST registration.');
+      return;
+    }
+    if (form.gstin.trim() && !GSTIN_PATTERN.test(form.gstin.trim().toUpperCase())) {
+      failOn('hp-gstin', 'Enter a valid 15-character GSTIN.');
       return;
     }
     const coords = validateCoordinates(form);

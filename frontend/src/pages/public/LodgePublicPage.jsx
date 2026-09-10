@@ -90,10 +90,9 @@ function capacityLabel(venue) {
   return venue.capacityPax ? `Up to ${venue.capacityPax} guests` : null;
 }
 
-function VenueCard({ lodge, venue, onOpenPhotos }) {
-  const enquiryMessage = `Hi! I'd like to enquire about booking ${venue.name} at ${lodge.name} for a function. Could you share availability and what's included?`;
-  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, enquiryMessage);
+function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
   const capacity = capacityLabel(venue);
+  const canEnquire = Boolean(lodge.whatsappNumber) || Boolean(lodge.phone);
 
   return (
     <div className="lodge-public__room lodge-public__venue">
@@ -131,10 +130,14 @@ function VenueCard({ lodge, venue, onOpenPhotos }) {
           </div>
         )}
 
-        {whatsappLink ? (
-          <a className="lodge-public__whatsapp-btn" href={whatsappLink} target="_blank" rel="noopener noreferrer">
-            Enquire for a function
-          </a>
+        {canEnquire ? (
+          <button
+            type="button"
+            className="lodge-public__whatsapp-btn"
+            onClick={() => onEnquireEvent(venue.id)}
+          >
+            Enquire for Venue
+          </button>
         ) : (
           <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
         )}
@@ -309,15 +312,10 @@ function MenuCard({ menu, onOpenPhotos }) {
   );
 }
 
-function RoomTypeCard({ lodge, type, checkInDate, checkOutDate, onOpenPhotos }) {
+function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
   const availability = availabilityOf(type);
   const isUnavailable = type.availableCount === 0;
-  const dateRangeText =
-    checkInDate && checkOutDate ? ` for ${formatDateLong(checkInDate)} – ${formatDateLong(checkOutDate)}` : '';
-  const enquiryMessage = isUnavailable
-    ? `Hi! The ${type.name} rooms at ${lodge.name} show as fully booked${dateRangeText}. Do you have anything else available?`
-    : `Hi! I'd like to book a ${type.name} room at ${lodge.name}${dateRangeText} — ${formatPrice(type.price)}/night. Could you confirm availability?`;
-  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, enquiryMessage);
+  const canEnquire = Boolean(lodge.whatsappNumber) || Boolean(lodge.phone);
 
   const beds = type.bedSizes.map((b) => bedSizeLabel[b]).filter(Boolean);
   const baths = type.bathroomTypes.map((b) => bathroomTypeLabel[b]).filter(Boolean);
@@ -384,12 +382,317 @@ function RoomTypeCard({ lodge, type, checkInDate, checkOutDate, onOpenPhotos }) 
 
         {type.description && <p className="lodge-public__room-description">{type.description}</p>}
 
-        {whatsappLink ? (
-          <a className="lodge-public__whatsapp-btn" href={whatsappLink} target="_blank" rel="noopener noreferrer">
-            {isUnavailable ? 'Ask about other dates' : 'Enquire on WhatsApp'}
-          </a>
+        {canEnquire ? (
+          <button
+            type="button"
+            className="lodge-public__whatsapp-btn"
+            onClick={() => onEnquireRoom(type.id)}
+          >
+            {isUnavailable ? 'Ask about other dates' : 'Enquire for Room'}
+          </button>
         ) : (
           <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the lodge'} to enquire.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const EVENT_TYPES = ['Wedding', 'Reception', 'Birthday', 'Anniversary', 'Corporate event', 'Other'];
+
+// One modal for every "Enquire" entry point on the page, room and event alike.
+// It never talks to a server — the site has no enquiry storage — it only
+// gathers the details a WhatsApp message would otherwise miss and folds them
+// into the same pre-filled wa.me link the rest of the page already uses.
+function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuAvailable, initial, onClose, onViewMenu }) {
+  // `initial.kind` is 'room' | 'event' | null. Null means the lodge offers
+  // both and the visitor hasn't said which one they want yet.
+  const [kind, setKind] = useState(initial.kind || null);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const [checkInDate, setCheckInDate] = useState(initial.checkInDate || todayIso());
+  const [checkOutDate, setCheckOutDate] = useState(initial.checkOutDate || addDays(todayIso(), 1));
+  const [roomTypeId, setRoomTypeId] = useState(initial.roomTypeId ? String(initial.roomTypeId) : 'ANY');
+  const [guests, setGuests] = useState('');
+  const [roomAddonIds, setRoomAddonIds] = useState([]);
+
+  const [eventDate, setEventDate] = useState('');
+  const [eventType, setEventType] = useState(EVENT_TYPES[0]);
+  const [venueId, setVenueId] = useState(initial.venueId ? String(initial.venueId) : 'ANY');
+  const [eventGuests, setEventGuests] = useState('');
+  const [eventAddonIds, setEventAddonIds] = useState([]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const toggleAddon = (setFn, id) => {
+    setFn((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  };
+
+  const buildMessage = () => {
+    const who = name.trim() ? `My name is ${name.trim()}. ` : '';
+    if (kind === 'room') {
+      const type = roomTypes.find((t) => String(t.id) === roomTypeId);
+      const lines = [
+        `Hi! I'd like to enquire about a room at ${lodge.name}.`,
+        who,
+        `Dates: ${formatDateLong(checkInDate)} – ${formatDateLong(checkOutDate)}.`,
+        `Room type: ${type ? type.name : 'Any available'}.`,
+        guests ? `Guests: ${guests}.` : null,
+      ];
+      if (roomAddonIds.length > 0) {
+        const names = roomAddons.filter((a) => roomAddonIds.includes(a.id)).map((a) => a.name);
+        lines.push(`Also interested in: ${names.join(', ')}.`);
+      }
+      if (notes.trim()) lines.push(`Note: ${notes.trim()}`);
+      if (phone.trim()) lines.push(`My phone: ${phone.trim()}.`);
+      return lines.filter(Boolean).join('\n');
+    }
+    const venue = venues.find((v) => String(v.id) === venueId);
+    const lines = [
+      `Hi! I'd like to enquire about an event at ${lodge.name}.`,
+      who,
+      `Event type: ${eventType}.`,
+      eventDate ? `Date: ${formatDateLong(eventDate)}.` : null,
+      `Venue: ${venue ? venue.name : 'Any available'}.`,
+      eventGuests ? `Expected guests: ${eventGuests}.` : null,
+    ];
+    if (eventAddonIds.length > 0) {
+      const names = eventAddons.filter((a) => eventAddonIds.includes(a.id)).map((a) => a.name);
+      lines.push(`Also interested in: ${names.join(', ')}.`);
+    }
+    if (notes.trim()) lines.push(`Note: ${notes.trim()}`);
+    if (phone.trim()) lines.push(`My phone: ${phone.trim()}.`);
+    return lines.filter(Boolean).join('\n');
+  };
+
+  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, buildMessage());
+  const telLink = lodge.phone ? `tel:${lodge.phone}` : null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (whatsappLink) {
+      window.open(whatsappLink, '_blank', 'noopener,noreferrer');
+    } else if (telLink) {
+      window.location.href = telLink;
+    }
+    onClose();
+  };
+
+  const title = kind === 'room' ? 'Room enquiry' : kind === 'event' ? 'Event enquiry' : 'What are you enquiring about?';
+
+  return (
+    <div className="lodge-public__modal-overlay" onClick={onClose}>
+      <div className="lodge-public__modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <div className="lodge-public__modal-head">
+          <h3>{title}</h3>
+          <button type="button" className="lodge-public__modal-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        {!kind ? (
+          <div className="lodge-public__modal-choice">
+            <button type="button" className="lodge-public__modal-choice-btn" onClick={() => setKind('room')}>
+              <span className="lodge-public__modal-choice-title">Room enquiry</span>
+              <span className="lodge-public__modal-choice-sub">Book a stay</span>
+            </button>
+            <button type="button" className="lodge-public__modal-choice-btn" onClick={() => setKind('event')}>
+              <span className="lodge-public__modal-choice-title">Event enquiry</span>
+              <span className="lodge-public__modal-choice-sub">Weddings & functions</span>
+            </button>
+          </div>
+        ) : (
+          <form className="lodge-public__modal-form" onSubmit={handleSubmit}>
+            <div className="lodge-public__modal-row">
+              <div className="lodge-public__date-field">
+                <label htmlFor="enqName">Your name</label>
+                <input id="enqName" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
+              </div>
+              <div className="lodge-public__date-field">
+                <label htmlFor="enqPhone">Phone number</label>
+                <input id="enqPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile" />
+              </div>
+            </div>
+
+            {kind === 'room' ? (
+              <>
+                <div className="lodge-public__modal-row">
+                  <div className="lodge-public__date-field">
+                    <label htmlFor="enqCheckIn">Check-in</label>
+                    <input
+                      id="enqCheckIn"
+                      type="date"
+                      min={todayIso()}
+                      value={checkInDate}
+                      onChange={(e) => {
+                        setCheckInDate(e.target.value);
+                        if (checkOutDate <= e.target.value) setCheckOutDate(addDays(e.target.value, 1));
+                      }}
+                    />
+                  </div>
+                  <div className="lodge-public__date-field">
+                    <label htmlFor="enqCheckOut">Check-out</label>
+                    <input
+                      id="enqCheckOut"
+                      type="date"
+                      min={addDays(checkInDate, 1)}
+                      value={checkOutDate}
+                      onChange={(e) => setCheckOutDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="lodge-public__modal-row">
+                  {roomTypes.length > 0 && (
+                    <div className="lodge-public__date-field lodge-public__date-field--wide">
+                      <label htmlFor="enqRoomType">Room type</label>
+                      <select id="enqRoomType" value={roomTypeId} onChange={(e) => setRoomTypeId(e.target.value)}>
+                        <option value="ANY">Any available</option>
+                        {roomTypes.map((t) => (
+                          <option key={t.id} value={String(t.id)}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="lodge-public__date-field">
+                    <label htmlFor="enqGuests">Guests</label>
+                    <input
+                      id="enqGuests"
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 2"
+                      value={guests}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setGuests(raw === '' ? '' : Math.max(1, Number(raw) || 1));
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {roomAddons.length > 0 && (
+                  <div className="lodge-public__modal-field">
+                    <label>Booking extras</label>
+                    <div className="lodge-public__modal-addons">
+                      {roomAddons.map((a) => (
+                        <label className="lodge-public__modal-addon" key={a.id}>
+                          <input
+                            type="checkbox"
+                            checked={roomAddonIds.includes(a.id)}
+                            onChange={() => toggleAddon(setRoomAddonIds, a.id)}
+                          />
+                          <span>{a.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="lodge-public__modal-row">
+                  <div className="lodge-public__date-field">
+                    <label htmlFor="enqEventDate">Event date</label>
+                    <input id="enqEventDate" type="date" min={todayIso()} value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
+                  </div>
+                  <div className="lodge-public__date-field">
+                    <label htmlFor="enqEventType">Event type</label>
+                    <select id="enqEventType" value={eventType} onChange={(e) => setEventType(e.target.value)}>
+                      {EVENT_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="lodge-public__modal-row">
+                  {venues.length > 0 && (
+                    <div className="lodge-public__date-field lodge-public__date-field--wide">
+                      <label htmlFor="enqVenue">Venue</label>
+                      <select id="enqVenue" value={venueId} onChange={(e) => setVenueId(e.target.value)}>
+                        <option value="ANY">Any available</option>
+                        {venues.map((v) => (
+                          <option key={v.id} value={String(v.id)}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="lodge-public__date-field">
+                    <label htmlFor="enqEventGuests">Expected guests</label>
+                    <input
+                      id="enqEventGuests"
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 50"
+                      value={eventGuests}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setEventGuests(raw === '' ? '' : Math.max(1, Number(raw) || 1));
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {eventAddons.length > 0 && (
+                  <div className="lodge-public__modal-field">
+                    <label>Add-ons available</label>
+                    <div className="lodge-public__modal-addons">
+                      {eventAddons.map((a) => (
+                        <label className="lodge-public__modal-addon" key={a.id}>
+                          <input
+                            type="checkbox"
+                            checked={eventAddonIds.includes(a.id)}
+                            onChange={() => toggleAddon(setEventAddonIds, a.id)}
+                          />
+                          <span>{a.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {menuAvailable && (
+                  <button type="button" className="lodge-public__modal-menu-link" onClick={onViewMenu}>
+                    View menu
+                  </button>
+                )}
+              </>
+            )}
+
+            <div className="lodge-public__modal-field">
+              <label htmlFor="enqNotes">Additional message</label>
+              <textarea
+                id="enqNotes"
+                rows={3}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Anything else we should know?"
+              />
+            </div>
+
+            <div className="lodge-public__modal-actions">
+              <button type="button" className="site-btn site-btn--ghost lodge-public__modal-back" onClick={() => (initial.kind ? onClose() : setKind(null))}>
+                {initial.kind ? 'Cancel' : 'Back'}
+              </button>
+              <button type="submit" className="site-btn site-btn--whatsapp" disabled={!whatsappLink && !telLink}>
+                {whatsappLink ? 'Send on WhatsApp' : 'Call to enquire'}
+              </button>
+            </div>
+          </form>
         )}
       </div>
     </div>
@@ -401,6 +704,7 @@ export default function LodgePublicPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [lightbox, setLightbox] = useState(null);
+  const [enquireModal, setEnquireModal] = useState(null);
 
   // Defaults to tonight → tomorrow so the page shows real availability the
   // moment it loads, without making a guest pick dates first.
@@ -504,7 +808,7 @@ export default function LodgePublicPage() {
     );
   }
 
-  const { lodge, roomTypes, venues = [], addons = [], menu = [] } = data;
+  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [] } = data;
   const generalMessage = `Hi! I'd like to know more about ${lodge.name}.`;
 
   // Which parts of the page this property has. The nav strip only appears
@@ -608,6 +912,34 @@ export default function LodgePublicPage() {
     setAvailableOnly(false);
   };
   const generalWhatsappLink = buildWhatsAppLink(lodge.whatsappNumber, generalMessage);
+  const canEnquireAtAll = Boolean(lodge.whatsappNumber) || Boolean(lodge.phone);
+  const menuAvailable = lodge.servesFood && menu.length > 0;
+
+  // The navbar CTA only asks "room or event?" when the lodge actually offers
+  // both — a lodge with just rooms (or just a hall) already knows what kind
+  // of enquiry this is, so skip straight to that form.
+  const openNavEnquire = () => {
+    const bothOffered = lodge.hasRooms && lodge.hasEvents && venues.length > 0;
+    setEnquireModal({
+      kind: bothOffered ? null : lodge.hasEvents && venues.length > 0 ? 'event' : 'room',
+      checkInDate: validDateRange ? checkInDate : undefined,
+      checkOutDate: validDateRange ? checkOutDate : undefined,
+    });
+  };
+  const openRoomEnquire = (roomTypeId) => {
+    setEnquireModal({
+      kind: 'room',
+      roomTypeId,
+      checkInDate: validDateRange ? checkInDate : undefined,
+      checkOutDate: validDateRange ? checkOutDate : undefined,
+    });
+  };
+  const openEventEnquire = (venueId) => setEnquireModal({ kind: 'event', venueId });
+  const closeEnquireModal = () => setEnquireModal(null);
+  const jumpToMenu = () => {
+    closeEnquireModal();
+    document.getElementById('menu')?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
     <div className="lodge-public site" id="top">
@@ -629,14 +961,10 @@ export default function LodgePublicPage() {
               </a>
             ))}
           </div>
-          {generalWhatsappLink ? (
-            <a className="site-btn site-btn--accent site-nav__cta" href={generalWhatsappLink} target="_blank" rel="noopener noreferrer">
+          {canEnquireAtAll ? (
+            <button type="button" className="site-btn site-btn--accent site-nav__cta" onClick={openNavEnquire}>
               Enquire
-            </a>
-          ) : lodge.phone ? (
-            <a className="site-btn site-btn--accent site-nav__cta" href={`tel:${lodge.phone}`}>
-              Call us
-            </a>
+            </button>
           ) : null}
         </div>
       </nav>
@@ -905,9 +1233,8 @@ export default function LodgePublicPage() {
                   key={type.id}
                   lodge={lodge}
                   type={type}
-                  checkInDate={validDateRange ? checkInDate : null}
-                  checkOutDate={validDateRange ? checkOutDate : null}
                   onOpenPhotos={openLightbox}
+                  onEnquireRoom={openRoomEnquire}
                 />
               ))}
             </div>
@@ -926,7 +1253,7 @@ export default function LodgePublicPage() {
           </div>
           <div className="lodge-public__room-grid">
             {venues.map((venue) => (
-              <VenueCard key={venue.id} lodge={lodge} venue={venue} onOpenPhotos={openLightbox} />
+              <VenueCard key={venue.id} lodge={lodge} venue={venue} onOpenPhotos={openLightbox} onEnquireEvent={openEventEnquire} />
             ))}
           </div>
           <AddonStrip addons={addons} />
@@ -1033,6 +1360,20 @@ export default function LodgePublicPage() {
           <span>Rates are indicative and confirmed on enquiry.</span>
         </div>
       </footer>
+
+      {enquireModal && (
+        <EnquireModal
+          lodge={lodge}
+          roomTypes={roomTypes}
+          roomAddons={roomAddons}
+          venues={venues}
+          eventAddons={addons}
+          menuAvailable={menuAvailable}
+          initial={enquireModal}
+          onClose={closeEnquireModal}
+          onViewMenu={jumpToMenu}
+        />
+      )}
 
       {lightbox && (
         <div className="lodge-public__lightbox" onClick={closeLightbox}>
