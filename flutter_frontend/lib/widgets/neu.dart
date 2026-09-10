@@ -262,6 +262,12 @@ class NeuField extends StatefulWidget {
   /// omitted, the field manages its own.
   final FocusNode? focusNode;
 
+  /// How the field capitalizes what's typed. When omitted, it's inferred
+  /// from [obscure]/[keyboardType] so plain text fields capitalize the
+  /// first letter by default, while passwords, emails, phone and numeric
+  /// fields are left untouched.
+  final TextCapitalization? textCapitalization;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -278,6 +284,7 @@ class NeuField extends StatefulWidget {
     this.suffix,
     this.labelAction,
     this.focusNode,
+    this.textCapitalization,
   });
 
   @override
@@ -289,6 +296,23 @@ class _NeuFieldState extends State<NeuField> {
   bool _focused = false;
 
   FocusNode get _node => widget.focusNode ?? (_ownNode ??= FocusNode());
+
+  static const _noCapitalizationTypes = [
+    'emailAddress',
+    'number',
+    'phone',
+    'url',
+    'visiblePassword',
+  ];
+
+  TextCapitalization get _defaultCapitalization {
+    if (widget.obscure) return TextCapitalization.none;
+    final type = widget.keyboardType;
+    if (type != null && _noCapitalizationTypes.any((name) => type.toString().contains(name))) {
+      return TextCapitalization.none;
+    }
+    return TextCapitalization.sentences;
+  }
 
   @override
   void initState() {
@@ -352,6 +376,7 @@ class _NeuFieldState extends State<NeuField> {
                   focusNode: _node,
                   obscureText: widget.obscure,
                   keyboardType: widget.keyboardType,
+                  textCapitalization: widget.textCapitalization ?? _defaultCapitalization,
                   maxLength: widget.maxLength,
                   readOnly: widget.readOnly,
                   onTap: widget.onTap,

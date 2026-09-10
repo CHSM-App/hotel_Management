@@ -282,23 +282,27 @@ class ChartRoom {
   /// compared as whole days, never as instants.
   ///
   /// The room a booking occupies is not always exactly `[checkInDate,
-  /// checkOutDate)` — the same two adjustments the web tape chart's own
-  /// occupancy map makes:
-  ///  - A guest still CHECKED_IN past their sold checkout date has not given
-  ///    the room back. It reads as occupied through tonight, not vacant from
-  ///    the date they were meant to leave, until an actual checkout happens.
+  /// checkOutDate)` — the same adjustment the web tape chart's own tile
+  /// renderer makes:
   ///  - A CHECKED_OUT stay holds no night from today on, even if it was sold
   ///    further — someone who left early should not still tint nights they
   ///    never used.
   ///
-  /// Where two stays both technically claim a night — an old booking nobody
-  /// ever checked out stretched, by the rule above, across a gap a newer
-  /// booking now legitimately occupies — the later one in [stays] wins, the
-  /// same way the web tape chart's own occupancy map does: it writes one
-  /// booking per day into a map in server order, so whichever booking is
-  /// listed later simply overwrites the earlier one's claim on a shared
-  /// night. The last match here is that same overwrite, without building a
-  /// map of its own.
+  /// An overdue CHECKED_IN guest (past their sold checkout date but not yet
+  /// checked out) is *not* drawn past that date either: the web tape chart
+  /// only extends such a stay in its internal occupancy map (to block new
+  /// bookings on those nights), but its rendered tile stops at the original
+  /// checkOutDate regardless. Since this method only feeds the visible tile
+  /// here, it mirrors that render-time cutoff rather than the occupancy-map
+  /// extension.
+  ///
+  /// Where two stays both technically claim a night — a newer booking placed
+  /// into a room whose prior stay hasn't been checked out yet — the later one
+  /// in [stays] wins, the same way the web tape chart's own occupancy map
+  /// does: it writes one booking per day into a map in server order, so
+  /// whichever booking is listed later simply overwrites the earlier one's
+  /// claim on a shared night. The last match here is that same overwrite,
+  /// without building a map of its own.
   TapeChartBooking? stayOn(DateTime day) {
     final today = _today();
     TapeChartBooking? found;
@@ -306,9 +310,6 @@ class ChartRoom {
       final inDate = DateTime.tryParse(b.checkInDate ?? '');
       var outDate = DateTime.tryParse(b.checkOutDate ?? '');
       if (inDate == null || outDate == null) continue;
-      if (b.status == 'CHECKED_IN' && !outDate.isAfter(today)) {
-        outDate = today.add(const Duration(days: 1));
-      }
       if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
         outDate = today;
       }

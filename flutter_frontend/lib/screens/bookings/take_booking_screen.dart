@@ -344,7 +344,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     if (_editing) {
       booking = await vm.updateBooking(
         bookingId: widget.editBooking!.id,
-        guestName: _name.text,
+        guestName: capitalizeWords(_name.text),
         guestPhone: phone,
         numGuests: 1 + _guests.length,
         idProofType: _idProofType,
@@ -358,7 +358,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       // payment.
       final paid = _advance.where((l) => l.value > 0).toList();
       booking = await vm.submit(
-        guestName: _name.text,
+        guestName: capitalizeWords(_name.text),
         guestPhone: phone,
         // The party is whoever was named, not a number typed separately and
         // then contradicted.
@@ -380,7 +380,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     // only — an edit returns straight to the stay that was being corrected,
     // which already shows what the save produced.
     if (!_editing) {
-      await _showBookingSaved(booking);
+      final paid = _advance.where((l) => l.value > 0).toList();
+      await _showBookingSaved(
+        booking,
+        advance: sumPayments(paid),
+        advanceMethod: paid.isNotEmpty ? paid.first.method : null,
+      );
       return;
     }
     Navigator.of(context).pop(true);
@@ -392,11 +397,17 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     );
   }
 
-  Future<void> _showBookingSaved(Booking booking) async {
+  Future<void> _showBookingSaved(
+    Booking booking, {
+    required num advance,
+    required String? advanceMethod,
+  }) async {
     final action = await showDialog<String>(
       context: context,
       builder: (dialogContext) => _BookingSavedDialog(
         booking: booking,
+        advance: advance,
+        advanceMethod: advanceMethod,
         onPrintReceipt: () => Navigator.of(dialogContext).pop('print'),
         onDone: () => Navigator.of(dialogContext).pop('done'),
       ),
@@ -857,18 +868,34 @@ class _SectionDivider extends StatelessWidget {
 /// to find the stay again from the list for the receipt a guest is waiting on.
 class _BookingSavedDialog extends StatelessWidget {
   final Booking booking;
+
+  /// What the desk actually typed into the advance rows, not what the
+  /// server's own round trip echoed back.
+  ///
+  /// A walk-in is created and then immediately checked in with an empty
+  /// second request (see [BookingViewModel.submit]), and it is that second
+  /// response this dialog would otherwise read from — which, for reasons
+  /// that don't matter here, doesn't reliably carry the advance back for
+  /// every payment method the same way. The desk just told this screen what
+  /// it took and how, so there is nothing to gain from asking the server to
+  /// confirm it back before deciding whether to offer the receipt: the
+  /// website's own confirmation card skips that round trip the same way.
+  final num advance;
+  final String? advanceMethod;
+
   final VoidCallback onPrintReceipt;
   final VoidCallback onDone;
 
   const _BookingSavedDialog({
     required this.booking,
+    required this.advance,
+    required this.advanceMethod,
     required this.onPrintReceipt,
     required this.onDone,
   });
 
   @override
   Widget build(BuildContext context) {
-    final advance = booking.advanceAmount ?? 0;
     final paidInFull =
         booking.totalPrice != null && (booking.totalPrice! - advance).abs() < 0.01;
 
@@ -916,7 +943,7 @@ class _BookingSavedDialog extends StatelessWidget {
               advance > 0
                   ? '${paidInFull ? 'Full payment of' : 'Advance of'} '
                         '${formatPrice(advance)}'
-                        '${booking.advancePaymentMethod != null ? ' by ${booking.advancePaymentMethod!.toLowerCase()}' : ''} '
+                        '${advanceMethod != null ? ' by ${advanceMethod!.toLowerCase()}' : ''} '
                         'taken — its receipt has been issued automatically.'
                   : 'No advance was taken, so there is nothing to receipt yet.',
               style: const TextStyle(color: AppTheme.muted, fontSize: 12),
@@ -928,7 +955,7 @@ class _BookingSavedDialog extends StatelessWidget {
                 primary: true,
                 expand: true,
                 onPressed: onPrintReceipt,
-                child: const Text('Print advance receipt'),
+                child: const Text('Advance receipt'),
               ),
               const SizedBox(height: AppTheme.s8),
             ],

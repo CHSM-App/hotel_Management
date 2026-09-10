@@ -28,7 +28,22 @@ class BillingState {
   /// How the balance is being tendered. One row is the ordinary case.
   final List<PaymentDraft> payment;
 
+  /// Whether the desk has actually edited a payment row — chosen a method,
+  /// typed an amount, added or removed a row. Until then the single row
+  /// keeps tracking the balance due as it moves (a discount typed after the
+  /// row was seeded must still land in it), the same way the web screen's
+  /// own row stays derived from the balance until the desk touches it.
+  final bool paymentTouched;
+
   final bool issuing;
+
+  /// A discount the desk gives on a CYCLE stay, in rupees, as typed. Kept as
+  /// the typed string; the server caps the amount and solves the document.
+  /// Empty means nothing off — the bill prices every night that was booked.
+  final String discountInput;
+
+  /// The reason printed beside the discount on the bill.
+  final String discountReason;
 
   const BillingState({
     this.queue = const AsyncValue.loading(),
@@ -39,7 +54,10 @@ class BillingState {
     this.error,
     this.includeLateCheckout = true,
     this.payment = const [],
+    this.paymentTouched = false,
     this.issuing = false,
+    this.discountInput = '',
+    this.discountReason = '',
   });
 
   BillingState copyWith({
@@ -54,7 +72,10 @@ class BillingState {
     bool clearError = false,
     bool? includeLateCheckout,
     List<PaymentDraft>? payment,
+    bool? paymentTouched,
     bool? issuing,
+    String? discountInput,
+    String? discountReason,
   }) => BillingState(
     queue: queue ?? this.queue,
     invoices: invoices ?? this.invoices,
@@ -64,11 +85,28 @@ class BillingState {
     error: clearError ? null : (error ?? this.error),
     includeLateCheckout: includeLateCheckout ?? this.includeLateCheckout,
     payment: payment ?? this.payment,
+    paymentTouched: paymentTouched ?? this.paymentTouched,
     issuing: issuing ?? this.issuing,
+    discountInput: discountInput ?? this.discountInput,
+    discountReason: discountReason ?? this.discountReason,
   );
+
+  /// Only a cycle property discounts here: on the other two modes the bill is
+  /// what the stay costs and any concession is settled through what the
+  /// guest hands over.
+  bool get isCycleStay => preview?.checkinMode == 'CYCLE';
+
+  /// The typed discount, as money. Never sent as a percentage — the server
+  /// re-derives that, so the two can't disagree on the document.
+  num get cycleDiscount => num.tryParse(discountInput) ?? 0;
 
   /// What the guest owes on the bill as it currently stands.
   num get balanceDue => preview?.balanceDue ?? 0;
+
+  /// A stay paid in full up front. The bill still has to be issued — it is
+  /// the tax document — but there is no money changing hands at the desk, so
+  /// nothing about a payment is asked for: no rows, no method.
+  bool get nothingDue => (balanceDue * 100).round() <= 0;
 
   /// What the rows add up to.
   num get collected => sumPayments(payment.where((p) => p.value > 0).toList());
@@ -87,8 +125,19 @@ class BillingState {
   /// recorded equals it.
   String? get settlementProblem {
     if (preview == null) return null;
+    // Nothing to reconcile against when the advance already covers the bill
+    // — there is no payment to enter, so there is nothing to be wrong.
+    if (nothingDue) return null;
     final rows = payment.where((p) => p.value > 0).toList();
     if (rows.isNotEmpty) {
+      // Worded the way the web screen's own rows are — one row missing its
+      // method reads as the whole payment being unset, and a split missing
+      // one reads as the part of it that still needs an answer.
+      if (rows.any((p) => p.method == null)) {
+        return rows.length == 1
+            ? 'Choose how the guest paid to issue this bill.'
+            : 'Choose how each part was paid to issue this bill.';
+      }
       final problem = paymentLinesError(rows);
       if (problem != null) return problem;
     }
@@ -136,6 +185,9 @@ class BillingViewModel extends StateNotifier<BillingState> {
       // and nothing else. The desk collects exactly what is owed on almost
       // every bill.
       payment: [PaymentDraft()],
+      paymentTouched: false,
+      discountInput: '',
+      discountReason: '',
     );
     await refreshPreview();
   }
@@ -145,11 +197,15 @@ class BillingViewModel extends StateNotifier<BillingState> {
     clearPreview: true,
     clearError: true,
     payment: const [],
+    paymentTouched: false,
+    discountInput: '',
+    discountReason: '',
   );
 
-  /// Re-price. Only the overstay decision moves this — adding that charge can
-  /// push a night into a different GST band and change the rounding, so the
-  /// whole document is re-derived rather than adjusted here.
+  /// Re-price. Only the overstay decision and the discount move this — adding
+  /// the overstay charge can push a night into a different GST band and
+  /// change the rounding, and a discount changes what the tax is charged on,
+  /// so the whole document is re-derived rather than adjusted here.
   Future<void> refreshPreview() async {
     final stay = state.target;
     if (stay == null) return;
@@ -159,14 +215,17 @@ class BillingViewModel extends StateNotifier<BillingState> {
       final preview = await usecase.preview(
         stay.id,
         includeLateCheckout: state.includeLateCheckout,
+        discountAmount: state.cycleDiscount,
+        discountReason: state.discountReason,
       );
       final rows = state.payment.isEmpty
           ? <PaymentDraft>[PaymentDraft()]
           : state.payment;
-      // Seed the single untouched row with the balance due. Only while the
-      // desk has not typed anything, or a refetch would overwrite what is
-      // being entered.
-      if (rows.length == 1 && rows.first.amount.trim().isEmpty) {
+      // Keep the single untouched row tracking the balance due. Only while
+      // the desk has not actually edited a row — a discount typed after the
+      // row was first seeded must still move it, the same way the web
+      // screen's own row stays derived from the balance until touched.
+      if (rows.length == 1 && !state.paymentTouched) {
         rows.first.amount = preview.balanceDue > 0
             ? '${preview.balanceDue}'
             : '';
@@ -189,16 +248,39 @@ class BillingViewModel extends StateNotifier<BillingState> {
     await refreshPreview();
   }
 
-  void addPaymentRow() =>
-      state = state.copyWith(payment: [...state.payment, PaymentDraft()]);
+  /// Set the discount amount and re-price. Clearing it also clears the
+  /// reason — an empty amount is charging in full, and a reason with no
+  /// discount behind it would print beside nothing.
+  Future<void> setDiscount(String amount) async {
+    state = state.copyWith(
+      discountInput: amount,
+      discountReason: amount.trim().isEmpty ? '' : state.discountReason,
+    );
+    await refreshPreview();
+  }
+
+  Future<void> setDiscountReason(String reason) async {
+    state = state.copyWith(discountReason: reason);
+    await refreshPreview();
+  }
+
+  void addPaymentRow() => state = state.copyWith(
+    payment: [...state.payment, PaymentDraft()],
+    paymentTouched: true,
+  );
 
   void removePaymentRow(int index) {
     final next = List.of(state.payment)..removeAt(index);
-    state = state.copyWith(payment: next);
+    state = state.copyWith(payment: next, paymentTouched: true);
   }
 
-  /// Nudge listeners after a row is edited in place.
-  void touch() => state = state.copyWith(payment: List.of(state.payment));
+  /// Nudge listeners after a row is edited in place — a method chosen, an
+  /// amount typed. Marks the row as the desk's own from here on, so a
+  /// discount added afterwards no longer overwrites what was typed.
+  void touch() => state = state.copyWith(
+    payment: List.of(state.payment),
+    paymentTouched: true,
+  );
 
   /// Cut the bill.
   ///
@@ -224,6 +306,8 @@ class BillingViewModel extends StateNotifier<BillingState> {
         // What the server itself worked out, read back off the preview rather
         // than recomputed — the two must not be able to disagree.
         'discountAmount': preview.amounts?.discountAmount ?? 0,
+        if (state.cycleDiscount > 0 && state.discountReason.trim().isNotEmpty)
+          'discountReason': state.discountReason.trim(),
         'includeLateCheckout': state.includeLateCheckout,
         'collectedAmount': state.collected,
         if (rows.isNotEmpty) ...{

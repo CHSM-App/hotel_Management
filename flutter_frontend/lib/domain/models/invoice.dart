@@ -118,6 +118,32 @@ class BillLine {
   );
 }
 
+/// A CYCLE guest who left before the nights they booked ran out.
+///
+/// The bill still carries every night that was sold; this is what the desk
+/// reads to decide whether to give the unused ones back as a discount. Null
+/// on every other checkin mode, and whenever nothing was left unused.
+class EarlyCheckout {
+  final int plannedNights;
+  final int actualNights;
+  final int unusedNights;
+  final num unusedAmount;
+
+  const EarlyCheckout({
+    required this.plannedNights,
+    required this.actualNights,
+    required this.unusedNights,
+    required this.unusedAmount,
+  });
+
+  factory EarlyCheckout.fromJson(Map<String, dynamic> json) => EarlyCheckout(
+    plannedNights: asInt(json['plannedNights']),
+    actualNights: asInt(json['actualNights']),
+    unusedNights: asInt(json['unusedNights']),
+    unusedAmount: asNum(json['unusedAmount']),
+  );
+}
+
 /// What the bill will say, before it is issued.
 class BillPreview {
   final int? bookingId;
@@ -134,10 +160,20 @@ class BillPreview {
   final bool isGstRegistered;
   final BillSide? gst;
   final BillSide? nonGst;
+  final EarlyCheckout? earlyCheckout;
 
   /// True once a bill has already been issued for this stay. Issuing again
   /// would burn a second serial on one stay, so the screen shuts instead.
   final bool alreadyInvoiced;
+
+  /// How this stay is checked in. A discount is only ever entered here on a
+  /// CYCLE property — on the other two modes the bill is what the stay costs
+  /// and any concession is settled through what the guest hands over.
+  final String? checkinMode;
+
+  /// Everything on this bill before tax and before anything comes off it —
+  /// the figure a percentage discount is a percentage *of*.
+  final num discountBase;
 
   const BillPreview({
     this.bookingId,
@@ -154,7 +190,10 @@ class BillPreview {
     this.isGstRegistered = false,
     this.gst,
     this.nonGst,
+    this.earlyCheckout,
     this.alreadyInvoiced = false,
+    this.checkinMode,
+    this.discountBase = 0,
   });
 
   factory BillPreview.fromJson(Map<String, dynamic> json) => BillPreview(
@@ -180,7 +219,14 @@ class BillPreview {
     nonGst: json['nonGst'] == null
         ? null
         : BillSide.fromJson(json['nonGst'] as Map<String, dynamic>),
+    earlyCheckout: json['earlyCheckout'] == null
+        ? null
+        : EarlyCheckout.fromJson(json['earlyCheckout'] as Map<String, dynamic>),
     alreadyInvoiced: asBool(json['alreadyInvoiced']),
+    checkinMode: asStringOrNull(
+      (json['document'] as Map<String, dynamic>?)?['checkinMode'],
+    ),
+    discountBase: asNum(json['discountBase']),
   );
 
   /// Which side is actually issued.

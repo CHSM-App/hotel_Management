@@ -337,7 +337,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                               boxShadow: AppTheme.subtle,
                             ),
                             child: SizedBox(
-                              height: MediaQuery.of(context).size.height * 0.85,
+                              height: MediaQuery.of(context).size.height * 0.55,
                               child: PdfPreview(
                                 key: ValueKey('${shown.id}-$_paperId'),
                                 build: (format) => AdvanceReceiptPdf.build(
@@ -368,34 +368,58 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                           ),
                           child: NeuCard(
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    _IconAction(
-                                      icon: Icons.download_rounded,
-                                      label: 'Download',
-                                      filled: true,
-                                      busy: _pdfBusy,
-                                      onPressed: () => _runPdfAction(() async {
-                                        final where =
-                                            await AdvanceReceiptPdf.download(
-                                              shown,
-                                              paperId: _paperId,
-                                            );
-                                        if (!mounted) return;
-                                        _say('Saved to $where');
-                                      }),
+                                    const Icon(
+                                      Icons.ios_share_rounded,
+                                      size: 15,
+                                      color: AppTheme.muted,
                                     ),
-                                    const SizedBox(width: AppTheme.s16),
-                                    _IconAction(
-                                      icon: Icons.share_rounded,
-                                      label: 'Share',
-                                      busy: _pdfBusy,
-                                      onPressed: () => _runPdfAction(
-                                        () => AdvanceReceiptPdf.share(
-                                          shown,
-                                          paperId: _paperId,
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Share this receipt',
+                                      style: const TextStyle(
+                                        color: AppTheme.muted,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: AppTheme.s12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _ReceiptActionButton(
+                                        icon: Icons.download_rounded,
+                                        label: 'Download',
+                                        filled: true,
+                                        busy: _pdfBusy,
+                                        onPressed: () =>
+                                            _runPdfAction(() async {
+                                          final where =
+                                              await AdvanceReceiptPdf.download(
+                                            shown,
+                                            paperId: _paperId,
+                                          );
+                                          if (!mounted) return;
+                                          _say('Saved to $where');
+                                        }),
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppTheme.s12),
+                                    Expanded(
+                                      child: _ReceiptActionButton(
+                                        icon: Icons.share_rounded,
+                                        label: 'Share',
+                                        busy: _pdfBusy,
+                                        onPressed: () => _runPdfAction(
+                                          () => AdvanceReceiptPdf.share(
+                                            shown,
+                                            paperId: _paperId,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -803,18 +827,19 @@ class _MoneyStat extends StatelessWidget {
   }
 }
 
-/// One of the three ways to hand the receipt off the phone — a circular
-/// icon button with its own label underneath, the way the web modal's own
-/// print/download/share row reads at a glance without needing text buttons
-/// wide enough to spell each one out.
-class _IconAction extends StatelessWidget {
+/// One of the two ways to hand the receipt off the phone — a full-width
+/// pill button with icon and label side by side, the primary ([filled])
+/// action reading as an accent-filled call to action and the other as its
+/// quieter outlined companion, so the pair reads as one deliberate choice
+/// rather than two small icon taps guessed at by their glyph alone.
+class _ReceiptActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool busy;
   final bool filled;
   final VoidCallback onPressed;
 
-  const _IconAction({
+  const _ReceiptActionButton({
     required this.icon,
     required this.label,
     required this.busy,
@@ -824,43 +849,58 @@ class _IconAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkResponse(
-          onTap: busy ? null : onPressed,
-          radius: 26,
-          child: Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: filled ? AppTheme.accent : AppTheme.card,
-              shape: BoxShape.circle,
-              border: filled ? null : Border.all(color: AppTheme.border),
-            ),
-            child: busy
-                ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: filled ? Colors.white : AppTheme.accent,
+    return Material(
+      color: filled ? AppTheme.accent : AppTheme.card,
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        onTap: busy ? null : onPressed,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            border: filled ? null : Border.all(color: AppTheme.border),
+            boxShadow: filled
+                ? [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.28),
+                      offset: const Offset(0, 6),
+                      blurRadius: 14,
                     ),
-                  )
-                : Icon(
-                    icon,
-                    size: 20,
-                    color: filled ? Colors.white : AppTheme.text,
+                  ]
+                : null,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (busy)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: filled ? Colors.white : AppTheme.accent,
                   ),
+                )
+              else
+                Icon(
+                  icon,
+                  size: 18,
+                  color: filled ? Colors.white : AppTheme.accent,
+                ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: filled ? Colors.white : AppTheme.heading,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-        ),
-      ],
+      ),
     );
   }
 }

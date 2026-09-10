@@ -281,10 +281,18 @@ class ApiService {
   Future<BillPreview> previewBill(
     int bookingId, {
     bool includeLateCheckout = true,
+    num discountAmount = 0,
+    String? discountReason,
   }) async {
     final res = await _dio.get(
       '/billing/bookings/$bookingId/preview',
-      queryParameters: {'includeLateCheckout': includeLateCheckout},
+      queryParameters: {
+        'includeLateCheckout': includeLateCheckout,
+        if (discountAmount > 0) ...{
+          'discountAmount': discountAmount,
+          'discountReason': (discountReason ?? '').trim(),
+        },
+      },
     );
     return BillPreview.fromJson(_map(res.data));
   }
