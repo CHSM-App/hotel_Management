@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 
 import '../../domain/models/invoice.dart';
 import 'receipt_download.dart';
+import 'receipt_share.dart';
 
 /// The stock this receipt can print onto — the same table the web app's own
 /// paper picker offers (billPaper.js), so a desk that has learned the sizes
@@ -78,7 +79,16 @@ class AdvanceReceiptPdf {
       RegExp(r'[\\/]'),
       '-',
     );
-    return Printing.sharePdf(bytes: bytes, filename: '$safe.pdf');
+    await shareBytesFromDevice(bytes, '$safe.pdf');
+    return true;
+  }
+
+  /// Hand the finished file straight to the OS print dialog, distinct from
+  /// [share] and [download] — the desk's third way to get the receipt off
+  /// the phone.
+  static Future<void> print(AdvanceReceipt receipt, {String paperId = ReceiptPaperSize.defaultId}) async {
+    final bytes = await build(receipt, paperId: paperId);
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
   /// Save the file to the device itself — a real download, distinct from
@@ -142,42 +152,71 @@ class AdvanceReceiptPdf {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          pw.Center(
-            child: pw.Text(
-              _ascii(_docLabel[r.documentType] ?? 'Advance Receipt'),
-              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Center(
-            child: pw.Text(
-              _ascii(r.lodgeName ?? ''),
-              style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
-            ),
+          // The masthead, laid out the same way the website's own
+          // `AdvanceReceiptDocument` does: the phone numbers pinned to the
+          // top-right corner rather than sitting in the reading flow, the
+          // property's name the dominant line, and no GSTIN line here — the
+          // GSTIN only ever appears against "Place of Supply" further down,
+          // never repeated in the masthead itself.
+          pw.Stack(
+            children: [
+              pw.Column(
+                children: [
+                  pw.Center(
+                    child: pw.Text(
+                      _ascii(_docLabel[r.documentType] ?? 'Advance Receipt'),
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 3),
+                  pw.Center(
+                    child: pw.Text(
+                      _ascii((r.lodgeName ?? '').toUpperCase()),
+                      style: pw.TextStyle(
+                        fontSize: 20,
+                        fontWeight: pw.FontWeight.bold,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (r.lodgePhone != null)
+                pw.Positioned(
+                  right: 0,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      for (final p in r.lodgePhone!.split(RegExp('[,/]')))
+                        if (p.trim().isNotEmpty)
+                          pw.Text(
+                            _ascii('Mob. ${p.trim()}'),
+                            style: const pw.TextStyle(fontSize: 6.5),
+                          ),
+                    ],
+                  ),
+                ),
+            ],
           ),
           if (r.lodgeAddress != null)
-            pw.Center(
-              child: pw.Text(
-                _ascii(
-                  [r.lodgeAddress, r.lodgeCity, r.lodgeState]
-                      .whereType<String>()
-                      .join(', '),
+            pw.Container(
+              margin: const pw.EdgeInsets.only(top: 3),
+              padding: const pw.EdgeInsets.only(top: 2),
+              decoration: const pw.BoxDecoration(
+                border: pw.Border(top: pw.BorderSide(width: 0.4)),
+              ),
+              child: pw.Center(
+                child: pw.Text(
+                  _ascii(
+                    [r.lodgeAddress, r.lodgeCity, r.lodgeState]
+                        .whereType<String>()
+                        .join(', '),
+                  ),
+                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
                 ),
-                style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
-              ),
-            ),
-          if (r.lodgePhone != null)
-            pw.Center(
-              child: pw.Text(
-                _ascii('Mob. ${r.lodgePhone}'),
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-            ),
-          if (isGst && r.gstin != null)
-            pw.Center(
-              child: pw.Text(
-                _ascii('GSTIN No. ${r.gstin}'),
-                style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
               ),
             ),
 
@@ -275,12 +314,15 @@ class AdvanceReceiptPdf {
             ),
 
           pw.SizedBox(height: 6),
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8)),
-            child: pw.Text(
-              _ascii(_amountBoxed(r.amountReceived)),
-              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+          pw.Align(
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8)),
+              child: pw.Text(
+                _ascii(_amountBoxed(r.amountReceived)),
+                style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+              ),
             ),
           ),
 

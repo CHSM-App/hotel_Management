@@ -740,28 +740,43 @@ class _Footer extends StatelessWidget {
                   ),
           ),
           const SizedBox(width: AppTheme.s12),
-          NeuButton(
-            onPressed: submitting ? null : onCancel,
-            child: const Text('Cancel'),
-          ),
-          const SizedBox(width: AppTheme.s8),
-          NeuButton(
-            primary: true,
-            onPressed: submitting ? null : onSubmit,
-            child: submitting
-                ? const SizedBox(
-                    height: 16,
-                    width: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                      SizedBox(width: 4),
-                      Text('Add room'),
-                    ],
+          // Cancel and Add room ride together in one FittedBox so a narrow
+          // screen shrinks the pair as a unit — rather than the Row running
+          // out of width and clipping them, or NeuButton's own text wrapping
+          // one letter per line.
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  NeuButton(
+                    onPressed: submitting ? null : onCancel,
+                    child: const Text('Cancel'),
                   ),
+                  const SizedBox(width: AppTheme.s8),
+                  NeuButton(
+                    primary: true,
+                    onPressed: submitting ? null : onSubmit,
+                    child: submitting
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                              SizedBox(width: 4),
+                              Text('Add room'),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

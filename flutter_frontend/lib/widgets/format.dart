@@ -39,6 +39,19 @@ String formatFloor(String? floor) {
   return f;
 }
 
+/// "raJESH kumar" → "Rajesh Kumar" — names are stored as typed, and the desk
+/// doesn't reliably hit shift, so this is what actually makes the register
+/// and tape chart read as capitalized rather than the on-screen keyboard's
+/// capitalize-next-letter hint (which never touches the saved text).
+String capitalizeWords(String? s) {
+  final value = (s ?? '').trim();
+  if (value.isEmpty) return value;
+  return value
+      .split(RegExp(r'\s+'))
+      .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1).toLowerCase())
+      .join(' ');
+}
+
 /// When something actually happened, not just which night it was booked
 /// against — "27 Aug, 4:10 pm" for an actual check-in or check-out instant,
 /// the same precision `formatIsoDate` deliberately drops for a plain date.

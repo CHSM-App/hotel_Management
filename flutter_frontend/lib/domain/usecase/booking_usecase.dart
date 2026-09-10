@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/booking.dart';
+import '../models/draft.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
@@ -88,4 +89,21 @@ class BookingUsecase {
   /// cancelled; the server answers 409 for anything further along.
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
       repository.cancel(id, body);
+
+  /// Every parked booking on this property.
+  Future<List<BookingDraft>> drafts() => repository.drafts();
+
+  /// One parked booking, in full — its form, for reopening it.
+  Future<BookingDraft> draft(int id) => repository.draft(id);
+
+  /// Park a new booking form.
+  Future<BookingDraft> createDraft(Map<String, dynamic> form) =>
+      repository.createDraft(form);
+
+  /// Update a parked booking form already on file.
+  Future<BookingDraft> updateDraft(int id, Map<String, dynamic> form) =>
+      repository.updateDraft(id, form);
+
+  /// Throw away a parked booking form.
+  Future<void> deleteDraft(int id) => repository.deleteDraft(id);
 }

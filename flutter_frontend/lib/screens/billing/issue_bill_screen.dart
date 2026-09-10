@@ -8,6 +8,7 @@ import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'bill_receipt_screen.dart';
 
 /// The bill itself: what it says, and what the guest handed over.
 ///
@@ -216,14 +217,44 @@ class _Body extends ConsumerWidget {
           ),
         ],
 
+        // ── The guest who left early ────────────────────────────────────────
+        // Only ever set on a CYCLE stay: the bill still carries every night
+        // that was sold, and this is where the desk decides whether to give
+        // the unused ones back. It fills the discount below.
+        if (preview.earlyCheckout != null) ...[
+          const SizedBox(height: AppTheme.s16),
+          _EarlyCheckoutNotice(state: state, earlyCheckout: preview.earlyCheckout!),
+        ],
+
+        // ── The discount ─────────────────────────────────────────────────────
+        // Only a cycle property discounts here: on the other two modes the
+        // bill is what the stay costs and any concession is settled through
+        // what the guest hands over.
+        if (state.isCycleStay) ...[
+          const SizedBox(height: AppTheme.s16),
+          _DiscountSection(state: state),
+        ],
+
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s24),
         Text(
-          'Balance collected',
+          'Record how the guest paid',
           style: Theme.of(context).textTheme.titleMedium,
         ),
+        const SizedBox(height: AppTheme.s4),
+        Text(
+          state.nothingDue
+              ? 'The advance already covers this bill. Nothing is left to '
+                    'collect — issue it as it stands.'
+              : '${formatPrice(state.balanceDue)} is due. Choose the payment '
+                    'type for each amount taken.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const SizedBox(height: AppTheme.s12),
-        _PaymentRows(state: state),
+        // No rows at all when nothing is due — the desk has nothing to
+        // record, and a set of payment rows sitting empty under a line
+        // saying there is nothing to collect is a form contradicting itself.
+        if (!state.nothingDue) _PaymentRows(state: state),
 
         const SizedBox(height: AppTheme.s24),
         if (state.error != null) ...[
@@ -245,28 +276,112 @@ class _Body extends ConsumerWidget {
                   // Both taken before the await: after the pop this route's
                   // context is defunct, and reading a messenger or a navigator
                   // off it then is reading from a page that no longer exists.
-                  final messenger = ScaffoldMessenger.of(context);
                   final navigator = Navigator.of(context);
+                  final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
 
                   final invoice = await vm.issue();
                   // A failure keeps the page open with the reason on it —
                   // there is nothing to go back to, the bill is not cut.
                   if (invoice == null) return;
 
-                  // The bill exists and the desk is done with this page. It
-                  // closes first, then says so, so the confirmation lands on
-                  // the list rather than on a page that is leaving.
-                  vm.close();
-                  navigator.pop();
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
-                        '${invoice.invoiceNumber ?? ''} issued.',
+                  // The bill exists; the desk chooses whether to look at the
+                  // receipt now or just get back to the queue.
+                  if (!context.mounted) return;
+                  final wantsReceipt = await showDialog<bool>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => Dialog(
+                      backgroundColor: AppTheme.bg,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.rLarge),
                       ),
-                      backgroundColor: AppTheme.heading,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.s24,
+                          AppTheme.s24,
+                          AppTheme.s24,
+                          AppTheme.s16,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: AppTheme.vacant.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppTheme.vacant,
+                                size: 32,
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s16),
+                            Text(
+                              '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
+                              '${invoice.invoiceNumber ?? ''} issued',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppTheme.heading,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s8),
+                            const Text(
+                              'The bill is cut. Open the receipt now, or '
+                              'head back to the billing list.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s24),
+                            NeuButton(
+                              primary: true,
+                              expand: true,
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text('Receipt'),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s8),
+                            NeuButton(
+                              expand: true,
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Done'),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   );
+
+                  vm.close();
+                  navigator.pop();
+
+                  if (wantsReceipt == true) {
+                    navigator.push(
+                      MaterialPageRoute(
+                        builder: (_) => BillReceiptScreen(
+                          invoice: invoice,
+                          lodgeName: lodgeName,
+                        ),
+                      ),
+                    );
+                  }
                 },
           child: state.issuing
               ? const SizedBox(
@@ -327,6 +442,250 @@ class _Row extends StatelessWidget {
               fontSize: strong ? 16 : 13,
               fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── The guest who left early ────────────────────────────────────────────────
+
+/// The reason printed on the bill when the discount below comes from this
+/// notice rather than being typed in directly — matching the web screen's own
+/// so a bill reads the same regardless of which one wrote it.
+const _kEarlyDiscountReason = 'Leaving early';
+
+/// The unused-nights banner for a CYCLE guest who checked out before their
+/// booked nights ran out. It shares the same discount fields the section
+/// below writes to — typing here just fills those in with this reason.
+class _EarlyCheckoutNotice extends ConsumerStatefulWidget {
+  final BillingState state;
+  final EarlyCheckout earlyCheckout;
+
+  const _EarlyCheckoutNotice({required this.state, required this.earlyCheckout});
+
+  @override
+  ConsumerState<_EarlyCheckoutNotice> createState() => _EarlyCheckoutNoticeState();
+}
+
+class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
+  late final _amount = TextEditingController(text: _reducing ? widget.state.discountInput : '');
+
+  bool get _reducing => widget.state.discountReason == _kEarlyDiscountReason;
+
+  @override
+  void didUpdateWidget(covariant _EarlyCheckoutNotice old) {
+    super.didUpdateWidget(old);
+    final text = _reducing ? widget.state.discountInput : '';
+    if (_amount.text != text) _amount.text = text;
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = ref.read(billingViewModelProvider.notifier);
+    final early = widget.earlyCheckout;
+    final reducing = _reducing;
+    final discountAmount = widget.state.preview?.amounts?.discountAmount ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s16),
+      decoration: BoxDecoration(
+        color: AppTheme.checkout.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.checkout.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: AppTheme.checkout, size: 20),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Guest left early',
+                      style: TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Stayed ${early.actualNights} of ${early.plannedNights} '
+                      '${early.plannedNights == 1 ? 'night' : 'nights'} booked · '
+                      '${early.unusedNights} ${early.unusedNights == 1 ? 'night' : 'nights'} unused',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                formatPrice(early.unusedAmount),
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Early-leaving discount',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const Text(
+                      'Leave blank to charge in full',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              SizedBox(
+                width: 110,
+                child: NeuPressed(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                  child: TextField(
+                    controller: _amount,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.right,
+                    onChanged: (v) {
+                      vm.setDiscount(v);
+                      vm.setDiscountReason(v.trim().isEmpty ? '' : _kEarlyDiscountReason);
+                    },
+                    style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                    decoration: const InputDecoration(
+                      prefixText: '₹ ',
+                      hintText: '0',
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Text(
+            reducing && widget.state.cycleDiscount > 0
+                ? '${formatPrice(discountAmount)} off · printed on the bill as '
+                      '"Discount – $_kEarlyDiscountReason"'
+                : 'Charging in full · all ${early.plannedNights} booked nights',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── The discount ─────────────────────────────────────────────────────────
+
+/// A discount the desk gives on a CYCLE stay, in rupees, with the reason that
+/// prints beside it on the bill. The server caps the amount and solves the
+/// document; this only carries what was typed.
+class _DiscountSection extends ConsumerStatefulWidget {
+  final BillingState state;
+
+  const _DiscountSection({required this.state});
+
+  @override
+  ConsumerState<_DiscountSection> createState() => _DiscountSectionState();
+}
+
+class _DiscountSectionState extends ConsumerState<_DiscountSection> {
+  late final _amount = TextEditingController(text: widget.state.discountInput);
+  late final _reason = TextEditingController(text: widget.state.discountReason);
+
+  // The early-checkout banner writes into these same two fields when the
+  // desk fills the discount in from there instead — without this, typing up
+  // there left this card showing whatever it started with, and a discount
+  // that looked unset here was still the one that priced the bill.
+  @override
+  void didUpdateWidget(covariant _DiscountSection old) {
+    super.didUpdateWidget(old);
+    if (_amount.text != widget.state.discountInput) {
+      _amount.text = widget.state.discountInput;
+    }
+    if (_reason.text != widget.state.discountReason) {
+      _reason.text = widget.state.discountReason;
+    }
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = ref.read(billingViewModelProvider.notifier);
+    final discount = widget.state.cycleDiscount;
+    final discountAmount = widget.state.preview?.amounts?.discountAmount ?? 0;
+
+    return NeuCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Discount',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppTheme.s12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: NeuField(
+                  controller: _amount,
+                  label: 'Amount',
+                  hint: '0',
+                  keyboardType: TextInputType.number,
+                  onChanged: vm.setDiscount,
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: NeuField(
+                  controller: _reason,
+                  label: 'Reason (printed on bill)',
+                  hint: 'e.g. Leaving early, regular guest',
+                  maxLength: 100,
+                  onChanged: vm.setDiscountReason,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Text(
+            discount > 0
+                ? 'Shown on the bill as "Discount'
+                      '${widget.state.discountReason.trim().isNotEmpty ? ' – ${widget.state.discountReason.trim()}' : ''}" '
+                      'of ${formatPrice(discountAmount)}.'
+                : 'No discount on this bill.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
@@ -430,6 +789,18 @@ class _PaymentRow extends StatefulWidget {
 class _PaymentRowState extends State<_PaymentRow> {
   late final _amount = TextEditingController(text: widget.line.amount);
   late final _reference = TextEditingController(text: widget.line.reference);
+
+  // The single untouched row is kept tracking the balance due from the view
+  // model (see BillingState.paymentTouched) — a discount typed after the row
+  // was first seeded still has to land in it. Without this the box went on
+  // showing whatever it opened with, even once the model's own figure moved.
+  @override
+  void didUpdateWidget(covariant _PaymentRow old) {
+    super.didUpdateWidget(old);
+    if (_amount.text != widget.line.amount) {
+      _amount.text = widget.line.amount;
+    }
+  }
 
   @override
   void dispose() {

@@ -405,6 +405,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
                       onTapStay: (b, room) => _openBookingDetail(context, b),
                       onTapVacant: (roomId, day) =>
                           _takeBooking(context, roomId: roomId, checkIn: day),
+                      onTapDraft: (d) => _openDraft(context, d.id),
                       hitIds: hitIds,
                       activeHitId: activeHitId,
                     ),
@@ -451,6 +452,23 @@ class _TapeChartState extends ConsumerState<TapeChart>
     if (booked == true) {
       ref.read(bookingViewModelProvider.notifier).loadChart();
     }
+  }
+
+  /// A tap on a yellow tile — the tile itself only ever carries the room and
+  /// the dates, so the draft's own form is fetched in full before the take-
+  /// booking screen can put it back on screen.
+  Future<void> _openDraft(BuildContext context, int draftId) async {
+    final draft = await ref
+        .read(bookingViewModelProvider.notifier)
+        .loadDraft(draftId);
+    if (!context.mounted || draft == null) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => TakeBookingScreen(draft: draft)),
+    );
+    // Whatever happened in there — booked, saved again, deleted, or simply
+    // backed out of — the chart's own drafts and bookings may have moved,
+    // so it is always worth a refetch rather than only on a reported save.
+    if (mounted) ref.read(bookingViewModelProvider.notifier).loadChart();
   }
 }
 
@@ -1271,6 +1289,7 @@ class _CategoryBand extends StatelessWidget {
   final _HorizontalSync hSync;
   final void Function(TapeChartBooking booking, ChartRoom room) onTapStay;
   final void Function(int roomId, DateTime day) onTapVacant;
+  final ValueChanged<TapeChartDraft> onTapDraft;
   final Set<int> hitIds;
   final int? activeHitId;
 
@@ -1286,6 +1305,7 @@ class _CategoryBand extends StatelessWidget {
     required this.activeHitId,
     required this.onTapStay,
     required this.onTapVacant,
+    required this.onTapDraft,
   });
 
   @override
@@ -1346,6 +1366,7 @@ class _CategoryBand extends StatelessWidget {
             hSync: hSync,
             onTapStay: onTapStay,
             onTapVacant: onTapVacant,
+            onTapDraft: onTapDraft,
             hitIds: hitIds,
             activeHitId: activeHitId,
           ),
@@ -1409,6 +1430,7 @@ class _RoomRow extends StatelessWidget {
   final _HorizontalSync hSync;
   final void Function(TapeChartBooking booking, ChartRoom room) onTapStay;
   final void Function(int roomId, DateTime day) onTapVacant;
+  final ValueChanged<TapeChartDraft> onTapDraft;
   final Set<int> hitIds;
   final int? activeHitId;
 
@@ -1422,6 +1444,7 @@ class _RoomRow extends StatelessWidget {
     required this.hSync,
     required this.onTapStay,
     required this.onTapVacant,
+    required this.onTapDraft,
     required this.hitIds,
     required this.activeHitId,
   });
@@ -1481,6 +1504,7 @@ class _RoomRow extends StatelessWidget {
                     for (final d in dates)
                       _Tile(
                         stay: room.stayOn(d),
+                        draft: room.draftOn(d),
                         // A run of nights on the same stay draws as one
                         // unbroken bar — rounded only where the bar itself
                         // starts or ends, square everywhere it butts against
@@ -1502,6 +1526,7 @@ class _RoomRow extends StatelessWidget {
                         height: rowHeight,
                         onTapStay: (b) => onTapStay(b, room),
                         onTapVacant: () => onTapVacant(room.room.id, d),
+                        onTapDraft: onTapDraft,
                       ),
                   ],
                 ),
@@ -1521,6 +1546,7 @@ class _RoomRow extends StatelessWidget {
 
 class _Tile extends StatelessWidget {
   final TapeChartBooking? stay;
+  final TapeChartDraft? draft;
   final bool isRunStart;
   final bool isRunEnd;
   final bool isToday;
@@ -1532,9 +1558,11 @@ class _Tile extends StatelessWidget {
   final double height;
   final ValueChanged<TapeChartBooking> onTapStay;
   final VoidCallback onTapVacant;
+  final ValueChanged<TapeChartDraft> onTapDraft;
 
   const _Tile({
     required this.stay,
+    required this.draft,
     required this.isRunStart,
     required this.isRunEnd,
     required this.isToday,
@@ -1546,11 +1574,17 @@ class _Tile extends StatelessWidget {
     required this.height,
     required this.onTapStay,
     required this.onTapVacant,
+    required this.onTapDraft,
   });
 
   Color get _fill {
     final s = stay;
     if (s == null) {
+      // A night nobody has booked, but somebody has a draft on — yellow, the
+      // same colour the web tape chart marks a parked booking with. It is
+      // still sellable, which is why this only fires once there is no real
+      // stay on the night at all.
+      if (draft != null) return AppTheme.draft;
       if (isPast) return AppTheme.border;
       // A weekend night sells the same as any other, but the web tape chart
       // washes it a touch deeper so a run of Saturdays stands out at a
@@ -1572,6 +1606,7 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = stay;
+    final d = draft;
     // A vacant night stands alone — each is its own small rounded box, the
     // way the web tape chart draws an empty grid. A stay's own nights are
     // never rounded or gapped except at the two ends of the run itself, so
@@ -1583,8 +1618,17 @@ class _Tile extends StatelessWidget {
     // tape chart's own click does — a stay taken on paper over the weekend
     // has to be enterable against the nights it actually happened on. Past
     // only dims the tile; it never locks it.
+    //
+    // A draft on the night opens that draft rather than starting a new
+    // booking, the same as the web tape chart's own draft tile — the room is
+    // still sellable, but whoever parked it should be finished or thrown
+    // away before the night is sold from under them.
     return GestureDetector(
-      onTap: s == null ? onTapVacant : () => onTapStay(s),
+      onTap: s != null
+          ? () => onTapStay(s)
+          : d != null
+          ? () => onTapDraft(d)
+          : onTapVacant,
       child: Container(
         width: size,
         height: height,

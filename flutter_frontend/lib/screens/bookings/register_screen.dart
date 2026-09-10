@@ -898,7 +898,7 @@ class _RegisterCard extends StatelessWidget {
                           child: Text(
                             (b.guestName ?? '').trim().isEmpty
                                 ? 'Guest'
-                                : b.guestName!,
+                                : capitalizeWords(b.guestName),
                             style: const TextStyle(
                               color: AppTheme.heading,
                               fontWeight: FontWeight.w700,

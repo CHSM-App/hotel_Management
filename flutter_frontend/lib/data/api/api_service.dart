@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
+import '../../domain/models/draft.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/late_checkout.dart';
@@ -265,6 +266,43 @@ class ApiService {
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
+  // ===== BOOKING DRAFTS =====
+
+  /// Every parked booking on this property — the same list the web drafts
+  /// panel draws from.
+  Future<List<BookingDraft>> drafts() async {
+    final res = await _dio.get('/bookings/drafts');
+    final body = _map(res.data);
+    return (body['drafts'] as List? ?? [])
+        .map((e) => BookingDraft.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<BookingDraft> draft(int id) async {
+    final res = await _dio.get('/bookings/drafts/$id');
+    return BookingDraft.fromJson(
+      _map(res.data)['draft'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<BookingDraft> createDraft(Map<String, dynamic> form) async {
+    final res = await _dio.post('/bookings/drafts', data: {'form': form});
+    return BookingDraft.fromJson(
+      _map(res.data)['draft'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<BookingDraft> updateDraft(int id, Map<String, dynamic> form) async {
+    final res = await _dio.put('/bookings/drafts/$id', data: {'form': form});
+    return BookingDraft.fromJson(
+      _map(res.data)['draft'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteDraft(int id) async {
+    await _dio.delete('/bookings/drafts/$id');
+  }
+
   // ===== BILLING =====
 
   /// Stays that have checked out and have no bill yet.
@@ -281,10 +319,18 @@ class ApiService {
   Future<BillPreview> previewBill(
     int bookingId, {
     bool includeLateCheckout = true,
+    num discountAmount = 0,
+    String? discountReason,
   }) async {
     final res = await _dio.get(
       '/billing/bookings/$bookingId/preview',
-      queryParameters: {'includeLateCheckout': includeLateCheckout},
+      queryParameters: {
+        'includeLateCheckout': includeLateCheckout,
+        if (discountAmount > 0) ...{
+          'discountAmount': discountAmount,
+          'discountReason': (discountReason ?? '').trim(),
+        },
+      },
     );
     return BillPreview.fromJson(_map(res.data));
   }

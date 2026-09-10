@@ -63,16 +63,16 @@ class ProfileScreen extends ConsumerWidget {
                               label: 'Role',
                               value: me.user.roleName ?? me.user.role,
                             ),
-                            const _RowDivider(),
-                            _ActionRow(
-                              icon: Icons.email_rounded,
-                              iconColor: const Color(0xFFE0457C),
-                              label: 'Email',
-                              subtitle: me.user.email ?? '—',
-                              onTap: _hasText(me.user.email)
-                                  ? () => launchUrl(Uri.parse('mailto:${me.user.email}'))
-                                  : null,
-                            ),
+                            if (_hasText(me.user.email)) ...[
+                              const _RowDivider(),
+                              _ActionRow(
+                                icon: Icons.email_rounded,
+                                iconColor: const Color(0xFFE0457C),
+                                label: 'Email',
+                                subtitle: me.user.email,
+                                onTap: () => launchUrl(Uri.parse('mailto:${me.user.email}')),
+                              ),
+                            ],
                             const _RowDivider(),
                             _ActionRow(
                               icon: Icons.call_rounded,
@@ -346,47 +346,67 @@ class _Sheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.9;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: AppTheme.bg,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
-        ),
-        padding: const EdgeInsets.fromLTRB(
-          AppTheme.s24,
-          AppTheme.s16,
-          AppTheme.s24,
-          AppTheme.s24,
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: AppTheme.s16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.border,
-                    borderRadius: BorderRadius.circular(2),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.bg,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s24,
+                    AppTheme.s16,
+                    AppTheme.s24,
+                    0,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: AppTheme.s16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.border,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.s24,
+                      AppTheme.s16,
+                      AppTheme.s24,
+                      AppTheme.s24,
+                    ),
+                    child: child,
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppTheme.s16),
-              child,
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -10,8 +10,17 @@ class BillingUsecase {
   Future<List<BillableStay>> queue() => repository.queue();
 
   /// What the bill will say.
-  Future<BillPreview> preview(int bookingId, {bool includeLateCheckout = true}) =>
-      repository.preview(bookingId, includeLateCheckout: includeLateCheckout);
+  Future<BillPreview> preview(
+    int bookingId, {
+    bool includeLateCheckout = true,
+    num discountAmount = 0,
+    String? discountReason,
+  }) => repository.preview(
+    bookingId,
+    includeLateCheckout: includeLateCheckout,
+    discountAmount: discountAmount,
+    discountReason: discountReason,
+  );
 
   /// Cut the bill.
   Future<Invoice> issue(int bookingId, Map<String, dynamic> body) =>

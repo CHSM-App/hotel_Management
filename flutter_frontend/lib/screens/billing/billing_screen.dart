@@ -7,7 +7,7 @@ import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
-import 'bill_pdf.dart';
+import 'invoice_preview_screen.dart';
 import 'issue_bill_screen.dart';
 
 /// Billing: what still has to be billed, and what already has been.
@@ -321,6 +321,13 @@ class _InvoiceCard extends ConsumerWidget {
         horizontal: AppTheme.s12,
         vertical: AppTheme.s12,
       ),
+      // Print/Download/Share/Void used to live here, four buttons deep in a
+      // card meant to be a queue row — they overflowed a narrow phone no
+      // matter how they were packed. The bill now opens on its own page,
+      // where those actions have a full-width row to themselves.
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => InvoicePreviewScreen(invoice: invoice)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -402,112 +409,7 @@ class _InvoiceCard extends ConsumerWidget {
               style: const TextStyle(color: AppTheme.danger, fontSize: 11),
             ),
           ],
-          const SizedBox(height: AppTheme.s8),
-          Row(
-            children: [
-              // Offered on a void bill too: the desk still has to be able to
-              // produce the document it issued, marked void, when somebody
-              // asks what happened to that number.
-              NeuButton(
-                onPressed: () => _sharePdf(context, ref),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s12,
-                  vertical: AppTheme.s4,
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.download_rounded,
-                      size: 15,
-                      color: AppTheme.heading,
-                    ),
-                    SizedBox(width: 6),
-                    Text('PDF', style: TextStyle(fontSize: 13)),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              if (!invoice.isVoid)
-                TextButton(
-                  onPressed: () => _confirmVoid(context, ref),
-                  child: const Text(
-                    'Void this bill',
-                    style: TextStyle(color: AppTheme.danger, fontSize: 13),
-                  ),
-                ),
-            ],
-          ),
         ],
-      ),
-    );
-  }
-
-  /// Build the document and hand it to the platform's share sheet, which is
-  /// where "save to Files", "send on WhatsApp" and "print" all live on a phone.
-  Future<void> _sharePdf(BuildContext context, WidgetRef ref) async {
-    final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
-    try {
-      await BillPdf.share(invoice, lodgeName: lodgeName);
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not build the PDF.'),
-          backgroundColor: AppTheme.heading,
-        ),
-      );
-    }
-  }
-
-  Future<void> _confirmVoid(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text('Void this bill?', style: TextStyle(color: AppTheme.heading)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              // A void is not a delete: the document stays on file and its
-              // number is never reused, because a gap in the series is what an
-              // auditor asks about.
-              'The bill stays on file marked void, and its number is not '
-              'reused. Say why.',
-              style: TextStyle(color: AppTheme.text, fontSize: 13),
-            ),
-            const SizedBox(height: AppTheme.s16),
-            NeuField(controller: controller, label: 'Reason', maxLength: 200),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Keep it'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text(
-              'Void',
-              style: TextStyle(color: AppTheme.danger),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (reason == null || reason.isEmpty || !context.mounted) return;
-    final ok = await ref
-        .read(billingViewModelProvider.notifier)
-        .voidInvoice(invoice.id, reason);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok ? 'Bill voided.' : 'Could not void that bill.'),
-        backgroundColor: AppTheme.heading,
       ),
     );
   }

@@ -8,11 +8,13 @@ class TapeChartData {
   final List<TapeChartRoom> rooms;
   final List<TapeChartBooking> bookings;
   final List<TapeChartCancelled> cancelled;
+  final List<TapeChartDraft> drafts;
 
   const TapeChartData({
     this.rooms = const [],
     this.bookings = const [],
     this.cancelled = const [],
+    this.drafts = const [],
   });
 
   factory TapeChartData.fromJson(Map<String, dynamic> json) => TapeChartData(
@@ -29,6 +31,11 @@ class TapeChartData {
     cancelled:
         (json['cancelled'] as List?)
             ?.map((e) => TapeChartCancelled.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    drafts:
+        (json['drafts'] as List?)
+            ?.map((e) => TapeChartDraft.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
   );
@@ -142,6 +149,36 @@ class TapeChartCancelled {
       TapeChartCancelled(
         id: asInt(json['id']),
         roomId: asInt(json['roomId']),
+        checkInDate: asStringOrNull(json['checkInDate']),
+        checkOutDate: asStringOrNull(json['checkOutDate']),
+      );
+}
+
+/// A parked booking form touching the window — a night nobody has booked but
+/// somebody has a draft on. Kept apart from [TapeChartBooking] the same way
+/// the web tape chart keeps its own draft map separate: a draft reserves
+/// nothing, so it can sit on a night a real booking already holds, and where
+/// both land on one night the booking wins the tile.
+class TapeChartDraft {
+  final int id;
+  final int roomId;
+  final String? guestName;
+  final String? checkInDate;
+  final String? checkOutDate;
+
+  const TapeChartDraft({
+    required this.id,
+    required this.roomId,
+    this.guestName,
+    this.checkInDate,
+    this.checkOutDate,
+  });
+
+  factory TapeChartDraft.fromJson(Map<String, dynamic> json) =>
+      TapeChartDraft(
+        id: asInt(json['id']),
+        roomId: asInt(json['roomId']),
+        guestName: asStringOrNull(json['guestName']),
         checkInDate: asStringOrNull(json['checkInDate']),
         checkOutDate: asStringOrNull(json['checkOutDate']),
       );

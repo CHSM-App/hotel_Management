@@ -201,6 +201,12 @@ class _NeuButtonState extends State<NeuButton> {
         fontSize: 15,
         fontWeight: FontWeight.w600,
       ),
+      // Squeezed too tight (three buttons sharing a narrow row, say), Text
+      // would otherwise wrap one letter per line rather than clipping —
+      // this keeps it to a single, ellipsized line instead.
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
       child: Center(child: widget.child),
     );
 
@@ -262,6 +268,12 @@ class NeuField extends StatefulWidget {
   /// omitted, the field manages its own.
   final FocusNode? focusNode;
 
+  /// How the field capitalizes what's typed. When omitted, it's inferred
+  /// from [obscure]/[keyboardType] so plain text fields capitalize the
+  /// first letter by default, while passwords, emails, phone and numeric
+  /// fields are left untouched.
+  final TextCapitalization? textCapitalization;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -278,6 +290,7 @@ class NeuField extends StatefulWidget {
     this.suffix,
     this.labelAction,
     this.focusNode,
+    this.textCapitalization,
   });
 
   @override
@@ -289,6 +302,23 @@ class _NeuFieldState extends State<NeuField> {
   bool _focused = false;
 
   FocusNode get _node => widget.focusNode ?? (_ownNode ??= FocusNode());
+
+  static const _noCapitalizationTypes = [
+    'emailAddress',
+    'number',
+    'phone',
+    'url',
+    'visiblePassword',
+  ];
+
+  TextCapitalization get _defaultCapitalization {
+    if (widget.obscure) return TextCapitalization.none;
+    final type = widget.keyboardType;
+    if (type != null && _noCapitalizationTypes.any((name) => type.toString().contains(name))) {
+      return TextCapitalization.none;
+    }
+    return TextCapitalization.sentences;
+  }
 
   @override
   void initState() {
@@ -309,34 +339,37 @@ class _NeuFieldState extends State<NeuField> {
 
   @override
   Widget build(BuildContext context) {
+    final hasLabel = widget.label.isNotEmpty || widget.labelAction != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: widget.label,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  children: widget.required
-                      ? const [
-                          TextSpan(
-                            text: ' *',
-                            style: TextStyle(
-                              color: AppTheme.danger,
-                              fontWeight: FontWeight.w700,
+        if (hasLabel) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    text: widget.label,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    children: widget.required
+                        ? const [
+                            TextSpan(
+                              text: ' *',
+                              style: TextStyle(
+                                color: AppTheme.danger,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                        ]
-                      : null,
+                          ]
+                        : null,
+                  ),
                 ),
               ),
-            ),
-            if (widget.labelAction != null) widget.labelAction!,
-          ],
-        ),
-        const SizedBox(height: AppTheme.s8),
+              if (widget.labelAction != null) widget.labelAction!,
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+        ],
         NeuPressed(
           focused: _focused,
           hasError: widget.errorText != null,
@@ -352,6 +385,7 @@ class _NeuFieldState extends State<NeuField> {
                   focusNode: _node,
                   obscureText: widget.obscure,
                   keyboardType: widget.keyboardType,
+                  textCapitalization: widget.textCapitalization ?? _defaultCapitalization,
                   maxLength: widget.maxLength,
                   readOnly: widget.readOnly,
                   onTap: widget.onTap,

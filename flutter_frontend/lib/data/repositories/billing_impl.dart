@@ -18,8 +18,17 @@ class BillingImpl implements BillingRepository {
   Future<List<BillableStay>> queue() => api.billingQueue();
 
   @override
-  Future<BillPreview> preview(int bookingId, {bool includeLateCheckout = true}) =>
-      api.previewBill(bookingId, includeLateCheckout: includeLateCheckout);
+  Future<BillPreview> preview(
+    int bookingId, {
+    bool includeLateCheckout = true,
+    num discountAmount = 0,
+    String? discountReason,
+  }) => api.previewBill(
+    bookingId,
+    includeLateCheckout: includeLateCheckout,
+    discountAmount: discountAmount,
+    discountReason: discountReason,
+  );
 
   @override
   Future<Invoice> issue(int bookingId, Map<String, dynamic> body) =>

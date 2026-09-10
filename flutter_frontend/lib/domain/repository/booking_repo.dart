@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/booking.dart';
+import '../models/draft.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
@@ -59,4 +60,15 @@ abstract class BookingRepository {
   /// Call off a reservation. Only a BOOKED stay can be cancelled. [body]
   /// settles whatever advance was on file.
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]);
+
+  /// Every parked booking on this property.
+  Future<List<BookingDraft>> drafts();
+
+  Future<BookingDraft> draft(int id);
+
+  Future<BookingDraft> createDraft(Map<String, dynamic> form);
+
+  Future<BookingDraft> updateDraft(int id, Map<String, dynamic> form);
+
+  Future<void> deleteDraft(int id);
 }
