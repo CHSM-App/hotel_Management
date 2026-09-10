@@ -8,6 +8,7 @@ import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'bill_receipt_screen.dart';
 
 /// The bill itself: what it says, and what the guest handed over.
 ///
@@ -275,28 +276,112 @@ class _Body extends ConsumerWidget {
                   // Both taken before the await: after the pop this route's
                   // context is defunct, and reading a messenger or a navigator
                   // off it then is reading from a page that no longer exists.
-                  final messenger = ScaffoldMessenger.of(context);
                   final navigator = Navigator.of(context);
+                  final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
 
                   final invoice = await vm.issue();
                   // A failure keeps the page open with the reason on it —
                   // there is nothing to go back to, the bill is not cut.
                   if (invoice == null) return;
 
-                  // The bill exists and the desk is done with this page. It
-                  // closes first, then says so, so the confirmation lands on
-                  // the list rather than on a page that is leaving.
-                  vm.close();
-                  navigator.pop();
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
-                        '${invoice.invoiceNumber ?? ''} issued.',
+                  // The bill exists; the desk chooses whether to look at the
+                  // receipt now or just get back to the queue.
+                  if (!context.mounted) return;
+                  final wantsReceipt = await showDialog<bool>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => Dialog(
+                      backgroundColor: AppTheme.bg,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.rLarge),
                       ),
-                      backgroundColor: AppTheme.heading,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.s24,
+                          AppTheme.s24,
+                          AppTheme.s24,
+                          AppTheme.s16,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: AppTheme.vacant.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppTheme.vacant,
+                                size: 32,
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s16),
+                            Text(
+                              '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
+                              '${invoice.invoiceNumber ?? ''} issued',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppTheme.heading,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s8),
+                            const Text(
+                              'The bill is cut. Open the receipt now, or '
+                              'head back to the billing list.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s24),
+                            NeuButton(
+                              primary: true,
+                              expand: true,
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text('Receipt'),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AppTheme.s8),
+                            NeuButton(
+                              expand: true,
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Done'),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   );
+
+                  vm.close();
+                  navigator.pop();
+
+                  if (wantsReceipt == true) {
+                    navigator.push(
+                      MaterialPageRoute(
+                        builder: (_) => BillReceiptScreen(
+                          invoice: invoice,
+                          lodgeName: lodgeName,
+                        ),
+                      ),
+                    );
+                  }
                 },
           child: state.issuing
               ? const SizedBox(

@@ -1,5 +1,7 @@
 library;
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -81,6 +83,12 @@ class BookingState {
   /// rather than carrying a stale choice onto a different stay.
   final bool? bookingTypeOverride;
 
+  /// Non-null once this flow is continuing a booking that was parked as a
+  /// draft rather than starting fresh — "Save draft" updates this row
+  /// instead of laying down a second copy, and the moment the stay is
+  /// actually taken this row is thrown away: it was only ever a stand-in.
+  final int? draftId;
+
   BookingState({
     this.isLoading = false,
     this.error,
@@ -101,6 +109,7 @@ class BookingState {
     this.quoting = false,
     this.submitting = false,
     this.bookingTypeOverride,
+    this.draftId,
   }) : chartFrom = chartFrom ?? _startOfMonth(_today()),
        chartTo = chartTo ?? _startOfNextMonth(_today());
 
@@ -139,6 +148,8 @@ class BookingState {
     bool? submitting,
     bool? bookingTypeOverride,
     bool clearBookingTypeOverride = false,
+    int? draftId,
+    bool clearDraftId = false,
   }) => BookingState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
@@ -163,6 +174,7 @@ class BookingState {
     bookingTypeOverride: clearBookingTypeOverride
         ? null
         : (bookingTypeOverride ?? this.bookingTypeOverride),
+    draftId: clearDraftId ? null : (draftId ?? this.draftId),
   );
 
   int get nights => (checkIn != null && checkOut != null)
@@ -223,10 +235,19 @@ class BookingState {
       (byRoom[b.roomId] ??= []).add(b);
     }
 
+    final draftsByRoom = <int, List<TapeChartDraft>>{};
+    for (final d in data.drafts) {
+      (draftsByRoom[d.roomId] ??= []).add(d);
+    }
+
     final byCategory = <String, List<ChartRoom>>{};
     for (final room in data.rooms) {
       (byCategory[room.categoryName] ??= []).add(
-        ChartRoom(room: room, stays: byRoom[room.id] ?? const []),
+        ChartRoom(
+          room: room,
+          stays: byRoom[room.id] ?? const [],
+          drafts: draftsByRoom[room.id] ?? const [],
+        ),
       );
     }
 
@@ -275,8 +296,13 @@ class BookingState {
 class ChartRoom {
   final TapeChartRoom room;
   final List<TapeChartBooking> stays;
+  final List<TapeChartDraft> drafts;
 
-  const ChartRoom({required this.room, required this.stays});
+  const ChartRoom({
+    required this.room,
+    required this.stays,
+    this.drafts = const [],
+  });
 
   /// The stay covering this night, if any. [day] is a bare date — nights are
   /// compared as whole days, never as instants.
@@ -316,6 +342,20 @@ class ChartRoom {
       if (!day.isBefore(inDate) && day.isBefore(outDate)) found = b;
     }
     return found;
+  }
+
+  /// The draft parked on this night, if any and if no real booking already
+  /// holds it — a draft reserves nothing, so a night a booking covers always
+  /// reads as that booking, never as the draft underneath it.
+  TapeChartDraft? draftOn(DateTime day) {
+    if (stayOn(day) != null) return null;
+    for (final d in drafts) {
+      final inDate = DateTime.tryParse(d.checkInDate ?? '');
+      final outDate = DateTime.tryParse(d.checkOutDate ?? '');
+      if (inDate == null || outDate == null) continue;
+      if (!day.isBefore(inDate) && day.isBefore(outDate)) return d;
+    }
+    return null;
   }
 
   static DateTime _today() {
@@ -703,6 +743,90 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
+  /// Open this flow onto a booking parked earlier — the dates it was typed
+  /// against, ready to pick up where the desk left off. Everything else the
+  /// draft carried (the guest, the extras, what was already put down) is not
+  /// state this view model owns; the screen reads it straight off
+  /// [BookingDraft.form] and sets it locally, the same way [startEdit]'s own
+  /// caller fills the guest fields from the booking it is handed.
+  Future<void> beginFromDraft(BookingDraft draft) async {
+    final form = draft.form;
+    state = state.copyWith(
+      draftId: draft.id,
+      clearEditBookingId: true,
+      checkIn: form.checkInDate,
+      checkOut: form.checkOutDate,
+      clearRoom: true,
+      clearQuote: true,
+      extras: const {},
+      roomTotal: '',
+      discount: '',
+      clearError: true,
+      clearBookingTypeOverride: true,
+    );
+    if (!state.datesChosen) return;
+    await loadRooms();
+    final roomId = form.roomId;
+    if (roomId == null) return;
+    final rooms = state.rooms?.valueOrNull;
+    final match = rooms?.where((r) => r.id == roomId).firstOrNull;
+    if (match == null) return;
+    // selectRoom clears extras/roomTotal (a fresh room quotes on its own
+    // rate), so whatever the draft agreed is put back only once the room —
+    // and the quote it starts — actually exists.
+    await selectRoom(match);
+    state = state.copyWith(
+      extras: form.extras,
+      roomTotal: form.roomTotal,
+      discount: form.discount,
+    );
+    await refreshQuote();
+  }
+
+  /// One parked booking, in full — for reopening it from a tap on the tape
+  /// chart's own yellow tile, which only ever carries the room and the dates.
+  Future<BookingDraft?> loadDraft(int id) async {
+    try {
+      return await usecase.draft(id);
+    } catch (e) {
+      state = state.copyWith(error: messageFor(e));
+      return null;
+    }
+  }
+
+  /// Park what is on screen so far. Updates the same row if this flow is
+  /// already continuing one — reopening a draft and saving it again should
+  /// not lay down a second copy of the same half-finished booking.
+  Future<bool> saveDraft(DraftForm form) async {
+    if (state.submitting) return false;
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final saved = state.draftId == null
+          ? await usecase.createDraft(form.toJson())
+          : await usecase.updateDraft(state.draftId!, form.toJson());
+      state = state.copyWith(submitting: false, draftId: saved.id);
+      await loadChart();
+      return true;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: messageFor(e));
+      return false;
+    }
+  }
+
+  /// Throw away a parked booking form — nothing agreed with a guest is lost,
+  /// so this goes without confirmation the same way the web drafts panel's
+  /// own delete does.
+  Future<bool> deleteDraft(int id) async {
+    try {
+      await usecase.deleteDraft(id);
+      await loadChart();
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: messageFor(e));
+      return false;
+    }
+  }
+
   Future<void> loadRooms() async {
     if (!state.datesChosen) return;
     state = state.copyWith(rooms: const AsyncValue.loading());
@@ -910,6 +1034,16 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final form = FormData.fromMap(formMap);
 
       final booking = await usecase.createBooking(form);
+
+      // The draft was only ever a stand-in for this booking; it exists now,
+      // so the stand-in goes — otherwise the chart would carry both, one of
+      // them stale, for a night that is actually settled. Failure here is
+      // not the desk's problem: the booking is real either way.
+      final parkedDraftId = state.draftId;
+      if (parkedDraftId != null) {
+        state = state.copyWith(clearDraftId: true);
+        unawaited(usecase.deleteDraft(parkedDraftId).catchError((_) {}));
+      }
 
       // A walk-in is somebody at the desk, so the stay is checked in as soon
       // as it exists rather than left sitting as a reservation nobody will

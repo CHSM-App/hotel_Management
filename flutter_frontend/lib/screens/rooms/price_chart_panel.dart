@@ -177,6 +177,41 @@ class _Row extends StatelessWidget {
   }
 }
 
+/// A compact "+ Add …" row that expands a section's add/edit form on tap —
+/// keeps the form's fields off-screen until the user actually wants to add
+/// something, instead of always eating vertical space at the bottom of the
+/// list.
+class _AddToggleRow extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _AddToggleRow({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(color: AppTheme.border, style: BorderStyle.solid),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.add, size: 16, color: AppTheme.accent),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w600, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 Future<void> _say(BuildContext context, String message) async {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(content: Text(message), backgroundColor: AppTheme.heading),
@@ -238,6 +273,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
   final _price = TextEditingController();
   int? _editingId;
   String? _error;
+  bool _formOpen = false;
 
   @override
   void dispose() {
@@ -249,6 +285,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
   void _edit(RoomCategory c) {
     setState(() {
       _editingId = c.id;
+      _formOpen = true;
       _name.text = c.name;
       _price.text = '${c.basePrice}';
       _error = null;
@@ -258,6 +295,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
   void _cancelEdit() {
     setState(() {
       _editingId = null;
+      _formOpen = false;
       _name.clear();
       _price.clear();
       _error = null;
@@ -308,41 +346,43 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
             onDelete: () => _delete(c),
           ),
         const SizedBox(height: AppTheme.s8),
-        if (_error != null) ...[
-          Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-          const SizedBox(height: AppTheme.s8),
-        ],
-        Row(
-          children: [
-            Expanded(
-              child: NeuField(controller: _name, label: '', hint: 'Deluxe'),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: NeuField(
-                controller: _price,
-                label: '',
-                hint: 'Base price ₹',
-                keyboardType: TextInputType.number,
-              ),
-            ),
+        if (!_formOpen)
+          _AddToggleRow(label: 'Add category', onTap: () => setState(() => _formOpen = true))
+        else ...[
+          if (_error != null) ...[
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            const SizedBox(height: AppTheme.s8),
           ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        Row(
-          children: [
-            Expanded(
-              child: NeuButton(
-                onPressed: submitting ? null : _submit,
-                child: Text(_editingId != null ? 'Save' : 'Add'),
+          Row(
+            children: [
+              Expanded(
+                child: NeuField(controller: _name, label: '', hint: 'Deluxe'),
               ),
-            ),
-            if (_editingId != null) ...[
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: NeuField(
+                  controller: _price,
+                  label: '',
+                  hint: 'Base price ₹',
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: NeuButton(
+                  onPressed: submitting ? null : _submit,
+                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                ),
+              ),
               const SizedBox(width: AppTheme.s8),
               TextButton(onPressed: _cancelEdit, child: const Text('Cancel')),
             ],
-          ],
-        ),
+          ),
+        ],
       ],
     );
   }
@@ -363,6 +403,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
   final _amount = TextEditingController();
   int? _editingId;
   String? _error;
+  bool _formOpen = false;
 
   @override
   void dispose() {
@@ -374,6 +415,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
   void _edit(SwitchableChargeListing c) {
     setState(() {
       _editingId = c.id;
+      _formOpen = true;
       _name.text = c.name;
       _amount.text = '${c.chargePerNight}';
       _error = null;
@@ -383,6 +425,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
   void _cancelEdit() {
     setState(() {
       _editingId = null;
+      _formOpen = false;
       _name.clear();
       _amount.clear();
       _error = null;
@@ -433,39 +476,41 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
             onDelete: () => _delete(c),
           ),
         const SizedBox(height: AppTheme.s8),
-        if (_error != null) ...[
-          Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-          const SizedBox(height: AppTheme.s8),
-        ],
-        Row(
-          children: [
-            Expanded(child: NeuField(controller: _name, label: '', hint: 'AC')),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: NeuField(
-                controller: _amount,
-                label: '',
-                hint: 'Amount ₹/night',
-                keyboardType: TextInputType.number,
-              ),
-            ),
+        if (!_formOpen)
+          _AddToggleRow(label: 'Add extra', onTap: () => setState(() => _formOpen = true))
+        else ...[
+          if (_error != null) ...[
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            const SizedBox(height: AppTheme.s8),
           ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        Row(
-          children: [
-            Expanded(
-              child: NeuButton(
-                onPressed: submitting ? null : _submit,
-                child: Text(_editingId != null ? 'Save' : 'Add'),
+          Row(
+            children: [
+              Expanded(child: NeuField(controller: _name, label: '', hint: 'AC')),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: NeuField(
+                  controller: _amount,
+                  label: '',
+                  hint: 'Amount ₹/night',
+                  keyboardType: TextInputType.number,
+                ),
               ),
-            ),
-            if (_editingId != null) ...[
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: NeuButton(
+                  onPressed: submitting ? null : _submit,
+                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                ),
+              ),
               const SizedBox(width: AppTheme.s8),
               TextButton(onPressed: _cancelEdit, child: const Text('Cancel')),
             ],
-          ],
-        ),
+          ),
+        ],
       ],
     );
   }
@@ -488,6 +533,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
   DateTime _endDate = DateTime.now();
   int? _editingId;
   String? _error;
+  bool _formOpen = false;
 
   static String _iso(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -502,6 +548,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
   void _edit(Season s) {
     setState(() {
       _editingId = s.id;
+      _formOpen = true;
       _name.text = s.name;
       _adjustment.text = '${s.adjustmentPercent}';
       _startDate = DateTime.tryParse(s.startDate) ?? DateTime.now();
@@ -513,6 +560,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
   void _cancelEdit() {
     setState(() {
       _editingId = null;
+      _formOpen = false;
       _name.clear();
       _adjustment.clear();
       _startDate = DateTime.now();
@@ -607,55 +655,57 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
             onDelete: () => _delete(s),
           ),
         const SizedBox(height: AppTheme.s8),
-        if (_error != null) ...[
-          Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-          const SizedBox(height: AppTheme.s8),
-        ],
-        NeuField(controller: _name, label: '', hint: 'Diwali'),
-        const SizedBox(height: AppTheme.s8),
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _pickDate(start: true),
-                child: NeuPressed(
-                  child: Text(_iso(_startDate), style: const TextStyle(color: AppTheme.text, fontSize: 13)),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _pickDate(start: false),
-                child: NeuPressed(
-                  child: Text(_iso(_endDate), style: const TextStyle(color: AppTheme.text, fontSize: 13)),
-                ),
-              ),
-            ),
+        if (!_formOpen)
+          _AddToggleRow(label: 'Add season', onTap: () => setState(() => _formOpen = true))
+        else ...[
+          if (_error != null) ...[
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            const SizedBox(height: AppTheme.s8),
           ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        NeuField(
-          controller: _adjustment,
-          label: '',
-          hint: '+% adjustment',
-          keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-        ),
-        const SizedBox(height: AppTheme.s8),
-        Row(
-          children: [
-            Expanded(
-              child: NeuButton(
-                onPressed: submitting ? null : _submit,
-                child: Text(_editingId != null ? 'Save' : 'Add'),
+          NeuField(controller: _name, label: '', hint: 'Diwali'),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickDate(start: true),
+                  child: NeuPressed(
+                    child: Text(_iso(_startDate), style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+                  ),
+                ),
               ),
-            ),
-            if (_editingId != null) ...[
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickDate(start: false),
+                  child: NeuPressed(
+                    child: Text(_iso(_endDate), style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _adjustment,
+            label: '',
+            hint: '+% adjustment',
+            keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: NeuButton(
+                  onPressed: submitting ? null : _submit,
+                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                ),
+              ),
               const SizedBox(width: AppTheme.s8),
               TextButton(onPressed: _cancelEdit, child: const Text('Cancel')),
             ],
-          ],
-        ),
+          ),
+        ],
       ],
     );
   }

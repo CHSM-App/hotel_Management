@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../domain/models/booking.dart' show PaymentLine;
 import '../../domain/models/invoice.dart';
@@ -44,6 +45,14 @@ class BillPdf {
       '-',
     );
     await shareBytesFromDevice(bytes, '$safe.pdf');
+  }
+
+  /// Hand the finished file straight to the OS print dialog, rather than a
+  /// share sheet or a download — the desk's third option alongside [share]
+  /// and [download].
+  static Future<void> print(Invoice invoice, {String? lodgeName}) async {
+    final bytes = await build(invoice, lodgeName: lodgeName);
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
   /// Save the file to the device itself — a real download, distinct from

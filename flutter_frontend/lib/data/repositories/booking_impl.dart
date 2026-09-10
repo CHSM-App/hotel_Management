@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/draft.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
@@ -99,4 +100,21 @@ class BookingImpl implements BookingRepository {
   @override
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
       api.cancelBooking(id, body);
+
+  @override
+  Future<List<BookingDraft>> drafts() => api.drafts();
+
+  @override
+  Future<BookingDraft> draft(int id) => api.draft(id);
+
+  @override
+  Future<BookingDraft> createDraft(Map<String, dynamic> form) =>
+      api.createDraft(form);
+
+  @override
+  Future<BookingDraft> updateDraft(int id, Map<String, dynamic> form) =>
+      api.updateDraft(id, form);
+
+  @override
+  Future<void> deleteDraft(int id) => api.deleteDraft(id);
 }

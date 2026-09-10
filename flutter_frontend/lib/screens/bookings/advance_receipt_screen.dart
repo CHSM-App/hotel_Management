@@ -409,7 +409,21 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                                         }),
                                       ),
                                     ),
-                                    const SizedBox(width: AppTheme.s12),
+                                    const SizedBox(width: AppTheme.s8),
+                                    Expanded(
+                                      child: _ReceiptActionButton(
+                                        icon: Icons.print_rounded,
+                                        label: 'Print',
+                                        busy: _pdfBusy,
+                                        onPressed: () => _runPdfAction(
+                                          () => AdvanceReceiptPdf.print(
+                                            shown,
+                                            paperId: _paperId,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppTheme.s8),
                                     Expanded(
                                       child: _ReceiptActionButton(
                                         icon: Icons.share_rounded,
@@ -869,9 +883,10 @@ class _ReceiptActionButton extends StatelessWidget {
                   ]
                 : null,
           ),
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (busy)
                 SizedBox(
@@ -885,16 +900,20 @@ class _ReceiptActionButton extends StatelessWidget {
               else
                 Icon(
                   icon,
-                  size: 18,
+                  size: 16,
                   color: filled ? Colors.white : AppTheme.accent,
                 ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: filled ? Colors.white : AppTheme.heading,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: filled ? Colors.white : AppTheme.heading,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],

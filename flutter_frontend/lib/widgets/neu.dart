@@ -201,6 +201,12 @@ class _NeuButtonState extends State<NeuButton> {
         fontSize: 15,
         fontWeight: FontWeight.w600,
       ),
+      // Squeezed too tight (three buttons sharing a narrow row, say), Text
+      // would otherwise wrap one letter per line rather than clipping —
+      // this keeps it to a single, ellipsized line instead.
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
       child: Center(child: widget.child),
     );
 
@@ -333,34 +339,37 @@ class _NeuFieldState extends State<NeuField> {
 
   @override
   Widget build(BuildContext context) {
+    final hasLabel = widget.label.isNotEmpty || widget.labelAction != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: widget.label,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  children: widget.required
-                      ? const [
-                          TextSpan(
-                            text: ' *',
-                            style: TextStyle(
-                              color: AppTheme.danger,
-                              fontWeight: FontWeight.w700,
+        if (hasLabel) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    text: widget.label,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    children: widget.required
+                        ? const [
+                            TextSpan(
+                              text: ' *',
+                              style: TextStyle(
+                                color: AppTheme.danger,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                        ]
-                      : null,
+                          ]
+                        : null,
+                  ),
                 ),
               ),
-            ),
-            if (widget.labelAction != null) widget.labelAction!,
-          ],
-        ),
-        const SizedBox(height: AppTheme.s8),
+              if (widget.labelAction != null) widget.labelAction!,
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+        ],
         NeuPressed(
           focused: _focused,
           hasError: widget.errorText != null,

@@ -53,11 +53,16 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
   /// The stay this page is correcting, if it is correcting one at all.
   final Booking? editBooking;
 
+  /// The parked booking this page is picking back up, if it was opened from
+  /// the tape chart's own yellow tile rather than starting fresh.
+  final BookingDraft? draft;
+
   const TakeBookingScreen({
     super.key,
     this.presetRoomId,
     this.presetCheckIn,
     this.editBooking,
+    this.draft,
   });
 
   @override
@@ -250,6 +255,35 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       return;
     }
 
+    final draft = widget.draft;
+    if (draft != null) {
+      // A clean slate first — a draft with no room or no dates yet must not
+      // inherit whatever the flow happened to be holding from a previous
+      // visit to this screen.
+      vm.reset();
+      final form = draft.form;
+      _name.text = form.guestName;
+      _phone.text = form.guestPhone;
+      _idProofType = form.idProofType;
+      _idProofNumber.text = form.idProofNumber;
+      _guests
+        ..clear()
+        ..addAll(form.guests);
+      _vehicles
+        ..clear()
+        ..addAll(form.vehicles);
+      if (form.advanceLines.isNotEmpty) {
+        _advance
+          ..clear()
+          ..addAll(form.advanceLines);
+        _rowVersions
+          ..clear()
+          ..addAll(List.filled(_advance.length, 0));
+      }
+      await vm.beginFromDraft(draft);
+      return;
+    }
+
     vm.reset();
     final now = DateTime.now();
     // Today and tomorrow, the same default the web form's own state opens
@@ -391,6 +425,83 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     Navigator.of(context).pop(true);
   }
 
+  /// What is on screen right now, in the shape a parked draft is saved as.
+  /// Read straight off the same controllers and lists [_submit] reads, plus
+  /// whatever the view model is holding for the room and the quote.
+  DraftForm _draftForm() {
+    final state = ref.read(bookingViewModelProvider);
+    return DraftForm(
+      roomId: state.room?.id,
+      checkInDate: state.checkIn,
+      checkOutDate: state.checkOut,
+      guestName: _name.text,
+      guestPhone: _phone.text,
+      idProofType: _idProofType,
+      idProofNumber: _idProofNumber.text,
+      guests: List.of(_guests),
+      vehicles: List.of(_vehicles),
+      advanceLines: List.of(_advance),
+      roomTotal: state.roomTotal,
+      discount: state.discount,
+      extras: Map.of(state.extras),
+    );
+  }
+
+  /// Parks what's on screen and closes — offered only on a new booking, the
+  /// same restriction the web form's own "Save draft" carries: a booking
+  /// already on file has somewhere to keep its corrections already, the
+  /// booking itself.
+  ///
+  /// Re-saving a draft that was opened from the tape chart's own yellow tile
+  /// updates that same row rather than parking a second copy of it.
+  Future<void> _saveDraft() async {
+    final state = ref.read(bookingViewModelProvider);
+    if (state.submitting) return;
+    final form = _draftForm();
+    final hasContent =
+        _name.text.trim().isNotEmpty ||
+        _phone.text.trim().isNotEmpty ||
+        form.roomId != null ||
+        _guests.isNotEmpty ||
+        _vehicles.any((v) => !v.isEmpty) ||
+        _advance.any((l) => l.value > 0);
+    if (!hasContent) {
+      _say('There is nothing to save yet — fill in a detail or two first.');
+      return;
+    }
+    final ok = await ref
+        .read(bookingViewModelProvider.notifier)
+        .saveDraft(form);
+    if (!mounted) return;
+    if (!ok) {
+      _say(
+        ref.read(bookingViewModelProvider).error ?? 'Could not save this draft.',
+      );
+      return;
+    }
+    Navigator.of(context).pop(true);
+  }
+
+  /// Throws the parked draft away and closes — nothing agreed with a guest
+  /// is lost, so, like the web drafts panel's own delete, this goes without
+  /// a confirmation step.
+  Future<void> _deleteDraft() async {
+    final draftId = ref.read(bookingViewModelProvider).draftId;
+    if (draftId == null) return;
+    final ok = await ref
+        .read(bookingViewModelProvider.notifier)
+        .deleteDraft(draftId);
+    if (!mounted) return;
+    if (!ok) {
+      _say(
+        ref.read(bookingViewModelProvider).error ??
+            'Could not delete this draft.',
+      );
+      return;
+    }
+    Navigator.of(context).pop(true);
+  }
+
   void _say(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppTheme.heading),
@@ -478,6 +589,17 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             // about the past.
             if (!_editing) ...[
               _BookingTypeHeader(state: state),
+              const SizedBox(height: AppTheme.s16),
+            ],
+
+            // Says which draft this is and offers the way out of it — a
+            // parked booking that can't be thrown away accumulates, the
+            // same banner the web form shows while working one.
+            if (state.draftId != null) ...[
+              _DraftBanner(
+                submitting: state.submitting,
+                onDelete: _deleteDraft,
+              ),
               const SizedBox(height: AppTheme.s16),
             ],
 
@@ -720,16 +842,42 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
               children: [
                 Expanded(
                   child: NeuButton(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s8,
+                      vertical: AppTheme.s16,
+                    ),
                     onPressed: state.submitting
                         ? null
                         : () => Navigator.of(context).pop(false),
                     child: const Text('Close'),
                   ),
                 ),
+                // Only on a new booking — an edit already has somewhere to
+                // keep its answers, the booking itself, the same
+                // restriction the web form's own "Save draft" is under.
+                if (!_editing) ...[
+                  const SizedBox(width: AppTheme.s12),
+                  Expanded(
+                    child: NeuButton(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.s8,
+                        vertical: AppTheme.s16,
+                      ),
+                      onPressed: state.submitting ? null : _saveDraft,
+                      child: Text(
+                        state.draftId != null ? 'Update draft' : 'Save draft',
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(width: AppTheme.s12),
                 Expanded(
                   flex: 2,
                   child: NeuButton(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s8,
+                      vertical: AppTheme.s16,
+                    ),
                     primary: true,
                     expand: true,
                     // Held shut while the request is in flight, and until
@@ -771,6 +919,52 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 // The form used to be a stack of separate cards, each with its own numbered
 // heading. It is one card now, so a section only needs a small label — the
 // divider between sections is what used to be the gap between cards.
+
+/// Says which draft this is and offers the way out of it — a parked booking
+/// that can't be thrown away accumulates. Shown only while [BookingState.
+/// draftId] is set, the same as the web form's own "You are working on a
+/// saved draft." banner.
+class _DraftBanner extends StatelessWidget {
+  final bool submitting;
+  final VoidCallback onDelete;
+
+  const _DraftBanner({required this.submitting, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: AppTheme.s8,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.draft.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.draft.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'You are working on a saved draft.',
+              style: TextStyle(color: AppTheme.heading, fontSize: 12),
+            ),
+          ),
+          TextButton(
+            onPressed: submitting ? null : onDelete,
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.danger,
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Delete draft', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SectionLabel extends StatelessWidget {
   final String title;

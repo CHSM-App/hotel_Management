@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../domain/models/invoice.dart';
 import 'receipt_download.dart';
@@ -80,6 +81,14 @@ class AdvanceReceiptPdf {
     );
     await shareBytesFromDevice(bytes, '$safe.pdf');
     return true;
+  }
+
+  /// Hand the finished file straight to the OS print dialog, distinct from
+  /// [share] and [download] — the desk's third way to get the receipt off
+  /// the phone.
+  static Future<void> print(AdvanceReceipt receipt, {String paperId = ReceiptPaperSize.defaultId}) async {
+    final bytes = await build(receipt, paperId: paperId);
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
   /// Save the file to the device itself — a real download, distinct from
