@@ -186,6 +186,13 @@ app.use('/menu-images', PUBLIC_IMAGE_CORP, express.static(MENU_IMAGE_DIR));
 app.use('/venue-images', PUBLIC_IMAGE_CORP, express.static(VENUE_IMAGE_DIR));
 app.use('/hotel-logos', PUBLIC_IMAGE_CORP, express.static(LOGO_DIR));
 
+// pdf.js, vendored rather than pulled from a CDN: the CSP above locks
+// scriptSrc to 'self' as the XSS defence for the dashboard, so a <script src>
+// pointed at cdnjs is silently dropped by the browser. Serving the same files
+// same-origin needs no CSP exception. Used by the shared-bill/receipt landing
+// page (public.controller.js) to render a preview of the PDF a guest is sent.
+app.use('/vendor/pdfjs', express.static(path.join(__dirname, 'vendor', 'pdfjs')));
+
 // Built frontend (Vite output lands in src/public via CI). Serves index.html,
 // assets/*, favicon, etc. Static files take precedence over the SPA fallback below.
 const CLIENT_DIR = path.join(__dirname, 'public');

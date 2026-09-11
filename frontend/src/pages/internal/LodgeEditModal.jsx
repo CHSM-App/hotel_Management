@@ -5,6 +5,8 @@ import LocationPicker from '../../components/LocationPicker';
 import { validateCoordinates } from '../../lib/coordinates';
 import './LodgeEditModal.css';
 
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 const CHECKIN_MODES = [
   { value: 'HOUR_24', label: '24-hour cycle (from check-in time)' },
   { value: 'NIGHT_BASED', label: 'Night-based (fixed checkout time)' },
@@ -111,6 +113,10 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
     }
     if (form.isGstRegistered && !form.gstin.trim()) {
       failOn('edit-gstin', 'Enter the GSTIN, or turn off GST registration.');
+      return;
+    }
+    if (form.gstin.trim() && !GSTIN_PATTERN.test(form.gstin.trim().toUpperCase())) {
+      failOn('edit-gstin', 'Enter a valid 15-character GSTIN.');
       return;
     }
     const coords = validateCoordinates(form);

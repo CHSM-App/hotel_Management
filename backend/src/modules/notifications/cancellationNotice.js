@@ -34,6 +34,18 @@ function clean(value) {
   return text || '-';
 }
 
+// Same comma-safety as clean(), but leaves a genuinely empty value empty
+// instead of falling back to '-'. Used only for the cancellation reason: a
+// guest who cancels without giving one should see that slot blank in the
+// WhatsApp message, not a placeholder dash standing in for a reason nobody
+// gave.
+function cleanOptional(value) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ' - ')
+    .trim();
+}
+
 function dateParts(value) {
   if (typeof value === 'string') {
     const [y, m, d] = value.slice(0, 10).split('-').map(Number);
@@ -71,14 +83,14 @@ function refundModeAmount(booking) {
 // see notifyBookingCancelled — lodge the raw dbo.lodges row.
 function buildCancellationSample(booking, lodge) {
   return [
-    booking.guestName,
-    lodge.name,
-    `#${booking.id}`,
-    formatDate(booking.checkInDate),
-    formatDate(booking.checkOutDate),
-    booking.cancelReason || 'Not specified',
-    refundModeAmount(booking),
-  ].map(clean);
+    clean(booking.guestName),
+    clean(lodge.name),
+    clean(`#${booking.id}`),
+    clean(formatDate(booking.checkInDate)),
+    clean(formatDate(booking.checkOutDate)),
+    cleanOptional(booking.cancelReason),
+    clean(refundModeAmount(booking)),
+  ];
 }
 
 async function loadLodge(lodgeId) {
@@ -119,4 +131,5 @@ module.exports = {
   buildCancellationSample,
   refundModeAmount,
   clean,
+  cleanOptional,
 };

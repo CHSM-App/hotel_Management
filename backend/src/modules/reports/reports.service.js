@@ -102,7 +102,7 @@ function mergeTenders(parts) {
 //   gross − discount = net;  net − CGST − SGST = taxable;
 //   taxable + CGST + SGST + round off = billed total.
 function billFigures(row) {
-  const roomGross = Number(row.room_subtotal);
+  const roomGross = Number(row.room_subtotal ?? 0);
   const foodGross = Number(row.food_subtotal ?? 0);
   const roomCgst = Number(row.cgst_amount ?? 0);
   const roomSgst = Number(row.sgst_amount ?? 0);
@@ -135,7 +135,7 @@ function billFigures(row) {
     sgstAmount: round2(roomSgst + foodSgst),
     totalTax: round2(roomCgst + foodCgst + roomSgst + foodSgst),
     roundOff: Number(row.round_off ?? 0),
-    billedAmount: Number(row.total_amount),
+    billedAmount: Number(row.total_amount ?? 0),
   };
 }
 
@@ -445,12 +445,12 @@ async function getOccupancyReport(lodgeId, fromDate, toDate) {
 }
 
 function emptyTotals() {
-  return { count: 0, roomSubtotal: 0, cgstAmount: 0, sgstAmount: 0, totalAmount: 0 };
+  return { count: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, totalAmount: 0 };
 }
 
 function addToTotals(totals, invoice) {
   totals.count += 1;
-  totals.roomSubtotal = round2(totals.roomSubtotal + invoice.roomSubtotal);
+  totals.taxableValue = round2(totals.taxableValue + invoice.taxableValue);
   totals.cgstAmount = round2(totals.cgstAmount + invoice.cgstAmount);
   totals.sgstAmount = round2(totals.sgstAmount + invoice.sgstAmount);
   totals.totalAmount = round2(totals.totalAmount + invoice.totalAmount);
@@ -470,7 +470,7 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     .query(`
       SELECT i.id, i.document_type, i.billing_side, i.invoice_number, i.room_subtotal,
              i.cgst_amount, i.sgst_amount, i.round_off, i.total_amount, i.created_at,
-             i.event_booking_id, i.booking_id,
+             i.event_booking_id, i.booking_id, i.discount_amount,
              i.food_subtotal, i.food_cgst_amount, i.food_sgst_amount,
              COALESCE(b.guest_name, eb.organiser_name) AS guest_name
       FROM dbo.invoices i
@@ -483,26 +483,36 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
       ORDER BY i.created_at ASC
     `);
 
-  const invoices = result.recordset.map((row) => ({
-    id: row.id,
-    invoiceNumber: row.invoice_number,
-    documentType: row.document_type,
-    billingSide: row.billing_side,
-    guestName: row.guest_name,
-    roomSubtotal: Number(row.room_subtotal),
-    cgstAmount: Number(row.cgst_amount),
-    sgstAmount: Number(row.sgst_amount),
-    roundOff: Number(row.round_off),
-    totalAmount: Number(row.total_amount),
-    createdAt: row.created_at,
-    // Same discriminator getAnalyticsOverview uses: an EVENT invoice's "room"
-    // columns hold the venue/catering charge, never room revenue, and
-    // food_subtotal/food_cgst/food_sgst is food tax wherever it rides —
-    // including room-service food billed onto a stay's own invoice.
-    isEvent: row.event_booking_id != null,
-    foodCgst: Number(row.food_cgst_amount ?? 0),
-    foodSgst: Number(row.food_sgst_amount ?? 0),
-  }));
+  const invoices = result.recordset.map((row) => {
+    const figures = billFigures(row);
+    return {
+      id: row.id,
+      invoiceNumber: row.invoice_number,
+      documentType: row.document_type,
+      billingSide: row.billing_side,
+      guestName: row.guest_name,
+      // The register's "taxable value" is net of GST and includes food, the
+      // same identity billFigures derives for the printed bill — never the
+      // gross room_subtotal, which would double-count the tax inside it and
+      // omit food entirely.
+      taxableValue: figures.taxableValue,
+      cgstAmount: figures.cgstAmount,
+      sgstAmount: figures.sgstAmount,
+      roundOff: Number(row.round_off),
+      totalAmount: Number(row.total_amount),
+      createdAt: row.created_at,
+      // Same discriminator getAnalyticsOverview uses: an EVENT invoice's "room"
+      // columns hold the venue/catering charge, never room revenue, and
+      // food_subtotal/food_cgst/food_sgst is food tax wherever it rides —
+      // including room-service food billed onto a stay's own invoice.
+      isEvent: row.event_booking_id != null,
+      roomCgst: figures.roomCgst,
+      roomSgst: figures.roomSgst,
+      foodCgst: figures.foodCgst,
+      foodSgst: figures.foodSgst,
+      foodTaxable: figures.foodTaxable,
+    };
+  });
 
   const totals = emptyTotals();
   const byDocumentType = {};
@@ -520,8 +530,8 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     addToTotals(byDocumentType[invoice.documentType], invoice);
 
     const primaryStream = invoice.isEvent ? 'FUNCTIONS' : 'ROOMS';
-    byRevenueStream[primaryStream].cgstAmount = round2(byRevenueStream[primaryStream].cgstAmount + invoice.cgstAmount);
-    byRevenueStream[primaryStream].sgstAmount = round2(byRevenueStream[primaryStream].sgstAmount + invoice.sgstAmount);
+    byRevenueStream[primaryStream].cgstAmount = round2(byRevenueStream[primaryStream].cgstAmount + invoice.roomCgst);
+    byRevenueStream[primaryStream].sgstAmount = round2(byRevenueStream[primaryStream].sgstAmount + invoice.roomSgst);
     byRevenueStream.FOOD.cgstAmount = round2(byRevenueStream.FOOD.cgstAmount + invoice.foodCgst);
     byRevenueStream.FOOD.sgstAmount = round2(byRevenueStream.FOOD.sgstAmount + invoice.foodSgst);
   }

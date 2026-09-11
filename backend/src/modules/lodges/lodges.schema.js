@@ -19,6 +19,18 @@ const coordinate = (min, max, label) =>
 const latitude = coordinate(-90, 90, 'Latitude');
 const longitude = coordinate(-180, 180, 'Longitude');
 
+// 15 characters: 2-digit state code, 10-character PAN, 1-digit entity code,
+// literal 'Z', 1 alphanumeric checksum. Empty string is allowed through here;
+// "GSTIN required when registered" is enforced separately.
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const gstin = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .refine((value) => value === '' || GSTIN_PATTERN.test(value), {
+    message: 'Enter a valid 15-character GSTIN.',
+  });
+
 // Half a coordinate is not a place: the pair is stored together or not at all.
 // On an update, a payload carrying only one half is judged against the stored
 // row in the service instead.
@@ -53,7 +65,7 @@ const createLodgeSchema = z
     longitude: longitude.default(null),
     checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED', 'CYCLE']).default('HOUR_24'),
     isGstRegistered: z.boolean().default(false),
-    gstin: z.string().trim().optional().default(''),
+    gstin: gstin.optional().default(''),
     isSpecifiedPremises: z.boolean().default(false),
     // What kind of property this is. Defaults describe the original product —
     // a lodge with rooms and no food — so an existing caller that omits them
@@ -124,7 +136,7 @@ const updateLodgeSchema = z.object({
   longitude: longitude.optional(),
   checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED', 'CYCLE']).optional(),
   isGstRegistered: z.boolean().optional(),
-  gstin: z.string().trim().max(20).optional(),
+  gstin: gstin.optional(),
   isSpecifiedPremises: z.boolean().optional(),
   hasRooms: z.boolean().optional(),
   servesFood: z.boolean().optional(),

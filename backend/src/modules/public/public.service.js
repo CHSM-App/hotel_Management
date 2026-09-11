@@ -288,6 +288,28 @@ async function listPublicAddons(lodgeId) {
   }));
 }
 
+// The same "booking extras" the desk already offers at check-in — AC, an
+// extra bed — read here at list price for the enquiry form. Informational
+// only, same as listPublicAddons: the desk still agrees the real number once
+// the guest actually calls or messages.
+async function listPublicRoomAddons(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT id, name, charge_per_night
+      FROM dbo.switchable_charges
+      WHERE lodge_id = @lodgeId AND is_active = 1
+      ORDER BY name ASC
+    `);
+  return result.recordset.map((row) => ({
+    id: row.id,
+    name: row.name,
+    chargePerNight: Number(row.charge_per_night),
+  }));
+}
+
 function assertServesFood(lodge) {
   if (!lodge.servesFood) {
     throw new ApiError('This property isn’t taking food orders.', 404);
@@ -788,6 +810,7 @@ module.exports = {
   listPublicRoomTypes,
   listPublicVenues,
   listPublicAddons,
+  listPublicRoomAddons,
   getPublicMenu,
   getLodgeOrderingContext,
   getTableOrderingContext,

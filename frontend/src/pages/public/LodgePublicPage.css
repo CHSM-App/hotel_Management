@@ -896,11 +896,14 @@
   justify-content: center;
   background: #25d366;
   color: #08321c;
+  font: inherit;
   font-size: 14px;
   font-weight: 700;
   padding: 11px 16px;
+  border: none;
   border-radius: 8px;
   text-decoration: none;
+  cursor: pointer;
   transition: background 150ms ease;
 }
 
@@ -1709,5 +1712,200 @@
     width: 40px;
     height: 40px;
     font-size: 24px;
+  }
+}
+
+/* --- enquire modal --------------------------------------------------------- */
+
+.lodge-public__modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  background: rgba(8, 12, 20, 0.55);
+  padding: 40px 16px;
+}
+
+.lodge-public__modal {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--site-shadow-hover);
+  padding: 24px;
+  margin: auto;
+}
+
+.lodge-public__modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.lodge-public__modal-head h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lodge-public__modal-close {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.lodge-public__modal-close:hover {
+  background: var(--neu-sunken);
+  color: var(--ink);
+}
+
+.lodge-public__modal-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lodge-public__modal-choice-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 18px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--neu-sunken);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.lodge-public__modal-choice-btn:hover {
+  border-color: var(--brand);
+  background: #fff;
+}
+
+.lodge-public__modal-choice-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lodge-public__modal-choice-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.lodge-public__modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lodge-public__modal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.lodge-public__modal-row > * {
+  flex: 1 1 160px;
+}
+
+.lodge-public__modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lodge-public__modal-field label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.lodge-public__modal-field textarea {
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--field);
+  box-shadow: var(--shadow-well);
+  resize: vertical;
+}
+
+.lodge-public__modal-addons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.lodge-public__modal-addon {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.lodge-public__modal-addon input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+}
+
+.lodge-public__modal-menu-link {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.lodge-public__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+@media (max-width: 560px) {
+  .lodge-public__modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .lodge-public__modal {
+    max-width: none;
+    min-height: 100%;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  .lodge-public__modal-choice {
+    grid-template-columns: 1fr;
   }
 }

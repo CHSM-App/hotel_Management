@@ -501,7 +501,7 @@ export default function ReportsPanel({ lodge }) {
     () => ({
       type: (r) => DOCUMENT_LABEL[r.type] || r.type,
       count: (r) => r.count,
-      roomSubtotal: (r) => r.roomSubtotal,
+      taxableValue: (r) => r.taxableValue,
       cgstAmount: (r) => r.cgstAmount,
       sgstAmount: (r) => r.sgstAmount,
       totalAmount: (r) => r.totalAmount,
@@ -1024,7 +1024,7 @@ export default function ReportsPanel({ lodge }) {
                 </div>
                 <div className="reports-panel__gst-cell">
                   <span className="reports-panel__gst-cell-label">Taxable value</span>
-                  <span className="reports-panel__gst-cell-value">{formatPrice(gst.totals.roomSubtotal)}</span>
+                  <span className="reports-panel__gst-cell-value">{formatPrice(gst.totals.taxableValue)}</span>
                 </div>
                 <div className="reports-panel__gst-cell">
                   <span className="reports-panel__gst-cell-label">CGST collected</span>
@@ -1048,7 +1048,7 @@ export default function ReportsPanel({ lodge }) {
                           <tr>
                             <SortTh label="Document type" sortKey="type" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="Count" sortKey="count" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
-                            <SortTh label="Taxable value" sortKey="roomSubtotal" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
+                            <SortTh label="Taxable value" sortKey="taxableValue" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="CGST" sortKey="cgstAmount" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="SGST" sortKey="sgstAmount" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
                             <SortTh label="Total" sortKey="totalAmount" sort={documentTypeSort} onSort={toggleDocumentTypeSort} />
@@ -1059,7 +1059,7 @@ export default function ReportsPanel({ lodge }) {
                             <tr key={t.type}>
                               <td><span className="reports-panel__doc-chip">{DOCUMENT_LABEL[t.type] || t.type}</span></td>
                               <td>{t.count}</td>
-                              <td>{formatPrice(t.roomSubtotal)}</td>
+                              <td>{formatPrice(t.taxableValue)}</td>
                               <td>{formatPrice(t.cgstAmount)}</td>
                               <td>{formatPrice(t.sgstAmount)}</td>
                               <td>{formatPrice(t.totalAmount)}</td>
