@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/guest_match.dart';
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
@@ -87,6 +89,31 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   final _phone = TextEditingController();
   String? _idProofType;
   final _idProofNumber = TextEditingController();
+
+  // ── Returning-guest suggestions on the primary name field ────────────────
+  //
+  // Mirrors the web booking form's own typeahead (Bookings.jsx's
+  // GuestNameField): a name typed against this property's guest history
+  // offers back who it likely is, so the desk stops re-typing a phone number
+  // and an ID that are already on file. Offered only on a fresh booking — an
+  // edit is correcting one guest already on this stay, not choosing among
+  // past ones.
+  final _nameLink = LayerLink();
+  final _namePortal = OverlayPortalController();
+  final _nameFieldKey = GlobalKey();
+  Timer? _nameSearchDebounce;
+  List<GuestMatch> _nameMatches = [];
+  int _nameSearchToken = 0;
+
+  /// The name a suggestion was just taken under — the same keystroke's own
+  /// fetch would otherwise reopen the list over the name just chosen.
+  String _namePicked = '';
+
+  /// Set right after a suggestion fills the ID fields, so typing over the
+  /// name afterwards can tell the ID details no longer describe whoever is
+  /// now being typed and drop them, rather than leave a stranger's number
+  /// attached to a different name.
+  String? _idFieldsPickedFor;
 
   /// A photo of the primary guest's document, taken or picked this session —
   /// never pre-filled on an edit, since a stay with one already on file has
@@ -303,10 +330,63 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _nameSearchDebounce?.cancel();
     _name.dispose();
     _phone.dispose();
     _idProofNumber.dispose();
     super.dispose();
+  }
+
+  // ── Returning-guest suggestions ──────────────────────────────────────────
+
+  void _onNameTyped(String value) {
+    setState(() {}); // re-derive _nameError as the web's own field does
+    // Typing over a name a suggestion filled means the fields it filled no
+    // longer describe whoever is being typed now.
+    if (_idFieldsPickedFor != null && value != _idFieldsPickedFor) {
+      _idFieldsPickedFor = null;
+      _idProofType = null;
+      _idProofNumber.clear();
+    }
+
+    _nameSearchDebounce?.cancel();
+    final term = value.trim();
+    if (term.length < 2 || term == _namePicked) {
+      _nameMatches = [];
+      _namePortal.hide();
+      return;
+    }
+    // A query per keystroke would be a query per keystroke. A quarter second
+    // is below the threshold where a suggestion list feels like it lagged,
+    // and above the speed anyone types a name.
+    final token = ++_nameSearchToken;
+    _nameSearchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      final matches = await ref
+          .read(bookingViewModelProvider.notifier)
+          .searchGuests(term);
+      // Two keystrokes in flight can land out of order; the later one owns
+      // the list, so an answer to a name already typed past is dropped.
+      if (!mounted || token != _nameSearchToken) return;
+      setState(() => _nameMatches = matches);
+      if (matches.isNotEmpty) {
+        _namePortal.show();
+      } else {
+        _namePortal.hide();
+      }
+    });
+  }
+
+  void _pickGuest(GuestMatch guest) {
+    _namePicked = guest.name;
+    _namePortal.hide();
+    setState(() {
+      _nameMatches = [];
+      _name.text = guest.name;
+      _phone.text = guest.phone ?? '';
+      _idProofType = guest.idProofType;
+      _idProofNumber.text = guest.idProofNumber ?? '';
+      _idFieldsPickedFor = guest.name;
+    });
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -677,13 +757,71 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         children: [
                           KeyedSubtree(
                             key: _nameKey,
-                            child: NeuField(
-                              controller: _name,
-                              label: 'Name (primary guest)',
-                              required: true,
-                              errorText: _nameError,
-                              onChanged: (_) => setState(() {}),
-                            ),
+                            child: _editing
+                                ? NeuField(
+                                    controller: _name,
+                                    label: 'Name (primary guest)',
+                                    required: true,
+                                    errorText: _nameError,
+                                    onChanged: (_) => setState(() {}),
+                                  )
+                                : CompositedTransformTarget(
+                                    link: _nameLink,
+                                    child: OverlayPortal(
+                                      controller: _namePortal,
+                                      overlayChildBuilder: (context) {
+                                        final box = _nameFieldKey.currentContext
+                                            ?.findRenderObject() as RenderBox?;
+                                        final width = box?.size.width ?? 280;
+                                        return Stack(
+                                          children: [
+                                            Positioned.fill(
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.translucent,
+                                                onTap: _namePortal.hide,
+                                              ),
+                                            ),
+                                            CompositedTransformFollower(
+                                              link: _nameLink,
+                                              showWhenUnlinked: false,
+                                              targetAnchor: Alignment.bottomLeft,
+                                              followerAnchor: Alignment.topLeft,
+                                              offset: const Offset(0, AppTheme.s4),
+                                              child: Align(
+                                                alignment: Alignment.topLeft,
+                                                child: Material(
+                                                  color: Colors.transparent,
+                                                  child: SizedBox(
+                                                    width: width,
+                                                    child: _GuestSuggestions(
+                                                      matches: _nameMatches,
+                                                      onPick: _pickGuest,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                      child: KeyedSubtree(
+                                        key: _nameFieldKey,
+                                        child: NeuField(
+                                          controller: _name,
+                                          label: 'Name (primary guest)',
+                                          required: true,
+                                          errorText: _nameError,
+                                          onChanged: _onNameTyped,
+                                          onTap: () {
+                                            if (_nameMatches.isNotEmpty) {
+                                              _namePortal.show();
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                           ),
                           const SizedBox(height: AppTheme.s12),
                           NeuField(
@@ -2007,6 +2145,76 @@ class _IdProofFields extends StatelessWidget {
           ],
         ],
       ],
+    );
+  }
+}
+
+// ── Returning-guest suggestions ─────────────────────────────────────────────
+
+/// The dropdown itself — one row per match, each with the trail the web
+/// list shows: phone, how many times they've stayed, when last, and whether
+/// an ID document is already on file for them.
+class _GuestSuggestions extends StatelessWidget {
+  final List<GuestMatch> matches;
+  final ValueChanged<GuestMatch> onPick;
+
+  const _GuestSuggestions({required this.matches, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    if (matches.isEmpty) return const SizedBox.shrink();
+    return NeuCard(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+      shadow: AppTheme.extruded,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final guest in matches)
+            InkWell(
+              onTap: () => onPick(guest),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s12,
+                  vertical: AppTheme.s8,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      guest.name,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (guest.phone != null) guest.phone!,
+                        if (guest.stayCount > 1) '${guest.stayCount} stays',
+                        if (guest.lastStayDate != null)
+                          'last ${formatIsoDate(guest.lastStayDate)}',
+                      ].join(' · '),
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                    ),
+                    if (guest.hasIdProofDocument) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '${kIdProofTypes[guest.idProofType] ?? guest.idProofType ?? 'ID'} on file',
+                        style: const TextStyle(
+                          color: AppTheme.accent,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

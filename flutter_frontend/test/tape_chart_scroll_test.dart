@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
+import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/late_checkout.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
 import 'package:hotel_manager/domain/models/room.dart';
@@ -59,6 +60,10 @@ class _FakeBookingRepository implements BookingRepository {
 
   @override
   Future<Booking> booking(int id) => throw UnimplementedError();
+
+  @override
+  Future<List<GuestMatch>> searchGuests(String query) =>
+      throw UnimplementedError();
 
   @override
   Future<Response<List<int>>> idProof(int bookingId) =>

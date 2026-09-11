@@ -19,8 +19,11 @@ const kIdProofTypes = <String, String>{
   'OTHER': 'Other',
 };
 
-/// Mirrors PAYMENT_METHODS. UPI and card leave a reference the property
-/// reconciles against its settlement statement; cash does not.
+/// Mirrors PAYMENT_METHODS. UPI and card leave a reference the property can
+/// reconcile against its settlement statement; cash does not. Offered, never
+/// demanded — the number is often not to hand at the moment of payment, so it
+/// stays optional on both methods (mirrors requiresReference in
+/// bookings.schema.js).
 const kPaymentMethods = <String, String>{
   'CASH': 'Cash',
   'UPI': 'UPI',
@@ -118,9 +121,6 @@ num sumPayments(List<PaymentDraft> lines) {
 String? paymentLinesError(List<PaymentDraft> lines) {
   for (final line in lines) {
     if (line.method == null) return 'Choose how each part was paid.';
-    if (needsPaymentReference(line.method) && line.reference.trim().isEmpty) {
-      return 'Enter the transaction number for a UPI or card payment.';
-    }
     if (line.value <= 0) return 'Each payment must be more than zero.';
   }
   return null;

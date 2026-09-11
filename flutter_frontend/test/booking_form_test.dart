@@ -84,10 +84,12 @@ void main() {
       expect(sumPayments(lines), 1500.10);
     });
 
-    test('a UPI row without its transaction number is refused', () {
+    test('a UPI row without its transaction number is accepted', () {
+      // Offered, never demanded — the number is often not to hand at the
+      // moment of payment, so it stays optional on UPI and card alike.
       expect(
         paymentLinesError([PaymentDraft(method: 'UPI', amount: '400')]),
-        'Enter the transaction number for a UPI or card payment.',
+        isNull,
       );
     });
 

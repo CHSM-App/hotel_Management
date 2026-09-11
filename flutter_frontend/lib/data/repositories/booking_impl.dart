@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/guest_match.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
@@ -59,6 +60,10 @@ class BookingImpl implements BookingRepository {
 
   @override
   Future<Booking> booking(int id) => api.booking(id);
+
+  @override
+  Future<List<GuestMatch>> searchGuests(String query) =>
+      api.searchGuests(query);
 
   @override
   Future<Response<List<int>>> idProof(int bookingId) => api.idProof(bookingId);

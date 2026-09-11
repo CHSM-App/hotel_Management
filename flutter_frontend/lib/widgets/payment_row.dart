@@ -9,8 +9,9 @@ import 'neu.dart';
 /// Shared rather than owned by the booking form, because money arrives at more
 /// than one moment in a stay — a deposit when the booking is taken, a further
 /// advance at the door on check-in — and each is the same split-tender question
-/// asked again. Keeping one control means a reference stays mandatory on UPI in
-/// both places rather than only in the screen somebody remembered.
+/// asked again. Keeping one control means the optional reference field is
+/// offered the same way in both places rather than only in the screen
+/// somebody remembered.
 class PaymentRow extends StatefulWidget {
   final PaymentDraft line;
 
@@ -117,7 +118,7 @@ class _PaymentRowState extends State<PaymentRow> {
           const SizedBox(height: AppTheme.s8),
           NeuField(
             controller: _reference,
-            label: 'Transaction number',
+            label: 'Transaction number (optional)',
             hint: widget.line.method == 'UPI'
                 ? 'UPI reference / UTR'
                 : 'Approval code',

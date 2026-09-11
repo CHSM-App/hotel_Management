@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
+import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/late_checkout.dart';
 import 'package:hotel_manager/domain/models/me.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
@@ -126,6 +127,9 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> booking(int id) async =>
       rows.firstWhere((b) => b.id == id, orElse: () => Booking(id: id));
+
+  @override
+  Future<List<GuestMatch>> searchGuests(String query) async => const [];
 
   @override
   Future<Response<List<int>>> idProof(int bookingId) async =>

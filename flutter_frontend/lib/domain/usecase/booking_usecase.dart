@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../models/booking.dart';
 import '../models/draft.dart';
+import '../models/guest_match.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
@@ -46,6 +47,10 @@ class BookingUsecase {
 
   /// One stay, in full.
   Future<Booking> booking(int id) => repository.booking(id);
+
+  /// Guests this property has had before, matched on a partly-typed name.
+  Future<List<GuestMatch>> searchGuests(String query) =>
+      repository.searchGuests(query);
 
   /// The primary guest's uploaded ID proof, raw bytes plus content type.
   Future<Response<List<int>>> idProof(int bookingId) =>

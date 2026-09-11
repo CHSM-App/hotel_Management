@@ -262,6 +262,7 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
+
   static String _address(Lodge lodge) {
     final parts = [
       lodge.address,
@@ -313,6 +314,14 @@ class ProfileScreen extends ConsumerWidget {
     );
     if (ok == true) {
       await ref.read(authViewModelProvider.notifier).signOut();
+      // ProfileScreen is pushed on top of DashboardShell, which sits inside
+      // AuthGate's single root route. Signing out swaps AuthGate's child to
+      // LoginScreen, but that happens underneath this pushed route — without
+      // popping back to root, this screen stays on top showing its "me is
+      // null" spinner forever instead of the login screen.
+      if (context.mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     }
   }
 

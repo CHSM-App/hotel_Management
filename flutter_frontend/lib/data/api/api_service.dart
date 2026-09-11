@@ -4,6 +4,7 @@ import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/food_order.dart';
+import '../../domain/models/guest_match.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/me.dart';
@@ -165,6 +166,19 @@ class ApiService {
   Future<Booking> booking(int id) async {
     final res = await _dio.get('/bookings/$id');
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
+  /// Guests this property has had before, matched on a partly-typed name —
+  /// the same lookup the web booking form's own typeahead runs.
+  Future<List<GuestMatch>> searchGuests(String query) async {
+    final res = await _dio.get(
+      '/bookings/guest-search',
+      queryParameters: {'q': query},
+    );
+    final body = _map(res.data);
+    return (body['guests'] as List? ?? [])
+        .map((e) => GuestMatch.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// The tape chart's own fetch: every active room plus every stay, draft and

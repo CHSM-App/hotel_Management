@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/guest_match.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
@@ -671,6 +672,18 @@ class BookingViewModel extends StateNotifier<BookingState> {
     } catch (e) {
       state = state.copyWith(error: messageFor(e));
       return null;
+    }
+  }
+
+  /// Returning guests matching what's been typed so far. A convenience, not
+  /// a field the form depends on — a failed lookup leaves the desk typing
+  /// the name out, which is what they were doing anyway, so nothing here
+  /// touches [state.error].
+  Future<List<GuestMatch>> searchGuests(String query) async {
+    try {
+      return await usecase.searchGuests(query);
+    } catch (_) {
+      return [];
     }
   }
 
