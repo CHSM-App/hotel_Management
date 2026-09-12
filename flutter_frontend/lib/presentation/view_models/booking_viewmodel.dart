@@ -14,6 +14,7 @@ import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/tape_chart.dart';
 import '../../domain/usecase/booking_usecase.dart';
+import '../../core/network/api_error_message.dart';
 
 /// What the desk has chosen so far, and what the server says it costs.
 ///
@@ -1231,22 +1232,5 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// The server's own words where it sent any — "This room is already booked
   /// for part of that date range" is the whole answer, and no generic string
   /// can replace it.
-  static String messageFor(Object e) {
-    if (e is DioException) {
-      final data = e.response?.data;
-      if (data is Map && data['message'] is String) return data['message'];
-      if (data is Map && data['error'] is String) return data['error'];
-      switch (e.type) {
-        case DioExceptionType.connectionTimeout:
-        case DioExceptionType.sendTimeout:
-        case DioExceptionType.receiveTimeout:
-          return 'The server took too long to answer.';
-        case DioExceptionType.connectionError:
-          return 'Cannot reach the server. Check the wifi and try again.';
-        default:
-          return 'Something went wrong. Try again.';
-      }
-    }
-    return 'Something went wrong. Try again.';
-  }
+  static String messageFor(Object e) => apiErrorMessage(e);
 }

@@ -1,7 +1,7 @@
-import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/token_provider.dart';
+import '../../core/network/api_error_message.dart';
 import '../../domain/models/me.dart';
 import '../../domain/usecase/auth_usecase.dart';
 
@@ -125,22 +125,5 @@ class AuthViewModel extends StateNotifier<AuthState> {
   /// The server's own words where it sent any, because it says the useful
   /// thing — "That account is locked for 15 minutes" is worth far more to the
   /// desk than "Request failed with status code 429".
-  String _message(Object e) {
-    if (e is DioException) {
-      final data = e.response?.data;
-      if (data is Map && data['message'] is String) return data['message'];
-      if (data is Map && data['error'] is String) return data['error'];
-      switch (e.type) {
-        case DioExceptionType.connectionTimeout:
-        case DioExceptionType.sendTimeout:
-        case DioExceptionType.receiveTimeout:
-          return 'The server took too long to answer.';
-        case DioExceptionType.connectionError:
-          return 'Cannot reach the server. Check the wifi and try again.';
-        default:
-          return 'Something went wrong. Try again.';
-      }
-    }
-    return 'Something went wrong. Try again.';
-  }
+  String _message(Object e) => apiErrorMessage(e);
 }
