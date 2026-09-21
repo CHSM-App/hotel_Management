@@ -113,7 +113,12 @@ async function listLodges() {
       l.logo_path, l.show_logo_on_receipt,
       u.name AS owner_name, u.phone AS owner_phone
     FROM dbo.lodges l
-    LEFT JOIN dbo.users u ON u.lodge_id = l.id AND u.role = 'OWNER'
+    OUTER APPLY (
+      SELECT TOP 1 name, phone
+      FROM dbo.users
+      WHERE lodge_id = l.id AND role = 'OWNER'
+      ORDER BY created_at
+    ) u
     ORDER BY l.created_at DESC
   `);
 
