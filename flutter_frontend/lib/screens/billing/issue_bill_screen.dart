@@ -138,15 +138,32 @@ class _Body extends ConsumerWidget {
               // The tax is inside the total, not added to it. Shown so the
               // guest can see what was charged, and so the figures reconcile
               // with what is filed.
-              if (preview.isGstRegistered) ...[
+              //
+              // Room and food taxed separately — different SACs at different
+              // rates, which is the split GSTR-1 reports on — so each prints
+              // its own CGST/SGST pair rather than one merged figure, same as
+              // the web bill.
+              if ((amounts?.cgstAmount ?? 0) > 0 || (amounts?.sgstAmount ?? 0) > 0) ...[
                 _Row(
-                  label: 'CGST ${amounts?.cgstRatePercent ?? 0} %',
+                  label: 'CGST (${amounts?.cgstRatePercent ?? 0}%)',
                   value: amounts?.cgstAmount ?? 0,
                   muted: true,
                 ),
                 _Row(
-                  label: 'SGST ${amounts?.sgstRatePercent ?? 0} %',
+                  label: 'SGST (${amounts?.sgstRatePercent ?? 0}%)',
                   value: amounts?.sgstAmount ?? 0,
+                  muted: true,
+                ),
+              ],
+              if ((amounts?.foodCgstAmount ?? 0) > 0 || (amounts?.foodSgstAmount ?? 0) > 0) ...[
+                _Row(
+                  label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
+                  value: amounts?.foodCgstAmount ?? 0,
+                  muted: true,
+                ),
+                _Row(
+                  label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
+                  value: amounts?.foodSgstAmount ?? 0,
                   muted: true,
                 ),
               ],

@@ -14,11 +14,32 @@ import 'counter_order_screen.dart';
 /// This is the section a KITCHEN login lands on, and until now the only one it
 /// could reach — the seeded role carries `orders.manage` and nothing else, so
 /// a cook signing in got a single tab with a placeholder behind it.
-class OrdersScreen extends ConsumerWidget {
+class OrdersScreen extends ConsumerStatefulWidget {
   const OrdersScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OrdersScreen> createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends ConsumerState<OrdersScreen> {
+  /// The status cut, behind its own icon rather than sitting permanently on
+  /// screen — folds open right under the date field, the same way the
+  /// register page's own status filter does.
+  bool _filterOpen = false;
+  final LayerLink _filterLink = LayerLink();
+  final OverlayPortalController _filterPortalController = OverlayPortalController();
+
+  void _toggleFilterOpen() {
+    setState(() => _filterOpen = !_filterOpen);
+    if (_filterOpen) {
+      _filterPortalController.show();
+    } else {
+      _filterPortalController.hide();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(ordersViewModelProvider);
     final vm = ref.read(ordersViewModelProvider.notifier);
 
@@ -49,19 +70,18 @@ class OrdersScreen extends ConsumerWidget {
           ),
         ),
         Positioned(
-          left: AppTheme.s16,
           right: AppTheme.s16,
           bottom: AppTheme.s16,
-          child: NeuButton(
-            primary: true,
-            expand: true,
+          child: FloatingActionButton(
+            backgroundColor: AppTheme.accent,
+            foregroundColor: Colors.white,
             onPressed: () async {
               final placed = await Navigator.of(context).push<bool>(
                 MaterialPageRoute(builder: (_) => const CounterOrderScreen()),
               );
               if (placed == true) await vm.loadQueue();
             },
-            child: const Text('Take an order'),
+            child: const Icon(Icons.add_rounded),
           ),
         ),
       ],
@@ -159,12 +179,49 @@ class OrdersScreen extends ConsumerWidget {
               ),
             ),
           ),
+          const SizedBox(width: AppTheme.s8),
+          CompositedTransformTarget(
+            link: _filterLink,
+            child: OverlayPortal(
+              controller: _filterPortalController,
+              overlayChildBuilder: (context) => Stack(
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _toggleFilterOpen,
+                    ),
+                  ),
+                  CompositedTransformFollower(
+                    link: _filterLink,
+                    showWhenUnlinked: false,
+                    targetAnchor: Alignment.bottomRight,
+                    followerAnchor: Alignment.topRight,
+                    offset: const Offset(0, AppTheme.s8),
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: _StatusChips(
+                          selected: state.historyStatus,
+                          onSelect: (status) {
+                            vm.setHistoryStatus(status);
+                            _toggleFilterOpen();
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              child: _FilterButton(
+                active: state.historyStatus != null,
+                open: _filterOpen,
+                onTap: _toggleFilterOpen,
+              ),
+            ),
+          ),
         ],
-      ),
-      const SizedBox(height: AppTheme.s12),
-      _StatusChips(
-        selected: state.historyStatus,
-        onSelect: vm.setHistoryStatus,
       ),
       const SizedBox(height: AppTheme.s16),
     ];
@@ -210,77 +267,144 @@ class OrdersScreen extends ConsumerWidget {
 
 // ── Queue / history switch ──────────────────────────────────────────────────
 
+/// Same sliding-pill segmented control the billing screen's To-bill/Issued
+/// switch and the rooms screen's Rooms/Price-chart switch use — one connected
+/// control with a moving highlight, rather than two separate boxes that don't
+/// read as a single tab bar.
 class _TabRow extends StatelessWidget {
   final OrdersState state;
   final ValueChanged<OrdersTab> onSelect;
 
   const _TabRow({required this.state, required this.onSelect});
 
+  static const double _height = 44;
+
   @override
   Widget build(BuildContext context) {
     // The count rides on the tab because a cook looking at the day's history
     // still needs to know something new has come in.
     final waiting = state.needsAccepting;
+    final kitchenLabel = waiting > 0 ? 'Kitchen ($waiting new)' : 'Kitchen';
+    final selectedIndex = state.tab == OrdersTab.queue ? 0 : 1;
 
-    return Row(
-      children: [
+    Widget segment(String label, bool isSelected, VoidCallback onTap) =>
         Expanded(
-          child: _Tab(
-            label: waiting > 0 ? 'Kitchen ($waiting new)' : 'Kitchen',
-            selected: state.tab == OrdersTab.queue,
-            onTap: () => onSelect(OrdersTab.queue),
+          child: GestureDetector(
+            onTap: onTap,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              height: _height,
+              child: Center(
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  style: TextStyle(
+                    color: isSelected ? AppTheme.accent : AppTheme.muted,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 13,
+                  ),
+                  child: Text(label, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: AppTheme.s8),
-        Expanded(
-          child: _Tab(
-            label: 'Earlier',
-            selected: state.tab == OrdersTab.history,
-            onTap: () => onSelect(OrdersTab.history),
+        );
+
+    return Container(
+      height: _height,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment:
+                selectedIndex == 0 ? Alignment.centerLeft : Alignment.centerRight,
+            child: FractionallySizedBox(
+              widthFactor: 0.5,
+              child: Container(
+                height: _height - 8,
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+                  boxShadow: AppTheme.extruded,
+                ),
+              ),
+            ),
           ),
-        ),
-      ],
+          Row(
+            children: [
+              segment(kitchenLabel, selectedIndex == 0, () => onSelect(OrdersTab.queue)),
+              segment('Earlier', selectedIndex == 1, () => onSelect(OrdersTab.history)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _Tab extends StatelessWidget {
-  final String label;
-  final bool selected;
+/// The status cut's own door — a funnel icon with a dot when a status is on,
+/// right beside the date field. Tapping it folds the status chips open
+/// directly underneath, the same way the register page's own filter icon
+/// works, rather than the chips sitting permanently on screen.
+class _FilterButton extends StatelessWidget {
+  final bool active;
+  final bool open;
   final VoidCallback onTap;
 
-  const _Tab({
-    required this.label,
-    required this.selected,
+  const _FilterButton({
+    required this.active,
+    required this.open,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final child = Text(
-      label,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        color: selected ? AppTheme.accent : AppTheme.text,
-        fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-        fontSize: 13,
-      ),
-    );
-
+    final on = active || open;
     return GestureDetector(
       onTap: onTap,
-      child: selected
-          ? NeuPressed(
-              radius: 999,
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-              child: child,
-            )
-          : NeuCard(
-              radius: 999,
-              shadow: AppTheme.subtle,
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-              child: child,
-            ),
+      child: NeuCard(
+        radius: AppTheme.rSmall,
+        shadow: AppTheme.subtle,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: AppTheme.s8,
+        ),
+        child: SizedBox(
+          width: 18,
+          height: 15,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.filter_alt_rounded,
+                size: 18,
+                color: on ? AppTheme.accent : AppTheme.muted,
+              ),
+              if (active)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: AppTheme.accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -295,52 +419,85 @@ class _StatusChips extends StatelessWidget {
     'CANCELLED': 'Cancelled',
   };
 
+  static const _icons = <String?, IconData>{
+    null: Icons.apps_rounded,
+    'DELIVERED': Icons.check_circle_rounded,
+    'CANCELLED': Icons.cancel_rounded,
+  };
+
   const _StatusChips({required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
+    return Container(
+      width: 170,
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        boxShadow: AppTheme.subtle,
+      ),
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (final entry in _options.entries) ...[
-            GestureDetector(
+          for (final entry in _options.entries)
+            _Chip(
+              label: entry.value,
+              icon: _icons[entry.key]!,
+              on: entry.key == selected,
               onTap: () => onSelect(entry.key),
-              child: entry.key == selected
-                  ? NeuPressed(
-                      radius: 999,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.s16,
-                        vertical: AppTheme.s8,
-                      ),
-                      child: Text(
-                        entry.value,
-                        style: const TextStyle(
-                          color: AppTheme.accent,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
-                        ),
-                      ),
-                    )
-                  : NeuCard(
-                      radius: 999,
-                      shadow: AppTheme.subtle,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.s16,
-                        vertical: AppTheme.s8,
-                      ),
-                      child: Text(
-                        entry.value,
-                        style: const TextStyle(
-                          color: AppTheme.text,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
             ),
-            const SizedBox(width: AppTheme.s8),
-          ],
         ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool on;
+  final VoidCallback onTap;
+
+  const _Chip({
+    required this.label,
+    required this.icon,
+    required this.on,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: AppTheme.s8,
+        ),
+        decoration: BoxDecoration(
+          color: on ? AppTheme.accent.withValues(alpha: 0.10) : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: on ? AppTheme.accent : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: on ? AppTheme.accent : AppTheme.muted),
+            const SizedBox(width: AppTheme.s8),
+            Text(
+              label,
+              style: TextStyle(
+                color: on ? AppTheme.accent : AppTheme.text,
+                fontSize: 13,
+                fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

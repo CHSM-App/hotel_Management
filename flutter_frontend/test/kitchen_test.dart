@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/food_order.dart';
 import 'package:hotel_manager/domain/models/me.dart';
 import 'package:hotel_manager/domain/models/menu.dart';
+import 'package:hotel_manager/domain/models/room.dart';
 import 'package:hotel_manager/domain/models/session.dart';
 import 'package:hotel_manager/domain/repository/auth_repo.dart';
 import 'package:hotel_manager/domain/repository/orders_repo.dart';
@@ -93,6 +94,9 @@ class _FakeOrders implements OrdersRepository {
 
   @override
   Future<List<DiningTable>> tables() async => const [];
+
+  @override
+  Future<List<RoomListing>> roomsForOrder() async => const [];
 
   @override
   Future<void> clearFoodPinLockout(String roomNumber) async {}

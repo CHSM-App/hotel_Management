@@ -8,6 +8,8 @@ import '../../widgets/neu.dart';
 import '../billing/billing_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
+import '../events/events_screen.dart';
+import '../food/menu_setup_screen.dart';
 import '../food/orders_screen.dart';
 import '../placeholder_screen.dart';
 import '../profile/profile_screen.dart';
@@ -30,6 +32,10 @@ class DashboardShell extends ConsumerStatefulWidget {
   ConsumerState<DashboardShell> createState() => _DashboardShellState();
 }
 
+/// Not a real feature key — selects the inline "More" list rather than any
+/// [Feature], the same way `_section` selects any other tab's screen.
+const _kMoreKey = '__more__';
+
 class _DashboardShellState extends ConsumerState<DashboardShell> {
   String? _section;
 
@@ -41,23 +47,35 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     Future.microtask(() => ref.read(authViewModelProvider.notifier).loadMe());
   }
 
+  /// True once the desk has followed the More list into Rooms & rates or
+  /// Menu & QR codes. Those screens then take the whole page — no top bar,
+  /// no bottom bar, just their own back row — the same way a pushed page
+  /// would, since nothing about the outer shell's chrome applies to a
+  /// destination that isn't one of its own bottom-bar tabs.
+  bool _inOverflowScreen(Me? me) {
+    if (me == null || _section == null || _section == _kMoreKey) return false;
+    final features = kFeatures.where((f) => f.availableTo(me)).toList();
+    return features.skip(kPrimaryTabs).any((f) => f.key == _section);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(authViewModelProvider);
     final me = state.me;
+    final fullScreen = _inOverflowScreen(me);
 
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            _TopBar(me: me),
-            const _OfflineBanner(),
+            if (!fullScreen) _TopBar(me: me),
+            if (!fullScreen) const _OfflineBanner(),
             Expanded(child: _body(state.isLoading, state.error, me)),
           ],
         ),
       ),
-      bottomNavigationBar: me == null ? null : _bottomBar(me),
+      bottomNavigationBar: (me == null || fullScreen) ? null : _bottomBar(me),
     );
   }
 
@@ -86,28 +104,59 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       );
     }
 
+    if (_section == _kMoreKey) {
+      final overflow = features.skip(kPrimaryTabs).toList();
+      return _MoreList(
+        features: overflow,
+        onSelect: (key) => setState(() => _section = key),
+      );
+    }
+
     final active = features.firstWhere(
       (f) => f.key == _section,
       orElse: () => features.first,
     );
 
+    Widget screen;
     switch (active.key) {
       case 'bookings':
-        return const BookingsScreen();
+        screen = const BookingsScreen();
       case 'register':
-        return const RegisterScreen();
+        screen = const RegisterScreen();
       case 'food':
-        return const OrdersScreen();
+        screen = const OrdersScreen();
       case 'billing':
-        return const BillingScreen();
+        screen = const BillingScreen();
       case 'rooms':
-        return const RoomsRatesScreen();
+        screen = const RoomsRatesScreen();
+      case 'menu':
+        screen = const MenuSetupScreen();
+      case 'events':
+        screen = const EventsScreen();
       // case 'reports':
-      //   return const ReportsScreen();
+      //   screen = const ReportsScreen();
       default:
         // Every other section is deliberately still a stub — see the file.
-        return PlaceholderScreen(feature: active);
+        screen = PlaceholderScreen(feature: active);
     }
+
+    // Rooms & rates and Menu & QR codes only ever arrive from the More list,
+    // never from their own bottom-bar tab, so nothing else lets the desk get
+    // back to that list once inside one — a back row does the one thing a
+    // pushed page's AppBar would have, without turning this into a real
+    // Navigator.push (which would fight the tab bar's own section switching).
+    final cameFromMore = features.skip(kPrimaryTabs).any((f) => f.key == active.key);
+    if (!cameFromMore) return screen;
+
+    return Column(
+      children: [
+        _BackToMoreRow(
+          title: active.title,
+          onBack: () => setState(() => _section = _kMoreKey),
+        ),
+        Expanded(child: screen),
+      ],
+    );
   }
 
   Widget _bottomBar(Me me) {
@@ -117,11 +166,15 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     final primary = features.take(kPrimaryTabs).toList();
     final overflow = features.skip(kPrimaryTabs).toList();
 
-    final active = features.firstWhere(
-      (f) => f.key == _section,
-      orElse: () => features.first,
-    );
-    final activeIsOverflow = overflow.any((f) => f.key == active.key);
+    final onMoreList = _section == _kMoreKey;
+    final active = onMoreList
+        ? null
+        : features.firstWhere(
+            (f) => f.key == _section,
+            orElse: () => features.first,
+          );
+    final activeIsOverflow =
+        onMoreList || overflow.any((f) => f.key == active?.key);
 
     return Container(
       decoration: const BoxDecoration(
@@ -163,7 +216,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                     child: _Tab(
                       icon: f.icon,
                       label: f.tabLabel,
-                      selected: !activeIsOverflow && f.key == active.key,
+                      selected: !activeIsOverflow && f.key == active?.key,
                       onTap: () => setState(() => _section = f.key),
                     ),
                   ),
@@ -173,7 +226,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                       icon: Icons.more_horiz_rounded,
                       label: 'More',
                       selected: activeIsOverflow,
-                      onTap: () => _openMore(overflow),
+                      onTap: () => setState(() => _section = _kMoreKey),
                     ),
                   ),
               ],
@@ -184,47 +237,89 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     );
   }
 
-  Future<void> _openMore(List<Feature> overflow) async {
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppTheme.bg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AppTheme.rLarge),
-        ),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: AppTheme.s12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.shadowDark,
-                borderRadius: BorderRadius.circular(2),
+}
+
+/// The body shown for the "More" tab: the features that didn't fit on the
+/// bottom bar, listed the same way any other section fills this space —
+/// tapping one just switches `_section` like any other tab does, rather than
+/// opening a sheet or pushing a page.
+class _MoreList extends StatelessWidget {
+  final List<Feature> features;
+  final ValueChanged<String> onSelect;
+
+  const _MoreList({required this.features, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(AppTheme.s16),
+      children: [
+        for (final f in features)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            child: NeuCard(
+              onTap: () => onSelect(f.key),
+              child: Row(
+                children: [
+                  Icon(f.icon, color: AppTheme.accent),
+                  const SizedBox(width: AppTheme.s12),
+                  Expanded(
+                    child: Text(
+                      f.title,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppTheme.muted,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: AppTheme.s16),
-            for (final f in overflow)
-              ListTile(
-                leading: Icon(f.icon, color: AppTheme.text),
-                title: Text(
-                  f.title,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w500,
-                  ),
+          ),
+      ],
+    );
+  }
+}
+
+class _BackToMoreRow extends StatelessWidget {
+  final String title;
+  final VoidCallback onBack;
+
+  const _BackToMoreRow({required this.title, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.bg,
+      child: InkWell(
+        onTap: onBack,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.s8,
+            vertical: AppTheme.s8,
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.arrow_back_rounded, color: AppTheme.heading),
+              const SizedBox(width: AppTheme.s8),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
                 ),
-                onTap: () => Navigator.pop(context, f.key),
               ),
-            const SizedBox(height: AppTheme.s8),
-          ],
+            ],
+          ),
         ),
       ),
     );
-    if (picked != null) setState(() => _section = picked);
   }
 }
 

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/food_order.dart';
 import '../../domain/models/menu.dart';
+import '../../domain/models/room.dart';
 import '../../domain/usecase/orders_usecase.dart';
 import 'booking_viewmodel.dart' show BookingViewModel;
 
@@ -247,6 +248,7 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     int? roomId,
     int? tableId,
     String guestName = '',
+    String guestPhone = '',
     String note = '',
     required List<OrderLineDraft> lines,
   }) async {
@@ -257,6 +259,7 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
         roomId: roomId,
         tableId: tableId,
         guestName: guestName,
+        guestPhone: guestPhone,
         note: note,
         lines: lines,
       );
@@ -277,4 +280,10 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
   Future<List<MenuSection>> menu() => usecase.menu();
 
   Future<List<DiningTable>> tables() => usecase.tables();
+
+  /// Rooms for the counter order screen's own target picker. Left for the
+  /// screen to catch: a role without `rooms.manage` gets a 403 here, same as
+  /// the web's own attempt, and the screen treats that the same as "no rooms
+  /// to offer" rather than surfacing it as an error.
+  Future<List<RoomListing>> roomsForOrder() => usecase.roomsForOrder();
 }

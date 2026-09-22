@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/tape_chart.dart';
@@ -382,37 +383,50 @@ class _TapeChartState extends ConsumerState<TapeChart>
             // the last card's own scroll area squeezed against the button;
             // this instead gives only the trailing space the extra room.
             padding: const EdgeInsets.only(top: AppTheme.s12, bottom: 96),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                for (final section in sections) ...[
-                  Container(
-                    key: _keyFor(section.categoryName),
-                    decoration: BoxDecoration(
-                      color: AppTheme.card,
-                      borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                      border: Border.all(color: AppTheme.border),
-                      boxShadow: AppTheme.extruded,
+            // A plain Column in one SliverToBoxAdapter rather than a
+            // SliverList: a SliverList's children are built lazily as they
+            // scroll near the viewport, even with a fixed
+            // SliverChildListDelegate, so a category several bands below the
+            // fold has no mounted RenderObject — and no findRenderObject()
+            // for its GlobalKey — until the desk has already scrolled most
+            // of the way to it by hand. That left [_jumpTo] silently doing
+            // nothing for exactly the chip taps it exists for: the ones
+            // reaching past what's currently on screen. There are only ever
+            // a handful of categories, so building them all up front costs
+            // nothing worth lazily deferring.
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  for (final section in sections) ...[
+                    Container(
+                      key: _keyFor(section.categoryName),
+                      decoration: BoxDecoration(
+                        color: AppTheme.card,
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        border: Border.all(color: AppTheme.border),
+                        boxShadow: AppTheme.extruded,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _CategoryBand(
+                        section: section,
+                        dates: dates,
+                        today: todayDate,
+                        tile: tile,
+                        roomCol: roomCol,
+                        rowHeight: rowHeight,
+                        hSync: _hSync,
+                        onTapStay: (b, room) => _openBookingDetail(context, b),
+                        onTapVacant: (roomId, day) =>
+                            _takeBooking(context, roomId: roomId, checkIn: day),
+                        onTapDraft: (d) => _openDraft(context, d.id),
+                        hitIds: hitIds,
+                        activeHitId: activeHitId,
+                      ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: _CategoryBand(
-                      section: section,
-                      dates: dates,
-                      today: todayDate,
-                      tile: tile,
-                      roomCol: roomCol,
-                      rowHeight: rowHeight,
-                      hSync: _hSync,
-                      onTapStay: (b, room) => _openBookingDetail(context, b),
-                      onTapVacant: (roomId, day) =>
-                          _takeBooking(context, roomId: roomId, checkIn: day),
-                      onTapDraft: (d) => _openDraft(context, d.id),
-                      hitIds: hitIds,
-                      activeHitId: activeHitId,
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s12),
+                  ],
                 ],
-              ]),
+              ),
             ),
           ),
         ],
@@ -598,6 +612,71 @@ class _CategoryChips extends StatefulWidget {
 class _CategoryChipsState extends State<_CategoryChips> {
   String? _active;
 
+  /// One key per chip, so tapping one that's only half in view (the strip
+  /// scrolls sideways on a property with more categories than it's wide)
+  /// can bring the whole thing on screen instead of leaving it clipped at
+  /// the edge where it was tapped.
+  final Map<String, GlobalKey> _chipKeys = {};
+
+  /// This strip's own horizontal offset. Deliberately not driven through
+  /// [Scrollable.ensureVisible] on the chip's context — that call doesn't
+  /// stop at the nearest scrollable, it walks every ancestor Scrollable in
+  /// turn, and this strip sits inside the chart's pinned header, itself
+  /// inside the chart's outer *vertical* CustomScrollView. It was picking
+  /// that up as a second ancestor to "reveal" and re-animating the chart's
+  /// own scroll position right behind [_TapeChartState._jumpTo]'s own
+  /// animateTo — the two fought over the same controller, and the chart
+  /// would land wherever that second, unwanted animation left it rather
+  /// than on the section the chip named. Owning this controller keeps the
+  /// chip-centring animation confined to the strip it belongs to.
+  final _hScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _hScroll.dispose();
+    super.dispose();
+  }
+
+  GlobalKey _keyFor(String category) =>
+      _chipKeys.putIfAbsent(category, () => GlobalKey());
+
+  void _revealChip(String category) {
+    final renderObject = _keyFor(category).currentContext?.findRenderObject();
+    if (renderObject == null || !_hScroll.hasClients) return;
+    final viewport = RenderAbstractViewport.of(renderObject);
+    // Forcing a hard centre (alignment 0.5) was the fix's own bug: with only
+    // a couple of chips, centring one near either end of the strip has to
+    // scroll past where the row actually ends, and clamping that back into
+    // range leaves whichever chip lands on the boundary sliced in half by
+    // the viewport edge instead — the exact half-hidden-name look this was
+    // supposed to fix, just relocated onto a neighbour.
+    //
+    // What the chip actually needs is the smallest scroll that gets it
+    // fully on screen, same as a tab bar: leave it alone if it's already
+    // fully visible, otherwise bring it flush to whichever edge it's
+    // closest to. [start]..[end] is the whole band of offsets at which the
+    // chip is fully visible at once — inside that band nothing moves.
+    final start = viewport.getOffsetToReveal(renderObject, 1.0).offset;
+    final end = viewport.getOffsetToReveal(renderObject, 0.0).offset;
+    final current = _hScroll.offset;
+    double target;
+    if (current < start) {
+      target = start;
+    } else if (current > end) {
+      target = end;
+    } else {
+      return; // Already fully in view — nothing to animate.
+    }
+    _hScroll.position.animateTo(
+      target.clamp(
+        _hScroll.position.minScrollExtent,
+        _hScroll.position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
   /// Nights sold across every room in the section, over nights offered — the
   /// same occupancy figure the web chip badges with a percent.
   int _percentSold(ChartSection section) {
@@ -616,11 +695,13 @@ class _CategoryChipsState extends State<_CategoryChips> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
+      controller: _hScroll,
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
           for (final section in widget.sections) ...[
             _CategoryChip(
+              key: _keyFor(section.categoryName),
               label: section.categoryName,
               count: section.rooms.length,
               percent: _percentSold(section),
@@ -628,6 +709,7 @@ class _CategoryChipsState extends State<_CategoryChips> {
               onTap: () {
                 setState(() => _active = section.categoryName);
                 widget.onTap(section.categoryName);
+                _revealChip(section.categoryName);
               },
             ),
             const SizedBox(width: AppTheme.s8),
@@ -646,6 +728,7 @@ class _CategoryChip extends StatelessWidget {
   final VoidCallback onTap;
 
   const _CategoryChip({
+    super.key,
     required this.label,
     required this.count,
     required this.percent,

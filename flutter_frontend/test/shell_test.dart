@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
+import 'package:hotel_manager/domain/models/draft.dart';
 import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/late_checkout.dart';
 import 'package:hotel_manager/domain/models/me.dart';
@@ -164,6 +165,24 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> checkOut(int id, Map<String, dynamic> body) async =>
       Booking(id: id, status: 'CHECKED_OUT');
+
+  @override
+  Future<List<BookingDraft>> drafts() async => const [];
+
+  @override
+  Future<BookingDraft> draft(int id) async =>
+      BookingDraft(id: id, form: DraftForm());
+
+  @override
+  Future<BookingDraft> createDraft(Map<String, dynamic> form) async =>
+      BookingDraft(id: 1, form: DraftForm());
+
+  @override
+  Future<BookingDraft> updateDraft(int id, Map<String, dynamic> form) async =>
+      BookingDraft(id: id, form: DraftForm());
+
+  @override
+  Future<void> deleteDraft(int id) async {}
 }
 
 /// The real payload for this property: an owner with every permission, rooms

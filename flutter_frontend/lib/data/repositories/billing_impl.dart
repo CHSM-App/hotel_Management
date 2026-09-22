@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../domain/models/invoice.dart';
 import '../../domain/repository/billing_repo.dart';
 import '../api/api_service.dart';
@@ -35,11 +37,30 @@ class BillingImpl implements BillingRepository {
       api.issueInvoice(bookingId, body);
 
   @override
+  Future<List<FoodTab>> foodTabs() => api.foodTabs();
+
+  @override
+  Future<FoodBillPreview> previewFoodBill(String tab) =>
+      api.previewFoodBill(tab);
+
+  @override
+  Future<Invoice> issueFoodInvoice(String tab, Map<String, dynamic> body) =>
+      api.issueFoodInvoice(tab, body);
+
+  @override
   Future<List<Invoice>> invoices() => api.invoices();
 
   @override
   Future<Invoice> voidInvoice(int id, String reason) =>
       api.voidInvoice(id, reason);
+
+  @override
+  Future<WhatsAppShareResult> shareInvoiceWhatsApp(
+    int invoiceId,
+    Uint8List pdfBytes,
+    String filename, {
+    String? phone,
+  }) => api.shareInvoiceWhatsApp(invoiceId, pdfBytes, filename, phone: phone);
 
   @override
   Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) =>

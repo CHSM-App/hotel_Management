@@ -1,11 +1,16 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/event_booking.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/inventory.dart';
 import '../../domain/models/invoice.dart';
+import '../../domain/models/json.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/me.dart';
 import '../../domain/models/menu.dart';
@@ -365,6 +370,34 @@ class ApiService {
     );
   }
 
+  /// Tables, rooms, and takeaways holding delivered food nobody has paid for.
+  Future<List<FoodTab>> foodTabs() async {
+    final res = await _dio.get('/billing/food-tabs');
+    return (_map(res.data)['tabs'] as List? ?? [])
+        .map((e) => FoodTab.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// What a food bill will say. `tab` is the opaque id the queue row itself
+  /// carries — "table-3", "room-12", "counter-88" — passed straight through.
+  Future<FoodBillPreview> previewFoodBill(String tab) async {
+    final res = await _dio.get('/billing/food-tabs/$tab/preview');
+    return FoodBillPreview.fromJson(_map(res.data));
+  }
+
+  /// Close one tab — sweeps every delivered order on it into one document.
+  Future<Invoice> issueFoodInvoice(
+    String tab,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post('/billing/food-tabs/$tab/invoice', data: body);
+    final map = _map(res.data);
+    final invoice = map['invoice'];
+    return Invoice.fromJson(
+      invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
   /// Bills already issued.
   Future<List<Invoice>> invoices() async {
     final res = await _dio.get('/billing/invoices');
@@ -394,6 +427,28 @@ class ApiService {
     return Invoice.fromJson(
       invoice is Map<String, dynamic> ? invoice : map,
     );
+  }
+
+  /// Send the already-built bill PDF to the guest on WhatsApp. The server
+  /// stores it behind a link and texts that link through an approved
+  /// template — nothing here opens the device's own WhatsApp or asks for an
+  /// attachment. [phone] overrides the number on file for this one send;
+  /// left null, the server falls back to the guest's own number.
+  Future<WhatsAppShareResult> shareInvoiceWhatsApp(
+    int invoiceId,
+    Uint8List pdfBytes,
+    String filename, {
+    String? phone,
+  }) async {
+    final form = FormData.fromMap({
+      'bill': MultipartFile.fromBytes(pdfBytes, filename: filename),
+      if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+    });
+    final res = await _dio.post(
+      '/billing/invoices/$invoiceId/share/whatsapp',
+      data: form,
+    );
+    return WhatsAppShareResult.fromJson(_map(res.data));
   }
 
   /// Every advance receipt written against this stay, newest first.
@@ -524,6 +579,246 @@ class ApiService {
     return (_map(res.data)['tables'] as List? ?? [])
         .map((e) => DiningTable.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  // ===== MENU MANAGEMENT (food.manage) =====
+
+  Future<int> createMenuCategory({
+    required String name,
+    required int sortOrder,
+  }) async {
+    final res = await _dio.post(
+      '/menu/categories',
+      data: {'name': name, 'sortOrder': sortOrder},
+    );
+    return asInt(_map(res.data)['id']);
+  }
+
+  Future<void> updateMenuCategory(
+    int id, {
+    required String name,
+    required int sortOrder,
+  }) async {
+    await _dio.patch(
+      '/menu/categories/$id',
+      data: {'name': name, 'sortOrder': sortOrder},
+    );
+  }
+
+  Future<void> setMenuCategoryActive(int id, bool isActive) async {
+    await _dio.patch('/menu/categories/$id/status', data: {'isActive': isActive});
+  }
+
+  /// The kitchen's "the fish ran out" switch, thrown over a whole section —
+  /// see setCategoryItemsAvailable on the server.
+  Future<void> setMenuCategoryAvailability(int id, bool isAvailable) async {
+    await _dio.patch(
+      '/menu/categories/$id/availability',
+      data: {'isAvailable': isAvailable},
+    );
+  }
+
+  Future<void> deleteMenuCategory(int id) async {
+    await _dio.delete('/menu/categories/$id');
+  }
+
+  /// Add a dish. Multipart, for the photo — see createMenuItemSchema on the
+  /// server for the field names this form must carry.
+  Future<int> createMenuItem(FormData form) async {
+    final res = await _dio.post('/menu/items', data: form);
+    return asInt(_map(res.data)['id']);
+  }
+
+  Future<void> updateMenuItem(int id, FormData form) async {
+    await _dio.patch('/menu/items/$id', data: form);
+  }
+
+  Future<void> setMenuItemAvailability(int id, bool isAvailable) async {
+    await _dio.patch(
+      '/menu/items/$id/availability',
+      data: {'isAvailable': isAvailable},
+    );
+  }
+
+  Future<void> setMenuItemActive(int id, bool isActive) async {
+    await _dio.patch('/menu/items/$id/status', data: {'isActive': isActive});
+  }
+
+  Future<void> deleteMenuItem(int id) async {
+    await _dio.delete('/menu/items/$id');
+  }
+
+  /// A dish's whole size list, replaced wholesale — an empty list is the way
+  /// back to a single-price dish. See setItemPortions on the server.
+  Future<void> setItemPortions(int itemId, List<Map<String, dynamic>> portions) async {
+    await _dio.put('/menu/items/$itemId/portions', data: {'portions': portions});
+  }
+
+  Future<FoodSettings> foodSettings() async {
+    final res = await _dio.get('/menu/settings');
+    return FoodSettings.fromJson(_map(res.data)['settings'] as Map<String, dynamic>);
+  }
+
+  Future<FoodSettings> updateFoodSettings(FoodSettings settings) async {
+    final res = await _dio.patch('/menu/settings', data: settings.toJson());
+    return FoodSettings.fromJson(_map(res.data)['settings'] as Map<String, dynamic>);
+  }
+
+  // ===== INVENTORY (food.manage) =====
+
+  Future<List<RawMaterial>> materials({bool includeInactive = true}) async {
+    final res = await _dio.get(
+      '/inventory/materials',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['materials'] as List? ?? [])
+        .map((e) => RawMaterial.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<int> createMaterial({
+    required String name,
+    required String unit,
+    required String category,
+    num quantity = 0,
+    num lowStockThreshold = 0,
+  }) async {
+    final res = await _dio.post(
+      '/inventory/materials',
+      data: {
+        'name': name,
+        'unit': unit,
+        'category': category,
+        'quantity': quantity,
+        'lowStockThreshold': lowStockThreshold,
+      },
+    );
+    return asInt(_map(res.data)['id']);
+  }
+
+  /// The unit can't be changed once anything has been counted in it — see
+  /// updateMaterialSchema's own comment on the server — so it isn't sent here.
+  Future<RawMaterial> updateMaterial(
+    int id, {
+    required String name,
+    required String category,
+    num lowStockThreshold = 0,
+  }) async {
+    final res = await _dio.patch(
+      '/inventory/materials/$id',
+      data: {'name': name, 'category': category, 'lowStockThreshold': lowStockThreshold},
+    );
+    return RawMaterial.fromJson(_map(res.data)['material'] as Map<String, dynamic>);
+  }
+
+  Future<RawMaterial> setMaterialActive(int id, bool isActive) async {
+    final res = await _dio.patch(
+      '/inventory/materials/$id/status',
+      data: {'isActive': isActive},
+    );
+    return RawMaterial.fromJson(_map(res.data)['material'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteMaterial(int id) async {
+    await _dio.delete('/inventory/materials/$id');
+  }
+
+  /// Stock arriving (ADD) or a shelf count that disagrees with the book
+  /// (SET) — see adjustStockSchema on the server for the two modes.
+  Future<RawMaterial> adjustStock(
+    int id, {
+    required String mode,
+    required num quantity,
+    String note = '',
+  }) async {
+    final res = await _dio.post(
+      '/inventory/materials/$id/adjust',
+      data: {'mode': mode, 'quantity': quantity, 'note': note},
+    );
+    return RawMaterial.fromJson(_map(res.data)['material'] as Map<String, dynamic>);
+  }
+
+  Future<List<StockMovement>> movements({int? materialId, int limit = 100}) async {
+    final res = await _dio.get(
+      '/inventory/movements',
+      queryParameters: {
+        if (materialId != null) 'materialId': materialId,
+        'limit': limit,
+      },
+    );
+    return (_map(res.data)['movements'] as List? ?? [])
+        .map((e) => StockMovement.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Which dishes have a recipe and which don't — the Recipes tab's own list,
+  /// distinct from [menu] which is the guest-facing sections-and-dishes shape.
+  Future<List<RecipeDishSummary>> recipeSummaries() async {
+    final res = await _dio.get('/inventory/recipes');
+    return (_map(res.data)['dishes'] as List? ?? [])
+        .map((e) => RecipeDishSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ItemRecipe> itemRecipe(int itemId) async {
+    final res = await _dio.get('/inventory/recipes/$itemId');
+    return ItemRecipe.fromJson(_map(res.data)['recipe'] as Map<String, dynamic>);
+  }
+
+  /// A dish's whole ingredient list, replaced wholesale — same
+  /// replace-don't-diff rule as [setItemPortions].
+  Future<ItemRecipe> setItemRecipe(int itemId, List<Map<String, dynamic>> lines) async {
+    final res = await _dio.put('/inventory/recipes/$itemId', data: {'lines': lines});
+    return ItemRecipe.fromJson(_map(res.data)['recipe'] as Map<String, dynamic>);
+  }
+
+  // ===== TABLES MANAGEMENT (food.manage) =====
+
+  /// Every table, active or not — [tables] above only ever needs to offer an
+  /// order the active ones, so this is the setup screen's own fuller list.
+  Future<List<DiningTable>> allTables() async {
+    final res = await _dio.get('/tables');
+    return (_map(res.data)['tables'] as List? ?? [])
+        .map((e) => DiningTable.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createTable({required String label, int? seats}) async {
+    await _dio.post('/tables', data: {'label': label, 'seats': seats});
+  }
+
+  Future<void> bulkCreateTables({
+    required String prefix,
+    required int rangeStart,
+    required int rangeEnd,
+    int? seats,
+  }) async {
+    await _dio.post(
+      '/tables/bulk',
+      data: {
+        'prefix': prefix,
+        'rangeStart': rangeStart,
+        'rangeEnd': rangeEnd,
+        'seats': seats,
+      },
+    );
+  }
+
+  Future<void> updateTable(int id, {required String label, int? seats}) async {
+    await _dio.patch('/tables/$id', data: {'label': label, 'seats': seats});
+  }
+
+  Future<void> setTableActive(int id, bool isActive) async {
+    await _dio.patch('/tables/$id/status', data: {'isActive': isActive});
+  }
+
+  /// Issues a fresh QR token, killing every printed copy of the old code.
+  Future<void> regenerateTableQr(int id) async {
+    await _dio.post('/tables/$id/regenerate-qr');
+  }
+
+  Future<void> deleteTable(int id) async {
+    await _dio.delete('/tables/$id');
   }
 
   List<FoodOrder> _orders(dynamic data) =>
@@ -716,6 +1011,267 @@ class ApiService {
       queryParameters: {'fromDate': fromDate, 'toDate': toDate},
     );
     return GstSummaryReport.fromJson(_map(res.data));
+  }
+
+  // ===== EVENTS & FUNCTIONS (events.manage) =====
+
+  /// Halls and lawns that can be hired — the Setup tab's Venues card.
+  Future<List<EventVenue>> eventVenues({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/events/venues',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['venues'] as List? ?? [])
+        .map((e) => EventVenue.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createEventVenue({
+    required String name,
+    int? capacityPax,
+    required num baseCharge,
+  }) async {
+    await _dio.post(
+      '/events/venues',
+      data: FormData.fromMap({
+        'name': name,
+        'capacityPax': capacityPax?.toString() ?? '',
+        'baseCharge': baseCharge.toString(),
+      }),
+    );
+  }
+
+  /// Multipart when a field is actually being edited — the route runs
+  /// through the same multer middleware a photo upload would, and a plain
+  /// text field rides along untouched. The activate/deactivate toggle sends
+  /// no field of its own, only `isActive`, and takes the JSON door instead:
+  /// multer only reads a multipart body, so a boolean sent as a form field
+  /// would arrive as the string "true"/"false" and fail the server's
+  /// `z.boolean()` check. See venueImageUpload.js's own comment on this.
+  Future<void> updateEventVenue(
+    int id, {
+    String? name,
+    int? capacityPax,
+    num? baseCharge,
+    bool? isActive,
+  }) async {
+    if (name == null && capacityPax == null && baseCharge == null) {
+      await _dio.patch('/events/venues/$id', data: {if (isActive != null) 'isActive': isActive});
+      return;
+    }
+    await _dio.patch(
+      '/events/venues/$id',
+      data: FormData.fromMap({
+        if (name != null) 'name': name,
+        if (capacityPax != null) 'capacityPax': capacityPax.toString(),
+        if (baseCharge != null) 'baseCharge': baseCharge.toString(),
+        if (isActive != null) 'isActive': isActive.toString(),
+      }),
+    );
+  }
+
+  /// Extras quoted on top of venue and plates — DJ, decor, mandap.
+  Future<List<EventAddon>> eventAddons({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/events/addons',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['addons'] as List? ?? [])
+        .map((e) => EventAddon.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createEventAddon({
+    required String name,
+    required num defaultAmount,
+    bool isPerUnit = false,
+  }) async {
+    await _dio.post(
+      '/events/addons',
+      data: {
+        'name': name,
+        'defaultAmount': defaultAmount,
+        'isPerUnit': isPerUnit,
+      },
+    );
+  }
+
+  Future<void> updateEventAddon(
+    int id, {
+    String? name,
+    num? defaultAmount,
+    bool? isPerUnit,
+    bool? isActive,
+  }) async {
+    await _dio.patch(
+      '/events/addons/$id',
+      data: {
+        if (name != null) 'name': name,
+        if (defaultAmount != null) 'defaultAmount': defaultAmount,
+        if (isPerUnit != null) 'isPerUnit': isPerUnit,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+  }
+
+  /// Whether a venue is free over a window, and what it clashes with if not
+  /// — an enquiry is still allowed onto a taken slot, so the desk decides.
+  Future<EventAvailability> eventAvailability({
+    required int venueId,
+    required String startAt,
+    required String endAt,
+    int? excludeId,
+  }) async {
+    final res = await _dio.get(
+      '/events/availability',
+      queryParameters: {
+        'venueId': venueId,
+        'startAt': startAt,
+        'endAt': endAt,
+        if (excludeId != null) 'excludeId': excludeId,
+      },
+    );
+    return EventAvailability.fromJson(_map(res.data));
+  }
+
+  /// The live price as a function form is filled in — re-fetched on every
+  /// change to venue, pax, rate or add-ons, the same as [priceQuote].
+  Future<EventQuoteResult> eventQuote(Map<String, dynamic> body) async {
+    final res = await _dio.post('/events/quote', data: body);
+    return EventQuoteResult.fromJson(_map(res.data));
+  }
+
+  /// The diary/list's own fetch, over a date range and optionally narrowed
+  /// to a status or venue.
+  Future<List<EventBooking>> events({
+    String? fromDate,
+    String? toDate,
+    String? status,
+    int? venueId,
+    bool includeClosed = false,
+  }) async {
+    final res = await _dio.get(
+      '/events',
+      queryParameters: {
+        if (fromDate != null) 'fromDate': fromDate,
+        if (toDate != null) 'toDate': toDate,
+        if (status != null) 'status': status,
+        if (venueId != null) 'venueId': venueId,
+        'includeClosed': includeClosed,
+      },
+    );
+    return (_map(res.data)['events'] as List? ?? [])
+        .map((e) => EventBooking.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<EventBooking> event(int id) async {
+    final res = await _dio.get('/events/$id');
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  /// Write down a function enquiry, hold or confirmation. The advance, if
+  /// any, is receipted server-side in the same request — see
+  /// createEventHandler on the server.
+  Future<EventBooking> createEvent(Map<String, dynamic> body) async {
+    final res = await _dio.post('/events', data: body);
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> updateEvent(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/events/$id', data: body);
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  /// Something asked for on the day — more chairs, a second mic — noted so
+  /// it reaches the bill. A price can be typed now or left for later.
+  Future<EventBooking> addEventExtra(
+    int id, {
+    required String label,
+    int quantity = 1,
+    num? agreedAmount,
+  }) async {
+    final res = await _dio.post(
+      '/events/$id/extras',
+      data: {
+        'label': label,
+        'quantity': quantity,
+        if (agreedAmount != null) 'agreedAmount': agreedAmount,
+      },
+    );
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> priceEventExtra(int id, int lineId, num agreedAmount) async {
+    final res = await _dio.patch(
+      '/events/$id/extras/$lineId',
+      data: {'agreedAmount': agreedAmount},
+    );
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> removeEventExtra(int id, int lineId) async {
+    final res = await _dio.delete('/events/$id/extras/$lineId');
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> holdEvent(int id, {int holdHours = 48}) async {
+    final res = await _dio.patch(
+      '/events/$id/hold',
+      data: {'holdHours': holdHours},
+    );
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> confirmEvent(int id) async {
+    final res = await _dio.patch('/events/$id/confirm');
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> releaseEvent(int id) async {
+    final res = await _dio.patch('/events/$id/release');
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  Future<EventBooking> cancelEvent(
+    int id, {
+    required String reason,
+    num? refundAmount,
+  }) async {
+    final res = await _dio.patch(
+      '/events/$id/cancel',
+      data: {
+        'reason': reason,
+        if (refundAmount != null) 'refundAmount': refundAmount,
+      },
+    );
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
+  /// Every advance receipt written against this function, newest first —
+  /// same shape [advanceReceipts] answers for a room stay.
+  Future<List<AdvanceReceipt>> eventAdvanceReceipts(int eventId) async {
+    final res = await _dio.get('/billing/events/$eventId/advance-receipts');
+    return (_map(res.data)['receipts'] as List? ?? [])
+        .map((e) => AdvanceReceipt.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Money taken with an existing function — the detail screen's "Take
+  /// advance" action, same door AdvanceReceiptModal.jsx uses.
+  Future<AdvanceReceipt> issueEventAdvanceReceipt(
+    int eventId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post(
+      '/billing/events/$eventId/advance-receipt',
+      data: body,
+    );
+    final map = _map(res.data);
+    final receipt = map['receipt'];
+    return AdvanceReceipt.fromJson(
+      receipt is Map<String, dynamic> ? receipt : map,
+    );
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

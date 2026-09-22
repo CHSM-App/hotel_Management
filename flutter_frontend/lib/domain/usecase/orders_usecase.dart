@@ -1,5 +1,6 @@
 import '../models/food_order.dart';
 import '../models/menu.dart';
+import '../models/room.dart';
 import '../repository/orders_repo.dart';
 
 class OrdersUsecase {
@@ -35,6 +36,7 @@ class OrdersUsecase {
     int? roomId,
     int? tableId,
     String guestName = '',
+    String guestPhone = '',
     String note = '',
     required List<OrderLineDraft> lines,
   }) => repository.createCounterOrder({
@@ -43,6 +45,7 @@ class OrdersUsecase {
     if (roomId != null) 'roomId': roomId,
     if (tableId != null && roomId == null) 'tableId': tableId,
     if (guestName.trim().isNotEmpty) 'guestName': guestName.trim(),
+    if (guestPhone.trim().isNotEmpty) 'guestPhone': guestPhone.trim(),
     if (note.trim().isNotEmpty) 'note': note.trim(),
     'items': lines.map((l) => l.toJson()).toList(),
   });
@@ -50,6 +53,8 @@ class OrdersUsecase {
   Future<List<MenuSection>> menu() => repository.menu();
 
   Future<List<DiningTable>> tables() => repository.tables();
+
+  Future<List<RoomListing>> roomsForOrder() => repository.roomsForOrder();
 
   /// Clear a room's food-PIN lockout.
   Future<void> clearFoodPinLockout(String roomNumber) =>
