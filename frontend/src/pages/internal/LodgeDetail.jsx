@@ -414,16 +414,15 @@ export default function LodgeDetail() {
               </section>
 
               <section className="detail-card detail-card--wide">
-                <h2>Staff &amp; logins</h2>
+                <h2>Owner login</h2>
                 {data.staff.length === 0 ? (
-                  <p className="detail-card__hint">No logins on this property.</p>
+                  <p className="detail-card__hint">No owner login on this property.</p>
                 ) : (
                   <div className="dash-table-scroll">
                     <table className="dash-table">
                       <thead>
                         <tr>
                           <th>Name</th>
-                          <th>Role</th>
                           <th>Phone</th>
                           <th>Email</th>
                           <th>Status</th>
@@ -434,7 +433,6 @@ export default function LodgeDetail() {
                         {data.staff.map((user) => (
                           <tr key={user.id}>
                             <td className="dash-lodge-name">{user.name}</td>
-                            <td>{user.role}</td>
                             <td>{user.phone}</td>
                             <td>{user.email || '—'}</td>
                             <td>
