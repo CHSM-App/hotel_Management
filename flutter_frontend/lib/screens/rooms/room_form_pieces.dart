@@ -225,6 +225,8 @@ class OptionDropdown extends StatelessWidget {
                 value: v,
                 child: Text(
                   labels[v] ?? v,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppTheme.heading,
                     fontWeight: FontWeight.w600,
