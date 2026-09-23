@@ -102,6 +102,17 @@ function billSource(inv) {
   return inv.foodSubtotal > 0 ? 'ROOM_FOOD' : 'ROOM';
 }
 
+// The "Room" tag alone reads as an exclusive-use room, same as any other
+// stay — nothing about it says the guest holds one bed in a shared
+// dormitory, not the room outright. Said here rather than as its own badge:
+// this is still the same source (a room bill), just qualified, and a second
+// tag beside it would repeat what the room number already implies once this
+// one names it.
+function sourceLabel(inv) {
+  const base = SOURCE_LABEL[billSource(inv)];
+  return inv.isDormitory ? `${base} · Dormitory` : base;
+}
+
 // An advance receipt, restated in the shape the bills list reads.
 //
 // The list, its search, its date range and its filters all speak one document
@@ -1513,7 +1524,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       <span className="chart-row__name">
                         <span className="billing-panel__invoice-id">
                           {inv.invoiceNumber}
-                          <span className={`bill-tag bill-tag--${tagClass(source)}`}>{SOURCE_LABEL[source]}</span>
+                          <span className={`bill-tag bill-tag--${tagClass(source)}`}>{sourceLabel(inv)}</span>
                         </span>
                         <span className="chart-row__dates">
                           {/* A food bill has no guest and no room to name, so it
@@ -2240,7 +2251,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   one looking identical until you read the word. */}
               <span className="billing-panel__detail-tags">
                 <span className={`bill-tag bill-tag--${tagClass(billSource(detailInvoice))}`}>
-                  {SOURCE_LABEL[billSource(detailInvoice)]}
+                  {sourceLabel(detailInvoice)}
                 </span>
                 <span className={`bill-tag bill-tag--${DOCUMENT_TAG[detailInvoice.documentType]}`}>
                   {DOCUMENT_LABEL[detailInvoice.documentType]}

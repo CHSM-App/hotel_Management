@@ -323,7 +323,8 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, c.name AS category_name,
+      SELECT b.*, r.room_number, r.is_dormitory, c.name AS category_name,
+             db.bed_label,
              l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
              l.late_grace_minutes,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
@@ -337,6 +338,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
       JOIN dbo.lodges l ON l.id = b.lodge_id
+      LEFT JOIN dbo.dormitory_beds db ON db.id = b.bed_id
       WHERE b.id = @bookingId AND b.lodge_id = @lodgeId
     `);
   const row = result.recordset[0];
@@ -1047,6 +1049,13 @@ function mapInvoice(row) {
     numGuests: row.num_guests,
     roomNumber: row.room_number,
     categoryName: row.category_name,
+    // Both getInvoice and listInvoices join dormitory_beds for this — the
+    // bills list renders the printed document straight from its own payload
+    // (see listInvoices), so it needs the same fields getInvoice does or a
+    // bill opened from the list loses its bed line the moment the list is
+    // the source that wins (see detailInvoice in Billing.jsx).
+    isDormitory: !!row.is_dormitory,
+    bedLabel: row.bed_label ?? null,
     checkInDate: isoDate(row.check_in_date),
     checkOutDate: isoDate(row.check_out_date),
     actualCheckInAt: row.actual_check_in_at,
@@ -1186,6 +1195,13 @@ function buildPreviewDocument({
     numGuests: row.num_guests ?? null,
     roomNumber: row.room_number ?? null,
     categoryName: row.category_name ?? null,
+    // A dormitory bill is for one bed, not the room — printed alongside the
+    // room number so the guest and the desk both read it as "your bed in a
+    // shared room" rather than mistaking it for exclusive use of the room.
+    // bedLabel is null on a whole-room buyout (bed_id IS NULL), same as a
+    // dormitory room booked outright — that one still just says "dormitory".
+    isDormitory: !!row.is_dormitory,
+    bedLabel: row.bed_label ?? null,
     checkInDate: isoDate(row.check_in_date),
     checkOutDate: isoDate(row.check_out_date),
     actualCheckInAt: row.actual_check_in_at ?? null,
@@ -1246,7 +1262,8 @@ async function getInvoice(lodgeId, invoiceId) {
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
-             r.room_number, c.name AS category_name,
+             r.room_number, r.is_dormitory, c.name AS category_name,
+             db.bed_label,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
@@ -1266,6 +1283,7 @@ async function getInvoice(lodgeId, invoiceId) {
       LEFT JOIN dbo.bookings b ON b.id = i.booking_id
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       LEFT JOIN dbo.room_categories c ON c.id = r.category_id
+      LEFT JOIN dbo.dormitory_beds db ON db.id = b.bed_id
       LEFT JOIN dbo.dining_tables dt ON dt.id = i.table_id
       -- LEFT for the same reason: a function's bill has no stay and no table.
       LEFT JOIN dbo.event_bookings eb ON eb.id = i.event_booking_id
@@ -1335,7 +1353,8 @@ async function listInvoices(lodgeId) {
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
-             r.room_number, c.name AS category_name,
+             r.room_number, r.is_dormitory, c.name AS category_name,
+             db.bed_label,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
@@ -1355,6 +1374,7 @@ async function listInvoices(lodgeId) {
       LEFT JOIN dbo.bookings b ON b.id = i.booking_id
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       LEFT JOIN dbo.room_categories c ON c.id = r.category_id
+      LEFT JOIN dbo.dormitory_beds db ON db.id = b.bed_id
       LEFT JOIN dbo.dining_tables dt ON dt.id = i.table_id
       -- LEFT for the same reason: a function's bill has no stay and no table.
       LEFT JOIN dbo.event_bookings eb ON eb.id = i.event_booking_id
