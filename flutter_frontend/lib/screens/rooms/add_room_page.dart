@@ -47,6 +47,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   final _bathroomKey = GlobalKey();
   final _bedsKey = GlobalKey();
   final _occupancyKey = GlobalKey();
+  final _dormitoryKey = GlobalKey();
 
   final _roomNumber = TextEditingController();
   final _rangeStart = TextEditingController();
@@ -54,12 +55,21 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   final _floor = TextEditingController();
   final _maxOccupancy = TextEditingController();
   final _description = TextEditingController();
+  final _dormitoryPrice = TextEditingController();
 
   bool _bulkMode = false;
   int? _categoryId;
   String? _bathroomType;
   final List<BedDraft> _beds = [BedDraft()];
   final List<XFile> _newPhotos = [];
+
+  // A dormitory answers "beds" and "occupancy" through its own bed list
+  // instead (added after the room is saved — see DormitoryBedCountField), so
+  // it skips both fields and forces single-room mode, matching the server's
+  // own refine rules (rooms.schema.js).
+  bool _isDormitory = false;
+  String? _dormitoryGender;
+  String? _dormitoryIsAc;
 
   String? _error;
 
@@ -96,7 +106,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   }
 
   String? get _bedsError {
-    if (!_submitAttempted) return null;
+    if (!_submitAttempted || _isDormitory) return null;
     if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
       return 'Choose a size for every bed.';
     }
@@ -107,11 +117,20 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   }
 
   String? get _occupancyError {
-    if (!_submitAttempted) return null;
+    if (!_submitAttempted || _isDormitory) return null;
     final occupancy = int.tryParse(_maxOccupancy.text.trim());
     return (occupancy == null || occupancy <= 0)
         ? 'Enter a max occupancy greater than 0.'
         : null;
+  }
+
+  String? get _dormitoryError {
+    if (!_submitAttempted || !_isDormitory) return null;
+    if (_dormitoryGender == null) return 'Choose who this dormitory is for.';
+    final price = num.tryParse(_dormitoryPrice.text.trim());
+    if (price == null || price <= 0) return 'Enter a price per night for this dormitory.';
+    if (_dormitoryIsAc == null) return 'Choose AC or Non-AC.';
+    return null;
   }
 
   @override
@@ -129,6 +148,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
     _floor.dispose();
     _maxOccupancy.dispose();
     _description.dispose();
+    _dormitoryPrice.dispose();
     for (final bed in _beds) {
       bed.countController.dispose();
     }
@@ -189,7 +209,12 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     child: ModeToggle(
                       options: const {'single': 'Single', 'bulk': 'Bulk range'},
                       selected: _bulkMode ? 'bulk' : 'single',
-                      onSelect: submitting ? (_) {} : (v) => setState(() => _bulkMode = v == 'bulk'),
+                      // A dormitory can't be added as a bulk range — its beds
+                      // are added one at a time after the room exists, so
+                      // there's no one bed list a whole range could share.
+                      onSelect: submitting || _isDormitory
+                          ? (_) {}
+                          : (v) => setState(() => _bulkMode = v == 'bulk'),
                     ),
                   ),
                   const SizedBox(height: AppTheme.s16),
@@ -370,6 +395,70 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         ),
                         const SizedBox(height: AppTheme.s16),
 
+                        KeyedSubtree(
+                          key: _dormitoryKey,
+                          child: Row(
+                            children: [
+                              Switch(
+                                value: _isDormitory,
+                                onChanged: (v) => setState(() {
+                                  _isDormitory = v;
+                                  if (v) _bulkMode = false;
+                                }),
+                                activeThumbColor: AppTheme.accent,
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'This is a dormitory (sold bed-by-bed)',
+                                  style: TextStyle(color: AppTheme.text, fontSize: 13.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_isDormitory) ...[
+                          const SizedBox(height: AppTheme.s8),
+                          const RequiredLabel('Who is this dormitory for'),
+                          const SizedBox(height: AppTheme.s8),
+                          OptionDropdown(
+                            values: dormitoryGenders,
+                            labels: dormitoryGenderLabel,
+                            selected: _dormitoryGender,
+                            hasError: _dormitoryError != null && _dormitoryGender == null,
+                            onSelect: (v) => setState(() => _dormitoryGender = v),
+                          ),
+                          const SizedBox(height: AppTheme.s12),
+                          NeuField(
+                            controller: _dormitoryPrice,
+                            label: 'Price per bed, per night',
+                            hint: '500',
+                            required: true,
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: AppTheme.s12),
+                          const RequiredLabel('AC'),
+                          const SizedBox(height: AppTheme.s8),
+                          OptionDropdown(
+                            values: dormitoryAcOptions,
+                            labels: dormitoryAcLabel,
+                            selected: _dormitoryIsAc,
+                            hasError: _dormitoryError != null && _dormitoryIsAc == null,
+                            onSelect: (v) => setState(() => _dormitoryIsAc = v),
+                          ),
+                          if (_dormitoryError != null) ...[
+                            const SizedBox(height: AppTheme.s4),
+                            Text(
+                              _dormitoryError!,
+                              style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                            ),
+                          ],
+                          const SizedBox(height: AppTheme.s4),
+                          const Text(
+                            'Add this dormitory\'s beds after saving it — edit the room to set a bed count.',
+                            style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                          ),
+                        ] else ...[
                         const RequiredLabel('Beds'),
                         const SizedBox(height: AppTheme.s8),
                         KeyedSubtree(
@@ -451,6 +540,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           keyboardType: TextInputType.number,
                           onChanged: (_) => setState(() {}),
                         ),
+                        ],
                         const SizedBox(height: AppTheme.s16),
 
                         NeuField(
@@ -562,18 +652,29 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
       _scrollToError(_occupancyKey);
       return;
     }
-
-    final occupancy = int.parse(_maxOccupancy.text.trim());
-    final bedsJson = _beds.map((b) => {'size': b.size, 'count': b.count}).toList();
+    if (_dormitoryError != null) {
+      _scrollToError(_dormitoryKey);
+      return;
+    }
 
     final formMap = <String, dynamic>{
       'categoryId': '$_categoryId',
       'floor': _floor.text.trim(),
-      'beds': jsonEncodeBeds(bedsJson),
       'bathroomType': _bathroomType,
-      'maxOccupancy': '$occupancy',
       'description': _description.text.trim(),
     };
+
+    if (_isDormitory) {
+      formMap['isDormitory'] = 'true';
+      formMap['dormitoryGender'] = _dormitoryGender;
+      formMap['dormitoryPrice'] = num.parse(_dormitoryPrice.text.trim()).toString();
+      formMap['dormitoryIsAc'] = _dormitoryIsAc;
+    } else {
+      final occupancy = int.parse(_maxOccupancy.text.trim());
+      final bedsJson = _beds.map((b) => {'size': b.size, 'count': b.count}).toList();
+      formMap['beds'] = jsonEncodeBeds(bedsJson);
+      formMap['maxOccupancy'] = '$occupancy';
+    }
 
     if (_bulkMode) {
       formMap['rangeStart'] = _rangeStart.text.trim();

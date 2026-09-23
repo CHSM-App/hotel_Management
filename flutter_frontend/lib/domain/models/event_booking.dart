@@ -1,4 +1,5 @@
 import 'json.dart';
+import 'room.dart' show RoomImage;
 
 /// A hall or lawn that can be hired for a function — mirrors event_venues,
 /// read the same way the web Setup tab's Venues card does.
@@ -9,12 +10,17 @@ class EventVenue {
   final num baseCharge;
   final bool isActive;
 
+  /// Uploaded to the same `{id, filename}` shape as [RoomImage] — the
+  /// backend's event_venue_images table is modelled directly on room_images.
+  final List<RoomImage> images;
+
   const EventVenue({
     required this.id,
     required this.name,
     this.capacityPax,
     this.baseCharge = 0,
     this.isActive = true,
+    this.images = const [],
   });
 
   factory EventVenue.fromJson(Map<String, dynamic> json) => EventVenue(
@@ -23,6 +29,8 @@ class EventVenue {
     capacityPax: asIntOrNull(json['capacityPax']),
     baseCharge: asNum(json['baseCharge']),
     isActive: json['isActive'] == null ? true : asBool(json['isActive']),
+    images:
+        (json['images'] as List?)?.map((e) => RoomImage.fromJson(e as Map<String, dynamic>)).toList() ?? const [],
   );
 }
 

@@ -50,11 +50,23 @@ class TapeChartRoom {
   final String? floor;
   final String categoryName;
 
+  final bool isDormitory;
+  final String? dormitoryGender;
+  final String? dormitoryIsAc;
+
+  /// How many active beds this dormitory has to fan occupancy across — 0 on
+  /// every non-dormitory room.
+  final int dormitoryBedCount;
+
   const TapeChartRoom({
     required this.id,
     required this.roomNumber,
     this.floor,
     required this.categoryName,
+    this.isDormitory = false,
+    this.dormitoryGender,
+    this.dormitoryIsAc,
+    this.dormitoryBedCount = 0,
   });
 
   factory TapeChartRoom.fromJson(Map<String, dynamic> json) => TapeChartRoom(
@@ -62,6 +74,10 @@ class TapeChartRoom {
     roomNumber: json['roomNumber']?.toString() ?? '',
     floor: asStringOrNull(json['floor']),
     categoryName: json['categoryName']?.toString() ?? '',
+    isDormitory: asBool(json['isDormitory']),
+    dormitoryGender: asStringOrNull(json['dormitoryGender']),
+    dormitoryIsAc: asStringOrNull(json['dormitoryIsAc']),
+    dormitoryBedCount: asInt(json['dormitoryBedCount']),
   );
 }
 
@@ -71,6 +87,12 @@ class TapeChartRoom {
 class TapeChartBooking {
   final int id;
   final int roomId;
+
+  /// Which bed this stay holds, on a dormitory room — null there means a
+  /// buyout of the whole dormitory, and is meaningless (always null) on an
+  /// ordinary room.
+  final int? bedId;
+  final String? bedLabel;
   final String? guestName;
   final String? guestPhone;
   final String? idProofNumber;
@@ -85,6 +107,8 @@ class TapeChartBooking {
   const TapeChartBooking({
     required this.id,
     required this.roomId,
+    this.bedId,
+    this.bedLabel,
     this.guestName,
     this.guestPhone,
     this.idProofNumber,
@@ -101,6 +125,8 @@ class TapeChartBooking {
       TapeChartBooking(
         id: asInt(json['id']),
         roomId: asInt(json['roomId']),
+        bedId: asIntOrNull(json['bedId']),
+        bedLabel: asStringOrNull(json['bedLabel']),
         guestName: asStringOrNull(json['guestName']),
         guestPhone: asStringOrNull(json['guestPhone']),
         idProofNumber: asStringOrNull(json['idProofNumber']),

@@ -320,6 +320,22 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                             ],
                           ),
                         ),
+                        // The colour legend — mirrors the web diary's own
+                        // tape-legend row, so a desk reading either surface
+                        // sees the same status → colour vocabulary.
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(AppTheme.s12, 0, AppTheme.s12, AppTheme.s8),
+                          child: Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              for (final status in const ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'])
+                                _LegendItem(color: _statusColor(status), label: kEventStatusLabel[status] ?? status),
+                              const _LegendItem(color: AppTheme.vacant, label: 'Vacant', outlined: true),
+                            ],
+                          ),
+                        ),
                         // The sticky month band — full width, never
                         // scrolls, "Today" riding its right edge exactly
                         // the way TapeChart's own date-header band carries
@@ -468,6 +484,21 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                         bottom: 4,
                         child: _ScrollArrow(icon: Icons.chevron_right_rounded, onTap: () => _step(5)),
                       ),
+                      Positioned(
+                        right: AppTheme.s16,
+                        bottom: 40,
+                        child: FloatingActionButton(
+                          backgroundColor: AppTheme.accent,
+                          foregroundColor: Colors.white,
+                          onPressed: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const EventFormScreen()),
+                            );
+                            _load();
+                          },
+                          child: const Icon(Icons.add_rounded),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -530,6 +561,36 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// One swatch + label pair in the diary's colour legend. [outlined] draws a
+/// hollow ring instead of a solid fill, matching the empty "Vacant" tile.
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool outlined;
+
+  const _LegendItem({required this.color, required this.label, this.outlined = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: outlined ? color.withValues(alpha: 0.16) : color,
+            border: outlined ? Border.all(color: color.withValues(alpha: 0.6)) : null,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+      ],
     );
   }
 }

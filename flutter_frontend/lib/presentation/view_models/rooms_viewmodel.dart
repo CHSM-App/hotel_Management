@@ -132,6 +132,21 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
     }
   }
 
+  /// Reconciles a dormitory's beds to [count] — the server relabels and
+  /// refuses to shrink past a booked bed. Reported through [error] rather
+  /// than thrown, same as every other action here, so the bed editor can show
+  /// it inline without its own try/catch.
+  Future<bool> setBedCount(int roomId, int count) async {
+    try {
+      await usecase.setBedCount(roomId, count);
+      await loadAll();
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: messageFor(e));
+      return false;
+    }
+  }
+
   // ── Categories ────────────────────────────────────────────────────────────
 
   Future<bool> saveCategory({int? id, required String name, required num basePrice}) async {

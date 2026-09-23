@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../models/event_booking.dart';
 import '../models/invoice.dart';
 import '../repository/events_repo.dart';
@@ -10,25 +12,13 @@ class EventsUsecase {
   Future<List<EventVenue>> venues({bool includeInactive = false}) =>
       repository.venues(includeInactive: includeInactive);
 
-  Future<void> createVenue({
-    required String name,
-    int? capacityPax,
-    required num baseCharge,
-  }) => repository.createVenue(name: name, capacityPax: capacityPax, baseCharge: baseCharge);
+  Future<void> createVenue(FormData form) => repository.createVenue(form);
 
-  Future<void> updateVenue(
-    int id, {
-    String? name,
-    int? capacityPax,
-    num? baseCharge,
-    bool? isActive,
-  }) => repository.updateVenue(
-    id,
-    name: name,
-    capacityPax: capacityPax,
-    baseCharge: baseCharge,
-    isActive: isActive,
-  );
+  Future<void> updateVenue(int id, FormData form) => repository.updateVenue(id, form);
+
+  Future<void> setVenueActive(int id, bool isActive) => repository.setVenueActive(id, isActive);
+
+  Future<void> deleteVenueImage(int venueId, int imageId) => repository.deleteVenueImage(venueId, imageId);
 
   Future<List<EventAddon>> addons({bool includeInactive = false}) =>
       repository.addons(includeInactive: includeInactive);

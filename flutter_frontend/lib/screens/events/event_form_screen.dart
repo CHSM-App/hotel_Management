@@ -82,6 +82,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   bool _submitAttempted = false;
   bool _catalogueReady = false;
 
+  final _scrollController = ScrollController();
+  final Map<String, GlobalKey> _fieldKeys = {
+    for (final k in ['title', 'venue', 'end', 'organiserName', 'organiserPhone', 'expectedPax', 'perPlateRate', 'roomsCount', 'roomsFrom', 'roomsTo', 'advance'])
+      k: GlobalKey(),
+  };
+
   @override
   void initState() {
     super.initState();
@@ -162,6 +168,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   @override
   void dispose() {
     _quoteTimer?.cancel();
+    _scrollController.dispose();
     _title.dispose();
     _organiserName.dispose();
     _organiserPhone.dispose();
@@ -445,6 +452,15 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         _fieldError = invalid.$1;
         _error = invalid.$2;
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final key = _fieldKeys[invalid.$1];
+        final ctx = key?.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), alignment: 0.2);
+        } else {
+          _scrollController.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        }
+      });
       return;
     }
     setState(() {
@@ -497,6 +513,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: ListView(
+                controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
                 children: [
                   if (_error != null) ...[
@@ -531,6 +548,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         ),
                         const SizedBox(height: AppTheme.s8),
                         NeuField(
+                          key: _fieldKeys['title'],
                           controller: _title,
                           label: 'Title',
                           hint: 'Sharma–Patil reception',
@@ -540,34 +558,34 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         const SizedBox(height: AppTheme.s8),
                         RequiredLabel('Venue'),
                         const SizedBox(height: 4),
-                        _Dropdown<int?>(
-                          value: _venueId,
-                          items: {for (final v in venues) v.id: '${v.name}${v.capacityPax != null ? ' (up to ${v.capacityPax})' : ''}'},
-                          onChanged: (v) {
-                            setState(() {
-                              _venueId = v;
-                              final picked = venues.firstWhereOrNull((x) => x.id == v);
-                              if (picked != null) _venueCharge.text = picked.baseCharge.toString();
-                            });
-                            _checkAvailability();
-                            _refreshQuote();
-                          },
+                        Container(
+                          key: _fieldKeys['venue'],
+                          decoration: _submitAttempted && _fieldError == 'venue'
+                              ? BoxDecoration(border: Border.all(color: AppTheme.danger, width: 1.4), borderRadius: BorderRadius.circular(AppTheme.rSmall))
+                              : null,
+                          child: _Dropdown<int?>(
+                            value: _venueId,
+                            items: {for (final v in venues) v.id: '${v.name}${v.capacityPax != null ? ' (up to ${v.capacityPax})' : ''}'},
+                            onChanged: (v) {
+                              setState(() {
+                                _venueId = v;
+                                final picked = venues.firstWhereOrNull((x) => x.id == v);
+                                if (picked != null) _venueCharge.text = picked.baseCharge.toString();
+                              });
+                              _checkAvailability();
+                              _refreshQuote();
+                            },
+                          ),
                         ),
                         if (_submitAttempted && _fieldError == 'venue')
                           Padding(padding: const EdgeInsets.only(top: 4), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
                         const SizedBox(height: AppTheme.s8),
                         const Text('Slot', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                         const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 6,
-                          children: [
-                            for (final s in kSlotLabel.entries)
-                              ChoiceChip(
-                                label: Text(s.value),
-                                selected: _slot == s.key,
-                                onSelected: (_) => _pickSlot(s.key),
-                              ),
-                          ],
+                        _Dropdown<String>(
+                          value: _slot,
+                          items: kSlotLabel,
+                          onChanged: _pickSlot,
                         ),
                         const SizedBox(height: AppTheme.s8),
                         Row(
@@ -577,10 +595,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                             ),
                             const SizedBox(width: AppTheme.s8),
                             Expanded(
+                              key: _fieldKeys['end'],
                               child: _DateTimeField(label: 'Ends', date: _endDate, time: _endTime, onDate: () => _pickDate(isStart: false), onTime: () => _pickTime(isStart: false)),
                             ),
                           ],
                         ),
+                        if (_submitAttempted && _fieldError == 'end')
+                          Padding(padding: const EdgeInsets.only(top: 4), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
                         if (_checkingAvailability) _AvailBanner(text: 'Checking the venue…', color: AppTheme.muted)
                         else if (_availability != null && _availability!.available)
                           _AvailBanner(text: '${venue?.name ?? 'Venue'} is available for these hours.', color: AppTheme.vacant)
@@ -602,9 +623,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                       children: [
                         const SectionLabel('Organiser', number: 2),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null),
+                        NeuField(key: _fieldKeys['organiserName'], controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null),
                         const SizedBox(height: AppTheme.s8),
                         NeuField(
+                          key: _fieldKeys['organiserPhone'],
                           controller: _organiserPhone,
                           label: 'Mobile',
                           required: true,
@@ -631,6 +653,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           children: [
                             Expanded(
                               child: NeuField(
+                                key: _fieldKeys['expectedPax'],
                                 controller: _expectedPax,
                                 label: 'Expected guests',
                                 required: true,
@@ -666,6 +689,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                             children: [
                               Expanded(
                                 child: NeuField(
+                                  key: _fieldKeys['perPlateRate'],
                                   controller: _perPlateRate,
                                   label: 'Per-plate rate',
                                   required: true,
@@ -687,6 +711,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                             children: [
                               Expanded(
                                 child: NeuField(
+                                  key: _fieldKeys['roomsCount'],
                                   controller: _roomsCount,
                                   label: 'Rooms needed',
                                   required: true,
@@ -695,11 +720,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                                 ),
                               ),
                               const SizedBox(width: AppTheme.s8),
-                              Expanded(child: _PlainDateField(label: 'From (night of)', date: _roomsFrom, onTap: () => _pickRoomsDate(isFrom: true))),
+                              Expanded(key: _fieldKeys['roomsFrom'], child: _PlainDateField(label: 'From (night of)', date: _roomsFrom, onTap: () => _pickRoomsDate(isFrom: true))),
                               const SizedBox(width: AppTheme.s8),
-                              Expanded(child: _PlainDateField(label: 'Until (morning of)', date: _roomsTo, onTap: () => _pickRoomsDate(isFrom: false))),
+                              Expanded(key: _fieldKeys['roomsTo'], child: _PlainDateField(label: 'Until (morning of)', date: _roomsTo, onTap: () => _pickRoomsDate(isFrom: false))),
                             ],
                           ),
+                          if (_submitAttempted && (_fieldError == 'roomsFrom' || _fieldError == 'roomsTo'))
+                            Padding(padding: const EdgeInsets.only(top: 4), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
                           const SizedBox(height: AppTheme.s8),
                           NeuField(controller: _roomsNotes, label: 'Room notes (optional)', hint: 'Two on the ground floor for grandparents, …'),
                         ],
@@ -739,6 +766,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
                   if (!_isEdit) ...[
                     NeuCard(
+                      key: _fieldKeys['advance'],
                       padding: const EdgeInsets.all(AppTheme.s8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
+import '../../domain/models/room.dart';
+import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
@@ -19,6 +22,11 @@ const bedSizeLabel = {
 const bathroomTypes = ['ATTACHED', 'COMMON'];
 const bathroomLabel = {'ATTACHED': 'Attached bathroom', 'COMMON': 'Common bathroom'};
 const maxRoomImages = 6;
+
+const dormitoryGenders = ['MALE', 'FEMALE', 'BOTH'];
+const dormitoryGenderLabel = {'MALE': 'Male', 'FEMALE': 'Female', 'BOTH': 'Both'};
+const dormitoryAcOptions = ['AC', 'NON_AC'];
+const dormitoryAcLabel = {'AC': 'AC', 'NON_AC': 'Non-AC'};
 
 class BedDraft {
   String size;
@@ -545,4 +553,125 @@ class PhotoThumb extends StatelessWidget {
 String jsonEncodeBeds(List<Map<String, dynamic>> beds) {
   final parts = beds.map((b) => '{"size":"${b['size']}","count":${b['count']}}');
   return '[${parts.join(',')}]';
+}
+
+/// A dormitory's own headcount control — the only place its beds are added or
+/// removed, one call to `PUT /rooms/:id/beds/count` at a time rather than a
+/// per-bed add/remove UI. Only meaningful once the room already exists: a
+/// dormitory being created for the first time has no id yet for this to call
+/// against, so this only ever appears on the edit screen.
+class DormitoryBedCountField extends ConsumerStatefulWidget {
+  final int roomId;
+  final List<DormitoryBed> beds;
+
+  const DormitoryBedCountField({super.key, required this.roomId, required this.beds});
+
+  @override
+  ConsumerState<DormitoryBedCountField> createState() => _DormitoryBedCountFieldState();
+}
+
+class _DormitoryBedCountFieldState extends ConsumerState<DormitoryBedCountField> {
+  late int _count = widget.beds.length;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void didUpdateWidget(covariant DormitoryBedCountField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.beds.length != widget.beds.length) _count = widget.beds.length;
+  }
+
+  Future<void> _apply(int next) async {
+    if (next < 0 || next > 60 || next == widget.beds.length) return;
+    setState(() {
+      _count = next;
+      _saving = true;
+      _error = null;
+    });
+    final vm = ref.read(roomsViewModelProvider.notifier);
+    final ok = await vm.setBedCount(widget.roomId, next);
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (!ok) {
+        _count = widget.beds.length;
+        _error = ref.read(roomsViewModelProvider).error ?? 'Could not update the bed count.';
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const RequiredLabel('Beds'),
+        const SizedBox(height: AppTheme.s8),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline_rounded),
+              color: AppTheme.muted,
+              onPressed: _saving ? null : () => _apply(_count - 1),
+            ),
+            SizedBox(
+              width: 48,
+              child: Text(
+                '$_count',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              color: AppTheme.accent,
+              onPressed: _saving ? null : () => _apply(_count + 1),
+            ),
+            if (_saving) ...[
+              const SizedBox(width: AppTheme.s8),
+              const SizedBox(
+                height: 14,
+                width: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: AppTheme.s4),
+          Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+        ],
+        if (widget.beds.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s8),
+          Wrap(
+            spacing: AppTheme.s8,
+            runSpacing: AppTheme.s8,
+            children: [
+              for (final bed in widget.beds)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: bed.isActive ? AppTheme.accent.withValues(alpha: 0.08) : AppTheme.bg,
+                    border: bed.isActive ? null : Border.all(color: AppTheme.border),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    bed.bedLabel,
+                    style: TextStyle(
+                      color: bed.isActive ? AppTheme.accent : AppTheme.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }

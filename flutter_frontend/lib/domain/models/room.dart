@@ -19,6 +19,14 @@ class Room {
   final num categoryBasePrice;
   final List<SwitchableCharge> switchableCharges;
 
+  /// Whether this is a dorm sold bed-by-bed rather than as a whole room — see
+  /// [DormitoryBed] and [DormitoryGender]/[DormitoryAc]. A dormitory has no
+  /// [bedSize]/[maxOccupancy] of its own; those stay null on it.
+  final bool isDormitory;
+  final String? dormitoryGender;
+  final String? dormitoryIsAc;
+  final num? dormitoryPrice;
+
   const Room({
     required this.id,
     required this.roomNumber,
@@ -30,6 +38,10 @@ class Room {
     required this.categoryName,
     required this.categoryBasePrice,
     this.switchableCharges = const [],
+    this.isDormitory = false,
+    this.dormitoryGender,
+    this.dormitoryIsAc,
+    this.dormitoryPrice,
   });
 
   factory Room.fromJson(Map<String, dynamic> json) => Room(
@@ -48,6 +60,10 @@ class Room {
             ?.map((e) => SwitchableCharge.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+    isDormitory: asBool(json['isDormitory']),
+    dormitoryGender: asStringOrNull(json['dormitoryGender']),
+    dormitoryIsAc: asStringOrNull(json['dormitoryIsAc']),
+    dormitoryPrice: asNumOrNull(json['dormitoryPrice']),
   );
 }
 
@@ -122,6 +138,79 @@ class RoomBed {
   );
 }
 
+/// One bed in a dormitory room, individually labelled and let one at a time
+/// — see beds.schema.js on the server. Unlike [RoomBed] (a size/count pair
+/// on an ordinary room), each of these is its own bookable unit with a
+/// [bedId] a stay can be pinned to.
+class DormitoryBed {
+  final int id;
+  final String bedLabel;
+  final bool isActive;
+
+  const DormitoryBed({
+    required this.id,
+    required this.bedLabel,
+    this.isActive = true,
+  });
+
+  factory DormitoryBed.fromJson(Map<String, dynamic> json) => DormitoryBed(
+    id: asInt(json['id']),
+    bedLabel: json['bedLabel']?.toString() ?? '',
+    isActive: asBool(json['isActive']),
+  );
+}
+
+/// One bed as GET /bookings/available-beds lists it for a chosen stay — same
+/// identity as [DormitoryBed], plus whether it's free over those nights.
+class AvailableBed {
+  final int id;
+  final String bedLabel;
+  final bool isTaken;
+
+  const AvailableBed({
+    required this.id,
+    required this.bedLabel,
+    this.isTaken = false,
+  });
+
+  factory AvailableBed.fromJson(Map<String, dynamic> json) => AvailableBed(
+    id: asInt(json['id']),
+    bedLabel: json['bedLabel']?.toString() ?? '',
+    isTaken: asBool(json['isTaken']),
+  );
+}
+
+/// GET /bookings/available-beds for one dormitory room and date range — the
+/// bed-picker's own fetch, answering both "who's free" and "can this be
+/// bought out whole" in one call.
+class AvailableBeds {
+  final num pricePerNight;
+  final String? gender;
+  final String? isAc;
+  final List<AvailableBed> beds;
+  final bool roomAvailableForBuyout;
+
+  const AvailableBeds({
+    required this.pricePerNight,
+    this.gender,
+    this.isAc,
+    this.beds = const [],
+    this.roomAvailableForBuyout = false,
+  });
+
+  factory AvailableBeds.fromJson(Map<String, dynamic> json) => AvailableBeds(
+    pricePerNight: asNum(json['pricePerNight']),
+    gender: asStringOrNull(json['gender']),
+    isAc: asStringOrNull(json['isAc']),
+    beds:
+        (json['beds'] as List?)
+            ?.map((e) => AvailableBed.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    roomAvailableForBuyout: asBool(json['roomAvailableForBuyout']),
+  );
+}
+
 /// A room as GET /rooms (rooms.manage) returns it — the setup view, with
 /// status, photos and every bed, as opposed to [Room] from
 /// /bookings/available-rooms which is the booking-time view of a sellable
@@ -145,6 +234,15 @@ class RoomListing {
   final List<RoomImage> images;
   final num price;
 
+  final bool isDormitory;
+  final String? dormitoryGender;
+  final String? dormitoryIsAc;
+  final num? dormitoryPrice;
+
+  /// Every bed this dormitory currently has, active and inactive alike —
+  /// empty on every non-dormitory room.
+  final List<DormitoryBed> dormitoryBeds;
+
   const RoomListing({
     required this.id,
     required this.roomNumber,
@@ -159,6 +257,11 @@ class RoomListing {
     this.switchableCharges = const [],
     this.images = const [],
     required this.price,
+    this.isDormitory = false,
+    this.dormitoryGender,
+    this.dormitoryIsAc,
+    this.dormitoryPrice,
+    this.dormitoryBeds = const [],
   });
 
   factory RoomListing.fromJson(Map<String, dynamic> json) => RoomListing(
@@ -189,6 +292,15 @@ class RoomListing {
             .toList() ??
         const [],
     price: asNum(json['price']),
+    isDormitory: asBool(json['isDormitory']),
+    dormitoryGender: asStringOrNull(json['dormitoryGender']),
+    dormitoryIsAc: asStringOrNull(json['dormitoryIsAc']),
+    dormitoryPrice: asNumOrNull(json['dormitoryPrice']),
+    dormitoryBeds:
+        (json['dormitoryBeds'] as List?)
+            ?.map((e) => DormitoryBed.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
   );
 }
 

@@ -123,7 +123,15 @@ class _FakeBookings implements BookingRepository {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
+    int? bedId,
   }) async => const Quote();
+
+  @override
+  Future<AvailableBeds> availableBeds({
+    required int roomId,
+    required String checkInDate,
+    required String checkOutDate,
+  }) async => const AvailableBeds(pricePerNight: 0);
 
   @override
   Future<Booking> booking(int id) async =>

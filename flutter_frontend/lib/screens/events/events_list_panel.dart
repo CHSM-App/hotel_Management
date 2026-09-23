@@ -75,19 +75,26 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              NeuField(
-                controller: _search,
-                label: '',
-                hint: 'Search title, organiser, phone',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: AppTheme.s8),
-              _StatusFilter(
-                selected: _status,
-                onSelect: (s) {
-                  setState(() => _status = s);
-                  _load();
-                },
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: NeuField(
+                      controller: _search,
+                      label: '',
+                      hint: 'Search title, organiser, phone',
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  _StatusFilterButton(
+                    selected: _status,
+                    onSelect: (s) {
+                      setState(() => _status = s);
+                      _load();
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: AppTheme.s12),
               if (state.isLoading && state.events.isEmpty)
@@ -136,48 +143,50 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
   }
 }
 
-class _StatusFilter extends StatelessWidget {
+/// The search bar's side filter — a single icon that pops a menu of
+/// statuses (All + each of [kEventStatusLabel]) instead of a row of chips,
+/// so the search bar keeps most of the width and the header stays compact.
+class _StatusFilterButton extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
-  const _StatusFilter({required this.selected, required this.onSelect});
+  const _StatusFilterButton({required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 32,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          _chip('', 'All'),
-          for (final s in kEventStatusLabel.keys) _chip(s, kEventStatusLabel[s]!),
-        ],
+    final isFiltered = selected.isNotEmpty;
+    return PopupMenuButton<String>(
+      tooltip: 'Filter by status',
+      initialValue: selected,
+      onSelected: onSelect,
+      offset: const Offset(0, 44),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
+      itemBuilder: (context) => [
+        _item('', 'All'),
+        for (final s in kEventStatusLabel.keys) _item(s, kEventStatusLabel[s]!),
+      ],
+      child: NeuPressed(
+        padding: const EdgeInsets.all(AppTheme.s12),
+        focused: isFiltered,
+        child: Icon(Icons.filter_list_rounded, size: 20, color: isFiltered ? AppTheme.accent : AppTheme.muted),
       ),
     );
   }
 
-  Widget _chip(String key, String label) {
+  PopupMenuItem<String> _item(String key, String label) {
     final isSelected = key == selected;
-    return Padding(
-      padding: const EdgeInsets.only(right: AppTheme.s8),
-      child: GestureDetector(
-        onTap: () => onSelect(key),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected ? AppTheme.accent : AppTheme.card,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: isSelected ? AppTheme.accent : AppTheme.border),
+    return PopupMenuItem(
+      value: key,
+      child: Row(
+        children: [
+          Icon(
+            isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+            size: 16,
+            color: isSelected ? AppTheme.accent : AppTheme.muted,
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : AppTheme.text,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-              fontSize: 12.5,
-            ),
-          ),
-        ),
+          const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: AppTheme.text, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, fontSize: 13)),
+        ],
       ),
     );
   }

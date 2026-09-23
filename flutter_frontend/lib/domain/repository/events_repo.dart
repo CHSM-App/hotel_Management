@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../models/event_booking.dart';
 import '../models/invoice.dart';
 
@@ -5,19 +7,13 @@ import '../models/invoice.dart';
 abstract class EventsRepository {
   Future<List<EventVenue>> venues({bool includeInactive = false});
 
-  Future<void> createVenue({
-    required String name,
-    int? capacityPax,
-    required num baseCharge,
-  });
+  Future<void> createVenue(FormData form);
 
-  Future<void> updateVenue(
-    int id, {
-    String? name,
-    int? capacityPax,
-    num? baseCharge,
-    bool? isActive,
-  });
+  Future<void> updateVenue(int id, FormData form);
+
+  Future<void> setVenueActive(int id, bool isActive);
+
+  Future<void> deleteVenueImage(int venueId, int imageId);
 
   Future<List<EventAddon>> addons({bool includeInactive = false});
 

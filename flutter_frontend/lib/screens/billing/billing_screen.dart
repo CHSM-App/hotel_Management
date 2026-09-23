@@ -509,8 +509,11 @@ class _InvoiceCard extends ConsumerWidget {
           Text(
             [
               invoice.guestName,
-              if (invoice.roomNumber != null)
+              if (invoice.isEventBill)
+                invoice.venueName ?? 'Function'
+              else if (invoice.roomNumber != null)
                 'Room ${invoice.roomNumber}'
+                    '${invoice.isDormitory ? ' · Dormitory' : ''}'
               else if (invoice.tableLabel != null)
                 invoice.tableLabel,
               formatIsoDate(invoice.createdAt),
@@ -521,15 +524,20 @@ class _InvoiceCard extends ConsumerWidget {
           const SizedBox(height: AppTheme.s8),
           Row(
             children: [
-              _Figure(label: 'Total', value: invoice.totalAmount),
-              const SizedBox(width: AppTheme.s16),
-              if (invoice.advancePaid > 0)
-                _Figure(label: 'Advance', value: invoice.advancePaid),
+              Flexible(child: _Figure(label: 'Total', value: invoice.totalAmount)),
+              if (invoice.advancePaid > 0) ...[
+                const SizedBox(width: AppTheme.s16),
+                Flexible(
+                  child: _Figure(label: 'Advance', value: invoice.advancePaid),
+                ),
+              ],
               const Spacer(),
-              _Figure(
-                label: 'Collected',
-                value: invoice.balanceCollected,
-                strong: true,
+              Flexible(
+                child: _Figure(
+                  label: 'Collected',
+                  value: invoice.balanceCollected,
+                  strong: true,
+                ),
               ),
             ],
           ),
@@ -576,7 +584,11 @@ class _Figure extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall,
+          overflow: TextOverflow.ellipsis,
+        ),
         Text(
           formatPrice(value),
           style: TextStyle(
@@ -584,6 +596,7 @@ class _Figure extends StatelessWidget {
             fontSize: strong ? 16 : 14,
             fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );

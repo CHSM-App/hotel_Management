@@ -112,6 +112,15 @@ class _Body extends ConsumerWidget {
                 '${nightsLabel(preview.nights)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (preview.isDormitory) ...[
+                const SizedBox(height: 2),
+                Text(
+                  preview.bedLabel != null
+                      ? 'Dormitory bed — ${preview.bedLabel}'
+                      : 'Dormitory (whole room)',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
               const Divider(height: AppTheme.s24),
 
               for (final line in preview.roomCharges)

@@ -56,6 +56,7 @@ void main() {
     'lodgeAddress': 'Near Moti Lake, Sawantwadi',
     'lodgePhone': '9421072971',
     'lodgeCity': 'Vengurla',
+    'lodgeState': 'Maharashtra',
     'gstin': 'QWERTY1234',
     'isGstRegistered': true,
   });

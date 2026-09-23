@@ -87,14 +87,15 @@ class _TapeChartState extends ConsumerState<TapeChart>
 
   /// Anchors the vertical `CustomScrollView` so a chip jump can measure a
   /// section's actual painted position instead of asking `Scrollable.
-  /// ensureVisible` to work it out — that call reasons about the pinned
-  /// date-header sliver's *declared* extent, but the header's own content
-  /// (an `OverflowBox` sized off font metrics, not a fixed number) can paint
-  /// a little taller or shorter than that declared height, and against a
-  /// section already partway up the screen the mismatch reads as the chip
-  /// tap barely moving the chart at all. Measuring the header and the
-  /// section by their real on-screen positions sidesteps that mismatch
-  /// entirely.
+  /// ensureVisible` to work it out — that call walks every ancestor
+  /// `Scrollable` it finds, which picks up the chip strip's own horizontal
+  /// one too and fights [_CategoryChipsState._revealChip] over it. Measuring
+  /// the section's own on-screen position and correcting it by the pinned
+  /// header's *declared* extent ([_DateHeaderDelegate.heightFor], the number
+  /// the sliver layout actually reserves) sidesteps that entirely — the
+  /// header's inner content sits in an `OverflowBox` and can paint a little
+  /// taller or shorter than that declared height, so the correction must use
+  /// the declared number, not whatever the header's content box measures.
   final _scrollViewKey = GlobalKey();
 
   void _jumpTo(String category) {
@@ -104,13 +105,15 @@ class _TapeChartState extends ConsumerState<TapeChart>
     if (targetBox is! RenderBox || !targetBox.attached) return;
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
     // The section's current distance from the top of the scroll view as
-    // actually painted right now — this already reflects wherever the date
-    // header really ends, not where its declared sliver extent says it does.
+    // actually painted right now.
     final sectionTop = targetBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
-    final headerBox = _headerKey.currentContext?.findRenderObject();
-    final headerHeight = headerBox is RenderBox && headerBox.attached
-        ? headerBox.size.height
-        : 0.0;
+    // What the pinned header sliver actually reserves in the scroll layout —
+    // not whatever its `OverflowBox`'d content happens to measure, which can
+    // paint a few pixels taller or shorter and would otherwise leave the
+    // target landing partly under (or with a gap below) the pinned header.
+    final headerHeight = _DateHeaderDelegate.heightFor(
+      ref.read(bookingViewModelProvider).chartSections.length > 1,
+    );
     final target = (_vScroll.offset + sectionTop - headerHeight).clamp(
       _vScroll.position.minScrollExtent,
       _vScroll.position.maxScrollExtent,
@@ -121,10 +124,6 @@ class _TapeChartState extends ConsumerState<TapeChart>
       curve: Curves.easeOut,
     );
   }
-
-  /// Marks the pinned date header's own rendered box, so [_jumpTo] can read
-  /// its real painted height rather than the sliver's declared one.
-  final _headerKey = GlobalKey();
 
   @override
   void initState() {
@@ -374,7 +373,6 @@ class _TapeChartState extends ConsumerState<TapeChart>
               tile: tile,
               roomCol: roomCol,
               hSync: _hSync,
-              headerKey: _headerKey,
             ),
           ),
           SliverPadding(
@@ -937,7 +935,6 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double tile;
   final double roomCol;
   final _HorizontalSync hSync;
-  final GlobalKey headerKey;
 
   _DateHeaderDelegate({
     required this.sections,
@@ -948,7 +945,6 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.tile,
     required this.roomCol,
     required this.hSync,
-    required this.headerKey,
   });
 
   // Both a little over the sum of `_DateHeader`'s own fixed row heights and
@@ -962,8 +958,15 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   bool get _hasChips => sections != null && sections!.isNotEmpty;
 
-  double get _height =>
-      _dateHeaderHeight + (_hasChips ? _chipsHeight + AppTheme.s8 : 0);
+  double get _height => heightFor(_hasChips);
+
+  /// The exact pinned extent this delegate reserves for a given chip-row
+  /// state — the number the sliver layout actually uses, as opposed to
+  /// whatever the header's own `OverflowBox`'d content measures at paint
+  /// time. [_TapeChartState._jumpTo] needs this precise figure to land a
+  /// chip jump flush under the header instead of a few pixels off.
+  static double heightFor(bool hasChips) =>
+      _dateHeaderHeight + (hasChips ? _chipsHeight + AppTheme.s8 : 0);
 
   @override
   double get minExtent => _height;
@@ -991,7 +994,6 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
       // which reads as the chips sinking into the list instead of sitting
       // fixed above it.
       child: Container(
-        key: headerKey,
         color: AppTheme.bg,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1587,6 +1589,7 @@ class _RoomRow extends StatelessWidget {
                     for (final d in dates)
                       _Tile(
                         stay: room.stayOn(d),
+                        dormitoryOccupancy: room.dormitoryOccupancyOn(d),
                         draft: room.draftOn(d),
                         // A run of nights on the same stay draws as one
                         // unbroken bar — rounded only where the bar itself
@@ -1629,6 +1632,11 @@ class _RoomRow extends StatelessWidget {
 
 class _Tile extends StatelessWidget {
   final TapeChartBooking? stay;
+
+  /// Set only on a dormitory room's night, and only when at least one bed on
+  /// it is held — how full it is, for the partial-occupancy fill and the
+  /// "2/10" fraction below.
+  final DormitoryOccupancy? dormitoryOccupancy;
   final TapeChartDraft? draft;
   final bool isRunStart;
   final bool isRunEnd;
@@ -1645,6 +1653,7 @@ class _Tile extends StatelessWidget {
 
   const _Tile({
     required this.stay,
+    this.dormitoryOccupancy,
     required this.draft,
     required this.isRunStart,
     required this.isRunEnd,
@@ -1690,13 +1699,23 @@ class _Tile extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = stay;
     final d = draft;
+    final occ = dormitoryOccupancy;
+    // A partial dormitory night — some beds held, some still free — is drawn
+    // and tapped like a vacant night with a headcount on it, not like a
+    // single stay's bar: several different bookings can share it, and a tap
+    // opens a new booking against whichever beds are still free rather than
+    // any one of them.
+    final isPartial = occ?.isPartial ?? false;
+
     // A vacant night stands alone — each is its own small rounded box, the
     // way the web tape chart draws an empty grid. A stay's own nights are
     // never rounded or gapped except at the two ends of the run itself, so
     // they read as one continuous bar the whole length of the booking
-    // rather than a row of separately boxed nights.
-    final roundLeft = s == null || isRunStart;
-    final roundRight = s == null || isRunEnd;
+    // rather than a row of separately boxed nights. A partial dormitory
+    // night stands alone the same way a vacant one does — several bookings
+    // can share it, so there is no one run to draw as a continuous bar.
+    final roundLeft = s == null || isRunStart || isPartial;
+    final roundRight = s == null || isRunEnd || isPartial;
     // A vacant night in the past still opens a booking, exactly as the web
     // tape chart's own click does — a stay taken on paper over the weekend
     // has to be enterable against the nights it actually happened on. Past
@@ -1707,7 +1726,9 @@ class _Tile extends StatelessWidget {
     // still sellable, but whoever parked it should be finished or thrown
     // away before the night is sold from under them.
     return GestureDetector(
-      onTap: s != null
+      onTap: isPartial
+          ? onTapVacant
+          : s != null
           ? () => onTapStay(s)
           : d != null
           ? () => onTapDraft(d)
@@ -1723,7 +1744,23 @@ class _Tile extends StatelessWidget {
         ),
         child: Container(
           decoration: BoxDecoration(
-            color: _fill,
+            color: isPartial ? null : _fill,
+            gradient: isPartial
+                ? LinearGradient(
+                    colors: [
+                      AppTheme.reserved,
+                      AppTheme.reserved,
+                      AppTheme.vacant.withValues(alpha: 0.16),
+                      AppTheme.vacant.withValues(alpha: 0.16),
+                    ],
+                    stops: [
+                      0,
+                      occ!.occupied / occ.total,
+                      occ.occupied / occ.total,
+                      1,
+                    ],
+                  )
+                : null,
             borderRadius: BorderRadius.horizontal(
               left: roundLeft ? const Radius.circular(6) : Radius.zero,
               right: roundRight ? const Radius.circular(6) : Radius.zero,
@@ -1742,12 +1779,21 @@ class _Tile extends StatelessWidget {
                     color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
                     width: 1.6,
                   )
-                : (isToday && s == null)
+                : (isToday && s == null && !isPartial)
                 ? Border.all(color: AppTheme.accent, width: 1.4)
                 : null,
           ),
           alignment: Alignment.center,
-          child: s != null && size >= 48
+          child: isPartial && size >= 34
+              ? Text(
+                  '${occ!.occupied}/${occ.total}',
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              : (!isPartial && s != null && size >= 48)
               ? Text(
                   (s.guestName ?? '').isEmpty
                       ? ''

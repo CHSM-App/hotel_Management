@@ -31,6 +31,22 @@ class RoomsImpl implements RoomsRepository {
   Future<void> deleteRoomImage(int roomId, int imageId) => api.deleteRoomImage(roomId, imageId);
 
   @override
+  Future<List<DormitoryBed>> listBeds(int roomId) => api.listBeds(roomId);
+
+  @override
+  Future<DormitoryBed> createBed(int roomId, String bedLabel) => api.createBed(roomId, bedLabel);
+
+  @override
+  Future<void> updateBed(int roomId, int bedId, {String? bedLabel, bool? isActive}) =>
+      api.updateBed(roomId, bedId, bedLabel: bedLabel, isActive: isActive);
+
+  @override
+  Future<void> deleteBed(int roomId, int bedId) => api.deleteBed(roomId, bedId);
+
+  @override
+  Future<List<DormitoryBed>> setBedCount(int roomId, int count) => api.setBedCount(roomId, count);
+
+  @override
   Future<List<RoomCategory>> categories() => api.categories();
 
   @override
