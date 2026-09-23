@@ -157,7 +157,7 @@ export const FEATURES = [
   },
   {
     key: 'assets',
-    title: 'Assets & Maintenance',
+    title: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and log repairs.',
     permission: 'assets.manage',
     // No capability gate — every property type has physical assets to track.

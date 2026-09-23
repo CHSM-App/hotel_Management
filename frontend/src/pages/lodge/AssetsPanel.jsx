@@ -536,6 +536,15 @@ export default function AssetsPanel() {
   // for it doesn't need a setState synchronized against the assets list.
   const [consumedAssetToken, setConsumedAssetToken] = useState(null);
 
+  // One "Register asset" button opens whichever of the two register forms
+  // this points at; the toggle in each form's own header switches it (and
+  // swaps which form is showing) without closing the dialog first — reads
+  // as one modal with two tabs, same pattern as Add room's Single/Bulk
+  // range toggle, even though single and bulk stay two separately-rendered
+  // forms underneath (they diverge too much past the shared fields — a unit
+  // table vs. one set of fields — to merge into one without either mode
+  // dragging the other's fields along).
+  const [registerMode, setRegisterMode] = useState('single');
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [editingAssetId, setEditingAssetId] = useState(null);
   const [assetForm, setAssetForm] = useState(emptyAssetForm);
@@ -711,6 +720,8 @@ export default function AssetsPanel() {
     setBillFile(null);
     setFormError('');
     setFieldErrors({});
+    setRegisterMode('single');
+    setShowBulkForm(false);
     setShowAssetForm(true);
   };
 
@@ -867,7 +878,18 @@ export default function AssetsPanel() {
     setBulkImportError('');
     setBulkFieldErrors({});
     setBulkUnitErrors({});
+    setRegisterMode('bulk');
+    setShowAssetForm(false);
     setShowBulkForm(true);
+  };
+
+  // The toggle in either form's header — switches which one is open without
+  // the person having to close and reopen from the tab row. Each open*
+  // function already resets its own form to a blank slate, so switching
+  // modes never carries stale state from single into bulk or back.
+  const switchRegisterMode = (mode) => {
+    if (mode === 'bulk') openBulkForm();
+    else openAssetForm(null);
   };
 
   const addBulkUnit = () => setBulkUnits((rows) => [...rows, emptyBulkUnit()]);
@@ -1472,9 +1494,6 @@ export default function AssetsPanel() {
                 </select>
               )}
               <div className="inv-bar__actions">
-                <button type="button" className="btn-secondary" onClick={openBulkForm}>
-                  Bulk register
-                </button>
                 <button type="button" className="btn-accent" onClick={() => openAssetForm(null)}>
                   Register asset
                 </button>
@@ -1494,6 +1513,13 @@ export default function AssetsPanel() {
                 const wFlag = expiryFlag(asset.warrantyExpiry);
                 const aFlag = expiryFlag(asset.amcExpiry);
                 const badFlag = wFlag === 'expired' || aFlag === 'expired' ? 'expired' : wFlag || aFlag;
+                // Named rather than a generic "Warranty/AMC" — a hotel with
+                // both on file needs to know which one to act on without
+                // opening the asset to check, and "AMC expired" reads as
+                // more urgent (someone to call) than "Warranty expired"
+                // (nothing to do, it just lapsed).
+                const expiredNames = [wFlag === 'expired' && 'Warranty', aFlag === 'expired' && 'AMC'].filter(Boolean);
+                const soonNames = [wFlag === 'soon' && 'Warranty', aFlag === 'soon' && 'AMC'].filter(Boolean);
                 return (
                   <li
                     key={asset.id}
@@ -1503,8 +1529,12 @@ export default function AssetsPanel() {
                       <div className="inv-item__name">
                         {asset.name}
                         <span className="inv-tag">{STATUS_LABEL[asset.status]}</span>
-                        {badFlag === 'expired' && <span className="inv-tag inv-tag--bad">Warranty/AMC expired</span>}
-                        {badFlag === 'soon' && <span className="inv-tag inv-tag--low">Expiring soon</span>}
+                        {badFlag === 'expired' && (
+                          <span className="inv-tag inv-tag--bad">{expiredNames.join(' & ')} expired</span>
+                        )}
+                        {badFlag === 'soon' && (
+                          <span className="inv-tag inv-tag--low">{soonNames.join(' & ')} expiring soon</span>
+                        )}
                         {asset.openWorkOrders > 0 && (
                           <span className="inv-tag inv-tag--low">
                             {asset.openWorkOrders} open work order{asset.openWorkOrders === 1 ? '' : 's'}
@@ -1867,6 +1897,19 @@ export default function AssetsPanel() {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3 id="assetModalTitle">{editingAssetId ? 'Edit asset' : 'Register asset'}</h3>
+                  {/* Editing is always one asset — there's nothing to range
+                      over — so the toggle only appears when starting fresh,
+                      same as Add room hiding it once a room is being edited. */}
+                  {!editingAssetId && (
+                    <div className="toggle-group">
+                      <button type="button" aria-pressed={registerMode === 'single'} onClick={() => switchRegisterMode('single')}>
+                        Single
+                      </button>
+                      <button type="button" aria-pressed={registerMode === 'bulk'} onClick={() => switchRegisterMode('bulk')}>
+                        Bulk register
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="modal-form__close"
@@ -2180,7 +2223,15 @@ export default function AssetsPanel() {
             <form className="modal-form" onSubmit={handleBulkSubmit} noValidate>
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
-                  <h3 id="bulkModalTitle">Bulk register</h3>
+                  <h3 id="bulkModalTitle">Register asset</h3>
+                  <div className="toggle-group">
+                    <button type="button" aria-pressed={registerMode === 'single'} onClick={() => switchRegisterMode('single')}>
+                      Single
+                    </button>
+                    <button type="button" aria-pressed={registerMode === 'bulk'} onClick={() => switchRegisterMode('bulk')}>
+                      Bulk register
+                    </button>
+                  </div>
                   <button
                     type="button"
                     className="modal-form__close"

@@ -1070,6 +1070,37 @@
   box-shadow: none;
 }
 
+/* The Single/Bulk toggle's default look (a light inset track, dark text) is
+   built for a white header — dropped onto this one unchanged it read as a
+   separate light panel stuck on top of the purple rather than a control
+   that belongs to it. Same idea as the × button above: a translucent white
+   track, white text for the unselected side, and a solid white pill for the
+   selected one (dark text on white reads better than white-on-brand at this
+   size) so it sits in the header's own colour instead of fighting it. */
+.inv-panel__modal--asset .modal-form__head .toggle-group {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+  margin-bottom: 0;
+}
+
+.inv-panel__modal--asset .modal-form__head .toggle-group button {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.inv-panel__modal--asset .modal-form__head .toggle-group button:hover {
+  color: #ffffff;
+}
+
+.inv-panel__modal--asset .modal-form__head .toggle-group button[aria-pressed='true'] {
+  background: #ffffff;
+  color: var(--brand);
+  box-shadow: 0 1px 3px rgba(22, 33, 46, 0.25);
+}
+
+.inv-panel__modal--asset .modal-form__head .toggle-group button[aria-pressed='true']:hover {
+  color: var(--brand);
+}
+
 .modal-form__body--asset {
   display: grid;
   grid-template-columns: 1fr 1fr;

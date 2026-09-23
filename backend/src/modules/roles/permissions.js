@@ -56,7 +56,7 @@ const PERMISSIONS = [
   },
   {
     key: 'assets.manage',
-    label: 'Assets & Maintenance',
+    label: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and manage maintenance work orders.',
   },
 ];
