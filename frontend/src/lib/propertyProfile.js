@@ -156,6 +156,15 @@ export const FEATURES = [
     group: 'Setup',
   },
   {
+    key: 'assets',
+    title: 'Assets & Maintenance',
+    description: 'Register equipment, track warranty/AMC, and log repairs.',
+    permission: 'assets.manage',
+    // No capability gate — every property type has physical assets to track.
+    icon: 'wrench',
+    group: 'Setup',
+  },
+  {
     key: 'reports',
     title: 'Report & Analytics',
     description: 'Booking, occupancy, GST, events and food order reports — whichever this property sells.',

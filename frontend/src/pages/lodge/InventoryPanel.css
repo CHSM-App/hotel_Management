@@ -741,3 +741,345 @@
     display: none;
   }
 }
+
+/* The asset category field's suggestion list — a styled stand-in for a
+   native <datalist>, which renders with the browser's own chrome (dark
+   on Chrome, light on Firefox) that CSS can't reach. Same shape as
+   .menu-suggest in MenuPanel.css. */
+.asset-suggest {
+  position: relative;
+}
+
+.asset-suggest__list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 100%;
+  max-height: 232px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-elevated);
+}
+
+.asset-suggest__option {
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  min-height: 0;
+}
+
+.asset-suggest__option--active {
+  background: var(--paper);
+}
+
+/* The phone/specialty line under a vendor suggestion — lighter and smaller
+   than the name, so the row still reads as one name at a glance and the
+   detail only registers once you're looking for it (telling two vendors of
+   the same name apart). */
+.asset-suggest__option-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Register/Edit asset: wider than the other form dialogs (Work Order,
+   Vendor) because it carries three sections' worth of fields — Category,
+   Purchase details, Installation details. Two columns inside it is what
+   actually shortens the scroll; the extra width alone would just leave a
+   narrow form floating in a wide box. */
+.inv-panel__modal--asset {
+  max-width: 860px;
+}
+
+/* The header was the same white as the body under it — same colour, same
+   shadow plane, so "Register asset" and the × sat on what looked like one
+   undivided card rather than a bar of their own. Same brand gradient as
+   .btn-accent, which is what already tells the desk "the thing to press" —
+   reusing it here makes the header read as this form's own colour rather
+   than introducing a third hue. */
+.inv-panel__modal--asset .modal-form__head {
+  background-image: linear-gradient(135deg, var(--brand-lift), var(--brand));
+  border-bottom: none;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.inv-panel__modal--asset .modal-form__head h3,
+.inv-panel__modal--asset .modal-form__sub {
+  color: #ffffff;
+}
+
+.inv-panel__modal--asset .modal-form__sub {
+  opacity: 0.85;
+}
+
+.inv-panel__modal--asset .modal-form__close {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.inv-panel__modal--asset .modal-form__close:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+.inv-panel__modal--asset .modal-form__close:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: none;
+}
+
+.modal-form__body--asset {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 18px;
+  /* Row gap only — .field already carries its own bottom margin, and
+     stacking both would double the space between rows. */
+  row-gap: 0;
+  align-content: start;
+}
+
+.modal-form__body--asset > .field--span2,
+.modal-form__body--asset > .form-banner,
+.modal-form__body--asset > h4 {
+  grid-column: 1 / -1;
+}
+
+.modal-form__body--asset > h4 {
+  margin-bottom: 2px;
+}
+
+/* The theme's default field border (#DDE3EC on white, ~1.3:1) and hint text
+   (--text-muted, ~3.7:1) both read as barely-there on these two forms in
+   particular — twenty-plus fields across two-column grids and a bulk unit
+   table, where a faint edge means half the boxes look like they have no
+   border until the cursor lands in one. Scoped to the asset modals rather
+   than changed globally, since every other screen's forms are shorter and
+   the faintness hasn't been reported as a problem there. */
+.inv-panel__modal--asset .field input,
+.inv-panel__modal--asset .field select,
+.inv-panel__modal--asset .asset-suggest input,
+.inv-panel__modal--asset .asset-bulk-row input,
+.inv-panel__modal--asset .asset-bulk-row select {
+  /* ~3.2:1 against white — meets WCAG's 3:1 minimum for a UI component
+     border (1.4.11), where the theme default (~1.3:1) does not. */
+  border-color: #8090A8;
+}
+
+.inv-panel__modal--asset .field__hint {
+  color: #55627A;
+}
+
+@media (max-width: 720px) {
+  .inv-panel__modal--asset {
+    max-width: 460px;
+  }
+
+  .modal-form__body--asset {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* One row per unit in the Bulk register form: room, floor, location, an
+   optional name-override and a serial number, with the row number and a
+   remove button bookending it. A grid rather than flex so all five inputs
+   line up column to column down fifty rows — a ragged row of flex-grown
+   inputs would make the sheet unreadable at exactly the size it's meant to
+   help with. .asset-bulk-row__head repeats the same template so the labels
+   sit directly above their column instead of floating free above the list. */
+.asset-bulk-row,
+.asset-bulk-row__head {
+  display: grid;
+  grid-template-columns: 24px 1fr 70px 1fr 1fr 1fr 32px;
+  gap: 8px;
+  align-items: center;
+}
+
+.asset-bulk-row {
+  margin-bottom: 8px;
+}
+
+.asset-bulk-row__head {
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  /* Darker than --text-muted (~3.7:1) — small, all-caps column labels need
+     the extra contrast more than a hint sentence does. */
+  color: #55627A;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.asset-bulk-row select,
+.asset-bulk-row input {
+  min-height: 0;
+}
+
+.asset-bulk-row__index {
+  font-size: 12px;
+  font-weight: 600;
+  color: #55627A;
+  text-align: center;
+}
+
+.asset-bulk-row__remove {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.asset-bulk-row__remove:hover:not(:disabled) {
+  color: var(--danger, #c0392b);
+  box-shadow: var(--shadow-pressed);
+}
+
+.asset-bulk-row__remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* A row that failed validation, marked the same way a single field is
+   (.field__error's red edge) rather than only in a banner nobody would
+   connect back to which of fifty rows it's about. */
+.asset-bulk-row--error select,
+.asset-bulk-row--error input {
+  border-color: var(--danger);
+  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+}
+
+.asset-bulk-row__error {
+  display: block;
+  margin: -4px 0 8px;
+}
+
+/* FileField: the native <input type="file"> renders whatever button/text the
+   browser feels like (Chrome's own "Choose File / No file chosen" pill,
+   unstyleable and visually foreign to the rest of the form) — see the
+   component in AssetsPanel.jsx. The input itself stays in the DOM and
+   focusable, just visually hidden, so keyboard use and screen readers still
+   reach the real control; a styled button beside it triggers the picker and
+   a chip shows what's selected. */
+.asset-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.asset-file__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.asset-file__input:focus-visible + .btn-outline {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.asset-file__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-file__name--empty {
+  color: #55627A;
+  font-style: italic;
+}
+
+.asset-file__clear {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #55627A;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.asset-file__clear:hover {
+  color: var(--danger, #c0392b);
+  box-shadow: var(--shadow-pressed);
+}
+
+/* The Asset Register's category filter — sits in the toolbar beside the
+   search box rather than inside a .field, so it doesn't inherit that
+   width:100% rule (a filter that fills the row like the search box would
+   read as another search field, not a narrower "which kind" control). */
+.asset-category-filter {
+  flex-shrink: 0;
+  width: auto;
+  max-width: 240px;
+  padding: 8px 11px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+  min-height: 36px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-well);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .asset-category-filter {
+    width: 100%;
+    max-width: none;
+    order: 1;
+  }
+
+  .asset-bulk-row__head {
+    display: none;
+  }
+
+  .asset-bulk-row {
+    grid-template-columns: 1fr;
+    grid-template-areas: none;
+    row-gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .asset-bulk-row__index {
+    display: none;
+  }
+
+  .asset-bulk-row__remove {
+    justify-self: end;
+  }
+}

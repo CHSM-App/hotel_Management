@@ -54,6 +54,11 @@ const PERMISSIONS = [
     description: 'Take hall and lawn bookings for functions, quote them, and set up venues and add-ons.',
     capability: 'hasEvents',
   },
+  {
+    key: 'assets.manage',
+    label: 'Assets & Maintenance',
+    description: 'Register equipment, track warranty/AMC, and manage maintenance work orders.',
+  },
 ];
 
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
