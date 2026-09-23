@@ -27,6 +27,14 @@ String formatIsoDate(String? iso) {
 /// "3 nights", "1 night".
 String nightsLabel(int nights) => '$nights night${nights == 1 ? '' : 's'}';
 
+/// The clock time an ISO timestamp fell at — "2:45 PM" — for a food tab's
+/// "since" or "placed" line, which cares when, not what day.
+String formatTimeOfDay(String? iso) {
+  if (iso == null || iso.isEmpty) return '';
+  final parsed = DateTime.tryParse(iso);
+  return parsed == null ? '' : DateFormat('h:mm a').format(parsed.toLocal());
+}
+
 /// Short floor code for tight labels: "1" → "F1", "Ground"/"G" → "G",
 /// anything else (already short, or non-numeric) passed through as-is.
 String formatFloor(String? floor) {

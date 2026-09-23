@@ -44,6 +44,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2
 
+  # Ordering QR codes, drawn on-device for the same reason qr.js draws them in
+  # the browser rather than fetching an image: they end up printed and stuck
+  # to a table, and have to render without our server being reachable.
+  qr_flutter: ^4.1.0
+
   # The profile screen's map pin: reading the phone's own GPS for "use my
   # current location", and handing a lat/lng off to Google Maps to view.
   geolocator: ^13.0.2

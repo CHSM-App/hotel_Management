@@ -135,6 +135,11 @@ class RoomListing {
   final int? maxOccupancy;
   final String? description;
   final bool isActive;
+
+  /// Whether a guest is currently checked into this room — the counter
+  /// order screen's target picker only offers a room to bill food to when
+  /// there's someone in it to bill.
+  final bool isOccupied;
   final RoomCategoryRef category;
   final List<SwitchableCharge> switchableCharges;
   final List<RoomImage> images;
@@ -149,6 +154,7 @@ class RoomListing {
     this.maxOccupancy,
     this.description,
     required this.isActive,
+    this.isOccupied = false,
     required this.category,
     this.switchableCharges = const [],
     this.images = const [],
@@ -168,6 +174,7 @@ class RoomListing {
     maxOccupancy: asIntOrNull(json['maxOccupancy']),
     description: asStringOrNull(json['description']),
     isActive: asBool(json['isActive']),
+    isOccupied: asBool(json['isOccupied']),
     category: RoomCategoryRef.fromJson(
       json['category'] as Map<String, dynamic>,
     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
+import '../../core/network/api_error_message.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
@@ -112,6 +113,25 @@ class InvoicePreviewScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
+                  if (invoice.status == 'ISSUED') ...[
+                    const SizedBox(height: AppTheme.s8),
+                    // One press: the bill is sent to the guest's WhatsApp
+                    // number by the server, link only — no chat to attach it
+                    // in, same as the web billing screen's own button.
+                    NeuButton(
+                      expand: true,
+                      onPressed: () => _shareOnWhatsApp(context, ref),
+                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.send_rounded, size: 18, color: Color(0xFF25D366)),
+                          SizedBox(width: 8),
+                          Text('Send this bill on WhatsApp'),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (!invoice.isVoid) ...[
                     const SizedBox(height: AppTheme.s4),
                     Align(
@@ -167,6 +187,31 @@ class InvoicePreviewScreen extends ConsumerWidget {
           content: Text('Could not build the PDF.'),
           backgroundColor: AppTheme.heading,
         ),
+      );
+    }
+  }
+
+  /// Send the bill to the guest's own WhatsApp number, from the server — not
+  /// the device's own WhatsApp, and nothing for the desk to attach by hand.
+  Future<void> _shareOnWhatsApp(BuildContext context, WidgetRef ref) async {
+    final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await BillPdf.build(invoice, lodgeName: lodgeName);
+      final filename =
+          '${(invoice.invoiceNumber ?? '${invoice.id}').replaceAll(RegExp(r'[\\/]'), '-')}.pdf';
+      final result = await ref
+          .read(billingViewModelProvider.notifier)
+          .shareInvoiceWhatsApp(invoice.id, bytes, filename);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Bill sent on WhatsApp to ${result.phone}.'),
+          backgroundColor: AppTheme.heading,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(apiErrorMessage(e)), backgroundColor: AppTheme.heading),
       );
     }
   }

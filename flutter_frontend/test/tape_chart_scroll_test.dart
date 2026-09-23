@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
+import 'package:hotel_manager/domain/models/draft.dart';
 import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/late_checkout.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
@@ -100,6 +101,23 @@ class _FakeBookingRepository implements BookingRepository {
   @override
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
       throw UnimplementedError();
+
+  @override
+  Future<List<BookingDraft>> drafts() => throw UnimplementedError();
+
+  @override
+  Future<BookingDraft> draft(int id) => throw UnimplementedError();
+
+  @override
+  Future<BookingDraft> createDraft(Map<String, dynamic> form) =>
+      throw UnimplementedError();
+
+  @override
+  Future<BookingDraft> updateDraft(int id, Map<String, dynamic> form) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> deleteDraft(int id) => throw UnimplementedError();
 }
 
 /// A horizontally scrollable strip that a desk could actually drag: not the

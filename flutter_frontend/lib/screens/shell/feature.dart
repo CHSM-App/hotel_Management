@@ -41,6 +41,8 @@ class Feature {
         return me.lodge.hasRooms;
       case 'servesFood':
         return me.lodge.servesFood;
+      case 'hasEvents':
+        return me.lodge.hasEvents;
       default:
         return true;
     }
@@ -84,14 +86,18 @@ const kFeatures = <Feature>[
   // Guest register ('guests', permission 'guests.view') is deliberately not
   // listed: it has no phone screen, and Rooms & rates now does (see
   // dashboard_shell.dart), so that tab took its primary-bar slot instead.
-  // Feature(
-  //   key: 'food',
-  //   title: 'Food orders',
-  //   tabLabel: 'Food',
-  //   icon: Icons.room_service_rounded,
-  //   permission: 'orders.manage',
-  //   capability: 'servesFood',
-  // ),
+  Feature(
+    key: 'food',
+    title: 'Food orders',
+    tabLabel: 'Food',
+    icon: Icons.room_service_rounded,
+    permission: 'orders.manage',
+    capability: 'servesFood',
+  ),
+  // ── Setup ────────────────────────────────────────────────────────────────
+  // Rooms and Menu & QR codes are both setup screens touched far less often
+  // than the four above once a property's rooms and menu exist, so both fold
+  // into "More" — Rooms listed first, Menu & QR codes under it.
   Feature(
     key: 'rooms',
     title: 'Rooms & rates',
@@ -100,16 +106,25 @@ const kFeatures = <Feature>[
     permission: 'rooms.manage',
     capability: 'hasRooms',
   ),
-
-  // ── Setup ────────────────────────────────────────────────────────────────
-  // Feature(
-  //   key: 'menu',
-  //   title: 'Menu & QR codes',
-  //   tabLabel: 'Menu',
-  //   icon: Icons.restaurant_menu_rounded,
-  //   permission: 'food.manage',
-  //   capability: 'servesFood',
-  // ),
+  Feature(
+    key: 'menu',
+    title: 'Menu & QR codes',
+    tabLabel: 'Menu',
+    icon: Icons.restaurant_menu_rounded,
+    permission: 'food.manage',
+    capability: 'servesFood',
+  ),
+  // Same web module (Events.jsx): diary, list and venue/add-on setup for
+  // halls and functions. Folded into "More" beside Rooms and Menu — a
+  // banquet enquiry is taken far less often than a walk-in booking.
+  Feature(
+    key: 'events',
+    title: 'Events & functions',
+    tabLabel: 'Events',
+    icon: Icons.celebration_rounded,
+    permission: 'events.manage',
+    capability: 'hasEvents',
+  ),
   // Feature(
   //   key: 'staff',
   //   title: 'Staff & roles',
@@ -131,7 +146,8 @@ const kFeatures = <Feature>[
 
 /// How many sections get their own tab before the rest go behind "More".
 ///
-/// Five plus More. Five is the practical ceiling for a bottom bar — past that
-/// the labels truncate and the targets fall under the 44px a thumb needs — and
-/// the web sidebar has eight sections, so something has to fold.
-const int kPrimaryTabs = 5;
+/// Four plus More: Bookings, Register, Billing and Food are what the desk
+/// opens every shift; Rooms & rates and Menu & QR codes are setup screens
+/// opened far less often, so both fold into "More" rather than crowding the
+/// bar.
+const int kPrimaryTabs = 4;

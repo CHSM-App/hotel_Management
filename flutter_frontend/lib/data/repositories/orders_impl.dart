@@ -1,5 +1,6 @@
 import '../../domain/models/food_order.dart';
 import '../../domain/models/menu.dart';
+import '../../domain/models/room.dart';
 import '../../domain/repository/orders_repo.dart';
 import '../api/api_service.dart';
 
@@ -37,6 +38,9 @@ class OrdersImpl implements OrdersRepository {
 
   @override
   Future<List<DiningTable>> tables() => api.tables();
+
+  @override
+  Future<List<RoomListing>> roomsForOrder() => api.rooms();
 
   @override
   Future<void> clearFoodPinLockout(String roomNumber) =>

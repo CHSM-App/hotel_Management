@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/usecase/auth_usecase.dart';
 import '../../domain/usecase/booking_usecase.dart';
 import '../../domain/usecase/billing_usecase.dart';
+import '../../domain/usecase/events_usecase.dart';
+import '../../domain/usecase/food_setup_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
 import '../../domain/usecase/reports_usecase.dart';
 import '../../domain/usecase/rooms_usecase.dart';
@@ -31,4 +33,12 @@ final roomsUsecaseProvider = Provider<RoomsUsecase>(
 
 final reportsUsecaseProvider = Provider<ReportsUsecase>(
   (ref) => ReportsUsecase(ref.watch(reportsRepositoryProvider)),
+);
+
+final foodSetupUsecaseProvider = Provider<FoodSetupUsecase>(
+  (ref) => FoodSetupUsecase(ref.watch(foodSetupRepositoryProvider)),
+);
+
+final eventsUsecaseProvider = Provider<EventsUsecase>(
+  (ref) => EventsUsecase(ref.watch(eventsRepositoryProvider)),
 );

@@ -9,6 +9,9 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'invoice_preview_screen.dart';
 import 'issue_bill_screen.dart';
+import 'issue_food_bill_screen.dart';
+
+enum _BillingTab { toBill, food, issued }
 
 /// Billing: what still has to be billed, and what already has been.
 ///
@@ -24,7 +27,7 @@ class BillingScreen extends ConsumerStatefulWidget {
 }
 
 class _BillingScreenState extends ConsumerState<BillingScreen> {
-  bool _showIssued = false;
+  _BillingTab _tab = _BillingTab.toBill;
 
   @override
   void initState() {
@@ -37,6 +40,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(billingViewModelProvider);
+    // A lodge bills stays, a restaurant bills open tables, and one with meals
+    // does both — same split the web billing screen makes between its own
+    // "Ready to bill" and "Food to bill" tabs.
+    final servesFood = ref.watch(authViewModelProvider).me?.lodge.servesFood ?? false;
+    final tab = servesFood || _tab != _BillingTab.food ? _tab : _BillingTab.toBill;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -51,16 +59,134 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           _Toggle(
-            showIssued: _showIssued,
-            queueCount: state.queue.valueOrNull?.length,
-            onChanged: (v) => setState(() => _showIssued = v),
+            tab: tab,
+            showFood: servesFood,
+            toBillCount: state.queue.valueOrNull?.length,
+            foodCount: state.foodQueue.valueOrNull?.length,
+            onChanged: (v) => setState(() => _tab = v),
           ),
           const SizedBox(height: AppTheme.s16),
-          if (_showIssued) ..._issued(state) else ..._queue(state),
+          if (tab == _BillingTab.food)
+            ..._food(state)
+          else if (tab == _BillingTab.issued)
+            ..._issued(state)
+          else
+            ..._queue(state),
         ],
       ),
     );
   }
+
+  // ── Food to bill ─────────────────────────────────────────────────────────
+
+  List<Widget> _food(BillingState state) => state.foodQueue.when(
+    loading: () => const [
+      SizedBox(height: 120),
+      Center(child: CircularProgressIndicator()),
+    ],
+    error: (e, _) => [
+      NeuNotice(
+        icon: Icons.cloud_off_rounded,
+        message: 'Could not load open tables.',
+        action: NeuButton(onPressed: _load, child: const Text('Try again')),
+      ),
+    ],
+    data: (rows) {
+      if (rows.isEmpty) {
+        return const [
+          SizedBox(height: 80),
+          NeuNotice(
+            icon: Icons.task_alt_rounded,
+            message: 'Nothing waiting — everything served has been billed.',
+          ),
+        ];
+      }
+      return [
+        for (final tab in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
+            child: NeuCard(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: AppTheme.s12,
+              ),
+              onTap: () async {
+                await ref.read(billingViewModelProvider.notifier).openFood(tab);
+                if (!mounted) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const IssueFoodBillScreen()),
+                );
+                if (!mounted) return;
+                await _load();
+              },
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppTheme.bg,
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: Icon(
+                      tab.isTakeaway
+                          ? Icons.shopping_bag_outlined
+                          : Icons.restaurant_rounded,
+                      color: AppTheme.heading,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          tab.guestName != null
+                              ? '${tab.tableLabel} · ${tab.guestName}'
+                              : tab.tableLabel ?? 'Counter',
+                          style: Theme.of(context).textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          tab.isTakeaway
+                              ? [
+                                  if (tab.customerPhone != null) tab.customerPhone!,
+                                  'Placed ${formatTimeOfDay(tab.openedAt)}',
+                                ].join(' · ')
+                              : '${tab.orderCount} order${tab.orderCount == 1 ? '' : 's'} '
+                                    '· since ${formatTimeOfDay(tab.openedAt)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Text(
+                    formatPrice(tab.subtotal),
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(
+                    Icons.chevron_right,
+                    color: AppTheme.muted,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ];
+    },
+  );
 
   // ── To bill ───────────────────────────────────────────────────────────────
 
@@ -225,13 +351,17 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 // ── Which list ──────────────────────────────────────────────────────────────
 
 class _Toggle extends StatelessWidget {
-  final bool showIssued;
-  final int? queueCount;
-  final ValueChanged<bool> onChanged;
+  final _BillingTab tab;
+  final bool showFood;
+  final int? toBillCount;
+  final int? foodCount;
+  final ValueChanged<_BillingTab> onChanged;
 
   const _Toggle({
-    required this.showIssued,
-    required this.queueCount,
+    required this.tab,
+    required this.showFood,
+    required this.toBillCount,
+    required this.foodCount,
     required this.onChanged,
   });
 
@@ -239,8 +369,22 @@ class _Toggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final toBillLabel =
-        queueCount == null ? 'To bill' : 'To bill ($queueCount)';
+    final segments = [
+      (
+        tab: _BillingTab.toBill,
+        label: toBillCount == null
+            ? 'Ready to bill'
+            : 'Ready to bill ($toBillCount)',
+      ),
+      if (showFood)
+        (
+          tab: _BillingTab.food,
+          label: foodCount == null ? 'Food to bill' : 'Food to bill ($foodCount)',
+        ),
+      (tab: _BillingTab.issued, label: 'Bills'),
+    ];
+    final index = segments.indexWhere((s) => s.tab == tab);
+    final slot = index < 0 ? 0 : index;
 
     Widget segment(String label, bool selected, VoidCallback onTap) =>
         Expanded(
@@ -281,10 +425,9 @@ class _Toggle extends StatelessWidget {
           AnimatedAlign(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
-            alignment:
-                showIssued ? Alignment.centerRight : Alignment.centerLeft,
+            alignment: Alignment(-1 + (2 * slot) / (segments.length - 1).clamp(1, 999), 0),
             child: FractionallySizedBox(
-              widthFactor: 0.5,
+              widthFactor: 1 / segments.length,
               child: Container(
                 height: _height - 8,
                 decoration: BoxDecoration(
@@ -297,8 +440,8 @@ class _Toggle extends StatelessWidget {
           ),
           Row(
             children: [
-              segment(toBillLabel, !showIssued, () => onChanged(false)),
-              segment('Issued', showIssued, () => onChanged(true)),
+              for (final s in segments)
+                segment(s.label, s.tab == tab, () => onChanged(s.tab)),
             ],
           ),
         ],
@@ -366,7 +509,10 @@ class _InvoiceCard extends ConsumerWidget {
           Text(
             [
               invoice.guestName,
-              if (invoice.roomNumber != null) 'Room ${invoice.roomNumber}',
+              if (invoice.roomNumber != null)
+                'Room ${invoice.roomNumber}'
+              else if (invoice.tableLabel != null)
+                invoice.tableLabel,
               formatIsoDate(invoice.createdAt),
             ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
             style: Theme.of(context).textTheme.bodySmall,

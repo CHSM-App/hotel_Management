@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/draft.dart';
@@ -12,11 +14,19 @@ import 'booking_viewmodel.dart' show BookingViewModel;
 /// and the one bill being cut right now.
 class BillingState {
   final AsyncValue<List<BillableStay>> queue;
+  final AsyncValue<List<FoodTab>> foodQueue;
   final AsyncValue<List<Invoice>> invoices;
 
   // ── The bill being cut ───────────────────────────────────────────────────
   final BillableStay? target;
   final BillPreview? preview;
+
+  /// Set instead of [target]/[preview] when a table, room, or takeaway is
+  /// being billed rather than a stay. Only one of the two pairs is ever
+  /// non-null — the payment rows, [issuing] and [error] below are shared by
+  /// whichever is in flight, since the desk only ever has one bill open.
+  final FoodTab? foodTarget;
+  final FoodBillPreview? foodPreview;
   final bool previewing;
   final String? error;
 
@@ -47,9 +57,12 @@ class BillingState {
 
   const BillingState({
     this.queue = const AsyncValue.loading(),
+    this.foodQueue = const AsyncValue.loading(),
     this.invoices = const AsyncValue.loading(),
     this.target,
     this.preview,
+    this.foodTarget,
+    this.foodPreview,
     this.previewing = false,
     this.error,
     this.includeLateCheckout = true,
@@ -62,11 +75,16 @@ class BillingState {
 
   BillingState copyWith({
     AsyncValue<List<BillableStay>>? queue,
+    AsyncValue<List<FoodTab>>? foodQueue,
     AsyncValue<List<Invoice>>? invoices,
     BillableStay? target,
     bool clearTarget = false,
     BillPreview? preview,
     bool clearPreview = false,
+    FoodTab? foodTarget,
+    bool clearFoodTarget = false,
+    FoodBillPreview? foodPreview,
+    bool clearFoodPreview = false,
     bool? previewing,
     String? error,
     bool clearError = false,
@@ -78,9 +96,12 @@ class BillingState {
     String? discountReason,
   }) => BillingState(
     queue: queue ?? this.queue,
+    foodQueue: foodQueue ?? this.foodQueue,
     invoices: invoices ?? this.invoices,
     target: clearTarget ? null : (target ?? this.target),
     preview: clearPreview ? null : (preview ?? this.preview),
+    foodTarget: clearFoodTarget ? null : (foodTarget ?? this.foodTarget),
+    foodPreview: clearFoodPreview ? null : (foodPreview ?? this.foodPreview),
     previewing: previewing ?? this.previewing,
     error: clearError ? null : (error ?? this.error),
     includeLateCheckout: includeLateCheckout ?? this.includeLateCheckout,
@@ -100,12 +121,16 @@ class BillingState {
   /// re-derives that, so the two can't disagree on the document.
   num get cycleDiscount => num.tryParse(discountInput) ?? 0;
 
-  /// What the guest owes on the bill as it currently stands.
-  num get balanceDue => preview?.balanceDue ?? 0;
+  /// What the guest owes on the bill as it currently stands — whichever kind
+  /// of bill is open.
+  num get balanceDue => foodTarget != null
+      ? (foodPreview?.balanceDue ?? 0)
+      : (preview?.balanceDue ?? 0);
 
-  /// A stay paid in full up front. The bill still has to be issued — it is
-  /// the tax document — but there is no money changing hands at the desk, so
-  /// nothing about a payment is asked for: no rows, no method.
+  /// A stay paid in full up front, or (for a table) nothing at all still
+  /// owed. The bill still has to be issued — it is the tax document — but
+  /// there is no money changing hands at the desk, so nothing about a
+  /// payment is asked for: no rows, no method.
   bool get nothingDue => (balanceDue * 100).round() <= 0;
 
   /// What the rows add up to.
@@ -120,11 +145,11 @@ class BillingState {
 
   /// The message to show, or null when the bill may be issued.
   ///
-  /// The balance due is fixed — it is what the stay costs, and nothing typed
-  /// into the payment rows moves it. A bill cannot be cut until the money
-  /// recorded equals it.
+  /// The balance due is fixed — it is what the stay (or the table) costs, and
+  /// nothing typed into the payment rows moves it. A bill cannot be cut until
+  /// the money recorded equals it.
   String? get settlementProblem {
-    if (preview == null) return null;
+    if (preview == null && foodPreview == null) return null;
     // Nothing to reconcile against when the advance already covers the bill
     // — there is no payment to enter, so there is nothing to be wrong.
     if (nothingDue) return null;
@@ -157,7 +182,7 @@ class BillingViewModel extends StateNotifier<BillingState> {
 
   BillingViewModel(this.usecase) : super(const BillingState());
 
-  /// Load the queue and the bills already issued.
+  /// Load the queue, the open food tabs, and the bills already issued.
   Future<void> load() async {
     state = state.copyWith(clearError: true);
     try {
@@ -165,6 +190,12 @@ class BillingViewModel extends StateNotifier<BillingState> {
       state = state.copyWith(queue: AsyncValue.data(rows));
     } catch (e, st) {
       state = state.copyWith(queue: AsyncValue.error(e, st));
+    }
+    try {
+      final rows = await usecase.foodTabs();
+      state = state.copyWith(foodQueue: AsyncValue.data(rows));
+    } catch (e, st) {
+      state = state.copyWith(foodQueue: AsyncValue.error(e, st));
     }
     try {
       final rows = await usecase.invoices();
@@ -201,6 +232,56 @@ class BillingViewModel extends StateNotifier<BillingState> {
     discountInput: '',
     discountReason: '',
   );
+
+  /// Open a table, room, or takeaway for billing — the food side of the
+  /// queue. No overstay and no cycle discount: a food bill is the food side
+  /// on its own, with nothing to negotiate beyond how it was paid.
+  Future<void> openFood(FoodTab tab) async {
+    state = state.copyWith(
+      foodTarget: tab,
+      clearFoodPreview: true,
+      clearError: true,
+      payment: [PaymentDraft()],
+      paymentTouched: false,
+    );
+    await refreshFoodPreview();
+  }
+
+  void closeFood() => state = state.copyWith(
+    clearFoodTarget: true,
+    clearFoodPreview: true,
+    clearError: true,
+    payment: const [],
+    paymentTouched: false,
+  );
+
+  Future<void> refreshFoodPreview() async {
+    final tab = state.foodTarget;
+    if (tab == null) return;
+
+    state = state.copyWith(previewing: true, clearError: true);
+    try {
+      final preview = await usecase.previewFoodBill(tab.tab);
+      final rows = state.payment.isEmpty
+          ? <PaymentDraft>[PaymentDraft()]
+          : state.payment;
+      if (rows.length == 1 && !state.paymentTouched) {
+        rows.first.amount = preview.balanceDue > 0
+            ? '${preview.balanceDue}'
+            : '';
+      }
+      state = state.copyWith(
+        previewing: false,
+        foodPreview: preview,
+        payment: List.of(rows),
+      );
+    } catch (e) {
+      state = state.copyWith(
+        previewing: false,
+        error: BookingViewModel.messageFor(e),
+      );
+    }
+  }
 
   /// Re-price. Only the overstay decision and the discount move this — adding
   /// the overstay charge can push a night into a different GST band and
@@ -338,6 +419,50 @@ class BillingViewModel extends StateNotifier<BillingState> {
     }
   }
 
+  /// Close a food tab — sweeps every delivered order on it into one bill.
+  ///
+  /// Returns the invoice on success, null on failure with the error set.
+  /// Guarded against a second tap: this burns a serial and there is no undo,
+  /// only a void.
+  Future<Invoice?> issueFood() async {
+    final tab = state.foodTarget;
+    final preview = state.foodPreview;
+    if (tab == null || preview == null || state.issuing) return null;
+
+    final problem = state.settlementProblem;
+    if (problem != null) {
+      state = state.copyWith(error: problem);
+      return null;
+    }
+
+    state = state.copyWith(issuing: true, clearError: true);
+    try {
+      final rows = state.payment.where((p) => p.value > 0).toList();
+      final invoice = await usecase.issueFoodInvoice(tab.tab, {
+        'billingSide': preview.billingSide,
+        'discountAmount': preview.amounts?.discountAmount ?? 0,
+        'collectedAmount': state.collected,
+        if (rows.isNotEmpty) ...{
+          'paymentMethod': rows.first.method,
+          if (needsPaymentReference(rows.first.method) &&
+              rows.first.reference.trim().isNotEmpty)
+            'paymentReference': rows.first.reference.trim(),
+          if (rows.length > 1)
+            'paymentLines': rows.map((r) => r.toJson()).toList(),
+        },
+      });
+      state = state.copyWith(issuing: false);
+      // Deliberately not reloading here — see issue() above for why.
+      return invoice;
+    } catch (e) {
+      state = state.copyWith(
+        issuing: false,
+        error: BookingViewModel.messageFor(e),
+      );
+      return null;
+    }
+  }
+
   /// Cancel a bill that should not have been issued.
   Future<bool> voidInvoice(int id, String reason) async {
     try {
@@ -349,4 +474,17 @@ class BillingViewModel extends StateNotifier<BillingState> {
       return false;
     }
   }
+
+  /// Send an already-built bill PDF to the guest on WhatsApp — see
+  /// billShare.service.js on the server for what actually happens: the file
+  /// is stored behind a link, and an approved template carries that link to
+  /// the guest's number. Left to throw rather than folded into [state]: this
+  /// runs from a bill already on screen (freshly issued, or reopened from the
+  /// list), not from the queue this class otherwise tracks, so the caller
+  /// shows its own result rather than one more screen reacting to `error`.
+  Future<WhatsAppShareResult> shareInvoiceWhatsApp(
+    int invoiceId,
+    Uint8List pdfBytes,
+    String filename,
+  ) => usecase.shareInvoiceWhatsApp(invoiceId, pdfBytes, filename);
 }

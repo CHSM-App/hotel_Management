@@ -4,12 +4,16 @@ import '../../core/network/dio_provider.dart';
 import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
 import '../../data/repositories/billing_impl.dart';
+import '../../data/repositories/events_impl.dart';
+import '../../data/repositories/food_setup_impl.dart';
 import '../../data/repositories/orders_impl.dart';
 import '../../data/repositories/reports_impl.dart';
 import '../../data/repositories/rooms_impl.dart';
 import '../../domain/repository/auth_repo.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../../domain/repository/billing_repo.dart';
+import '../../domain/repository/events_repo.dart';
+import '../../domain/repository/food_setup_repo.dart';
 import '../../domain/repository/orders_repo.dart';
 import '../../domain/repository/reports_repo.dart';
 import '../../domain/repository/rooms_repo.dart';
@@ -44,4 +48,12 @@ final roomsRepositoryProvider = Provider<RoomsRepository>(
 
 final reportsRepositoryProvider = Provider<ReportsRepository>(
   (ref) => ReportsImpl(ref.watch(apiServiceProvider)),
+);
+
+final foodSetupRepositoryProvider = Provider<FoodSetupRepository>(
+  (ref) => FoodSetupImpl(ref.watch(apiServiceProvider)),
+);
+
+final eventsRepositoryProvider = Provider<EventsRepository>(
+  (ref) => EventsImpl(ref.watch(apiServiceProvider)),
 );

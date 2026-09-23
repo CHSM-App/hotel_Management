@@ -61,6 +61,8 @@ class BillSide {
   final num foodSubtotal;
   final num foodCgstAmount;
   final num foodSgstAmount;
+  final num foodCgstRatePercent;
+  final num foodSgstRatePercent;
   final num discountAmount;
   final num discountPercent;
   final num roundOff;
@@ -78,6 +80,8 @@ class BillSide {
     this.foodSubtotal = 0,
     this.foodCgstAmount = 0,
     this.foodSgstAmount = 0,
+    this.foodCgstRatePercent = 0,
+    this.foodSgstRatePercent = 0,
     this.discountAmount = 0,
     this.discountPercent = 0,
     this.roundOff = 0,
@@ -96,6 +100,8 @@ class BillSide {
     foodSubtotal: asNum(json['foodSubtotal']),
     foodCgstAmount: asNum(json['foodCgstAmount']),
     foodSgstAmount: asNum(json['foodSgstAmount']),
+    foodCgstRatePercent: asNum(json['foodCgstRatePercent']),
+    foodSgstRatePercent: asNum(json['foodSgstRatePercent']),
     discountAmount: asNum(json['discountAmount']),
     discountPercent: asNum(json['discountPercent']),
     roundOff: asNum(json['roundOff']),
@@ -246,6 +252,141 @@ class BillPreview {
   }
 }
 
+/// One line of food ordered — "2× Chicken Biryani ₹560" — on a food bill's
+/// itemised list, whether it's still a preview or already on an invoice.
+class FoodItemLine {
+  final String name;
+  final num unitPrice;
+  final num quantity;
+  final num lineTotal;
+
+  const FoodItemLine({
+    required this.name,
+    this.unitPrice = 0,
+    this.quantity = 0,
+    this.lineTotal = 0,
+  });
+
+  factory FoodItemLine.fromJson(Map<String, dynamic> json) => FoodItemLine(
+    name: json['name']?.toString() ?? '',
+    unitPrice: asNum(json['unitPrice']),
+    quantity: asNum(json['quantity']),
+    lineTotal: asNum(json['lineTotal']),
+  );
+}
+
+/// A table, room, or takeaway with delivered food nobody has paid for yet —
+/// one row of GET /billing/food-tabs. A table or a room keeps one running
+/// tab; each takeaway is its own row, since the next one is a different
+/// customer walking up to the till.
+class FoodTab {
+  final String tab;
+  final String? tableLabel;
+  final String? guestName;
+  final String? guestPhone;
+  final String? customerName;
+  final String? customerPhone;
+  final int orderCount;
+  final num subtotal;
+  final String? openedAt;
+
+  const FoodTab({
+    required this.tab,
+    this.tableLabel,
+    this.guestName,
+    this.guestPhone,
+    this.customerName,
+    this.customerPhone,
+    this.orderCount = 0,
+    this.subtotal = 0,
+    this.openedAt,
+  });
+
+  factory FoodTab.fromJson(Map<String, dynamic> json) => FoodTab(
+    tab: json['tab']?.toString() ?? '',
+    tableLabel: asStringOrNull(json['tableLabel']),
+    guestName: asStringOrNull(json['guestName']),
+    guestPhone: asStringOrNull(json['guestPhone']),
+    customerName: asStringOrNull(json['customerName']),
+    customerPhone: asStringOrNull(json['customerPhone']),
+    orderCount: asInt(json['orderCount']),
+    subtotal: asNum(json['subtotal']),
+    openedAt: asStringOrNull(json['openedAt']),
+  );
+
+  /// A takeaway — one finished order rather than a tab still filling up, so
+  /// it reads by when it was placed instead of "since" a running total.
+  bool get isTakeaway => tab.startsWith('counter');
+}
+
+/// What a food bill will say, before it is issued — GET
+/// /billing/food-tabs/{tab}/preview. No advance, no nights, no room: a table
+/// bill is the food side on its own.
+class FoodBillPreview {
+  final String tab;
+  final String? tableLabel;
+  final String? customerName;
+  final String? customerPhone;
+  final List<FoodItemLine> foodItems;
+
+  /// The order numbers being swept onto this bill, so staff can trace a
+  /// query back to a specific ticket — "From order #12, #13".
+  final List<int> orderNumbers;
+  final bool isGstRegistered;
+  final String? gstin;
+  final BillSide? gst;
+  final BillSide? nonGst;
+
+  const FoodBillPreview({
+    required this.tab,
+    this.tableLabel,
+    this.customerName,
+    this.customerPhone,
+    this.foodItems = const [],
+    this.orderNumbers = const [],
+    this.isGstRegistered = false,
+    this.gstin,
+    this.gst,
+    this.nonGst,
+  });
+
+  factory FoodBillPreview.fromJson(Map<String, dynamic> json) =>
+      FoodBillPreview(
+        tab: json['tab']?.toString() ?? '',
+        tableLabel: asStringOrNull(json['tableLabel']),
+        customerName: asStringOrNull(json['customerName']),
+        customerPhone: asStringOrNull(json['customerPhone']),
+        foodItems:
+            (json['foodItems'] as List?)
+                ?.map((e) => FoodItemLine.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        orderNumbers:
+            (json['orders'] as List?)
+                ?.map((e) => asIntOrNull((e as Map)['orderNumber']))
+                .whereType<int>()
+                .toList() ??
+            const [],
+        isGstRegistered: asBool(json['isGstRegistered']),
+        gstin: asStringOrNull(json['gstin']),
+        gst: json['gst'] == null
+            ? null
+            : BillSide.fromJson(json['gst'] as Map<String, dynamic>),
+        nonGst: json['nonGst'] == null
+            ? null
+            : BillSide.fromJson(json['nonGst'] as Map<String, dynamic>),
+      );
+
+  /// Which side is actually issued — decided by the property, not the desk.
+  String get billingSide => isGstRegistered ? 'GST' : 'NON_GST';
+
+  BillSide? get amounts => isGstRegistered ? gst : nonGst;
+
+  /// No advance ever rides on a table tab, so what the customer hands over is
+  /// the total.
+  num get balanceDue => amounts?.totalAmount ?? 0;
+}
+
 /// An issued bill.
 class Invoice {
   final int id;
@@ -255,6 +396,7 @@ class Invoice {
   final String? billingSide;
   final String? guestName;
   final String? roomNumber;
+  final String? tableLabel;
   final String? checkInDate;
   final String? checkOutDate;
   final num totalAmount;
@@ -280,6 +422,11 @@ class Invoice {
   /// season uplift. The document names them rather than folding them into one
   /// figure and leaving it to be argued about.
   final List<BillLine> roomCharges;
+
+  /// Food charged on this bill, itemised — a different supply at a different
+  /// rate, reported apart in GSTR-1, so a single folded figure would leave a
+  /// customer no way to check what they ate.
+  final List<FoodItemLine> foodItems;
 
   final num nightsSubtotal;
   final num roomSubtotal;
@@ -320,6 +467,7 @@ class Invoice {
     this.billingSide,
     this.guestName,
     this.roomNumber,
+    this.tableLabel,
     this.checkInDate,
     this.checkOutDate,
     this.totalAmount = 0,
@@ -339,6 +487,7 @@ class Invoice {
     this.checkOutTime,
     this.checkinMode,
     this.roomCharges = const [],
+    this.foodItems = const [],
     this.nightsSubtotal = 0,
     this.roomSubtotal = 0,
     this.lateCheckoutCharge = 0,
@@ -373,6 +522,7 @@ class Invoice {
     billingSide: asStringOrNull(json['billingSide']),
     guestName: asStringOrNull(json['guestName']),
     roomNumber: asStringOrNull(json['roomNumber']),
+    tableLabel: asStringOrNull(json['tableLabel']),
     checkInDate: asStringOrNull(json['checkInDate']),
     checkOutDate: asStringOrNull(json['checkOutDate']),
     totalAmount: asNum(json['totalAmount']),
@@ -398,6 +548,11 @@ class Invoice {
     roomCharges:
         (json['roomCharges'] as List?)
             ?.map((e) => BillLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    foodItems:
+        (json['foodItems'] as List?)
+            ?.map((e) => FoodItemLine.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
     nightsSubtotal: asNum(json['nightsSubtotal']),
@@ -458,6 +613,14 @@ class Invoice {
 
   bool get isVoid => status == 'VOID';
 
+  /// A bill is a food bill when no stay backs it — a table, a room with
+  /// nobody checked in, or a takeaway. `roomNumber` only ever comes from a
+  /// booking's own room (see getInvoice's join on `b.room_id`), so it is
+  /// null on every food bill including a room-service tab — checked
+  /// alongside `bookingId` rather than alone, since a payload that omits an
+  /// absent `bookingId` key must not be mistaken for one that sent it null.
+  bool get isFoodBill => bookingId == null && roomNumber == null;
+
   /// How the balance was tendered, as one line or several.
   ///
   /// A bill paid part cash, part UPI reads as both. Documents issued before
@@ -473,6 +636,34 @@ class Invoice {
               reference: balanceReference,
             ),
         ];
+}
+
+/// What the provider said after POST /billing/invoices/{id}/share/whatsapp —
+/// the bill went out (or didn't), and to which number.
+///
+/// The honest limit of this, worth keeping in mind wherever it's shown: the
+/// provider accepting the message is not the guest reading it. This is
+/// "handed to the provider", not "seen".
+class WhatsAppShareResult {
+  final String status;
+  final String phone;
+  final String? invoiceNumber;
+  final String? sentAt;
+
+  const WhatsAppShareResult({
+    required this.status,
+    required this.phone,
+    this.invoiceNumber,
+    this.sentAt,
+  });
+
+  factory WhatsAppShareResult.fromJson(Map<String, dynamic> json) =>
+      WhatsAppShareResult(
+        status: json['status']?.toString() ?? '',
+        phone: json['phone']?.toString() ?? '',
+        invoiceNumber: asStringOrNull(json['invoiceNumber']),
+        sentAt: asStringOrNull(json['sentAt']),
+      );
 }
 
 /// The label a document carries. Rule 50 names the taxable receipt; the rest

@@ -181,23 +181,43 @@ class BillPdf {
           _rule(),
           _strip([
             _label('Name'),
-            _filled(inv.guestName ?? '', flex: 3),
+            // A room tab or a takeaway prints like a stay bill's guest; only a
+            // table tab has nobody behind it and falls back to naming the
+            // table, same as BillDocument.jsx.
+            _filled(
+              inv.isFoodBill
+                  ? (inv.guestName ?? inv.tableLabel ?? 'Counter')
+                  : (inv.guestName ?? ''),
+              flex: 3,
+            ),
             _label('Mob. No.'),
             _filled(inv.guestPhone ?? '', width: 80),
           ]),
           _rule(),
-          _strip([
-            _label('Room No.'),
-            _filled(
-              inv.roomNumber == null
-                  ? ''
-                  : '${inv.roomNumber}'
-                        '${inv.categoryName != null ? ' (${inv.categoryName})' : ''}',
-              flex: 3,
-            ),
-            _label('Persons -'),
-            _filled('${inv.numGuests ?? ''}', width: 40),
-          ]),
+          // A food bill has no room or stay behind it, so it names the bill
+          // number and the table/covers instead of leaving two rules blank.
+          if (inv.isFoodBill)
+            _strip([
+              _label('Bill No.'),
+              _filled(inv.invoiceNumber ?? '${inv.id}', width: 50),
+              _label('Table'),
+              _filled(inv.tableLabel ?? '', flex: 2),
+              _label('Covers -'),
+              _filled('${inv.numGuests ?? ''}', width: 30),
+            ])
+          else
+            _strip([
+              _label('Room No.'),
+              _filled(
+                inv.roomNumber == null
+                    ? ''
+                    : '${inv.roomNumber}'
+                          '${inv.categoryName != null ? ' (${inv.categoryName})' : ''}',
+                flex: 3,
+              ),
+              _label('Persons -'),
+              _filled('${inv.numGuests ?? ''}', width: 40),
+            ]),
           _rule(),
 
           // ── The body: the stay to the left, the money column to the right ─
@@ -235,7 +255,15 @@ class BillPdf {
           // TOTAL AMOUNT is the taxable value, not the gross: the tax sits
           // inside every price here, so it is taken out before the two GST
           // lines state it and added back by GRAND TOTAL.
+          //
+          // The vertical rules carry on from the item table above — same
+          // column boundaries, same 0.5pt weight — so the Rs./Ps. columns
+          // read as one continuous ruled strip down the page, the way the
+          // web memo's own CSS borders do.
           pw.Table(
+            border: const pw.TableBorder(
+              verticalInside: pw.BorderSide(width: 0.5),
+            ),
             columnWidths: const {
               0: pw.FlexColumnWidth(),
               1: pw.FixedColumnWidth(52),
@@ -268,7 +296,7 @@ class BillPdf {
                   inv.foodSgstAmount,
                 ),
               if (inv.roundOff != 0) _moneyRow('Round off', inv.roundOff),
-              _moneyRow('GRAND TOTAL', inv.totalAmount, strong: true),
+              _moneyRow('GRAND TOTAL', inv.totalAmount, strong: true, rule: true),
               if (inv.advancePaid > 0)
                 _moneyRow(
                   inv.advanceReceiptNumbers == null
@@ -280,6 +308,7 @@ class BillPdf {
                 'Net Payment',
                 netPayment,
                 strong: true,
+                rule: true,
                 // With one tender the method is said beneath the label, the
                 // way the web decorates it. With a split it is dropped here
                 // and each method gets its own row below, or the first would
@@ -395,79 +424,154 @@ class BillPdf {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          _strip([
-            _label('For'),
-            _filled('${inv.nights}', width: 30),
-            _label('Days'),
-          ]),
-          _strip([
-            _label('From'),
-            _filled(from.$1, width: 76),
-            _label('at'),
-            _filled(from.$2, width: 60),
-          ]),
-          _strip([
-            _label('To'),
-            _filled(to.$1, width: 76),
-            _label('at'),
-            _filled(to.$2, width: 60),
-          ]),
-          _strip([
-            _label(_rs),
-            _filled(inv.perDay == null ? '' : _amt(inv.perDay!), width: 66),
-            _label('Per day'),
-          ]),
-          // What the day count doesn't cover — an extra bed, AC, an overstay.
-          // Named rather than folded into the total, each against what it came
-          // to. The rule prints whether or not anything was added: a blank rule
-          // is part of the shape.
-          _strip([
-            _label('Extra Charges'),
-            pw.Expanded(
-              child: inv.extras.isEmpty
-                  ? _underline('')
-                  : pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                      children: [
-                        for (final e in inv.extras)
-                          pw.Row(
-                            children: [
-                              pw.Expanded(
-                                child: pw.Text(
-                                  ascii(e.label),
+          // A food bill has no stay behind it — a table, a room with nobody
+          // checked in, or a takeaway — so none of the days/dates/rate rules
+          // apply, same as BillDocument.jsx's `!isFoodBill` branch.
+          if (!inv.isFoodBill) ...[
+            _strip([
+              _label('For'),
+              _filled('${inv.nights}', width: 30),
+              _label('Days'),
+            ]),
+            _strip([
+              _label('From'),
+              _filled(from.$1, width: 76),
+              _label('at'),
+              _filled(from.$2, width: 60),
+            ]),
+            _strip([
+              _label('To'),
+              _filled(to.$1, width: 76),
+              _label('at'),
+              _filled(to.$2, width: 60),
+            ]),
+            _strip([
+              _label(_rs),
+              _filled(inv.perDay == null ? '' : _amt(inv.perDay!), width: 66),
+              _label('Per day'),
+            ]),
+            // What the day count doesn't cover — an extra bed, AC, an
+            // overstay. Named rather than folded into the total, each against
+            // what it came to. The rule prints whether or not anything was
+            // added: a blank rule is part of the shape.
+            _strip([
+              _label('Extra Charges'),
+              pw.Expanded(
+                child: inv.extras.isEmpty
+                    ? _underline('')
+                    : pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: [
+                          for (final e in inv.extras)
+                            pw.Row(
+                              children: [
+                                pw.Expanded(
+                                  child: pw.Text(
+                                    ascii(e.label),
+                                    style: pw.TextStyle(
+                                      fontSize: 7,
+                                      fontWeight: pw.FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                pw.Text(
+                                  ascii(_amt(e.amount)),
                                   style: pw.TextStyle(
                                     fontSize: 7,
                                     fontWeight: pw.FontWeight.bold,
                                   ),
                                 ),
-                              ),
-                              pw.Text(
-                                ascii(_amt(e.amount)),
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  fontWeight: pw.FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-            ),
-          ]),
-          if (isGst) ...[
-            _strip([
-              _label('Place of Supply'),
-              _filled(inv.lodgeCity ?? '', width: 70, fine: true),
-              _label('Reverse Charge'),
-              _filled('No', width: 26, fine: true),
+                              ],
+                            ),
+                        ],
+                      ),
+              ),
             ]),
-            if (inv.roomSubtotal > 0)
-              _strip([_label('SAC'), _filled('996311', width: 60, fine: true)]),
+            if (isGst) ...[
+              _strip([
+                _label('Place of Supply'),
+                _filled(inv.lodgeCity ?? '', width: 70, fine: true),
+                _label('Reverse Charge'),
+                _filled('No', width: 26, fine: true),
+              ]),
+              if (inv.roomSubtotal > 0)
+                _strip([
+                  _label('SAC'),
+                  _filled('996311', width: 60, fine: true),
+                ]),
+            ],
           ],
+
+          // Food keeps its items, on a room stay or on its own — a different
+          // supply at a different rate, reported apart in GSTR-1, so a single
+          // folded figure would leave nobody a way to check what they ate.
+          if (inv.foodSubtotal > 0) _miscChargesBlock(inv, isGst),
         ],
       ),
     );
   }
+
+  static const _sacFood = '996331';
+
+  static pw.Widget _miscChargesBlock(Invoice inv, bool isGst) => pw.Padding(
+    padding: const pw.EdgeInsets.only(top: 2),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Row(
+          children: [
+            pw.Expanded(
+              child: pw.Text(
+                ascii('Misc Charges'),
+                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+              ),
+            ),
+            if (isGst)
+              pw.Text(
+                ascii('SAC $_sacFood'),
+                style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+              ),
+          ],
+        ),
+        for (final item in inv.foodItems)
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      ascii(item.name),
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text(
+                      ascii('${_qty(item.quantity)} x ${_amt(item.unitPrice)}'),
+                      style: const pw.TextStyle(
+                        fontSize: 6,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.Text(
+                ascii(_amt(item.lineTotal)),
+                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+              ),
+            ],
+          ),
+      ],
+    ),
+  );
+
+  /// A count printed without a trailing ".0" — quantities arrive as `num` and
+  /// a whole one is still a double under the hood.
+  static String _qty(num n) =>
+      n == n.roundToDouble() ? '${n.toInt()}' : '$n';
 
   // ── Pieces ────────────────────────────────────────────────────────────────
 
