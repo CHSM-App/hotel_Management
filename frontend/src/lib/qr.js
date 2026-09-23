@@ -31,3 +31,11 @@ export function orderUrl(origin, slug) {
 export function tableOrderUrl(origin, token) {
   return `${origin}/order/t/${token}`;
 }
+
+// A staff-only deep link, not a public route: scanning this on a signed-out
+// device bounces through the ordinary login redirect and lands back on the
+// asset it names. Asset cost, vendor and AMC details aren't guest-facing the
+// way a food menu is, so there is no unauthenticated landing page for it.
+export function assetUrl(origin, qrToken) {
+  return `${origin}/dashboard?section=assets&assetToken=${qrToken}`;
+}

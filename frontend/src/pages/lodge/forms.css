@@ -383,6 +383,44 @@
   box-shadow: none;
 }
 
+/* A real action that isn't the form's one primary commit — Download
+   template, Choose file, + Add unit sit beside Save/Register asset
+   (.btn-accent, the filled brand button) and shouldn't compete with it for
+   attention, but .btn-secondary's flat surface colour made them read as
+   inert text rather than something to press. A visible brand-coloured
+   border plus tinted text is the middle ground: noticeably a button,
+   without four brand-filled buttons fighting over which one matters. */
+.btn-outline {
+  background: var(--surface);
+  border: 1.5px solid var(--brand);
+  color: var(--brand);
+  border-radius: var(--radius-tile);
+  padding: 10.5px 18px;
+  min-height: 44px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--brand);
+  color: #ffffff;
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.btn-outline:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.btn-outline:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .checkbox-inline {
   display: flex;
   align-items: center;
@@ -536,6 +574,22 @@
 .field select[aria-invalid='true'] {
   border-color: var(--danger);
   box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+}
+
+/* Same rule, one level deeper — for a field whose input sits inside a
+   wrapper (Assets' CategoryField/VendorField/AssetPickerField combobox)
+   rather than as a direct child of .field. */
+.field:has(> .field__error) .asset-suggest input {
+  border-color: var(--danger);
+  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+}
+
+.field .asset-suggest input:disabled {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-pressed);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 /* The agreed price for this stay. Same shape as the count box beside it, a

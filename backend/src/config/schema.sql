@@ -2154,3 +2154,187 @@ BEGIN
     EXEC('ALTER TABLE dbo.rooms ADD CONSTRAINT ck_rooms_dormitory_is_ac
           CHECK (dormitory_is_ac IS NULL OR dormitory_is_ac IN (''AC'', ''NON_AC''))');
 END
+
+-- ---------------------------------------------------------------------------
+-- Assets & Maintenance (migrations 067-070)
+-- ---------------------------------------------------------------------------
+-- Equipment a property owns — AC units, lifts, beds, geysers, generators —
+-- tracked through registration, warranty/AMC, and repair. Deliberately a
+-- separate domain from the kitchen's raw_materials inventory above: that
+-- tracks consumable stock a dish eats, this tracks durable equipment a
+-- technician fixes. Different lifecycle, different questions, so a shared
+-- table would have to grow columns neither side uses.
+--
+-- A real table rather than a fixed enum, same reasoning as room_categories:
+-- an owner adds hotel-specific categories (a resort's pool pump, a dormitory's
+-- bunk frames) without a migration.
+IF OBJECT_ID('dbo.asset_categories', 'U') IS NULL
+CREATE TABLE dbo.asset_categories (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name        NVARCHAR(60) NOT NULL,
+    is_active   BIT NOT NULL DEFAULT 1,
+    created_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_asset_categories_lodge_name UNIQUE (lodge_id, name)
+);
+
+-- The people and firms who service assets — AC contractors, lift AMC vendors,
+-- electricians. Scoped to this module only; a shared procurement vendor
+-- directory is a separate decision this table deliberately doesn't make.
+IF OBJECT_ID('dbo.vendors', 'U') IS NULL
+CREATE TABLE dbo.vendors (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id        BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name            NVARCHAR(120) NOT NULL,
+    contact_person  NVARCHAR(80) NULL,
+    phone           NVARCHAR(20) NULL,
+    email           NVARCHAR(120) NULL,
+    specialty       NVARCHAR(80) NULL,
+    notes           NVARCHAR(400) NULL,
+    is_active       BIT NOT NULL DEFAULT 1,
+    created_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_vendors_lodge_name UNIQUE (lodge_id, name)
+);
+
+-- One running asset-tag sequence per lodge. Allocated with an atomic
+-- UPDATE ... OUTPUT in assets.service.js — never SELECT MAX()+1. A single
+-- lodge-wide series rather than one per category: a hotel with a handful of
+-- assets a month has no use for "AC-0001, AC-0002" resetting a counter per
+-- category when "AST-0001, AST-0002" already tells everything on one shelf
+-- apart.
+IF OBJECT_ID('dbo.asset_tag_counters', 'U') IS NULL
+CREATE TABLE dbo.asset_tag_counters (
+    lodge_id     BIGINT NOT NULL PRIMARY KEY REFERENCES dbo.lodges(id),
+    next_number  INT NOT NULL DEFAULT 1
+);
+
+-- One physical piece of equipment. Location is room_id where the asset lives
+-- in a room, plus free-text floor/department for anything that doesn't —
+-- lobby AC, the lift, a generator. Mirrors dbo.rooms.floor, which is already
+-- free text with no backing table: a normalised location hierarchy would be
+-- solving a problem hotel-scale asset counts don't have.
+--
+-- qr_token is a GUID, not the numeric id, so a printed/scanned QR code never
+-- exposes a sequential internal id.
+--
+-- asset_tag is system-generated (AST-0001, AST-0002…) rather than typed, so
+-- it can be relied on as a real identifier — a free-text field would let two
+-- assets collide on the same sticker, or one owner's "AC1" mean nothing to
+-- the next. Unique per lodge, not globally: two lodges independently reach
+-- "AST-0001" and that's fine, they never appear on the same screen.
+IF OBJECT_ID('dbo.assets', 'U') IS NULL
+CREATE TABLE dbo.assets (
+    id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id           BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    category_id        BIGINT NOT NULL REFERENCES dbo.asset_categories(id),
+    name               NVARCHAR(120) NOT NULL,
+    asset_tag          NVARCHAR(40) NOT NULL,
+    brand              NVARCHAR(80) NULL,
+    model              NVARCHAR(80) NULL,
+    serial_number      NVARCHAR(120) NULL,
+    purchase_date      DATE NULL,
+    purchase_cost      DECIMAL(12,2) NULL
+        CONSTRAINT ck_assets_purchase_cost CHECK (purchase_cost IS NULL OR purchase_cost >= 0),
+    room_id            BIGINT NULL REFERENCES dbo.rooms(id),
+    floor              NVARCHAR(20) NULL,
+    department         NVARCHAR(60) NULL,
+    location_note      NVARCHAR(200) NULL,
+    vendor_id          BIGINT NULL REFERENCES dbo.vendors(id),
+    warranty_expiry    DATE NULL,
+    amc_expiry         DATE NULL,
+    amc_coverage_note  NVARCHAR(200) NULL,
+    -- The uploaded purchase bill's generated filename, never the original
+    -- name or a path — same shape as dbo.bookings.id_proof_document. Served
+    -- through GET /assets/:id/bill rather than a public URL.
+    bill_document      NVARCHAR(255) NULL,
+    status             NVARCHAR(20) NOT NULL DEFAULT 'IN_USE'
+        CONSTRAINT ck_assets_status CHECK (status IN ('IN_USE', 'UNDER_REPAIR', 'TRANSFERRED', 'RETIRED')),
+    qr_token           UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    is_active          BIT NOT NULL DEFAULT 1,
+    created_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    updated_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_assets_qr_token UNIQUE (qr_token),
+    CONSTRAINT uq_assets_lodge_tag UNIQUE (lodge_id, asset_tag)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_assets_lodge' AND object_id = OBJECT_ID('dbo.assets'))
+CREATE INDEX ix_assets_lodge ON dbo.assets(lodge_id, is_active);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_assets_room' AND object_id = OBJECT_ID('dbo.assets'))
+CREATE INDEX ix_assets_room ON dbo.assets(room_id) WHERE room_id IS NOT NULL;
+
+-- The coverage an asset has had over its life: the maker's warranty first,
+-- then an AMC, then that AMC renewed — one row per period rather than two
+-- flat dates on the asset, because "who covered it when it broke last year"
+-- is a real question once an AMC has renewed a few times and the old vendor
+-- and terms would otherwise be gone the moment the new period is entered.
+--
+-- assets.warranty_expiry / amc_expiry stay as they are — a cache of this
+-- table's latest END_DATE per type, kept for the cheap "expiring soon" badge
+-- the register list already computes from them. This table is the record;
+-- those two columns are a read-shortcut over it, rewritten by
+-- assets.service.js whenever a period is added here.
+IF OBJECT_ID('dbo.asset_coverage_periods', 'U') IS NULL
+CREATE TABLE dbo.asset_coverage_periods (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    asset_id       BIGINT NOT NULL REFERENCES dbo.assets(id),
+    coverage_type  NVARCHAR(10) NOT NULL
+        CONSTRAINT ck_coverage_type CHECK (coverage_type IN ('WARRANTY', 'AMC')),
+    vendor_id      BIGINT NULL REFERENCES dbo.vendors(id),
+    start_date     DATE NULL,
+    end_date       DATE NOT NULL,
+    cost           DECIMAL(12,2) NULL
+        CONSTRAINT ck_coverage_cost CHECK (cost IS NULL OR cost >= 0),
+    coverage_note  NVARCHAR(200) NULL,
+    created_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_coverage_asset' AND object_id = OBJECT_ID('dbo.asset_coverage_periods'))
+CREATE INDEX ix_coverage_asset ON dbo.asset_coverage_periods(asset_id, coverage_type, end_date DESC);
+
+-- A breakdown report and a maintenance record in one: it opens as the issue
+-- filed against an asset, and closing it is the completed service. There is
+-- no separate service-history table — an asset's history is just its work
+-- orders, oldest to newest.
+IF OBJECT_ID('dbo.asset_work_orders', 'U') IS NULL
+CREATE TABLE dbo.asset_work_orders (
+    id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id           BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    asset_id           BIGINT NOT NULL REFERENCES dbo.assets(id),
+    issue_type         NVARCHAR(20) NOT NULL DEFAULT 'BREAKDOWN'
+        CONSTRAINT ck_wo_issue_type CHECK (issue_type IN ('BREAKDOWN', 'ROUTINE_SERVICE')),
+    description        NVARCHAR(400) NOT NULL,
+    status             NVARCHAR(20) NOT NULL DEFAULT 'OPEN'
+        CONSTRAINT ck_wo_status CHECK (status IN ('OPEN', 'IN_PROGRESS', 'CLOSED')),
+    reported_by        BIGINT NULL REFERENCES dbo.users(id),
+    assigned_to_name   NVARCHAR(80) NULL,
+    vendor_id          BIGINT NULL REFERENCES dbo.vendors(id),
+    parts_cost         DECIMAL(12,2) NULL
+        CONSTRAINT ck_wo_parts_cost CHECK (parts_cost IS NULL OR parts_cost >= 0),
+    labor_cost         DECIMAL(12,2) NULL
+        CONSTRAINT ck_wo_labor_cost CHECK (labor_cost IS NULL OR labor_cost >= 0),
+    parts_used_note    NVARCHAR(400) NULL,
+    is_warranty_claim  BIT NOT NULL DEFAULT 0,
+    resolution_note    NVARCHAR(400) NULL,
+    opened_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    closed_at          DATETIMEOFFSET NULL,
+    created_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    updated_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_wo_lodge' AND object_id = OBJECT_ID('dbo.asset_work_orders'))
+CREATE INDEX ix_wo_lodge ON dbo.asset_work_orders(lodge_id, status);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_wo_asset' AND object_id = OBJECT_ID('dbo.asset_work_orders'))
+CREATE INDEX ix_wo_asset ON dbo.asset_work_orders(asset_id, id DESC);
+
+-- assets.manage on the OWNER built-in role. Only where it is still at its
+-- shipped default; a customised built-in keeps its own set — the owner grants
+-- the section from Staff & roles there. Same pattern as events.manage above
+-- (migration 047).
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
+           AND permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","events.manage"]')
+UPDATE dbo.roles
+SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","events.manage","assets.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'OWNER';
