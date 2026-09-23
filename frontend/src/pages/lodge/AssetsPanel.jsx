@@ -1154,8 +1154,28 @@ export default function AssetsPanel() {
       ? coveragePeriods.periods
       : null;
 
-  const reportIssue = (asset) => {
-    setWoForm({ ...emptyWorkOrderForm, assetId: String(asset.id) });
+  // Whoever is on the hook for this asset right now — the AMC vendor if
+  // there's a live one, otherwise whoever gave the warranty, otherwise
+  // nobody. Coverage periods are sorted end_date DESC by the API, so the
+  // first non-expired row of each type is that type's current one; AMC is
+  // checked first because an asset under an active AMC is contractually
+  // that vendor's problem even if the maker's warranty technically hasn't
+  // lapsed yet.
+  const resolveActiveCoverageVendor = async (assetId) => {
+    try {
+      const { periods } = await apiGet(`/assets/${assetId}/coverage`, { token: session?.token });
+      const today = new Date().toISOString().slice(0, 10);
+      const current = (type) =>
+        periods.find((p) => p.coverageType === type && p.vendorId && p.endDate?.slice(0, 10) >= today);
+      return current('AMC') || current('WARRANTY') || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const reportIssue = async (asset) => {
+    const vendor = await resolveActiveCoverageVendor(asset.id);
+    setWoForm({ ...emptyWorkOrderForm, assetId: String(asset.id), vendorId: vendor ? String(vendor.vendorId) : '' });
     setEditingWoId(null);
     setFormError('');
     setShowWoForm(true);
@@ -2503,7 +2523,12 @@ export default function AssetsPanel() {
                     id="woAsset"
                     assets={assets}
                     selectedId={woForm.assetId}
-                    onPick={(asset) => setWoForm((f) => ({ ...f, assetId: String(asset.id) }))}
+                    onPick={(asset) => {
+                      setWoForm((f) => ({ ...f, assetId: String(asset.id) }));
+                      resolveActiveCoverageVendor(asset.id).then((vendor) => {
+                        if (vendor) setWoForm((f) => ({ ...f, vendorId: String(vendor.vendorId) }));
+                      });
+                    }}
                     disabled={Boolean(editingWoId)}
                   />
                 </div>
@@ -2573,6 +2598,10 @@ export default function AssetsPanel() {
                       </option>
                     ))}
                   </select>
+                  <span className="field__hint">
+                    Filled in from the asset's current AMC or warranty, if it has one on file — change it if
+                    someone else is doing this repair.
+                  </span>
                 </div>
 
                 {editingWoId && (
