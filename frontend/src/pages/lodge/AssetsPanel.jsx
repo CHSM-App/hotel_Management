@@ -1384,6 +1384,16 @@ export default function AssetsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAsset?.qrToken]);
 
+  // The data URL is already sitting in memory — saving it is just handing
+  // the browser a filename, not a second network round trip.
+  const downloadQr = () => {
+    if (!qrDataUrl || !selectedAsset) return;
+    const link = document.createElement('a');
+    link.href = qrDataUrl;
+    link.download = `${selectedAsset.assetTag || selectedAsset.name}-qr.png`;
+    link.click();
+  };
+
   if (error && !assets) {
     return <div className="form-banner form-banner--error">{error}</div>;
   }
@@ -1512,27 +1522,29 @@ export default function AssetsPanel() {
       {tab === 'workOrders' && (
         <div>
           <div className="inv-bar">
-            <div className="inv-bar__row">
-              <SectionTabs
-                ariaLabel="Work order status"
-                activeId={woStatusFilter}
-                onChange={setWoStatusFilter}
-                tabs={[
-                  { id: '', name: 'All', count: (workOrders || []).length },
-                  { id: 'OPEN', name: 'Open', count: (workOrders || []).filter((w) => w.status === 'OPEN').length },
-                  {
-                    id: 'IN_PROGRESS',
-                    name: 'In progress',
-                    count: (workOrders || []).filter((w) => w.status === 'IN_PROGRESS').length,
-                  },
-                  {
-                    id: 'CLOSED',
-                    name: 'Closed',
-                    count: (workOrders || []).filter((w) => w.status === 'CLOSED').length,
-                  },
-                ]}
-              />
-              <div className="inv-bar__actions">
+            <div className="inv-bar__row asset-wo-toolbar">
+              <div className="asset-wo-toolbar__tabs">
+                <SectionTabs
+                  ariaLabel="Work order status"
+                  activeId={woStatusFilter}
+                  onChange={setWoStatusFilter}
+                  tabs={[
+                    { id: '', name: 'All', count: (workOrders || []).length },
+                    { id: 'OPEN', name: 'Open', count: (workOrders || []).filter((w) => w.status === 'OPEN').length },
+                    {
+                      id: 'IN_PROGRESS',
+                      name: 'In progress',
+                      count: (workOrders || []).filter((w) => w.status === 'IN_PROGRESS').length,
+                    },
+                    {
+                      id: 'CLOSED',
+                      name: 'Closed',
+                      count: (workOrders || []).filter((w) => w.status === 'CLOSED').length,
+                    },
+                  ]}
+                />
+              </div>
+              <div className="inv-bar__actions asset-wo-toolbar__actions">
                 <button type="button" className="btn-accent" onClick={() => openWoForm(null)}>
                   New work order
                 </button>
@@ -1602,7 +1614,7 @@ export default function AssetsPanel() {
       {selectedAsset && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={closeAssetDetail}>
           <div
-            className="glass-panel inv-panel__modal inv-panel__modal--wide"
+            className="glass-panel inv-panel__modal inv-panel__modal--asset-detail"
             role="dialog"
             aria-modal="true"
             aria-labelledby="assetDetailTitle"
@@ -1621,70 +1633,98 @@ export default function AssetsPanel() {
             </div>
 
             <div className="inv-modal__body">
-              <div className="field">
-                <label>Status</label>
-                <select value={selectedAsset.status} onChange={(e) => changeAssetStatus(selectedAsset, e.target.value)}>
-                  {Object.entries(STATUS_LABEL).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+              <div className="asset-detail__top">
+                <div className="asset-detail__facts">
+                  <div className="asset-detail__status">
+                    <label htmlFor="assetDetailStatus">Status</label>
+                    <select
+                      id="assetDetailStatus"
+                      value={selectedAsset.status}
+                      onChange={(e) => changeAssetStatus(selectedAsset, e.target.value)}
+                    >
+                      {Object.entries(STATUS_LABEL).map(([key, label]) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <dl className="asset-detail__grid">
+                    <div>
+                      <dt>Location</dt>
+                      <dd>
+                        {selectedAsset.roomNumber
+                          ? `Room ${selectedAsset.roomNumber}`
+                          : [selectedAsset.floor && `Floor ${selectedAsset.floor}`, selectedAsset.department]
+                              .filter(Boolean)
+                              .join(' · ') || 'Not set'}
+                      </dd>
+                    </div>
+                    {selectedAsset.brand && (
+                      <div>
+                        <dt>Brand / model</dt>
+                        <dd>
+                          {selectedAsset.brand} {selectedAsset.model}
+                        </dd>
+                      </div>
+                    )}
+                    {selectedAsset.serialNumber && (
+                      <div>
+                        <dt>Serial number</dt>
+                        <dd>{selectedAsset.serialNumber}</dd>
+                      </div>
+                    )}
+                    {selectedAsset.purchaseDate && (
+                      <div>
+                        <dt>Purchased</dt>
+                        <dd>
+                          {formatDate(selectedAsset.purchaseDate)}
+                          {selectedAsset.purchaseCost != null && ` · ₹${selectedAsset.purchaseCost}`}
+                        </dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>Warranty</dt>
+                      <dd>{formatDate(selectedAsset.warrantyExpiry)}</dd>
+                    </div>
+                    <div>
+                      <dt>AMC</dt>
+                      <dd>{formatDate(selectedAsset.amcExpiry)}</dd>
+                    </div>
+                    {selectedAsset.vendorName && (
+                      <div>
+                        <dt>Vendor</dt>
+                        <dd>{selectedAsset.vendorName}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>Purchase bill</dt>
+                      <dd>
+                        {selectedAsset.hasBillDocument ? (
+                          <button type="button" className="inv-linkbtn" onClick={() => viewBill(selectedAsset)}>
+                            View bill
+                          </button>
+                        ) : (
+                          'Not uploaded'
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {qrDataUrl && (
+                  <div className="asset-detail__qr">
+                    <img src={qrDataUrl} alt={`QR code for ${selectedAsset.name}`} width={132} height={132} />
+                    <p>Scan to open this asset</p>
+                    <button type="button" className="inv-linkbtn" onClick={downloadQr}>
+                      Download QR
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <p>
-                <strong>Location:</strong>{' '}
-                {selectedAsset.roomNumber
-                  ? `Room ${selectedAsset.roomNumber}`
-                  : [selectedAsset.floor && `Floor ${selectedAsset.floor}`, selectedAsset.department]
-                      .filter(Boolean)
-                      .join(' · ') || 'Not set'}
-              </p>
-              {selectedAsset.brand && (
-                <p>
-                  <strong>Brand/model:</strong> {selectedAsset.brand} {selectedAsset.model}
-                </p>
-              )}
-              {selectedAsset.serialNumber && (
-                <p>
-                  <strong>Serial number:</strong> {selectedAsset.serialNumber}
-                </p>
-              )}
-              {selectedAsset.purchaseDate && (
-                <p>
-                  <strong>Purchased:</strong> {formatDate(selectedAsset.purchaseDate)}
-                  {selectedAsset.purchaseCost != null && ` · ₹${selectedAsset.purchaseCost}`}
-                </p>
-              )}
-              <p>
-                <strong>Warranty:</strong> {formatDate(selectedAsset.warrantyExpiry)}
-                {' · '}
-                <strong>AMC:</strong> {formatDate(selectedAsset.amcExpiry)}
-              </p>
-              {selectedAsset.vendorName && (
-                <p>
-                  <strong>Vendor:</strong> {selectedAsset.vendorName}
-                </p>
-              )}
-              <p>
-                <strong>Purchase bill:</strong>{' '}
-                {selectedAsset.hasBillDocument ? (
-                  <button type="button" className="inv-linkbtn" onClick={() => viewBill(selectedAsset)}>
-                    View bill
-                  </button>
-                ) : (
-                  'Not uploaded'
-                )}
-              </p>
-
-              {qrDataUrl && (
-                <div style={{ textAlign: 'center', margin: '16px 0' }}>
-                  <img src={qrDataUrl} alt={`QR code for ${selectedAsset.name}`} width={160} height={160} />
-                  <p className="inv-panel__hint">Scan to open this asset</p>
-                </div>
-              )}
-
-              <div className="modal-form__foot-actions" style={{ justifyContent: 'flex-start', marginBottom: 16 }}>
+              <div className="modal-form__foot-actions asset-detail__actions">
                 <button type="button" className="btn-accent" onClick={() => reportIssue(selectedAsset)}>
                   Report an issue
                 </button>
@@ -1703,49 +1743,65 @@ export default function AssetsPanel() {
                   answerable after it's renewed a few times.
                 </p>
               ) : (
-                <ul className="inv-ledger">
+                <ul className="asset-coverage-list">
                   {visibleCoveragePeriods.map((period) => {
                     const flag = expiryFlag(period.endDate);
                     const isLatestOfType =
                       period.id ===
                       visibleCoveragePeriods.find((p) => p.coverageType === period.coverageType)?.id;
+                    const vendor = period.vendorId ? (vendors || []).find((v) => v.id === period.vendorId) : null;
                     return (
-                      <li key={period.id} className="inv-ledger__row">
-                        <div className="inv-ledger__what">
-                          <span className="inv-ledger__reason">
-                            {period.coverageType === 'AMC' ? 'AMC' : 'Warranty'}
-                          </span>
-                          <span className="inv-ledger__detail">
-                            {[period.vendorName, period.coverageNote].filter(Boolean).join(' · ') || '—'}
-                            {period.cost != null && ` · ₹${period.cost}`}
-                          </span>
-                        </div>
-                        <div
-                          className={`inv-ledger__when${
-                            flag === 'expired' ? ' inv-tag--bad' : flag === 'soon' ? ' inv-tag--low' : ''
-                          }`}
-                        >
-                          {period.startDate ? `${formatDate(period.startDate)} – ` : 'Until '}
-                          {formatDate(period.endDate)}
-                        </div>
-                        <div className="inv-item__actions" style={{ marginTop: 4 }}>
-                          {isLatestOfType && (
-                            <button
-                              type="button"
-                              className="inv-linkbtn"
-                              onClick={() => openCoverageForm(period)}
-                            >
-                              Renew
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="inv-linkbtn"
-                            onClick={() => deleteCoveragePeriod(period)}
+                      <li key={period.id} className="asset-coverage-card">
+                        <div className="asset-coverage-card__head">
+                          <span className="inv-tag">{period.coverageType === 'AMC' ? 'AMC' : 'Warranty'}</span>
+                          <span
+                            className={`asset-coverage-card__dates${
+                              flag === 'expired' ? ' inv-tag--bad' : flag === 'soon' ? ' inv-tag--low' : ''
+                            }`}
                           >
-                            Delete
-                          </button>
+                            {period.startDate ? `${formatDate(period.startDate)} – ` : 'Until '}
+                            {formatDate(period.endDate)}
+                          </span>
+                          <div className="asset-coverage-card__actions">
+                            {isLatestOfType && (
+                              <button type="button" className="inv-linkbtn" onClick={() => openCoverageForm(period)}>
+                                Renew
+                              </button>
+                            )}
+                            <button type="button" className="inv-linkbtn" onClick={() => deleteCoveragePeriod(period)}>
+                              Delete
+                            </button>
+                          </div>
                         </div>
+
+                        {vendor ? (
+                          <div className="asset-coverage-card__vendor">
+                            <strong>{vendor.name}</strong>
+                            {vendor.specialty && <span> · {vendor.specialty}</span>}
+                            {(vendor.contactPerson || vendor.phone || vendor.email) && (
+                              <div className="asset-coverage-card__vendor-contact">
+                                {[vendor.contactPerson, vendor.phone, vendor.email].filter(Boolean).join(' · ')}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          period.vendorName && (
+                            <div className="asset-coverage-card__vendor">
+                              <strong>{period.vendorName}</strong>
+                            </div>
+                          )
+                        )}
+
+                        {period.cost != null && (
+                          <div className="asset-coverage-card__line">
+                            <strong>Cost:</strong> ₹{period.cost}
+                          </div>
+                        )}
+                        {period.coverageNote && (
+                          <div className="asset-coverage-card__line">
+                            <strong>Covers:</strong> {period.coverageNote}
+                          </div>
+                        )}
                       </li>
                     );
                   })}

@@ -29,6 +29,37 @@
   flex-shrink: 0;
 }
 
+/* Work Orders' status strip + "New work order": one row, button pinned to
+   the right. Without min-width: 0 here, the status tabstrip's own
+   overflow-x: auto sizes to its full content width and pushes the button
+   past the row instead of leaving the strip to scroll sideways under it. */
+.asset-wo-toolbar {
+  flex-wrap: nowrap;
+}
+
+.asset-wo-toolbar__tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.asset-wo-toolbar__actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .asset-wo-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .asset-wo-toolbar__actions {
+    width: 100%;
+  }
+
+  .asset-wo-toolbar__actions button {
+    width: 100%;
+  }
+}
+
 /* Shown only while a search or the low-stock filter is on, when the group
    strip is hidden and the results decide what's on screen. */
 .inv-bar__searching {
@@ -361,6 +392,202 @@
 
 .inv-panel__modal--wide {
   max-width: 620px;
+}
+
+/* The asset detail view: wider still than --wide, because its top section
+   runs facts and the QR code side by side rather than stacking everything
+   in one narrow column the way a flat list of "Label: value" paragraphs
+   used to. */
+.inv-panel__modal--asset-detail {
+  max-width: 720px;
+}
+
+.asset-detail__top {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.asset-detail__facts {
+  flex: 1;
+  min-width: 0;
+}
+
+.asset-detail__status {
+  margin-bottom: 16px;
+}
+
+.asset-detail__status label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.asset-detail__status select {
+  width: auto;
+  min-width: 180px;
+}
+
+/* A real definition list instead of a stack of "Label: value" paragraphs —
+   label above value, two columns once there's room, so ten-odd facts read
+   as a sheet rather than a paragraph of sentences run together. */
+.asset-detail__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.asset-detail__grid dt {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+
+.asset-detail__grid dd {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* A small card of its own — set apart with a border rather than floating
+   loose in the middle of the modal, so it reads as "here's the printable
+   label for this asset" rather than an illustration dropped into the text. */
+.asset-detail__qr {
+  flex-shrink: 0;
+  width: 148px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+  text-align: center;
+}
+
+.asset-detail__qr img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.asset-detail__qr p {
+  margin: 8px 0 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.asset-detail__qr .inv-linkbtn {
+  font-size: 12.5px;
+}
+
+/* One card per warranty/AMC period, replacing the single-line ledger row
+   that truncated the coverage note and never had room for a vendor's
+   phone/email — a period carries too much (type, vendor, contact, cost,
+   note, dates, actions) to fit one line without cutting something. */
+.asset-coverage-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asset-coverage-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.asset-coverage-card__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.asset-coverage-card__dates {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.asset-coverage-card__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+
+.asset-coverage-card__vendor {
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.asset-coverage-card__vendor-contact {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.asset-coverage-card__line {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+  /* The one thing the old ledger row got right: this can still be a long
+     sentence, and it's allowed to wrap onto a second line now instead of
+     being cut with an ellipsis. */
+  white-space: normal;
+  word-break: break-word;
+}
+
+.asset-coverage-card__line strong {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.asset-detail__actions {
+  justify-content: flex-start;
+  margin: 20px 0 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Coverage history / Service history headers — the actions block above
+   already carries the top border that separates the fact sheet from these,
+   so this just gives "Service history" room to read as its own section
+   after Coverage history's list ends right above it. */
+.inv-panel__modal--asset-detail .inv-modal__body h4 {
+  margin: 22px 0 10px;
+  font-family: var(--serif);
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.inv-panel__modal--asset-detail .inv-modal__body h4:first-of-type {
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .asset-detail__top {
+    flex-direction: column;
+  }
+
+  .asset-detail__qr {
+    width: 100%;
+  }
+
+  .asset-detail__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .inv-modal__head {
