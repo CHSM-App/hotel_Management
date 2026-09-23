@@ -17,7 +17,30 @@ const STATUS_LABEL = {
   RETIRED: 'Retired',
 };
 
+// A neutral pill for every status read the same at a glance as "nothing to
+// see here" — the one status that actually needs attention (Under repair)
+// looked no different from Retired or In use. Same colour language as the
+// warranty/AMC chips: green for normal, amber for "someone's on it",
+// blue for a neutral fact, grey for inactive.
+const STATUS_TAG_CLASS = {
+  IN_USE: 'inv-tag--good',
+  UNDER_REPAIR: 'inv-tag--low',
+  TRANSFERRED: 'inv-tag--info',
+  RETIRED: 'inv-tag--off',
+};
+
 const WO_STATUS_LABEL = { OPEN: 'Open', IN_PROGRESS: 'In progress', CLOSED: 'Closed' };
+
+const TABLE_SORT_ACCESSORS = {
+  tag: (a) => a.assetTag || '',
+  name: (a) => a.name || '',
+  category: (a) => a.categoryName || '',
+  location: (a) => (a.roomNumber ? `Room ${a.roomNumber}` : a.department || (a.floor ? `Floor ${a.floor}` : '')),
+  status: (a) => STATUS_LABEL[a.status] || '',
+  warranty: (a) => (a.warrantyExpiry ? new Date(a.warrantyExpiry).getTime() : null),
+  amc: (a) => (a.amcExpiry ? new Date(a.amcExpiry).getTime() : null),
+  openWorkOrders: (a) => a.openWorkOrders || 0,
+};
 
 const emptyAssetForm = {
   name: '',
@@ -48,6 +71,17 @@ const emptyAssetForm = {
 const emptyWorkOrderForm = {
   assetId: '',
   issueType: 'BREAKDOWN',
+  description: '',
+  assignedToName: '',
+  vendorId: '',
+};
+
+// One work order per active asset in a category, from a single form — "the
+// AC contractor is servicing every split AC today" shouldn't mean filing the
+// same work order a dozen times by hand.
+const emptyBulkWoForm = {
+  categoryId: '',
+  issueType: 'ROUTINE_SERVICE',
   description: '',
   assignedToName: '',
   vendorId: '',
@@ -525,6 +559,16 @@ export default function AssetsPanel() {
   // offered (see categoryFilterOptions), so this never ends up pointed at
   // an empty result on its own.
   const [categoryFilter, setCategoryFilter] = useState('');
+  // Retiring an asset drops it from the everyday list (see setAssetStatus on
+  // the backend) — this is the escape hatch to find one again, e.g. to
+  // un-retire it or check its old service history.
+  const [showRetired, setShowRetired] = useState(false);
+  // 'cards' is the everyday view — one asset at a time is easy to read on a
+  // phone. 'table' is the sheet-style view for someone who wants every
+  // asset's warranty/AMC/location on screen at once to scan or compare, the
+  // way they'd open a spreadsheet to do the same job.
+  const [assetView, setAssetView] = useState('table');
+  const [tableSort, setTableSort] = useState({ key: null, dir: 'asc' });
   const [selectedAssetId, setSelectedAssetId] = useState(null);
   // { assetId, workOrders } — keyed by asset so a stale list from the
   // previously open asset never renders as this one's history.
@@ -579,9 +623,14 @@ export default function AssetsPanel() {
   const [bulkUnitErrors, setBulkUnitErrors] = useState({});
 
   const [showWoForm, setShowWoForm] = useState(false);
+  const [woMode, setWoMode] = useState('single');
   const [editingWoId, setEditingWoId] = useState(null);
   const [woForm, setWoForm] = useState(emptyWorkOrderForm);
   const [woStatusFilter, setWoStatusFilter] = useState('OPEN');
+
+  const [bulkWoForm, setBulkWoForm] = useState(emptyBulkWoForm);
+  const [bulkWoSubmitting, setBulkWoSubmitting] = useState(false);
+  const [bulkWoError, setBulkWoError] = useState('');
 
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState(null);
@@ -596,7 +645,7 @@ export default function AssetsPanel() {
   const [submitting, setSubmitting] = useState(false);
 
   const loadAssets = () =>
-    apiGet('/assets', { token: session?.token })
+    apiGet(`/assets${showRetired ? '?includeInactive=true' : ''}`, { token: session?.token })
       .then((data) => setAssets(writeCache('/assets', data.assets)))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load assets.'));
 
@@ -628,6 +677,11 @@ export default function AssetsPanel() {
     loadWorkOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    loadAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRetired]);
 
   // Resolved at render rather than in an effect: the token names an asset
   // that may not have loaded yet, and re-deriving here needs no setState.
@@ -667,6 +721,34 @@ export default function AssetsPanel() {
       );
     });
   }, [assets, query, categoryFilter]);
+
+  const sortedAssets = useMemo(() => {
+    if (!tableSort.key) return visibleAssets;
+    const accessor = TABLE_SORT_ACCESSORS[tableSort.key];
+    if (!accessor) return visibleAssets;
+    const dir = tableSort.dir === 'desc' ? -1 : 1;
+    return [...visibleAssets].sort((a, b) => {
+      const av = accessor(a);
+      const bv = accessor(b);
+      // Null/empty dates and text sink to the bottom regardless of direction —
+      // "no warranty on file" isn't meaningfully before or after a real date.
+      const aEmpty = av === null || av === '';
+      const bEmpty = bv === null || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [visibleAssets, tableSort]);
+
+  const toggleTableSort = (key) => {
+    setTableSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  };
 
   const visibleWorkOrders = useMemo(() => {
     if (!workOrders) return [];
@@ -1105,6 +1187,24 @@ export default function AssetsPanel() {
     }
   };
 
+  // Soft-delete on the backend (setAssetActive false) — the row and its work
+  // order history stay intact, same as retiring. This is the explicit "get
+  // rid of it" action for something that was never real (a duplicate entry, a
+  // typo'd registration) rather than the everyday end-of-life path, which is
+  // the Retired status.
+  const deleteAsset = async (asset) => {
+    if (!window.confirm(`Delete "${asset.name}"? Its service history is kept, but it won't show in the register.`)) {
+      return;
+    }
+    try {
+      await apiDelete(`/assets/${asset.id}`, { token: session?.token });
+      if (selectedAssetId === asset.id) setSelectedAssetId(null);
+      await loadAssets();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not delete that asset.');
+    }
+  };
+
   const closeAssetDetail = () => {
     if (scannedToken) setConsumedAssetToken(scannedToken);
     setSelectedAssetId(null);
@@ -1301,8 +1401,25 @@ export default function AssetsPanel() {
           }
         : emptyWorkOrderForm
     );
+    setWoMode('single');
     setFormError('');
     setShowWoForm(true);
+  };
+
+  const openBulkWoForm = () => {
+    setEditingWoId(null);
+    setBulkWoForm(emptyBulkWoForm);
+    setWoMode('bulk');
+    setBulkWoError('');
+    setShowWoForm(true);
+  };
+
+  // Same idea as switchRegisterMode on the asset form — the toggle swaps
+  // which body/footer is showing without closing the modal, and each side
+  // resets its own form so leftover state never crosses over.
+  const switchWoMode = (mode) => {
+    if (mode === 'bulk') openBulkWoForm();
+    else openWoForm(null);
   };
 
   const handleWoSubmit = async (e) => {
@@ -1360,6 +1477,43 @@ export default function AssetsPanel() {
       setFormError(err instanceof ApiError ? err.message : 'Could not save that work order. Try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleBulkWoSubmit = async (e) => {
+    e.preventDefault();
+    if (!bulkWoForm.categoryId) {
+      setBulkWoError('Choose a category.');
+      return;
+    }
+    if (!bulkWoForm.description.trim()) {
+      setBulkWoError('Describe the work.');
+      return;
+    }
+
+    setBulkWoSubmitting(true);
+    setBulkWoError('');
+    try {
+      const { workOrders: created } = await apiPost(
+        '/assets/work-orders/bulk',
+        {
+          categoryId: Number(bulkWoForm.categoryId),
+          issueType: bulkWoForm.issueType,
+          description: bulkWoForm.description,
+          assignedToName: bulkWoForm.assignedToName,
+          vendorId: bulkWoForm.vendorId ? Number(bulkWoForm.vendorId) : null,
+        },
+        { token: session?.token }
+      );
+      setShowWoForm(false);
+      await loadWorkOrders();
+      await loadAssets();
+      setWoStatusFilter('OPEN');
+      window.alert(`Created ${created.length} work order${created.length === 1 ? '' : 's'}.`);
+    } catch (err) {
+      setBulkWoError(err instanceof ApiError ? err.message : 'Could not create those work orders. Try again.');
+    } finally {
+      setBulkWoSubmitting(false);
     }
   };
 
@@ -1468,32 +1622,74 @@ export default function AssetsPanel() {
       {tab === 'register' && (
         <div>
           <div className="inv-bar">
-            <div className="inv-bar__row">
-              <div className="inv-search">
-                <span className="inv-search__icon" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search assets, tag, room, location"
-                  aria-label="Search assets"
-                />
+            <div className="inv-bar__row asset-toolbar-row">
+              <div className="asset-toolbar-row__filters">
+                <div className="inv-search">
+                  <span className="inv-search__icon" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search assets, tag, room, location"
+                    aria-label="Search assets"
+                  />
+                </div>
+                {categoryFilterOptions.length > 0 && (
+                  <select
+                    className="asset-category-filter"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    aria-label="Filter by category"
+                  >
+                    <option value="">All categories ({assets.length})</option>
+                    {categoryFilterOptions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.count})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <label className="asset-show-retired">
+                  <input
+                    type="checkbox"
+                    checked={showRetired}
+                    onChange={(e) => setShowRetired(e.target.checked)}
+                  />
+                  Show retired
+                </label>
               </div>
-              {categoryFilterOptions.length > 0 && (
-                <select
-                  className="asset-category-filter"
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  aria-label="Filter by category"
-                >
-                  <option value="">All categories ({assets.length})</option>
-                  {categoryFilterOptions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.count})
-                    </option>
-                  ))}
-                </select>
-              )}
-              <div className="inv-bar__actions">
+              <div className="asset-toolbar-row__end">
+                <div className="toggle-group asset-view-toggle" role="group" aria-label="Asset list view">
+                  <button
+                    type="button"
+                    className="asset-view-toggle__btn"
+                    aria-pressed={assetView === 'cards'}
+                    aria-label="Cards view"
+                    title="Cards view"
+                    onClick={() => setAssetView('cards')}
+                  >
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
+                      <rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+                      <rect x="11" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+                      <rect x="2.5" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+                      <rect x="11" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="asset-view-toggle__btn"
+                    aria-pressed={assetView === 'table'}
+                    aria-label="Table view"
+                    title="Table view"
+                    onClick={() => setAssetView('table')}
+                  >
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
+                      <rect x="2.5" y="3.5" width="15" height="13" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+                      <line x1="2.5" y1="8" x2="17.5" y2="8" stroke="currentColor" strokeWidth="1.6" />
+                      <line x1="2.5" y1="12.3" x2="17.5" y2="12.3" stroke="currentColor" strokeWidth="1.6" />
+                      <line x1="7.3" y1="3.5" x2="7.3" y2="16.5" stroke="currentColor" strokeWidth="1.6" />
+                    </svg>
+                  </button>
+                </div>
                 <button type="button" className="btn-accent" onClick={() => openAssetForm(null)}>
                   Register asset
                 </button>
@@ -1507,6 +1703,91 @@ export default function AssetsPanel() {
                 ? 'Nothing registered yet. Add the equipment you want to track — an AC, a lift, a geyser — with its warranty and AMC dates.'
                 : 'No asset matches that.'}
             </p>
+          ) : assetView === 'table' ? (
+            <div className="asset-table-wrap">
+              <table className="asset-table">
+                <thead>
+                  <tr>
+                    {[
+                      ['tag', 'Tag'],
+                      ['name', 'Name'],
+                      ['category', 'Category'],
+                      ['location', 'Location'],
+                      ['status', 'Status'],
+                      ['warranty', 'Warranty'],
+                      ['amc', 'AMC'],
+                      ['openWorkOrders', 'Open WOs'],
+                    ].map(([key, label]) => (
+                      <th key={key}>
+                        <button
+                          type="button"
+                          className="asset-table__sort-btn"
+                          aria-sort={tableSort.key === key ? (tableSort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+                          onClick={() => toggleTableSort(key)}
+                        >
+                          {label}
+                          <span className="asset-table__sort-icon" aria-hidden="true">
+                            {tableSort.key === key ? (tableSort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedAssets.map((asset) => {
+                    const wFlag = expiryFlag(asset.warrantyExpiry);
+                    const aFlag = expiryFlag(asset.amcExpiry);
+                    const location = asset.roomNumber
+                      ? `Room ${asset.roomNumber}`
+                      : asset.department || (asset.floor ? `Floor ${asset.floor}` : '');
+                    const dateCell = (value, flag) =>
+                      flag === 'expired' || flag === 'soon' ? (
+                        <span className={`asset-table__date-chip asset-table__date-chip--${flag === 'expired' ? 'bad' : 'low'}`}>
+                          {formatDate(value)}
+                        </span>
+                      ) : (
+                        <span className="asset-table__muted">{formatDate(value)}</span>
+                      );
+                    return (
+                      <tr key={asset.id} onClick={() => openAssetDetail(asset)}>
+                        <td className="asset-table__mono">{asset.assetTag}</td>
+                        <td className="asset-table__name">{asset.name}</td>
+                        <td>{asset.categoryName}</td>
+                        <td className={location ? '' : 'asset-table__muted'}>{location || '—'}</td>
+                        <td>
+                          <span className={`inv-tag ${STATUS_TAG_CLASS[asset.status]}`}>
+                            {STATUS_LABEL[asset.status]}
+                          </span>
+                        </td>
+                        <td>{dateCell(asset.warrantyExpiry, wFlag)}</td>
+                        <td>{dateCell(asset.amcExpiry, aFlag)}</td>
+                        <td className={asset.openWorkOrders > 0 ? '' : 'asset-table__muted'}>
+                          {asset.openWorkOrders > 0 ? asset.openWorkOrders : '—'}
+                        </td>
+                        <td className="asset-table__actions" onClick={(e) => e.stopPropagation()}>
+                          <RowMenu label={`More actions for ${asset.name}`}>
+                            <button type="button" onClick={() => openAssetDetail(asset)}>
+                              View details
+                            </button>
+                            <button type="button" onClick={() => openAssetForm(asset)}>
+                              Edit asset
+                            </button>
+                            <button type="button" onClick={() => reportIssue(asset)}>
+                              Report issue
+                            </button>
+                            <button type="button" className="inv-danger" onClick={() => deleteAsset(asset)}>
+                              Delete asset
+                            </button>
+                          </RowMenu>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <ul className="inv-list">
               {visibleAssets.map((asset) => {
@@ -1528,7 +1809,7 @@ export default function AssetsPanel() {
                     <div className="inv-item__body" onClick={() => openAssetDetail(asset)} style={{ cursor: 'pointer' }}>
                       <div className="inv-item__name">
                         {asset.name}
-                        <span className="inv-tag">{STATUS_LABEL[asset.status]}</span>
+                        <span className={`inv-tag ${STATUS_TAG_CLASS[asset.status]}`}>{STATUS_LABEL[asset.status]}</span>
                         {badFlag === 'expired' && (
                           <span className="inv-tag inv-tag--bad">{expiredNames.join(' & ')} expired</span>
                         )}
@@ -1558,6 +1839,9 @@ export default function AssetsPanel() {
                         </button>
                         <button type="button" onClick={() => openAssetForm(asset)}>
                           Edit asset
+                        </button>
+                        <button type="button" className="inv-danger" onClick={() => deleteAsset(asset)}>
+                          Delete asset
                         </button>
                       </RowMenu>
                     </div>
@@ -1781,6 +2065,14 @@ export default function AssetsPanel() {
                 <button type="button" className="btn-outline" onClick={() => openCoverageForm(null)}>
                   Add coverage
                 </button>
+                <button type="button" className="btn-outline" onClick={() => openAssetForm(selectedAsset)}>
+                  Edit asset
+                </button>
+                <RowMenu label={`More actions for ${selectedAsset.name}`}>
+                  <button type="button" className="inv-danger" onClick={() => deleteAsset(selectedAsset)}>
+                    Delete asset
+                  </button>
+                </RowMenu>
               </div>
 
               <h4>Coverage history</h4>
@@ -2539,184 +2831,323 @@ export default function AssetsPanel() {
 
       {/* Work order form */}
       {showWoForm && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowWoForm(false)}>
+        <div
+          className="glass-backdrop inv-panel__backdrop"
+          onClick={() => !submitting && !bulkWoSubmitting && setShowWoForm(false)}
+        >
           <div
-            className="glass-panel inv-panel__modal modal-form__panel"
+            className="glass-panel inv-panel__modal inv-panel__modal--asset modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="woModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <form className="modal-form" onSubmit={handleWoSubmit} noValidate>
-              <div className="modal-form__head">
-                <div className="modal-form__head-row">
-                  <h3 id="woModalTitle">{editingWoId ? 'Edit work order' : 'Report an issue'}</h3>
-                  <button
-                    type="button"
-                    className="modal-form__close"
-                    onClick={() => setShowWoForm(false)}
-                    disabled={submitting}
-                    aria-label="Close"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-
-              <div className="modal-form__body">
-                {formError && <div className="form-banner form-banner--error form-banner--flash">{formError}</div>}
-
-                <div className="field">
-                  <label htmlFor="woAsset">
-                    Asset <Req />
-                  </label>
-                  <AssetPickerField
-                    id="woAsset"
-                    assets={assets}
-                    selectedId={woForm.assetId}
-                    onPick={(asset) => {
-                      setWoForm((f) => ({ ...f, assetId: String(asset.id) }));
-                      resolveActiveCoverageVendor(asset.id).then((vendor) => {
-                        if (vendor) setWoForm((f) => ({ ...f, vendorId: String(vendor.vendorId) }));
-                      });
-                    }}
-                    disabled={Boolean(editingWoId)}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="woType">Type</label>
-                  <select
-                    id="woType"
-                    value={woForm.issueType}
-                    onChange={(e) => setWoForm((f) => ({ ...f, issueType: e.target.value }))}
-                  >
-                    <option value="BREAKDOWN">Breakdown</option>
-                    <option value="ROUTINE_SERVICE">Routine service</option>
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="woDescription">
-                    Description <Req />
-                  </label>
-                  <input
-                    id="woDescription"
-                    value={woForm.description}
-                    onChange={(e) => setWoForm((f) => ({ ...f, description: e.target.value }))}
-                    placeholder="What's wrong, or what needs doing"
-                  />
-                </div>
-
-                {editingWoId && (
-                  <div className="field">
-                    <label htmlFor="woStatus">Status</label>
-                    <select
-                      id="woStatus"
-                      value={woForm.status}
-                      onChange={(e) => setWoForm((f) => ({ ...f, status: e.target.value }))}
+            {woMode === 'single' ? (
+              <form className="modal-form" onSubmit={handleWoSubmit} noValidate>
+                <div className="modal-form__head">
+                  <div className="modal-form__head-row">
+                    <h3 id="woModalTitle">{editingWoId ? 'Edit work order' : 'Report an issue'}</h3>
+                    {/* Editing is always one work order, same reasoning as the
+                        asset form hiding its toggle while editing. */}
+                    {!editingWoId && (
+                      <div className="toggle-group">
+                        <button type="button" aria-pressed={woMode === 'single'} onClick={() => switchWoMode('single')}>
+                          Single
+                        </button>
+                        <button type="button" aria-pressed={woMode === 'bulk'} onClick={() => switchWoMode('bulk')}>
+                          Bulk by category
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="modal-form__close"
+                      onClick={() => setShowWoForm(false)}
+                      disabled={submitting}
+                      aria-label="Close"
                     >
-                      {Object.entries(WO_STATUS_LABEL).map(([key, label]) => (
-                        <option key={key} value={key}>
-                          {label}
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div className="modal-form__body">
+                  {formError && <div className="form-banner form-banner--error form-banner--flash">{formError}</div>}
+
+                  <div className="field">
+                    <label htmlFor="woAsset">
+                      Asset <Req />
+                    </label>
+                    <AssetPickerField
+                      id="woAsset"
+                      assets={assets}
+                      selectedId={woForm.assetId}
+                      onPick={(asset) => {
+                        setWoForm((f) => ({ ...f, assetId: String(asset.id) }));
+                        resolveActiveCoverageVendor(asset.id).then((vendor) => {
+                          if (vendor) setWoForm((f) => ({ ...f, vendorId: String(vendor.vendorId) }));
+                        });
+                      }}
+                      disabled={Boolean(editingWoId)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="woType">Type</label>
+                    <select
+                      id="woType"
+                      value={woForm.issueType}
+                      onChange={(e) => setWoForm((f) => ({ ...f, issueType: e.target.value }))}
+                    >
+                      <option value="BREAKDOWN">Breakdown</option>
+                      <option value="ROUTINE_SERVICE">Routine service</option>
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="woDescription">
+                      Description <Req />
+                    </label>
+                    <input
+                      id="woDescription"
+                      value={woForm.description}
+                      onChange={(e) => setWoForm((f) => ({ ...f, description: e.target.value }))}
+                      placeholder="What's wrong, or what needs doing"
+                    />
+                  </div>
+
+                  {editingWoId && (
+                    <div className="field">
+                      <label htmlFor="woStatus">Status</label>
+                      <select
+                        id="woStatus"
+                        value={woForm.status}
+                        onChange={(e) => setWoForm((f) => ({ ...f, status: e.target.value }))}
+                      >
+                        {Object.entries(WO_STATUS_LABEL).map(([key, label]) => (
+                          <option key={key} value={key}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="field">
+                    <label htmlFor="woAssignee">Assigned to</label>
+                    <input
+                      id="woAssignee"
+                      value={woForm.assignedToName}
+                      onChange={(e) => setWoForm((f) => ({ ...f, assignedToName: e.target.value }))}
+                      placeholder="In-house handyman name"
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="woVendor">Vendor</label>
+                    <select
+                      id="woVendor"
+                      value={woForm.vendorId}
+                      onChange={(e) => setWoForm((f) => ({ ...f, vendorId: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {(vendors || []).map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="field__hint">
+                      Filled in from the asset's current AMC or warranty, if it has one on file — change it if
+                      someone else is doing this repair.
+                    </span>
+                  </div>
+
+                  {editingWoId && (
+                    <>
+                      <div className="field">
+                        <label htmlFor="woPartsCost">Parts cost</label>
+                        <input
+                          id="woPartsCost"
+                          type="number"
+                          step="0.01"
+                          value={woForm.partsCost}
+                          onChange={(e) => setWoForm((f) => ({ ...f, partsCost: e.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="woLaborCost">Labor cost</label>
+                        <input
+                          id="woLaborCost"
+                          type="number"
+                          step="0.01"
+                          value={woForm.laborCost}
+                          onChange={(e) => setWoForm((f) => ({ ...f, laborCost: e.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="woPartsNote">Parts used</label>
+                        <input
+                          id="woPartsNote"
+                          value={woForm.partsUsedNote}
+                          onChange={(e) => setWoForm((f) => ({ ...f, partsUsedNote: e.target.value }))}
+                        />
+                      </div>
+                      <label className="checkbox-inline">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(woForm.isWarrantyClaim)}
+                          onChange={(e) => setWoForm((f) => ({ ...f, isWarrantyClaim: e.target.checked }))}
+                        />
+                        This repair is a warranty claim
+                      </label>
+                      <div className="field">
+                        <label htmlFor="woResolution">Resolution note</label>
+                        <input
+                          id="woResolution"
+                          value={woForm.resolutionNote}
+                          onChange={(e) => setWoForm((f) => ({ ...f, resolutionNote: e.target.value }))}
+                          placeholder="What was done"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="modal-form__foot">
+                  <div className="modal-form__foot-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setShowWoForm(false)}
+                      disabled={submitting}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn-accent" disabled={submitting}>
+                      {submitting ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <form className="modal-form" onSubmit={handleBulkWoSubmit} noValidate>
+                <div className="modal-form__head">
+                  <div className="modal-form__head-row">
+                    <h3 id="woModalTitle">Bulk work order</h3>
+                    <div className="toggle-group">
+                      <button type="button" aria-pressed={woMode === 'single'} onClick={() => switchWoMode('single')}>
+                        Single
+                      </button>
+                      <button type="button" aria-pressed={woMode === 'bulk'} onClick={() => switchWoMode('bulk')}>
+                        Bulk by category
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="modal-form__close"
+                      onClick={() => setShowWoForm(false)}
+                      disabled={bulkWoSubmitting}
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div className="modal-form__body">
+                  {bulkWoError && <div className="form-banner form-banner--error form-banner--flash">{bulkWoError}</div>}
+                  <p className="field__hint">
+                    Opens one work order for every active asset in the category you pick — e.g. every split AC, all
+                    at once, for a contractor's routine visit.
+                  </p>
+
+                  <div className="field">
+                    <label htmlFor="bulkWoCategory">
+                      Category <Req />
+                    </label>
+                    <select
+                      id="bulkWoCategory"
+                      value={bulkWoForm.categoryId}
+                      onChange={(e) => setBulkWoForm((f) => ({ ...f, categoryId: e.target.value }))}
+                    >
+                      <option value="">Choose a category</option>
+                      {categoryFilterOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.count})
                         </option>
                       ))}
                     </select>
                   </div>
-                )}
 
-                <div className="field">
-                  <label htmlFor="woAssignee">Assigned to</label>
-                  <input
-                    id="woAssignee"
-                    value={woForm.assignedToName}
-                    onChange={(e) => setWoForm((f) => ({ ...f, assignedToName: e.target.value }))}
-                    placeholder="In-house handyman name"
-                  />
-                </div>
+                  <div className="field">
+                    <label htmlFor="bulkWoType">Type</label>
+                    <select
+                      id="bulkWoType"
+                      value={bulkWoForm.issueType}
+                      onChange={(e) => setBulkWoForm((f) => ({ ...f, issueType: e.target.value }))}
+                    >
+                      <option value="ROUTINE_SERVICE">Routine service</option>
+                      <option value="BREAKDOWN">Breakdown</option>
+                    </select>
+                  </div>
 
-                <div className="field">
-                  <label htmlFor="woVendor">Vendor</label>
-                  <select
-                    id="woVendor"
-                    value={woForm.vendorId}
-                    onChange={(e) => setWoForm((f) => ({ ...f, vendorId: e.target.value }))}
-                  >
-                    <option value="">None</option>
-                    {(vendors || []).map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="field__hint">
-                    Filled in from the asset's current AMC or warranty, if it has one on file — change it if
-                    someone else is doing this repair.
-                  </span>
-                </div>
-
-                {editingWoId && (
-                  <>
-                    <div className="field">
-                      <label htmlFor="woPartsCost">Parts cost</label>
-                      <input
-                        id="woPartsCost"
-                        type="number"
-                        step="0.01"
-                        value={woForm.partsCost}
-                        onChange={(e) => setWoForm((f) => ({ ...f, partsCost: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="woLaborCost">Labor cost</label>
-                      <input
-                        id="woLaborCost"
-                        type="number"
-                        step="0.01"
-                        value={woForm.laborCost}
-                        onChange={(e) => setWoForm((f) => ({ ...f, laborCost: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="woPartsNote">Parts used</label>
-                      <input
-                        id="woPartsNote"
-                        value={woForm.partsUsedNote}
-                        onChange={(e) => setWoForm((f) => ({ ...f, partsUsedNote: e.target.value }))}
-                      />
-                    </div>
-                    <label className="checkbox-inline">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(woForm.isWarrantyClaim)}
-                        onChange={(e) => setWoForm((f) => ({ ...f, isWarrantyClaim: e.target.checked }))}
-                      />
-                      This repair is a warranty claim
+                  <div className="field">
+                    <label htmlFor="bulkWoDescription">
+                      Description <Req />
                     </label>
-                    <div className="field">
-                      <label htmlFor="woResolution">Resolution note</label>
-                      <input
-                        id="woResolution"
-                        value={woForm.resolutionNote}
-                        onChange={(e) => setWoForm((f) => ({ ...f, resolutionNote: e.target.value }))}
-                        placeholder="What was done"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
+                    <input
+                      id="bulkWoDescription"
+                      value={bulkWoForm.description}
+                      onChange={(e) => setBulkWoForm((f) => ({ ...f, description: e.target.value }))}
+                      placeholder="e.g. Quarterly AMC service visit"
+                    />
+                  </div>
 
-              <div className="modal-form__foot">
-                <div className="modal-form__foot-actions">
-                  <button type="button" className="btn-secondary" onClick={() => setShowWoForm(false)} disabled={submitting}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn-accent" disabled={submitting}>
-                    {submitting ? 'Saving…' : 'Save'}
-                  </button>
+                  <div className="field">
+                    <label htmlFor="bulkWoAssignee">Assigned to</label>
+                    <input
+                      id="bulkWoAssignee"
+                      value={bulkWoForm.assignedToName}
+                      onChange={(e) => setBulkWoForm((f) => ({ ...f, assignedToName: e.target.value }))}
+                      placeholder="In-house handyman name"
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="bulkWoVendor">Vendor</label>
+                    <select
+                      id="bulkWoVendor"
+                      value={bulkWoForm.vendorId}
+                      onChange={(e) => setBulkWoForm((f) => ({ ...f, vendorId: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {(vendors || []).map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
-            </form>
+
+                <div className="modal-form__foot">
+                  <div className="modal-form__foot-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setShowWoForm(false)}
+                      disabled={bulkWoSubmitting}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn-accent" disabled={bulkWoSubmitting}>
+                      {bulkWoSubmitting ? 'Creating…' : 'Create work orders'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

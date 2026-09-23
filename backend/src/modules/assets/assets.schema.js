@@ -111,6 +111,18 @@ const createWorkOrderSchema = z.object({
   vendorId: optionalId(),
 });
 
+// One visit covering every asset in a category — "service all the ACs" —
+// instead of filing the same work order by hand once per unit. assignedToName
+// stays free text like the single-asset form; vendorId is who's doing the
+// round, not who owns any one asset.
+const bulkWorkOrderSchema = z.object({
+  categoryId: z.coerce.number().int().positive('Choose a category.'),
+  issueType: z.enum(['BREAKDOWN', 'ROUTINE_SERVICE']).optional().default('ROUTINE_SERVICE'),
+  description: z.string().trim().min(1, 'Describe the work.').max(400),
+  assignedToName: z.string().trim().max(80).optional().default(''),
+  vendorId: optionalId(),
+});
+
 // Everything on a work order can be edited after it's opened — cost figures
 // and the assignment are usually filled in after the fact, not at creation.
 const updateWorkOrderSchema = z.object({
@@ -134,5 +146,6 @@ module.exports = {
   updateAssetStatusSchema,
   vendorSchema,
   createWorkOrderSchema,
+  bulkWorkOrderSchema,
   updateWorkOrderSchema,
 };

@@ -59,6 +59,11 @@ const PERMISSIONS = [
     label: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and manage maintenance work orders.',
   },
+  {
+    key: 'expenses.manage',
+    label: 'Expenses',
+    description: 'Log and review property expenses, vendors and recurring bills.',
+  },
 ];
 
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

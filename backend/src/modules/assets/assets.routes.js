@@ -21,6 +21,7 @@ const {
   updateVendorHandler,
   listWorkOrdersHandler,
   createWorkOrderHandler,
+  createWorkOrdersBulkHandler,
   updateWorkOrderHandler,
 } = require('./assets.controller');
 
@@ -39,6 +40,10 @@ router.patch('/vendors/:id', authenticate, canAccess, updateVendorHandler);
 
 router.get('/work-orders', authenticate, canAccess, listWorkOrdersHandler);
 router.post('/work-orders', authenticate, canAccess, createWorkOrderHandler);
+// Ahead of PATCH '/work-orders/:id' for the same reason '/bulk' is ahead of
+// '/:id' on assets below — a distinct path, not a param value, so it can
+// never collide with a numeric work order id.
+router.post('/work-orders/bulk', authenticate, canAccess, createWorkOrdersBulkHandler);
 router.patch('/work-orders/:id', authenticate, canAccess, updateWorkOrderHandler);
 
 // Resolves a scanned QR token to its asset — kept ahead of /:id so "qr" is

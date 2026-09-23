@@ -16,6 +16,7 @@ import FoodSetup from './FoodSetup';
 import OrdersPanel from './OrdersPanel';
 import Events from './Events';
 import AssetsPanel from './AssetsPanel';
+import ExpensesPanel from './ExpensesPanel';
 import ProfileMenu from './ProfileMenu';
 import '../internal/LodgesDashboard.css';
 import './OwnerDashboard.css';
@@ -112,6 +113,13 @@ const ICON_PATHS = {
   wrench: (
     <>
       <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L2 19l3 3 7.3-7.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2z" />
+    </>
+  ),
+  wallet: (
+    <>
+      <path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" />
+      <path d="M21 12a2 2 0 0 0-2-2h-3a2 2 0 0 0 0 4h3a2 2 0 0 0 2-2Z" />
+      <path d="M3 7h13" />
     </>
   ),
 };
@@ -644,8 +652,10 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'assets' && <AssetsPanel />}
 
+              {activeFeature && activeFeature.key === 'expenses' && <ExpensesPanel />}
+
               {activeFeature &&
-                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'assets'].includes(
+                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'assets', 'expenses'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

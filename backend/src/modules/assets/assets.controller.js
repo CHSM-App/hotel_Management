@@ -6,6 +6,7 @@ const {
   updateAssetStatusSchema,
   vendorSchema,
   createWorkOrderSchema,
+  bulkWorkOrderSchema,
   updateWorkOrderSchema,
 } = require('./assets.schema');
 const fs = require('fs');
@@ -253,6 +254,19 @@ async function createWorkOrderHandler(req, res, next) {
   }
 }
 
+async function createWorkOrdersBulkHandler(req, res, next) {
+  try {
+    const workOrders = await assetsService.createWorkOrdersBulk(
+      req.user.lodgeId,
+      parse(bulkWorkOrderSchema, req.body),
+      req.user.sub
+    );
+    res.status(201).json({ workOrders });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function updateWorkOrderHandler(req, res, next) {
   try {
     const workOrder = await assetsService.updateWorkOrder(
@@ -286,5 +300,6 @@ module.exports = {
   updateVendorHandler,
   listWorkOrdersHandler,
   createWorkOrderHandler,
+  createWorkOrdersBulkHandler,
   updateWorkOrderHandler,
 };

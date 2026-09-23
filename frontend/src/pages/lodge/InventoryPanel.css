@@ -313,6 +313,28 @@
   color: var(--danger);
 }
 
+/* Asset status pills — same tinted-chip construction as the warranty/AMC
+   ones above, so "In use" reads as fine and "Under repair" reads as
+   something to notice, instead of every status looking like the same
+   neutral grey label regardless of what it means. */
+.inv-tag--good {
+  background: #eaf7ef;
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.inv-tag--info {
+  background: rgba(91, 63, 217, 0.08);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.inv-tag--off {
+  background: var(--paper);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
 .inv-linkbtn {
   background: none;
   border: none;
@@ -552,6 +574,244 @@
   color: var(--text-muted);
   font-weight: 600;
   margin-right: 4px;
+}
+
+/* The Asset Register toolbar: search + category filter on the left (they
+   grow/shrink as a pair), the view toggle and Register button pinned to the
+   right as their own group. Four controls jammed onto .inv-bar__row's
+   single flex line with a flat 12px gap read as one undifferentiated row;
+   splitting it into two visual groups with real space between them is what
+   actually reads as "find/filter" vs "view/act" instead of a wall of
+   controls. */
+.asset-toolbar-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+
+.asset-toolbar-row__filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.asset-toolbar-row__end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.asset-show-retired {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.asset-show-retired input {
+  margin: 0;
+}
+
+.asset-view-toggle {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.asset-view-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0 !important;
+}
+
+@media (max-width: 720px) {
+  .asset-toolbar-row__filters {
+    width: 100%;
+  }
+
+  .asset-toolbar-row__end {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Table view: every asset's tag, location, warranty and AMC in one scan —
+   the spreadsheet-shaped alternative to the card list above, for someone
+   comparing several assets at once rather than opening them one at a time.
+   A plain <table> rather than another div grid, because that's what makes
+   "select this column and copy it" and a screen reader's table navigation
+   both work for free.
+
+   Styled to match the card list's own surface (rounded, shadowed, on
+   --surface) rather than reading as a bare HTML table dropped into the
+   page — striped rows for a long list to track across, and a coloured
+   *chip* on an expiring/expired date rather than just bolder text, which
+   read as an accident of formatting rather than a warning. */
+.asset-table-wrap {
+  overflow-x: auto;
+  border-radius: 14px;
+  box-shadow: var(--shadow-raised);
+  margin-bottom: 18px;
+}
+
+.asset-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  white-space: nowrap;
+  background: var(--surface);
+}
+
+.asset-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.asset-table__sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 12px 16px;
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.asset-table__sort-btn:hover {
+  color: var(--ink);
+}
+
+.asset-table__sort-icon {
+  font-size: 9px;
+  opacity: 0.55;
+}
+
+.asset-table__sort-btn[aria-sort='ascending'],
+.asset-table__sort-btn[aria-sort='descending'] {
+  color: var(--brand);
+}
+
+.asset-table__sort-btn[aria-sort='ascending'] .asset-table__sort-icon,
+.asset-table__sort-btn[aria-sort='descending'] .asset-table__sort-icon {
+  opacity: 1;
+}
+
+.asset-table thead th:first-child {
+  border-top-left-radius: 14px;
+}
+
+.asset-table thead th:last-child {
+  border-top-right-radius: 14px;
+}
+
+.asset-table tbody td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.asset-table tbody tr:nth-child(even) td {
+  background: var(--paper);
+}
+
+.asset-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.asset-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 14px;
+}
+
+.asset-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 14px;
+}
+
+.asset-table tbody tr {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.asset-table tbody tr:hover td {
+  background: rgba(91, 63, 217, 0.06);
+}
+
+.asset-table__mono {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.asset-table__name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.asset-table__muted {
+  color: var(--text-muted);
+}
+
+/* A pill, the same construction as .inv-tag, rather than bare coloured text —
+   so "expiring soon" on a date reads as a status the way it does everywhere
+   else in this module, not as a stray bit of bold formatting. */
+.asset-table__date-chip {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-table__date-chip--bad {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.asset-table__date-chip--low {
+  background: #fef9e7;
+  color: #8a6d0b;
+}
+
+.asset-table__actions {
+  cursor: default;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .asset-table {
+    white-space: normal;
+  }
 }
 
 .asset-detail__actions {

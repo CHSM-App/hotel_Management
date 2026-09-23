@@ -3,6 +3,7 @@ const path = require('path');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR: BILL_UPLOAD_DIR } = require('../../middleware/assetBillUpload');
+const vendorsService = require('../vendors/vendors.service');
 
 // ---------------------------------------------------------------------------
 // Categories
@@ -424,6 +425,12 @@ async function getBillFilename(lodgeId, assetId) {
   return row.bill_document;
 }
 
+// RETIRED also drops is_active, so a retired asset stops showing in the
+// Register list and its counts/badges without a second, easy-to-forget step —
+// the same is_active flag setAssetActive already uses to hide an asset while
+// keeping its row (and its work orders' history) intact. Moving a retired
+// asset back to any other status reverses that, since "un-retiring" should
+// put it back in the list it disappeared from.
 async function setAssetStatus(lodgeId, assetId, status) {
   const pool = await getPool();
   const result = await pool
@@ -431,9 +438,10 @@ async function setAssetStatus(lodgeId, assetId, status) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('assetId', sql.BigInt, assetId)
     .input('status', sql.NVarChar, status)
+    .input('isActive', sql.Bit, status === 'RETIRED' ? 0 : 1)
     .query(`
       UPDATE dbo.assets
-      SET status = @status, updated_at = SYSDATETIMEOFFSET()
+      SET status = @status, is_active = @isActive, updated_at = SYSDATETIMEOFFSET()
       OUTPUT inserted.id
       WHERE id = @assetId AND lodge_id = @lodgeId
     `);
@@ -614,103 +622,13 @@ async function deleteCoveragePeriod(lodgeId, assetId, periodId) {
 // ---------------------------------------------------------------------------
 // Vendors
 // ---------------------------------------------------------------------------
+//
+// dbo.vendors is now a shared directory (see vendors/vendors.service.js) —
+// the Expenses module uses the same table and the same CRUD. These just
+// re-export it so every existing caller of assetsService.listVendors etc.
+// keeps working unchanged.
 
-function mapVendor(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    contactPerson: row.contact_person,
-    phone: row.phone,
-    email: row.email,
-    specialty: row.specialty,
-    notes: row.notes,
-    isActive: !!row.is_active,
-  };
-}
-
-async function listVendors(lodgeId, { includeInactive = false } = {}) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .query(`
-      SELECT id, name, contact_person, phone, email, specialty, notes, is_active
-      FROM dbo.vendors
-      WHERE lodge_id = @lodgeId ${includeInactive ? '' : 'AND is_active = 1'}
-      ORDER BY name ASC
-    `);
-  return result.recordset.map(mapVendor);
-}
-
-async function createVendor(lodgeId, input) {
-  const pool = await getPool();
-
-  const existing = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('name', sql.NVarChar, input.name)
-    .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND name = @name');
-  if (existing.recordset.length > 0) {
-    throw new ApiError('A vendor with that name already exists.', 409, 'name');
-  }
-
-  const result = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('name', sql.NVarChar, input.name)
-    .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
-    .input('phone', sql.NVarChar, toNullable(input.phone))
-    .input('email', sql.NVarChar, toNullable(input.email))
-    .input('specialty', sql.NVarChar, toNullable(input.specialty))
-    .input('notes', sql.NVarChar, toNullable(input.notes))
-    .query(`
-      INSERT INTO dbo.vendors (lodge_id, name, contact_person, phone, email, specialty, notes)
-      OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @contactPerson, @phone, @email, @specialty, @notes)
-    `);
-
-  const id = result.recordset[0].id;
-  const vendors = await listVendors(lodgeId, { includeInactive: true });
-  return vendors.find((v) => v.id === id);
-}
-
-async function updateVendor(lodgeId, vendorId, input) {
-  const pool = await getPool();
-
-  const conflict = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('name', sql.NVarChar, input.name)
-    .input('vendorId', sql.BigInt, vendorId)
-    .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND name = @name AND id <> @vendorId');
-  if (conflict.recordset.length > 0) {
-    throw new ApiError('A vendor with that name already exists.', 409, 'name');
-  }
-
-  const result = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('vendorId', sql.BigInt, vendorId)
-    .input('name', sql.NVarChar, input.name)
-    .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
-    .input('phone', sql.NVarChar, toNullable(input.phone))
-    .input('email', sql.NVarChar, toNullable(input.email))
-    .input('specialty', sql.NVarChar, toNullable(input.specialty))
-    .input('notes', sql.NVarChar, toNullable(input.notes))
-    .query(`
-      UPDATE dbo.vendors
-      SET name = @name, contact_person = @contactPerson, phone = @phone, email = @email,
-          specialty = @specialty, notes = @notes
-      OUTPUT inserted.id
-      WHERE id = @vendorId AND lodge_id = @lodgeId
-    `);
-  if (result.recordset.length === 0) {
-    throw new ApiError('Vendor not found.', 404);
-  }
-
-  const vendors = await listVendors(lodgeId, { includeInactive: true });
-  return vendors.find((v) => v.id === vendorId);
-}
+const { listVendors, createVendor, updateVendor } = vendorsService;
 
 // ---------------------------------------------------------------------------
 // Work orders
@@ -818,6 +736,53 @@ async function createWorkOrder(lodgeId, input, userId) {
   return getWorkOrder(lodgeId, result.recordset[0].id);
 }
 
+// One routine-service visit that covers every unit of a kind at once — "the
+// AC contractor is coming Tuesday for all 12 split ACs" is a single event on
+// site, not 12 separate ones a staff member should have to type out. Targets
+// a category rather than asking for asset ids one by one, since that's how
+// the person filing this thinks about it ("all the ACs"), and it's exactly
+// the set the Asset Register's own category filter already shows them.
+async function createWorkOrdersBulk(lodgeId, input, userId) {
+  const pool = await getPool();
+
+  const assetsResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, input.categoryId)
+    .query(`
+      SELECT id FROM dbo.assets
+      WHERE lodge_id = @lodgeId AND category_id = @categoryId AND is_active = 1
+      ORDER BY id
+    `);
+  const assetIds = assetsResult.recordset.map((r) => r.id);
+  if (assetIds.length === 0) {
+    throw new ApiError('No active assets in that category.', 400, 'categoryId');
+  }
+
+  const createdIds = [];
+  for (const assetId of assetIds) {
+    const result = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('assetId', sql.BigInt, assetId)
+      .input('issueType', sql.NVarChar, input.issueType)
+      .input('description', sql.NVarChar, input.description)
+      .input('reportedBy', sql.BigInt, userId ?? null)
+      .input('assignedToName', sql.NVarChar, toNullable(input.assignedToName))
+      .input('vendorId', sql.BigInt, input.vendorId ?? null)
+      .query(`
+        INSERT INTO dbo.asset_work_orders
+          (lodge_id, asset_id, issue_type, description, reported_by, assigned_to_name, vendor_id)
+        OUTPUT inserted.id
+        VALUES
+          (@lodgeId, @assetId, @issueType, @description, @reportedBy, @assignedToName, @vendorId)
+      `);
+    createdIds.push(result.recordset[0].id);
+  }
+
+  return Promise.all(createdIds.map((id) => getWorkOrder(lodgeId, id)));
+}
+
 async function updateWorkOrder(lodgeId, workOrderId, input) {
   const pool = await getPool();
   const current = await getWorkOrder(lodgeId, workOrderId);
@@ -917,5 +882,6 @@ module.exports = {
   listWorkOrders,
   getWorkOrder,
   createWorkOrder,
+  createWorkOrdersBulk,
   updateWorkOrder,
 };

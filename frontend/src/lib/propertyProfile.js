@@ -165,6 +165,15 @@ export const FEATURES = [
     group: 'Setup',
   },
   {
+    key: 'expenses',
+    title: 'Expenses',
+    description: 'Log utility bills, salaries, repairs and other property costs.',
+    permission: 'expenses.manage',
+    // No capability gate — every property type has operating expenses.
+    icon: 'wallet',
+    group: 'Setup',
+  },
+  {
     key: 'reports',
     title: 'Report & Analytics',
     description: 'Booking, occupancy, GST, events and food order reports — whichever this property sells.',
