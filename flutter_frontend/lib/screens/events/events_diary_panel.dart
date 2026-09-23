@@ -484,6 +484,21 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                         bottom: 4,
                         child: _ScrollArrow(icon: Icons.chevron_right_rounded, onTap: () => _step(5)),
                       ),
+                      Positioned(
+                        right: AppTheme.s16,
+                        bottom: 40,
+                        child: FloatingActionButton(
+                          backgroundColor: AppTheme.accent,
+                          foregroundColor: Colors.white,
+                          onPressed: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const EventFormScreen()),
+                            );
+                            _load();
+                          },
+                          child: const Icon(Icons.add_rounded),
+                        ),
+                      ),
                     ],
                   ),
                 ),

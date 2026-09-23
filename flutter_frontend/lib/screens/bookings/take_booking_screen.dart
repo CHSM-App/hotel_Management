@@ -84,6 +84,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   final _phoneKey = GlobalKey();
   final _idProofKey = GlobalKey();
   final _advanceKey = GlobalKey();
+  final _bedKey = GlobalKey();
 
   final _name = TextEditingController();
   final _phone = TextEditingController();
@@ -202,6 +203,16 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     final state = ref.read(bookingViewModelProvider);
     if (!state.datesChosen) return null;
     return state.room == null ? 'Choose a room.' : null;
+  }
+
+  String? get _bedError {
+    if (!_submitAttempted) return null;
+    final state = ref.read(bookingViewModelProvider);
+    final room = state.room;
+    if (room == null || !room.isDormitory) return null;
+    return (state.bedId == null && !state.buyout)
+        ? 'Choose a bed, or book the whole dormitory as a buyout.'
+        : null;
   }
 
   // Mirrors the web form's own client-side checks on the advance rows,
@@ -424,6 +435,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     }
     if (_roomError != null) {
       _scrollToError(_roomKey);
+      return;
+    }
+    if (_bedError != null) {
+      _scrollToError(_bedKey);
       return;
     }
     if (_nameError != null) {
@@ -721,6 +736,21 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                   if (state.room != null) ...[
                     const SizedBox(height: AppTheme.s12),
                     _RoomChips(room: state.room!),
+
+                    if (state.room!.isDormitory) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      KeyedSubtree(
+                        key: _bedKey,
+                        child: _BedPicker(state: state),
+                      ),
+                      if (_bedError != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(
+                          _bedError!,
+                          style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                        ),
+                      ],
+                    ],
 
                     if (state.room!.switchableCharges.isNotEmpty) ...[
                       const SizedBox(height: AppTheme.s16),
@@ -1656,14 +1686,147 @@ class _RoomChips extends StatelessWidget {
       runSpacing: AppTheme.s8,
       children: [
         _Chip(
-          '${formatPrice(room.categoryBasePrice)}/night',
+          room.isDormitory
+              ? '${formatPrice(room.dormitoryPrice ?? room.categoryBasePrice)}/bed/night'
+              : '${formatPrice(room.categoryBasePrice)}/night',
           accent: true,
         ),
         _Chip(room.categoryName),
-        if (bedLabel != null) _Chip(bedLabel),
+        if (room.isDormitory) ...[
+          _Chip('Dormitory'),
+          if (room.dormitoryGender != null)
+            _Chip(dormitoryGenderLabel[room.dormitoryGender!] ?? room.dormitoryGender!),
+          if (room.dormitoryIsAc != null)
+            _Chip(dormitoryAcLabel[room.dormitoryIsAc!] ?? room.dormitoryIsAc!),
+        ] else ...[
+          if (bedLabel != null) _Chip(bedLabel),
+          if (room.maxOccupancy != null) _Chip('Sleeps ${room.maxOccupancy}'),
+        ],
         if (bathroomLabel != null) _Chip(bathroomLabel),
-        if (room.maxOccupancy != null) _Chip('Sleeps ${room.maxOccupancy}'),
       ],
+    );
+  }
+}
+
+// ── Dormitory bed picker ────────────────────────────────────────────────────
+
+/// One bed, or the whole room as a buyout — the desk's own choice for a
+/// dormitory stay, mirroring the web form's bed-vs-buyout picker
+/// (Bookings.jsx). Fetches GET /bookings/available-beds itself through
+/// [BookingViewModel.loadAvailableBeds] once a dormitory room is selected.
+class _BedPicker extends ConsumerWidget {
+  final BookingState state;
+
+  const _BedPicker({required this.state});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final beds = state.availableBeds;
+    if (beds == null) return const SizedBox.shrink();
+
+    return beds.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => NeuNotice(
+        icon: Icons.cloud_off_rounded,
+        message: BookingViewModel.messageFor(e),
+        action: NeuButton(
+          onPressed: () =>
+              ref.read(bookingViewModelProvider.notifier).loadAvailableBeds(),
+          child: const Text('Try again'),
+        ),
+      ),
+      data: (data) {
+        final vm = ref.read(bookingViewModelProvider.notifier);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _RequiredLabel('Bed'),
+            const SizedBox(height: AppTheme.s4),
+            Text(
+              '${formatPrice(data.pricePerNight)}/night, any bed or the whole room.',
+              style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+            ),
+            const SizedBox(height: AppTheme.s8),
+            Wrap(
+              spacing: AppTheme.s8,
+              runSpacing: AppTheme.s8,
+              children: [
+                for (final bed in data.beds)
+                  _BedChoiceChip(
+                    label: bed.bedLabel,
+                    sublabel: bed.isTaken ? 'Taken' : 'Free',
+                    selected: state.bedId == bed.id,
+                    enabled: !bed.isTaken && !state.buyout,
+                    onTap: () => vm.selectBed(bedId: bed.id),
+                  ),
+                _BedChoiceChip(
+                  label: 'Whole dormitory',
+                  sublabel: data.roomAvailableForBuyout ? 'Buyout' : 'Unavailable',
+                  selected: state.buyout,
+                  enabled: data.roomAvailableForBuyout,
+                  onTap: () => vm.selectBed(buyout: true),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _BedChoiceChip extends StatelessWidget {
+  final String label;
+  final String sublabel;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _BedChoiceChip({
+    required this.label,
+    required this.sublabel,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = !enabled
+        ? AppTheme.muted
+        : selected
+        ? AppTheme.accent
+        : AppTheme.text;
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.5,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.bg,
+            border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5),
+              ),
+              Text(
+                sublabel,
+                style: TextStyle(color: color, fontSize: 10.5),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1589,6 +1589,7 @@ class _RoomRow extends StatelessWidget {
                     for (final d in dates)
                       _Tile(
                         stay: room.stayOn(d),
+                        dormitoryOccupancy: room.dormitoryOccupancyOn(d),
                         draft: room.draftOn(d),
                         // A run of nights on the same stay draws as one
                         // unbroken bar — rounded only where the bar itself
@@ -1631,6 +1632,11 @@ class _RoomRow extends StatelessWidget {
 
 class _Tile extends StatelessWidget {
   final TapeChartBooking? stay;
+
+  /// Set only on a dormitory room's night, and only when at least one bed on
+  /// it is held — how full it is, for the partial-occupancy fill and the
+  /// "2/10" fraction below.
+  final DormitoryOccupancy? dormitoryOccupancy;
   final TapeChartDraft? draft;
   final bool isRunStart;
   final bool isRunEnd;
@@ -1647,6 +1653,7 @@ class _Tile extends StatelessWidget {
 
   const _Tile({
     required this.stay,
+    this.dormitoryOccupancy,
     required this.draft,
     required this.isRunStart,
     required this.isRunEnd,
@@ -1692,13 +1699,23 @@ class _Tile extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = stay;
     final d = draft;
+    final occ = dormitoryOccupancy;
+    // A partial dormitory night — some beds held, some still free — is drawn
+    // and tapped like a vacant night with a headcount on it, not like a
+    // single stay's bar: several different bookings can share it, and a tap
+    // opens a new booking against whichever beds are still free rather than
+    // any one of them.
+    final isPartial = occ?.isPartial ?? false;
+
     // A vacant night stands alone — each is its own small rounded box, the
     // way the web tape chart draws an empty grid. A stay's own nights are
     // never rounded or gapped except at the two ends of the run itself, so
     // they read as one continuous bar the whole length of the booking
-    // rather than a row of separately boxed nights.
-    final roundLeft = s == null || isRunStart;
-    final roundRight = s == null || isRunEnd;
+    // rather than a row of separately boxed nights. A partial dormitory
+    // night stands alone the same way a vacant one does — several bookings
+    // can share it, so there is no one run to draw as a continuous bar.
+    final roundLeft = s == null || isRunStart || isPartial;
+    final roundRight = s == null || isRunEnd || isPartial;
     // A vacant night in the past still opens a booking, exactly as the web
     // tape chart's own click does — a stay taken on paper over the weekend
     // has to be enterable against the nights it actually happened on. Past
@@ -1709,7 +1726,9 @@ class _Tile extends StatelessWidget {
     // still sellable, but whoever parked it should be finished or thrown
     // away before the night is sold from under them.
     return GestureDetector(
-      onTap: s != null
+      onTap: isPartial
+          ? onTapVacant
+          : s != null
           ? () => onTapStay(s)
           : d != null
           ? () => onTapDraft(d)
@@ -1725,7 +1744,23 @@ class _Tile extends StatelessWidget {
         ),
         child: Container(
           decoration: BoxDecoration(
-            color: _fill,
+            color: isPartial ? null : _fill,
+            gradient: isPartial
+                ? LinearGradient(
+                    colors: [
+                      AppTheme.reserved,
+                      AppTheme.reserved,
+                      AppTheme.vacant.withValues(alpha: 0.16),
+                      AppTheme.vacant.withValues(alpha: 0.16),
+                    ],
+                    stops: [
+                      0,
+                      occ!.occupied / occ.total,
+                      occ.occupied / occ.total,
+                      1,
+                    ],
+                  )
+                : null,
             borderRadius: BorderRadius.horizontal(
               left: roundLeft ? const Radius.circular(6) : Radius.zero,
               right: roundRight ? const Radius.circular(6) : Radius.zero,
@@ -1744,12 +1779,21 @@ class _Tile extends StatelessWidget {
                     color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
                     width: 1.6,
                   )
-                : (isToday && s == null)
+                : (isToday && s == null && !isPartial)
                 ? Border.all(color: AppTheme.accent, width: 1.4)
                 : null,
           ),
           alignment: Alignment.center,
-          child: s != null && size >= 48
+          child: isPartial && size >= 34
+              ? Text(
+                  '${occ!.occupied}/${occ.total}',
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              : (!isPartial && s != null && size >= 48)
               ? Text(
                   (s.guestName ?? '').isEmpty
                       ? ''

@@ -172,9 +172,14 @@ class BillPdf {
 
           _rule(),
           // ── No. / Date ──────────────────────────────────────────────────
+          // A function bill doesn't print a bill number at all — the desk
+          // asked for it to stay off the sheet, not just moved elsewhere,
+          // same as BillDocument.jsx.
           _strip([
-            _label('No.-'),
-            _filled(inv.invoiceNumber ?? '${inv.id}', width: 60),
+            if (!inv.isEventBill) ...[
+              _label('No.-'),
+              _filled(inv.invoiceNumber ?? '${inv.id}', width: 60),
+            ],
             _label('Date -'),
             _filled(_date(inv.createdAt), width: 90),
           ]),
@@ -194,9 +199,18 @@ class BillPdf {
             _filled(inv.guestPhone ?? '', width: 80),
           ]),
           _rule(),
-          // A food bill has no room or stay behind it, so it names the bill
-          // number and the table/covers instead of leaving two rules blank.
-          if (inv.isFoodBill)
+          // A function bill names the venue and the plate count here instead
+          // of a room; a food bill has no room or stay behind it, so it
+          // names the bill number and the table/covers instead of leaving
+          // two rules blank.
+          if (inv.isEventBill)
+            _strip([
+              _label('Venue'),
+              _filled(inv.venueName ?? '', flex: 2),
+              _label('Plates -'),
+              _filled('${inv.numGuests ?? ''}', width: 40),
+            ])
+          else if (inv.isFoodBill)
             _strip([
               _label('Bill No.'),
               _filled(inv.invoiceNumber ?? '${inv.id}', width: 50),
@@ -219,6 +233,26 @@ class BillPdf {
               _filled('${inv.numGuests ?? ''}', width: 40),
             ]),
           _rule(),
+
+          // A dormitory stay is billed for one bed in a shared room, not the
+          // room outright — said plainly right under the room line, the same
+          // as BillDocument.jsx, or a guest reading "017 (Standard)" has no
+          // way to tell this bill isn't for the whole room. bedLabel is null
+          // on a buyout, which sells the whole dormitory the same as an
+          // ordinary room, so that case prints "Dormitory (whole room)"
+          // instead of naming a bed it has none of.
+          if (!inv.isFoodBill && inv.isDormitory) ...[
+            _strip([
+              _label('Bed'),
+              _filled(
+                inv.bedLabel != null
+                    ? 'Dormitory bed — ${inv.bedLabel}'
+                    : 'Dormitory (whole room)',
+                flex: 3,
+              ),
+            ]),
+            _rule(),
+          ],
 
           // ── The body: the stay to the left, the money column to the right ─
           pw.Table(
@@ -272,8 +306,7 @@ class BillPdf {
             children: [
               if (inv.discountAmount > 0)
                 _moneyRow(
-                  'Less: Discount'
-                  '${inv.discountPercent > 0 ? ' (${inv.discountPercent}%)' : ''}',
+                  'Less: Discount${_discountQualifier(inv)}',
                   -inv.discountAmount,
                 ),
               _moneyRow(
@@ -418,16 +451,62 @@ class BillPdf {
   static pw.Widget _stayBlock(Invoice inv, bool isGst) {
     final from = _splitDateTime(inv.actualCheckInAt ?? inv.checkInDate);
     final to = _splitDateTime(inv.actualCheckOutAt ?? inv.checkOutDate);
+    final eventFrom = _splitDateTime(inv.eventStartAt);
+    final eventTo = _splitDateTime(inv.eventEndAt);
 
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 2),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
+          // A function: what it was, when it ran, the hire and what was sold
+          // with it — the same rules the stay block uses, with the night
+          // count gone, same as BillDocument.jsx's `isEventBill` branch.
+          if (inv.isEventBill) ...[
+            _strip([
+              _label('Function'),
+              _filled(inv.eventTitle ?? '', flex: 3),
+            ]),
+            _strip([
+              _label('From'),
+              _filled(eventFrom.$1, width: 76),
+              _label('at'),
+              _filled(eventFrom.$2, width: 60),
+            ]),
+            _strip([
+              _label('To'),
+              _filled(eventTo.$1, width: 76),
+              _label('at'),
+              _filled(eventTo.$2, width: 60),
+            ]),
+            _strip([
+              _label(_rs),
+              _filled(
+                inv.roomCharges.isEmpty ? '' : _amt(inv.roomCharges.first.amount),
+                width: 66,
+              ),
+              _label('Venue hire'),
+            ]),
+            _extraChargesStrip(inv.extras),
+            if (inv.placeOfSupply != null)
+              _strip([
+                _label('Place of Supply'),
+                _filled(inv.placeOfSupply!, width: 70, fine: true),
+                _label('Reverse Charge'),
+                _filled('No', width: 26, fine: true),
+              ]),
+            if (isGst && inv.roomSubtotal > 0)
+              _strip([
+                _label('SAC'),
+                _filled(_sacVenue, width: 60, fine: true),
+              ]),
+          ],
+
           // A food bill has no stay behind it — a table, a room with nobody
           // checked in, or a takeaway — so none of the days/dates/rate rules
-          // apply, same as BillDocument.jsx's `!isFoodBill` branch.
-          if (!inv.isFoodBill) ...[
+          // apply, same as BillDocument.jsx's `!isFoodBill && !isEventBill`
+          // branch.
+          if (!inv.isFoodBill && !inv.isEventBill) ...[
             _strip([
               _label('For'),
               _filled('${inv.nights}', width: 30),
@@ -454,52 +533,19 @@ class BillPdf {
             // overstay. Named rather than folded into the total, each against
             // what it came to. The rule prints whether or not anything was
             // added: a blank rule is part of the shape.
-            _strip([
-              _label('Extra Charges'),
-              pw.Expanded(
-                child: inv.extras.isEmpty
-                    ? _underline('')
-                    : pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                        children: [
-                          for (final e in inv.extras)
-                            pw.Row(
-                              children: [
-                                pw.Expanded(
-                                  child: pw.Text(
-                                    ascii(e.label),
-                                    style: pw.TextStyle(
-                                      fontSize: 7,
-                                      fontWeight: pw.FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                pw.Text(
-                                  ascii(_amt(e.amount)),
-                                  style: pw.TextStyle(
-                                    fontSize: 7,
-                                    fontWeight: pw.FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-              ),
-            ]),
-            if (isGst) ...[
+            _extraChargesStrip(inv.extras),
+            if (inv.placeOfSupply != null)
               _strip([
                 _label('Place of Supply'),
-                _filled(inv.lodgeCity ?? '', width: 70, fine: true),
+                _filled(inv.placeOfSupply!, width: 70, fine: true),
                 _label('Reverse Charge'),
                 _filled('No', width: 26, fine: true),
               ]),
-              if (inv.roomSubtotal > 0)
-                _strip([
-                  _label('SAC'),
-                  _filled('996311', width: 60, fine: true),
-                ]),
-            ],
+            if (isGst && inv.roomSubtotal > 0)
+              _strip([
+                _label('SAC'),
+                _filled(_sacAccommodation, width: 60, fine: true),
+              ]),
           ],
 
           // Food keeps its items, on a room stay or on its own — a different
@@ -511,7 +557,47 @@ class BillPdf {
     );
   }
 
+  static const _sacAccommodation = '996311';
   static const _sacFood = '996331';
+  static const _sacVenue = '997212';
+
+  /// "Extra Charges" and whatever rides under it — an extra bed, AC, an
+  /// overstay on a stay bill, or an add-on beyond the base hire on a
+  /// function bill. Shared between [_stayBlock]'s two branches: the rule
+  /// prints whether or not anything was added, same as BillDocument.jsx.
+  static pw.Widget _extraChargesStrip(List<BillLine> extras) => _strip([
+    _label('Extra Charges'),
+    pw.Expanded(
+      child: extras.isEmpty
+          ? _underline('')
+          : pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                for (final e in extras)
+                  pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          ascii(e.label),
+                          style: pw.TextStyle(
+                            fontSize: 7,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        ascii(_amt(e.amount)),
+                        style: pw.TextStyle(
+                          fontSize: 7,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+    ),
+  ]);
 
   static pw.Widget _miscChargesBlock(Invoice inv, bool isGst) => pw.Padding(
     padding: const pw.EdgeInsets.only(top: 2),
@@ -766,6 +852,18 @@ class BillPdf {
   static String debugWords(num amount) => _inWords(amount);
 
   static num _round2(num n) => (n * 100).round() / 100;
+
+  // "(Leaving early, 50%)", "(50%)", "(Leaving early)" or nothing — the
+  // reason first because it is what the guest asks about, the percentage
+  // because it is what the desk agreed. Mirrors the web memo's
+  // discountQualifier.
+  static String _discountQualifier(Invoice inv) {
+    final parts = <String>[
+      if ((inv.discountReason ?? '').isNotEmpty) inv.discountReason!,
+      if (inv.discountPercent > 0) '${inv.discountPercent}%',
+    ];
+    return parts.isEmpty ? '' : ' (${parts.join(', ')})';
+  }
 
   static String _amt(num n) => NumberFormat('#,##,##0.00', 'en_IN').format(n);
 

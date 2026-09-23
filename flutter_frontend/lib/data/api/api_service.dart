@@ -130,6 +130,7 @@ class ApiService {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
+    int? bedId,
   }) async {
     final res = await _dio.get(
       '/bookings/price-quote',
@@ -140,9 +141,28 @@ class ApiService {
         if (chargeIds != null && chargeIds.isNotEmpty) 'chargeIds': chargeIds,
         if (basePriceOverride != null) 'basePriceOverride': basePriceOverride,
         if (discountAmount != null) 'discountAmount': discountAmount,
+        if (bedId != null) 'bedId': bedId,
       },
     );
     return Quote.fromJson(_map(res.data));
+  }
+
+  /// The bed picker's own fetch, for a dormitory room and a chosen stay —
+  /// which beds are free, and whether the whole room can still be bought out.
+  Future<AvailableBeds> availableBeds({
+    required int roomId,
+    required String checkInDate,
+    required String checkOutDate,
+  }) async {
+    final res = await _dio.get(
+      '/bookings/available-beds',
+      queryParameters: {
+        'roomId': roomId,
+        'checkInDate': checkInDate,
+        'checkOutDate': checkOutDate,
+      },
+    );
+    return AvailableBeds.fromJson(_map(res.data));
   }
 
   /// The register, over a date range.
@@ -857,6 +877,55 @@ class ApiService {
 
   Future<void> deleteRoomImage(int roomId, int imageId) async {
     await _dio.delete('/rooms/$roomId/images/$imageId');
+  }
+
+  // ===== DORMITORY BEDS =====
+
+  Future<List<DormitoryBed>> listBeds(int roomId) async {
+    final res = await _dio.get('/rooms/$roomId/beds');
+    return (_map(res.data)['beds'] as List? ?? [])
+        .map((e) => DormitoryBed.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<DormitoryBed> createBed(int roomId, String bedLabel) async {
+    final res = await _dio.post(
+      '/rooms/$roomId/beds',
+      data: {'bedLabel': bedLabel},
+    );
+    return DormitoryBed.fromJson(_map(res.data)['bed'] as Map<String, dynamic>);
+  }
+
+  Future<void> updateBed(
+    int roomId,
+    int bedId, {
+    String? bedLabel,
+    bool? isActive,
+  }) async {
+    await _dio.patch(
+      '/rooms/$roomId/beds/$bedId',
+      data: {
+        if (bedLabel != null) 'bedLabel': bedLabel,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+  }
+
+  Future<void> deleteBed(int roomId, int bedId) async {
+    await _dio.delete('/rooms/$roomId/beds/$bedId');
+  }
+
+  /// The desk's own single control for a dormitory's headcount — the server
+  /// reconciles the bed list to [count], auto-labelling "Bed 1".."Bed N" and
+  /// refusing to shrink past a bed that still has a booking on it.
+  Future<List<DormitoryBed>> setBedCount(int roomId, int count) async {
+    final res = await _dio.put(
+      '/rooms/$roomId/beds/count',
+      data: {'count': count},
+    );
+    return (_map(res.data)['beds'] as List? ?? [])
+        .map((e) => DormitoryBed.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   // ===== CATEGORIES (rate plans) =====

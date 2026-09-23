@@ -32,6 +32,7 @@ class BookingUsecase {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
+    int? bedId,
   }) => repository.priceQuote(
     roomId: roomId,
     checkInDate: checkInDate,
@@ -39,6 +40,18 @@ class BookingUsecase {
     chargeIds: chargeIds,
     basePriceOverride: basePriceOverride,
     discountAmount: discountAmount,
+    bedId: bedId,
+  );
+
+  /// The bed picker's own fetch, for a dormitory room and a chosen stay.
+  Future<AvailableBeds> availableBeds({
+    required int roomId,
+    required String checkInDate,
+    required String checkOutDate,
+  }) => repository.availableBeds(
+    roomId: roomId,
+    checkInDate: checkInDate,
+    checkOutDate: checkOutDate,
   );
 
   /// The register, over the nights the desk asked about.

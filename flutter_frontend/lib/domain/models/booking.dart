@@ -9,6 +9,11 @@ class Booking {
   final int id;
   final int? roomId;
   final String? roomNumber;
+
+  /// Which bed this stay holds, on a dormitory room — null means either an
+  /// ordinary room, or a buyout of the whole dormitory.
+  final int? bedId;
+  final String? bedLabel;
   final String? categoryName;
   final String? guestName;
   final String? guestPhone;
@@ -99,6 +104,8 @@ class Booking {
     required this.id,
     this.roomId,
     this.roomNumber,
+    this.bedId,
+    this.bedLabel,
     this.categoryName,
     this.guestName,
     this.guestPhone,
@@ -145,6 +152,8 @@ class Booking {
     id: asInt(json['id']),
     roomId: asIntOrNull(json['roomId']),
     roomNumber: asStringOrNull(json['roomNumber']),
+    bedId: asIntOrNull(json['bedId']),
+    bedLabel: asStringOrNull(json['bedLabel']),
     categoryName: asStringOrNull(json['categoryName']),
     guestName: asStringOrNull(json['guestName']),
     guestPhone: asStringOrNull(json['guestPhone']),

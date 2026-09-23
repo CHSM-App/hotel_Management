@@ -53,6 +53,14 @@ class _FakeBookingRepository implements BookingRepository {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
+    int? bedId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AvailableBeds> availableBeds({
+    required int roomId,
+    required String checkInDate,
+    required String checkOutDate,
   }) => throw UnimplementedError();
 
   @override

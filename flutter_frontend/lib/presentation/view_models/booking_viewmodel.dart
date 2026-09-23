@@ -60,6 +60,14 @@ class BookingState {
   final AsyncValue<List<Room>>? rooms;
   final Room? room;
 
+  /// Which bed of a dormitory [room] this stay holds — null with [buyout]
+  /// false means nothing chosen yet (the dormitory bed-vs-buyout picker asks
+  /// before this stay can be saved); null with [buyout] true means the whole
+  /// room. Always null on an ordinary room.
+  final int? bedId;
+  final bool buyout;
+  final AsyncValue<AvailableBeds>? availableBeds;
+
   /// chargeId → what the desk has set for it. Absent means the extra is off.
   final Map<int, ExtraDraft> extras;
 
@@ -104,6 +112,9 @@ class BookingState {
     this.checkOut,
     this.rooms,
     this.room,
+    this.bedId,
+    this.buyout = false,
+    this.availableBeds,
     this.extras = const {},
     this.roomTotal = '',
     this.discount = '',
@@ -141,6 +152,11 @@ class BookingState {
     AsyncValue<List<Room>>? rooms,
     Room? room,
     bool clearRoom = false,
+    int? bedId,
+    bool clearBedId = false,
+    bool? buyout,
+    AsyncValue<AvailableBeds>? availableBeds,
+    bool clearAvailableBeds = false,
     Map<int, ExtraDraft>? extras,
     String? roomTotal,
     String? discount,
@@ -167,6 +183,11 @@ class BookingState {
     checkOut: checkOut ?? this.checkOut,
     rooms: rooms ?? this.rooms,
     room: clearRoom ? null : (room ?? this.room),
+    bedId: (clearRoom || clearBedId) ? null : (bedId ?? this.bedId),
+    buyout: clearRoom ? false : (buyout ?? this.buyout),
+    availableBeds: (clearRoom || clearAvailableBeds)
+        ? null
+        : (availableBeds ?? this.availableBeds),
     extras: extras ?? this.extras,
     roomTotal: roomTotal ?? this.roomTotal,
     discount: discount ?? this.discount,
@@ -227,6 +248,16 @@ class BookingState {
   /// touch [chartFrom, chartTo) — the server sends every active room already;
   /// this only sorts stays onto them and bands them by category, the same
   /// grouping the web tape chart draws.
+  ///
+  /// A dormitory room's pricing category (Standard, Deluxe, ...) still prices
+  /// it, but grouping it there would scatter dormitories across whichever
+  /// categories they happen to share with private rooms — the desk wants
+  /// every dormitory in one place regardless of its category, the same way
+  /// "sold bed by bed" is a different kind of room to book, not a different
+  /// grade of room. So every dormitory room lands in its own "Dormitory"
+  /// section instead, kept last — the same split the web tape chart draws
+  /// (Bookings.jsx's own categorySections) — so the ordinary categories the
+  /// desk sells most still lead.
   List<ChartSection> get chartSections {
     final data = chart.valueOrNull;
     if (data == null) return const [];
@@ -243,20 +274,28 @@ class BookingState {
     }
 
     final byCategory = <String, List<ChartRoom>>{};
+    final dormitoryRooms = <ChartRoom>[];
     for (final room in data.rooms) {
-      (byCategory[room.categoryName] ??= []).add(
-        ChartRoom(
-          room: room,
-          stays: byRoom[room.id] ?? const [],
-          drafts: draftsByRoom[room.id] ?? const [],
-        ),
+      final chartRoom = ChartRoom(
+        room: room,
+        stays: byRoom[room.id] ?? const [],
+        drafts: draftsByRoom[room.id] ?? const [],
       );
+      if (room.isDormitory) {
+        dormitoryRooms.add(chartRoom);
+      } else {
+        (byCategory[room.categoryName] ??= []).add(chartRoom);
+      }
     }
 
-    return byCategory.entries
+    final sections = byCategory.entries
         .map((e) => ChartSection(categoryName: e.key, rooms: e.value))
         .toList()
       ..sort((a, b) => a.categoryName.compareTo(b.categoryName));
+    if (dormitoryRooms.isNotEmpty) {
+      sections.add(ChartSection(categoryName: 'Dormitory', rooms: dormitoryRooms));
+    }
+    return sections;
   }
 
   /// Every stay the chart's search box currently answers to, across every
@@ -346,6 +385,42 @@ class ChartRoom {
     return found;
   }
 
+  /// Every stay holding a bed on [day] — unlike [stayOn] (which picks one
+  /// "winner" the way an ordinary room's single occupant does), a dormitory
+  /// night can have several bookings at once, one per bed, and the tile
+  /// needs all of them to fan out how full the room actually is.
+  List<TapeChartBooking> bedStaysOn(DateTime day) {
+    final today = _today();
+    final result = <TapeChartBooking>[];
+    for (final b in stays) {
+      final inDate = DateTime.tryParse(b.checkInDate ?? '');
+      var outDate = DateTime.tryParse(b.checkOutDate ?? '');
+      if (inDate == null || outDate == null) continue;
+      if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) outDate = today;
+      if (!day.isBefore(inDate) && day.isBefore(outDate)) result.add(b);
+    }
+    return result;
+  }
+
+  /// How full a dormitory room is on [day] — null on an ordinary room, and
+  /// null on a dormitory night nobody holds a bed on (that reads as plain
+  /// vacant, same as [stayOn] returning null).
+  DormitoryOccupancy? dormitoryOccupancyOn(DateTime day) {
+    if (!room.isDormitory) return null;
+    final bs = bedStaysOn(day);
+    if (bs.isEmpty) return null;
+    // A buyout (bedId null on a dormitory booking) holds every bed at once,
+    // whatever the bed count says — the same as the server's own
+    // "roomAvailableForBuyout" check treats it.
+    final buyout = bs.any((b) => b.bedId == null);
+    return DormitoryOccupancy(
+      occupied: buyout ? room.dormitoryBedCount : bs.length,
+      total: room.dormitoryBedCount,
+      buyout: buyout,
+      stays: bs,
+    );
+  }
+
   /// The draft parked on this night, if any and if no real booking already
   /// holds it — a draft reserves nothing, so a night a booking covers always
   /// reads as that booking, never as the draft underneath it.
@@ -364,6 +439,26 @@ class ChartRoom {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
   }
+}
+
+/// How full a dormitory room is on one night — [occupied] beds out of
+/// [total], whether that is a whole-room [buyout], and which bookings make
+/// it up (for the tile's own hover/search behaviour).
+class DormitoryOccupancy {
+  final int occupied;
+  final int total;
+  final bool buyout;
+  final List<TapeChartBooking> stays;
+
+  const DormitoryOccupancy({
+    required this.occupied,
+    required this.total,
+    required this.buyout,
+    required this.stays,
+  });
+
+  bool get isFull => total > 0 && occupied >= total;
+  bool get isPartial => occupied > 0 && !isFull;
 }
 
 /// One category's band on the chart — the web groups the same way, so a room
@@ -753,7 +848,18 @@ class BookingViewModel extends StateNotifier<BookingState> {
     if (!state.isLoading) {
       final rooms = state.rooms?.valueOrNull;
       final match = rooms?.where((r) => r.id == booking.roomId).firstOrNull;
-      if (match != null) await selectRoom(match);
+      if (match != null) {
+        await selectRoom(match);
+        // Preselect the bed (or buyout) this stay already holds — selectRoom
+        // clears both, since a freshly picked room starts with neither.
+        if (match.isDormitory) {
+          state = state.copyWith(
+            bedId: booking.bedId,
+            clearBedId: booking.bedId == null,
+            buyout: booking.bedId == null,
+          );
+        }
+      }
     }
   }
 
@@ -868,10 +974,42 @@ class BookingViewModel extends StateNotifier<BookingState> {
   Future<void> selectRoom(Room room) async {
     state = state.copyWith(
       room: room,
+      clearBedId: true,
+      clearAvailableBeds: true,
       extras: const {},
       roomTotal: '',
       clearQuote: true,
     );
+    if (room.isDormitory) await loadAvailableBeds();
+    await refreshQuote();
+  }
+
+  /// The bed picker's own fetch, for the currently selected dormitory room
+  /// and the chosen nights — who's free, and whether the whole room can
+  /// still be bought out.
+  Future<void> loadAvailableBeds() async {
+    final room = state.room;
+    if (room == null || !room.isDormitory || !state.datesChosen) return;
+    state = state.copyWith(availableBeds: const AsyncValue.loading());
+    try {
+      final beds = await usecase.availableBeds(
+        roomId: room.id,
+        checkInDate: iso(state.checkIn!),
+        checkOutDate: iso(state.checkOut!),
+      );
+      state = state.copyWith(availableBeds: AsyncValue.data(beds));
+    } catch (e, st) {
+      state = state.copyWith(availableBeds: AsyncValue.error(e, st));
+    }
+  }
+
+  /// The desk's pick from the bed picker — one bed, or the whole dormitory
+  /// as a buyout. Re-quotes against it: a bed's price is the dormitory's own
+  /// rate, a buyout is nights × beds, and only the server works either out.
+  Future<void> selectBed({int? bedId, bool buyout = false}) async {
+    state = bedId != null
+        ? state.copyWith(bedId: bedId, buyout: false)
+        : state.copyWith(clearBedId: true, buyout: buyout);
     await refreshQuote();
   }
 
@@ -956,6 +1094,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         chargeIds: chargeIdsParam(),
         basePriceOverride: perNight(state.roomTotal, state.nights),
         discountAmount: wholeAmount(state.discount),
+        bedId: state.bedId,
       );
       state = state.copyWith(quoting: false, quote: quote);
     } catch (e) {
@@ -1014,6 +1153,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // Not a fixed value: a stay starting today is a walk-in and is checked
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,
+        // A dormitory always sends this — blank means buyout — the same as
+        // the web form; meaningless (and simply omitted) on an ordinary room.
+        if (room.isDormitory) 'bedId': state.bedId == null ? '' : '${state.bedId}',
         if (rate != null) 'basePriceOverride': '$rate',
         // Sent whole. The quote the desk agreed to was priced with this off
         // it, so leaving it out here would book the stay at a total nobody
@@ -1133,6 +1275,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // explicit 0 rather than being read as "leave it alone".
         'discountAmount': '${discount ?? 0}',
         if (rate != null) 'basePriceOverride': '$rate',
+        // Only sent when the dormitory bed-vs-buyout picker was actually
+        // touched — omitted otherwise, the server's cue to leave the bed
+        // this stay already holds alone.
+        if (room.isDormitory && state.bedId != null) 'bedId': '${state.bedId}',
         if (idProofType != null) 'idProofType': idProofType,
         if (idProofNumber != null && idProofNumber.trim().isNotEmpty)
           'idProofNumber': idProofNumber.trim(),

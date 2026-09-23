@@ -47,12 +47,19 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     text: widget.room.maxOccupancy?.toString() ?? '',
   );
   late final _description = TextEditingController(text: widget.room.description ?? '');
+  late final _dormitoryPrice = TextEditingController(
+    text: widget.room.dormitoryPrice != null ? '${widget.room.dormitoryPrice}' : '',
+  );
 
   int? _categoryId;
   String? _bathroomType;
   late List<BedDraft> _beds;
   final List<XFile> _newPhotos = [];
   late List<RoomImage> _existingPhotos;
+
+  late bool _isDormitory;
+  String? _dormitoryGender;
+  String? _dormitoryIsAc;
 
   String? _error;
 
@@ -66,6 +73,9 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
         ? room.beds.map((b) => BedDraft(size: b.size, count: b.count)).toList()
         : [BedDraft()];
     _existingPhotos = List.of(room.images);
+    _isDormitory = room.isDormitory;
+    _dormitoryGender = room.dormitoryGender;
+    _dormitoryIsAc = room.dormitoryIsAc;
   }
 
   @override
@@ -74,6 +84,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     _floor.dispose();
     _maxOccupancy.dispose();
     _description.dispose();
+    _dormitoryPrice.dispose();
     for (final bed in _beds) {
       bed.countController.dispose();
     }
@@ -159,9 +170,56 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                   ),
 
                   const SectionDivider(),
+                  const SectionLabel('Dormitory', number: 4),
+                  const SizedBox(height: AppTheme.s12),
+                  Row(
+                    children: [
+                      Switch(
+                        value: _isDormitory,
+                        onChanged: (v) => setState(() => _isDormitory = v),
+                        activeThumbColor: AppTheme.accent,
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'This is a dormitory (sold bed-by-bed)',
+                          style: TextStyle(color: AppTheme.text, fontSize: 13.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_isDormitory) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    const RequiredLabel('Who is this dormitory for'),
+                    const SizedBox(height: AppTheme.s8),
+                    OptionDropdown(
+                      values: dormitoryGenders,
+                      labels: dormitoryGenderLabel,
+                      selected: _dormitoryGender,
+                      onSelect: (v) => setState(() => _dormitoryGender = v),
+                    ),
+                    const SizedBox(height: AppTheme.s12),
+                    NeuField(
+                      controller: _dormitoryPrice,
+                      label: 'Price per bed, per night',
+                      hint: '500',
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: AppTheme.s12),
+                    const RequiredLabel('AC'),
+                    const SizedBox(height: AppTheme.s8),
+                    OptionDropdown(
+                      values: dormitoryAcOptions,
+                      labels: dormitoryAcLabel,
+                      selected: _dormitoryIsAc,
+                      onSelect: (v) => setState(() => _dormitoryIsAc = v),
+                    ),
+                    const SizedBox(height: AppTheme.s16),
+                    DormitoryBedCountField(roomId: widget.room.id, beds: widget.room.dormitoryBeds),
+                  ] else ...[
+                  const SectionDivider(),
                   SectionLabel(
                     'Beds',
-                    number: 4,
+                    number: 5,
                     trailing: _beds.length == 1 ? null : '${_beds.length}',
                   ),
                   const SizedBox(height: AppTheme.s12),
@@ -238,9 +296,10 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                     hint: '2',
                     keyboardType: TextInputType.number,
                   ),
+                  ],
 
                   const SectionDivider(),
-                  const SectionLabel('Details', number: 5),
+                  const SectionLabel('Details', number: 6),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(
                     controller: _description,
@@ -252,7 +311,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                   const SectionDivider(),
                   SectionLabel(
                     'Photos',
-                    number: 6,
+                    number: 7,
                     trailing: 'up to $maxRoomImages',
                   ),
                   const SizedBox(height: AppTheme.s12),
@@ -358,35 +417,59 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
       setState(() => _error = 'Enter the floor.');
       return;
     }
-    if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
-      setState(() => _error = 'Choose a size for every bed.');
-      return;
-    }
-    if (_beds.any((b) => b.count < 1)) {
-      setState(() => _error = 'Each bed needs a count of 1 or more.');
-      return;
-    }
     if (_bathroomType == null) {
       setState(() => _error = 'Choose a bathroom type.');
       return;
     }
-    final occupancy = int.tryParse(_maxOccupancy.text.trim());
-    if (occupancy == null || occupancy <= 0) {
-      setState(() => _error = 'Enter a max occupancy greater than 0.');
-      return;
+    if (!_isDormitory) {
+      if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
+        setState(() => _error = 'Choose a size for every bed.');
+        return;
+      }
+      if (_beds.any((b) => b.count < 1)) {
+        setState(() => _error = 'Each bed needs a count of 1 or more.');
+        return;
+      }
+      final occupancy = int.tryParse(_maxOccupancy.text.trim());
+      if (occupancy == null || occupancy <= 0) {
+        setState(() => _error = 'Enter a max occupancy greater than 0.');
+        return;
+      }
+    } else {
+      if (_dormitoryGender == null) {
+        setState(() => _error = 'Choose who this dormitory is for.');
+        return;
+      }
+      final price = num.tryParse(_dormitoryPrice.text.trim());
+      if (price == null || price <= 0) {
+        setState(() => _error = 'Enter a price per night for this dormitory.');
+        return;
+      }
+      if (_dormitoryIsAc == null) {
+        setState(() => _error = 'Choose AC or Non-AC.');
+        return;
+      }
     }
-
-    final bedsJson = _beds.map((b) => {'size': b.size, 'count': b.count}).toList();
 
     final formMap = <String, dynamic>{
       'categoryId': '$_categoryId',
       'roomNumber': _roomNumber.text.trim(),
       'floor': _floor.text.trim(),
-      'beds': jsonEncodeBeds(bedsJson),
       'bathroomType': _bathroomType,
-      'maxOccupancy': '$occupancy',
       'description': _description.text.trim(),
+      'isDormitory': '$_isDormitory',
     };
+
+    if (_isDormitory) {
+      formMap['dormitoryGender'] = _dormitoryGender;
+      formMap['dormitoryPrice'] = num.parse(_dormitoryPrice.text.trim()).toString();
+      formMap['dormitoryIsAc'] = _dormitoryIsAc;
+    } else {
+      final occupancy = int.parse(_maxOccupancy.text.trim());
+      final bedsJson = _beds.map((b) => {'size': b.size, 'count': b.count}).toList();
+      formMap['beds'] = jsonEncodeBeds(bedsJson);
+      formMap['maxOccupancy'] = '$occupancy';
+    }
     for (final file in _newPhotos) {
       formMap.update(
         'images',

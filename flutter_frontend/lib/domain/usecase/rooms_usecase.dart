@@ -19,6 +19,15 @@ class RoomsUsecase {
   Future<void> deleteRoomImage(int roomId, int imageId) =>
       repository.deleteRoomImage(roomId, imageId);
 
+  Future<List<DormitoryBed>> listBeds(int roomId) => repository.listBeds(roomId);
+  Future<DormitoryBed> createBed(int roomId, String bedLabel) =>
+      repository.createBed(roomId, bedLabel);
+  Future<void> updateBed(int roomId, int bedId, {String? bedLabel, bool? isActive}) =>
+      repository.updateBed(roomId, bedId, bedLabel: bedLabel, isActive: isActive);
+  Future<void> deleteBed(int roomId, int bedId) => repository.deleteBed(roomId, bedId);
+  Future<List<DormitoryBed>> setBedCount(int roomId, int count) =>
+      repository.setBedCount(roomId, count);
+
   Future<List<RoomCategory>> categories() => repository.categories();
   Future<void> createCategory({required String name, required num basePrice}) =>
       repository.createCategory(name: name, basePrice: basePrice);

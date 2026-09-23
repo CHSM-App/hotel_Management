@@ -16,6 +16,13 @@ abstract class RoomsRepository {
   Future<void> deleteRoom(int id);
   Future<void> deleteRoomImage(int roomId, int imageId);
 
+  // Dormitory beds
+  Future<List<DormitoryBed>> listBeds(int roomId);
+  Future<DormitoryBed> createBed(int roomId, String bedLabel);
+  Future<void> updateBed(int roomId, int bedId, {String? bedLabel, bool? isActive});
+  Future<void> deleteBed(int roomId, int bedId);
+  Future<List<DormitoryBed>> setBedCount(int roomId, int count);
+
   // Categories
   Future<List<RoomCategory>> categories();
   Future<void> createCategory({required String name, required num basePrice});

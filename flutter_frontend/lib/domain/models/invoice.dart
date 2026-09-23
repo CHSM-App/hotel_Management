@@ -155,6 +155,14 @@ class BillPreview {
   final int? bookingId;
   final String? guestName;
   final String? roomNumber;
+
+  /// Whether [roomNumber] is a dormitory.
+  final bool isDormitory;
+
+  /// Which bed of a dormitory room this stay is billing — null on an
+  /// ordinary room, and null on a dormitory stay that bought out the whole
+  /// room.
+  final String? bedLabel;
   final String? categoryName;
   final int nights;
   final List<BillLine> roomCharges;
@@ -185,6 +193,8 @@ class BillPreview {
     this.bookingId,
     this.guestName,
     this.roomNumber,
+    this.isDormitory = false,
+    this.bedLabel,
     this.categoryName,
     this.nights = 0,
     this.roomCharges = const [],
@@ -206,6 +216,8 @@ class BillPreview {
     bookingId: asIntOrNull(json['bookingId']),
     guestName: asStringOrNull(json['guestName']),
     roomNumber: asStringOrNull(json['roomNumber']),
+    isDormitory: asBool(json['isDormitory']),
+    bedLabel: asStringOrNull(json['bedLabel']),
     categoryName: asStringOrNull(json['categoryName']),
     nights: asInt(json['nights']),
     roomCharges:
@@ -394,8 +406,30 @@ class Invoice {
   final String? invoiceNumber;
   final String? documentType;
   final String? billingSide;
+
+  /// 'STAY', 'EVENT' or 'FOOD' — the server's own tag for which of the three
+  /// this bill is, rather than the screen sniffing at which fields are null.
+  final String? kind;
+
   final String? guestName;
   final String? roomNumber;
+
+  /// Whether [roomNumber] is a dormitory — printed alongside the room
+  /// number so the bill reads as "your bed in a shared room" rather than
+  /// exclusive use of it.
+  final bool isDormitory;
+
+  // ── What a function bill (kind == 'EVENT') states beyond the above ───────
+  final int? eventBookingId;
+  final String? eventTitle;
+  final String? eventType;
+  final String? venueName;
+  final String? eventStartAt;
+  final String? eventEndAt;
+
+  /// Which bed of a dormitory room this stay billed — null on an ordinary
+  /// room, and null on a dormitory stay that bought out the whole room.
+  final String? bedLabel;
   final String? tableLabel;
   final String? checkInDate;
   final String? checkOutDate;
@@ -448,6 +482,7 @@ class Invoice {
   final num foodSgstRatePercent;
   final num discountAmount;
   final num discountPercent;
+  final String? discountReason;
   final num roundOff;
   final String? advanceReceiptNumbers;
 
@@ -456,6 +491,7 @@ class Invoice {
   final String? lodgeAddress;
   final String? lodgePhone;
   final String? lodgeCity;
+  final String? lodgeState;
   final String? gstin;
   final bool isGstRegistered;
 
@@ -465,8 +501,17 @@ class Invoice {
     this.invoiceNumber,
     this.documentType,
     this.billingSide,
+    this.kind,
     this.guestName,
     this.roomNumber,
+    this.isDormitory = false,
+    this.eventBookingId,
+    this.eventTitle,
+    this.eventType,
+    this.venueName,
+    this.eventStartAt,
+    this.eventEndAt,
+    this.bedLabel,
     this.tableLabel,
     this.checkInDate,
     this.checkOutDate,
@@ -504,12 +549,14 @@ class Invoice {
     this.foodSgstRatePercent = 0,
     this.discountAmount = 0,
     this.discountPercent = 0,
+    this.discountReason,
     this.roundOff = 0,
     this.advanceReceiptNumbers,
     this.lodgeName,
     this.lodgeAddress,
     this.lodgePhone,
     this.lodgeCity,
+    this.lodgeState,
     this.gstin,
     this.isGstRegistered = false,
   });
@@ -520,8 +567,17 @@ class Invoice {
     invoiceNumber: asStringOrNull(json['invoiceNumber']),
     documentType: asStringOrNull(json['documentType']),
     billingSide: asStringOrNull(json['billingSide']),
+    kind: asStringOrNull(json['kind']),
     guestName: asStringOrNull(json['guestName']),
     roomNumber: asStringOrNull(json['roomNumber']),
+    isDormitory: asBool(json['isDormitory']),
+    eventBookingId: asIntOrNull(json['eventBookingId']),
+    eventTitle: asStringOrNull(json['eventTitle']),
+    eventType: asStringOrNull(json['eventType']),
+    venueName: asStringOrNull(json['venueName']),
+    eventStartAt: asStringOrNull(json['eventStartAt']),
+    eventEndAt: asStringOrNull(json['eventEndAt']),
+    bedLabel: asStringOrNull(json['bedLabel']),
     tableLabel: asStringOrNull(json['tableLabel']),
     checkInDate: asStringOrNull(json['checkInDate']),
     checkOutDate: asStringOrNull(json['checkOutDate']),
@@ -571,12 +627,14 @@ class Invoice {
     foodSgstRatePercent: asNum(json['foodSgstRatePercent']),
     discountAmount: asNum(json['discountAmount']),
     discountPercent: asNum(json['discountPercent']),
+    discountReason: asStringOrNull(json['discountReason']),
     roundOff: asNum(json['roundOff']),
     advanceReceiptNumbers: asStringOrNull(json['advanceReceiptNumbers']),
     lodgeName: asStringOrNull(json['lodgeName']),
     lodgeAddress: asStringOrNull(json['lodgeAddress']),
     lodgePhone: asStringOrNull(json['lodgePhone']),
     lodgeCity: asStringOrNull(json['lodgeCity']),
+    lodgeState: asStringOrNull(json['lodgeState']),
     gstin: asStringOrNull(json['gstin']),
     isGstRegistered: asBool(json['isGstRegistered']),
   );
@@ -613,13 +671,37 @@ class Invoice {
 
   bool get isVoid => status == 'VOID';
 
-  /// A bill is a food bill when no stay backs it — a table, a room with
-  /// nobody checked in, or a takeaway. `roomNumber` only ever comes from a
-  /// booking's own room (see getInvoice's join on `b.room_id`), so it is
-  /// null on every food bill including a room-service tab — checked
+  /// A function's bill — a venue hired for an event, not a room or a table.
+  /// Checked off [kind] where the server sent one; [eventBookingId] is the
+  /// fallback for a cached object from before [kind] existed.
+  bool get isEventBill => kind == 'EVENT' || (kind == null && eventBookingId != null);
+
+  /// A bill is a food bill when no stay and no function backs it — a table, a
+  /// room with nobody checked in, or a takeaway. `roomNumber` only ever comes
+  /// from a booking's own room (see getInvoice's join on `b.room_id`), so it
+  /// is null on every food bill including a room-service tab — checked
   /// alongside `bookingId` rather than alone, since a payload that omits an
   /// absent `bookingId` key must not be mistaken for one that sent it null.
-  bool get isFoodBill => bookingId == null && roomNumber == null;
+  /// Excludes an event bill, which also carries no `roomNumber`/`bookingId`
+  /// of its own but is a different kind of bill entirely.
+  bool get isFoodBill =>
+      !isEventBill && bookingId == null && roomNumber == null;
+
+  /// Rule 46(n) wants the place of supply named. For accommodation (and a
+  /// venue hire) it is fixed at the location of the property (IGST Act
+  /// §12(3)(b)) — a guest from anywhere is an intra-state supply here — so it
+  /// is the lodge's own state, always. Null when the property never recorded
+  /// one, same as the website's own `placeOfSupply`.
+  ///
+  /// The state code is the first two digits of the GSTIN rather than a
+  /// lookup table: it is the same number by definition, and a table would be
+  /// one more thing to get out of step with the registration.
+  String? get placeOfSupply {
+    final state = lodgeState;
+    if (state == null || state.isEmpty) return null;
+    final match = RegExp(r'^\d{2}').firstMatch(gstin ?? '');
+    return match != null ? '$state (${match.group(0)})' : state;
+  }
 
   /// How the balance was tendered, as one line or several.
   ///

@@ -8,6 +8,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'add_room_page.dart';
+import 'room_form_pieces.dart';
 import 'room_form_sheet.dart';
 
 /// The room grid — same cards the web "Rooms" tab shows, minus the photo
@@ -264,10 +265,23 @@ class _RoomCard extends ConsumerWidget {
                       children: [
                         if (room.floor != null && room.floor!.isNotEmpty)
                           _Chip(Icons.layers_outlined, formatFloor(room.floor)),
-                        if (_bedSummary != null) _Chip(Icons.bed_outlined, _bedSummary!),
+                        if (room.isDormitory) ...[
+                          _Chip(
+                            Icons.groups_outlined,
+                            room.dormitoryBeds.isEmpty
+                                ? 'Dormitory'
+                                : 'Dormitory · ${room.dormitoryBeds.length} bed${room.dormitoryBeds.length == 1 ? '' : 's'}',
+                          ),
+                          if (room.dormitoryGender != null)
+                            _Chip(Icons.wc_outlined, dormitoryGenderLabel[room.dormitoryGender!] ?? room.dormitoryGender!),
+                          if (room.dormitoryIsAc != null)
+                            _Chip(Icons.ac_unit_outlined, dormitoryAcLabel[room.dormitoryIsAc!] ?? room.dormitoryIsAc!),
+                        ] else ...[
+                          if (_bedSummary != null) _Chip(Icons.bed_outlined, _bedSummary!),
+                          if (room.maxOccupancy != null)
+                            _Chip(Icons.people_alt_outlined, 'Max ${room.maxOccupancy}'),
+                        ],
                         if (_bathroomLabel != null) _Chip(Icons.bathtub_outlined, _bathroomLabel!),
-                        if (room.maxOccupancy != null)
-                          _Chip(Icons.people_alt_outlined, 'Max ${room.maxOccupancy}'),
                       ],
                     ),
                     const SizedBox(height: 4),

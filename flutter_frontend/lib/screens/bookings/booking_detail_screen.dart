@@ -431,7 +431,8 @@ class _StayRoomSection extends StatelessWidget {
           _Fact(
             label: 'Room',
             value: 'Room ${booking.roomNumber ?? '—'}'
-                '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}',
+                '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}'
+                '${booking.bedLabel != null ? ' · ${booking.bedLabel}' : ''}',
           ),
           _Fact(
             label: 'Dates',
@@ -523,7 +524,10 @@ class _FoodPinBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppTheme.s8,
+            runSpacing: 4,
             children: [
               const Text(
                 'FOOD PIN',
@@ -534,7 +538,6 @@ class _FoodPinBox extends StatelessWidget {
                   letterSpacing: 0.3,
                 ),
               ),
-              const SizedBox(width: AppTheme.s8),
               Text(
                 booking.foodPin!,
                 style: const TextStyle(
@@ -544,8 +547,7 @@ class _FoodPinBox extends StatelessWidget {
                   letterSpacing: 2,
                 ),
               ),
-              if (locked) ...[
-                const SizedBox(width: AppTheme.s8),
+              if (locked)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -564,7 +566,6 @@ class _FoodPinBox extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
             ],
           ),
           const SizedBox(height: 4),
@@ -646,9 +647,15 @@ class _GuestSection extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppTheme.s8),
-                Text(
-                  split,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                Expanded(
+                  child: Text(
+                    split,
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),

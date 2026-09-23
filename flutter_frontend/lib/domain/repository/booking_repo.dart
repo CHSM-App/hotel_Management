@@ -25,6 +25,14 @@ abstract class BookingRepository {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
+    int? bedId,
+  });
+
+  /// The bed picker's own fetch for a dormitory room and a chosen stay.
+  Future<AvailableBeds> availableBeds({
+    required int roomId,
+    required String checkInDate,
+    required String checkOutDate,
   });
 
   /// The register over a date range. Both ends optional; omitting them asks

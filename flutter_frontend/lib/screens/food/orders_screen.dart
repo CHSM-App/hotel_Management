@@ -120,7 +120,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         return [
           for (final order in orders)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: _OrderCard(order: order, now: state.now, live: true),
             ),
         ];
@@ -254,7 +254,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         return [
           for (final order in orders)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: _OrderCard(order: order, now: state.now, live: false),
             ),
         ];
@@ -541,6 +541,10 @@ class _OrderCard extends ConsumerWidget {
     final waited = order.waitingFor(now);
 
     return NeuCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: AppTheme.s8,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -550,14 +554,18 @@ class _OrderCard extends ConsumerWidget {
                 child: Text(
                   // The number the kitchen calls out, then who it is for.
                   '#${order.orderNumber} · ${order.target}',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
+                  horizontal: 8,
+                  vertical: 2,
                 ),
                 decoration: BoxDecoration(
                   color: colour.withValues(alpha: 0.12),
@@ -567,59 +575,68 @@ class _OrderCard extends ConsumerWidget {
                   order.statusLabel,
                   style: TextStyle(
                     color: colour,
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ],
           ),
-          if (live && waited != null) ...[
+          if ((live && waited != null) || (order.guestName ?? '').isNotEmpty) ...[
             const SizedBox(height: AppTheme.s4),
-            Text(
-              'Waiting ${_elapsed(waited)}',
-              style: TextStyle(
-                // A ticket that has sat for twenty minutes should read as a
-                // problem without anybody having to do the subtraction.
-                color: waited.inMinutes >= 20 ? AppTheme.danger : AppTheme.muted,
-                fontSize: 12,
-              ),
-            ),
-          ],
-          if ((order.guestName ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s4),
-            Text(
-              order.guestName!,
-              style: Theme.of(context).textTheme.bodySmall,
+            Row(
+              children: [
+                if ((order.guestName ?? '').isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      order.guestName!,
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (live && waited != null)
+                  Text(
+                    'Waiting ${_elapsed(waited)}',
+                    style: TextStyle(
+                      // A ticket that has sat for twenty minutes should read
+                      // as a problem without anybody having to do the
+                      // subtraction.
+                      color: waited.inMinutes >= 20
+                          ? AppTheme.danger
+                          : AppTheme.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
             ),
           ],
 
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           for (final item in order.items)
             _ItemLine(order: order, item: item, live: live),
 
           if ((order.note ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             Text(
               'Note: ${order.note}',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
             ),
           ],
 
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s4),
           Row(
             children: [
               const Expanded(
                 child: Text(
                   'Total',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
                 ),
               ),
               Text(
                 formatPrice(order.subtotal),
                 style: const TextStyle(
                   color: AppTheme.heading,
-                  fontSize: 15,
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -628,10 +645,10 @@ class _OrderCard extends ConsumerWidget {
 
           if (order.status == 'CANCELLED' &&
               (order.cancelReason ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             Text(
               'Cancelled: ${order.cancelReason}',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
             ),
           ],
 
@@ -639,7 +656,7 @@ class _OrderCard extends ConsumerWidget {
           // decides which transitions are legal — it names the ones it was
           // handed, so a rule change on the server needs no release here.
           if (live && order.nextStatuses.isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s12),
+            const SizedBox(height: AppTheme.s8),
             Wrap(
               spacing: AppTheme.s8,
               runSpacing: AppTheme.s8,
@@ -648,11 +665,14 @@ class _OrderCard extends ConsumerWidget {
                   NeuButton(
                     primary: next != 'CANCELLED',
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s16,
-                      vertical: AppTheme.s12,
+                      horizontal: AppTheme.s12,
+                      vertical: AppTheme.s8,
                     ),
                     onPressed: () => _advance(context, ref, next),
-                    child: Text(kOrderActionLabels[next] ?? next),
+                    child: Text(
+                      kOrderActionLabels[next] ?? next,
+                      style: const TextStyle(fontSize: 13),
+                    ),
                   ),
               ],
             ),
@@ -758,38 +778,38 @@ class _ItemLine extends ConsumerWidget {
     final done = item.isReady;
 
     final row = Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.only(bottom: AppTheme.s4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (live)
             Padding(
-              padding: const EdgeInsets.only(right: AppTheme.s8),
+              padding: const EdgeInsets.only(right: AppTheme.s4),
               child: Icon(
                 done
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked_rounded,
-                size: 18,
+                size: 15,
                 color: done ? AppTheme.accent : AppTheme.muted,
               ),
             ),
           Text(
             '${item.quantity}×  ',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
           ),
           Expanded(
             child: Text(
               item.name,
               style: TextStyle(
                 color: done ? AppTheme.muted : AppTheme.text,
-                fontSize: 13,
+                fontSize: 12,
                 decoration: done ? TextDecoration.lineThrough : null,
               ),
             ),
           ),
           Text(
             formatPrice(item.lineTotal),
-            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
           ),
         ],
       ),
