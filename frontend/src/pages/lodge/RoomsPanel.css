@@ -809,3 +809,97 @@
     grid-template-columns: minmax(0, 1fr) 4.5rem 2.25rem;
   }
 }
+
+.field--checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.field--checkbox input[type='checkbox'] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent, #2f4858);
+  cursor: pointer;
+}
+
+/* This one choice reshapes the rest of the form — bulk range disables,
+   beds/occupancy disappear below — so it gets its own bordered card right
+   after the room number instead of blending in as one more field. */
+.room-type-choice {
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 10px;
+  background: var(--paper, #f7f7f5);
+}
+
+.room-type-choice .modal-form__hint {
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+
+.room-type-choice__fields {
+  margin-top: 0.65rem;
+}
+
+.room-type-choice__fields .field {
+  margin-bottom: 0;
+}
+
+.room-form__beds-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* A count, not a roster — one number and a unit label, saved along with
+   everything else on the form's own Save button rather than one of its own. */
+.room-form__bed-count-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 10px 12px;
+  border: 1px dashed var(--border, #d8d8d4);
+  border-radius: 10px;
+}
+
+.room-form__bed-count-row input {
+  width: 5rem;
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.room-form__bed-count-label {
+  flex: 1 1 auto;
+  font-size: 0.86rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.room-card__chip--dormitory {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* A dormitory with no beds can't actually be booked, so this reads as a
+   warning rather than the same neutral fact chip everything else here is —
+   and it's a real button (see the onClick), not just colored text. */
+.room-card__chip--warn {
+  background: var(--danger-bg, #fbe7e7);
+  color: var(--danger, #b3261e);
+  cursor: pointer;
+  border: none;
+  font: inherit;
+}
+
+.room-card__chip--warn:hover {
+  text-decoration: underline;
+}

@@ -2063,3 +2063,94 @@ IF COL_LENGTH('dbo.lodges', 'show_logo_on_receipt') IS NULL
 -- remove from billing" at void time.
 IF COL_LENGTH('dbo.invoices', 'closed_billing') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD closed_billing BIT NOT NULL CONSTRAINT df_invoices_closed_billing DEFAULT 0');
+
+-- ---------------------------------------------------------------------------
+-- Dormitory beds (migration 064)
+-- ---------------------------------------------------------------------------
+-- dbo.rooms.beds (040) is descriptive JSON on purpose — "nothing queries a
+-- bed" was true until now. A dormitory room sells its beds individually, so
+-- unlike an ordinary multi-bed room, something does query a bed: booking,
+-- pricing and the overlap check all need a bed as a real row, not a count.
+-- This graduates dormitory beds only, for rooms opted into it — an ordinary
+-- room's beds JSON is untouched and this table stays empty for it.
+IF COL_LENGTH('dbo.rooms', 'is_dormitory') IS NULL
+    EXEC('ALTER TABLE dbo.rooms ADD is_dormitory BIT NOT NULL CONSTRAINT df_rooms_is_dormitory DEFAULT 0');
+
+-- One row per physical bed. price_override is this bed's own nightly rate (a
+-- window bunk costs more than an aisle one); NULL falls back to the room's
+-- category base_price, the same fallback base_price_override already uses on
+-- a booking.
+IF OBJECT_ID('dbo.dormitory_beds', 'U') IS NULL
+CREATE TABLE dbo.dormitory_beds (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    room_id        BIGINT NOT NULL REFERENCES dbo.rooms(id),
+    bed_label      NVARCHAR(20) NOT NULL,
+    price_override DECIMAL(10,2) NULL
+        CONSTRAINT ck_dormitory_beds_price CHECK (price_override IS NULL OR price_override > 0),
+    is_active      BIT NOT NULL DEFAULT 1,
+    created_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_dormitory_beds_room_label UNIQUE (room_id, bed_label)
+);
+
+-- Which bed a booking holds, when it holds one bed rather than the whole
+-- room. NULL means a whole-room booking — unchanged for every non-dormitory
+-- room, and on a dormitory room deliberately how a buyout is represented
+-- (not a separate flag), since a buyout is otherwise exactly the whole-room
+-- booking this table already knew how to hold.
+IF COL_LENGTH('dbo.bookings', 'bed_id') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD bed_id BIGINT NULL REFERENCES dbo.dormitory_beds(id)');
+
+-- Mirrors ix_bookings_room_dates but keyed on the bed, so a bed-level
+-- overlap check seeks instead of scanning every booking on the room.
+-- Filtered so ordinary-room bookings never touch it.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bookings_bed_dates' AND object_id = OBJECT_ID('dbo.bookings'))
+    CREATE INDEX ix_bookings_bed_dates ON dbo.bookings(bed_id, check_in_date, check_out_date)
+        WHERE bed_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Dormitory room price and gender (migration 065)
+-- ---------------------------------------------------------------------------
+-- Price moves from the bed to the room: one rate for the whole dormitory,
+-- same as every other room type, not a per-bed price. dormitory_beds keeps
+-- no price column at all — nothing past this point reads or writes one.
+IF COL_LENGTH('dbo.rooms', 'dormitory_price') IS NULL
+    EXEC('ALTER TABLE dbo.rooms ADD dormitory_price DECIMAL(10,2) NULL
+          CONSTRAINT ck_rooms_dormitory_price CHECK (dormitory_price IS NULL OR dormitory_price > 0)');
+
+-- Which guests this dormitory room is for. NULL on every non-dormitory
+-- room, and required in practice for a dormitory room by the application
+-- layer, not by a NOT NULL here — a room mid-setup still has to save.
+IF COL_LENGTH('dbo.rooms', 'dormitory_gender') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.rooms ADD dormitory_gender NVARCHAR(10) NULL');
+    EXEC('ALTER TABLE dbo.rooms ADD CONSTRAINT ck_rooms_dormitory_gender
+          CHECK (dormitory_gender IS NULL OR dormitory_gender IN (''MALE'', ''FEMALE'', ''BOTH''))');
+END
+
+IF COL_LENGTH('dbo.dormitory_beds', 'price_override') IS NOT NULL
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_dormitory_beds_price')
+        EXEC('ALTER TABLE dbo.dormitory_beds DROP CONSTRAINT ck_dormitory_beds_price');
+    EXEC('ALTER TABLE dbo.dormitory_beds DROP COLUMN price_override');
+END
+
+-- ---------------------------------------------------------------------------
+-- Dormitory AC / Non-AC (migration 066)
+-- ---------------------------------------------------------------------------
+-- In place of a free extras checklist: a dormitory only ever needed to say
+-- whether it has AC, so this is a plain tag, the same shape dormitory_gender
+-- already is — descriptive, not a separate charge, already priced into
+-- dormitory_price. Any room_switchable_charges rows a dormitory picked up
+-- under 065 were cleared by that migration; nothing reads them for a
+-- dormitory room from here on.
+--
+-- A string enum rather than a BIT: the app layer validates against
+-- z.coerce.boolean(), which reads the string 'false' as true — any
+-- non-empty string is truthy in JS — so a BIT here would have silently
+-- turned every "Non-AC" pick into "AC" the first time a form posted it.
+IF COL_LENGTH('dbo.rooms', 'dormitory_is_ac') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.rooms ADD dormitory_is_ac NVARCHAR(10) NULL');
+    EXEC('ALTER TABLE dbo.rooms ADD CONSTRAINT ck_rooms_dormitory_is_ac
+          CHECK (dormitory_is_ac IS NULL OR dormitory_is_ac IN (''AC'', ''NON_AC''))');
+END

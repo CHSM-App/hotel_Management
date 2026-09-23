@@ -10,6 +10,11 @@ const {
   updateRoomStatusHandler,
   deleteRoomHandler,
   deleteRoomImageHandler,
+  listBedsHandler,
+  createBedHandler,
+  updateBedHandler,
+  deleteBedHandler,
+  setBedCountHandler,
 } = require('./rooms.controller');
 
 const router = Router();
@@ -37,6 +42,17 @@ router.post('/', authenticate, requirePermission('rooms.manage'), roomImageUploa
 router.patch('/:id', authenticate, requirePermission('rooms.manage'), roomImageUpload, updateRoomHandler);
 router.patch('/:id/status', authenticate, requirePermission('rooms.manage'), updateRoomStatusHandler);
 router.delete('/:id/images/:imageId', authenticate, requirePermission('rooms.manage'), deleteRoomImageHandler);
+
+// Bed CRUD for a dormitory room. Readable by anyone who can book (the
+// booking form needs bed labels), writable only by rooms.manage.
+router.get('/:id/beds', authenticate, requirePermission('rooms.manage', 'bookings.manage'), listBedsHandler);
+router.post('/:id/beds', authenticate, requirePermission('rooms.manage'), createBedHandler);
+router.patch('/:id/beds/:bedId', authenticate, requirePermission('rooms.manage'), updateBedHandler);
+router.delete('/:id/beds/:bedId', authenticate, requirePermission('rooms.manage'), deleteBedHandler);
+// The desk's actual entry point: "this room has N beds" rather than adding
+// them one at a time — reconciles the room's beds to that count.
+router.put('/:id/beds/count', authenticate, requirePermission('rooms.manage'), setBedCountHandler);
+
 router.delete('/:id', authenticate, requirePermission('rooms.manage'), deleteRoomHandler);
 
 module.exports = router;

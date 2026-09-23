@@ -222,6 +222,12 @@ function paymentLinesOf(input, total) {
 const createBookingSchema = z
   .object({
     roomId: z.coerce.number().int().positive('Choose a room.'),
+    // The one bed this booking holds, on a dormitory room. Omitted (or a
+    // normal room) means the whole room — a buyout, on a dormitory room, is
+    // this same field simply left out. Whether it actually belongs to
+    // roomId and to a dormitory room needs a query, so that check happens in
+    // the service, the same place the room itself is validated.
+    bedId: z.coerce.number().int().positive('Choose a valid bed.').optional(),
     checkInDate: dateField('Choose a check-in date.'),
     checkOutDate: dateField('Choose a check-out date.'),
     guestName: z.string({ error: 'Enter the guest name.' }).trim().min(1, 'Enter the guest name.'),
@@ -351,6 +357,11 @@ const updateBookingSchema = z
     checkInDate: dateField('Choose a valid check-in date.').optional(),
     checkOutDate: dateField('Choose a valid check-out date.').optional(),
     roomId: z.coerce.number().int().positive('Choose a valid room.').optional(),
+    // Omitted keeps the bed this booking already holds. Explicit null is how
+    // the desk switches it to a buyout (or how a normal room stays bed-less);
+    // it needs the same three-way handling as discountAmount and the advance
+    // fields below, so it can't just be .optional() like roomId.
+    bedId: clearableField(z.coerce.number().int().positive('Choose a valid bed.')),
     numGuests: z.coerce.number().int().positive('Enter a guest count greater than 0.').optional(),
     guestName: z.string().trim().min(1, 'Enter the guest name.').optional(),
     guestPhone: requiredMobileField().optional(),

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createRoomSchema, updateRoomSchema, statusSchema, checkoutPolicySchema } = require('./rooms.schema');
+const { createBedSchema, updateBedSchema, bedCountSchema } = require('./beds.schema');
 const roomsService = require('./rooms.service');
 const checkoutPolicyService = require('./checkoutPolicy.service');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -131,6 +132,68 @@ async function deleteRoomHandler(req, res, next) {
   }
 }
 
+async function listBedsHandler(req, res, next) {
+  try {
+    const beds = await roomsService.listBeds(req.user.lodgeId, Number(req.params.id));
+    res.json({ beds });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createBedHandler(req, res, next) {
+  try {
+    const parsed = createBedSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const bed = await roomsService.createBed(req.user.lodgeId, Number(req.params.id), parsed.data);
+    res.status(201).json({ bed });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateBedHandler(req, res, next) {
+  try {
+    const parsed = updateBedSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const result = await roomsService.updateBed(
+      req.user.lodgeId,
+      Number(req.params.id),
+      Number(req.params.bedId),
+      parsed.data
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteBedHandler(req, res, next) {
+  try {
+    await roomsService.deleteBed(req.user.lodgeId, Number(req.params.id), Number(req.params.bedId));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setBedCountHandler(req, res, next) {
+  try {
+    const parsed = bedCountSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const beds = await roomsService.setBedCount(req.user.lodgeId, Number(req.params.id), parsed.data.count);
+    res.json({ beds });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listRoomsHandler,
   getCheckoutPolicyHandler,
@@ -140,4 +203,9 @@ module.exports = {
   updateRoomStatusHandler,
   deleteRoomHandler,
   deleteRoomImageHandler,
+  listBedsHandler,
+  createBedHandler,
+  updateBedHandler,
+  deleteBedHandler,
+  setBedCountHandler,
 };

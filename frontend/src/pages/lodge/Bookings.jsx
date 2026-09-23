@@ -227,6 +227,8 @@ function bedSummary(room) {
   return beds.map((b) => `${b.count} ${BED_SIZE_LABEL[b.size] || b.size}`).join(' + ');
 }
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
+const DORMITORY_GENDER_LABEL = { MALE: 'Male', FEMALE: 'Female', BOTH: 'Both' };
+const DORMITORY_AC_LABEL = { AC: 'AC', NON_AC: 'Non-AC' };
 // Today by the IST calendar, which is the only "today" this app has: every
 // lodge on it is in India, and UTC lags IST by up to 5.5 hours — a plain
 // toISOString() would still read "yesterday" for the first few hours of an IST
@@ -542,6 +544,14 @@ const initialBookingForm = {
   checkInDate: todayIso(),
   checkOutDate: addDays(todayIso(), 1),
   roomId: '',
+  // Which bed this stay holds, on a dormitory room. Blank on every other
+  // room, and on a dormitory room deliberately blank when buyout is chosen —
+  // a buyout is the whole room, not one of its beds.
+  bedId: '',
+  // The desk has chosen to sell the whole dormitory room to one party
+  // instead of a single bed. Meaningless off a dormitory room, where it is
+  // simply never shown.
+  buyout: false,
   switchableCharges: [],
   // Blank means "charge the full quote" — reception only fills this in when
   // they've agreed to knock something off, once, at the end.
@@ -663,6 +673,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // The tile that's under the pointer right now, with the screen position to
   // float its card at. Guest names live only in here — never on the tiles.
   const [hoverTile, setHoverTile] = useState(null);
+  // A partial dormitory tile has more than one thing a click could mean —
+  // book a free bed, or open one already taken — so a click there opens
+  // this small chooser instead of guessing. null when closed.
+  const [dormPicker, setDormPicker] = useState(null);
   // What the desk is looking for on the chart, and which of the hits it is
   // currently parked on. The index is held here rather than derived so stepping
   // through the results is a state change and not a re-search.
@@ -889,20 +903,47 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // Rooms are shown category by category rather than in one long list, so the
   // desk can see at a glance which grade of room is still sellable. Insertion
   // order follows the room ordering the API already sorted.
+  //
+  // A dormitory room's own pricing category (Standard, Deluxe, ...) is still
+  // what prices it, but grouping it there would scatter dormitories across
+  // whichever categories they happen to share with private rooms — the desk
+  // wants every dormitory in one place regardless of its category, the same
+  // way "sold bed by bed" is a different kind of room to book, not a
+  // different grade of room. So every dormitory room lands in one
+  // "Dormitory" section here, pulled out ahead of the category grouping,
+  // and kept last so the ordinary categories the desk sells most still lead.
   const categorySections = useMemo(() => {
     if (!tapeData) return [];
     const groups = new Map();
+    const dormitoryRooms = [];
     for (const room of tapeData.rooms) {
+      if (room.isDormitory) {
+        dormitoryRooms.push(room);
+        continue;
+      }
       const name = room.categoryName || 'Uncategorised';
       if (!groups.has(name)) groups.set(name, []);
       groups.get(name).push(room);
     }
-    return Array.from(groups, ([categoryName, rooms]) => ({ categoryName, rooms }));
+    const sections = Array.from(groups, ([categoryName, rooms]) => ({ categoryName, rooms }));
+    if (dormitoryRooms.length > 0) {
+      sections.push({ categoryName: 'Dormitory', rooms: dormitoryRooms });
+    }
+    return sections;
   }, [tapeData]);
 
-  // room id -> (date -> booking), covering only the nights on screen. Building
-  // it once per load keeps the render a plain lookup per tile instead of a scan
-  // of every booking for every day of every room.
+  // room id -> (date -> bookings[]), covering only the nights on screen.
+  // Building it once per load keeps the render a plain lookup per tile
+  // instead of a scan of every booking for every day of every room.
+  //
+  // The value is an ARRAY, not a single booking: an ordinary room can only
+  // ever have one live booking on a given night (the server's overlap check
+  // guarantees it), but a dormitory room sells its beds one at a time, so
+  // several different bookings — one per bed — can legitimately share the
+  // same room and night. Collapsing them to one (the earlier shape here)
+  // silently discarded every booking but the last one processed, which is
+  // what made the tape chart show a 10-bed room as fully occupied the moment
+  // one bed was booked and refuse to start a new booking on it at all.
   const occupancy = useMemo(() => {
     const byRoom = new Map();
     if (!tapeData) return byRoom;
@@ -927,7 +968,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       // would otherwise leave the nights they didn't use looking sold here
       // while the picker happily sells them.
       if (booking.status === 'CHECKED_OUT' && to > today) to = today;
-      for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, booking);
+      for (let d = from; d < to; d = addDays(d, 1)) {
+        const existing = byDate.get(d);
+        if (existing) existing.push(booking);
+        else byDate.set(d, [booking]);
+      }
     }
     return byRoom;
   }, [tapeData, rangeStart, rangeEnd, today]);
@@ -998,22 +1043,29 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         // insertion order, which is the order bookings arrived from the API,
         // not the order their nights sit on the chart.
         for (const d of dates) {
-          const booking = byDate.get(d);
-          // A stay can hold nights in more than one room across a window if it
-          // was moved; `taken` is per booking id, so it is still one hit.
-          if (!booking || taken.has(booking.id)) continue;
-          if (!matchesSearch(searchFields(booking), needle, squashed)) continue;
-          taken.add(booking.id);
-          // roomNumber rides along so the readout can name where the guest
-          // is without looking the room up again — the whole point of the
-          // search is answering "which room?", and that answer is right here.
-          hits.push({
-            bookingId: booking.id,
-            roomId: room.id,
-            roomNumber: room.roomNumber,
-            date: d,
-            booking,
-          });
+          const bookings = byDate.get(d);
+          if (!bookings) continue;
+          // A dormitory night can hold several bookings (one per bed) — check
+          // every one of them, not just the first, or the search would only
+          // ever find whichever bed happened to be first in the array.
+          for (const booking of bookings) {
+            // A stay can hold nights in more than one room across a window if
+            // it was moved; `taken` is per booking id, so it is still one hit.
+            if (taken.has(booking.id)) continue;
+            if (!matchesSearch(searchFields(booking), needle, squashed)) continue;
+            taken.add(booking.id);
+            // roomNumber rides along so the readout can name where the guest
+            // is without looking the room up again — the whole point of the
+            // search is answering "which room?", and that answer is right
+            // here.
+            hits.push({
+              bookingId: booking.id,
+              roomId: room.id,
+              roomNumber: room.roomNumber,
+              date: d,
+              booking,
+            });
+          }
         }
       }
     }
@@ -1304,6 +1356,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   // effect. Extending a stay over a night somebody else holds used to empty the
   // picker with no explanation at all.
   const [roomTakenNote, setRoomTakenNote] = useState('');
+  // Only populated while a dormitory room is selected — see the fetch effect
+  // below. { beds, roomAvailableForBuyout } from /bookings/available-beds,
+  // same shape the backend returns.
+  const [availableBeds, setAvailableBeds] = useState(null);
+  const [availableBedsError, setAvailableBedsError] = useState('');
   const [quote, setQuote] = useState(null);
 
   // Switching "collect full payment" on rebuilds the rows to the stay total;
@@ -1593,7 +1650,16 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         setBookingForm((f) =>
           f.roomId && data.rooms.some((r) => String(r.id) === f.roomId)
             ? f
-            : { ...f, roomId: '', switchableCharges: [], discountAmount: '', discountPercent: '', discountSource: '' }
+            : {
+                ...f,
+                roomId: '',
+                bedId: '',
+                buyout: false,
+                switchableCharges: [],
+                discountAmount: '',
+                discountPercent: '',
+                discountSource: '',
+              }
         );
       })
       .catch((err) => {
@@ -1605,18 +1671,23 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   }, [showBookingForm, bookingForm.checkInDate, bookingForm.checkOutDate, roomsNonce]);
 
   useEffect(() => {
-    if (!showBookingForm || !validRange || !bookingForm.roomId) {
+    // On a dormitory room, neither a bed nor a buyout picked yet means there
+    // is nothing to price — quoting the whole room by default would show a
+    // total for a sale the desk hasn't actually offered.
+    const dormitoryUndecided = selectedRoom?.isDormitory && !bookingForm.bedId && !bookingForm.buyout;
+    if (!showBookingForm || !validRange || !bookingForm.roomId || dormitoryUndecided) {
       setQuote(null);
       return;
     }
     const chargeIds = chargesParam(bookingForm.switchableCharges);
     const discount = discountParam(bookingForm.discountAmount);
+    const bedParam = bookingForm.bedId ? `&bedId=${bookingForm.bedId}` : '';
     // Typing a discount fires a quote per keystroke, so a slower earlier
     // reply must not land on top of a newer one and show a total for an
     // amount that is no longer in the box.
     let current = true;
     apiGet(
-      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${rateParam(bookingForm.basePriceOverride)}${discount}`,
+      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${rateParam(bookingForm.basePriceOverride)}${discount}${bedParam}`,
       { token }
     )
       .then((data) => {
@@ -1657,6 +1728,8 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   }, [
     showBookingForm,
     bookingForm.roomId,
+    bookingForm.bedId,
+    bookingForm.buyout,
     bookingForm.checkInDate,
     bookingForm.checkOutDate,
     bookingForm.switchableCharges,
@@ -1667,6 +1740,51 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   ]);
 
   const selectedRoom = availableRooms?.find((r) => String(r.id) === bookingForm.roomId);
+
+  // Which beds are free in this dormitory room, refetched whenever the room
+  // or the dates change — the same shape of effect as the price quote, since
+  // both depend on the same inputs and both go stale the moment either one
+  // moves. Skipped entirely off a dormitory room: there is nothing to ask.
+  useEffect(() => {
+    if (!showBookingForm || !validRange || !selectedRoom?.isDormitory) {
+      setAvailableBeds(null);
+      setAvailableBedsError('');
+      return;
+    }
+    let current = true;
+    apiGet(
+      `/bookings/available-beds?roomId=${selectedRoom.id}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}`,
+      { token }
+    )
+      .then((data) => {
+        if (!current) return;
+        setAvailableBeds(data);
+        setAvailableBedsError('');
+        // A bed or a buyout picked against the previous date range may no
+        // longer be free — same "did the ground move" check the room picker
+        // above already does for the room itself.
+        setBookingForm((f) => {
+          if (f.bedId && !data.beds.some((b) => String(b.id) === f.bedId && !b.isTaken)) {
+            return { ...f, bedId: '' };
+          }
+          if (f.buyout && !data.roomAvailableForBuyout) {
+            return { ...f, buyout: false };
+          }
+          return f;
+        });
+      })
+      .catch((err) => {
+        if (!current) return;
+        setAvailableBeds(null);
+        setAvailableBedsError(err instanceof ApiError ? err.message : 'Could not load beds for this room.');
+      });
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBookingForm, selectedRoom?.id, selectedRoom?.isDormitory, bookingForm.checkInDate, bookingForm.checkOutDate]);
+
+  const selectedBed = availableBeds?.beds?.find((b) => String(b.id) === bookingForm.bedId);
   const numGuests = bookingForm.adults.length + bookingForm.children.length;
   const overOccupancy = Boolean(selectedRoom?.maxOccupancy && numGuests > selectedRoom.maxOccupancy);
 
@@ -1816,6 +1934,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     }
     if (!bookingForm.roomId) {
       failOn('roomId', 'Choose a room.');
+      return;
+    }
+    if (selectedRoom?.isDormitory && !bookingForm.bedId && !bookingForm.buyout) {
+      failOn('bedId', 'Choose a bed, or book the whole dormitory as a buyout.');
       return;
     }
     if (bookingForm.discountAmount !== '' && !(Number(bookingForm.discountAmount) >= 0)) {
@@ -2035,6 +2157,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         // move or extend, and the backend refuses both.
         if (canEditStay) {
           formData.append('roomId', String(Number(bookingForm.roomId)));
+          // Blank means "back to a whole-room booking" — a buyout, on a
+          // dormitory room, or simply no bed on a normal one. Same
+          // blank-clears rule as basePriceOverride just above.
+          formData.append('bedId', bookingForm.bedId ? String(Number(bookingForm.bedId)) : '');
           formData.append('checkOutDate', bookingForm.checkOutDate);
           // Only while the stay hasn't started. Sent even when unchanged, which
           // the backend reads as "no change" — it only refuses a date that
@@ -2050,6 +2176,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         setSelectedBookingId(editTarget.id);
       } else {
         formData.append('roomId', String(Number(bookingForm.roomId)));
+        if (bookingForm.bedId) formData.append('bedId', String(Number(bookingForm.bedId)));
         formData.append('checkInDate', bookingForm.checkInDate);
         formData.append('checkOutDate', bookingForm.checkOutDate);
         if (bookingForm.basePriceOverride !== '') {
@@ -2209,6 +2336,12 @@ export default function Bookings({ onBillStay, onShowRegister }) {
       checkInDate: bookingDetail.checkInDate,
       checkOutDate: bookingDetail.checkOutDate,
       roomId: String(bookingDetail.roomId),
+      // A stay with no bed reopens as a whole-room booking — a buyout, on a
+      // dormitory room, or simply the normal case everywhere else. The
+      // bed-vs-buyout picker itself derives which from availableBeds once
+      // the effect above has loaded, not from a stored flag.
+      bedId: bookingDetail.bedId ? String(bookingDetail.bedId) : '',
+      buyout: Boolean(bookingDetail.isDormitory && !bookingDetail.bedId),
       // The agreed price is only prefilled when it differs from the lodge's,
       // so an extra nobody haggled over reopens with an empty box — and stays
       // on the lodge price if that price later changes.
@@ -2738,7 +2871,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     // rendered would draw nothing at all.
     const activeNights =
       activeHit && activeHit.roomId === room.id
-        ? dates.filter((d) => byDate?.get(d)?.id === activeHit.bookingId)
+        ? dates.filter((d) => byDate?.get(d)?.some((b) => b.id === activeHit.bookingId))
         : [];
     const activeSpan = activeNights.length;
     const activeFrom = activeNights[0] ?? null;
@@ -2748,6 +2881,15 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         <div className="tape-month__room">
           <strong>{room.roomNumber}</strong>
           {room.floor != null && <span>Floor {room.floor}</span>}
+          {/* Which beds this dormitory is actually open to, and AC/Non-AC —
+              the section header already says "Dormitory", these are the
+              facts within it that still vary room to room. */}
+          {room.isDormitory && room.dormitoryGender && (
+            <span className="tape-month__room-tag">{DORMITORY_GENDER_LABEL[room.dormitoryGender]}</span>
+          )}
+          {room.isDormitory && room.dormitoryIsAc && (
+            <span className="tape-month__room-tag">{DORMITORY_AC_LABEL[room.dormitoryIsAc]}</span>
+          )}
         </div>
         {dates.map((d) => {
           // The occupancy map extends an overdue CHECKED_IN stay's nights
@@ -2756,8 +2898,33 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           // at the sold checkout date until someone actually checks the guest
           // out. Nights past that date read as their real state (vacant, or a
           // vacated night from an early checkout) instead of more booking.
-          const rawBooking = byDate?.get(d);
-          const booking = rawBooking && d < rawBooking.checkOutDate ? rawBooking : null;
+          const nightBookings = (byDate?.get(d) || []).filter((b) => d < b.checkOutDate);
+          // A whole-room buyout on a dormitory (bed_id NULL) fills every bed
+          // at once, same as an ordinary room's one booking — it renders as
+          // the traditional single-booking tile below, not the fraction.
+          const buyout = room.isDormitory ? nightBookings.find((b) => b.bedId == null) : null;
+          // Dormitory beds sell one at a time: several bookings can share
+          // this room and night, one per bed, so the tile has to read as a
+          // fraction ("1/10") until every bed (or a buyout) is taken —
+          // otherwise the first bed booked made the whole room look sold out
+          // and blocked booking any of the other nine from the chart.
+          const isPartialDorm =
+            room.isDormitory &&
+            !buyout &&
+            nightBookings.length > 0 &&
+            room.dormitoryBedCount > 0 &&
+            nightBookings.length < room.dormitoryBedCount;
+          // Every bed sold (no fraction left to show) falls back to the
+          // traditional solid tile too, same as a buyout — it renders
+          // whichever one of the bed bookings the click/hover reaches first,
+          // since the room genuinely has nothing free to offer from here.
+          const isFullDorm =
+            room.isDormitory && !buyout && room.dormitoryBedCount > 0 &&
+            nightBookings.length >= room.dormitoryBedCount;
+          const booking =
+            buyout ||
+            (!room.isDormitory && nightBookings.length ? nightBookings[0] : null) ||
+            (isFullDorm ? nightBookings[0] : null);
           const draft = draftsByDate?.get(d);
           // A stay that was cancelled for this night. Whatever else the tile
           // is — vacant, drafted on, or let again — it gets the cancelled
@@ -2769,7 +2936,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           // and it opens that draft rather than starting a new booking — the
           // room is still sellable, but whoever parked it should be finished
           // or thrown away before the night is sold from under them.
-          if (!booking && draft) {
+          if (!booking && !isPartialDorm && draft) {
             const classes = ['tape-tile', 'tape-tile--draft'];
             if (d === draft.checkInDate) classes.push('tape-tile--start');
             if (d === addDays(draft.checkOutDate, -1)) classes.push('tape-tile--end');
@@ -2788,6 +2955,69 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                 onBlur={() => setHoverTile(null)}
                 aria-label={`${room.roomNumber} has a draft booking on ${formatDateLong(d)}`}
               />
+            );
+          }
+
+          // A dormitory night with some but not all of its beds sold. Shows
+          // as a fraction rather than the solid block a full booking gets. A
+          // click can mean two different things here — book a free bed, or
+          // open a taken one — so it opens a small chooser listing every bed
+          // rather than guessing which one the desk meant.
+          if (!booking && isPartialDorm) {
+            const classes = ['tape-tile', 'tape-tile--dorm-partial'];
+            if (past) classes.push('tape-tile--past');
+            if (d === today) classes.push('tape-tile--today');
+            if (draft) classes.push('tape-tile--has-draft');
+            if (nightBookings.some((b) => hitIds.has(b.id))) classes.push('tape-tile--hit');
+            return (
+              <button
+                key={d}
+                type="button"
+                className={classes.join(' ')}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHoverTile(null);
+                  setDormPicker({
+                    room,
+                    date: d,
+                    bookings: nightBookings,
+                    bedCount: room.dormitoryBedCount,
+                    x: Math.min(Math.max(rect.left, 8), window.innerWidth - 268),
+                    y: rect.bottom + 8,
+                  });
+                }}
+                onMouseEnter={(e) =>
+                  showTileHover(e, {
+                    room,
+                    date: d,
+                    booking: null,
+                    bookings: nightBookings,
+                    bedCount: room.dormitoryBedCount,
+                    draft,
+                    past,
+                    cancelled: cancelledStay,
+                  })
+                }
+                onFocus={(e) =>
+                  showTileHover(e, {
+                    room,
+                    date: d,
+                    booking: null,
+                    bookings: nightBookings,
+                    bedCount: room.dormitoryBedCount,
+                    draft,
+                    past,
+                    cancelled: cancelledStay,
+                  })
+                }
+                onMouseLeave={() => setHoverTile(null)}
+                onBlur={() => setHoverTile(null)}
+                aria-label={`${room.roomNumber} has ${nightBookings.length} of ${room.dormitoryBedCount} beds booked on ${formatDateLong(d)}`}
+              >
+                <span className="tape-tile__fraction">
+                  {nightBookings.length}/{room.dormitoryBedCount}
+                </span>
+              </button>
             );
           }
 
@@ -3277,7 +3507,29 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           role="tooltip"
           style={{ left: `${hoverTile.x}px`, top: `${hoverTile.y}px` }}
         >
-          {hoverTile.booking ? (
+          {hoverTile.bookings ? (
+            <>
+              <span className="tape-tooltip__top">
+                <span className="tape-tooltip__dot tape-tooltip__dot--booked" />
+                {hoverTile.bookings.length} of {hoverTile.bedCount} beds booked
+              </span>
+              <strong>Room {hoverTile.room.roomNumber}</strong>
+              <span className="tape-tooltip__meta">{hoverTile.room.categoryName}</span>
+              {hoverTile.bookings.map((b) => (
+                <span className="tape-tooltip__meta" key={b.id}>
+                  {b.bedLabel || 'Bed'} · {b.guestName}
+                </span>
+              ))}
+              {hoverTile.draft && (
+                <span className="tape-tooltip__hint">
+                  A draft also names this night{hoverTile.draft.guestName ? ` (${hoverTile.draft.guestName})` : ''}.
+                </span>
+              )}
+              <span className="tape-tooltip__hint">
+                {hoverTile.past ? 'This night has passed' : 'Click to book a bed or view a booking'}
+              </span>
+            </>
+          ) : hoverTile.booking ? (
             <>
               <span className="tape-tooltip__top">
                 <span
@@ -3383,6 +3635,62 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               </span>
             </>
           )}
+        </div>
+      )}
+
+      {/* A click on a partial dormitory tile — every bed for that room and
+          night, in one place, so the desk can either finish selling the
+          free ones or drop straight into a booking already on one of the
+          taken ones. Closes on an outside click, same as the other panels
+          here that float over the chart. */}
+      {dormPicker && (
+        <div className="tape-dormpicker-backdrop" onClick={() => setDormPicker(null)}>
+          <div
+            className="tape-dormpicker"
+            style={{ left: `${dormPicker.x}px`, top: `${dormPicker.y}px` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="tape-dormpicker__head">
+              <strong>Room {dormPicker.room.roomNumber}</strong>
+              <span>{formatDateLong(dormPicker.date)}</span>
+            </div>
+            <div className="tape-dormpicker__list">
+              {Array.from({ length: dormPicker.bedCount }, (_, i) => i + 1).map((n) => {
+                const label = `Bed ${n}`;
+                const bedBooking = dormPicker.bookings.find((b) => b.bedLabel === label);
+                if (bedBooking) {
+                  return (
+                    <button
+                      type="button"
+                      key={label}
+                      className="tape-dormpicker__row tape-dormpicker__row--taken"
+                      onClick={() => {
+                        setDormPicker(null);
+                        openDetail(bedBooking.id);
+                      }}
+                    >
+                      <span className="tape-dormpicker__bed">{label}</span>
+                      <span className="tape-dormpicker__guest">{bedBooking.guestName}</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    key={label}
+                    className="tape-dormpicker__row tape-dormpicker__row--free"
+                    onClick={() => {
+                      setDormPicker(null);
+                      openNewBooking(dormPicker.room.id, dormPicker.date);
+                    }}
+                  >
+                    <span className="tape-dormpicker__bed">{label}</span>
+                    <span className="tape-dormpicker__guest">Free — click to book</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -3661,6 +3969,11 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                           setBookingForm((f) => ({
                             ...f,
                             roomId: e.target.value,
+                            // A bed (or a buyout) was chosen against the
+                            // previous room; a different room means a fresh
+                            // pick, dormitory or not.
+                            bedId: '',
+                            buyout: false,
                             switchableCharges: [],
                             // A concession was agreed against a particular
                             // room's total; picking a different one is a fresh
@@ -3707,7 +4020,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                       <span className="booking-form__chip booking-form__chip--rate">
                         {formatPrice(selectedRoom.categoryBasePrice)}/night
                       </span>
-                      <span className="booking-form__chip">{selectedRoom.categoryName}</span>
+                      <span className="booking-form__chip">
+                        {selectedBed ? selectedBed.bedLabel : selectedRoom.categoryName}
+                      </span>
                       {/* One chip, not one per bed: the row already carries
                           rate, category, bathroom and occupancy, and a family
                           room added three more chips that pushed the rest onto
@@ -3733,40 +4048,128 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                   </div>
                 )}
 
-                {selectedRoom && selectedRoom.switchableCharges.length > 0 && (
+                {/* A dormitory room sells by the bed, not the whole room, so
+                    picking one is its own step between the room and the
+                    extras — either a free bed, or a buyout of the whole
+                    room, never both at once (see the two onClick handlers
+                    below, which always clear the other). */}
+                {selectedRoom?.isDormitory && (
                   <div className="field">
-                    <label>Extras</label>
-                    <div className="checkbox-grid">
-                      {selectedRoom.switchableCharges.map((charge) => {
-                        const selection = selectionOf(bookingForm.switchableCharges, charge.id);
-                        return (
-                          <label className="checkbox-chip" key={charge.id}>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(selection)}
-                              onChange={() => toggleCharge(charge.id)}
-                            />
-                            {charge.name} ({formatPrice(charge.chargePerNight)}/night)
-                            {/* Only counted extras get a box, and only once the
-                                extra is on the booking — an unticked row has
-                                nothing to count, and AC is on or it isn't. */}
-                            {selection && charge.isCounter && (
-                              <input
-                                className="checkbox-chip__qty"
-                                type="number"
-                                min="1"
-                                step="1"
-                                inputMode="numeric"
-                                aria-label={`How many ${charge.name}`}
-                                value={selection.quantity}
-                                onChange={(e) => setChargeQuantity(charge.id, e.target.value)}
-                              />
-                            )}
-                          </label>
-                        );
-                      })}
-                    </div>
+                    <label>
+                      Bed<Req />
+                    </label>
+                    {availableBedsError && (
+                      <div className="form-banner form-banner--error">{availableBedsError}</div>
+                    )}
+                    {!availableBeds && !availableBedsError && (
+                      <p className="bookings-panel__hint">Loading beds…</p>
+                    )}
+                    {availableBeds && (
+                      <>
+                        {/* One rate for the whole room now — every bed and a
+                            buyout all cost this same figure — so it's stated
+                            once here instead of repeated on every button. */}
+                        <p className="bookings-panel__hint">
+                          {formatPrice(availableBeds.pricePerNight)}/night, any bed or the whole room.
+                        </p>
+                        <div className="booking-form__bed-grid">
+                          {availableBeds.beds.map((bed) => {
+                            const selected = String(bookingForm.bedId) === String(bed.id);
+                            const disabled = bed.isTaken || bookingForm.buyout;
+                            return (
+                              <button
+                                type="button"
+                                key={bed.id}
+                                className={`booking-form__bed-option${selected ? ' booking-form__bed-option--selected' : ''}${
+                                  disabled ? ' booking-form__bed-option--disabled' : ''
+                                }`}
+                                disabled={disabled}
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  setBookingForm((f) => ({ ...f, bedId: String(bed.id), buyout: false }))
+                                }
+                              >
+                                <span className="booking-form__bed-label">{bed.bedLabel}</span>
+                                <span className="booking-form__bed-state">{bed.isTaken ? 'Taken' : 'Free'}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          className={`booking-form__buyout-option${
+                            bookingForm.buyout ? ' booking-form__buyout-option--selected' : ''
+                          }${!availableBeds.roomAvailableForBuyout ? ' booking-form__buyout-option--disabled' : ''}`}
+                          disabled={!availableBeds.roomAvailableForBuyout}
+                          aria-pressed={bookingForm.buyout}
+                          onClick={() => setBookingForm((f) => ({ ...f, buyout: true, bedId: '' }))}
+                        >
+                          <span>Book the whole dormitory (buyout)</span>
+                        </button>
+                        {!availableBeds.roomAvailableForBuyout && (
+                          <p className="bookings-panel__hint">
+                            A buyout isn’t available — at least one bed is already booked for these dates.
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {fieldErr('bedId')}
                   </div>
+                )}
+
+                {/* A dormitory has no selectable extras — AC/Non-AC is a
+                    plain fact about the room, already baked into its flat
+                    price, not something one bed-booker opts into while a
+                    roommate doesn't. Every other room keeps the selectable
+                    checklist below. */}
+                {selectedRoom?.isDormitory ? (
+                  availableBeds?.isAc && (
+                    <div className="field">
+                      <label>Room type</label>
+                      <div className="checkbox-grid">
+                        <span className="checkbox-chip checkbox-chip--static">
+                          {DORMITORY_AC_LABEL[availableBeds.isAc]}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  selectedRoom &&
+                  selectedRoom.switchableCharges.length > 0 && (
+                    <div className="field">
+                      <label>Extras</label>
+                      <div className="checkbox-grid">
+                        {selectedRoom.switchableCharges.map((charge) => {
+                          const selection = selectionOf(bookingForm.switchableCharges, charge.id);
+                          return (
+                            <label className="checkbox-chip" key={charge.id}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selection)}
+                                onChange={() => toggleCharge(charge.id)}
+                              />
+                              {charge.name} ({formatPrice(charge.chargePerNight)}/night)
+                              {/* Only counted extras get a box, and only once the
+                                  extra is on the booking — an unticked row has
+                                  nothing to count, and AC is on or it isn't. */}
+                              {selection && charge.isCounter && (
+                                <input
+                                  className="checkbox-chip__qty"
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  inputMode="numeric"
+                                  aria-label={`How many ${charge.name}`}
+                                  value={selection.quantity}
+                                  onChange={(e) => setChargeQuantity(charge.id, e.target.value)}
+                                />
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )
                 )}
 
                 {/* What the stay costs, before anything is knocked off it.

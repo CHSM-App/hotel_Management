@@ -298,6 +298,123 @@
   margin: 6px 0 0;
 }
 
+/* A dormitory's beds read as the tape chart's own tiles do: a free bed is
+   the chart's vacant mint, a taken one is its booked red, same wells and
+   hairlines. Picking a bed is the same action as clicking a tile on the
+   chart, so this borrows that exact vocabulary instead of the generic
+   .checkbox-chip look every other picker on the form uses — a desk reading
+   the chart all day recognises "green means take it" here without having
+   to learn a second colour language. */
+.booking-form__bed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.booking-form__bed-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--tape-vacant-edge);
+  border-radius: 6px;
+  padding: 10px 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--tape-vacant);
+  box-shadow: inset 1px 1px 3px var(--tape-vacant-well), inset -1px -1px 2px var(--neu-light);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.booking-form__bed-option:hover:not(:disabled) {
+  background: var(--tape-vacant-hover);
+  border-color: var(--tape-vacant-edge-hover);
+}
+
+.booking-form__bed-option--selected {
+  border-color: var(--tape-checked-in);
+  background: var(--tape-checked-in);
+  box-shadow: none;
+  color: #fff;
+}
+
+/* A taken bed reads exactly as the chart's own booked tile does — solid
+   fill, no well, because it is sold and not something the pointer can
+   carve into. */
+.booking-form__bed-option--disabled,
+.booking-form__bed-option:disabled {
+  border-color: var(--tape-booked-deep);
+  background: var(--tape-booked);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.04));
+  box-shadow: none;
+  color: #fff;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.booking-form__bed-label {
+  font-weight: 700;
+}
+
+.booking-form__bed-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+}
+
+.booking-form__bed-option:not(.booking-form__bed-option--disabled):not(.booking-form__bed-option--selected)
+  .booking-form__bed-state {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.booking-form__bed-price {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* The buyout option keeps the dashed "different kind of choice" framing —
+   it isn't a bed, it's the whole room at once — but picks up the same
+   checked-in blue when taken, so "selected" reads the same way across both
+   controls. */
+.booking-form__buyout-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.booking-form__buyout-option:hover:not(:disabled) {
+  border-color: var(--tape-checked-in);
+}
+
+.booking-form__buyout-option--selected {
+  border-color: var(--tape-checked-in);
+  border-style: solid;
+  background: var(--tape-checked-in);
+  color: #fff;
+}
+
+.booking-form__buyout-option--disabled,
+.booking-form__buyout-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .booking-form__warn {
   font-size: 12px;
   font-weight: 600;

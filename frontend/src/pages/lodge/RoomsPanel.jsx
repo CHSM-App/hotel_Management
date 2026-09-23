@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiGet, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
+import { apiGet, apiPut, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { useSearchTerm, matchesSearch } from '../../lib/searchContext';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -15,8 +15,12 @@ const BED_SIZES = ['SINGLE', 'DOUBLE', 'QUEEN', 'KING'];
 const BATHROOM_TYPES = ['ATTACHED', 'COMMON'];
 const MAX_ROOM_IMAGES = 6;
 const ROOM_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp';
+const DORMITORY_GENDERS = ['MALE', 'FEMALE', 'BOTH'];
+const DORMITORY_AC_OPTIONS = ['AC', 'NON_AC'];
 
 const bedSizeLabel = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
+const dormitoryGenderLabel = { MALE: 'Male', FEMALE: 'Female', BOTH: 'Both' };
+const dormitoryAcLabel = { AC: 'AC', NON_AC: 'Non-AC' };
 
 function bedSummary(room) {
   const beds = room.beds && room.beds.length > 0 ? room.beds : room.bedSize ? [{ size: room.bedSize, count: 1 }] : [];
@@ -37,6 +41,16 @@ const initialForm = {
   maxOccupancy: '',
   description: '',
   imageFiles: [],
+  isDormitory: false,
+  dormitoryGender: '',
+  dormitoryPrice: '',
+  // AC or Non-AC — the one thing an earlier version of this form asked as a
+  // free extras checklist. A plain tag, same as dormitoryGender: descriptive,
+  // already priced into dormitoryPrice, never a separate charge.
+  dormitoryIsAc: '',
+  // Starts blank while a new dormitory is being described. Once it is saved,
+  // the same field sets the actual individually bookable beds.
+  bedCount: '',
 };
 
 function GuestIcon() {
@@ -82,6 +96,45 @@ function BathIcon() {
   );
 }
 
+// The bed-count field for a dormitory room — a controlled input, its value
+// living in the room form's own state (form.bedCount) rather than saving
+// itself. The actual /rooms/:id/beds/count call only happens when the whole
+// room form is submitted (see handleSubmit), the same moment every other
+// field on this form is saved — a bed count is not a special case that gets
+// its own Save button.
+//
+// The desk doesn't name beds — it says how many the room has, and the
+// server auto-labels them "Bed 1".."Bed N" (see setBedCount in
+// rooms.service.js). Shrinking the count is blocked, on submit, once one of
+// the beds that would have to go has a booking on record — that comes back
+// as this field's error the same way any other save failure does.
+function DormitoryBedCountField({ value, onChange, invalid, fieldErr }) {
+  return (
+    <div className="field field--beds">
+      <div className="room-form__beds-head">
+        <label htmlFor="bedCount">
+          Beds
+          <Req />
+        </label>
+      </div>
+      <p className="modal-form__hint">Every bed charges the room's own rate, set above.</p>
+      <div className="room-form__bed-count-row">
+        <input
+          id="bedCount"
+          type="number"
+          min="1"
+          max="60"
+          aria-invalid={invalid}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <span className="room-form__bed-count-label">bed{value === '1' ? '' : 's'} in this room</span>
+      </div>
+      {fieldErr}
+    </div>
+  );
+}
+
 export default function RoomsPanel() {
   const session = getSession();
   // Seeded from what this session already fetched, so coming back to the page
@@ -93,6 +146,17 @@ export default function RoomsPanel() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState(null);
+  // True only for the moment between a dormitory room's own creation and the
+  // desk adding its first bed — see handleSubmit. Powers the "Room saved —
+  // now add its beds" banner so the jump straight into edit mode doesn't
+  // read as the form failing to close.
+  const [justCreatedDormitory, setJustCreatedDormitory] = useState(false);
+  // In flight while the checkbox's own silent create (below) is saving —
+  // separate from `submitting`, which is the room's own explicit Save/Add,
+  // because the two can't be the same flag: this one fires from a checkbox
+  // click, not a form submit, and disables that checkbox rather than the
+  // footer button while it runs.
+  const [autoCreating, setAutoCreating] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [formError, setFormError] = useState('');
   const [fieldError, setFieldError] = useState(null);
@@ -184,11 +248,13 @@ export default function RoomsPanel() {
     setForm(initialForm);
     setExistingImages([]);
     setFormError('');
+    setJustCreatedDormitory(false);
     setShowForm(true);
   };
 
   const openEditForm = (room) => {
     setEditingRoomId(room.id);
+    setJustCreatedDormitory(false);
     setForm({
       mode: 'single',
       roomNumber: room.roomNumber,
@@ -204,11 +270,119 @@ export default function RoomsPanel() {
       maxOccupancy: room.maxOccupancy != null ? String(room.maxOccupancy) : '',
       description: room.description || '',
       imageFiles: [],
+      isDormitory: !!room.isDormitory,
+      dormitoryGender: room.dormitoryGender || '',
+      dormitoryPrice: room.dormitoryPrice != null ? String(room.dormitoryPrice) : '',
+      dormitoryIsAc: room.dormitoryIsAc || '',
+      // room.dormitoryBeds is already the room's full bed list (see
+      // listRooms in rooms.service.js) — no separate fetch needed just to
+      // know how many there are.
+      bedCount: room.isDormitory ? String(room.dormitoryBeds?.length ?? 0) : '',
     });
     setExistingImages(room.images || []);
     setFormError('');
     setShowForm(true);
   };
+
+  // Guards re-entrancy synchronously — autoCreating (state) only updates on
+  // the next render, which is too late to stop the retry effect below from
+  // firing a second create for a fast run of field changes (e.g. a paste)
+  // that lands before that render happens.
+  const autoCreatingRef = useRef(false);
+
+  // Ticking "This is a dormitory" is the moment the desk wants to start
+  // adding beds — asking them to also finish Pricing/Photos and press Add
+  // room first, then find the room again to open it, was the whole
+  // complaint. So the room saves itself right here, the instant enough is
+  // known to save it validly (category, a single room number, floor,
+  // bathroom, who it's for, its price, and AC/Non-AC — a dormitory has no
+  // default rate or room type worth falling back to), and the same open
+  // modal swings straight into edit mode where the bed editor already
+  // lives — no second screen, no reopening.
+  const tryAutoCreateDormitory = async () => {
+    if (
+      !form.categoryId ||
+      !form.roomNumber.trim() ||
+      !form.floor.trim() ||
+      !form.bathroomType ||
+      !form.dormitoryGender ||
+      !form.dormitoryPrice ||
+      Number(form.dormitoryPrice) <= 0 ||
+      !form.dormitoryIsAc ||
+      autoCreatingRef.current
+    ) {
+      return;
+    }
+    autoCreatingRef.current = true;
+    setFormError('');
+    setFieldError(null);
+    setAutoCreating(true);
+    try {
+      const formData = new FormData();
+      formData.append('categoryId', String(Number(form.categoryId)));
+      formData.append('roomNumber', form.roomNumber.trim());
+      formData.append('floor', form.floor.trim());
+      formData.append('bathroomType', form.bathroomType);
+      formData.append('description', form.description.trim());
+      formData.append('isDormitory', 'true');
+      formData.append('dormitoryGender', form.dormitoryGender);
+      formData.append('dormitoryPrice', String(Number(form.dormitoryPrice)));
+      formData.append('dormitoryIsAc', form.dormitoryIsAc);
+      const result = await apiPostForm('/rooms', formData, { token: session?.token });
+      loadAll();
+      setEditingRoomId(result.roomIds[0]);
+      setJustCreatedDormitory(true);
+      // A brand-new dormitory has no beds yet — the count field starts at 0
+      // rather than blank, so the desk types the number they actually want
+      // and it saves along with everything else on the next Save.
+      setForm((f) => ({ ...f, bedCount: f.bedCount || '0' }));
+    } catch (err) {
+      // The box stays checked on failure — a taken room number is the
+      // likely cause, named under its field, and the retry effect below
+      // tries again on its own the moment the desk corrects it. Only an
+      // error with nowhere to land (a dropped connection) is worth
+      // unchecking the box for, since nothing the desk can fix in a field
+      // would otherwise trigger a retry.
+      if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
+        failOn(err.field, err.message);
+      } else {
+        reportFormError(err instanceof ApiError ? err.message : 'Could not save this room.');
+        setForm((f) => ({ ...f, isDormitory: false }));
+      }
+    } finally {
+      autoCreatingRef.current = false;
+      setAutoCreating(false);
+    }
+  };
+
+  // The one place the room actually gets saved for the dormitory checkbox:
+  // fires whenever isDormitory is checked and re-fires as each required
+  // field (room number, category, floor, bathroom, who it's for, its price,
+  // AC/Non-AC) is filled in — most of those attempts quietly no-op inside
+  // tryAutoCreateDormitory until all seven are present, so the desk never
+  // has to notice or re-click anything; the room appears and the bed editor
+  // opens the moment it's actually possible to save it, whichever order the
+  // fields were filled in.
+  useEffect(() => {
+    if (!showForm || editingRoomId || !form.isDormitory) return;
+    // Deferred a tick so the state updates inside tryAutoCreateDormitory
+    // (setAutoCreating, setEditingRoomId, ...) land as their own update
+    // outside this effect's own commit, rather than synchronously within it.
+    const timer = setTimeout(() => tryAutoCreateDormitory(), 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    showForm,
+    editingRoomId,
+    form.isDormitory,
+    form.roomNumber,
+    form.categoryId,
+    form.floor,
+    form.bathroomType,
+    form.dormitoryGender,
+    form.dormitoryPrice,
+    form.dormitoryIsAc,
+  ]);
 
   const addImageFiles = (fileList) => {
     setForm((f) => {
@@ -330,26 +504,54 @@ export default function RoomsPanel() {
       failOn('rangeEnd', 'Enter the end of the range.');
       return;
     }
+    if (!editingRoomId && form.mode === 'bulk' && form.isDormitory) {
+      failOn('isDormitory', 'A dormitory room can’t be added as a bulk range — add it as a single room, then add its beds.');
+      return;
+    }
     if (!form.floor.trim()) {
       failOn('floor', 'Enter the floor.');
       return;
     }
-    const missingBedSize = form.beds.findIndex((b) => !b.size);
-    if (form.beds.length === 0 || missingBedSize !== -1) {
-      failOn(`bed-size-${missingBedSize === -1 ? 0 : missingBedSize}`, 'Choose a size for every bed.');
-      return;
-    }
-    const badBedCount = form.beds.findIndex((b) => !b.count || Number(b.count) < 1);
-    if (badBedCount !== -1) {
-      failOn(`bed-size-${badBedCount}`, 'Each bed needs a count of 1 or more.');
-      return;
+    // A dormitory has neither field: its beds are added one at a time after
+    // this save, and there's no single party's headcount to cap.
+    if (!form.isDormitory) {
+      const missingBedSize = form.beds.findIndex((b) => !b.size);
+      if (form.beds.length === 0 || missingBedSize !== -1) {
+        failOn(`bed-size-${missingBedSize === -1 ? 0 : missingBedSize}`, 'Choose a size for every bed.');
+        return;
+      }
+      const badBedCount = form.beds.findIndex((b) => !b.count || Number(b.count) < 1);
+      if (badBedCount !== -1) {
+        failOn(`bed-size-${badBedCount}`, 'Each bed needs a count of 1 or more.');
+        return;
+      }
     }
     if (!form.bathroomType) {
       failOn('bathroomType', 'Choose a bathroom type.');
       return;
     }
-    if (!form.maxOccupancy || Number(form.maxOccupancy) <= 0) {
+    if (!form.isDormitory && (!form.maxOccupancy || Number(form.maxOccupancy) <= 0)) {
       failOn('maxOccupancy', 'Enter a max occupancy greater than 0.');
+      return;
+    }
+    if (form.isDormitory && !form.dormitoryGender) {
+      failOn('dormitoryGender', 'Choose who this dormitory is for.');
+      return;
+    }
+    if (form.isDormitory && (!form.dormitoryPrice || Number(form.dormitoryPrice) <= 0)) {
+      failOn('dormitoryPrice', 'Enter a price per night for this dormitory.');
+      return;
+    }
+    if (form.isDormitory && !form.dormitoryIsAc) {
+      failOn('dormitoryIsAc', 'Choose AC or Non-AC.');
+      return;
+    }
+    // The bed-count field only exists once the room does (see the JSX gate,
+    // editingRoomId && form.isDormitory) — a dormitory being created for the
+    // first time hasn't reached that step yet, so there's nothing to check
+    // here on that pass.
+    if (editingRoomId && form.isDormitory && (form.bedCount === '' || Number(form.bedCount) < 1)) {
+      failOn('bedCount', 'Enter at least 1 bed.');
       return;
     }
 
@@ -358,18 +560,39 @@ export default function RoomsPanel() {
       const formData = new FormData();
       formData.append('categoryId', String(Number(form.categoryId)));
       formData.append('floor', form.floor.trim());
-      formData.append(
-        'beds',
-        JSON.stringify(form.beds.map((b) => ({ size: b.size, count: Number(b.count) })))
-      );
+      // A dormitory sends neither — the server treats their absence as
+      // deliberate for a dormitory (see rooms.schema.js), the same way this
+      // form hides the fields that would otherwise fill them in.
+      if (!form.isDormitory) {
+        formData.append(
+          'beds',
+          JSON.stringify(form.beds.map((b) => ({ size: b.size, count: Number(b.count) })))
+        );
+        formData.append('maxOccupancy', String(Number(form.maxOccupancy)));
+      } else {
+        formData.append('dormitoryGender', form.dormitoryGender);
+        formData.append('dormitoryPrice', String(Number(form.dormitoryPrice)));
+        formData.append('dormitoryIsAc', form.dormitoryIsAc);
+      }
       formData.append('bathroomType', form.bathroomType);
-      formData.append('maxOccupancy', String(Number(form.maxOccupancy)));
       formData.append('description', form.description.trim());
+      formData.append('isDormitory', String(form.isDormitory));
       form.imageFiles.forEach((file) => formData.append('images', file));
 
       if (editingRoomId) {
         formData.append('roomNumber', form.roomNumber.trim());
         await apiPatchForm(`/rooms/${editingRoomId}`, formData, { token: session?.token });
+        // The room itself is saved at this point — reflected in the list
+        // even if the bed-count call right below fails, so a shrink blocked
+        // by a booked bed doesn't read as the whole save having failed.
+        loadAll();
+        // Bed count is its own call, not a field on the room row — it saves
+        // right after the room does, same "one Save button" moment, rather
+        // than needing its own button the way it used to.
+        if (form.isDormitory) {
+          await apiPut(`/rooms/${editingRoomId}/beds/count`, { count: Number(form.bedCount) }, { token: session?.token });
+        }
+        setShowForm(false);
       } else {
         if (form.mode === 'single') {
           formData.append('roomNumber', form.roomNumber.trim());
@@ -377,10 +600,22 @@ export default function RoomsPanel() {
           formData.append('rangeStart', String(Number(form.rangeStart)));
           formData.append('rangeEnd', String(Number(form.rangeEnd)));
         }
-        await apiPostForm('/rooms', formData, { token: session?.token });
+        const result = await apiPostForm('/rooms', formData, { token: session?.token });
+        loadAll();
+
+        // A brand-new dormitory has no beds yet — closing the form here would
+        // leave the desk to go find the room again and reopen it just to add
+        // them. Bulk mode can't reach this branch (isDormitory is disabled
+        // for it), so a dormitory create always makes exactly one room, and
+        // its id is the one to reopen straight into the bed editor.
+        if (form.isDormitory && result.roomIds.length === 1) {
+          setEditingRoomId(result.roomIds[0]);
+          setForm((f) => ({ ...f, mode: 'single', roomNumber: form.roomNumber.trim() }));
+          setJustCreatedDormitory(true);
+        } else {
+          setShowForm(false);
+        }
       }
-      setShowForm(false);
-      loadAll();
     } catch (err) {
       // A room number (or range) already taken, or a category that stopped
       // being valid between opening the form and saving it, both name the
@@ -430,6 +665,9 @@ export default function RoomsPanel() {
         room.bathroomType && bathroomTypeLabel[room.bathroomType],
         room.maxOccupancy && `Max ${room.maxOccupancy} Guests`,
         room.isActive ? 'Active' : 'Inactive',
+        room.isDormitory && 'Dormitory',
+        room.isDormitory && room.dormitoryGender && dormitoryGenderLabel[room.dormitoryGender],
+        room.isDormitory && room.dormitoryIsAc && dormitoryAcLabel[room.dormitoryIsAc],
         room.description
       )
     );
@@ -480,8 +718,7 @@ export default function RoomsPanel() {
     3:
       form.floor.trim() !== '' &&
       form.bathroomType !== '' &&
-      form.beds.some((b) => b.size !== '') &&
-      form.maxOccupancy !== '',
+      (form.isDormitory || (form.beds.some((b) => b.size !== '') && form.maxOccupancy !== '')),
     4: photoCount > 0,
   };
 
@@ -607,9 +844,35 @@ export default function RoomsPanel() {
                 </div>
                 <div className="room-card__category">{room.category.name}</div>
 
-                {(room.floor || room.bedSize || room.bathroomType || room.maxOccupancy) && (
+                {(room.floor || room.bedSize || room.bathroomType || room.maxOccupancy || room.isDormitory) && (
                   <div className="room-card__chips">
                     {room.floor && <span className="room-card__chip">Floor {room.floor}</span>}
+                    {room.isDormitory && (room.dormitoryBeds?.length ?? 0) === 0 ? (
+                      // No beds yet means this room can't actually be
+                      // booked — flagged as a warning, not just a fact,
+                      // and clicking it goes straight to where that gets
+                      // fixed instead of making the desk find Edit first.
+                      <button
+                        type="button"
+                        className="room-card__chip room-card__chip--dormitory room-card__chip--warn"
+                        onClick={() => openEditForm(room)}
+                        title="This dormitory has no beds yet — click to add some."
+                      >
+                        Dormitory · no beds yet
+                      </button>
+                    ) : (
+                      room.isDormitory && (
+                        <span className="room-card__chip room-card__chip--dormitory">
+                          Dormitory · {room.dormitoryBeds.length} bed{room.dormitoryBeds.length === 1 ? '' : 's'}
+                        </span>
+                      )
+                    )}
+                    {room.isDormitory && room.dormitoryGender && (
+                      <span className="room-card__chip">{dormitoryGenderLabel[room.dormitoryGender]}</span>
+                    )}
+                    {room.isDormitory && room.dormitoryIsAc && (
+                      <span className="room-card__chip">{dormitoryAcLabel[room.dormitoryIsAc]}</span>
+                    )}
                     {bedSummary(room) && <span className="room-card__chip">{bedSummary(room)}</span>}
                     {room.bathroomType && (
                       <span className="room-card__chip">
@@ -659,9 +922,19 @@ export default function RoomsPanel() {
                   scroll out of sight. Same shape as the new-booking form. */}
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
-                  <h3>{editingRoomId ? `Edit room · ${form.roomNumber}` : 'Add room'}</h3>
+                  <h3>
+                    {justCreatedDormitory
+                      ? `Add beds · ${form.roomNumber}`
+                      : editingRoomId
+                        ? `Edit room · ${form.roomNumber}`
+                        : 'Add room'}
+                  </h3>
                   {/* One room or a floor's worth is the first decision, so it
-                      belongs beside the title. An edit is always one room. */}
+                      belongs beside the title. An edit is always one room,
+                      and so is a dormitory — a bulk range shares one set of
+                      details across every room in it, and a dormitory's beds
+                      are added one room at a time after it's saved, so the
+                      two can't be combined (enforced again on submit). */}
                   {!editingRoomId && (
                     <div className="toggle-group">
                       <button
@@ -674,6 +947,7 @@ export default function RoomsPanel() {
                       <button
                         type="button"
                         aria-pressed={form.mode === 'bulk'}
+                        disabled={form.isDormitory}
                         onClick={() => setForm((f) => ({ ...f, mode: 'bulk' }))}
                       >
                         Bulk range
@@ -694,11 +968,13 @@ export default function RoomsPanel() {
                   </button>
                 </div>
                 <p className="modal-form__sub">
-                  {editingRoomId
-                    ? 'Corrections apply to this room only — its bookings and history stay as they are.'
-                    : form.mode === 'bulk'
-                      ? 'Creates every room in the range at once, all sharing these details. Photos are added per room afterwards.'
-                      : 'Adds one room to the chart. Everything but the description and photos is needed before it can be booked.'}
+                  {justCreatedDormitory
+                    ? 'The room itself is saved. Add at least one bed so guests can actually book it.'
+                    : editingRoomId
+                      ? 'Corrections apply to this room only — its bookings and history stay as they are.'
+                      : form.mode === 'bulk'
+                        ? 'Creates every room in the range at once, all sharing these details. Photos are added per room afterwards.'
+                        : 'Adds one room to the chart. Everything but the description and photos is needed before it can be booked.'}
                 </p>
               </div>
 
@@ -765,6 +1041,140 @@ export default function RoomsPanel() {
                     </div>
                   </div>
                 )}
+
+                {/* Made here, right beside the number, because it changes
+                    what the rest of the form is for — a dormitory has no
+                    single "beds" or "max occupancy" of its own (those
+                    describe a private room), and its actual beds are added
+                    right below, in this same open form, the moment there's
+                    a room to attach them to. Burying that choice as a
+                    checkbox at the bottom of Room details, after the fields
+                    it changes the meaning of, was the confusing part. */}
+                {/* Stays a real, editable checkbox even once the room
+                    exists — a room genuinely opened via Edit can still be
+                    switched either way, saved the normal way on "Save
+                    changes" like any other field here. Only the *auto-save*
+                    below is gated to a room that doesn't exist yet
+                    (!editingRoomId); ticking this on an existing room just
+                    changes the field, same as typing in the floor box. */}
+                <div className="field field--checkbox room-type-choice">
+                  <label htmlFor="isDormitory">
+                    <input
+                      id="isDormitory"
+                      type="checkbox"
+                      checked={form.isDormitory}
+                      disabled={autoCreating}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        // The effect below does the actual saving, watching
+                        // isDormitory along with the fields it needs — this
+                        // only flips the flag. Keeping the save in one place
+                        // (the effect) rather than also here avoids firing it
+                        // twice for the same check.
+                        setForm((f) => ({
+                          ...f,
+                          isDormitory: checked,
+                          // A dormitory is always a single room — see the
+                          // disabled Bulk toggle above.
+                          mode: checked ? 'single' : f.mode,
+                        }));
+                      }}
+                    />
+                    This is a dormitory — sold bed by bed, not as one room
+                  </label>
+                  {fieldErr('isDormitory')}
+                  {form.isDormitory ? (
+                    <>
+                      <div className="field-row field-row--triple room-type-choice__fields">
+                        <div className="field">
+                          <label htmlFor="dormitoryGender">
+                            Who stays here
+                            <Req />
+                          </label>
+                          <select
+                            id="dormitoryGender"
+                            aria-invalid={invalid('dormitoryGender')}
+                            value={form.dormitoryGender}
+                            onChange={(e) => setForm((f) => ({ ...f, dormitoryGender: e.target.value }))}
+                          >
+                            <option value="">Choose one</option>
+                            {DORMITORY_GENDERS.map((g) => (
+                              <option key={g} value={g}>
+                                {dormitoryGenderLabel[g]}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldErr('dormitoryGender')}
+                        </div>
+                        <div className="field">
+                          <label htmlFor="dormitoryPrice">
+                            Price / night
+                            <Req />
+                          </label>
+                          <input
+                            id="dormitoryPrice"
+                            type="number"
+                            min="1"
+                            step="0.01"
+                            aria-invalid={invalid('dormitoryPrice')}
+                            value={form.dormitoryPrice}
+                            onChange={(e) => setForm((f) => ({ ...f, dormitoryPrice: e.target.value }))}
+                            placeholder="e.g. 500"
+                          />
+                          {fieldErr('dormitoryPrice')}
+                        </div>
+                        <div className="field">
+                          <label htmlFor="dormitoryIsAc">
+                            Room type
+                            <Req />
+                          </label>
+                          <select
+                            id="dormitoryIsAc"
+                            aria-invalid={invalid('dormitoryIsAc')}
+                            value={form.dormitoryIsAc}
+                            onChange={(e) => setForm((f) => ({ ...f, dormitoryIsAc: e.target.value }))}
+                          >
+                            <option value="">Choose one</option>
+                            {DORMITORY_AC_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {dormitoryAcLabel[option]}
+                              </option>
+                            ))}
+                          </select>
+                          {/* Descriptive only — already covered by the price
+                              above, never a separate charge. Replaces what
+                              used to be a free extras checklist here. */}
+                          {fieldErr('dormitoryIsAc')}
+                        </div>
+                      </div>
+                      <>
+                        {editingRoomId && justCreatedDormitory && (
+                          <div className="form-banner form-banner--success">
+                            Room {form.roomNumber} saved. Set its bed count, then Save changes — guests can’t
+                            book this room until it has at least one bed.
+                          </div>
+                        )}
+                        <DormitoryBedCountField
+                          value={form.bedCount}
+                          onChange={(value) => setForm((f) => ({ ...f, bedCount: value }))}
+                          invalid={invalid('bedCount')}
+                          fieldErr={fieldErr('bedCount')}
+                        />
+                      </>
+                      <p className="modal-form__hint">
+                        {editingRoomId
+                          ? 'One rate for every bed in this room — set how many beds it has above.'
+                          : autoCreating
+                            ? 'Saving the room…'
+                            : 'Fill in the room number, category, floor, bathroom, who this dormitory is for, its price and bed count. The room then saves and stays open for confirmation.'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="modal-form__hint">
+                      Leave unchecked for an ordinary room booked as a whole — most rooms are this.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="form-section">
@@ -846,94 +1256,104 @@ export default function RoomsPanel() {
                     {fieldErr('bathroomType')}
                   </div>
                 </div>
-                  <div className="field field--beds">
-                    <label htmlFor="bed-size-0">
-                      Beds
-                      <Req />
-                    </label>
-                    {/* One row per bed type, because a family room is a double
-                        and two singles — storing whichever one the desk picked
-                        first was losing the other half of the room. */}
-                    {form.beds.map((bed, i) => (
-                      <div key={i}>
-                        <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`}>
-                          <select
-                            id={`bed-size-${i}`}
-                            aria-invalid={invalid(`bed-size-${i}`)}
-                            value={bed.size}
-                            onChange={(e) =>
-                              setForm((f) => ({
-                                ...f,
-                                beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
-                              }))
-                            }
-                          >
-                            <option value="">Choose one</option>
-                            {BED_SIZES.map((size) => (
-                              <option key={size} value={size}>
-                                {bedSizeLabel[size]}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            min="1"
-                            className="bed-row__count"
-                            aria-invalid={invalid(`bed-size-${i}`)}
-                            aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
-                            value={bed.count}
-                            onChange={(e) =>
-                              setForm((f) => ({
-                                ...f,
-                                beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
-                              }))
-                            }
-                          />
-                          {/* The last row has no remove button: a room with no
-                              beds is not a room, and the server rejects it. */}
-                          {form.beds.length > 1 && (
-                            <button
-                              type="button"
-                              className="bed-row__remove"
-                              aria-label="Remove this bed"
-                              onClick={() =>
-                                setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                {/* A dormitory's beds are individually labelled and priced in
+                    the Beds section below, not this "one shared bed layout"
+                    field — showing both would ask the same question twice
+                    and let them disagree. Same for max occupancy: that caps
+                    one party in a private room, and has no meaning once the
+                    room sells by the bed to unrelated guests. */}
+                {!form.isDormitory && (
+                  <>
+                    <div className="field field--beds">
+                      <label htmlFor="bed-size-0">
+                        Beds
+                        <Req />
+                      </label>
+                      {/* One row per bed type, because a family room is a double
+                          and two singles — storing whichever one the desk picked
+                          first was losing the other half of the room. */}
+                      {form.beds.map((bed, i) => (
+                        <div key={i}>
+                          <div className={`bed-row${form.beds.length > 1 ? '' : ' bed-row--single'}`}>
+                            <select
+                              id={`bed-size-${i}`}
+                              aria-invalid={invalid(`bed-size-${i}`)}
+                              value={bed.size}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  beds: f.beds.map((b, j) => (j === i ? { ...b, size: e.target.value } : b)),
+                                }))
                               }
                             >
-                              ×
-                            </button>
-                          )}
+                              <option value="">Choose one</option>
+                              {BED_SIZES.map((size) => (
+                                <option key={size} value={size}>
+                                  {bedSizeLabel[size]}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min="1"
+                              className="bed-row__count"
+                              aria-invalid={invalid(`bed-size-${i}`)}
+                              aria-label={`How many ${bedSizeLabel[bed.size] || ''} beds`}
+                              value={bed.count}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  beds: f.beds.map((b, j) => (j === i ? { ...b, count: e.target.value } : b)),
+                                }))
+                              }
+                            />
+                            {/* The last row has no remove button: a room with no
+                                beds is not a room, and the server rejects it. */}
+                            {form.beds.length > 1 && (
+                              <button
+                                type="button"
+                                className="bed-row__remove"
+                                aria-label="Remove this bed"
+                                onClick={() =>
+                                  setForm((f) => ({ ...f, beds: f.beds.filter((_, j) => j !== i) }))
+                                }
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                          {fieldErr(`bed-size-${i}`)}
                         </div>
-                        {fieldErr(`bed-size-${i}`)}
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      className="bed-add"
-                      onClick={() =>
-                        setForm((f) => ({ ...f, beds: [...f.beds, { size: '', count: '1' }] }))
-                      }
-                    >
-                      + Add another bed
-                    </button>
-                  </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="bed-add"
+                        onClick={() =>
+                          setForm((f) => ({ ...f, beds: [...f.beds, { size: '', count: '1' }] }))
+                        }
+                      >
+                        + Add another bed
+                      </button>
+                    </div>
 
-                <div className="field">
-                  <label htmlFor="maxOccupancy">
-                    Max occupancy
-                    <Req />
-                  </label>
-                  <input
-                    id="maxOccupancy"
-                    type="number"
-                    min="1"
-                    aria-invalid={invalid('maxOccupancy')}
-                    value={form.maxOccupancy}
-                    onChange={(e) => setForm((f) => ({ ...f, maxOccupancy: e.target.value }))}
-                    placeholder="2"
-                  />
-                  {fieldErr('maxOccupancy')}
-                </div>
+                    <div className="field">
+                      <label htmlFor="maxOccupancy">
+                        Max occupancy
+                        <Req />
+                      </label>
+                      <input
+                        id="maxOccupancy"
+                        type="number"
+                        min="1"
+                        aria-invalid={invalid('maxOccupancy')}
+                        value={form.maxOccupancy}
+                        onChange={(e) => setForm((f) => ({ ...f, maxOccupancy: e.target.value }))}
+                        placeholder="2"
+                      />
+                      {fieldErr('maxOccupancy')}
+                    </div>
+                  </>
+                )}
 
                 <div className="field">
                   <label htmlFor="description">Description (optional)</label>
@@ -945,6 +1365,7 @@ export default function RoomsPanel() {
                     maxLength={200}
                   />
                 </div>
+
               </div>
 
               {(editingRoomId || form.mode === 'single') && (
@@ -1025,7 +1446,10 @@ export default function RoomsPanel() {
                 </div>
                 <div className="modal-form__foot-actions">
                   <button type="button" className="btn-secondary" onClick={closeForm} disabled={submitting}>
-                    Cancel
+                    {/* The room is already saved at this point — "Cancel"
+                        would read as undoing it, when closing here just
+                        stops adding beds for now. */}
+                    {justCreatedDormitory ? 'Done' : 'Cancel'}
                   </button>
                   <button className="btn-accent" type="submit" disabled={submitting}>
                     {editingRoomId

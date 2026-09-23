@@ -31,18 +31,64 @@ const bedsSchema = z.preprocess(
     .max(10, 'Add at most 10 bed types to a room.')
 );
 
+// A dormitory has no single bed layout or max occupancy of its own — beds
+// are the individually labelled, individually priced rows added after the
+// room is saved (dormitory_beds), and there is no one party to cap the
+// headcount of. Both fields are pointless to ask for on a dormitory, so they
+// arrive optional and the room saves with the same "no data yet" shape
+// dormitory_beds itself starts in: bed_size/beds NULL, max_occupancy NULL.
+const optionalBedsSchema = bedsSchema.optional();
+const optionalMaxOccupancy = z.coerce
+  .number()
+  .int()
+  .positive('Enter a max occupancy greater than 0.')
+  .optional();
+
+const DORMITORY_GENDERS = ['MALE', 'FEMALE', 'BOTH'];
+
+// Which guests a dormitory can hold — required on a dormitory room (see the
+// refine below), meaningless and always absent on an ordinary one.
+const dormitoryGenderField = () =>
+  z.enum(DORMITORY_GENDERS, { error: 'Choose who this dormitory is for.' }).optional();
+
+const DORMITORY_AC_OPTIONS = ['AC', 'NON_AC'];
+
+// AC or Non-AC — the one thing the old free extras checklist was standing in
+// for. A plain tag, not a charge: already priced into dormitoryPrice, same
+// as dormitoryGender is descriptive rather than something billed. An enum
+// rather than a coerced boolean on purpose — z.coerce.boolean() reads the
+// string 'false' as true (any non-empty string is truthy), which would
+// silently turn every "Non-AC" pick into "AC".
+const dormitoryIsAcField = () =>
+  z.enum(DORMITORY_AC_OPTIONS, { error: 'Choose AC or Non-AC.' }).optional();
+
+// One rate for the whole room — every bed in it charges this. Required on a
+// dormitory (see the refine below): unlike an ordinary room, a dormitory has
+// no category-derived default the desk is likely to actually want — beds
+// sell far under a private room's rate, and silently falling back to the
+// category price would quietly overcharge every bed until someone noticed.
+const dormitoryPriceField = () =>
+  z.coerce.number().positive('Enter a price greater than 0.').optional();
+
 const createRoomSchema = z
   .object({
     categoryId: z.coerce.number().int().positive('Choose a category.'),
     switchableChargeIds: z.array(z.coerce.number().int().positive()).optional().default([]),
     floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
-    beds: bedsSchema,
+    beds: optionalBedsSchema,
     bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
-    maxOccupancy: z.coerce.number().int().positive('Enter a max occupancy greater than 0.'),
+    maxOccupancy: optionalMaxOccupancy,
     description: z.string().trim().max(200, 'Keep the description under 200 characters.').optional().default(''),
     roomNumber: z.string().trim().optional().default(''),
     rangeStart: z.coerce.number().int().positive().optional(),
     rangeEnd: z.coerce.number().int().positive().optional(),
+    // Sold bed by bed rather than as one whole room. A bulk range can't be a
+    // dormitory — dormitory beds are added one at a time after the room
+    // exists, the same reason bulk-created rooms get no photos either.
+    isDormitory: z.coerce.boolean().optional().default(false),
+    dormitoryGender: dormitoryGenderField(),
+    dormitoryPrice: dormitoryPriceField(),
+    dormitoryIsAc: dormitoryIsAcField(),
   })
   .refine(
     (data) => {
@@ -63,7 +109,36 @@ const createRoomSchema = z
     (data) =>
       data.rangeStart == null || data.rangeEnd == null || data.rangeEnd - data.rangeStart < 100,
     { message: 'Add rooms in batches of 100 or fewer.', path: ['rangeEnd'] }
-  );
+  )
+  .refine((data) => !data.isDormitory || data.roomNumber.length > 0, {
+    message: 'A dormitory room can’t be added as a bulk range — add it as a single room, then add its beds.',
+    path: ['isDormitory'],
+  })
+  // An ordinary room still needs both — only a dormitory is let off the
+  // hook, and only because it has its own answer to both questions
+  // (individual beds, no shared occupancy cap) that lives elsewhere.
+  .refine((data) => data.isDormitory || (data.beds && data.beds.length > 0), {
+    message: 'Add at least one bed.',
+    path: ['beds'],
+  })
+  .refine((data) => data.isDormitory || data.maxOccupancy != null, {
+    message: 'Enter a max occupancy greater than 0.',
+    path: ['maxOccupancy'],
+  })
+  // The one thing a dormitory does require that an ordinary room has no
+  // equivalent of — which beds it's even open to booking.
+  .refine((data) => !data.isDormitory || data.dormitoryGender != null, {
+    message: 'Choose who this dormitory is for.',
+    path: ['dormitoryGender'],
+  })
+  .refine((data) => !data.isDormitory || data.dormitoryPrice != null, {
+    message: 'Enter a price per night for this dormitory.',
+    path: ['dormitoryPrice'],
+  })
+  .refine((data) => !data.isDormitory || data.dormitoryIsAc != null, {
+    message: 'Choose AC or Non-AC.',
+    path: ['dormitoryIsAc'],
+  });
 
 // Editing a room is always a single room (no bulk range), so this is a
 // leaner sibling of createRoomSchema rather than a .partial() of it — the
@@ -72,16 +147,44 @@ const createRoomSchema = z
 // doesn't manage it (booking extras now apply lodge-wide, not per room), so
 // omitting it must leave any existing room_switchable_charges rows alone
 // instead of wiping them on every edit.
-const updateRoomSchema = z.object({
-  roomNumber: z.string({ error: 'Enter a room number.' }).trim().min(1, 'Enter a room number.'),
-  categoryId: z.coerce.number().int().positive('Choose a category.'),
-  switchableChargeIds: z.array(z.coerce.number().int().positive()).optional(),
-  floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
-  beds: bedsSchema,
-  bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
-  maxOccupancy: z.coerce.number().int().positive('Enter a max occupancy greater than 0.'),
-  description: z.string().trim().max(200, 'Keep the description under 200 characters.').optional().default(''),
-});
+const updateRoomSchema = z
+  .object({
+    roomNumber: z.string({ error: 'Enter a room number.' }).trim().min(1, 'Enter a room number.'),
+    categoryId: z.coerce.number().int().positive('Choose a category.'),
+    switchableChargeIds: z.array(z.coerce.number().int().positive()).optional(),
+    floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
+    beds: optionalBedsSchema,
+    bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
+    maxOccupancy: optionalMaxOccupancy,
+    description: z.string().trim().max(200, 'Keep the description under 200 characters.').optional().default(''),
+    isDormitory: z.coerce.boolean().optional().default(false),
+    dormitoryGender: dormitoryGenderField(),
+    dormitoryPrice: dormitoryPriceField(),
+    dormitoryIsAc: dormitoryIsAcField(),
+  })
+  // Same carve-out as createRoomSchema: a dormitory answers "beds" and
+  // "occupancy" through dormitory_beds instead, so it's the one case that
+  // can save without either.
+  .refine((data) => data.isDormitory || (data.beds && data.beds.length > 0), {
+    message: 'Add at least one bed.',
+    path: ['beds'],
+  })
+  .refine((data) => data.isDormitory || data.maxOccupancy != null, {
+    message: 'Enter a max occupancy greater than 0.',
+    path: ['maxOccupancy'],
+  })
+  .refine((data) => !data.isDormitory || data.dormitoryGender != null, {
+    message: 'Choose who this dormitory is for.',
+    path: ['dormitoryGender'],
+  })
+  .refine((data) => !data.isDormitory || data.dormitoryPrice != null, {
+    message: 'Enter a price per night for this dormitory.',
+    path: ['dormitoryPrice'],
+  })
+  .refine((data) => !data.isDormitory || data.dormitoryIsAc != null, {
+    message: 'Choose AC or Non-AC.',
+    path: ['dormitoryIsAc'],
+  });
 
 const statusSchema = z.object({ isActive: z.boolean({ error: 'isActive must be true or false.' }) });
 
@@ -122,4 +225,11 @@ const checkoutPolicySchema = z
     message: 'The full-day charge has to start after the grace period ends.',
   });
 
-module.exports = { createRoomSchema, updateRoomSchema, statusSchema, checkoutPolicySchema };
+module.exports = {
+  createRoomSchema,
+  updateRoomSchema,
+  statusSchema,
+  checkoutPolicySchema,
+  DORMITORY_GENDERS,
+  DORMITORY_AC_OPTIONS,
+};

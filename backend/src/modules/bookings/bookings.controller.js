@@ -99,6 +99,20 @@ async function listAvailableRoomsForBookingHandler(req, res, next) {
   }
 }
 
+async function listAvailableBedsHandler(req, res, next) {
+  try {
+    const roomId = Number(req.query.roomId);
+    if (!roomId) {
+      throw new ApiError('Choose a room.', 400);
+    }
+    const { checkInDate, checkOutDate } = parseDateRange(req.query);
+    const result = await bookingsService.listAvailableBeds(req.user.lodgeId, roomId, checkInDate, checkOutDate);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listBookingsHandler(req, res, next) {
   try {
     const filter = req.query.fromDate || req.query.toDate ? parseFromToRange(req.query) : {};
@@ -117,6 +131,7 @@ async function priceQuoteHandler(req, res, next) {
     }
     const { checkInDate, checkOutDate } = parseDateRange(req.query);
     const chargeIds = parseChargeIds(req.query.chargeIds);
+    const bedId = req.query.bedId ? Number(req.query.bedId) : null;
     const result = await bookingsService.priceStay(
       req.user.lodgeId,
       roomId,
@@ -124,7 +139,8 @@ async function priceQuoteHandler(req, res, next) {
       checkOutDate,
       chargeIds,
       parseBasePriceOverride(req.query.basePriceOverride),
-      parseDiscountAmount(req.query.discountAmount)
+      parseDiscountAmount(req.query.discountAmount),
+      bedId
     );
     res.json(result);
   } catch (err) {
@@ -492,6 +508,7 @@ module.exports = {
   deleteDraftHandler,
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
+  listAvailableBedsHandler,
   listBookingsHandler,
   searchGuestsHandler,
   priceQuoteHandler,

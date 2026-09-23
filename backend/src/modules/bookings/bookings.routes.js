@@ -4,6 +4,7 @@ const { idProofUpload } = require('../../middleware/idProofUpload');
 const {
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
+  listAvailableBedsHandler,
   listBookingsHandler,
   searchGuestsHandler,
   priceQuoteHandler,
@@ -43,6 +44,7 @@ router.delete('/drafts/:id', authenticate, staff, deleteDraftHandler);
 // already page through.
 router.get('/guest-search', authenticate, canSeeRegister, searchGuestsHandler);
 router.get('/available-rooms', authenticate, staff, listAvailableRoomsHandler);
+router.get('/available-beds', authenticate, staff, listAvailableBedsHandler);
 router.get('/price-quote', authenticate, staff, priceQuoteHandler);
 router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);

@@ -322,6 +322,13 @@
   color: var(--danger);
 }
 
+/* Same soft-fill language as the room-rate chip elsewhere in this form —
+   confirms a step actually completed, rather than warning about one. */
+.form-banner--success {
+  background: #eef4f2;
+  color: var(--brand-ink);
+}
+
 /* A save that fails after the round-trip to the server — the room got taken,
    the phone's already on file — lands its answer in this banner, but on a
    form this long the desk is usually scrolled well past the top by the time
@@ -429,6 +436,20 @@
   min-height: 0;
   flex-shrink: 0;
   accent-color: var(--brand);
+}
+
+/* A fact, not a control — what a dormitory's price already includes, so
+   there's nothing to tick and no pointer cursor inviting a click. */
+.checkbox-chip--static {
+  cursor: default;
+}
+
+/* The catalog price shown next to a room-setup extra, for reference only —
+   what it would cost as a standalone selectable extra, not what this room
+   actually charges for it. */
+.checkbox-chip__hint {
+  color: var(--text-muted, #6b7280);
+  font-size: 0.82em;
 }
 
 /* The count that appears beside a ticked extra (3 extra beds). Needs to
