@@ -31,6 +31,9 @@ const STRINGS_EN = {
   covers: 'Covers -',
   counter: 'Counter / takeaway',
   roomNo: 'Room No.',
+  bedTag: 'Bed',
+  dormitory: 'Dormitory bed',
+  dormitoryWhole: 'Dormitory (whole room)',
   persons: 'Persons -',
   rs: 'Rs.',
   ps: 'Ps.',
@@ -955,6 +958,23 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           </>
         )}
       </div>
+
+      {/* A dormitory stay is billed for one bed in a shared room, not the
+          room outright — said plainly right under the room line, or a guest
+          reading "017 (Standard)" has no way to tell this bill isn't for
+          the whole room. bedLabel is null on a buyout, which sells the
+          whole dormitory the same as an ordinary room, so that case is
+          named "Dormitory (whole room)" instead of naming a bed it has none
+          of. */}
+      {!isFoodBill && !isEventBill && invoice.isDormitory && (
+        <div className="memo__row">
+          <span className="memo__label">{T.bedTag}</span>
+          {/* Not narrow: that width is sized for a date or a phone number,
+              and "Dormitory bed — Bed 10" wraps inside it, breaking the
+              single ruled line the rest of this block keeps. */}
+          <Filled>{invoice.bedLabel ? `${T.dormitory} — ${invoice.bedLabel}` : T.dormitoryWhole}</Filled>
+        </div>
+      )}
 
       {/* The body: the stay stated on ruled lines to the left, the money column
           to the right. One table so the two halves share a top and bottom rule
