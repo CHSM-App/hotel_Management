@@ -1026,48 +1026,29 @@ class ApiService {
         .toList();
   }
 
-  Future<void> createEventVenue({
-    required String name,
-    int? capacityPax,
-    required num baseCharge,
-  }) async {
-    await _dio.post(
-      '/events/venues',
-      data: FormData.fromMap({
-        'name': name,
-        'capacityPax': capacityPax?.toString() ?? '',
-        'baseCharge': baseCharge.toString(),
-      }),
-    );
+  /// Multipart so any newly picked photos can ride along under the `images`
+  /// field, the same way [createRoom] does.
+  Future<void> createEventVenue(FormData form) async {
+    await _dio.post('/events/venues', data: form);
   }
 
-  /// Multipart when a field is actually being edited — the route runs
-  /// through the same multer middleware a photo upload would, and a plain
-  /// text field rides along untouched. The activate/deactivate toggle sends
-  /// no field of its own, only `isActive`, and takes the JSON door instead:
-  /// multer only reads a multipart body, so a boolean sent as a form field
-  /// would arrive as the string "true"/"false" and fail the server's
-  /// `z.boolean()` check. See venueImageUpload.js's own comment on this.
-  Future<void> updateEventVenue(
-    int id, {
-    String? name,
-    int? capacityPax,
-    num? baseCharge,
-    bool? isActive,
-  }) async {
-    if (name == null && capacityPax == null && baseCharge == null) {
-      await _dio.patch('/events/venues/$id', data: {if (isActive != null) 'isActive': isActive});
-      return;
-    }
-    await _dio.patch(
-      '/events/venues/$id',
-      data: FormData.fromMap({
-        if (name != null) 'name': name,
-        if (capacityPax != null) 'capacityPax': capacityPax.toString(),
-        if (baseCharge != null) 'baseCharge': baseCharge.toString(),
-        if (isActive != null) 'isActive': isActive.toString(),
-      }),
-    );
+  /// Multipart when a field (or a photo) is actually being edited — the
+  /// route runs through the same multer middleware a photo upload would.
+  /// The activate/deactivate toggle takes the JSON door instead via
+  /// [setEventVenueActive]: multer only reads a multipart body, so a
+  /// boolean sent as a form field would arrive as the string "true"/"false"
+  /// and fail the server's `z.boolean()` check. See venueImageUpload.js's
+  /// own comment on this.
+  Future<void> updateEventVenue(int id, FormData form) async {
+    await _dio.patch('/events/venues/$id', data: form);
+  }
+
+  Future<void> setEventVenueActive(int id, bool isActive) async {
+    await _dio.patch('/events/venues/$id', data: {'isActive': isActive});
+  }
+
+  Future<void> deleteEventVenueImage(int venueId, int imageId) async {
+    await _dio.delete('/events/venues/$venueId/images/$imageId');
   }
 
   /// Extras quoted on top of venue and plates — DJ, decor, mandap.

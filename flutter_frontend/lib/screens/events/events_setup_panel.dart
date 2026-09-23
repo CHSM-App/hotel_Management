@@ -1,18 +1,29 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../core/constant.dart';
 import '../../domain/models/event_booking.dart';
+import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/photo_source_sheet.dart';
+import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
+
+/// The most photos a venue can carry — mirrors [maxRoomImages] and the
+/// web's own MAX_VENUE_IMAGES.
+const maxVenueImages = 6;
 
 /// Events & functions > Setup — mirrors the Setup tab's two CatalogueCards
 /// in Events.jsx: Venues and Add-ons, each a list with inline activate /
-/// deactivate and an add/edit dialog. Venue photos are left to the web
-/// Setup tab, which already carries the multi-image picker the room form
-/// uses — this phone screen covers the fields a function is actually
-/// priced and booked on.
+/// deactivate and an add/edit dialog, plus a venue's own photo picker
+/// (same [AddPhotoTile]/[PhotoThumb] pieces and camera-or-gallery sheet the
+/// room form uses).
 class EventsSetupPanel extends ConsumerStatefulWidget {
   const EventsSetupPanel({super.key});
 
@@ -153,6 +164,32 @@ class _VenueRow extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
+          if (venue.images.isNotEmpty) ...[
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    '$baseUrl/venue-images/${venue.images.first.filename}',
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (venue.images.length > 1)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                      child: Text('+${venue.images.length - 1}', style: const TextStyle(color: Colors.white, fontSize: 9)),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: AppTheme.s8),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,7 +298,11 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
   late final _name = TextEditingController(text: widget.venue?.name ?? '');
   late final _capacity = TextEditingController(text: widget.venue?.capacityPax?.toString() ?? '');
   late final _charge = TextEditingController(text: widget.venue?.baseCharge == null ? '' : widget.venue!.baseCharge.toString());
+  late final List<RoomImage> _existingPhotos = List.of(widget.venue?.images ?? const []);
+  final List<XFile> _newPhotos = [];
   String? _error;
+
+  bool get _photosFull => _existingPhotos.length + _newPhotos.length >= maxVenueImages;
 
   @override
   void dispose() {
@@ -271,17 +312,58 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
     super.dispose();
   }
 
+  Future<void> _pickPhotos() async {
+    final room = _existingPhotos.length + _newPhotos.length;
+    final allowed = maxVenueImages - room;
+    if (allowed <= 0) return;
+    final source = await showPhotoSourceSheet(
+      context,
+      title: 'Add photos',
+      subtitle: 'Take a photo or pick some from your gallery',
+    );
+    if (source == null) return;
+    if (source == ImageSource.camera) {
+      final photo = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
+      if (photo != null) setState(() => _newPhotos.add(photo));
+      return;
+    }
+    final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
+    if (picked.isEmpty) return;
+    setState(() => _newPhotos.addAll(picked.take(allowed)));
+  }
+
+  Future<void> _removeExistingPhoto(RoomImage img) async {
+    if (widget.venue == null) return;
+    final vm = ref.read(eventsViewModelProvider.notifier);
+    final ok = await vm.deleteVenueImage(widget.venue!.id, img.id);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _existingPhotos.removeWhere((i) => i.id == img.id));
+    } else {
+      setState(() => _error = ref.read(eventsViewModelProvider).error ?? 'Could not delete this photo.');
+    }
+  }
+
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
       setState(() => _error = 'Enter a name for the venue.');
       return;
     }
-    final ok = await ref.read(eventsViewModelProvider.notifier).saveVenue(
-      id: widget.venue?.id,
-      name: _name.text.trim(),
-      capacityPax: int.tryParse(_capacity.text.trim()),
-      baseCharge: num.tryParse(_charge.text.trim()) ?? 0,
-    );
+    final formMap = <String, dynamic>{
+      'name': _name.text.trim(),
+      'capacityPax': _capacity.text.trim(),
+      'baseCharge': (num.tryParse(_charge.text.trim()) ?? 0).toString(),
+    };
+    for (final file in _newPhotos) {
+      formMap.update(
+        'images',
+        (existing) => [...(existing as List), dio.MultipartFile.fromFileSync(file.path, filename: file.name)],
+        ifAbsent: () => [dio.MultipartFile.fromFileSync(file.path, filename: file.name)],
+      );
+    }
+    final ok = await ref
+        .read(eventsViewModelProvider.notifier)
+        .saveVenue(dio.FormData.fromMap(formMap), id: widget.venue?.id);
     if (!mounted) return;
     if (ok) {
       Navigator.pop(context);
@@ -309,6 +391,29 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
             NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number),
             const SizedBox(height: AppTheme.s8),
             NeuField(controller: _charge, label: 'Hire charge', hint: '25000', keyboardType: TextInputType.number),
+            const SizedBox(height: AppTheme.s12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Photos (up to $maxVenueImages)', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+            ),
+            const SizedBox(height: AppTheme.s8),
+            Wrap(
+              spacing: AppTheme.s8,
+              runSpacing: AppTheme.s8,
+              children: [
+                for (final img in _existingPhotos)
+                  PhotoThumb(
+                    imageProvider: NetworkImage('$baseUrl/venue-images/${img.filename}'),
+                    onRemove: () => _removeExistingPhoto(img),
+                  ),
+                for (final file in _newPhotos)
+                  PhotoThumb(
+                    imageProvider: FileImage(File(file.path)),
+                    onRemove: () => setState(() => _newPhotos.remove(file)),
+                  ),
+                if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
+              ],
+            ),
           ],
         ),
       ),

@@ -558,16 +558,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         const SizedBox(height: AppTheme.s8),
                         const Text('Slot', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                         const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 6,
-                          children: [
-                            for (final s in kSlotLabel.entries)
-                              ChoiceChip(
-                                label: Text(s.value),
-                                selected: _slot == s.key,
-                                onSelected: (_) => _pickSlot(s.key),
-                              ),
-                          ],
+                        _Dropdown<String>(
+                          value: _slot,
+                          items: kSlotLabel,
+                          onChanged: _pickSlot,
                         ),
                         const SizedBox(height: AppTheme.s8),
                         Row(

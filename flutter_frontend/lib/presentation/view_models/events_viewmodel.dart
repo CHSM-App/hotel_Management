@@ -1,5 +1,6 @@
 library;
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_error_message.dart';
@@ -113,13 +114,13 @@ class EventsViewModel extends StateNotifier<EventsState> {
 
   // ── Setup: venues ──────────────────────────────────────────────────────
 
-  Future<bool> saveVenue({int? id, required String name, int? capacityPax, required num baseCharge}) async {
+  Future<bool> saveVenue(FormData form, {int? id}) async {
     state = state.copyWith(submitting: true, clearError: true);
     try {
       if (id != null) {
-        await usecase.updateVenue(id, name: name, capacityPax: capacityPax, baseCharge: baseCharge);
+        await usecase.updateVenue(id, form);
       } else {
-        await usecase.createVenue(name: name, capacityPax: capacityPax, baseCharge: baseCharge);
+        await usecase.createVenue(form);
       }
       state = state.copyWith(submitting: false);
       await loadCatalogue();
@@ -132,7 +133,18 @@ class EventsViewModel extends StateNotifier<EventsState> {
 
   Future<bool> toggleVenue(EventVenue venue) async {
     try {
-      await usecase.updateVenue(venue.id, isActive: !venue.isActive);
+      await usecase.setVenueActive(venue.id, !venue.isActive);
+      await loadCatalogue();
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return false;
+    }
+  }
+
+  Future<bool> deleteVenueImage(int venueId, int imageId) async {
+    try {
+      await usecase.deleteVenueImage(venueId, imageId);
       await loadCatalogue();
       return true;
     } catch (e) {

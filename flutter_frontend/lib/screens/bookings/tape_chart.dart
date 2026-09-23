@@ -87,14 +87,15 @@ class _TapeChartState extends ConsumerState<TapeChart>
 
   /// Anchors the vertical `CustomScrollView` so a chip jump can measure a
   /// section's actual painted position instead of asking `Scrollable.
-  /// ensureVisible` to work it out — that call reasons about the pinned
-  /// date-header sliver's *declared* extent, but the header's own content
-  /// (an `OverflowBox` sized off font metrics, not a fixed number) can paint
-  /// a little taller or shorter than that declared height, and against a
-  /// section already partway up the screen the mismatch reads as the chip
-  /// tap barely moving the chart at all. Measuring the header and the
-  /// section by their real on-screen positions sidesteps that mismatch
-  /// entirely.
+  /// ensureVisible` to work it out — that call walks every ancestor
+  /// `Scrollable` it finds, which picks up the chip strip's own horizontal
+  /// one too and fights [_CategoryChipsState._revealChip] over it. Measuring
+  /// the section's own on-screen position and correcting it by the pinned
+  /// header's *declared* extent ([_DateHeaderDelegate.heightFor], the number
+  /// the sliver layout actually reserves) sidesteps that entirely — the
+  /// header's inner content sits in an `OverflowBox` and can paint a little
+  /// taller or shorter than that declared height, so the correction must use
+  /// the declared number, not whatever the header's content box measures.
   final _scrollViewKey = GlobalKey();
 
   void _jumpTo(String category) {
@@ -104,13 +105,15 @@ class _TapeChartState extends ConsumerState<TapeChart>
     if (targetBox is! RenderBox || !targetBox.attached) return;
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
     // The section's current distance from the top of the scroll view as
-    // actually painted right now — this already reflects wherever the date
-    // header really ends, not where its declared sliver extent says it does.
+    // actually painted right now.
     final sectionTop = targetBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
-    final headerBox = _headerKey.currentContext?.findRenderObject();
-    final headerHeight = headerBox is RenderBox && headerBox.attached
-        ? headerBox.size.height
-        : 0.0;
+    // What the pinned header sliver actually reserves in the scroll layout —
+    // not whatever its `OverflowBox`'d content happens to measure, which can
+    // paint a few pixels taller or shorter and would otherwise leave the
+    // target landing partly under (or with a gap below) the pinned header.
+    final headerHeight = _DateHeaderDelegate.heightFor(
+      ref.read(bookingViewModelProvider).chartSections.length > 1,
+    );
     final target = (_vScroll.offset + sectionTop - headerHeight).clamp(
       _vScroll.position.minScrollExtent,
       _vScroll.position.maxScrollExtent,
@@ -121,10 +124,6 @@ class _TapeChartState extends ConsumerState<TapeChart>
       curve: Curves.easeOut,
     );
   }
-
-  /// Marks the pinned date header's own rendered box, so [_jumpTo] can read
-  /// its real painted height rather than the sliver's declared one.
-  final _headerKey = GlobalKey();
 
   @override
   void initState() {
@@ -374,7 +373,6 @@ class _TapeChartState extends ConsumerState<TapeChart>
               tile: tile,
               roomCol: roomCol,
               hSync: _hSync,
-              headerKey: _headerKey,
             ),
           ),
           SliverPadding(
@@ -937,7 +935,6 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double tile;
   final double roomCol;
   final _HorizontalSync hSync;
-  final GlobalKey headerKey;
 
   _DateHeaderDelegate({
     required this.sections,
@@ -948,7 +945,6 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.tile,
     required this.roomCol,
     required this.hSync,
-    required this.headerKey,
   });
 
   // Both a little over the sum of `_DateHeader`'s own fixed row heights and
@@ -962,8 +958,15 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   bool get _hasChips => sections != null && sections!.isNotEmpty;
 
-  double get _height =>
-      _dateHeaderHeight + (_hasChips ? _chipsHeight + AppTheme.s8 : 0);
+  double get _height => heightFor(_hasChips);
+
+  /// The exact pinned extent this delegate reserves for a given chip-row
+  /// state — the number the sliver layout actually uses, as opposed to
+  /// whatever the header's own `OverflowBox`'d content measures at paint
+  /// time. [_TapeChartState._jumpTo] needs this precise figure to land a
+  /// chip jump flush under the header instead of a few pixels off.
+  static double heightFor(bool hasChips) =>
+      _dateHeaderHeight + (hasChips ? _chipsHeight + AppTheme.s8 : 0);
 
   @override
   double get minExtent => _height;
@@ -991,7 +994,6 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
       // which reads as the chips sinking into the list instead of sitting
       // fixed above it.
       child: Container(
-        key: headerKey,
         color: AppTheme.bg,
         child: Column(
           mainAxisSize: MainAxisSize.min,

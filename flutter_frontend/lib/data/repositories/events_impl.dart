@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/repository/events_repo.dart';
@@ -13,26 +15,16 @@ class EventsImpl implements EventsRepository {
       api.eventVenues(includeInactive: includeInactive);
 
   @override
-  Future<void> createVenue({
-    required String name,
-    int? capacityPax,
-    required num baseCharge,
-  }) => api.createEventVenue(name: name, capacityPax: capacityPax, baseCharge: baseCharge);
+  Future<void> createVenue(FormData form) => api.createEventVenue(form);
 
   @override
-  Future<void> updateVenue(
-    int id, {
-    String? name,
-    int? capacityPax,
-    num? baseCharge,
-    bool? isActive,
-  }) => api.updateEventVenue(
-    id,
-    name: name,
-    capacityPax: capacityPax,
-    baseCharge: baseCharge,
-    isActive: isActive,
-  );
+  Future<void> updateVenue(int id, FormData form) => api.updateEventVenue(id, form);
+
+  @override
+  Future<void> setVenueActive(int id, bool isActive) => api.setEventVenueActive(id, isActive);
+
+  @override
+  Future<void> deleteVenueImage(int venueId, int imageId) => api.deleteEventVenueImage(venueId, imageId);
 
   @override
   Future<List<EventAddon>> addons({bool includeInactive = false}) =>
