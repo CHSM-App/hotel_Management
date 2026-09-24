@@ -2380,8 +2380,10 @@ CREATE TABLE dbo.expense_recurring_templates (
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expense_templates_lodge' AND object_id = OBJECT_ID('dbo.expense_recurring_templates'))
 CREATE INDEX ix_expense_templates_lodge ON dbo.expense_recurring_templates(lodge_id, is_active, next_due_date);
 
--- The actual ledger of what the property spent. payment_method reuses the
--- CASH/UPI/CARD vocabulary payment_lines already established.
+-- The actual ledger of what the property spent. payment_method started as
+-- payment_lines' CASH/UPI/CARD vocabulary but expenses needed a wider one —
+-- a vendor bill is as often settled by cheque or bank transfer as by any of
+-- those three (migration 081).
 IF OBJECT_ID('dbo.expenses', 'U') IS NULL
 CREATE TABLE dbo.expenses (
     id                      BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -2393,8 +2395,15 @@ CREATE TABLE dbo.expenses (
     description             NVARCHAR(400) NULL,
     amount                  DECIMAL(12,2) NOT NULL
         CONSTRAINT ck_expenses_amount CHECK (amount >= 0),
-    payment_method          NVARCHAR(10) NOT NULL
-        CONSTRAINT ck_expenses_payment_method CHECK (payment_method IN ('CASH', 'UPI', 'CARD')),
+    payment_method          NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_expenses_payment_method
+        CHECK (payment_method IN ('CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER')),
+    -- Whether this bill is actually settled yet — a vendor invoice can sit
+    -- partially paid or fully pending. amount_paid only means anything for
+    -- PARTIAL; PAID defaults it to the full amount, PENDING to 0.
+    payment_status          NVARCHAR(10) NOT NULL DEFAULT 'PAID'
+        CONSTRAINT ck_expenses_payment_status CHECK (payment_status IN ('PAID', 'PARTIAL', 'PENDING')),
+    amount_paid             DECIMAL(12,2) NULL,
     expense_date            DATE NOT NULL,
     -- Stores the uploaded receipt's filename (a UUID the upload middleware
     -- generated), never the original filename or a path — same reasoning as
@@ -2402,6 +2411,10 @@ CREATE TABLE dbo.expenses (
     -- GET /expenses/:id/bill route.
     bill_document           NVARCHAR(255) NULL,
     created_by              BIGINT NULL REFERENCES dbo.users(id),
+    -- Set only when this row was generated automatically from an asset
+    -- purchase, a work order close, or a coverage/AMC renewal — see
+    -- migration 078. NULL for anything typed by hand in the Expenses tab.
+    asset_id                BIGINT NULL REFERENCES dbo.assets(id),
     created_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     updated_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
 );
@@ -2411,6 +2424,33 @@ CREATE INDEX ix_expenses_lodge ON dbo.expenses(lodge_id, expense_date DESC);
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expenses_category' AND object_id = OBJECT_ID('dbo.expenses'))
 CREATE INDEX ix_expenses_category ON dbo.expenses(category_id);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expenses_asset' AND object_id = OBJECT_ID('dbo.expenses'))
+CREATE INDEX ix_expenses_asset ON dbo.expenses(asset_id) WHERE asset_id IS NOT NULL;
+
+-- One expense can be settled in several payments — part cash today, the
+-- rest by UPI next week. expenses.amount_paid is a running total kept in
+-- sync by the service layer as these rows are added or removed;
+-- payment_status is derived from it, not stored as its own choice.
+IF OBJECT_ID('dbo.expense_payments', 'U') IS NULL
+CREATE TABLE dbo.expense_payments (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    expense_id      BIGINT NOT NULL REFERENCES dbo.expenses(id) ON DELETE CASCADE,
+    amount          DECIMAL(12,2) NOT NULL
+        CONSTRAINT ck_expense_payments_amount CHECK (amount > 0),
+    payment_method  NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_expense_payments_method
+        CHECK (payment_method IN ('CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER')),
+    -- Cheque number, UTR, transaction id, … — which one depends on
+    -- payment_method; this column just stores whatever the frontend asked
+    -- for under that method's own label. Optional throughout.
+    reference_number NVARCHAR(80) NULL,
+    paid_date       DATE NOT NULL,
+    created_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expense_payments_expense' AND object_id = OBJECT_ID('dbo.expense_payments'))
+CREATE INDEX ix_expense_payments_expense ON dbo.expense_payments(expense_id);
 
 -- expenses.manage on the OWNER built-in role. Only where it is still at its
 -- shipped default (now including assets.manage from migration 071); a

@@ -4,6 +4,14 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR: BILL_UPLOAD_DIR } = require('../../middleware/assetBillUpload');
 const vendorsService = require('../vendors/vendors.service');
+const expensesService = require('../expenses/expenses.service');
+
+// Best-effort: an asset purchase/work order/AMC renewal must still save even
+// if expense-logging hits a snag (e.g. a concurrent category rename), so
+// this never lets that failure surface as the caller's own error.
+function logAssetExpenseQuietly(lodgeId, entry) {
+  expensesService.logAssetExpense(lodgeId, entry).catch(() => {});
+}
 
 // ---------------------------------------------------------------------------
 // Categories
@@ -244,6 +252,21 @@ async function createAsset(lodgeId, input, billFilename) {
     await seedWarrantyCoverage(new sql.Request(transaction), lodgeId, assetId, input);
 
     await transaction.commit();
+
+    if (input.purchaseCost) {
+      logAssetExpenseQuietly(lodgeId, {
+        assetId,
+        vendorId: input.vendorId ?? null,
+        title: `Asset purchase: ${input.name}`,
+        amount: input.purchaseCost,
+        paymentMethod: input.paymentMethod,
+        paymentStatus: input.paymentStatus,
+        amountPaid: input.amountPaid,
+        referenceNumber: input.referenceNumber,
+        expenseDate: input.purchaseDate || new Date().toISOString().slice(0, 10),
+      });
+    }
+
     return getAsset(lodgeId, assetId);
   } catch (err) {
     await transaction.rollback();
@@ -313,6 +336,26 @@ async function createAssetsBulk(lodgeId, sharedInput, units, billFilename) {
     }
 
     await transaction.commit();
+
+    if (sharedInput.purchaseCost) {
+      for (const [i, assetId] of insertedIds.entries()) {
+        logAssetExpenseQuietly(lodgeId, {
+          assetId,
+          vendorId: sharedInput.vendorId ?? null,
+          title: `Asset purchase: ${units[i].name}`,
+          amount: sharedInput.purchaseCost,
+          paymentMethod: sharedInput.paymentMethod,
+          // amountPaid is per-unit too, same as purchaseCost itself — the
+          // form asks for "cost per unit", not one total split across the
+          // batch.
+          paymentStatus: sharedInput.paymentStatus,
+          amountPaid: sharedInput.amountPaid,
+          referenceNumber: sharedInput.referenceNumber,
+          expenseDate: sharedInput.purchaseDate || new Date().toISOString().slice(0, 10),
+        });
+      }
+    }
+
     return Promise.all(insertedIds.map((id) => getAsset(lodgeId, id)));
   } catch (err) {
     await transaction.rollback();
@@ -547,7 +590,7 @@ async function addCoveragePeriod(lodgeId, assetId, input) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('assetId', sql.BigInt, assetId)
-    .query('SELECT id FROM dbo.assets WHERE id = @assetId AND lodge_id = @lodgeId');
+    .query('SELECT id, name FROM dbo.assets WHERE id = @assetId AND lodge_id = @lodgeId');
   if (asset.recordset.length === 0) {
     throw new ApiError('Asset not found.', 404);
   }
@@ -575,6 +618,22 @@ async function addCoveragePeriod(lodgeId, assetId, input) {
     await refreshAssetCoverageCache(new sql.Request(transaction), lodgeId, assetId);
 
     await transaction.commit();
+
+    if (input.cost) {
+      const label = input.coverageType === 'AMC' ? 'AMC' : 'Warranty';
+      logAssetExpenseQuietly(lodgeId, {
+        assetId,
+        vendorId: input.vendorId ?? null,
+        title: `${label} coverage: ${asset.recordset[0].name}`,
+        amount: input.cost,
+        paymentMethod: input.paymentMethod,
+        paymentStatus: input.paymentStatus,
+        amountPaid: input.amountPaid,
+        referenceNumber: input.referenceNumber,
+        expenseDate: input.startDate || new Date().toISOString().slice(0, 10),
+      });
+    }
+
     return mapCoveragePeriod({
       id: result.recordset[0].id,
       asset_id: assetId,
@@ -846,6 +905,24 @@ async function updateWorkOrder(lodgeId, workOrderId, input) {
         UPDATE dbo.assets SET status = 'IN_USE', updated_at = SYSDATETIMEOFFSET()
         WHERE id = @assetId AND lodge_id = @lodgeId AND status = 'UNDER_REPAIR'
       `);
+
+    // Logged on close, not on every edit — the total cost is usually only
+    // known once the repair is actually done, and closing is the one
+    // transition each work order makes exactly once.
+    const repairCost = Number(next.partsCost || 0) + Number(next.laborCost || 0);
+    if (repairCost > 0) {
+      logAssetExpenseQuietly(lodgeId, {
+        assetId: current.assetId,
+        vendorId: next.vendorId ?? null,
+        title: `Repair: ${current.assetName}`,
+        amount: repairCost,
+        paymentMethod: input.paymentMethod,
+        paymentStatus: input.paymentStatus,
+        amountPaid: input.amountPaid,
+        referenceNumber: input.referenceNumber,
+        expenseDate: new Date().toISOString().slice(0, 10),
+      });
+    }
   } else if (next.status === 'IN_PROGRESS' && current.status !== 'IN_PROGRESS') {
     await pool
       .request()

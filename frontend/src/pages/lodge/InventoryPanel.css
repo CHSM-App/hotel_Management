@@ -604,6 +604,24 @@
   flex-shrink: 0;
 }
 
+/* Bare <input type="date"> pair (expense from/to range): match the search
+   box's field styling instead of the browser default, and keep them a
+   fixed width so they don't stretch with the flex row like the search box
+   does — a date field growing to fill space just looks broken. */
+.asset-toolbar-row__filters input[type='date'] {
+  width: 160px;
+  flex-shrink: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field);
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  box-shadow: var(--shadow-well);
+  box-sizing: border-box;
+}
+
 .asset-show-retired {
   display: inline-flex;
   align-items: center;
@@ -1379,6 +1397,17 @@
 
 .modal-form__body--asset > h4 {
   margin-bottom: 2px;
+  /* .form-section__title elsewhere gets its break from a wrapping
+     .form-section's border-top; these headings sit directly in the asset
+     grid with no such wrapper, so the divider is drawn on the heading
+     itself instead. */
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-form__body--asset > h4:first-child {
+  padding-top: 0;
+  border-top: none;
 }
 
 /* The theme's default field border (#DDE3EC on white, ~1.3:1) and hint text

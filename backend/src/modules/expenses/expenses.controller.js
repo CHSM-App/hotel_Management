@@ -3,6 +3,7 @@ const {
   updateCategorySchema,
   vendorSchema,
   expenseSchema,
+  expensePaymentSchema,
   recurringTemplateSchema,
   updateRecurringTemplateSchema,
 } = require('./expenses.schema');
@@ -104,6 +105,7 @@ async function listExpensesHandler(req, res, next) {
     const expenses = await expensesService.listExpenses(req.user.lodgeId, {
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
       vendorId: req.query.vendorId ? Number(req.query.vendorId) : undefined,
+      assetId: req.query.assetId ? Number(req.query.assetId) : undefined,
       from: req.query.from || undefined,
       to: req.query.to || undefined,
     });
@@ -158,6 +160,45 @@ async function deleteExpenseHandler(req, res, next) {
   try {
     await expensesService.deleteExpense(req.user.lodgeId, Number(req.params.id));
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Payments — several per expense, see dbo.expense_payments.
+// ---------------------------------------------------------------------------
+
+async function listPaymentsHandler(req, res, next) {
+  try {
+    const payments = await expensesService.listPayments(req.user.lodgeId, Number(req.params.id));
+    res.json({ payments });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function addPaymentHandler(req, res, next) {
+  try {
+    const expense = await expensesService.addPayment(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parse(expensePaymentSchema, req.body)
+    );
+    res.status(201).json({ expense });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deletePaymentHandler(req, res, next) {
+  try {
+    const expense = await expensesService.deletePayment(
+      req.user.lodgeId,
+      Number(req.params.id),
+      Number(req.params.paymentId)
+    );
+    res.json({ expense });
   } catch (err) {
     next(err);
   }
@@ -251,6 +292,9 @@ module.exports = {
   createExpenseHandler,
   updateExpenseHandler,
   deleteExpenseHandler,
+  listPaymentsHandler,
+  addPaymentHandler,
+  deletePaymentHandler,
   getExpenseBillHandler,
   getSummaryHandler,
   listTemplatesHandler,
