@@ -1,18 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/dio_provider.dart';
+import '../../data/repositories/assets_impl.dart';
 import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
 import '../../data/repositories/billing_impl.dart';
 import '../../data/repositories/events_impl.dart';
+import '../../data/repositories/expenses_impl.dart';
 import '../../data/repositories/food_setup_impl.dart';
 import '../../data/repositories/orders_impl.dart';
 import '../../data/repositories/reports_impl.dart';
 import '../../data/repositories/rooms_impl.dart';
+import '../../domain/repository/assets_repo.dart';
 import '../../domain/repository/auth_repo.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../../domain/repository/billing_repo.dart';
 import '../../domain/repository/events_repo.dart';
+import '../../domain/repository/expenses_repo.dart';
 import '../../domain/repository/food_setup_repo.dart';
 import '../../domain/repository/orders_repo.dart';
 import '../../domain/repository/reports_repo.dart';
@@ -56,4 +60,12 @@ final foodSetupRepositoryProvider = Provider<FoodSetupRepository>(
 
 final eventsRepositoryProvider = Provider<EventsRepository>(
   (ref) => EventsImpl(ref.watch(apiServiceProvider)),
+);
+
+final assetsRepositoryProvider = Provider<AssetsRepository>(
+  (ref) => AssetsImpl(ref.watch(apiServiceProvider)),
+);
+
+final expensesRepositoryProvider = Provider<ExpensesRepository>(
+  (ref) => ExpensesImpl(ref.watch(apiServiceProvider)),
 );
