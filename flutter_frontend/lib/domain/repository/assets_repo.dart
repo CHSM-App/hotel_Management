@@ -6,7 +6,7 @@ import '../models/asset.dart';
 abstract class AssetsRepository {
   Future<List<AssetCategory>> categories();
 
-  Future<void> createCategory(String name);
+  Future<AssetCategory> createCategory(String name);
 
   Future<List<Vendor>> vendors({bool includeInactive = false});
 

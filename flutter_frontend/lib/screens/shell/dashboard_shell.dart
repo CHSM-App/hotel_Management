@@ -264,10 +264,14 @@ class _MoreList extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.s12),
             child: NeuCard(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s16,
+                vertical: AppTheme.s12,
+              ),
               onTap: () => onSelect(f.key),
               child: Row(
                 children: [
-                  Icon(f.icon, color: AppTheme.accent),
+                  Icon(f.icon, color: AppTheme.accent, size: 22),
                   const SizedBox(width: AppTheme.s12),
                   Expanded(
                     child: Text(
@@ -282,6 +286,7 @@ class _MoreList extends StatelessWidget {
                   const Icon(
                     Icons.chevron_right_rounded,
                     color: AppTheme.muted,
+                    size: 22,
                   ),
                 ],
               ),

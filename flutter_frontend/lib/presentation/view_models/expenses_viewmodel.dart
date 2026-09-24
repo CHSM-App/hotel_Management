@@ -265,6 +265,46 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     }
   }
 
+  // ── Payments ──────────────────────────────────────────────────────────
+  // A bill can be settled in more than one payment — mirrors loadPayments /
+  // handleAddPayment / handleDeletePayment in ExpensesPanel.jsx. Only
+  // meaningful once the expense exists, so these take the expense id
+  // explicitly rather than living on ExpensesState.
+
+  Future<List<ExpensePayment>> loadPayments(int expenseId) async {
+    try {
+      return await usecase.expensePayments(expenseId);
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return const [];
+    }
+  }
+
+  /// Adds a payment and refreshes the expense list/summary so every other
+  /// screen's paymentStatus/amountPaid stay in sync. Answers with the
+  /// expense's own updated totals, or null on failure.
+  Future<Expense?> addPayment(int expenseId, Map<String, dynamic> body) async {
+    try {
+      final expense = await usecase.addExpensePayment(expenseId, body);
+      await Future.wait([loadExpenses(), loadSummary()]);
+      return expense;
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return null;
+    }
+  }
+
+  Future<Expense?> deletePayment(int expenseId, int paymentId) async {
+    try {
+      final expense = await usecase.deleteExpensePayment(expenseId, paymentId);
+      await Future.wait([loadExpenses(), loadSummary()]);
+      return expense;
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return null;
+    }
+  }
+
   // ── Recurring templates ───────────────────────────────────────────────
 
   Future<bool> saveTemplate(Map<String, dynamic> body, {int? id}) async {

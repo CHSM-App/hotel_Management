@@ -13,7 +13,7 @@ class AssetsImpl implements AssetsRepository {
   Future<List<AssetCategory>> categories() => api.assetCategories();
 
   @override
-  Future<void> createCategory(String name) => api.createAssetCategory(name);
+  Future<AssetCategory> createCategory(String name) => api.createAssetCategory(name);
 
   @override
   Future<List<Vendor>> vendors({bool includeInactive = false}) =>

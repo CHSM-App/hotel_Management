@@ -1335,8 +1335,9 @@ class ApiService {
         .toList();
   }
 
-  Future<void> createAssetCategory(String name) async {
-    await _dio.post('/assets/categories', data: {'name': name});
+  Future<AssetCategory> createAssetCategory(String name) async {
+    final res = await _dio.post('/assets/categories', data: {'name': name});
+    return AssetCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
   }
 
   /// dbo.vendors is a directory shared with Expenses — this and
@@ -1524,6 +1525,7 @@ class ApiService {
   Future<List<Expense>> expenses({
     int? categoryId,
     int? vendorId,
+    int? assetId,
     String? from,
     String? to,
   }) async {
@@ -1532,6 +1534,7 @@ class ApiService {
       queryParameters: {
         if (categoryId != null) 'categoryId': categoryId,
         if (vendorId != null) 'vendorId': vendorId,
+        if (assetId != null) 'assetId': assetId,
         if (from != null) 'from': from,
         if (to != null) 'to': to,
       },
@@ -1559,6 +1562,28 @@ class ApiService {
 
   Future<void> deleteExpense(int id) async {
     await _dio.delete('/expenses/$id');
+  }
+
+  /// Payments logged against one expense — mirrors listPayments in
+  /// expenses.service.js. A bill can be settled in more than one payment, so
+  /// this is a running list, not a single field on the expense.
+  Future<List<ExpensePayment>> expensePayments(int expenseId) async {
+    final res = await _dio.get('/expenses/$expenseId/payments');
+    return (_map(res.data)['payments'] as List? ?? [])
+        .map((e) => ExpensePayment.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Logs a new payment against the expense; answers with the expense's own
+  /// updated amountPaid/paymentStatus, same as addPaymentHandler.
+  Future<Expense> addExpensePayment(int expenseId, Map<String, dynamic> body) async {
+    final res = await _dio.post('/expenses/$expenseId/payments', data: body);
+    return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
+  }
+
+  Future<Expense> deleteExpensePayment(int expenseId, int paymentId) async {
+    final res = await _dio.delete('/expenses/$expenseId/payments/$paymentId');
+    return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
   }
 
   /// The receipt photo, behind the same authenticated-bytes door

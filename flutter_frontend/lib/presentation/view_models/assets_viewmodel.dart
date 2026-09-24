@@ -100,18 +100,26 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
 
   void _bump() => state = state.copyWith(bumps: state.bumps + 1);
 
-  // ── Setup: categories & vendors ────────────────────────────────────────
+  // ── Categories & vendors ─────────────────────────────────────────────
 
-  Future<bool> saveCategory(String name) async {
-    state = state.copyWith(submitting: true, clearError: true);
+  /// Resolves a typed category name to an id, creating the category first if
+  /// nothing on file matches it — mirrors resolveCategoryId in
+  /// AssetsPanel.jsx. There is no standalone "add a category" screen, same
+  /// as the web app: naming a new one is as cheap as picking an existing one
+  /// from the register form's own field.
+  Future<int?> resolveCategoryId(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    for (final c in state.categories) {
+      if (c.name.toLowerCase() == trimmed.toLowerCase()) return c.id;
+    }
     try {
-      await usecase.createCategory(name);
-      state = state.copyWith(submitting: false);
+      final created = await usecase.createCategory(trimmed);
       await loadCatalogue();
-      return true;
+      return created.id;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
-      return false;
+      state = state.copyWith(error: apiErrorMessage(e));
+      return null;
     }
   }
 

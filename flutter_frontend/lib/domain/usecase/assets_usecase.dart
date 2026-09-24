@@ -10,7 +10,7 @@ class AssetsUsecase {
 
   Future<List<AssetCategory>> categories() => repository.categories();
 
-  Future<void> createCategory(String name) => repository.createCategory(name);
+  Future<AssetCategory> createCategory(String name) => repository.createCategory(name);
 
   Future<List<Vendor>> vendors({bool includeInactive = false}) =>
       repository.vendors(includeInactive: includeInactive);

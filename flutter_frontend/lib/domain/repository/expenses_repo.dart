@@ -21,6 +21,7 @@ abstract class ExpensesRepository {
   Future<List<Expense>> expenses({
     int? categoryId,
     int? vendorId,
+    int? assetId,
     String? from,
     String? to,
   });
@@ -32,6 +33,12 @@ abstract class ExpensesRepository {
   Future<Expense> updateExpense(int id, FormData form);
 
   Future<void> deleteExpense(int id);
+
+  Future<List<ExpensePayment>> expensePayments(int expenseId);
+
+  Future<Expense> addExpensePayment(int expenseId, Map<String, dynamic> body);
+
+  Future<Expense> deleteExpensePayment(int expenseId, int paymentId);
 
   Future<Response<List<int>>> expenseBill(int id);
 

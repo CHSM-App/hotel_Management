@@ -4,12 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../theme.dart';
 import 'assets_list_panel.dart';
-import 'assets_setup_panel.dart';
+import 'vendors_panel.dart';
 import 'work_orders_panel.dart';
 
-/// Asset inventory — mirrors AssetsPanel.jsx's shell: Assets, Work orders
-/// and Setup (categories + vendors), the same three-tab split Events uses
-/// for Diary/List/Setup.
+/// Asset inventory — mirrors AssetsPanel.jsx's shell: the same three tabs,
+/// Asset Register / Work Orders / Vendors. There is no separate "Setup" tab
+/// on the web app — categories are named inline from the register form's
+/// own Category field, so Vendors is the only thing with a tab of its own.
 class AssetsScreen extends ConsumerStatefulWidget {
   const AssetsScreen({super.key});
 
@@ -32,15 +33,15 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s8),
-          child: Align(
-            alignment: Alignment.centerLeft,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             child: _SubTabs(selected: _tab, onSelect: (t) => setState(() => _tab = t)),
           ),
         ),
         Expanded(
           child: switch (_tab) {
             'workOrders' => const WorkOrdersPanel(),
-            'setup' => const AssetsSetupPanel(),
+            'vendors' => const VendorsPanel(),
             _ => const AssetsListPanel(),
           },
         ),
@@ -56,9 +57,9 @@ class _SubTabs extends StatelessWidget {
   const _SubTabs({required this.selected, required this.onSelect});
 
   static const _tabs = [
-    ('assets', 'Assets'),
-    ('workOrders', 'Work orders'),
-    ('setup', 'Setup'),
+    ('assets', 'Asset Register'),
+    ('workOrders', 'Work Orders'),
+    ('vendors', 'Vendors'),
   ];
 
   @override
@@ -78,7 +79,7 @@ class _SubTabs extends StatelessWidget {
               onTap: () => onSelect(t.$1),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s8),
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
                 decoration: BoxDecoration(
                   color: t.$1 == selected ? AppTheme.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(999),
@@ -88,7 +89,7 @@ class _SubTabs extends StatelessWidget {
                   style: TextStyle(
                     color: t.$1 == selected ? Colors.white : AppTheme.text,
                     fontWeight: t.$1 == selected ? FontWeight.w600 : FontWeight.w500,
-                    fontSize: 13,
+                    fontSize: 12.5,
                   ),
                 ),
               ),

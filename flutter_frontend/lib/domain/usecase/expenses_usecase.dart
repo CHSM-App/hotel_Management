@@ -28,9 +28,10 @@ class ExpensesUsecase {
   Future<List<Expense>> expenses({
     int? categoryId,
     int? vendorId,
+    int? assetId,
     String? from,
     String? to,
-  }) => repository.expenses(categoryId: categoryId, vendorId: vendorId, from: from, to: to);
+  }) => repository.expenses(categoryId: categoryId, vendorId: vendorId, assetId: assetId, from: from, to: to);
 
   Future<Expense> expense(int id) => repository.expense(id);
 
@@ -39,6 +40,15 @@ class ExpensesUsecase {
   Future<Expense> updateExpense(int id, FormData form) => repository.updateExpense(id, form);
 
   Future<void> deleteExpense(int id) => repository.deleteExpense(id);
+
+  Future<List<ExpensePayment>> expensePayments(int expenseId) =>
+      repository.expensePayments(expenseId);
+
+  Future<Expense> addExpensePayment(int expenseId, Map<String, dynamic> body) =>
+      repository.addExpensePayment(expenseId, body);
+
+  Future<Expense> deleteExpensePayment(int expenseId, int paymentId) =>
+      repository.deleteExpensePayment(expenseId, paymentId);
 
   Future<Response<List<int>>> expenseBill(int id) => repository.expenseBill(id);
 
