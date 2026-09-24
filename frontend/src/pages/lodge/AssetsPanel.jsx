@@ -4,9 +4,16 @@ import { apiGet, apiPost, apiPatch, apiDelete, apiPostForm, apiPatchForm, apiGet
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { toQrDataUrl, assetUrl } from '../../lib/qr';
+import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
+import {
+  PAYMENT_METHOD_LABEL as PAYMENT_LABEL,
+  PAYMENT_METHOD_TAG_CLASS as PAYMENT_TAG_CLASS,
+  PAYMENT_METHOD_OPTIONS,
+  PAYMENT_REFERENCE_LABEL,
+} from './paymentMethods';
 import './forms.css';
 import './InventoryPanel.css';
 
@@ -50,6 +57,10 @@ const emptyAssetForm = {
   serialNumber: '',
   purchaseDate: '',
   purchaseCost: '',
+  paymentMethod: 'CASH',
+  paymentStatus: 'PAID',
+  amountPaid: '',
+  referenceNumber: '',
   roomId: '',
   floor: '',
   department: '',
@@ -74,6 +85,10 @@ const emptyWorkOrderForm = {
   description: '',
   assignedToName: '',
   vendorId: '',
+  paymentMethod: 'CASH',
+  paymentStatus: 'PAID',
+  amountPaid: '',
+  referenceNumber: '',
 };
 
 // One work order per active asset in a category, from a single form — "the
@@ -101,6 +116,10 @@ const emptyCoverageForm = {
   startDate: '',
   endDate: '',
   cost: '',
+  paymentMethod: 'CASH',
+  paymentStatus: 'PAID',
+  amountPaid: '',
+  referenceNumber: '',
   coverageNote: '',
 };
 
@@ -113,6 +132,10 @@ const emptyBulkForm = {
   model: '',
   purchaseDate: '',
   purchaseCost: '',
+  paymentMethod: 'CASH',
+  paymentStatus: 'PAID',
+  amountPaid: '',
+  referenceNumber: '',
   vendorId: '',
   vendorName: '',
   vendorContactPerson: '',
@@ -185,6 +208,10 @@ function expiryFlag(dateStr) {
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 // A styled stand-in for a native <datalist>, which every browser renders with
@@ -575,6 +602,14 @@ export default function AssetsPanel() {
   const [assetHistory, setAssetHistory] = useState(null);
   // { assetId, periods } — same keying, for the warranty/AMC coverage list.
   const [coveragePeriods, setCoveragePeriods] = useState(null);
+  // { assetId, expenses } — every expense this asset's purchase/repairs/AMC
+  // auto-generated (see asset_id on dbo.expenses, migration 078), so the
+  // detail view can show payment status/history without a trip to the
+  // Expenses tab. Same load-on-open keying as work orders and coverage.
+  const [assetExpenses, setAssetExpenses] = useState(null);
+  const [newAssetPayment, setNewAssetPayment] = useState({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
+  const [assetPaymentError, setAssetPaymentError] = useState('');
+  const [addingAssetPayment, setAddingAssetPayment] = useState(false);
   // A scanned QR lands here as ?assetToken=... — read once as the initial
   // selection rather than applied from an effect, so opening the detail view
   // for it doesn't need a setState synchronized against the assets list.
@@ -915,6 +950,10 @@ export default function AssetsPanel() {
         serialNumber: assetForm.serialNumber,
         purchaseDate: assetForm.purchaseDate,
         purchaseCost: assetForm.purchaseCost,
+        paymentMethod: assetForm.paymentMethod,
+        paymentStatus: assetForm.paymentStatus,
+        amountPaid: assetForm.paymentStatus === 'PARTIAL' ? assetForm.amountPaid : '',
+        referenceNumber: assetForm.paymentStatus !== 'PENDING' ? assetForm.referenceNumber : '',
         roomId: assetForm.roomId || '',
         floor: assetForm.floor,
         department: assetForm.department,
@@ -1161,6 +1200,10 @@ export default function AssetsPanel() {
       formData.append('model', bulkForm.model);
       formData.append('purchaseDate', bulkForm.purchaseDate);
       formData.append('purchaseCost', bulkForm.purchaseCost ?? '');
+      formData.append('paymentMethod', bulkForm.paymentMethod);
+      formData.append('paymentStatus', bulkForm.paymentStatus);
+      formData.append('amountPaid', bulkForm.paymentStatus === 'PARTIAL' ? bulkForm.amountPaid : '');
+      formData.append('referenceNumber', bulkForm.paymentStatus !== 'PENDING' ? bulkForm.referenceNumber : '');
       formData.append('vendorId', vendorId ?? '');
       formData.append('warrantyExpiry', bulkForm.warrantyExpiry);
       formData.append('units', JSON.stringify(units));
@@ -1276,6 +1319,114 @@ export default function AssetsPanel() {
       ? coveragePeriods.periods
       : null;
 
+  // Same load-on-open shape as service history and coverage — every expense
+  // this asset generated (purchase, repairs, AMC), so payment status/history
+  // shows without leaving the Assets tab.
+  useEffect(() => {
+    if (!selectedAsset) return undefined;
+    let ignore = false;
+    const assetId = selectedAsset.id;
+    apiGet(`/expenses?assetId=${assetId}`, { token: session?.token })
+      .then((data) => {
+        if (!ignore) setAssetExpenses({ assetId, expenses: data.expenses });
+      })
+      .catch(() => {
+        if (!ignore) setAssetExpenses({ assetId, expenses: [] });
+      });
+    return () => {
+      ignore = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAsset?.id]);
+
+  const visibleAssetExpenses =
+    assetExpenses && selectedAsset && assetExpenses.assetId === selectedAsset.id ? assetExpenses.expenses : null;
+
+  // The purchase expense specifically — repairs/AMC also carry asset_id, but
+  // "the asset's own payment status" means what's owed on buying it, and a
+  // purchase expense's title always starts "Asset purchase:" (see
+  // logAssetExpense's call sites in assets.service.js).
+  const purchaseExpense = visibleAssetExpenses?.find((e) => e.title.startsWith('Asset purchase:')) || null;
+
+  // The purchase expense's own payment history — separate state from the
+  // expense summary above since it needs its own fetch (GET
+  // /expenses/:id/payments), keyed by the purchase expense's id rather than
+  // the asset's, so switching assets never shows the previous one's list.
+  const [purchasePayments, setPurchasePayments] = useState(null);
+
+  useEffect(() => {
+    if (!purchaseExpense) {
+      setPurchasePayments(null);
+      return undefined;
+    }
+    let ignore = false;
+    const expenseId = purchaseExpense.id;
+    apiGet(`/expenses/${expenseId}/payments`, { token: session?.token })
+      .then((data) => {
+        if (!ignore) setPurchasePayments({ expenseId, payments: data.payments });
+      })
+      .catch(() => {
+        if (!ignore) setPurchasePayments({ expenseId, payments: [] });
+      });
+    return () => {
+      ignore = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseExpense?.id]);
+
+  const visiblePurchasePayments =
+    purchasePayments && purchaseExpense && purchasePayments.expenseId === purchaseExpense.id
+      ? purchasePayments.payments
+      : null;
+
+  const reloadAssetExpenses = async () => {
+    if (!selectedAsset) return;
+    const data = await apiGet(`/expenses?assetId=${selectedAsset.id}`, { token: session?.token }).catch(() => null);
+    if (!data) return;
+    setAssetExpenses({ assetId: selectedAsset.id, expenses: data.expenses });
+    const nextPurchase = data.expenses.find((e) => e.title.startsWith('Asset purchase:'));
+    if (nextPurchase) {
+      const paymentsData = await apiGet(`/expenses/${nextPurchase.id}/payments`, { token: session?.token }).catch(() => null);
+      if (paymentsData) setPurchasePayments({ expenseId: nextPurchase.id, payments: paymentsData.payments });
+    }
+  };
+
+  const handleAddAssetPayment = async (e) => {
+    e.preventDefault();
+    if (!purchaseExpense) return;
+    if (!newAssetPayment.amount || Number(newAssetPayment.amount) <= 0) {
+      setAssetPaymentError('Enter a valid amount.');
+      return;
+    }
+    if (!newAssetPayment.paidDate) {
+      setAssetPaymentError('Enter when this was paid.');
+      return;
+    }
+
+    setAddingAssetPayment(true);
+    setAssetPaymentError('');
+    try {
+      await apiPost(`/expenses/${purchaseExpense.id}/payments`, newAssetPayment, { token: session?.token });
+      setNewAssetPayment({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
+      await reloadAssetExpenses();
+    } catch (err) {
+      setAssetPaymentError(err instanceof ApiError ? err.message : 'Could not add that payment.');
+    } finally {
+      setAddingAssetPayment(false);
+    }
+  };
+
+  const handleDeleteAssetPayment = async (payment) => {
+    if (!purchaseExpense) return;
+    if (!window.confirm(`Remove this ${formatPrice(payment.amount)} payment?`)) return;
+    try {
+      await apiDelete(`/expenses/${purchaseExpense.id}/payments/${payment.id}`, { token: session?.token });
+      await reloadAssetExpenses();
+    } catch (err) {
+      setAssetPaymentError(err instanceof ApiError ? err.message : 'Could not remove that payment.');
+    }
+  };
+
   // Whoever is on the hook for this asset right now — the AMC vendor if
   // there's a live one, otherwise whoever gave the warranty, otherwise
   // nobody. Coverage periods are sorted end_date DESC by the API, so the
@@ -1346,6 +1497,10 @@ export default function AssetsPanel() {
           startDate: coverageForm.startDate,
           endDate: coverageForm.endDate,
           cost: coverageForm.cost,
+          paymentMethod: coverageForm.paymentMethod,
+          paymentStatus: coverageForm.paymentStatus,
+          amountPaid: coverageForm.paymentStatus === 'PARTIAL' ? coverageForm.amountPaid : '',
+          referenceNumber: coverageForm.paymentStatus !== 'PENDING' ? coverageForm.referenceNumber : '',
           coverageNote: coverageForm.coverageNote,
         },
         { token: session?.token }
@@ -1395,6 +1550,10 @@ export default function AssetsPanel() {
             status: workOrder.status,
             partsCost: workOrder.partsCost ?? '',
             laborCost: workOrder.laborCost ?? '',
+            paymentMethod: 'CASH',
+            paymentStatus: 'PAID',
+            amountPaid: '',
+            referenceNumber: '',
             partsUsedNote: workOrder.partsUsedNote || '',
             isWarrantyClaim: workOrder.isWarrantyClaim,
             resolutionNote: workOrder.resolutionNote || '',
@@ -1447,6 +1606,10 @@ export default function AssetsPanel() {
             vendorId: woForm.vendorId ? Number(woForm.vendorId) : null,
             partsCost: woForm.partsCost === '' ? null : Number(woForm.partsCost),
             laborCost: woForm.laborCost === '' ? null : Number(woForm.laborCost),
+            paymentMethod: woForm.paymentMethod,
+            paymentStatus: woForm.paymentStatus,
+            amountPaid: woForm.paymentStatus === 'PARTIAL' ? woForm.amountPaid : '',
+            referenceNumber: woForm.paymentStatus !== 'PENDING' ? woForm.referenceNumber : '',
             partsUsedNote: woForm.partsUsedNote,
             isWarrantyClaim: Boolean(woForm.isWarrantyClaim),
             resolutionNote: woForm.resolutionNote,
@@ -2075,6 +2238,115 @@ export default function AssetsPanel() {
                 </RowMenu>
               </div>
 
+              {purchaseExpense && (
+                <>
+                  <h4>Purchase payments</h4>
+                  <p className="inv-panel__hint" style={{ marginTop: -8 }}>
+                    {formatPrice(purchaseExpense.amountPaid || 0)} of {formatPrice(purchaseExpense.amount)} paid
+                    {purchaseExpense.amount > (purchaseExpense.amountPaid || 0) &&
+                      ` · ${formatPrice(purchaseExpense.amount - (purchaseExpense.amountPaid || 0))} left`}
+                  </p>
+
+                  {visiblePurchasePayments === null ? (
+                    <p className="inv-panel__hint">Loading…</p>
+                  ) : (
+                    visiblePurchasePayments.length > 0 && (
+                      <ul className="inv-list" style={{ marginBottom: 10 }}>
+                        {visiblePurchasePayments.map((p) => (
+                          <li key={p.id} className="inv-item">
+                            <div className="inv-item__body">
+                              <div className="inv-item__name">
+                                {formatPrice(p.amount)}
+                                <span className={`inv-tag ${PAYMENT_TAG_CLASS[p.paymentMethod]}`}>
+                                  {PAYMENT_LABEL[p.paymentMethod]}
+                                </span>
+                              </div>
+                              <div className="inv-item__meta">
+                                {formatDate(p.paidDate)}
+                                {p.referenceNumber && ` · ${PAYMENT_REFERENCE_LABEL[p.paymentMethod] || 'Ref'}: ${p.referenceNumber}`}
+                              </div>
+                            </div>
+                            <div className="inv-item__actions">
+                              <button type="button" className="inv-danger" onClick={() => handleDeleteAssetPayment(p)}>
+                                Remove
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  )}
+
+                  {assetPaymentError && (
+                    <div className="form-banner form-banner--error form-banner--flash">{assetPaymentError}</div>
+                  )}
+
+                  {/* No separate "Add payment" button — Enter in any of
+                      these three fields submits the payment directly. */}
+                  {purchaseExpense.amount > (purchaseExpense.amountPaid || 0) && (
+                    <div
+                      className="field-row field-row--triple"
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        if (!addingAssetPayment) handleAddAssetPayment(e);
+                      }}
+                    >
+                      <div className="field">
+                        <label htmlFor="assetNewPaymentAmount">Amount</label>
+                        <input
+                          id="assetNewPaymentAmount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          max={purchaseExpense.amount - (purchaseExpense.amountPaid || 0)}
+                          value={newAssetPayment.amount}
+                          onChange={(e) => setNewAssetPayment((f) => ({ ...f, amount: e.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="assetNewPaymentMethod">Paid via</label>
+                        <select
+                          id="assetNewPaymentMethod"
+                          value={newAssetPayment.paymentMethod}
+                          onChange={(e) => setNewAssetPayment((f) => ({ ...f, paymentMethod: e.target.value }))}
+                        >
+                          {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="assetNewPaymentDate">Date</label>
+                        <input
+                          id="assetNewPaymentDate"
+                          type="date"
+                          value={newAssetPayment.paidDate}
+                          onChange={(e) => setNewAssetPayment((f) => ({ ...f, paidDate: e.target.value }))}
+                        />
+                      </div>
+                      {PAYMENT_REFERENCE_LABEL[newAssetPayment.paymentMethod] && (
+                        <div className="field" style={{ gridColumn: '1 / -1' }}>
+                          <label htmlFor="assetNewPaymentReference">
+                            {PAYMENT_REFERENCE_LABEL[newAssetPayment.paymentMethod]}
+                          </label>
+                          <input
+                            id="assetNewPaymentReference"
+                            value={newAssetPayment.referenceNumber}
+                            onChange={(e) => setNewAssetPayment((f) => ({ ...f, referenceNumber: e.target.value }))}
+                          />
+                        </div>
+                      )}
+                      <span className="field__hint" style={{ gridColumn: '1 / -1' }}>
+                        {addingAssetPayment ? 'Adding…' : 'Press Enter to add this payment.'}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
               <h4>Coverage history</h4>
               {visibleCoveragePeriods === null ? (
                 <p className="inv-panel__hint">Loading…</p>
@@ -2243,53 +2515,115 @@ export default function AssetsPanel() {
                   )}
                 </div>
 
-                <h4 style={{ marginTop: 14 }}>Purchase details</h4>
+                <h4 className="form-section__title">Purchase details</h4>
 
-                <div className="field">
-                  <label htmlFor="assetBrand">Brand / model</label>
-                  <input
-                    id="assetBrand"
-                    value={assetForm.brand}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, brand: e.target.value }))}
-                    placeholder="Brand"
-                    style={{ marginBottom: 8 }}
-                  />
-                  <input
-                    value={assetForm.model}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, model: e.target.value }))}
-                    placeholder="Model"
-                  />
+                <div className="field-row field-row--triple field--span2">
+                  <div className="field">
+                    <label htmlFor="assetBrand">Brand</label>
+                    <input
+                      id="assetBrand"
+                      value={assetForm.brand}
+                      onChange={(e) => setAssetForm((f) => ({ ...f, brand: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="assetModel">Model</label>
+                    <input
+                      id="assetModel"
+                      value={assetForm.model}
+                      onChange={(e) => setAssetForm((f) => ({ ...f, model: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="assetSerial">Serial number</label>
+                    <input
+                      id="assetSerial"
+                      value={assetForm.serialNumber}
+                      onChange={(e) => setAssetForm((f) => ({ ...f, serialNumber: e.target.value }))}
+                    />
+                  </div>
                 </div>
 
-                <div className="field">
-                  <label htmlFor="assetSerial">Serial number</label>
-                  <input
-                    id="assetSerial"
-                    value={assetForm.serialNumber}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, serialNumber: e.target.value }))}
-                  />
+                <div className="field-row field-row--triple field--span2" style={{ marginTop: 12 }}>
+                  <div className="field">
+                    <label htmlFor="assetPurchaseDate">Purchase date</label>
+                    <input
+                      id="assetPurchaseDate"
+                      type="date"
+                      value={assetForm.purchaseDate}
+                      onChange={(e) => setAssetForm((f) => ({ ...f, purchaseDate: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="assetPurchaseCost">Purchase cost</label>
+                    <input
+                      id="assetPurchaseCost"
+                      type="number"
+                      step="0.01"
+                      value={assetForm.purchaseCost}
+                      onChange={(e) => setAssetForm((f) => ({ ...f, purchaseCost: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="assetPaymentStatus">Payment status</label>
+                    <select
+                      id="assetPaymentStatus"
+                      value={assetForm.paymentStatus}
+                      onChange={(e) => setAssetForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                    >
+                      <option value="PAID">Paid in full</option>
+                      <option value="PARTIAL">Partially paid</option>
+                      <option value="PENDING">Pending</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="field">
-                  <label htmlFor="assetPurchaseDate">Purchase date</label>
-                  <input
-                    id="assetPurchaseDate"
-                    type="date"
-                    value={assetForm.purchaseDate}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, purchaseDate: e.target.value }))}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="assetPurchaseCost">Purchase cost</label>
-                  <input
-                    id="assetPurchaseCost"
-                    type="number"
-                    step="0.01"
-                    value={assetForm.purchaseCost}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, purchaseCost: e.target.value }))}
-                  />
-                </div>
+                {assetForm.paymentStatus !== 'PENDING' && (
+                  <div className="field-row field--span2" style={{ marginTop: 12 }}>
+                    <div className="field">
+                      <label htmlFor="assetPaymentMethod">Paid via</label>
+                      <select
+                        id="assetPaymentMethod"
+                        value={assetForm.paymentMethod}
+                        onChange={(e) => setAssetForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                      >
+                        {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {PAYMENT_REFERENCE_LABEL[assetForm.paymentMethod] && (
+                      <div className="field">
+                        <label htmlFor="assetReferenceNumber">{PAYMENT_REFERENCE_LABEL[assetForm.paymentMethod]}</label>
+                        <input
+                          id="assetReferenceNumber"
+                          value={assetForm.referenceNumber}
+                          onChange={(e) => setAssetForm((f) => ({ ...f, referenceNumber: e.target.value }))}
+                        />
+                      </div>
+                    )}
+                    {assetForm.paymentStatus === 'PARTIAL' && (
+                      <div className="field">
+                        <label htmlFor="assetAmountPaid">Amount paid so far</label>
+                        <input
+                          id="assetAmountPaid"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          max={assetForm.purchaseCost || undefined}
+                          value={assetForm.amountPaid}
+                          onChange={(e) => setAssetForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="field field--span2">
                   <label htmlFor="assetVendor">Vendor</label>
@@ -2405,14 +2739,18 @@ export default function AssetsPanel() {
                   </div>
                 )}
 
-                <h4 style={{ marginTop: 14 }}>Installation details</h4>
+                <h4 className="form-section__title">Installation details</h4>
 
                 <div className="field">
                   <label htmlFor="assetRoom">Room</label>
                   <select
                     id="assetRoom"
                     value={assetForm.roomId}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, roomId: e.target.value }))}
+                    onChange={(e) => {
+                      const roomId = e.target.value;
+                      const room = (rooms || []).find((r) => String(r.id) === roomId);
+                      setAssetForm((f) => ({ ...f, roomId, floor: room?.floor || f.floor }));
+                    }}
                   >
                     <option value="">Not room-bound</option>
                     {(rooms || []).map((r) => (
@@ -2431,7 +2769,11 @@ export default function AssetsPanel() {
                     value={assetForm.floor}
                     onChange={(e) => setAssetForm((f) => ({ ...f, floor: e.target.value }))}
                     placeholder="2"
+                    readOnly={!!assetForm.roomId}
                   />
+                  {assetForm.roomId && (
+                    <span className="field__hint">Set by the room — clear the room above to edit this by hand.</span>
+                  )}
                 </div>
 
                 <div className="field field--span2">
@@ -2604,6 +2946,62 @@ export default function AssetsPanel() {
                   />
                 </div>
 
+                <div className="field">
+                  <label htmlFor="bulkPaymentStatus">Payment status</label>
+                  <select
+                    id="bulkPaymentStatus"
+                    value={bulkForm.paymentStatus}
+                    onChange={(e) => setBulkForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                  >
+                    <option value="PAID">Paid in full</option>
+                    <option value="PARTIAL">Partially paid</option>
+                    <option value="PENDING">Pending</option>
+                  </select>
+                </div>
+
+                {bulkForm.paymentStatus !== 'PENDING' && (
+                  <div className="field">
+                    <label htmlFor="bulkPaymentMethod">Paid via</label>
+                    <select
+                      id="bulkPaymentMethod"
+                      value={bulkForm.paymentMethod}
+                      onChange={(e) => setBulkForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                    >
+                      {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {PAYMENT_REFERENCE_LABEL[bulkForm.paymentMethod] && bulkForm.paymentStatus !== 'PENDING' && (
+                  <div className="field">
+                    <label htmlFor="bulkReferenceNumber">{PAYMENT_REFERENCE_LABEL[bulkForm.paymentMethod]}</label>
+                    <input
+                      id="bulkReferenceNumber"
+                      value={bulkForm.referenceNumber}
+                      onChange={(e) => setBulkForm((f) => ({ ...f, referenceNumber: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                {bulkForm.paymentStatus === 'PARTIAL' && (
+                  <div className="field">
+                    <label htmlFor="bulkAmountPaid">Amount paid so far (per unit)</label>
+                    <input
+                      id="bulkAmountPaid"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      max={bulkForm.purchaseCost || undefined}
+                      value={bulkForm.amountPaid}
+                      onChange={(e) => setBulkForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                    />
+                  </div>
+                )}
+
                 <div className="field field--span2">
                   <label htmlFor="bulkVendor">Vendor</label>
                   <VendorField
@@ -2752,7 +3150,11 @@ export default function AssetsPanel() {
                           aria-label={`Room for unit ${index + 1}`}
                           aria-invalid={Boolean(bulkUnitErrors[unit.key])}
                           value={unit.roomId}
-                          onChange={(e) => updateBulkUnit(unit.key, { roomId: e.target.value })}
+                          onChange={(e) => {
+                            const roomId = e.target.value;
+                            const room = (rooms || []).find((r) => String(r.id) === roomId);
+                            updateBulkUnit(unit.key, { roomId, floor: room?.floor || unit.floor });
+                          }}
                         >
                           <option value="">Not room-bound</option>
                           {(rooms || []).map((r) => (
@@ -2766,6 +3168,7 @@ export default function AssetsPanel() {
                           value={unit.floor}
                           onChange={(e) => updateBulkUnit(unit.key, { floor: e.target.value })}
                           placeholder="Floor"
+                          readOnly={!!unit.roomId}
                         />
                         <input
                           aria-label={`Location for unit ${index + 1}`}
@@ -2985,6 +3388,57 @@ export default function AssetsPanel() {
                           onChange={(e) => setWoForm((f) => ({ ...f, laborCost: e.target.value }))}
                         />
                       </div>
+                      <div className="field">
+                        <label htmlFor="woPaymentStatus">Payment status</label>
+                        <select
+                          id="woPaymentStatus"
+                          value={woForm.paymentStatus}
+                          onChange={(e) => setWoForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                        >
+                          <option value="PAID">Paid in full</option>
+                          <option value="PARTIAL">Partially paid</option>
+                          <option value="PENDING">Pending</option>
+                        </select>
+                      </div>
+                      {woForm.paymentStatus !== 'PENDING' && (
+                        <div className="field">
+                          <label htmlFor="woPaymentMethod">Paid via</label>
+                          <select
+                            id="woPaymentMethod"
+                            value={woForm.paymentMethod}
+                            onChange={(e) => setWoForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                          >
+                            {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {woForm.paymentStatus !== 'PENDING' && PAYMENT_REFERENCE_LABEL[woForm.paymentMethod] && (
+                        <div className="field">
+                          <label htmlFor="woReferenceNumber">{PAYMENT_REFERENCE_LABEL[woForm.paymentMethod]}</label>
+                          <input
+                            id="woReferenceNumber"
+                            value={woForm.referenceNumber}
+                            onChange={(e) => setWoForm((f) => ({ ...f, referenceNumber: e.target.value }))}
+                          />
+                        </div>
+                      )}
+                      {woForm.paymentStatus === 'PARTIAL' && (
+                        <div className="field">
+                          <label htmlFor="woAmountPaid">Amount paid so far</label>
+                          <input
+                            id="woAmountPaid"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={woForm.amountPaid}
+                            onChange={(e) => setWoForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                          />
+                        </div>
+                      )}
                       <div className="field">
                         <label htmlFor="woPartsNote">Parts used</label>
                         <input
@@ -3344,6 +3798,62 @@ export default function AssetsPanel() {
                     onChange={(e) => setCoverageForm((f) => ({ ...f, cost: e.target.value }))}
                   />
                 </div>
+
+                <div className="field">
+                  <label htmlFor="coveragePaymentStatus">Payment status</label>
+                  <select
+                    id="coveragePaymentStatus"
+                    value={coverageForm.paymentStatus}
+                    onChange={(e) => setCoverageForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                  >
+                    <option value="PAID">Paid in full</option>
+                    <option value="PARTIAL">Partially paid</option>
+                    <option value="PENDING">Pending</option>
+                  </select>
+                </div>
+
+                {coverageForm.paymentStatus !== 'PENDING' && (
+                  <div className="field">
+                    <label htmlFor="coveragePaymentMethod">Paid via</label>
+                    <select
+                      id="coveragePaymentMethod"
+                      value={coverageForm.paymentMethod}
+                      onChange={(e) => setCoverageForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                    >
+                      {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {coverageForm.paymentStatus !== 'PENDING' && PAYMENT_REFERENCE_LABEL[coverageForm.paymentMethod] && (
+                  <div className="field">
+                    <label htmlFor="coverageReferenceNumber">{PAYMENT_REFERENCE_LABEL[coverageForm.paymentMethod]}</label>
+                    <input
+                      id="coverageReferenceNumber"
+                      value={coverageForm.referenceNumber}
+                      onChange={(e) => setCoverageForm((f) => ({ ...f, referenceNumber: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                {coverageForm.paymentStatus === 'PARTIAL' && (
+                  <div className="field">
+                    <label htmlFor="coverageAmountPaid">Amount paid so far</label>
+                    <input
+                      id="coverageAmountPaid"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      max={coverageForm.cost || undefined}
+                      value={coverageForm.amountPaid}
+                      onChange={(e) => setCoverageForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                    />
+                  </div>
+                )}
 
                 <div className="field">
                   <label htmlFor="coverageNote">Coverage note</label>

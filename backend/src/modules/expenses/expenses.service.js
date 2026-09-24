@@ -110,6 +110,107 @@ async function updateCategory(lodgeId, categoryId, input) {
 // Expenses
 // ---------------------------------------------------------------------------
 
+// A bill can be settled in more than one payment — part cash today, the rest
+// by UPI next week (dbo.expense_payments, migration 080). amount_paid on the
+// expense itself is a running total kept in sync here rather than typed
+// directly, and payment_status is derived from it: >= amount is PAID, >0 is
+// PARTIAL, 0 is PENDING. Called after every payment add/delete.
+async function recalcExpensePaymentStatus(pool, expenseId) {
+  const totals = await pool
+    .request()
+    .input('expenseId', sql.BigInt, expenseId)
+    .query(`
+      SELECT e.amount, ISNULL(SUM(p.amount), 0) AS paid
+      FROM dbo.expenses e
+      LEFT JOIN dbo.expense_payments p ON p.expense_id = e.id
+      WHERE e.id = @expenseId
+      GROUP BY e.amount
+    `);
+  const row = totals.recordset[0];
+  if (!row) return;
+  const amount = Number(row.amount);
+  const paid = Number(row.paid);
+  const status = paid <= 0 ? 'PENDING' : paid >= amount ? 'PAID' : 'PARTIAL';
+
+  await pool
+    .request()
+    .input('expenseId', sql.BigInt, expenseId)
+    .input('amountPaid', sql.Decimal(12, 2), paid)
+    .input('paymentStatus', sql.NVarChar, status)
+    .query(`
+      UPDATE dbo.expenses SET amount_paid = @amountPaid, payment_status = @paymentStatus,
+          updated_at = SYSDATETIMEOFFSET()
+      WHERE id = @expenseId
+    `);
+}
+
+function mapPayment(row) {
+  return {
+    id: row.id,
+    expenseId: row.expense_id,
+    amount: Number(row.amount),
+    paymentMethod: row.payment_method,
+    referenceNumber: row.reference_number,
+    paidDate: row.paid_date,
+    createdAt: row.created_at,
+  };
+}
+
+async function listPayments(lodgeId, expenseId) {
+  const pool = await getPool();
+  await getExpense(lodgeId, expenseId); // 404s if the expense isn't this lodge's
+  const result = await pool
+    .request()
+    .input('expenseId', sql.BigInt, expenseId)
+    .query('SELECT * FROM dbo.expense_payments WHERE expense_id = @expenseId ORDER BY paid_date DESC, id DESC');
+  return result.recordset.map(mapPayment);
+}
+
+// Adding a payment can't push amount_paid past the bill — same reasoning as
+// the old resolveAmountPaid clamp, now enforced against the running total
+// instead of a single typed value.
+async function addPayment(lodgeId, expenseId, input) {
+  const pool = await getPool();
+  const expense = await getExpense(lodgeId, expenseId);
+  const remaining = expense.amount - expense.amountPaid;
+  if (Number(input.amount) > remaining + 0.01) {
+    throw new ApiError(`That's more than the ₹${remaining.toFixed(2)} left on this bill.`, 400, 'amount');
+  }
+
+  const result = await pool
+    .request()
+    .input('expenseId', sql.BigInt, expenseId)
+    .input('amount', sql.Decimal(12, 2), input.amount)
+    .input('paymentMethod', sql.NVarChar, input.paymentMethod)
+    .input('referenceNumber', sql.NVarChar, toNullable(input.referenceNumber))
+    .input('paidDate', sql.Date, input.paidDate)
+    .query(`
+      INSERT INTO dbo.expense_payments (expense_id, amount, payment_method, reference_number, paid_date)
+      OUTPUT inserted.id
+      VALUES (@expenseId, @amount, @paymentMethod, @referenceNumber, @paidDate)
+    `);
+
+  await recalcExpensePaymentStatus(pool, expenseId);
+  return getExpense(lodgeId, expenseId);
+}
+
+async function deletePayment(lodgeId, expenseId, paymentId) {
+  const pool = await getPool();
+  await getExpense(lodgeId, expenseId);
+
+  const result = await pool
+    .request()
+    .input('expenseId', sql.BigInt, expenseId)
+    .input('paymentId', sql.BigInt, paymentId)
+    .query('DELETE FROM dbo.expense_payments OUTPUT deleted.id WHERE id = @paymentId AND expense_id = @expenseId');
+  if (result.recordset.length === 0) {
+    throw new ApiError('Payment not found.', 404);
+  }
+
+  await recalcExpensePaymentStatus(pool, expenseId);
+  return getExpense(lodgeId, expenseId);
+}
+
 function mapExpense(row) {
   return {
     id: row.id,
@@ -118,10 +219,13 @@ function mapExpense(row) {
     vendorId: row.vendor_id,
     vendorName: row.vendor_name ?? null,
     recurringTemplateId: row.recurring_template_id,
+    assetId: row.asset_id,
     title: row.title,
     description: row.description,
     amount: Number(row.amount),
     paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    amountPaid: row.amount_paid == null ? null : Number(row.amount_paid),
     expenseDate: row.expense_date,
     // Only whether a receipt is on file, never the stored filename — same
     // reasoning as assets.service.js's mapAsset. The frontend always reaches
@@ -133,14 +237,14 @@ function mapExpense(row) {
 
 const EXPENSE_SELECT = `
   SELECT e.id, e.category_id, c.name AS category_name, e.vendor_id, v.name AS vendor_name,
-         e.recurring_template_id, e.title, e.description, e.amount, e.payment_method,
-         e.expense_date, e.bill_document, e.created_at
+         e.recurring_template_id, e.asset_id, e.title, e.description, e.amount, e.payment_method,
+         e.payment_status, e.amount_paid, e.expense_date, e.bill_document, e.created_at
   FROM dbo.expenses e
   JOIN dbo.expense_categories c ON c.id = e.category_id
   LEFT JOIN dbo.vendors v ON v.id = e.vendor_id
 `;
 
-async function listExpenses(lodgeId, { categoryId, vendorId, from, to } = {}) {
+async function listExpenses(lodgeId, { categoryId, vendorId, assetId, from, to } = {}) {
   const pool = await getPool();
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
   let filter = '';
@@ -151,6 +255,12 @@ async function listExpenses(lodgeId, { categoryId, vendorId, from, to } = {}) {
   if (vendorId) {
     request.input('vendorId', sql.BigInt, vendorId);
     filter += ' AND e.vendor_id = @vendorId';
+  }
+  // The Asset detail view's own Payments section — every expense this asset's
+  // purchase/repairs/AMC auto-generated (see asset_id, migration 078).
+  if (assetId) {
+    request.input('assetId', sql.BigInt, assetId);
+    filter += ' AND e.asset_id = @assetId';
   }
   if (from) {
     request.input('from', sql.Date, from);
@@ -195,6 +305,11 @@ async function assertCategory(pool, lodgeId, categoryId) {
   }
 }
 
+// paymentMethod/amount on input here seed one initial expense_payments row
+// (the common "log it, already paid" case) rather than being stored directly
+// on the expense — see recalcExpensePaymentStatus. Leaving amount unsent (or
+// 0) creates the expense as PENDING with no payments yet; more can be added
+// with addPayment.
 async function createExpense(lodgeId, input, userId, billFilename) {
   const pool = await getPool();
   await assertCategory(pool, lodgeId, input.categoryId);
@@ -207,7 +322,7 @@ async function createExpense(lodgeId, input, userId, billFilename) {
     .input('title', sql.NVarChar, input.title)
     .input('description', sql.NVarChar, toNullable(input.description))
     .input('amount', sql.Decimal(12, 2), input.amount)
-    .input('paymentMethod', sql.NVarChar, input.paymentMethod)
+    .input('paymentMethod', sql.NVarChar, input.paymentMethod || 'CASH')
     .input('expenseDate', sql.Date, input.expenseDate)
     .input('billDocument', sql.NVarChar, billFilename ?? null)
     .input('createdBy', sql.BigInt, userId ?? null)
@@ -221,7 +336,30 @@ async function createExpense(lodgeId, input, userId, billFilename) {
          @expenseDate, @billDocument, @createdBy)
     `);
 
-  return getExpense(lodgeId, result.recordset[0].id);
+  const expenseId = result.recordset[0].id;
+  // PAID -> the full amount as one payment; PARTIAL -> whatever was given,
+  // clamped; PENDING (or no status sent) -> no payment row at all. Always
+  // recalculating afterward (not just when a payment was seeded) is what
+  // makes a PENDING expense actually land as PENDING instead of sitting at
+  // the payment_status column's PAID default with no payment behind it.
+  const status = input.paymentStatus || 'PAID';
+  const initialPaid = status === 'PENDING' ? 0 : status === 'PARTIAL' ? Math.min(Number(input.amountPaid) || 0, Number(input.amount)) : Number(input.amount);
+  if (initialPaid > 0) {
+    await pool
+      .request()
+      .input('expenseId', sql.BigInt, expenseId)
+      .input('amount', sql.Decimal(12, 2), initialPaid)
+      .input('paymentMethod', sql.NVarChar, input.paymentMethod || 'CASH')
+      .input('referenceNumber', sql.NVarChar, toNullable(input.referenceNumber))
+      .input('paidDate', sql.Date, input.expenseDate)
+      .query(`
+        INSERT INTO dbo.expense_payments (expense_id, amount, payment_method, reference_number, paid_date)
+        VALUES (@expenseId, @amount, @paymentMethod, @referenceNumber, @paidDate)
+      `);
+  }
+  await recalcExpensePaymentStatus(pool, expenseId);
+
+  return getExpense(lodgeId, expenseId);
 }
 
 async function updateExpense(lodgeId, expenseId, input, billFilename) {
@@ -250,16 +388,21 @@ async function updateExpense(lodgeId, expenseId, input, billFilename) {
     .input('title', sql.NVarChar, input.title)
     .input('description', sql.NVarChar, toNullable(input.description))
     .input('amount', sql.Decimal(12, 2), input.amount)
-    .input('paymentMethod', sql.NVarChar, input.paymentMethod)
     .input('expenseDate', sql.Date, input.expenseDate);
 
   const setBillDocument = billFilename ? ', bill_document = @billDocument' : '';
   if (billFilename) request.input('billDocument', sql.NVarChar, billFilename);
 
+  // payment_method/payment_status/amount_paid are deliberately untouched
+  // here — they're either the method of the last payment or a running total
+  // over dbo.expense_payments (see recalcExpensePaymentStatus), never a
+  // value this form edits directly. Changing amount can shift PAID back to
+  // PARTIAL/PENDING though, so status is recalculated against the new
+  // amount after the update.
   const result = await request.query(`
       UPDATE dbo.expenses
       SET category_id = @categoryId, vendor_id = @vendorId, title = @title,
-          description = @description, amount = @amount, payment_method = @paymentMethod,
+          description = @description, amount = @amount,
           expense_date = @expenseDate ${setBillDocument}, updated_at = SYSDATETIMEOFFSET()
       OUTPUT inserted.id
       WHERE id = @expenseId AND lodge_id = @lodgeId
@@ -267,6 +410,8 @@ async function updateExpense(lodgeId, expenseId, input, billFilename) {
   if (result.recordset.length === 0) {
     throw new ApiError('Expense not found.', 404);
   }
+
+  await recalcExpensePaymentStatus(pool, expenseId);
 
   if (previousBill) {
     fs.unlink(path.join(BILL_UPLOAD_DIR, path.basename(previousBill))).catch(() => {});
@@ -359,6 +504,89 @@ async function getMonthlySummary(lodgeId, year) {
       total: Number(r.total),
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Asset-generated expenses
+// ---------------------------------------------------------------------------
+//
+// Called from assets.service.js when an asset purchase, a work order close,
+// or a coverage/AMC renewal carries a cost — so that spend logged in the
+// Assets tab shows up in the Expenses tab without being typed twice. Same
+// "auto-generate a real expenses row" model as generateDueExpenses(), with
+// asset_id as the origin marker instead of recurring_template_id.
+//
+// Never throws: a lodge mid-transaction in assets.service.js shouldn't fail
+// to save the asset/work order because expense-logging hit a snag. Errors
+// are swallowed by the caller (see logAssetExpense call sites).
+async function resolveAssetExpenseCategoryId(pool, lodgeId) {
+  const name = 'Asset & Maintenance';
+  const existing = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, name)
+    .query('SELECT id FROM dbo.expense_categories WHERE lodge_id = @lodgeId AND name = @name');
+  if (existing.recordset.length > 0) return existing.recordset[0].id;
+
+  const created = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, name)
+    .query(`
+      INSERT INTO dbo.expense_categories (lodge_id, name)
+      OUTPUT inserted.id
+      VALUES (@lodgeId, @name)
+    `);
+  return created.recordset[0].id;
+}
+
+async function logAssetExpense(
+  lodgeId,
+  { assetId, vendorId, title, amount, paymentMethod, paymentStatus, amountPaid, referenceNumber, expenseDate }
+) {
+  if (!amount || Number(amount) <= 0) return;
+  const pool = await getPool();
+  const categoryId = await resolveAssetExpenseCategoryId(pool, lodgeId);
+  const method = paymentMethod || 'CASH';
+
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .input('vendorId', sql.BigInt, vendorId ?? null)
+    .input('assetId', sql.BigInt, assetId)
+    .input('title', sql.NVarChar, title)
+    .input('amount', sql.Decimal(12, 2), amount)
+    .input('paymentMethod', sql.NVarChar, method)
+    .input('expenseDate', sql.Date, expenseDate)
+    .query(`
+      INSERT INTO dbo.expenses
+        (lodge_id, category_id, vendor_id, asset_id, title, amount, payment_method, expense_date)
+      OUTPUT inserted.id
+      VALUES
+        (@lodgeId, @categoryId, @vendorId, @assetId, @title, @amount, @paymentMethod, @expenseDate)
+    `);
+
+  const expenseId = result.recordset[0].id;
+  // PAID -> the full amount as one payment; PARTIAL -> whatever was given,
+  // clamped; PENDING (or unset) -> no payment row, the expense sits at 0
+  // paid until one is added by hand.
+  const status = paymentStatus || 'PAID';
+  const initialPaid = status === 'PENDING' ? 0 : status === 'PARTIAL' ? Math.min(Number(amountPaid) || 0, Number(amount)) : Number(amount);
+  if (initialPaid > 0) {
+    await pool
+      .request()
+      .input('expenseId', sql.BigInt, expenseId)
+      .input('amount', sql.Decimal(12, 2), initialPaid)
+      .input('paymentMethod', sql.NVarChar, method)
+      .input('referenceNumber', sql.NVarChar, toNullable(referenceNumber))
+      .input('paidDate', sql.Date, expenseDate)
+      .query(`
+        INSERT INTO dbo.expense_payments (expense_id, amount, payment_method, reference_number, paid_date)
+        VALUES (@expenseId, @amount, @paymentMethod, @referenceNumber, @paidDate)
+      `);
+  }
+  await recalcExpensePaymentStatus(pool, expenseId);
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +755,27 @@ async function generateDueExpenses(lodgeId) {
             (@lodgeId, @categoryId, @vendorId, @templateId, @title, @amount, 'CASH', @expenseDate)
         `);
 
+      // Generated already paid, in full, by cash — same assumption the old
+      // single-status model made for every auto-generated recurring row.
+      // amount_paid/payment_status are written directly here (rather than
+      // through recalcExpensePaymentStatus) because the values are already
+      // known and this has to stay inside the one transaction.
+      await new sql.Request(transaction)
+        .input('expenseId', sql.BigInt, insertResult.recordset[0].id)
+        .input('amount', sql.Decimal(12, 2), row.amount)
+        .input('paidDate', sql.Date, row.next_due_date)
+        .query(`
+          INSERT INTO dbo.expense_payments (expense_id, amount, payment_method, paid_date)
+          VALUES (@expenseId, @amount, 'CASH', @paidDate)
+        `);
+      await new sql.Request(transaction)
+        .input('expenseId', sql.BigInt, insertResult.recordset[0].id)
+        .input('amount', sql.Decimal(12, 2), row.amount)
+        .query(`
+          UPDATE dbo.expenses SET amount_paid = @amount, payment_status = 'PAID'
+          WHERE id = @expenseId
+        `);
+
       await new sql.Request(transaction)
         .input('lodgeId', sql.BigInt, lodgeId)
         .input('templateId', sql.BigInt, row.id)
@@ -558,6 +807,9 @@ module.exports = {
   createExpense,
   updateExpense,
   deleteExpense,
+  listPayments,
+  addPayment,
+  deletePayment,
   billExists,
   getBillFilename,
   getMonthlySummary,
@@ -565,4 +817,5 @@ module.exports = {
   createTemplate,
   updateTemplate,
   generateDueExpenses,
+  logAssetExpense,
 };

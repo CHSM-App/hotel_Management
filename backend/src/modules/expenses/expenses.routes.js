@@ -13,6 +13,9 @@ const {
   createExpenseHandler,
   updateExpenseHandler,
   deleteExpenseHandler,
+  listPaymentsHandler,
+  addPaymentHandler,
+  deletePaymentHandler,
   getExpenseBillHandler,
   getSummaryHandler,
   listTemplatesHandler,
@@ -51,5 +54,9 @@ router.get('/:id', authenticate, canAccess, getExpenseHandler);
 router.get('/:id/bill', authenticate, canAccess, getExpenseBillHandler);
 router.patch('/:id', authenticate, canAccess, expenseBillUpload, updateExpenseHandler);
 router.delete('/:id', authenticate, canAccess, deleteExpenseHandler);
+
+router.get('/:id/payments', authenticate, canAccess, listPaymentsHandler);
+router.post('/:id/payments', authenticate, canAccess, addPaymentHandler);
+router.delete('/:id/payments/:paymentId', authenticate, canAccess, deletePaymentHandler);
 
 module.exports = router;

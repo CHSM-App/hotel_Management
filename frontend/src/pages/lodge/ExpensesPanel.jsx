@@ -16,17 +16,23 @@ import { BarList } from './AnalyticsCharts';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
+import {
+  PAYMENT_METHOD_LABEL as PAYMENT_LABEL,
+  PAYMENT_METHOD_TAG_CLASS as PAYMENT_TAG_CLASS,
+  PAYMENT_METHOD_OPTIONS,
+  PAYMENT_REFERENCE_LABEL,
+} from './paymentMethods';
 import './forms.css';
 import './InventoryPanel.css';
 import './AnalyticsCharts.css';
 
-const PAYMENT_LABEL = { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' };
-// Same colour language as billing's PAYMENT_METHOD_COLOR in
-// AnalyticsOverview.jsx and the inv-tag status pills in AssetsPanel.jsx —
-// cash/UPI/card read the same way everywhere this app shows a payment
-// method, not a fresh palette invented for this one list.
-const PAYMENT_TAG_CLASS = { CASH: 'inv-tag--good', UPI: 'inv-tag--info', CARD: 'inv-tag--low' };
 const FREQUENCY_LABEL = { MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', YEARLY: 'Yearly' };
+
+// Only PARTIAL/PENDING get a tag — PAID is the default and common case, and
+// flagging every row as "Paid in full" would just be noise next to the
+// payment-method tag every row already carries.
+const PAYMENT_STATUS_LABEL = { PARTIAL: 'Partially paid', PENDING: 'Pending' };
+const PAYMENT_STATUS_TAG_CLASS = { PARTIAL: 'inv-tag--low', PENDING: 'inv-tag--bad' };
 
 const TABLE_SORT_ACCESSORS = {
   date: (e) => (e.expenseDate ? new Date(e.expenseDate).getTime() : 0),
@@ -261,7 +267,13 @@ const emptyExpenseForm = {
   description: '',
   amount: '',
   paymentMethod: 'CASH',
+  paymentStatus: 'PAID',
+  amountPaid: '',
+  referenceNumber: '',
   expenseDate: todayIso(),
+  // Read-only in the form itself — set from the expense on open, only used
+  // to offer "View receipt" in the view-mode summary.
+  hasBillDocument: false,
 };
 
 const emptyTemplateForm = {
@@ -306,6 +318,21 @@ export default function ExpensesPanel() {
   const [expenseBillFile, setExpenseBillFile] = useState(null);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // A row click opens this modal read-only — the fields show as text, not
+  // inputs, and Payments stays live (adding one there is never "editing").
+  // "Edit details" flips this off to turn the same modal into the form.
+  // Always false for a brand-new expense, which has nothing to view yet.
+  const [viewMode, setViewMode] = useState(false);
+
+  // Payments against the expense being edited — a bill isn't always settled
+  // in one go, so this is a running list, not a single field on the form.
+  // Only meaningful once the expense exists (editingExpenseId is set); a
+  // brand-new expense's first payment rides along with the create request
+  // instead (expenseForm.paymentStatus/amountPaid below).
+  const [payments, setPayments] = useState([]);
+  const [newPayment, setNewPayment] = useState({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
+  const [paymentError, setPaymentError] = useState('');
+  const [addingPayment, setAddingPayment] = useState(false);
 
   // Template form
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -466,9 +493,20 @@ export default function ExpensesPanel() {
   // Expense form
   // ---------------------------------------------------------------------
 
-  const openExpenseForm = (expense) => {
+  const loadPayments = (expenseId) =>
+    apiGet(`/expenses/${expenseId}/payments`, { token: session?.token })
+      .then((data) => setPayments(data.payments))
+      .catch(() => setPayments([]));
+
+  // mode 'view' opens read-only (a row click); 'edit' opens the form
+  // straight away (the RowMenu's "Edit expense", or "Edit details" from
+  // inside the view). Always 'edit' for a brand-new expense.
+  const openExpenseForm = (expense, mode = 'edit') => {
     setFormError('');
+    setPaymentError('');
     setExpenseBillFile(null);
+    setNewPayment({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
+    setViewMode(expense ? mode === 'view' : false);
     if (expense) {
       setEditingExpenseId(expense.id);
       setExpenseForm({
@@ -479,13 +517,53 @@ export default function ExpensesPanel() {
         description: expense.description || '',
         amount: String(expense.amount),
         paymentMethod: expense.paymentMethod,
+        paymentStatus: expense.paymentStatus || 'PAID',
+        amountPaid: expense.amountPaid != null ? String(expense.amountPaid) : '',
         expenseDate: expense.expenseDate?.slice(0, 10) || todayIso(),
+        hasBillDocument: !!expense.hasBillDocument,
       });
+      loadPayments(expense.id);
     } else {
       setEditingExpenseId(null);
       setExpenseForm(emptyExpenseForm);
+      setPayments([]);
     }
     setShowExpenseForm(true);
+  };
+
+  // A bill can be settled in more than one payment, so once the expense
+  // exists this is the way new money against it gets logged — not by
+  // re-editing amountPaid, which only ever seeds the first payment at
+  // creation. Refreshes the expense list too, since the row's own
+  // paymentStatus/amountPaid change with every payment.
+  const handleAddPayment = async (e) => {
+    e.preventDefault();
+    if (!newPayment.amount || Number(newPayment.amount) <= 0) return setPaymentError('Enter a valid amount.');
+    if (!newPayment.paidDate) return setPaymentError('Enter when this was paid.');
+
+    setAddingPayment(true);
+    setPaymentError('');
+    try {
+      const { expense } = await apiPost(`/expenses/${editingExpenseId}/payments`, newPayment, { token: session?.token });
+      setExpenseForm((f) => ({ ...f, amountPaid: String(expense.amountPaid), paymentStatus: expense.paymentStatus }));
+      setNewPayment({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
+      await Promise.all([loadPayments(editingExpenseId), loadExpenses(), loadSummary()]);
+    } catch (err) {
+      setPaymentError(err instanceof ApiError ? err.message : 'Could not add that payment.');
+    } finally {
+      setAddingPayment(false);
+    }
+  };
+
+  const handleDeletePayment = async (payment) => {
+    if (!window.confirm(`Remove this ₹${payment.amount} payment?`)) return;
+    try {
+      const { expense } = await apiDelete(`/expenses/${editingExpenseId}/payments/${payment.id}`, { token: session?.token });
+      setExpenseForm((f) => ({ ...f, amountPaid: String(expense.amountPaid), paymentStatus: expense.paymentStatus }));
+      await Promise.all([loadPayments(editingExpenseId), loadExpenses(), loadSummary()]);
+    } catch (err) {
+      setPaymentError(err instanceof ApiError ? err.message : 'Could not remove that payment.');
+    }
   };
 
   const handleExpenseSubmit = async (e) => {
@@ -507,6 +585,9 @@ export default function ExpensesPanel() {
         description: expenseForm.description,
         amount: expenseForm.amount,
         paymentMethod: expenseForm.paymentMethod,
+        paymentStatus: expenseForm.paymentStatus,
+        amountPaid: expenseForm.paymentStatus === 'PARTIAL' ? expenseForm.amountPaid : '',
+        referenceNumber: expenseForm.paymentStatus !== 'PENDING' ? expenseForm.referenceNumber : '',
         expenseDate: expenseForm.expenseDate,
       };
 
@@ -681,7 +762,7 @@ export default function ExpensesPanel() {
         <div>
           {summary && (
             <>
-              <div className="kpi-row">
+              <div className="kpi-row" style={{ marginBottom: 16 }}>
                 <div className="kpi-card kpi-card--primary">
                   <span className="kpi-label">Spent this year</span>
                   <span className="kpi-value">{formatPrice(summary.byMonth.reduce((s, m) => s + m.total, 0))}</span>
@@ -816,7 +897,7 @@ export default function ExpensesPanel() {
                 </thead>
                 <tbody>
                   {sortedExpenses.map((expense) => (
-                    <tr key={expense.id} onClick={() => openExpenseForm(expense)}>
+                    <tr key={expense.id} onClick={() => openExpenseForm(expense, 'view')}>
                       <td className="asset-table__muted">{formatDate(expense.expenseDate)}</td>
                       <td className="asset-table__name">
                         {expense.title}
@@ -827,9 +908,16 @@ export default function ExpensesPanel() {
                       <td>{expense.categoryName}</td>
                       <td className={expense.vendorName ? '' : 'asset-table__muted'}>{expense.vendorName || '—'}</td>
                       <td>
-                        <span className={`inv-tag ${PAYMENT_TAG_CLASS[expense.paymentMethod]}`}>
-                          {PAYMENT_LABEL[expense.paymentMethod]}
-                        </span>
+                        {expense.paymentStatus !== 'PENDING' && (
+                          <span className={`inv-tag ${PAYMENT_TAG_CLASS[expense.paymentMethod]}`}>
+                            {PAYMENT_LABEL[expense.paymentMethod]}
+                          </span>
+                        )}
+                        {PAYMENT_STATUS_LABEL[expense.paymentStatus] && (
+                          <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`} style={{ marginLeft: 4 }}>
+                            {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
+                          </span>
+                        )}
                       </td>
                       <td className="asset-table__mono">{formatPrice(expense.amount)}</td>
                       <td className="asset-table__actions" onClick={(e) => e.stopPropagation()}>
@@ -856,13 +944,20 @@ export default function ExpensesPanel() {
             <ul className="inv-list">
               {sortedExpenses.map((expense) => (
                 <li key={expense.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openExpenseForm(expense)} style={{ cursor: 'pointer' }}>
+                  <div className="inv-item__body" onClick={() => openExpenseForm(expense, 'view')} style={{ cursor: 'pointer' }}>
                     <div className="inv-item__name">
                       {expense.title}
                       <span className="inv-tag">{expense.categoryName}</span>
-                      <span className={`inv-tag ${PAYMENT_TAG_CLASS[expense.paymentMethod]}`}>
-                        {PAYMENT_LABEL[expense.paymentMethod]}
-                      </span>
+                      {expense.paymentStatus !== 'PENDING' && (
+                        <span className={`inv-tag ${PAYMENT_TAG_CLASS[expense.paymentMethod]}`}>
+                          {PAYMENT_LABEL[expense.paymentMethod]}
+                        </span>
+                      )}
+                      {PAYMENT_STATUS_LABEL[expense.paymentStatus] && (
+                        <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`}>
+                          {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
+                        </span>
+                      )}
                     </div>
                     <div className="inv-item__meta">
                       {formatDate(expense.expenseDate)} · {formatPrice(expense.amount)}
@@ -986,7 +1081,9 @@ export default function ExpensesPanel() {
             <form className="modal-form" onSubmit={handleExpenseSubmit} noValidate>
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
-                  <h3 id="expenseModalTitle">{editingExpenseId ? 'Edit expense' : 'New expense'}</h3>
+                  <h3 id="expenseModalTitle">
+                    {viewMode ? expenseForm.title : editingExpenseId ? 'Edit expense' : 'New expense'}
+                  </h3>
                   <button
                     type="button"
                     className="modal-form__close"
@@ -1002,112 +1099,331 @@ export default function ExpensesPanel() {
               <div className="modal-form__body">
                 {formError && <div className="form-banner form-banner--error form-banner--flash">{formError}</div>}
 
-                <div className="field">
-                  <label htmlFor="expenseTitle">
-                    Title <Req />
-                  </label>
-                  <input
-                    id="expenseTitle"
-                    value={expenseForm.title}
-                    onChange={(e) => setExpenseForm((f) => ({ ...f, title: e.target.value }))}
-                    placeholder="MSEB electricity bill, June salaries…"
-                    autoFocus
-                  />
-                </div>
+                {/* Read-only summary — a row click lands here first, not in
+                    the editable form. "Edit details" below switches this
+                    same modal into the form beneath. */}
+                {viewMode ? (
+                  <dl className="asset-detail__grid" style={{ marginBottom: 16 }}>
+                    <div>
+                      <dt>Category</dt>
+                      <dd>{expenseForm.categoryName || '—'}</dd>
+                    </div>
+                    {expenseForm.vendorName && (
+                      <div>
+                        <dt>Vendor</dt>
+                        <dd>{expenseForm.vendorName}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>Amount</dt>
+                      <dd>{formatPrice(expenseForm.amount)}</dd>
+                    </div>
+                    <div>
+                      <dt>Date</dt>
+                      <dd>{formatDate(expenseForm.expenseDate)}</dd>
+                    </div>
+                    {expenseForm.description && (
+                      <div>
+                        <dt>Notes</dt>
+                        <dd>{expenseForm.description}</dd>
+                      </div>
+                    )}
+                    {expenseForm.hasBillDocument && (
+                      <div>
+                        <dt>Receipt</dt>
+                        <dd>
+                          <button
+                            type="button"
+                            className="inv-linkbtn"
+                            onClick={() => viewBill({ id: editingExpenseId })}
+                          >
+                            View receipt
+                          </button>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label htmlFor="expenseTitle">
+                        Title <Req />
+                      </label>
+                      <input
+                        id="expenseTitle"
+                        value={expenseForm.title}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, title: e.target.value }))}
+                        placeholder="MSEB electricity bill, June salaries…"
+                        autoFocus
+                      />
+                    </div>
 
-                <div className="field">
-                  <label htmlFor="expenseCategory">
-                    Category <Req />
-                  </label>
-                  <CategoryField
-                    id="expenseCategory"
-                    value={expenseForm.categoryName}
-                    onChange={(name) => setExpenseForm((f) => ({ ...f, categoryName: name }))}
-                    options={categoryOptions}
-                  />
-                  <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
-                </div>
+                    <div className="field">
+                      <label htmlFor="expenseCategory">
+                        Category <Req />
+                      </label>
+                      <CategoryField
+                        id="expenseCategory"
+                        value={expenseForm.categoryName}
+                        onChange={(name) => setExpenseForm((f) => ({ ...f, categoryName: name }))}
+                        options={categoryOptions}
+                      />
+                      <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
+                    </div>
 
-                <div className="field">
-                  <label htmlFor="expenseVendor">Vendor</label>
-                  <VendorField
-                    id="expenseVendor"
-                    value={expenseForm.vendorName}
-                    vendors={vendors}
-                    onChange={(name) => setExpenseForm((f) => ({ ...f, vendorName: name, vendorId: '' }))}
-                    onPick={(vendor) => setExpenseForm((f) => ({ ...f, vendorName: vendor.name, vendorId: String(vendor.id) }))}
-                  />
-                </div>
+                    <div className="field">
+                      <label htmlFor="expenseVendor">Vendor</label>
+                      <VendorField
+                        id="expenseVendor"
+                        value={expenseForm.vendorName}
+                        vendors={vendors}
+                        onChange={(name) => setExpenseForm((f) => ({ ...f, vendorName: name, vendorId: '' }))}
+                        onPick={(vendor) => setExpenseForm((f) => ({ ...f, vendorName: vendor.name, vendorId: String(vendor.id) }))}
+                      />
+                    </div>
 
-                <div className="field">
-                  <label htmlFor="expenseAmount">
-                    Amount <Req />
-                  </label>
-                  <input
-                    id="expenseAmount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={expenseForm.amount}
-                    onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))}
-                  />
-                </div>
+                    <div className="field">
+                      <label htmlFor="expenseAmount">
+                        Amount <Req />
+                      </label>
+                      <input
+                        id="expenseAmount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={expenseForm.amount}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))}
+                      />
+                    </div>
 
-                <div className="field">
-                  <label htmlFor="expensePaymentMethod">
-                    Paid via <Req />
-                  </label>
-                  <select
-                    id="expensePaymentMethod"
-                    value={expenseForm.paymentMethod}
-                    onChange={(e) => setExpenseForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-                  >
-                    <option value="CASH">Cash</option>
-                    <option value="UPI">UPI</option>
-                    <option value="CARD">Card</option>
-                  </select>
-                </div>
+                    {!editingExpenseId && (
+                      <>
+                        <div className="field">
+                          <label htmlFor="expensePaymentStatus">
+                            Payment status <Req />
+                          </label>
+                          <select
+                            id="expensePaymentStatus"
+                            value={expenseForm.paymentStatus}
+                            onChange={(e) => setExpenseForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                          >
+                            <option value="PAID">Paid in full</option>
+                            <option value="PARTIAL">Partially paid</option>
+                            <option value="PENDING">Pending</option>
+                          </select>
+                        </div>
 
-                <div className="field">
-                  <label htmlFor="expenseDate">
-                    Date <Req />
-                  </label>
-                  <input
-                    id="expenseDate"
-                    type="date"
-                    value={expenseForm.expenseDate}
-                    onChange={(e) => setExpenseForm((f) => ({ ...f, expenseDate: e.target.value }))}
-                  />
-                </div>
+                        {expenseForm.paymentStatus !== 'PENDING' && (
+                          <div className="field">
+                            <label htmlFor="expensePaymentMethod">
+                              Paid via <Req />
+                            </label>
+                            <select
+                              id="expensePaymentMethod"
+                              value={expenseForm.paymentMethod}
+                              onChange={(e) => setExpenseForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                            >
+                              {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                                <option key={value} value={value}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
 
-                <div className="field">
-                  <label htmlFor="expenseDescription">Notes</label>
-                  <input
-                    id="expenseDescription"
-                    value={expenseForm.description}
-                    onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
-                  />
-                </div>
+                        {expenseForm.paymentStatus !== 'PENDING' && PAYMENT_REFERENCE_LABEL[expenseForm.paymentMethod] && (
+                          <div className="field">
+                            <label htmlFor="expenseReferenceNumber">{PAYMENT_REFERENCE_LABEL[expenseForm.paymentMethod]}</label>
+                            <input
+                              id="expenseReferenceNumber"
+                              value={expenseForm.referenceNumber}
+                              onChange={(e) => setExpenseForm((f) => ({ ...f, referenceNumber: e.target.value }))}
+                            />
+                          </div>
+                        )}
 
-                <div className="field">
-                  <label htmlFor="expenseBill">Receipt / bill (image or PDF)</label>
-                  <input
-                    id="expenseBill"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,application/pdf"
-                    onChange={(e) => setExpenseBillFile(e.target.files?.[0] || null)}
-                  />
-                </div>
+                        {expenseForm.paymentStatus === 'PARTIAL' && (
+                          <div className="field">
+                            <label htmlFor="expenseAmountPaid">Amount paid so far</label>
+                            <input
+                              id="expenseAmountPaid"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              max={expenseForm.amount || undefined}
+                              value={expenseForm.amountPaid}
+                              onChange={(e) => setExpenseForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    <div className="field">
+                      <label htmlFor="expenseDate">
+                        Date <Req />
+                      </label>
+                      <input
+                        id="expenseDate"
+                        type="date"
+                        value={expenseForm.expenseDate}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, expenseDate: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label htmlFor="expenseDescription">Notes</label>
+                      <input
+                        id="expenseDescription"
+                        value={expenseForm.description}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label htmlFor="expenseBill">Receipt / bill (image or PDF)</label>
+                      <input
+                        id="expenseBill"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        onChange={(e) => setExpenseBillFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* A bill can be settled in several payments, so once it
+                    exists this list — not a single status field — is what
+                    "how much has been paid" actually means. */}
+                {editingExpenseId && (
+                  <div className="field field--span2">
+                    <span className="field__group-label">Payments</span>
+                    <p className="field__hint" style={{ marginTop: -2, marginBottom: 8 }}>
+                      {formatPrice(expenseForm.amountPaid || 0)} of {formatPrice(expenseForm.amount || 0)} paid
+                      {Number(expenseForm.amount) > Number(expenseForm.amountPaid || 0) &&
+                        ` · ₹${(Number(expenseForm.amount) - Number(expenseForm.amountPaid || 0)).toFixed(2)} left`}
+                    </p>
+
+                    {payments.length > 0 && (
+                      <ul className="inv-list" style={{ marginBottom: 10 }}>
+                        {payments.map((p) => (
+                          <li key={p.id} className="inv-item">
+                            <div className="inv-item__body">
+                              <div className="inv-item__name">
+                                {formatPrice(p.amount)}
+                                <span className={`inv-tag ${PAYMENT_TAG_CLASS[p.paymentMethod]}`}>
+                                  {PAYMENT_LABEL[p.paymentMethod]}
+                                </span>
+                              </div>
+                              <div className="inv-item__meta">
+                                {formatDate(p.paidDate)}
+                                {p.referenceNumber && ` · ${PAYMENT_REFERENCE_LABEL[p.paymentMethod] || 'Ref'}: ${p.referenceNumber}`}
+                              </div>
+                            </div>
+                            <div className="inv-item__actions">
+                              <button type="button" className="inv-danger" onClick={() => handleDeletePayment(p)}>
+                                Remove
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {paymentError && <div className="form-banner form-banner--error form-banner--flash">{paymentError}</div>}
+
+                    {/* No separate "Add payment" button — Enter in any of
+                        these three fields submits the payment directly.
+                        This section lives inside the same <form> as the
+                        expense's own Save button, so Enter's default
+                        (submitting the nearest form) has to be stopped from
+                        reaching handleExpenseSubmit and redirected here
+                        instead. */}
+                    {Number(expenseForm.amountPaid || 0) < Number(expenseForm.amount || 0) && (
+                      <div
+                        className="field-row field-row--triple"
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          if (!addingPayment) handleAddPayment(e);
+                        }}
+                      >
+                        <div className="field">
+                          <label htmlFor="newPaymentAmount">Amount</label>
+                          <input
+                            id="newPaymentAmount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            max={Number(expenseForm.amount) - Number(expenseForm.amountPaid || 0)}
+                            value={newPayment.amount}
+                            onChange={(e) => setNewPayment((f) => ({ ...f, amount: e.target.value }))}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="newPaymentMethod">Paid via</label>
+                          <select
+                            id="newPaymentMethod"
+                            value={newPayment.paymentMethod}
+                            onChange={(e) => setNewPayment((f) => ({ ...f, paymentMethod: e.target.value }))}
+                          >
+                            {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label htmlFor="newPaymentDate">Date</label>
+                          <input
+                            id="newPaymentDate"
+                            type="date"
+                            value={newPayment.paidDate}
+                            onChange={(e) => setNewPayment((f) => ({ ...f, paidDate: e.target.value }))}
+                          />
+                        </div>
+                        {PAYMENT_REFERENCE_LABEL[newPayment.paymentMethod] && (
+                          <div className="field" style={{ gridColumn: '1 / -1' }}>
+                            <label htmlFor="newPaymentReference">{PAYMENT_REFERENCE_LABEL[newPayment.paymentMethod]}</label>
+                            <input
+                              id="newPaymentReference"
+                              value={newPayment.referenceNumber}
+                              onChange={(e) => setNewPayment((f) => ({ ...f, referenceNumber: e.target.value }))}
+                            />
+                          </div>
+                        )}
+                        <span className="field__hint" style={{ gridColumn: '1 / -1' }}>
+                          {addingPayment ? 'Adding…' : 'Press Enter to add this payment.'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="modal-form__foot">
                 <div className="modal-form__foot-actions">
-                  <button type="button" className="btn-secondary" onClick={() => setShowExpenseForm(false)} disabled={submitting}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn-accent" disabled={submitting}>
-                    {submitting ? 'Saving…' : 'Save'}
-                  </button>
+                  {viewMode ? (
+                    <>
+                      <button type="button" className="btn-secondary" onClick={() => setShowExpenseForm(false)}>
+                        Close
+                      </button>
+                      <button type="button" className="btn-accent" onClick={() => setViewMode(false)}>
+                        Edit details
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" className="btn-secondary" onClick={() => setShowExpenseForm(false)} disabled={submitting}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn-accent" disabled={submitting}>
+                        {submitting ? 'Saving…' : 'Save'}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </form>

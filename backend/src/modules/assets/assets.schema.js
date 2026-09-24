@@ -1,5 +1,27 @@
 const { z } = require('zod');
 
+// Same wider vocabulary expenses.schema.js uses — how a cost here was
+// actually paid, purely to carry over onto the expense row this
+// auto-generates (see logAssetExpense in expenses.service.js). Assets itself
+// has no column for this; it's not stored on the asset/work order/coverage
+// row, only forwarded.
+const paymentMethodSchema = z
+  .enum(['CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER'])
+  .optional()
+  .default('CASH');
+// Cheque number, UTR, transaction id, … — same free-text field the
+// Expenses tab's own payment form has, forwarded the same way paymentMethod
+// is.
+const referenceNumberSchema = z.string().trim().max(80).optional().default('');
+
+// Same reasoning, for whether the cost is actually settled yet — same
+// PAID/PARTIAL/PENDING vocabulary expenses.schema.js uses. amountPaid is
+// only meaningful when status is PARTIAL; logAssetExpense resolves the rest
+// (PAID -> full amount, PENDING -> 0) the same way expenses.service.js's own
+// createExpense does.
+const paymentStatusSchema = z.enum(['PAID', 'PARTIAL', 'PENDING']).optional().default('PAID');
+const amountPaidSchema = z.coerce.number().min(0, 'Amount paid can’t be negative.').optional().nullable();
+
 // An optional foreign key sent from a form that leaves it blank — "not
 // room-bound", "no vendor" — arrives as the empty string, not absent. Zod's
 // coercion runs before .optional()/.nullable() are checked, so
@@ -40,6 +62,10 @@ const assetSchema = z.object({
   serialNumber: z.string().trim().max(120).optional().default(''),
   purchaseDate: z.string().trim().max(10).optional().default(''),
   purchaseCost: z.coerce.number().min(0, 'Cost can’t be negative.').optional().nullable(),
+  paymentMethod: paymentMethodSchema,
+  paymentStatus: paymentStatusSchema,
+  amountPaid: amountPaidSchema,
+  referenceNumber: referenceNumberSchema,
   roomId: optionalId(),
   floor: z.string().trim().max(20).optional().default(''),
   department: z.string().trim().max(60).optional().default(''),
@@ -68,6 +94,10 @@ const bulkAssetSchema = z.object({
   model: z.string().trim().max(80).optional().default(''),
   purchaseDate: z.string().trim().max(10).optional().default(''),
   purchaseCost: z.coerce.number().min(0, 'Cost can’t be negative.').optional().nullable(),
+  paymentMethod: paymentMethodSchema,
+  paymentStatus: paymentStatusSchema,
+  amountPaid: amountPaidSchema,
+  referenceNumber: referenceNumberSchema,
   vendorId: optionalId(),
   warrantyExpiry: z.string().trim().max(10).optional().default(''),
   // 200 caps one request at something a browser and the database both
@@ -85,6 +115,10 @@ const coveragePeriodSchema = z.object({
   startDate: z.string().trim().max(10).optional().default(''),
   endDate: z.string().trim().min(1, 'Enter when this coverage ends.').max(10),
   cost: z.coerce.number().min(0, 'Cost can’t be negative.').optional().nullable(),
+  paymentMethod: paymentMethodSchema,
+  paymentStatus: paymentStatusSchema,
+  amountPaid: amountPaidSchema,
+  referenceNumber: referenceNumberSchema,
   coverageNote: z.string().trim().max(200).optional().default(''),
 });
 
@@ -133,6 +167,10 @@ const updateWorkOrderSchema = z.object({
   vendorId: optionalId(),
   partsCost: z.coerce.number().min(0).optional().nullable(),
   laborCost: z.coerce.number().min(0).optional().nullable(),
+  paymentMethod: paymentMethodSchema,
+  paymentStatus: paymentStatusSchema,
+  amountPaid: amountPaidSchema,
+  referenceNumber: referenceNumberSchema,
   partsUsedNote: z.string().trim().max(400).optional(),
   isWarrantyClaim: z.boolean().optional(),
   resolutionNote: z.string().trim().max(400).optional(),
