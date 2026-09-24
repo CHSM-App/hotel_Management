@@ -105,6 +105,12 @@ const ASSET_SELECT = `
   LEFT JOIN dbo.vendors v ON v.id = a.vendor_id
 `;
 
+// includeInactive is "Show retired" in the UI — it means status = RETIRED
+// specifically, not "any inactive row". Deleting an asset (setAssetActive)
+// also clears is_active but never touches status, so without the status
+// check here, a plain delete would resurface in this list the moment
+// someone ticked "Show retired", indistinguishable from an asset actually
+// retired through the status dropdown.
 async function listAssets(lodgeId, { includeInactive = false } = {}) {
   const pool = await getPool();
   const result = await pool
@@ -112,7 +118,8 @@ async function listAssets(lodgeId, { includeInactive = false } = {}) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       ${ASSET_SELECT}
-      WHERE a.lodge_id = @lodgeId ${includeInactive ? '' : 'AND a.is_active = 1'}
+      WHERE a.lodge_id = @lodgeId
+        AND (a.is_active = 1 ${includeInactive ? "OR a.status = 'RETIRED'" : ''})
       ORDER BY a.name ASC
     `);
   return result.recordset.map(mapAsset);

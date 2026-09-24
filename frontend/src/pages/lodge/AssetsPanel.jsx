@@ -24,6 +24,21 @@ const STATUS_LABEL = {
   RETIRED: 'Retired',
 };
 
+// Same rule as mobileDigits/typedMobile in Bookings.jsx — duplicated rather
+// than shared, but the two must agree: a vendor phone this form accepts and
+// the backend's TEN_DIGITS check in assets.schema.js rejects is a round trip
+// spent on a red banner.
+function typedMobile(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  const normalised =
+    digits.length === 12 && digits.startsWith('91')
+      ? digits.slice(2)
+      : digits.length === 11 && digits.startsWith('0')
+        ? digits.slice(1)
+        : digits;
+  return normalised.slice(0, 10);
+}
+
 // A neutral pill for every status read the same at a glance as "nothing to
 // see here" — the one status that actually needs attention (Under repair)
 // looked no different from Retired or In use. Same colour language as the
@@ -569,7 +584,7 @@ function FileField({ id, file, accept, onChange, existingLabel }) {
   );
 }
 
-export default function AssetsPanel() {
+export default function AssetsPanel({ onViewReport }) {
   const session = getSession();
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState('register');
@@ -1780,22 +1795,27 @@ export default function AssetsPanel() {
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
-      <SectionTabs
-        ariaLabel="Assets sections"
-        activeId={tab}
-        onChange={setTab}
-        tabs={[
-          { id: 'register', name: 'Asset Register', count: assets.length },
-          {
-            id: 'workOrders',
-            name: 'Work Orders',
-            count: openWoCount,
-            flagged: openWoCount > 0,
-            flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
-          },
-          { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
-        ]}
-      />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <SectionTabs
+          ariaLabel="Assets sections"
+          activeId={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'register', name: 'Asset Register', count: assets.length },
+            {
+              id: 'workOrders',
+              name: 'Work Orders',
+              count: openWoCount,
+              flagged: openWoCount > 0,
+              flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
+            },
+            { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
+          ]}
+        />
+        <button type="button" className="btn-secondary" onClick={onViewReport}>
+          View Report
+        </button>
+      </div>
 
       {tab === 'register' && (
         <div>
@@ -2124,7 +2144,7 @@ export default function AssetsPanel() {
 
       {/* Asset detail: fields, QR, service history */}
       {selectedAsset && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={closeAssetDetail}>
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
             className="glass-panel inv-panel__modal inv-panel__modal--asset-detail"
             role="dialog"
@@ -2687,7 +2707,11 @@ export default function AssetsPanel() {
                   <input
                     id="assetVendorPhone"
                     value={assetForm.vendorPhone}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, vendorPhone: e.target.value }))}
+                    onChange={(e) => setAssetForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }))}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile"
                   />
                 </div>
 
@@ -3059,7 +3083,11 @@ export default function AssetsPanel() {
                   <input
                     id="bulkVendorPhone"
                     value={bulkForm.vendorPhone}
-                    onChange={(e) => setBulkForm((f) => ({ ...f, vendorPhone: e.target.value }))}
+                    onChange={(e) => setBulkForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }))}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile"
                   />
                 </div>
 
@@ -3249,10 +3277,7 @@ export default function AssetsPanel() {
 
       {/* Work order form */}
       {showWoForm && (
-        <div
-          className="glass-backdrop inv-panel__backdrop"
-          onClick={() => !submitting && !bulkWoSubmitting && setShowWoForm(false)}
-        >
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
             className="glass-panel inv-panel__modal inv-panel__modal--asset modal-form__panel"
             role="dialog"
@@ -3648,7 +3673,7 @@ export default function AssetsPanel() {
 
       {/* Vendor form */}
       {showVendorForm && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowVendorForm(false)}>
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
             className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"
@@ -3704,7 +3729,11 @@ export default function AssetsPanel() {
                   <input
                     id="vendorPhone"
                     value={vendorForm.phone}
-                    onChange={(e) => setVendorForm((f) => ({ ...f, phone: e.target.value }))}
+                    onChange={(e) => setVendorForm((f) => ({ ...f, phone: typedMobile(e.target.value) }))}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile"
                   />
                 </div>
                 <div className="field">
@@ -3751,7 +3780,7 @@ export default function AssetsPanel() {
 
       {/* Add / renew coverage — a warranty or AMC period on the open asset. */}
       {showCoverageForm && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={() => !coverageSubmitting && setShowCoverageForm(false)}>
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
             className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"

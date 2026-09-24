@@ -106,6 +106,7 @@ async function listExpensesHandler(req, res, next) {
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
       vendorId: req.query.vendorId ? Number(req.query.vendorId) : undefined,
       assetId: req.query.assetId ? Number(req.query.assetId) : undefined,
+      recurringTemplateId: req.query.recurringTemplateId ? Number(req.query.recurringTemplateId) : undefined,
       from: req.query.from || undefined,
       to: req.query.to || undefined,
     });
@@ -271,11 +272,22 @@ async function updateTemplateHandler(req, res, next) {
   }
 }
 
-async function generateDueHandler(req, res, next) {
+// "Log this month" — the desk manually recording one occurrence of a
+// recurring template, entering amount/vendor/payment right here (this IS
+// the expense form; expenseSchema covers it) rather than inheriting a
+// guessed amount from the template.
+async function logOccurrenceHandler(req, res, next) {
   try {
-    const generated = await expensesService.generateDueExpenses(req.user.lodgeId);
-    res.json({ generated });
+    const expense = await expensesService.logRecurringOccurrence(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parse(expenseSchema, req.body),
+      req.user.sub,
+      req.file?.filename
+    );
+    res.status(201).json({ expense });
   } catch (err) {
+    if (req.file) fs.unlink(req.file.path, () => {});
     next(err);
   }
 }
@@ -300,5 +312,5 @@ module.exports = {
   listTemplatesHandler,
   createTemplateHandler,
   updateTemplateHandler,
-  generateDueHandler,
+  logOccurrenceHandler,
 };

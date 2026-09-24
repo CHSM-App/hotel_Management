@@ -131,7 +131,10 @@ const updateAssetStatusSchema = z.object({
 const vendorSchema = z.object({
   name: z.string().trim().min(1, 'Vendor name is required.').max(120),
   contactPerson: z.string().trim().max(80).optional().default(''),
-  phone: z.string().trim().max(20).optional().default(''),
+  // Optional — not every vendor has one on file — but when given it has to
+  // be a real 10-digit mobile number, same TEN_DIGITS rule bookings.schema.js
+  // and staff.controller.js already use for guest/staff phone numbers.
+  phone: z.string().trim().regex(/^$|^\d{10}$/, 'Enter a 10-digit mobile number.').optional().default(''),
   email: z.string().trim().max(120).optional().default(''),
   specialty: z.string().trim().max(80).optional().default(''),
   notes: z.string().trim().max(400).optional().default(''),

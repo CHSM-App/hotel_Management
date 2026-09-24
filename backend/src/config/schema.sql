@@ -2359,9 +2359,10 @@ CREATE TABLE dbo.expense_categories (
     CONSTRAINT uq_expense_categories_lodge_name UNIQUE (lodge_id, name)
 );
 
--- A recurring cost the property pays on a schedule — rent, electricity, a
--- monthly AMC. generateDueExpenses() in expenses.service.js turns a due
--- template into one dbo.expenses row and advances next_due_date.
+-- A repeat schedule — rent, electricity, a monthly AMC — not a fixed cost:
+-- amount/vendor aren't set here, only entered per occurrence when the desk
+-- logs it (logRecurringOccurrence in expenses.service.js). next_due_date is
+-- a reminder only; nothing generates automatically from it.
 IF OBJECT_ID('dbo.expense_recurring_templates', 'U') IS NULL
 CREATE TABLE dbo.expense_recurring_templates (
     id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -2369,7 +2370,7 @@ CREATE TABLE dbo.expense_recurring_templates (
     category_id         BIGINT NOT NULL REFERENCES dbo.expense_categories(id),
     vendor_id           BIGINT NULL REFERENCES dbo.vendors(id),
     title               NVARCHAR(120) NOT NULL,
-    amount              DECIMAL(12,2) NOT NULL,
+    amount              DECIMAL(12,2) NULL,
     frequency           NVARCHAR(20) NOT NULL
         CONSTRAINT ck_expense_templates_frequency CHECK (frequency IN ('MONTHLY', 'QUARTERLY', 'YEARLY')),
     next_due_date       DATE NOT NULL,

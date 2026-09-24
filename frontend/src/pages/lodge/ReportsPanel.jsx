@@ -27,6 +27,8 @@ import AnalyticsOverview from './AnalyticsOverview';
 import RoomsAnalytics from './RoomsAnalytics';
 import FunctionsAnalytics from './FunctionsAnalytics';
 import FoodAnalytics from './FoodAnalytics';
+import ExpensesReportPanel from './ExpensesReportPanel';
+import AssetsReportPanel from './AssetsReportPanel';
 import { BarList } from './AnalyticsCharts';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
@@ -47,6 +49,11 @@ const ALL_TABS = [
   { key: 'events', label: 'Events & functions', capability: 'hasEvents' },
   { key: 'food', label: 'Food orders', capability: 'servesFood' },
   { key: 'gst', label: 'Tax & GST' },
+  // Gated by permission rather than a lodge capability — every property has
+  // expenses/assets, but not every role is allowed to see them, the same
+  // check OwnerDashboard's own sidebar already makes for these two sections.
+  { key: 'expenses', label: 'Expenses', permission: 'expenses.manage' },
+  { key: 'assets', label: 'Assets', permission: 'assets.manage' },
 ];
 
 const EVENT_TYPE_LABEL = {
@@ -188,14 +195,17 @@ function SortTh({ label, sortKey, sort, onSort, className }) {
   );
 }
 
-export default function ReportsPanel({ lodge }) {
+export default function ReportsPanel({ lodge, permissions = [] }) {
   const session = getSession();
   const token = session?.token;
 
   // A property only sees the reports its own capabilities can produce — a
   // restaurant with no rooms gets no Bookings tab, a lodge with no function
   // hall gets no Events tab. Same gate OwnerDashboard applies to the sidebar.
-  const TABS = ALL_TABS.filter((t) => !t.capability || Boolean(lodge?.[t.capability]));
+  // Expenses/Assets are gated by permission instead, for the same reason.
+  const TABS = ALL_TABS.filter(
+    (t) => (!t.capability || Boolean(lodge?.[t.capability])) && (!t.permission || permissions.includes(t.permission))
+  );
   const [tab, setTab] = useUrlState('tab', 'overview');
   // A ?tab= this screen doesn't own falls back to the first available tab
   // rather than matching nothing and rendering an empty page under an
@@ -229,6 +239,15 @@ export default function ReportsPanel({ lodge }) {
   const [foodOrders, setFoodOrders] = useState(null);
   const [foodOrdersError, setFoodOrdersError] = useState('');
 
+  // Expenses/Assets reports over the full history, not a date range — same
+  // endpoints ExpensesPanel/AssetsPanel themselves use, fetched fresh here
+  // since a role reaching this tab from Reports rather than from those
+  // panels won't already have them in memory.
+  const [expensesReportData, setExpensesReportData] = useState(null);
+  const [expensesReportError, setExpensesReportError] = useState('');
+  const [assetsReportData, setAssetsReportData] = useState(null);
+  const [assetsReportError, setAssetsReportError] = useState('');
+
   // The month picker and the From/To pair drive the same range — this reads
   // the range back as a month so picking "August 2026" keeps showing August
   // rather than blanking the moment the component re-renders.
@@ -255,6 +274,25 @@ export default function ReportsPanel({ lodge }) {
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate]);
+
+  // Fetched once, lazily, the first time each of these tabs is actually
+  // opened — not on every panel load, since most sessions reaching Reports
+  // never look at either.
+  useEffect(() => {
+    if (activeTab !== 'expenses' || expensesReportData || expensesReportError) return;
+    apiGet('/expenses', { token })
+      .then((data) => setExpensesReportData(data.expenses))
+      .catch((err) => setExpensesReportError(err instanceof ApiError ? err.message : 'Could not load the expense report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'assets' || assetsReportData || assetsReportError) return;
+    Promise.all([apiGet('/assets', { token }), apiGet('/assets/work-orders', { token })])
+      .then(([assetsData, woData]) => setAssetsReportData({ assets: assetsData.assets, workOrders: woData.workOrders }))
+      .catch((err) => setAssetsReportError(err instanceof ApiError ? err.message : 'Could not load the asset report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // The built PDF, held as an object URL so the browser's own viewer can show
   // it. Previewing the real file rather than an HTML lookalike means what is on
@@ -581,6 +619,9 @@ export default function ReportsPanel({ lodge }) {
         ))}
       </div>
 
+      {/* Expenses/Assets report the full history, not a date range — the
+          picker bar and every date-scoped tab below it don't apply. */}
+      {activeTab !== 'expenses' && activeTab !== 'assets' && (
       <div className="dash-card reports-panel__compact-filters">
         <div className="reports-panel__compact-row">
           <div className="reports-panel__compact-field">
@@ -735,6 +776,27 @@ export default function ReportsPanel({ lodge }) {
           </p>
         )}
       </div>
+      )}
+
+      {activeTab === 'expenses' && (
+        expensesReportData ? (
+          <ExpensesReportPanel expenses={expensesReportData} onClose={null} />
+        ) : expensesReportError ? (
+          <p className="reports-panel__hint">{expensesReportError}</p>
+        ) : (
+          <p className="reports-panel__hint">Loading…</p>
+        )
+      )}
+
+      {activeTab === 'assets' && (
+        assetsReportData ? (
+          <AssetsReportPanel assets={assetsReportData.assets} workOrders={assetsReportData.workOrders} onClose={null} />
+        ) : assetsReportError ? (
+          <p className="reports-panel__hint">{assetsReportError}</p>
+        ) : (
+          <p className="reports-panel__hint">Loading…</p>
+        )
+      )}
 
       {activeTab === 'bookings' && (
         <>
