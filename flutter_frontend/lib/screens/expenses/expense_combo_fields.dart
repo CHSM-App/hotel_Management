@@ -14,6 +14,7 @@ class CategoryComboField extends StatefulWidget {
   final List<String> options;
   final String label;
   final bool required;
+  final String? errorText;
 
   const CategoryComboField({
     super.key,
@@ -21,6 +22,7 @@ class CategoryComboField extends StatefulWidget {
     required this.options,
     this.label = 'Category',
     this.required = true,
+    this.errorText,
   });
 
   @override
@@ -47,6 +49,7 @@ class _CategoryComboFieldState extends State<CategoryComboField> {
     final options = widget.options;
     final label = widget.label;
     final required = widget.required;
+    final errorText = widget.errorText;
     return RawAutocomplete<String>(
       textEditingController: controller,
       focusNode: _focusNode,
@@ -71,7 +74,16 @@ class _CategoryComboFieldState extends State<CategoryComboField> {
               ),
               const SizedBox(height: AppTheme.s8),
             ],
-            _ComboWell(controller: fieldController, focusNode: focusNode, hint: 'Utilities, Repairs, Salaries…'),
+            _ComboWell(
+              controller: fieldController,
+              focusNode: focusNode,
+              hint: 'Utilities, Repairs, Salaries…',
+              hasError: errorText != null,
+            ),
+            if (errorText != null) ...[
+              const SizedBox(height: AppTheme.s4),
+              Text(errorText, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            ],
           ],
         );
       },
@@ -155,8 +167,9 @@ class _ComboWell extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final String hint;
+  final bool hasError;
 
-  const _ComboWell({required this.controller, required this.focusNode, required this.hint});
+  const _ComboWell({required this.controller, required this.focusNode, required this.hint, this.hasError = false});
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +180,10 @@ class _ComboWell extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppTheme.bg,
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
-          border: Border.all(color: focusNode.hasFocus ? AppTheme.accent : AppTheme.border, width: focusNode.hasFocus ? 1.6 : 1),
+          border: Border.all(
+            color: hasError ? AppTheme.danger : (focusNode.hasFocus ? AppTheme.accent : AppTheme.border),
+            width: focusNode.hasFocus || hasError ? 1.6 : 1,
+          ),
         ),
         child: TextField(
           controller: controller,

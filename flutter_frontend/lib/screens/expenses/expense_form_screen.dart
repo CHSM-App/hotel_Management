@@ -59,6 +59,59 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   );
   XFile? _billPhoto;
   String? _error;
+  // Set once Save is first pressed — before that, an empty required field
+  // shouldn't shout at someone who hasn't gotten to it yet. Mirrors the same
+  // flag in InventoryPanel's material form.
+  bool _submitAttempted = false;
+
+  String? get _titleError =>
+      (_submitAttempted && _title.text.trim().isEmpty) ? 'Give this expense a title.' : null;
+  String? get _categoryError =>
+      (_submitAttempted && _category.text.trim().isEmpty) ? 'Enter or choose a category.' : null;
+  String? get _amountError {
+    if (!_submitAttempted) return null;
+    final amount = num.tryParse(_amount.text.trim());
+    return (amount == null || amount < 0) ? 'Enter a valid amount.' : null;
+  }
+
+  String? get _dateError =>
+      (_submitAttempted && _expenseDate.text.trim().isEmpty) ? 'Enter the expense date.' : null;
+
+  // Keyed so a failed Save can scroll straight to whichever required field
+  // is empty — this form runs long enough that an error message left where
+  // it was typed can sit off-screen, unseen, while the person keeps
+  // re-pressing Save. Mirrors focusFirstError in ExpensesPanel.jsx, adapted
+  // for a scrollable page instead of a modal.
+  final _titleFieldKey = GlobalKey();
+  final _categoryFieldKey = GlobalKey();
+  final _amountFieldKey = GlobalKey();
+  final _dateFieldKey = GlobalKey();
+  final _titleFocus = FocusNode();
+  final _amountFocus = FocusNode();
+
+  void _scrollToFirstError() {
+    GlobalKey? key;
+    FocusNode? focus;
+    if (_titleError != null) {
+      key = _titleFieldKey;
+      focus = _titleFocus;
+    } else if (_categoryError != null) {
+      key = _categoryFieldKey;
+    } else if (_amountError != null) {
+      key = _amountFieldKey;
+      focus = _amountFocus;
+    } else if (_dateError != null) {
+      key = _dateFieldKey;
+    }
+    if (key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key!.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.15);
+      }
+      focus?.requestFocus();
+    });
+  }
 
   // ── Payments — mirrors the "Payments" section in ExpensesPanel.jsx. Only
   // meaningful once the expense exists; kept as running local state updated
@@ -89,6 +142,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     }
     Future.microtask(() => ref.read(expensesViewModelProvider.notifier).loadCatalogue());
     if (_isEdit) _loadPayments();
+    // CategoryComboField has no onChanged of its own — its error only clears
+    // live (rather than waiting for the next Save press) if this screen
+    // rebuilds when the shared controller's text changes.
+    _category.addListener(_onCategoryChanged);
+  }
+
+  void _onCategoryChanged() {
+    if (_submitAttempted) setState(() {});
   }
 
   Future<void> _loadPayments() async {
@@ -103,6 +164,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
   @override
   void dispose() {
+    _category.removeListener(_onCategoryChanged);
     _category.dispose();
     _vendor.dispose();
     _amountPaid.dispose();
@@ -114,6 +176,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _newPaymentAmount.dispose();
     _newPaymentDate.dispose();
     _newPaymentReference.dispose();
+    _titleFocus.dispose();
+    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -300,23 +364,44 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                     ],
                     const SectionLabel('What was this for', number: 1),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _title, label: 'Title', hint: 'Electricity bill · August', required: true),
+                    NeuField(
+                      key: _titleFieldKey,
+                      controller: _title,
+                      label: 'Title',
+                      hint: 'Electricity bill · August',
+                      required: true,
+                      errorText: _titleError,
+                      focusNode: _titleFocus,
+                      onChanged: (_) => setState(() {}),
+                    ),
                     const SizedBox(height: AppTheme.s12),
                     CategoryComboField(
+                      key: _categoryFieldKey,
                       controller: _category,
                       options: {...state.categories.map((c) => c.name), ...kSuggestedExpenseCategories}.toList()..sort(),
+                      errorText: _categoryError,
                     ),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
-                    ),
+                    if (_categoryError == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+                      ),
                     const SizedBox(height: AppTheme.s12),
                     VendorComboField(controller: _vendor, vendors: state.vendors, label: 'Vendor'),
 
                     const SectionDivider(),
                     const SectionLabel('Amount & payment', number: 2),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _amount, label: 'Amount', keyboardType: TextInputType.number, required: true),
+                    NeuField(
+                      key: _amountFieldKey,
+                      controller: _amount,
+                      label: 'Amount',
+                      keyboardType: TextInputType.number,
+                      required: true,
+                      errorText: _amountError,
+                      focusNode: _amountFocus,
+                      onChanged: (_) => setState(() {}),
+                    ),
                     // Status/method/reference/amountPaid only make sense
                     // while logging a new expense — mirrors ExpensesPanel.jsx,
                     // where editing an existing one hides these in favour of
@@ -355,11 +440,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                     ],
                     const SizedBox(height: AppTheme.s12),
                     NeuField(
+                      key: _dateFieldKey,
                       controller: _expenseDate,
                       label: 'Date',
                       readOnly: true,
                       onTap: _pickDate,
                       required: true,
+                      errorText: _dateError,
                     ),
 
                     const SectionDivider(),
@@ -448,22 +535,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   }
 
   Future<void> _submit() async {
-    setState(() => _error = null);
-    if (_category.text.trim().isEmpty) {
-      setState(() => _error = 'Enter or choose a category.');
-      return;
-    }
-    if (_title.text.trim().isEmpty) {
-      setState(() => _error = 'Give this expense a title.');
-      return;
-    }
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
     final amount = num.tryParse(_amount.text.trim());
-    if (amount == null || amount < 0) {
-      setState(() => _error = 'Enter a valid amount.');
-      return;
-    }
-    if (_expenseDate.text.trim().isEmpty) {
-      setState(() => _error = 'Enter the expense date.');
+    if (_titleError != null || _categoryError != null || _amountError != null || _dateError != null) {
+      _scrollToFirstError();
       return;
     }
 
@@ -483,7 +561,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       'categoryId': '$categoryId',
       'title': _title.text.trim(),
       'description': _description.text.trim(),
-      'amount': amount.toString(),
+      'amount': amount!.toString(),
       'paymentMethod': _paymentMethod,
       'paymentStatus': _paymentStatus,
       'amountPaid': _paymentStatus == 'PARTIAL' ? _amountPaid.text.trim() : '',

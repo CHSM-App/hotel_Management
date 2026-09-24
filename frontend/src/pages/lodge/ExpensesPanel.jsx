@@ -58,6 +58,18 @@ const SUGGESTED_CATEGORIES = [
   'Miscellaneous',
 ];
 
+// Maps a field's key in an errors object to the DOM id its input actually
+// carries, then focuses and scrolls to the first one that has a message —
+// same pattern as AssetsPanel/InventoryPanel's focusFirstError.
+function focusFirstError(errors, fieldIds) {
+  const first = Object.keys(fieldIds).find((key) => errors[key]);
+  if (!first) return;
+  const el = document.getElementById(fieldIds[first]);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 function formatDate(value) {
   if (!value) return '';
   const d = new Date(value);
@@ -318,6 +330,10 @@ export default function ExpensesPanel() {
   const [expenseBillFile, setExpenseBillFile] = useState(null);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Per-field messages, shown under the offending input rather than only in
+  // the banner — same pattern as AssetsPanel/InventoryPanel, so a hand
+  // doesn't have to scan the whole form to find what's missing.
+  const [expenseFieldErrors, setExpenseFieldErrors] = useState({});
   // A row click opens this modal read-only — the fields show as text, not
   // inputs, and Payments stays live (adding one there is never "editing").
   // "Edit details" flips this off to turn the same modal into the form.
@@ -338,11 +354,13 @@ export default function ExpensesPanel() {
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
+  const [templateFieldErrors, setTemplateFieldErrors] = useState({});
 
   // Vendor form
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState(null);
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
+  const [vendorFieldErrors, setVendorFieldErrors] = useState({});
 
   const loadExpenses = () =>
     apiGet('/expenses', { token: session?.token })
@@ -503,6 +521,7 @@ export default function ExpensesPanel() {
   // inside the view). Always 'edit' for a brand-new expense.
   const openExpenseForm = (expense, mode = 'edit') => {
     setFormError('');
+    setExpenseFieldErrors({});
     setPaymentError('');
     setExpenseBillFile(null);
     setNewPayment({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
@@ -568,10 +587,21 @@ export default function ExpensesPanel() {
 
   const handleExpenseSubmit = async (e) => {
     e.preventDefault();
-    if (!expenseForm.categoryName.trim()) return setFormError('Enter or choose a category.');
-    if (!expenseForm.title.trim()) return setFormError('Give this expense a title.');
-    if (!expenseForm.amount || Number(expenseForm.amount) < 0) return setFormError('Enter a valid amount.');
-    if (!expenseForm.expenseDate) return setFormError('Enter the expense date.');
+    const errors = {};
+    if (!expenseForm.title.trim()) errors.title = 'Give this expense a title.';
+    if (!expenseForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
+    if (!expenseForm.amount || Number(expenseForm.amount) < 0) errors.amount = 'Enter a valid amount.';
+    if (!expenseForm.expenseDate) errors.expenseDate = 'Enter the expense date.';
+    setExpenseFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, {
+        title: 'expenseTitle',
+        categoryName: 'expenseCategory',
+        amount: 'expenseAmount',
+        expenseDate: 'expenseDate',
+      });
+      return;
+    }
 
     setSubmitting(true);
     setFormError('');
@@ -655,15 +685,27 @@ export default function ExpensesPanel() {
       setTemplateForm(emptyTemplateForm);
     }
     setFormError('');
+    setTemplateFieldErrors({});
     setShowTemplateForm(true);
   };
 
   const handleTemplateSubmit = async (e) => {
     e.preventDefault();
-    if (!templateForm.categoryName.trim()) return setFormError('Enter or choose a category.');
-    if (!templateForm.title.trim()) return setFormError('Give this recurring expense a title.');
-    if (!templateForm.amount || Number(templateForm.amount) < 0) return setFormError('Enter a valid amount.');
-    if (!templateForm.nextDueDate) return setFormError('Enter the next due date.');
+    const errors = {};
+    if (!templateForm.title.trim()) errors.title = 'Give this recurring expense a title.';
+    if (!templateForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
+    if (!templateForm.amount || Number(templateForm.amount) < 0) errors.amount = 'Enter a valid amount.';
+    if (!templateForm.nextDueDate) errors.nextDueDate = 'Enter the next due date.';
+    setTemplateFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, {
+        title: 'templateTitle',
+        categoryName: 'templateCategory',
+        amount: 'templateAmount',
+        nextDueDate: 'templateNextDue',
+      });
+      return;
+    }
 
     setSubmitting(true);
     setFormError('');
@@ -722,12 +764,19 @@ export default function ExpensesPanel() {
       setEditingVendorId(null);
       setVendorForm(emptyVendorForm);
     }
+    setVendorFieldErrors({});
     setShowVendorForm(true);
   };
 
   const handleVendorSubmit = async (e) => {
     e.preventDefault();
-    if (!vendorForm.name.trim()) return setFormError('Vendor name is required.');
+    const errors = {};
+    if (!vendorForm.name.trim()) errors.name = 'Vendor name is required.';
+    setVendorFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, { name: 'expVendorName' });
+      return;
+    }
     setSubmitting(true);
     setFormError('');
     try {
@@ -1151,11 +1200,18 @@ export default function ExpensesPanel() {
                       </label>
                       <input
                         id="expenseTitle"
+                        aria-invalid={Boolean(expenseFieldErrors.title)}
                         value={expenseForm.title}
-                        onChange={(e) => setExpenseForm((f) => ({ ...f, title: e.target.value }))}
+                        onChange={(e) => {
+                          setExpenseForm((f) => ({ ...f, title: e.target.value }));
+                          if (expenseFieldErrors.title) setExpenseFieldErrors((f) => ({ ...f, title: undefined }));
+                        }}
                         placeholder="MSEB electricity bill, June salaries…"
                         autoFocus
                       />
+                      {expenseFieldErrors.title ? (
+                        <span className="field__error">{expenseFieldErrors.title}</span>
+                      ) : null}
                     </div>
 
                     <div className="field">
@@ -1165,10 +1221,17 @@ export default function ExpensesPanel() {
                       <CategoryField
                         id="expenseCategory"
                         value={expenseForm.categoryName}
-                        onChange={(name) => setExpenseForm((f) => ({ ...f, categoryName: name }))}
+                        onChange={(name) => {
+                          setExpenseForm((f) => ({ ...f, categoryName: name }));
+                          if (expenseFieldErrors.categoryName) setExpenseFieldErrors((f) => ({ ...f, categoryName: undefined }));
+                        }}
                         options={categoryOptions}
                       />
-                      <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
+                      {expenseFieldErrors.categoryName ? (
+                        <span className="field__error">{expenseFieldErrors.categoryName}</span>
+                      ) : (
+                        <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
+                      )}
                     </div>
 
                     <div className="field">
@@ -1191,9 +1254,16 @@ export default function ExpensesPanel() {
                         type="number"
                         min="0"
                         step="0.01"
+                        aria-invalid={Boolean(expenseFieldErrors.amount)}
                         value={expenseForm.amount}
-                        onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))}
+                        onChange={(e) => {
+                          setExpenseForm((f) => ({ ...f, amount: e.target.value }));
+                          if (expenseFieldErrors.amount) setExpenseFieldErrors((f) => ({ ...f, amount: undefined }));
+                        }}
                       />
+                      {expenseFieldErrors.amount ? (
+                        <span className="field__error">{expenseFieldErrors.amount}</span>
+                      ) : null}
                     </div>
 
                     {!editingExpenseId && (
@@ -1267,9 +1337,16 @@ export default function ExpensesPanel() {
                       <input
                         id="expenseDate"
                         type="date"
+                        aria-invalid={Boolean(expenseFieldErrors.expenseDate)}
                         value={expenseForm.expenseDate}
-                        onChange={(e) => setExpenseForm((f) => ({ ...f, expenseDate: e.target.value }))}
+                        onChange={(e) => {
+                          setExpenseForm((f) => ({ ...f, expenseDate: e.target.value }));
+                          if (expenseFieldErrors.expenseDate) setExpenseFieldErrors((f) => ({ ...f, expenseDate: undefined }));
+                        }}
                       />
+                      {expenseFieldErrors.expenseDate ? (
+                        <span className="field__error">{expenseFieldErrors.expenseDate}</span>
+                      ) : null}
                     </div>
 
                     <div className="field">
@@ -1466,11 +1543,18 @@ export default function ExpensesPanel() {
                   </label>
                   <input
                     id="templateTitle"
+                    aria-invalid={Boolean(templateFieldErrors.title)}
                     value={templateForm.title}
-                    onChange={(e) => setTemplateForm((f) => ({ ...f, title: e.target.value }))}
+                    onChange={(e) => {
+                      setTemplateForm((f) => ({ ...f, title: e.target.value }));
+                      if (templateFieldErrors.title) setTemplateFieldErrors((f) => ({ ...f, title: undefined }));
+                    }}
                     placeholder="Rent, electricity, lift AMC…"
                     autoFocus
                   />
+                  {templateFieldErrors.title ? (
+                    <span className="field__error">{templateFieldErrors.title}</span>
+                  ) : null}
                 </div>
 
                 <div className="field">
@@ -1480,10 +1564,17 @@ export default function ExpensesPanel() {
                   <CategoryField
                     id="templateCategory"
                     value={templateForm.categoryName}
-                    onChange={(name) => setTemplateForm((f) => ({ ...f, categoryName: name }))}
+                    onChange={(name) => {
+                      setTemplateForm((f) => ({ ...f, categoryName: name }));
+                      if (templateFieldErrors.categoryName) setTemplateFieldErrors((f) => ({ ...f, categoryName: undefined }));
+                    }}
                     options={categoryOptions}
                   />
-                  <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
+                  {templateFieldErrors.categoryName ? (
+                    <span className="field__error">{templateFieldErrors.categoryName}</span>
+                  ) : (
+                    <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
+                  )}
                 </div>
 
                 <div className="field">
@@ -1506,9 +1597,16 @@ export default function ExpensesPanel() {
                     type="number"
                     min="0"
                     step="0.01"
+                    aria-invalid={Boolean(templateFieldErrors.amount)}
                     value={templateForm.amount}
-                    onChange={(e) => setTemplateForm((f) => ({ ...f, amount: e.target.value }))}
+                    onChange={(e) => {
+                      setTemplateForm((f) => ({ ...f, amount: e.target.value }));
+                      if (templateFieldErrors.amount) setTemplateFieldErrors((f) => ({ ...f, amount: undefined }));
+                    }}
                   />
+                  {templateFieldErrors.amount ? (
+                    <span className="field__error">{templateFieldErrors.amount}</span>
+                  ) : null}
                 </div>
 
                 <div className="field">
@@ -1533,9 +1631,16 @@ export default function ExpensesPanel() {
                   <input
                     id="templateNextDue"
                     type="date"
+                    aria-invalid={Boolean(templateFieldErrors.nextDueDate)}
                     value={templateForm.nextDueDate}
-                    onChange={(e) => setTemplateForm((f) => ({ ...f, nextDueDate: e.target.value }))}
+                    onChange={(e) => {
+                      setTemplateForm((f) => ({ ...f, nextDueDate: e.target.value }));
+                      if (templateFieldErrors.nextDueDate) setTemplateFieldErrors((f) => ({ ...f, nextDueDate: undefined }));
+                    }}
                   />
+                  {templateFieldErrors.nextDueDate ? (
+                    <span className="field__error">{templateFieldErrors.nextDueDate}</span>
+                  ) : null}
                 </div>
               </div>
 
@@ -1589,10 +1694,15 @@ export default function ExpensesPanel() {
                   </label>
                   <input
                     id="expVendorName"
+                    aria-invalid={Boolean(vendorFieldErrors.name)}
                     value={vendorForm.name}
-                    onChange={(e) => setVendorForm((f) => ({ ...f, name: e.target.value }))}
+                    onChange={(e) => {
+                      setVendorForm((f) => ({ ...f, name: e.target.value }));
+                      if (vendorFieldErrors.name) setVendorFieldErrors((f) => ({ ...f, name: undefined }));
+                    }}
                     autoFocus
                   />
+                  {vendorFieldErrors.name ? <span className="field__error">{vendorFieldErrors.name}</span> : null}
                 </div>
                 <div className="field">
                   <label htmlFor="expVendorContact">Contact person</label>

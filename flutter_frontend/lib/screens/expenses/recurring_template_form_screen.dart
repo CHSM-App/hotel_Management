@@ -35,21 +35,74 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
   late final _amount = TextEditingController(text: widget.template?.amount == null ? '' : widget.template!.amount.toString());
   late final _nextDueDate = TextEditingController(text: widget.template?.nextDueDate ?? '');
   String? _error;
+  bool _submitAttempted = false;
+
+  String? get _titleError =>
+      (_submitAttempted && _title.text.trim().isEmpty) ? 'Give this recurring expense a title.' : null;
+  String? get _categoryError =>
+      (_submitAttempted && _category.text.trim().isEmpty) ? 'Enter or choose a category.' : null;
+  String? get _amountError {
+    if (!_submitAttempted) return null;
+    final amount = num.tryParse(_amount.text.trim());
+    return (amount == null || amount < 0) ? 'Enter a valid amount.' : null;
+  }
+
+  String? get _dateError =>
+      (_submitAttempted && _nextDueDate.text.trim().isEmpty) ? 'Enter the next due date.' : null;
+
+  final _titleFieldKey = GlobalKey();
+  final _categoryFieldKey = GlobalKey();
+  final _amountFieldKey = GlobalKey();
+  final _dateFieldKey = GlobalKey();
+  final _titleFocus = FocusNode();
+  final _amountFocus = FocusNode();
+
+  void _scrollToFirstError() {
+    GlobalKey? key;
+    FocusNode? focus;
+    if (_titleError != null) {
+      key = _titleFieldKey;
+      focus = _titleFocus;
+    } else if (_categoryError != null) {
+      key = _categoryFieldKey;
+    } else if (_amountError != null) {
+      key = _amountFieldKey;
+      focus = _amountFocus;
+    } else if (_dateError != null) {
+      key = _dateFieldKey;
+    }
+    if (key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key!.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.15);
+      }
+      focus?.requestFocus();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _frequency = widget.template?.frequency ?? 'MONTHLY';
     Future.microtask(() => ref.read(expensesViewModelProvider.notifier).loadCatalogue());
+    _category.addListener(_onCategoryChanged);
+  }
+
+  void _onCategoryChanged() {
+    if (_submitAttempted) setState(() {});
   }
 
   @override
   void dispose() {
+    _category.removeListener(_onCategoryChanged);
     _category.dispose();
     _vendor.dispose();
     _title.dispose();
     _amount.dispose();
     _nextDueDate.dispose();
+    _titleFocus.dispose();
+    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -74,22 +127,13 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
   }
 
   Future<void> _save() async {
-    setState(() => _error = null);
-    if (_category.text.trim().isEmpty) {
-      setState(() => _error = 'Enter or choose a category.');
-      return;
-    }
-    if (_title.text.trim().isEmpty) {
-      setState(() => _error = 'Give this recurring expense a title.');
-      return;
-    }
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
     final amount = num.tryParse(_amount.text.trim());
-    if (amount == null || amount < 0) {
-      setState(() => _error = 'Enter a valid amount.');
-      return;
-    }
-    if (_nextDueDate.text.trim().isEmpty) {
-      setState(() => _error = 'Enter the next due date.');
+    if (_titleError != null || _categoryError != null || _amountError != null || _dateError != null) {
+      _scrollToFirstError();
       return;
     }
     final vm = ref.read(expensesViewModelProvider.notifier);
@@ -139,23 +183,44 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
 
                   const SectionLabel('What repeats', number: 1),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _title, label: 'Title', hint: 'Rent, electricity, lift AMC…', required: true),
+                  NeuField(
+                    key: _titleFieldKey,
+                    controller: _title,
+                    label: 'Title',
+                    hint: 'Rent, electricity, lift AMC…',
+                    required: true,
+                    errorText: _titleError,
+                    focusNode: _titleFocus,
+                    onChanged: (_) => setState(() {}),
+                  ),
                   const SizedBox(height: AppTheme.s12),
                   CategoryComboField(
+                    key: _categoryFieldKey,
                     controller: _category,
                     options: {...state.categories.map((c) => c.name), ...kSuggestedExpenseCategories}.toList()..sort(),
+                    errorText: _categoryError,
                   ),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                    child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
-                  ),
+                  if (_categoryError == null)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+                    ),
                   const SizedBox(height: AppTheme.s12),
                   VendorComboField(controller: _vendor, vendors: state.vendors, label: 'Vendor'),
 
                   const SectionDivider(),
                   const SectionLabel('Amount & schedule', number: 2),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _amount, label: 'Amount', keyboardType: TextInputType.number, required: true),
+                  NeuField(
+                    key: _amountFieldKey,
+                    controller: _amount,
+                    label: 'Amount',
+                    keyboardType: TextInputType.number,
+                    required: true,
+                    errorText: _amountError,
+                    focusNode: _amountFocus,
+                    onChanged: (_) => setState(() {}),
+                  ),
                   const SizedBox(height: AppTheme.s12),
                   const RequiredLabel('Repeats'),
                   const SizedBox(height: AppTheme.s8),
@@ -166,7 +231,15 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
                     onSelect: (v) => setState(() => _frequency = v),
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _nextDueDate, label: 'Next due date', readOnly: true, onTap: _pickDate, required: true),
+                  NeuField(
+                    key: _dateFieldKey,
+                    controller: _nextDueDate,
+                    label: 'Next due date',
+                    readOnly: true,
+                    onTap: _pickDate,
+                    required: true,
+                    errorText: _dateError,
+                  ),
                 ],
               ),
             ),
