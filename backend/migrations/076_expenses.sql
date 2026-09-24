@@ -12,8 +12,8 @@
 
 -- A real table rather than a fixed enum, same reasoning as asset_categories:
 -- an owner adds hotel-specific categories without a migration. Left empty by
--- default — a category exists once it's typed or picked from a suggestion
--- list in the expense form and used to save an expense, same as Assets.
+-- default (no forced seed rows) — the service seeds the standard set lazily
+-- on first use per lodge, same as an owner would type their own.
 IF OBJECT_ID('dbo.expense_categories', 'U') IS NULL
 CREATE TABLE dbo.expense_categories (
     id          BIGINT IDENTITY(1,1) PRIMARY KEY,
