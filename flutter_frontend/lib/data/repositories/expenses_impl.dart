@@ -36,9 +36,10 @@ class ExpensesImpl implements ExpensesRepository {
   Future<List<Expense>> expenses({
     int? categoryId,
     int? vendorId,
+    int? assetId,
     String? from,
     String? to,
-  }) => api.expenses(categoryId: categoryId, vendorId: vendorId, from: from, to: to);
+  }) => api.expenses(categoryId: categoryId, vendorId: vendorId, assetId: assetId, from: from, to: to);
 
   @override
   Future<Expense> expense(int id) => api.expense(id);
@@ -51,6 +52,17 @@ class ExpensesImpl implements ExpensesRepository {
 
   @override
   Future<void> deleteExpense(int id) => api.deleteExpense(id);
+
+  @override
+  Future<List<ExpensePayment>> expensePayments(int expenseId) => api.expensePayments(expenseId);
+
+  @override
+  Future<Expense> addExpensePayment(int expenseId, Map<String, dynamic> body) =>
+      api.addExpensePayment(expenseId, body);
+
+  @override
+  Future<Expense> deleteExpensePayment(int expenseId, int paymentId) =>
+      api.deleteExpensePayment(expenseId, paymentId);
 
   @override
   Future<Response<List<int>>> expenseBill(int id) => api.expenseBill(id);

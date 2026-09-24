@@ -7,7 +7,6 @@ import '../../widgets/neu.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'asset_icons.dart';
-import 'asset_stat_grid.dart';
 
 /// Assets > Vendors — mirrors the Vendors tab in AssetsPanel.jsx: a plain
 /// list (name, specialty · phone), tap to edit, "Add vendor" to file a new
@@ -32,10 +31,6 @@ class VendorsPanel extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              if (state.vendors.isNotEmpty) ...[
-                AssetStatGrid(items: _vendorStats(state.vendors)),
-                const SizedBox(height: AppTheme.s12),
-              ],
               if (state.catalogueLoading && state.vendors.isEmpty)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
               else if (state.vendors.isEmpty)
@@ -64,16 +59,6 @@ class VendorsPanel extends ConsumerWidget {
         ),
       ],
     );
-  }
-
-  List<AssetStat> _vendorStats(List<Vendor> vendors) {
-    final active = vendors.where((v) => v.isActive).length;
-    final inactive = vendors.length - active;
-    return [
-      AssetStat(label: 'Vendors', value: '${vendors.length}'),
-      AssetStat(label: 'Active', value: '$active', accent: true),
-      if (inactive > 0) AssetStat(label: 'Inactive', value: '$inactive'),
-    ];
   }
 
   Future<void> _editVendor(BuildContext context, {Vendor? vendor}) {

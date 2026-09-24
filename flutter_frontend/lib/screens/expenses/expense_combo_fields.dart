@@ -9,7 +9,7 @@ import '../theme.dart';
 /// been typed or picked here and used to save an expense; there is no
 /// separate "manage categories" screen, so this is the only place one gets
 /// named.
-class CategoryComboField extends StatelessWidget {
+class CategoryComboField extends StatefulWidget {
   final TextEditingController controller;
   final List<String> options;
   final String label;
@@ -24,10 +24,32 @@ class CategoryComboField extends StatelessWidget {
   });
 
   @override
+  State<CategoryComboField> createState() => _CategoryComboFieldState();
+}
+
+class _CategoryComboFieldState extends State<CategoryComboField> {
+  // Owned here, not created inline in build() — a fresh FocusNode on every
+  // rebuild (a StatelessWidget's build fires often in a form with several
+  // setState calls) would break RawAutocomplete's own focus tracking mid-
+  // interaction, which is what made a tapped suggestion sometimes fail to
+  // actually land in the field.
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final options = widget.options;
+    final label = widget.label;
+    final required = widget.required;
     return RawAutocomplete<String>(
       textEditingController: controller,
-      focusNode: FocusNode(),
+      focusNode: _focusNode,
       optionsBuilder: (value) {
         final needle = value.text.trim().toLowerCase();
         if (needle.isEmpty) return options;
@@ -37,16 +59,18 @@ class CategoryComboField extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text.rich(
-              TextSpan(
-                text: label,
-                style: Theme.of(context).textTheme.bodySmall,
-                children: required
-                    ? const [TextSpan(text: ' *', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700))]
-                    : null,
+            if (label.isNotEmpty) ...[
+              Text.rich(
+                TextSpan(
+                  text: label,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  children: required
+                      ? const [TextSpan(text: ' *', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700))]
+                      : null,
+                ),
               ),
-            ),
-            const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s8),
+            ],
             _ComboWell(controller: fieldController, focusNode: focusNode, hint: 'Utilities, Repairs, Salaries…'),
           ],
         );
@@ -63,7 +87,7 @@ class CategoryComboField extends StatelessWidget {
 /// Same shape as [CategoryComboField], but matches across name/phone/email
 /// and hands back the whole [Vendor] on pick — mirrors VendorField in
 /// ExpensesPanel.jsx.
-class VendorComboField extends StatelessWidget {
+class VendorComboField extends StatefulWidget {
   final TextEditingController controller;
   final List<Vendor> vendors;
   final String label;
@@ -76,10 +100,28 @@ class VendorComboField extends StatelessWidget {
   });
 
   @override
+  State<VendorComboField> createState() => _VendorComboFieldState();
+}
+
+class _VendorComboFieldState extends State<VendorComboField> {
+  // Same reasoning as _CategoryComboFieldState's own node: owned for the
+  // widget's lifetime, not recreated every build.
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final vendors = widget.vendors;
+    final label = widget.label;
     return RawAutocomplete<Vendor>(
       textEditingController: controller,
-      focusNode: FocusNode(),
+      focusNode: _focusNode,
       displayStringForOption: (v) => v.name,
       optionsBuilder: (value) {
         final needle = value.text.trim().toLowerCase();

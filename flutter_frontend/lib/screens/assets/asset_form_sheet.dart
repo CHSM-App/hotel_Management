@@ -10,12 +10,18 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../domain/models/asset.dart';
+import '../../domain/models/expense.dart' show kPaymentMethods, kPaymentMethodLabel, kPaymentReferenceLabel, kPaymentStatuses;
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/photo_source_sheet.dart';
+import '../expenses/expense_combo_fields.dart' show CategoryComboField;
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
+
+// Full option set for the payment-status dropdown — same reasoning as its
+// twin in expense_form_screen.dart.
+const _paymentStatusOptionLabel = {'PAID': 'Paid in full', 'PARTIAL': 'Partially paid', 'PENDING': 'Pending'};
 
 const _kSectionHeadingStyle = TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15);
 const _kFieldLabelStyle = TextStyle(color: AppTheme.muted, fontSize: 12);
@@ -87,6 +93,13 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   late final _serialNumber = TextEditingController(text: widget.asset?.serialNumber ?? '');
   late final _purchaseDate = TextEditingController(text: widget.asset?.purchaseDate ?? '');
   late final _purchaseCost = TextEditingController(text: widget.asset?.purchaseCost?.toString() ?? '');
+  // Forwarded onto the expense this purchase auto-generates — never stored
+  // on the asset itself (see paymentMethodSchema in assets.schema.js), so
+  // there's nothing on [widget.asset] to seed these from.
+  String _paymentStatus = 'PAID';
+  String _paymentMethod = 'CASH';
+  final _amountPaid = TextEditingController();
+  final _referenceNumber = TextEditingController();
   late final _floor = TextEditingController(text: widget.asset?.floor ?? '');
   late final _department = TextEditingController(text: widget.asset?.department ?? '');
   late final _warrantyExpiry = TextEditingController(text: widget.asset?.warrantyExpiry ?? '');
@@ -117,6 +130,8 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     _serialNumber.dispose();
     _purchaseDate.dispose();
     _purchaseCost.dispose();
+    _amountPaid.dispose();
+    _referenceNumber.dispose();
     _floor.dispose();
     _department.dispose();
     _warrantyExpiry.dispose();
@@ -351,7 +366,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   const SizedBox(height: AppTheme.s12),
                   const RequiredLabel('Category'),
                   const SizedBox(height: 4),
-                  _CategoryField(controller: _categoryName, options: categoryOptions),
+                  CategoryComboField(controller: _categoryName, options: categoryOptions, label: ''),
                   const SizedBox(height: 4),
                   const Text("Pick from the list or type a new one — it's added the first time it's used.", style: _kFieldHintStyle),
                   if (_bulk && !_isEdit) ...[
@@ -416,6 +431,39 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                     )
                   else
                     NeuField(controller: _purchaseCost, label: 'Cost per unit', keyboardType: TextInputType.number),
+                  const SizedBox(height: AppTheme.s12),
+
+                  // Forwarded onto the expense this purchase auto-generates —
+                  // mirrors assetForm.paymentStatus/paymentMethod/
+                  // amountPaid/referenceNumber in AssetsPanel.jsx, shown the
+                  // same way whether registering or editing.
+                  const Text('Payment status', style: _kFieldLabelStyle),
+                  const SizedBox(height: 4),
+                  OptionDropdown(
+                    values: kPaymentStatuses,
+                    labels: _paymentStatusOptionLabel,
+                    selected: _paymentStatus,
+                    onSelect: (v) => setState(() => _paymentStatus = v),
+                  ),
+                  if (_paymentStatus != 'PENDING') ...[
+                    const SizedBox(height: AppTheme.s12),
+                    const Text('Paid via', style: _kFieldLabelStyle),
+                    const SizedBox(height: 4),
+                    OptionDropdown(
+                      values: kPaymentMethods,
+                      labels: kPaymentMethodLabel,
+                      selected: _paymentMethod,
+                      onSelect: (v) => setState(() => _paymentMethod = v),
+                    ),
+                    if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                    ],
+                  ],
+                  if (_paymentStatus == 'PARTIAL') ...[
+                    const SizedBox(height: AppTheme.s12),
+                    NeuField(controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
+                  ],
                   const SizedBox(height: AppTheme.s12),
 
                   const Text('Vendor (optional)', style: _kFieldLabelStyle),
@@ -660,6 +708,10 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
         'model': _model.text.trim(),
         'purchaseDate': _purchaseDate.text.trim(),
         'purchaseCost': _purchaseCost.text.trim().isEmpty ? '' : (num.tryParse(_purchaseCost.text.trim()) ?? '').toString(),
+        'paymentMethod': _paymentMethod,
+        'paymentStatus': _paymentStatus,
+        'amountPaid': _paymentStatus == 'PARTIAL' ? _amountPaid.text.trim() : '',
+        'referenceNumber': _paymentStatus != 'PENDING' ? _referenceNumber.text.trim() : '',
         'vendorId': _vendorId?.toString() ?? '',
         'warrantyExpiry': _warrantyExpiry.text.trim(),
         'units': _unitsJson(),
@@ -689,6 +741,10 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
       'serialNumber': _serialNumber.text.trim(),
       'purchaseDate': _purchaseDate.text.trim(),
       'purchaseCost': _purchaseCost.text.trim().isEmpty ? '' : (num.tryParse(_purchaseCost.text.trim()) ?? '').toString(),
+      'paymentMethod': _paymentMethod,
+      'paymentStatus': _paymentStatus,
+      'amountPaid': _paymentStatus == 'PARTIAL' ? _amountPaid.text.trim() : '',
+      'referenceNumber': _paymentStatus != 'PENDING' ? _referenceNumber.text.trim() : '',
       'roomId': _roomId?.toString() ?? '',
       'floor': _floor.text.trim(),
       'department': _department.text.trim(),
@@ -716,98 +772,6 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
             'department': u.department.text.trim(),
           })
       .toList());
-}
-
-/// A styled stand-in for a native combobox — mirrors CategoryField in
-/// AssetsPanel.jsx: type freely, or pick a suggestion (existing categories
-/// plus the same starter list the web app offers).
-///
-/// This is deliberately an inline list under the field, in the normal widget
-/// tree, rather than Flutter's built-in [Autocomplete] — that widget shows
-/// its suggestions in the app-wide [Overlay], and if that overlay entry
-/// isn't torn down cleanly on blur (a real bug on Flutter Web/Chrome), it's
-/// left sitting invisibly on top of the whole page, swallowing every pointer
-/// event — including the page's own scroll — until the app is reloaded. An
-/// inline list can't do that: closing it just removes a few widgets from
-/// this subtree, the same as any other conditionally-shown Column child.
-class _CategoryField extends StatefulWidget {
-  final TextEditingController controller;
-  final List<String> options;
-
-  const _CategoryField({required this.controller, required this.options});
-
-  @override
-  State<_CategoryField> createState() => _CategoryFieldState();
-}
-
-class _CategoryFieldState extends State<_CategoryField> {
-  final _focusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(_onFocusChange);
-    widget.controller.addListener(_onTextChange);
-  }
-
-  void _onFocusChange() => setState(() {});
-  void _onTextChange() => setState(() {});
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChange);
-    widget.controller.removeListener(_onTextChange);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  List<String> get _matches {
-    final needle = widget.controller.text.trim().toLowerCase();
-    if (needle.isEmpty) return widget.options;
-    return widget.options.where((o) => o.toLowerCase().contains(needle)).toList();
-  }
-
-  void _pick(String name) {
-    widget.controller.text = name;
-    _focusNode.unfocus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final matches = _matches;
-    final open = _focusNode.hasFocus && matches.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        NeuField(controller: widget.controller, focusNode: _focusNode, label: '', hint: 'AC, Lift, Generator…'),
-        if (open)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            constraints: const BoxConstraints(maxHeight: 180),
-            decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(AppTheme.rSmall), border: Border.all(color: AppTheme.border)),
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              children: [
-                for (final name in matches)
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    // onTapDown, not onTap — a tap on this item first blurs
-                    // the field (closing this list) before an onTap would
-                    // fire, so the pick would land on nothing. Down fires
-                    // first, while the list is still here to hit-test.
-                    onTapDown: (_) => _pick(name),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 8),
-                      child: Text(name, style: const TextStyle(fontSize: 13.5, color: AppTheme.text)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
 }
 
 class _RoomDropdown extends StatelessWidget {

@@ -7,8 +7,6 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
 import 'asset_form_sheet.dart';
-import 'asset_icons.dart';
-import 'asset_stat_grid.dart';
 import 'work_orders_panel.dart';
 
 /// Assets > Assets — mirrors the Register tab in AssetsPanel.jsx: a search
@@ -68,27 +66,6 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
     await ref.read(assetsViewModelProvider.notifier).deleteAsset(a.id);
   }
 
-  List<AssetStat> _summaryStats(List<Asset> assets) {
-    final underRepair = assets.where((a) => a.status == 'UNDER_REPAIR').length;
-    final openWorkOrders = assets.fold<int>(0, (sum, a) => sum + a.openWorkOrders);
-    return [
-      AssetStat(label: 'Total assets', value: '${assets.length}'),
-      AssetStat(label: 'In use', value: '${assets.where((a) => a.status == 'IN_USE').length}'),
-      AssetStat(
-        label: 'Under repair',
-        value: '$underRepair',
-        accent: underRepair > 0,
-      ),
-      if (openWorkOrders > 0)
-        AssetStat(
-          label: 'Open work orders',
-          value: '$openWorkOrders',
-          note: 'across ${assets.where((a) => a.openWorkOrders > 0).length} asset${assets.where((a) => a.openWorkOrders > 0).length == 1 ? '' : 's'}',
-          accent: true,
-        ),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
@@ -113,10 +90,6 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              if (state.assets.isNotEmpty) ...[
-                AssetStatGrid(items: _summaryStats(state.assets)),
-                const SizedBox(height: AppTheme.s12),
-              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -254,8 +227,6 @@ class _AssetCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconBadge(icon: categoryIcon(asset.categoryName), color: _statusColor),
-          const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

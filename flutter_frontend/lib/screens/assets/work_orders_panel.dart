@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/asset.dart';
+import '../../domain/models/expense.dart' show kPaymentMethods, kPaymentMethodLabel, kPaymentReferenceLabel, kPaymentStatuses;
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
@@ -9,6 +10,10 @@ import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'asset_icons.dart';
 import 'asset_stat_grid.dart';
+
+// Full option set for the payment-status dropdown — same reasoning as its
+// twin in expense_form_screen.dart / asset_form_sheet.dart.
+const _paymentStatusOptionLabel = {'PAID': 'Paid in full', 'PARTIAL': 'Partially paid', 'PENDING': 'Pending'};
 
 /// Assets > Work orders — mirrors the Work Orders tab in AssetsPanel.jsx: a
 /// status filter and every breakdown/service ticket, newest first, with a
@@ -303,6 +308,14 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
   late final _partsCost = TextEditingController(text: widget.workOrder?.partsCost?.toString() ?? '');
   late final _laborCost = TextEditingController(text: widget.workOrder?.laborCost?.toString() ?? '');
   late final _resolutionNote = TextEditingController(text: widget.workOrder?.resolutionNote ?? '');
+  // Forwarded onto the expense a costed work order auto-generates — never
+  // stored on the work order itself (see paymentMethodSchema in
+  // assets.schema.js), so there's nothing on [widget.workOrder] to seed
+  // these from.
+  String _paymentStatus = 'PAID';
+  String _paymentMethod = 'CASH';
+  final _amountPaid = TextEditingController();
+  final _referenceNumber = TextEditingController();
   String? _error;
 
   bool get _isEdit => widget.workOrder != null;
@@ -326,6 +339,8 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
     _partsCost.dispose();
     _laborCost.dispose();
     _resolutionNote.dispose();
+    _amountPaid.dispose();
+    _referenceNumber.dispose();
     super.dispose();
   }
 
@@ -354,6 +369,10 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
         'vendorId': _vendorId,
         'partsCost': num.tryParse(_partsCost.text.trim()),
         'laborCost': num.tryParse(_laborCost.text.trim()),
+        'paymentMethod': _paymentMethod,
+        'paymentStatus': _paymentStatus,
+        'amountPaid': _paymentStatus == 'PARTIAL' ? _amountPaid.text.trim() : '',
+        'referenceNumber': _paymentStatus != 'PENDING' ? _referenceNumber.text.trim() : '',
         'resolutionNote': _resolutionNote.text.trim(),
       });
     } else if (_bulk) {
@@ -567,6 +586,38 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                         Expanded(child: NeuField(controller: _laborCost, label: 'Labor cost', keyboardType: TextInputType.number)),
                       ],
                     ),
+                    // Forwarded onto the expense a costed work order
+                    // auto-generates — mirrors woForm.paymentStatus/
+                    // paymentMethod/amountPaid/referenceNumber in
+                    // AssetsPanel.jsx.
+                    const SizedBox(height: AppTheme.s12),
+                    const Text('Payment status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    OptionDropdown(
+                      values: kPaymentStatuses,
+                      labels: _paymentStatusOptionLabel,
+                      selected: _paymentStatus,
+                      onSelect: (v) => setState(() => _paymentStatus = v),
+                    ),
+                    if (_paymentStatus != 'PENDING') ...[
+                      const SizedBox(height: AppTheme.s12),
+                      const Text('Paid via', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      OptionDropdown(
+                        values: kPaymentMethods,
+                        labels: kPaymentMethodLabel,
+                        selected: _paymentMethod,
+                        onSelect: (v) => setState(() => _paymentMethod = v),
+                      ),
+                      if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
+                        const SizedBox(height: AppTheme.s12),
+                        NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                      ],
+                    ],
+                    if (_paymentStatus == 'PARTIAL') ...[
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
+                    ],
                     const SizedBox(height: AppTheme.s12),
                     NeuField(controller: _resolutionNote, label: 'Resolution note (optional)', maxLength: 400),
                   ],

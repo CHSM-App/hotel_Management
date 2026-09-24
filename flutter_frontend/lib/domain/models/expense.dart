@@ -27,7 +27,9 @@ class Expense {
   final String title;
   final String description;
   final num amount;
-  final String paymentMethod; // CASH | UPI | CARD
+  final String paymentMethod; // CASH | UPI | CARD | CHEQUE | BANK_TRANSFER | WALLET | OTHER
+  final String paymentStatus; // PAID | PARTIAL | PENDING
+  final num? amountPaid;
   final String expenseDate;
   final bool hasBillDocument;
   final String createdAt;
@@ -43,6 +45,8 @@ class Expense {
     this.description = '',
     this.amount = 0,
     this.paymentMethod = 'CASH',
+    this.paymentStatus = 'PAID',
+    this.amountPaid,
     this.expenseDate = '',
     this.hasBillDocument = false,
     this.createdAt = '',
@@ -59,11 +63,52 @@ class Expense {
     description: asStringOrNull(json['description']) ?? '',
     amount: asNum(json['amount']),
     paymentMethod: asStringOrNull(json['paymentMethod']) ?? 'CASH',
+    paymentStatus: asStringOrNull(json['paymentStatus']) ?? 'PAID',
+    amountPaid: asNumOrNull(json['amountPaid']),
     expenseDate: asStringOrNull(json['expenseDate']) ?? '',
     hasBillDocument: asBool(json['hasBillDocument']),
     createdAt: json['createdAt']?.toString() ?? '',
   );
 }
+
+/// One payment logged against an expense — mirrors mapPayment in
+/// expenses.service.js. A bill can be settled in more than one payment, so
+/// this is a running list against an expense rather than a single field.
+class ExpensePayment {
+  final int id;
+  final int expenseId;
+  final num amount;
+  final String paymentMethod;
+  final String? referenceNumber;
+  final String paidDate;
+  final String createdAt;
+
+  const ExpensePayment({
+    required this.id,
+    this.expenseId = 0,
+    this.amount = 0,
+    this.paymentMethod = 'CASH',
+    this.referenceNumber,
+    this.paidDate = '',
+    this.createdAt = '',
+  });
+
+  factory ExpensePayment.fromJson(Map<String, dynamic> json) => ExpensePayment(
+    id: asInt(json['id']),
+    expenseId: asInt(json['expenseId']),
+    amount: asNum(json['amount']),
+    paymentMethod: asStringOrNull(json['paymentMethod']) ?? 'CASH',
+    referenceNumber: asStringOrNull(json['referenceNumber']),
+    paidDate: asStringOrNull(json['paidDate']) ?? '',
+    createdAt: json['createdAt']?.toString() ?? '',
+  );
+}
+
+const kPaymentStatuses = ['PAID', 'PARTIAL', 'PENDING'];
+
+// Only PARTIAL/PENDING get a label — PAID is the default/common case, same
+// reasoning as PAYMENT_STATUS_LABEL in ExpensesPanel.jsx.
+const kPaymentStatusLabel = {'PARTIAL': 'Partially paid', 'PENDING': 'Pending'};
 
 /// Offered as suggestions, not a fixed list — mirrors SUGGESTED_CATEGORIES
 /// in ExpensesPanel.jsx. A category only exists once it's been typed or
@@ -80,8 +125,30 @@ const kSuggestedExpenseCategories = [
   'Miscellaneous',
 ];
 
-const kPaymentMethods = ['CASH', 'UPI', 'CARD'];
-const kPaymentMethodLabel = {'CASH': 'Cash', 'UPI': 'UPI', 'CARD': 'Card'};
+// Same vocabulary as PAYMENT_METHOD_LABEL in paymentMethods.js — every place
+// this app logs how a bill was paid uses this one list.
+const kPaymentMethods = ['CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER'];
+const kPaymentMethodLabel = {
+  'CASH': 'Cash',
+  'UPI': 'UPI',
+  'CARD': 'Card',
+  'CHEQUE': 'Cheque',
+  'BANK_TRANSFER': 'Bank transfer',
+  'WALLET': 'Wallet',
+  'OTHER': 'Other',
+};
+
+// What the reference-number field is called for a given method — mirrors
+// PAYMENT_REFERENCE_LABEL in paymentMethods.js. Cash has none; callers hide
+// the field when this map has no entry for the selected method.
+const kPaymentReferenceLabel = {
+  'UPI': 'Transaction / UTR number',
+  'CARD': 'Last 4 digits / transaction ID',
+  'CHEQUE': 'Cheque number',
+  'BANK_TRANSFER': 'UTR / transaction number',
+  'WALLET': 'Transaction ID',
+  'OTHER': 'Reference number',
+};
 
 /// A schedule that "Generate due" turns into real [Expense] rows once
 /// [nextDueDate] arrives — mirrors mapTemplate in expenses.service.js.

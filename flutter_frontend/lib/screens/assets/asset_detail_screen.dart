@@ -9,18 +9,26 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/constant.dart';
 import '../../domain/models/asset.dart';
+import '../../domain/models/expense.dart';
+import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../bookings/id_proof_viewer_screen.dart';
+import '../rooms/room_form_pieces.dart' show OptionDropdown, SectionLabel;
 import '../theme.dart';
 import 'asset_form_sheet.dart';
 import 'work_orders_panel.dart';
 
+// Full option set for the payment-status dropdown — same reasoning as its
+// twin in expense_form_screen.dart / asset_form_sheet.dart.
+const _paymentStatusOptionLabel = {'PAID': 'Paid in full', 'PARTIAL': 'Partially paid', 'PENDING': 'Pending'};
+
 /// The staff-only deep link a scanned asset QR resolves to — mirrors
 /// assetUrl() in lib/qr.js so the code printed here and the one the web app
-/// decodes never drift apart.
-String _assetUrl(String qrToken) => '$baseUrl/dashboard?section=assets&assetToken=$qrToken';
+/// decodes never drift apart. Opens a standalone page with just this asset's
+/// record, not the full dashboard.
+String _assetUrl(String qrToken) => '$baseUrl/asset/$qrToken';
 
 /// One asset's full record — mirrors the "Asset detail" modal in
 /// AssetsPanel.jsx: identity + status up top with its QR code beside it,
@@ -39,6 +47,12 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
   List<CoveragePeriod> _coverage = const [];
   bool _loading = true;
 
+  // The expense the asset's own purchase cost auto-generated — mirrors
+  // purchaseExpense/visiblePurchasePayments in AssetsPanel.jsx. null payments
+  // means "loading", not "none yet".
+  Expense? _purchaseExpense;
+  List<ExpensePayment>? _purchasePayments;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +69,32 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
       _coverage = results[1] as List<CoveragePeriod>;
       _loading = false;
     });
+    await _loadPurchasePayments();
+  }
+
+  Future<void> _loadPurchasePayments() async {
+    final usecase = ref.read(expensesUsecaseProvider);
+    List<Expense> expenses;
+    try {
+      expenses = await usecase.expenses(assetId: widget.assetId);
+    } catch (_) {
+      expenses = const [];
+    }
+    final purchase = expenses.where((e) => e.title.startsWith('Asset purchase:')).firstOrNull;
+    if (!mounted) return;
+    setState(() {
+      _purchaseExpense = purchase;
+      _purchasePayments = null;
+    });
+    if (purchase == null) return;
+    List<ExpensePayment> payments;
+    try {
+      payments = await usecase.expensePayments(purchase.id);
+    } catch (_) {
+      payments = const [];
+    }
+    if (!mounted || _purchaseExpense?.id != purchase.id) return;
+    setState(() => _purchasePayments = payments);
   }
 
   Future<void> _deleteAsset() async {
@@ -128,6 +168,14 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
                     ],
                     const SizedBox(height: AppTheme.s12),
                     _ActionsRow(asset: _asset!, onChanged: _load, onDelete: _deleteAsset),
+                    if (_purchaseExpense != null) ...[
+                      const SizedBox(height: AppTheme.s16),
+                      _PurchasePaymentsSection(
+                        expense: _purchaseExpense!,
+                        payments: _purchasePayments,
+                        onChanged: _loadPurchasePayments,
+                      ),
+                    ],
                     const SizedBox(height: AppTheme.s16),
                     _CoverageSection(asset: _asset!, coverage: _coverage, onChanged: _load),
                     const SizedBox(height: AppTheme.s16),
@@ -351,6 +399,218 @@ class _ActionsRow extends ConsumerWidget {
   }
 }
 
+/// "Purchase payments" — mirrors the purchaseExpense block in
+/// AssetsPanel.jsx: the running total/remaining on the expense the asset's
+/// purchase cost auto-generated, its payment list, and a mini add-payment
+/// form, all reusing the same /expenses/:id/payments endpoints the Expenses
+/// tab's own Payments section talks to.
+class _PurchasePaymentsSection extends ConsumerStatefulWidget {
+  final Expense expense;
+  final List<ExpensePayment>? payments;
+  final Future<void> Function() onChanged;
+
+  const _PurchasePaymentsSection({required this.expense, required this.payments, required this.onChanged});
+
+  @override
+  ConsumerState<_PurchasePaymentsSection> createState() => _PurchasePaymentsSectionState();
+}
+
+class _PurchasePaymentsSectionState extends ConsumerState<_PurchasePaymentsSection> {
+  final _amount = TextEditingController();
+  String _method = 'CASH';
+  late final _date = TextEditingController(text: _isoToday());
+  final _reference = TextEditingController();
+  bool _adding = false;
+  String? _error;
+
+  static String _isoToday() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _date.dispose();
+    _reference.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 1),
+      initialDate: DateTime.tryParse(_date.text) ?? now,
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(primary: AppTheme.accent, onPrimary: Colors.white, surface: AppTheme.bg, onSurface: AppTheme.heading),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      _date.text = '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    });
+  }
+
+  Future<void> _add() async {
+    setState(() => _error = null);
+    final amount = num.tryParse(_amount.text.trim());
+    if (amount == null || amount <= 0) {
+      setState(() => _error = 'Enter a valid amount.');
+      return;
+    }
+    if (_date.text.trim().isEmpty) {
+      setState(() => _error = 'Enter when this was paid.');
+      return;
+    }
+    setState(() => _adding = true);
+    try {
+      await ref.read(expensesUsecaseProvider).addExpensePayment(widget.expense.id, {
+        'amount': amount.toString(),
+        'paymentMethod': _method,
+        'referenceNumber': _reference.text.trim(),
+        'paidDate': _date.text.trim(),
+      });
+      _amount.clear();
+      _reference.clear();
+      _date.text = _isoToday();
+      await widget.onChanged();
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not add that payment.');
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
+  }
+
+  Future<void> _delete(ExpensePayment payment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.bg,
+        title: const Text('Remove this payment?', style: TextStyle(color: AppTheme.heading)),
+        content: Text('${formatPrice(payment.amount)} · ${kPaymentMethodLabel[payment.paymentMethod] ?? payment.paymentMethod}', style: const TextStyle(color: AppTheme.text)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove', style: TextStyle(color: AppTheme.danger))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(expensesUsecaseProvider).deleteExpensePayment(widget.expense.id, payment.id);
+      await widget.onChanged();
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not remove that payment.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final amountPaid = widget.expense.amountPaid ?? 0;
+    final total = widget.expense.amount;
+    final remaining = total - amountPaid;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Purchase payments', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
+        const SizedBox(height: 4),
+        Text(
+          '${formatPrice(amountPaid)} of ${formatPrice(total)} paid${remaining > 0.01 ? ' · ${formatPrice(remaining)} left' : ''}',
+          style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+        ),
+        const SizedBox(height: AppTheme.s8),
+        if (widget.payments == null)
+          const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+        else ...[
+          if (widget.payments!.isNotEmpty)
+            NeuCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  for (final p in widget.payments!)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: AppTheme.s4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${formatPrice(p.amount)} · ${kPaymentMethodLabel[p.paymentMethod] ?? p.paymentMethod}',
+                                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  [
+                                    formatIsoDate(p.paidDate),
+                                    if (p.referenceNumber != null && p.referenceNumber!.isNotEmpty)
+                                      '${kPaymentReferenceLabel[p.paymentMethod] ?? 'Ref'}: ${p.referenceNumber}',
+                                  ].join(' · '),
+                                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.danger),
+                            onPressed: () => _delete(p),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (_error != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+          ],
+          if (remaining > 0.01) ...[
+            const SizedBox(height: AppTheme.s12),
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  NeuField(controller: _amount, label: 'Amount', keyboardType: TextInputType.number),
+                  const SizedBox(height: AppTheme.s12),
+                  const Text('Paid via', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  OptionDropdown(
+                    values: kPaymentMethods,
+                    labels: kPaymentMethodLabel,
+                    selected: _method,
+                    onSelect: (v) => setState(() => _method = v),
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(controller: _date, label: 'Date', readOnly: true, onTap: _pickDate),
+                  if (kPaymentReferenceLabel[_method] != null) ...[
+                    const SizedBox(height: AppTheme.s12),
+                    NeuField(controller: _reference, label: kPaymentReferenceLabel[_method]!),
+                  ],
+                  const SizedBox(height: AppTheme.s12),
+                  NeuButton(
+                    expand: true,
+                    onPressed: _adding ? null : _add,
+                    child: _adding
+                        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Add payment'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
 class _CoverageSection extends ConsumerWidget {
   final Asset asset;
   final List<CoveragePeriod> coverage;
@@ -493,6 +753,13 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
   late final _endDate = TextEditingController();
   late final _cost = TextEditingController();
   late final _note = TextEditingController();
+  // Forwarded onto the expense a costed coverage period auto-generates —
+  // never stored on the coverage row itself (see paymentMethodSchema in
+  // assets.schema.js).
+  String _paymentStatus = 'PAID';
+  String _paymentMethod = 'CASH';
+  final _amountPaid = TextEditingController();
+  final _referenceNumber = TextEditingController();
   String? _error;
 
   @override
@@ -501,6 +768,8 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
     _endDate.dispose();
     _cost.dispose();
     _note.dispose();
+    _amountPaid.dispose();
+    _referenceNumber.dispose();
     super.dispose();
   }
 
@@ -535,6 +804,10 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
       'startDate': _startDate.text.trim(),
       'endDate': _endDate.text.trim(),
       'cost': num.tryParse(_cost.text.trim()),
+      'paymentMethod': _paymentMethod,
+      'paymentStatus': _paymentStatus,
+      'amountPaid': _paymentStatus == 'PARTIAL' ? _amountPaid.text.trim() : '',
+      'referenceNumber': _paymentStatus != 'PENDING' ? _referenceNumber.text.trim() : '',
       'coverageNote': _note.text.trim(),
     });
     if (!mounted) return;
@@ -555,54 +828,143 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
           children: [
             if (_error != null) ...[
-              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-              const SizedBox(height: AppTheme.s12),
+              Container(
+                padding: const EdgeInsets.all(AppTheme.s12),
+                decoration: BoxDecoration(color: AppTheme.danger.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13))),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s16),
             ],
-            const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-            const SizedBox(height: 4),
-            NeuPressed(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: _type,
-                  dropdownColor: AppTheme.card,
-                  items: const [
-                    DropdownMenuItem(value: 'WARRANTY', child: Text('Warranty', style: TextStyle(fontSize: 13.5))),
-                    DropdownMenuItem(value: 'AMC', child: Text('AMC', style: TextStyle(fontSize: 13.5))),
-                  ],
-                  onChanged: (v) => setState(() => _type = v!),
-                ),
+
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Coverage', number: 1),
+                  const SizedBox(height: AppTheme.s12),
+                  const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  NeuPressed(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _type,
+                        dropdownColor: AppTheme.card,
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+                        items: const [
+                          DropdownMenuItem(value: 'WARRANTY', child: Text('Warranty', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5))),
+                          DropdownMenuItem(value: 'AMC', child: Text('AMC', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5))),
+                        ],
+                        onChanged: (v) => setState(() => _type = v!),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  const Text('Vendor (optional)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  NeuPressed(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int?>(
+                        isExpanded: true,
+                        value: _vendorId,
+                        dropdownColor: AppTheme.card,
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+                        hint: const Text('No vendor', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('No vendor', style: TextStyle(fontSize: 13.5))),
+                          for (final v in state.activeVendors)
+                            DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5))),
+                        ],
+                        onChanged: (v) => setState(() => _vendorId = v),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: AppTheme.s12),
-            const Text('Vendor (optional)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-            const SizedBox(height: 4),
-            NeuPressed(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<int?>(
-                  isExpanded: true,
-                  value: _vendorId,
-                  dropdownColor: AppTheme.card,
-                  hint: const Text('No vendor', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('No vendor', style: TextStyle(fontSize: 13.5))),
-                    for (final v in state.activeVendors)
-                      DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(fontSize: 13.5))),
-                  ],
-                  onChanged: (v) => setState(() => _vendorId = v),
-                ),
+            const SizedBox(height: AppTheme.s16),
+
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Period & cost', number: 2),
+                  const SizedBox(height: AppTheme.s12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: NeuField(controller: _startDate, label: 'Start date (optional)', hint: 'Tap to pick', readOnly: true, onTap: () => _pickDate(_startDate))),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(child: NeuField(controller: _endDate, label: 'End date', hint: 'Tap to pick', readOnly: true, onTap: () => _pickDate(_endDate), required: true)),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(controller: _cost, label: 'Cost (optional)', keyboardType: TextInputType.number),
+                ],
               ),
             ),
-            const SizedBox(height: AppTheme.s12),
-            NeuField(controller: _startDate, label: 'Start date (optional)', hint: 'Tap to pick', readOnly: true, onTap: () => _pickDate(_startDate)),
-            const SizedBox(height: AppTheme.s12),
-            NeuField(controller: _endDate, label: 'End date', hint: 'Tap to pick', readOnly: true, onTap: () => _pickDate(_endDate), required: true),
-            const SizedBox(height: AppTheme.s12),
-            NeuField(controller: _cost, label: 'Cost (optional)', keyboardType: TextInputType.number),
-            const SizedBox(height: AppTheme.s12),
-            NeuField(controller: _note, label: 'Coverage note (optional)', hint: 'What this covers'),
+            const SizedBox(height: AppTheme.s16),
+
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Payment', number: 3),
+                  const SizedBox(height: AppTheme.s12),
+                  // Forwarded onto the expense a costed coverage period
+                  // auto-generates — mirrors coverageForm.paymentStatus/
+                  // paymentMethod/amountPaid/referenceNumber in AssetsPanel.jsx.
+                  const Text('Payment status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  OptionDropdown(
+                    values: kPaymentStatuses,
+                    labels: _paymentStatusOptionLabel,
+                    selected: _paymentStatus,
+                    onSelect: (v) => setState(() => _paymentStatus = v),
+                  ),
+                  if (_paymentStatus != 'PENDING') ...[
+                    const SizedBox(height: AppTheme.s12),
+                    const Text('Paid via', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    OptionDropdown(
+                      values: kPaymentMethods,
+                      labels: kPaymentMethodLabel,
+                      selected: _paymentMethod,
+                      onSelect: (v) => setState(() => _paymentMethod = v),
+                    ),
+                    if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                    ],
+                  ],
+                  if (_paymentStatus == 'PARTIAL') ...[
+                    const SizedBox(height: AppTheme.s12),
+                    NeuField(controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: AppTheme.s16),
+
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Notes', number: 4),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(controller: _note, label: 'Coverage note (optional)', hint: 'What this covers'),
+                ],
+              ),
+            ),
+
             const SizedBox(height: AppTheme.s24),
             NeuButton(
               primary: true,
