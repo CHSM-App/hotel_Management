@@ -7,6 +7,9 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
 import 'asset_form_sheet.dart';
+import 'asset_icons.dart';
+import 'asset_stat_grid.dart';
+import 'work_orders_panel.dart';
 
 /// Assets > Assets — mirrors the Register tab in AssetsPanel.jsx: a search
 /// box, a status filter, and every unit on file, tap-through to its detail.
@@ -33,6 +36,59 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
     super.dispose();
   }
 
+  Future<void> _viewDetails(BuildContext context, WidgetRef ref, Asset a) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AssetDetailScreen(assetId: a.id)),
+    );
+    ref.read(assetsViewModelProvider.notifier).loadAssets();
+  }
+
+  // Soft-delete, same as deleteAsset in AssetsPanel.jsx — service history
+  // stays, the asset just stops showing in the register.
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, Asset a) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.bg,
+        title: const Text('Delete asset?', style: TextStyle(color: AppTheme.heading)),
+        content: Text(
+          'Delete "${a.name}"? Its service history is kept, but it won\'t show in the register.',
+          style: const TextStyle(color: AppTheme.text),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(assetsViewModelProvider.notifier).deleteAsset(a.id);
+  }
+
+  List<AssetStat> _summaryStats(List<Asset> assets) {
+    final underRepair = assets.where((a) => a.status == 'UNDER_REPAIR').length;
+    final openWorkOrders = assets.fold<int>(0, (sum, a) => sum + a.openWorkOrders);
+    return [
+      AssetStat(label: 'Total assets', value: '${assets.length}'),
+      AssetStat(label: 'In use', value: '${assets.where((a) => a.status == 'IN_USE').length}'),
+      AssetStat(
+        label: 'Under repair',
+        value: '$underRepair',
+        accent: underRepair > 0,
+      ),
+      if (openWorkOrders > 0)
+        AssetStat(
+          label: 'Open work orders',
+          value: '$openWorkOrders',
+          note: 'across ${assets.where((a) => a.openWorkOrders > 0).length} asset${assets.where((a) => a.openWorkOrders > 0).length == 1 ? '' : 's'}',
+          accent: true,
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
@@ -57,6 +113,10 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
+              if (state.assets.isNotEmpty) ...[
+                AssetStatGrid(items: _summaryStats(state.assets)),
+                const SizedBox(height: AppTheme.s12),
+              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -85,12 +145,14 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                     padding: const EdgeInsets.only(bottom: AppTheme.s8),
                     child: _AssetCard(
                       asset: a,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => AssetDetailScreen(assetId: a.id)),
-                        );
+                      onTap: () => _viewDetails(context, ref, a),
+                      onViewDetails: () => _viewDetails(context, ref, a),
+                      onEdit: () async {
+                        await showAssetFormSheet(context, asset: a);
                         ref.read(assetsViewModelProvider.notifier).loadAssets();
                       },
+                      onReportIssue: () => showReportIssueDialog(context, assetId: a.id),
+                      onDelete: () => _confirmDelete(context, ref, a),
                     ),
                   ),
             ],
@@ -163,8 +225,19 @@ class _StatusFilterButton extends StatelessWidget {
 class _AssetCard extends StatelessWidget {
   final Asset asset;
   final VoidCallback onTap;
+  final VoidCallback onViewDetails;
+  final VoidCallback onEdit;
+  final VoidCallback onReportIssue;
+  final VoidCallback onDelete;
 
-  const _AssetCard({required this.asset, required this.onTap});
+  const _AssetCard({
+    required this.asset,
+    required this.onTap,
+    required this.onViewDetails,
+    required this.onEdit,
+    required this.onReportIssue,
+    required this.onDelete,
+  });
 
   Color get _statusColor => switch (asset.status) {
     'IN_USE' => AppTheme.vacant,
@@ -181,7 +254,7 @@ class _AssetCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(width: 4, height: 40, decoration: BoxDecoration(color: _statusColor, borderRadius: BorderRadius.circular(2))),
+          IconBadge(icon: categoryIcon(asset.categoryName), color: _statusColor),
           const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
@@ -204,6 +277,12 @@ class _AssetCard extends StatelessWidget {
                         kAssetStatusLabel[asset.status] ?? asset.status,
                         style: TextStyle(color: _statusColor, fontSize: 10.5, fontWeight: FontWeight.w700),
                       ),
+                    ),
+                    _AssetRowMenu(
+                      onViewDetails: onViewDetails,
+                      onEdit: onEdit,
+                      onReportIssue: onReportIssue,
+                      onDelete: onDelete,
                     ),
                   ],
                 ),
@@ -233,6 +312,43 @@ class _AssetCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The ⋮ row menu — mirrors RowMenu in AssetsPanel.jsx: the rare/destructive
+/// actions for one asset, folded behind a single button instead of a row of
+/// buttons that would overflow the card on a phone width.
+class _AssetRowMenu extends StatelessWidget {
+  final VoidCallback onViewDetails;
+  final VoidCallback onEdit;
+  final VoidCallback onReportIssue;
+  final VoidCallback onDelete;
+
+  const _AssetRowMenu({
+    required this.onViewDetails,
+    required this.onEdit,
+    required this.onReportIssue,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<VoidCallback>(
+      tooltip: 'More actions',
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
+      onSelected: (action) => action(),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
+      itemBuilder: (context) => [
+        PopupMenuItem(value: onViewDetails, child: const Text('View details')),
+        PopupMenuItem(value: onEdit, child: const Text('Edit asset')),
+        PopupMenuItem(value: onReportIssue, child: const Text('Report issue')),
+        PopupMenuItem(
+          value: onDelete,
+          child: const Text('Delete asset', style: TextStyle(color: AppTheme.danger)),
+        ),
+      ],
     );
   }
 }

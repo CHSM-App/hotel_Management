@@ -1335,8 +1335,9 @@ class ApiService {
         .toList();
   }
 
-  Future<void> createAssetCategory(String name) async {
-    await _dio.post('/assets/categories', data: {'name': name});
+  Future<AssetCategory> createAssetCategory(String name) async {
+    final res = await _dio.post('/assets/categories', data: {'name': name});
+    return AssetCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
   }
 
   /// dbo.vendors is a directory shared with Expenses — this and

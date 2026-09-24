@@ -5,7 +5,10 @@ import '../../domain/models/asset.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
+import 'asset_icons.dart';
+import 'asset_stat_grid.dart';
 
 /// Assets > Work orders — mirrors the Work Orders tab in AssetsPanel.jsx: a
 /// status filter and every breakdown/service ticket, newest first, with a
@@ -29,6 +32,17 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
     });
   }
 
+  List<AssetStat> _summaryStats(List<WorkOrder> workOrders) {
+    final open = workOrders.where((w) => w.status == 'OPEN').length;
+    final inProgress = workOrders.where((w) => w.status == 'IN_PROGRESS').length;
+    final closed = workOrders.where((w) => w.status == 'CLOSED').length;
+    return [
+      AssetStat(label: 'Open', value: '$open', accent: open > 0),
+      AssetStat(label: 'In progress', value: '$inProgress'),
+      AssetStat(label: 'Closed', value: '$closed'),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
@@ -47,6 +61,10 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
+              if (state.workOrders.isNotEmpty) ...[
+                AssetStatGrid(items: _summaryStats(state.workOrders)),
+                const SizedBox(height: AppTheme.s12),
+              ],
               Align(
                 alignment: Alignment.centerLeft,
                 child: _StatusFilterButton(
@@ -68,10 +86,7 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
                     padding: const EdgeInsets.only(bottom: AppTheme.s8),
                     child: _WorkOrderCard(
                       workOrder: w,
-                      onTap: () => showDialog(
-                        context: context,
-                        builder: (_) => _WorkOrderDialog(workOrder: w),
-                      ),
+                      onTap: () => showWorkOrderDialog(context, workOrder: w),
                     ),
                   ),
             ],
@@ -83,9 +98,7 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
           child: FloatingActionButton(
             backgroundColor: AppTheme.accent,
             foregroundColor: Colors.white,
-            onPressed: state.assets.isEmpty
-                ? null
-                : () => showDialog(context: context, builder: (_) => const _WorkOrderDialog()),
+            onPressed: state.assets.isEmpty ? null : () => showReportIssueDialog(context),
             child: const Icon(Icons.add_rounded),
           ),
         ),
@@ -170,7 +183,7 @@ class _WorkOrderCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(width: 4, height: 40, decoration: BoxDecoration(color: _statusColor, borderRadius: BorderRadius.circular(2))),
+          IconBadge(icon: issueTypeIcon(workOrder.issueType), color: _statusColor),
           const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
@@ -224,18 +237,67 @@ class _WorkOrderCard extends StatelessWidget {
   }
 }
 
-class _WorkOrderDialog extends ConsumerStatefulWidget {
-  final WorkOrder? workOrder;
-  const _WorkOrderDialog({this.workOrder});
+/// Whoever is on the hook for an asset right now — the AMC vendor if there's
+/// a live one, otherwise whoever gave the warranty, otherwise nobody. Mirrors
+/// resolveActiveCoverageVendor in AssetsPanel.jsx: coverage periods come back
+/// newest-end-date-first, so the first non-expired row of each type is that
+/// type's current one, and AMC is checked first because an asset under an
+/// active AMC is contractually that vendor's problem even if the maker's
+/// warranty technically hasn't lapsed yet.
+Future<int?> _resolveActiveCoverageVendorId(WidgetRef ref, int assetId) async {
+  final periods = await ref.read(assetsViewModelProvider.notifier).coverage(assetId);
+  final today = DateTime.now();
+  CoveragePeriod? current(String type) {
+    for (final p in periods) {
+      if (p.coverageType != type || p.vendorId == null) continue;
+      final end = DateTime.tryParse(p.endDate);
+      if (end != null && !end.isBefore(today)) return p;
+    }
+    return null;
+  }
 
-  @override
-  ConsumerState<_WorkOrderDialog> createState() => _WorkOrderDialogState();
+  return (current('AMC') ?? current('WARRANTY'))?.vendorId;
 }
 
-class _WorkOrderDialogState extends ConsumerState<_WorkOrderDialog> {
+/// Opens "Report an issue", optionally pre-selected to one asset — used by
+/// the row menu's Report issue action, same shorthand as reportIssue() in
+/// AssetsPanel.jsx. With no asset given, this is the FAB's plain "+".
+Future<void> showReportIssueDialog(BuildContext context, {int? assetId}) {
+  return Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => _WorkOrderFormScreen(presetAssetId: assetId)),
+  );
+}
+
+/// Opens a work order for editing — used by the asset detail screen's
+/// service history list, same as clicking a row in AssetsPanel.jsx's
+/// service-history ledger.
+Future<void> showWorkOrderDialog(BuildContext context, {required WorkOrder workOrder}) {
+  return Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => _WorkOrderFormScreen(workOrder: workOrder)),
+  );
+}
+
+/// Report an issue / Edit work order / Bulk work order — one screen with the
+/// same Single ↔ Bulk by category toggle as the web modal. Bulk opens one
+/// work order for every active asset in a category at once (a contractor's
+/// routine AMC visit); Single (and editing) file one against a chosen asset.
+class _WorkOrderFormScreen extends ConsumerStatefulWidget {
+  final WorkOrder? workOrder;
+  final int? presetAssetId;
+  const _WorkOrderFormScreen({this.workOrder, this.presetAssetId});
+
+  @override
+  ConsumerState<_WorkOrderFormScreen> createState() => _WorkOrderFormScreenState();
+}
+
+class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
+  bool _bulk = false;
+
   int? _assetId;
+  int? _categoryId;
   late String _issueType = widget.workOrder?.issueType ?? 'BREAKDOWN';
   late String _status = widget.workOrder?.status ?? 'OPEN';
+  late int? _vendorId = widget.workOrder?.vendorId;
   late final _description = TextEditingController(text: widget.workOrder?.description ?? '');
   late final _assignedTo = TextEditingController(text: widget.workOrder?.assignedToName ?? '');
   late final _partsCost = TextEditingController(text: widget.workOrder?.partsCost?.toString() ?? '');
@@ -244,6 +306,18 @@ class _WorkOrderDialogState extends ConsumerState<_WorkOrderDialog> {
   String? _error;
 
   bool get _isEdit => widget.workOrder != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _assetId = widget.presetAssetId ?? widget.workOrder?.assetId;
+    if (!_isEdit && _assetId != null) _prefillVendor(_assetId!);
+  }
+
+  Future<void> _prefillVendor(int assetId) async {
+    final vendorId = await _resolveActiveCoverageVendorId(ref, assetId);
+    if (mounted && vendorId != null) setState(() => _vendorId = vendorId);
+  }
 
   @override
   void dispose() {
@@ -256,7 +330,12 @@ class _WorkOrderDialogState extends ConsumerState<_WorkOrderDialog> {
   }
 
   Future<void> _save() async {
-    if (!_isEdit && _assetId == null) {
+    if (_bulk) {
+      if (_categoryId == null) {
+        setState(() => _error = 'Choose a category.');
+        return;
+      }
+    } else if (_assetId == null) {
       setState(() => _error = 'Choose an asset.');
       return;
     }
@@ -272,9 +351,18 @@ class _WorkOrderDialogState extends ConsumerState<_WorkOrderDialog> {
         'issueType': _issueType,
         'description': _description.text.trim(),
         'assignedToName': _assignedTo.text.trim(),
+        'vendorId': _vendorId,
         'partsCost': num.tryParse(_partsCost.text.trim()),
         'laborCost': num.tryParse(_laborCost.text.trim()),
         'resolutionNote': _resolutionNote.text.trim(),
+      });
+    } else if (_bulk) {
+      ok = await vm.saveWorkOrdersBulk({
+        'categoryId': _categoryId,
+        'issueType': _issueType,
+        'description': _description.text.trim(),
+        'assignedToName': _assignedTo.text.trim(),
+        'vendorId': _vendorId,
       });
     } else {
       ok = await vm.saveWorkOrder({
@@ -282,6 +370,7 @@ class _WorkOrderDialogState extends ConsumerState<_WorkOrderDialog> {
         'issueType': _issueType,
         'description': _description.text.trim(),
         'assignedToName': _assignedTo.text.trim(),
+        'vendorId': _vendorId,
       });
     }
     if (!mounted) return;
@@ -295,89 +384,208 @@ class _WorkOrderDialogState extends ConsumerState<_WorkOrderDialog> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
-    return AlertDialog(
-      backgroundColor: AppTheme.bg,
-      title: Text(_isEdit ? 'Work order · ${widget.workOrder!.assetName}' : 'Report an issue', style: const TextStyle(color: AppTheme.heading)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final issueTypes = _bulk ? ['ROUTINE_SERVICE', 'BREAKDOWN'] : kIssueTypeLabel.keys.toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isEdit ? 'Work order · ${widget.workOrder!.assetName}' : (_bulk ? 'Bulk work order' : 'Report an issue')),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
           children: [
             if (_error != null) ...[
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s12),
             ],
             if (!_isEdit) ...[
-              const Text('Asset', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-              const SizedBox(height: 4),
-              NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    isExpanded: true,
-                    value: _assetId,
-                    dropdownColor: AppTheme.card,
-                    hint: const Text('Choose an asset', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
-                    items: [
-                      for (final a in state.assets)
-                        DropdownMenuItem(value: a.id, child: Text(a.name, style: const TextStyle(fontSize: 13.5))),
-                    ],
-                    onChanged: (v) => setState(() => _assetId = v),
-                  ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ModeToggle(
+                  options: const {'single': 'Single', 'bulk': 'Bulk by category'},
+                  selected: _bulk ? 'bulk' : 'single',
+                  onSelect: (v) => setState(() => _bulk = v == 'bulk'),
                 ),
               ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s16),
             ],
-            const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: AppTheme.s8,
-              children: [
-                for (final t in kIssueTypeLabel.keys)
-                  ChoiceChip(
-                    label: Text(kIssueTypeLabel[t]!),
-                    selected: _issueType == t,
-                    onSelected: (_) => setState(() => _issueType = t),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.s8),
-            NeuField(controller: _description, label: 'Description', hint: "Won't switch on", required: true, maxLength: 400),
-            const SizedBox(height: AppTheme.s8),
-            NeuField(controller: _assignedTo, label: 'Assigned to (optional)', hint: 'In-house / vendor name'),
-            if (_isEdit) ...[
-              const SizedBox(height: AppTheme.s8),
-              const Text('Status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: AppTheme.s8,
+
+            if (_bulk || !_isEdit) ...[
+              NeuCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SectionLabel(_bulk ? 'Category' : 'Asset', number: 1),
+                    const SizedBox(height: AppTheme.s12),
+                    if (_bulk) ...[
+                      const Text(
+                        'Opens one work order for every active asset in the category you pick — e.g. every '
+                        "split AC, all at once, for a contractor's routine visit.",
+                        style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      const RequiredLabel('Category'),
+                      const SizedBox(height: 4),
+                      NeuPressed(
+                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            isExpanded: true,
+                            value: _categoryId,
+                            dropdownColor: AppTheme.card,
+                            hint: const Text('Choose a category', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+                            items: [
+                              for (final c in state.activeCategories)
+                                DropdownMenuItem(value: c.id, child: Text(c.name, style: const TextStyle(fontSize: 13.5))),
+                            ],
+                            onChanged: (v) => setState(() => _categoryId = v),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      const RequiredLabel('Asset'),
+                      const SizedBox(height: 4),
+                      NeuPressed(
+                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            isExpanded: true,
+                            value: _assetId,
+                            dropdownColor: AppTheme.card,
+                            hint: const Text('Choose an asset', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+                            items: [
+                              for (final a in state.assets)
+                                DropdownMenuItem(value: a.id, child: Text(a.name, style: const TextStyle(fontSize: 13.5))),
+                            ],
+                            onChanged: (v) {
+                              setState(() => _assetId = v);
+                              if (v != null) _prefillVendor(v);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s16),
+            ],
+
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final s in kWorkOrderStatuses)
-                    ChoiceChip(
-                      label: Text(kWorkOrderStatusLabel[s]!),
-                      selected: _status == s,
-                      onSelected: (_) => setState(() => _status = s),
+                  SectionLabel('Issue', number: _bulk || !_isEdit ? 2 : 1),
+                  const SizedBox(height: AppTheme.s12),
+                  const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  NeuPressed(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _issueType,
+                        dropdownColor: AppTheme.card,
+                        items: [
+                          for (final t in issueTypes)
+                            DropdownMenuItem(value: t, child: Text(kIssueTypeLabel[t] ?? t, style: const TextStyle(fontSize: 13.5))),
+                        ],
+                        onChanged: (v) => setState(() => _issueType = v!),
+                      ),
                     ),
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(
+                    controller: _description,
+                    label: 'Description',
+                    hint: _bulk ? 'e.g. Quarterly AMC service visit' : "Won't switch on",
+                    required: true,
+                    maxLength: 400,
+                  ),
+                  if (_isEdit) ...[
+                    const SizedBox(height: AppTheme.s12),
+                    const Text('Status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: AppTheme.s8,
+                      children: [
+                        for (final s in kWorkOrderStatuses)
+                          ChoiceChip(
+                            label: Text(kWorkOrderStatusLabel[s]!),
+                            selected: _status == s,
+                            onSelected: (_) => setState(() => _status = s),
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
-              const SizedBox(height: AppTheme.s8),
-              Row(
+            ),
+            const SizedBox(height: AppTheme.s16),
+
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: NeuField(controller: _partsCost, label: 'Parts cost', keyboardType: TextInputType.number)),
-                  const SizedBox(width: AppTheme.s8),
-                  Expanded(child: NeuField(controller: _laborCost, label: 'Labor cost', keyboardType: TextInputType.number)),
+                  SectionLabel('Assignment', number: _bulk || !_isEdit ? 3 : 2),
+                  const SizedBox(height: AppTheme.s12),
+                  NeuField(controller: _assignedTo, label: 'Assigned to (optional)', hint: 'In-house handyman name'),
+                  const SizedBox(height: AppTheme.s12),
+                  const Text('Vendor', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  NeuPressed(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int?>(
+                        isExpanded: true,
+                        value: _vendorId,
+                        dropdownColor: AppTheme.card,
+                        hint: const Text('None', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('None', style: TextStyle(fontSize: 13.5))),
+                          for (final v in state.activeVendors)
+                            DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(fontSize: 13.5))),
+                        ],
+                        onChanged: (v) => setState(() => _vendorId = v),
+                      ),
+                    ),
+                  ),
+                  if (!_bulk) ...[
+                    const SizedBox(height: 4),
+                    const Text(
+                      "Filled in from the asset's current AMC or warranty, if it has one on file — change it if "
+                      'someone else is doing this repair.',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                    ),
+                  ],
+                  if (_isEdit) ...[
+                    const SizedBox(height: AppTheme.s12),
+                    Row(
+                      children: [
+                        Expanded(child: NeuField(controller: _partsCost, label: 'Parts cost', keyboardType: TextInputType.number)),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(child: NeuField(controller: _laborCost, label: 'Labor cost', keyboardType: TextInputType.number)),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.s12),
+                    NeuField(controller: _resolutionNote, label: 'Resolution note (optional)', maxLength: 400),
+                  ],
                 ],
               ),
-              const SizedBox(height: AppTheme.s8),
-              NeuField(controller: _resolutionNote, label: 'Resolution note (optional)', maxLength: 400),
-            ],
+            ),
+            const SizedBox(height: AppTheme.s24),
+            NeuButton(
+              primary: true,
+              expand: true,
+              onPressed: state.submitting ? null : _save,
+              child: state.submitting
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(_isEdit ? 'Save changes' : (_bulk ? 'Create work orders' : 'Save')),
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(onPressed: state.submitting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: state.submitting ? null : _save, child: Text(state.submitting ? 'Saving…' : 'Save')),
-      ],
     );
   }
 }
+
