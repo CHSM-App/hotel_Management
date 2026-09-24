@@ -12,7 +12,6 @@ import {
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
-import { BarList } from './AnalyticsCharts';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
@@ -27,6 +26,21 @@ import './InventoryPanel.css';
 import './AnalyticsCharts.css';
 
 const FREQUENCY_LABEL = { MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', YEARLY: 'Yearly' };
+
+// Same rule as mobileDigits/typedMobile in Bookings.jsx — duplicated rather
+// than shared, but the two must agree: a vendor phone this form accepts and
+// the backend's TEN_DIGITS check in expenses.schema.js rejects is a round
+// trip spent on a red banner.
+function typedMobile(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  const normalised =
+    digits.length === 12 && digits.startsWith('91')
+      ? digits.slice(2)
+      : digits.length === 11 && digits.startsWith('0')
+        ? digits.slice(1)
+        : digits;
+  return normalised.slice(0, 10);
+}
 
 // Only PARTIAL/PENDING get a tag — PAID is the default and common case, and
 // flagging every row as "Paid in full" would just be noise next to the
@@ -263,6 +277,10 @@ const emptyExpenseForm = {
   categoryName: '',
   vendorId: '',
   vendorName: '',
+  vendorContactPerson: '',
+  vendorPhone: '',
+  vendorEmail: '',
+  vendorSpecialty: '',
   title: '',
   description: '',
   amount: '',
@@ -276,19 +294,20 @@ const emptyExpenseForm = {
   hasBillDocument: false,
 };
 
+// A repeat schedule only — no amount or vendor. Those aren't known until the
+// desk actually logs an occurrence (see emptyOccurrenceForm), since a
+// template covers bills whose cost varies cycle to cycle (electricity) as
+// often as ones that don't (rent).
 const emptyTemplateForm = {
   categoryName: '',
-  vendorId: '',
-  vendorName: '',
   title: '',
-  amount: '',
   frequency: 'MONTHLY',
   nextDueDate: todayIso(),
 };
 
 const emptyVendorForm = { name: '', contactPerson: '', phone: '', email: '', specialty: '', notes: '' };
 
-export default function ExpensesPanel() {
+export default function ExpensesPanel({ onViewReport }) {
   const session = getSession();
   const [tab, setTab] = useState('expenses');
 
@@ -299,7 +318,6 @@ export default function ExpensesPanel() {
   const [summary, setSummary] = useState(() => readCache('/expenses/summary') || null);
 
   const [error, setError] = useState('');
-  const [generatedNotice, setGeneratedNotice] = useState('');
 
   // Filters
   const [query, setQuery] = useState('');
@@ -334,10 +352,23 @@ export default function ExpensesPanel() {
   const [paymentError, setPaymentError] = useState('');
   const [addingPayment, setAddingPayment] = useState(false);
 
+  // Set while the expense form is open for "Log this month" rather than a
+  // plain new/edit expense — routes the submit to POST
+  // /expenses/recurring/:id/log instead of POST /expenses, so the template's
+  // next_due_date advances along with it.
+  const [loggingTemplate, setLoggingTemplate] = useState(null);
+
   // Template form
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
+
+  // Occurrence history — every expense a recurring template has generated
+  // so far. { template, expenses } rather than just an id, so the modal's
+  // own header (title, category) doesn't need a second lookup into
+  // `templates` while it's open.
+  const [templateHistory, setTemplateHistory] = useState(null);
+  const [templateHistoryLoading, setTemplateHistoryLoading] = useState(false);
 
   // Vendor form
   const [showVendorForm, setShowVendorForm] = useState(false);
@@ -369,28 +400,9 @@ export default function ExpensesPanel() {
       .then((data) => setSummary(writeCache('/expenses/summary', data.summary)))
       .catch(() => {});
 
-  // Recurring templates that came due are generated into real expense rows
-  // the moment the panel opens — nobody has to remember to log the monthly
-  // electricity bill by hand if a template already says what it costs.
-  const generateDueThenLoad = async () => {
-    try {
-      const result = await apiPost('/expenses/recurring/generate-due', {}, { token: session?.token });
-      if (result.generated?.length > 0) {
-        setGeneratedNotice(
-          `${result.generated.length} recurring expense${result.generated.length === 1 ? '' : 's'} logged automatically.`
-        );
-      }
-    } catch {
-      // Silent — this is a convenience, not something worth blocking the
-      // panel over if it fails once.
-    } finally {
-      loadExpenses();
-      loadTemplates();
-    }
-  };
-
   useEffect(() => {
-    generateDueThenLoad();
+    loadExpenses();
+    loadTemplates();
     loadCategories();
     loadVendors();
     loadSummary();
@@ -437,14 +449,6 @@ export default function ExpensesPanel() {
     });
   };
 
-  // Top categories this year, for the breakdown chart next to the KPI row —
-  // same BarList component the Reports overview uses, so "what am I
-  // spending the most on" reads the same visual language everywhere this
-  // app answers that question.
-  const categoryBarRows = useMemo(() => {
-    if (!summary) return [];
-    return summary.byCategory.slice(0, 6).map((c) => ({ label: c.categoryName, value: c.total }));
-  }, [summary]);
 
   // Only categories an expense is actually filed under — same reasoning as
   // categoryFilterOptions in AssetsPanel.jsx: a category picked while trying
@@ -484,7 +488,17 @@ export default function ExpensesPanel() {
     const existing = (vendors || []).find((v) => v.name.toLowerCase() === trimmed.toLowerCase());
     if (existing) return existing.id;
 
-    const created = await apiPost('/expenses/vendors', { name: trimmed }, { token: session?.token });
+    const created = await apiPost(
+      '/expenses/vendors',
+      {
+        name: trimmed,
+        contactPerson: form.vendorContactPerson,
+        phone: form.vendorPhone,
+        email: form.vendorEmail,
+        specialty: form.vendorSpecialty,
+      },
+      { token: session?.token }
+    );
     await loadVendors();
     return created.vendor.id;
   };
@@ -507,18 +521,24 @@ export default function ExpensesPanel() {
     setExpenseBillFile(null);
     setNewPayment({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
     setViewMode(expense ? mode === 'view' : false);
+    setLoggingTemplate(null);
     if (expense) {
       setEditingExpenseId(expense.id);
       setExpenseForm({
         categoryName: expense.categoryName || '',
         vendorId: expense.vendorId ? String(expense.vendorId) : '',
         vendorName: expense.vendorName || '',
+        vendorContactPerson: '',
+        vendorPhone: '',
+        vendorEmail: '',
+        vendorSpecialty: '',
         title: expense.title,
         description: expense.description || '',
         amount: String(expense.amount),
         paymentMethod: expense.paymentMethod,
         paymentStatus: expense.paymentStatus || 'PAID',
         amountPaid: expense.amountPaid != null ? String(expense.amountPaid) : '',
+        referenceNumber: '',
         expenseDate: expense.expenseDate?.slice(0, 10) || todayIso(),
         hasBillDocument: !!expense.hasBillDocument,
       });
@@ -528,6 +548,29 @@ export default function ExpensesPanel() {
       setExpenseForm(emptyExpenseForm);
       setPayments([]);
     }
+    setShowExpenseForm(true);
+  };
+
+  // "Log this month" — opens the same expense form pre-filled from the
+  // template (category, title, today's date), amount left blank for the
+  // desk to type. Submitting posts to /expenses/recurring/:id/log instead
+  // of the plain create endpoint, which is what actually advances the
+  // template's next_due_date.
+  const openOccurrenceForm = (template) => {
+    setFormError('');
+    setPaymentError('');
+    setExpenseBillFile(null);
+    setNewPayment({ amount: '', paymentMethod: 'CASH', referenceNumber: '', paidDate: todayIso() });
+    setViewMode(false);
+    setEditingExpenseId(null);
+    setLoggingTemplate(template);
+    setExpenseForm({
+      ...emptyExpenseForm,
+      categoryName: template.categoryName || '',
+      title: template.title,
+      expenseDate: template.nextDueDate?.slice(0, 10) || todayIso(),
+    });
+    setPayments([]);
     setShowExpenseForm(true);
   };
 
@@ -591,6 +634,8 @@ export default function ExpensesPanel() {
         expenseDate: expenseForm.expenseDate,
       };
 
+      const logUrl = loggingTemplate ? `/expenses/recurring/${loggingTemplate.id}/log` : null;
+
       if (expenseBillFile) {
         const fd = new FormData();
         Object.entries(payload).forEach(([key, value]) => fd.append(key, value));
@@ -598,15 +643,16 @@ export default function ExpensesPanel() {
         if (editingExpenseId) {
           await apiPatchForm(`/expenses/${editingExpenseId}`, fd, { token: session?.token });
         } else {
-          await apiPostForm('/expenses', fd, { token: session?.token });
+          await apiPostForm(logUrl || '/expenses', fd, { token: session?.token });
         }
       } else if (editingExpenseId) {
         await apiPatch(`/expenses/${editingExpenseId}`, payload, { token: session?.token });
       } else {
-        await apiPost('/expenses', payload, { token: session?.token });
+        await apiPost(logUrl || '/expenses', payload, { token: session?.token });
       }
       setShowExpenseForm(false);
-      await Promise.all([loadExpenses(), loadSummary()]);
+      setLoggingTemplate(null);
+      await Promise.all([loadExpenses(), loadSummary(), ...(logUrl ? [loadTemplates()] : [])]);
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Could not save this expense.');
     } finally {
@@ -643,10 +689,7 @@ export default function ExpensesPanel() {
       setEditingTemplateId(template.id);
       setTemplateForm({
         categoryName: template.categoryName || '',
-        vendorId: template.vendorId ? String(template.vendorId) : '',
-        vendorName: template.vendorName || '',
         title: template.title,
-        amount: String(template.amount),
         frequency: template.frequency,
         nextDueDate: template.nextDueDate?.slice(0, 10) || todayIso(),
       });
@@ -662,19 +705,15 @@ export default function ExpensesPanel() {
     e.preventDefault();
     if (!templateForm.categoryName.trim()) return setFormError('Enter or choose a category.');
     if (!templateForm.title.trim()) return setFormError('Give this recurring expense a title.');
-    if (!templateForm.amount || Number(templateForm.amount) < 0) return setFormError('Enter a valid amount.');
     if (!templateForm.nextDueDate) return setFormError('Enter the next due date.');
 
     setSubmitting(true);
     setFormError('');
     try {
       const categoryId = await resolveCategoryId(templateForm.categoryName);
-      const vendorId = await resolveVendorId(templateForm);
       const payload = {
         categoryId,
-        vendorId: vendorId ?? '',
         title: templateForm.title,
-        amount: templateForm.amount,
         frequency: templateForm.frequency,
         nextDueDate: templateForm.nextDueDate,
       };
@@ -699,6 +738,23 @@ export default function ExpensesPanel() {
       await loadTemplates();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not update that recurring expense.');
+    }
+  };
+
+  // Every expense this template has generated, newest first — how a
+  // variable-amount recurring bill (electricity, sometimes salaries) gets
+  // reviewed against past cycles, and the way into each occurrence's own
+  // Payments section to record what was actually paid.
+  const openTemplateHistory = async (template) => {
+    setTemplateHistory({ template, expenses: [] });
+    setTemplateHistoryLoading(true);
+    try {
+      const data = await apiGet(`/expenses?recurringTemplateId=${template.id}`, { token: session?.token });
+      setTemplateHistory({ template, expenses: data.expenses });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load this recurring expense’s history.');
+    } finally {
+      setTemplateHistoryLoading(false);
     }
   };
 
@@ -754,9 +810,13 @@ export default function ExpensesPanel() {
   return (
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
-      {generatedNotice && <div className="form-banner form-banner--flash">{generatedNotice}</div>}
 
-      <SectionTabs ariaLabel="Expenses sections" activeId={tab} onChange={setTab} tabs={tabs} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <SectionTabs ariaLabel="Expenses sections" activeId={tab} onChange={setTab} tabs={tabs} />
+        <button type="button" className="btn-secondary" onClick={onViewReport}>
+          View Report
+        </button>
+      </div>
 
       {tab === 'expenses' && (
         <div>
@@ -785,14 +845,6 @@ export default function ExpensesPanel() {
                 </div>
               </div>
 
-              {categoryBarRows.length > 0 && (
-                <div className="analytics-card" style={{ marginBottom: 16 }}>
-                  <div className="analytics-card-head">
-                    <span className="analytics-card-title">Where it's going this year</span>
-                  </div>
-                  <BarList rows={categoryBarRows} formatValue={formatPrice} tone="brand" />
-                </div>
-              )}
             </>
           )}
 
@@ -997,8 +1049,8 @@ export default function ExpensesPanel() {
 
           {(templates || []).length === 0 ? (
             <p className="inv-panel__hint">
-              No recurring expenses set up. Add rent, electricity or any other bill that repeats on a schedule, and
-              it will be logged automatically when it's due.
+              No recurring expenses set up. Add rent, electricity or any other bill that repeats on a schedule — "Log
+              this month" records each occurrence by hand, with its own amount and vendor, once it's actually due.
             </p>
           ) : (
             <ul className="inv-list">
@@ -1007,9 +1059,17 @@ export default function ExpensesPanel() {
                   ? Math.ceil((new Date(template.nextDueDate) - new Date()) / (1000 * 60 * 60 * 24))
                   : null;
                 const dueTagClass = daysUntilDue == null ? '' : daysUntilDue < 0 ? 'inv-tag--bad' : daysUntilDue <= 7 ? 'inv-tag--low' : 'inv-tag--good';
+                const dueLabel =
+                  daysUntilDue == null
+                    ? formatDate(template.nextDueDate)
+                    : daysUntilDue < 0
+                      ? `Overdue since ${formatDate(template.nextDueDate)}`
+                      : daysUntilDue === 0
+                        ? 'Due today'
+                        : `Due in ${daysUntilDue} day${daysUntilDue === 1 ? '' : 's'}`;
                 return (
                   <li key={template.id} className="inv-item">
-                    <div className="inv-item__body" onClick={() => openTemplateForm(template)} style={{ cursor: 'pointer' }}>
+                    <div className="inv-item__body" onClick={() => openTemplateHistory(template)} style={{ cursor: 'pointer' }}>
                       <div className="inv-item__name">
                         {template.title}
                         <span className="inv-tag">{template.categoryName}</span>
@@ -1017,13 +1077,40 @@ export default function ExpensesPanel() {
                         {!template.isActive && <span className="inv-tag inv-tag--off">Paused</span>}
                       </div>
                       <div className="inv-item__meta">
-                        {formatPrice(template.amount)} ·{' '}
-                        <span className={`inv-tag ${dueTagClass}`}>Next due {formatDate(template.nextDueDate)}</span>
-                        {template.vendorName && ` · ${template.vendorName}`}
+                        <span className={`inv-tag ${dueTagClass}`}>{dueLabel}</span>
                       </div>
                     </div>
                     <div className="inv-item__actions">
-                      <button type="button" className="inv-linkbtn" onClick={() => toggleTemplateActive(template)}>
+                      {template.isActive && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openOccurrenceForm(template);
+                          }}
+                        >
+                          Log this month
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="inv-linkbtn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openTemplateForm(template);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="inv-linkbtn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTemplateActive(template);
+                        }}
+                      >
                         {template.isActive ? 'Pause' : 'Resume'}
                       </button>
                     </div>
@@ -1070,9 +1157,9 @@ export default function ExpensesPanel() {
 
       {/* New / edit expense */}
       {showExpenseForm && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowExpenseForm(false)}>
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
-            className="glass-panel inv-panel__modal modal-form__panel"
+            className="glass-panel inv-panel__modal inv-panel__modal--wide modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="expenseModalTitle"
@@ -1082,7 +1169,13 @@ export default function ExpensesPanel() {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3 id="expenseModalTitle">
-                    {viewMode ? expenseForm.title : editingExpenseId ? 'Edit expense' : 'New expense'}
+                    {viewMode
+                      ? expenseForm.title
+                      : loggingTemplate
+                        ? `Log: ${loggingTemplate.title}`
+                        : editingExpenseId
+                          ? 'Edit expense'
+                          : 'New expense'}
                   </h3>
                   <button
                     type="button"
@@ -1096,14 +1189,14 @@ export default function ExpensesPanel() {
                 </div>
               </div>
 
-              <div className="modal-form__body">
+              <div className="modal-form__body modal-form__body--asset">
                 {formError && <div className="form-banner form-banner--error form-banner--flash">{formError}</div>}
 
                 {/* Read-only summary — a row click lands here first, not in
                     the editable form. "Edit details" below switches this
                     same modal into the form beneath. */}
                 {viewMode ? (
-                  <dl className="asset-detail__grid" style={{ marginBottom: 16 }}>
+                  <dl className="asset-detail__grid field--span2" style={{ marginBottom: 16 }}>
                     <div>
                       <dt>Category</dt>
                       <dd>{expenseForm.categoryName || '—'}</dd>
@@ -1145,7 +1238,7 @@ export default function ExpensesPanel() {
                   </dl>
                 ) : (
                   <>
-                    <div className="field">
+                    <div className="field field--span2">
                       <label htmlFor="expenseTitle">
                         Title <Req />
                       </label>
@@ -1178,7 +1271,62 @@ export default function ExpensesPanel() {
                         value={expenseForm.vendorName}
                         vendors={vendors}
                         onChange={(name) => setExpenseForm((f) => ({ ...f, vendorName: name, vendorId: '' }))}
-                        onPick={(vendor) => setExpenseForm((f) => ({ ...f, vendorName: vendor.name, vendorId: String(vendor.id) }))}
+                        onPick={(vendor) =>
+                          setExpenseForm((f) => ({
+                            ...f,
+                            vendorId: String(vendor.id),
+                            vendorName: vendor.name,
+                            vendorContactPerson: vendor.contactPerson || '',
+                            vendorPhone: vendor.phone || '',
+                            vendorEmail: vendor.email || '',
+                            vendorSpecialty: vendor.specialty || '',
+                          }))
+                        }
+                      />
+                      <span className="field__hint">
+                        {expenseForm.vendorId
+                          ? 'Existing vendor — details below are theirs on file.'
+                          : expenseForm.vendorName.trim()
+                            ? 'No match — this will be added as a new vendor.'
+                            : 'Search by name or phone, or type a new vendor.'}
+                      </span>
+                    </div>
+
+                    <div className="field">
+                      <label htmlFor="expenseVendorContact">Vendor contact person</label>
+                      <input
+                        id="expenseVendorContact"
+                        value={expenseForm.vendorContactPerson}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, vendorContactPerson: e.target.value }))}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="expenseVendorPhone">Vendor phone</label>
+                      <input
+                        id="expenseVendorPhone"
+                        value={expenseForm.vendorPhone}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }))}
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        placeholder="10-digit mobile"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="expenseVendorEmail">Vendor email</label>
+                      <input
+                        id="expenseVendorEmail"
+                        value={expenseForm.vendorEmail}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, vendorEmail: e.target.value }))}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="expenseVendorSpecialty">Vendor specialty</label>
+                      <input
+                        id="expenseVendorSpecialty"
+                        value={expenseForm.vendorSpecialty}
+                        onChange={(e) => setExpenseForm((f) => ({ ...f, vendorSpecialty: e.target.value }))}
+                        placeholder="AC service, Electrical, Lift AMC…"
                       />
                     </div>
 
@@ -1433,9 +1581,9 @@ export default function ExpensesPanel() {
 
       {/* New / edit recurring template */}
       {showTemplateForm && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowTemplateForm(false)}>
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
-            className="glass-panel inv-panel__modal modal-form__panel"
+            className="glass-panel inv-panel__modal inv-panel__modal--wide modal-form__panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="templateModalTitle"
@@ -1457,10 +1605,10 @@ export default function ExpensesPanel() {
                 </div>
               </div>
 
-              <div className="modal-form__body">
+              <div className="modal-form__body modal-form__body--asset">
                 {formError && <div className="form-banner form-banner--error form-banner--flash">{formError}</div>}
 
-                <div className="field">
+                <div className="field field--span2">
                   <label htmlFor="templateTitle">
                     Title <Req />
                   </label>
@@ -1484,31 +1632,6 @@ export default function ExpensesPanel() {
                     options={categoryOptions}
                   />
                   <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="templateVendor">Vendor</label>
-                  <VendorField
-                    id="templateVendor"
-                    value={templateForm.vendorName}
-                    vendors={vendors}
-                    onChange={(name) => setTemplateForm((f) => ({ ...f, vendorName: name, vendorId: '' }))}
-                    onPick={(vendor) => setTemplateForm((f) => ({ ...f, vendorName: vendor.name, vendorId: String(vendor.id) }))}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="templateAmount">
-                    Amount <Req />
-                  </label>
-                  <input
-                    id="templateAmount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={templateForm.amount}
-                    onChange={(e) => setTemplateForm((f) => ({ ...f, amount: e.target.value }))}
-                  />
                 </div>
 
                 <div className="field">
@@ -1554,9 +1677,81 @@ export default function ExpensesPanel() {
         </div>
       )}
 
+      {/* Recurring template's occurrence history — every expense it has
+          generated so far, each opening straight into its own Payments
+          section (view mode), the same way a click from the main Expenses
+          list does. */}
+      {templateHistory && (
+        <div className="glass-backdrop inv-panel__backdrop">
+          <div
+            className="glass-panel inv-panel__modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="templateHistoryTitle"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="inv-modal__head">
+              <div>
+                <h3 id="templateHistoryTitle">{templateHistory.template.title}</h3>
+                <p className="inv-modal__sub">
+                  {templateHistory.template.categoryName} · {FREQUENCY_LABEL[templateHistory.template.frequency]}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inv-modal__close"
+                onClick={() => setTemplateHistory(null)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="inv-modal__body">
+              {templateHistoryLoading ? (
+                <p className="inv-panel__hint">Loading…</p>
+              ) : templateHistory.expenses.length === 0 ? (
+                <p className="inv-panel__hint">
+                  Nothing generated yet — the first one lands here once "Next due date" arrives.
+                </p>
+              ) : (
+                <ul className="inv-list">
+                  {templateHistory.expenses.map((expense) => (
+                    <li key={expense.id} className="inv-item">
+                      <div
+                        className="inv-item__body"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setTemplateHistory(null);
+                          openExpenseForm(expense, 'view');
+                        }}
+                      >
+                        <div className="inv-item__name">
+                          {formatDate(expense.expenseDate)}
+                          {PAYMENT_STATUS_LABEL[expense.paymentStatus] && (
+                            <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`}>
+                              {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="inv-item__meta">
+                          {formatPrice(expense.amount)}
+                          {expense.amountPaid < expense.amount &&
+                            ` · ${formatPrice(expense.amountPaid || 0)} paid so far`}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* New / edit vendor — same shared directory Assets uses. */}
       {showVendorForm && (
-        <div className="glass-backdrop inv-panel__backdrop" onClick={() => !submitting && setShowVendorForm(false)}>
+        <div className="glass-backdrop inv-panel__backdrop">
           <div
             className="glass-panel inv-panel__modal modal-form__panel"
             role="dialog"
@@ -1607,7 +1802,11 @@ export default function ExpensesPanel() {
                   <input
                     id="expVendorPhone"
                     value={vendorForm.phone}
-                    onChange={(e) => setVendorForm((f) => ({ ...f, phone: e.target.value }))}
+                    onChange={(e) => setVendorForm((f) => ({ ...f, phone: typedMobile(e.target.value) }))}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile"
                   />
                 </div>
                 <div className="field">

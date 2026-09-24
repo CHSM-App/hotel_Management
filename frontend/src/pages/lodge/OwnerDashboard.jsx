@@ -229,6 +229,24 @@ export default function OwnerDashboard() {
     );
   };
 
+  // "View Report" inside Expenses/Assets — same one-go section+tab move as
+  // openDraftInChart, landing on Reports & Analytics already switched to the
+  // matching tab rather than its default Overview.
+  const openReportsTab = (tabKey) => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'reports');
+        updated.set('tab', tabKey);
+        updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
   // Moving to another section from inside one, as the sidebar would. The
   // register's summary tiles use it to hand a question to the screen that owns
   // the answer.
@@ -637,7 +655,9 @@ export default function OwnerDashboard() {
                 <GuestRegister onOpenDraft={openDraftInChart} onOpenSection={showSection} />
               )}
 
-              {activeFeature && activeFeature.key === 'reports' && <ReportsPanel lodge={me?.lodge} />}
+              {activeFeature && activeFeature.key === 'reports' && (
+                <ReportsPanel lodge={me?.lodge} permissions={permissions} />
+              )}
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 
@@ -650,9 +670,13 @@ export default function OwnerDashboard() {
                 />
               )}
 
-              {activeFeature && activeFeature.key === 'assets' && <AssetsPanel />}
+              {activeFeature && activeFeature.key === 'assets' && (
+                <AssetsPanel onViewReport={() => openReportsTab('assets')} />
+              )}
 
-              {activeFeature && activeFeature.key === 'expenses' && <ExpensesPanel />}
+              {activeFeature && activeFeature.key === 'expenses' && (
+                <ExpensesPanel onViewReport={() => openReportsTab('expenses')} />
+              )}
 
               {activeFeature &&
                 !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'assets', 'expenses'].includes(

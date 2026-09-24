@@ -1,0 +1,87 @@
+/* The Expense Report view opened from "View Report" on the Expenses tab.
+   Reuses .analytics-card/.analytics-grid-2/.kpi-row from AnalyticsCharts.css
+   — this file only carries what's specific to this page: the head bar, the
+   PDF preview frame, the donut's legend, and the payment-status tiles. */
+
+.expense-report {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+}
+
+.expense-report__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.expense-report__title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.expense-report__sub {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.expense-report__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.expense-report__preview-card {
+  margin-bottom: 16px;
+}
+
+.expense-report__preview {
+  width: 100%;
+  height: 70vh;
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.expense-report__donut-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.expense-report__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.expense-report__legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.expense-report__legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.expense-report__legend-value {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--text-muted);
+}

@@ -21,7 +21,7 @@ const {
   listTemplatesHandler,
   createTemplateHandler,
   updateTemplateHandler,
-  generateDueHandler,
+  logOccurrenceHandler,
 } = require('./expenses.controller');
 
 const router = Router();
@@ -42,11 +42,10 @@ router.get('/summary', authenticate, canAccess, getSummaryHandler);
 
 router.get('/recurring', authenticate, canAccess, listTemplatesHandler);
 router.post('/recurring', authenticate, canAccess, createTemplateHandler);
-// Ahead of PATCH '/recurring/:id' for the same reason '/bulk' is ahead of
-// '/:id' on assets — a distinct path, not a param value, so it can never
-// collide with a numeric template id.
-router.post('/recurring/generate-due', authenticate, canAccess, generateDueHandler);
 router.patch('/recurring/:id', authenticate, canAccess, updateTemplateHandler);
+// "Log this month" — one occurrence, entered by hand with its own
+// amount/vendor/payment, not a scheduled generator.
+router.post('/recurring/:id/log', authenticate, canAccess, expenseBillUpload, logOccurrenceHandler);
 
 router.get('/', authenticate, canAccess, listExpensesHandler);
 router.post('/', authenticate, canAccess, expenseBillUpload, createExpenseHandler);

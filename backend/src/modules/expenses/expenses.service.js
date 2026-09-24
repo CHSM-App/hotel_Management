@@ -244,7 +244,7 @@ const EXPENSE_SELECT = `
   LEFT JOIN dbo.vendors v ON v.id = e.vendor_id
 `;
 
-async function listExpenses(lodgeId, { categoryId, vendorId, assetId, from, to } = {}) {
+async function listExpenses(lodgeId, { categoryId, vendorId, assetId, recurringTemplateId, from, to } = {}) {
   const pool = await getPool();
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
   let filter = '';
@@ -261,6 +261,12 @@ async function listExpenses(lodgeId, { categoryId, vendorId, assetId, from, to }
   if (assetId) {
     request.input('assetId', sql.BigInt, assetId);
     filter += ' AND e.asset_id = @assetId';
+  }
+  // The Recurring tab's own "occurrence history" — every expense a given
+  // template has generated so far, oldest bill to newest.
+  if (recurringTemplateId) {
+    request.input('recurringTemplateId', sql.BigInt, recurringTemplateId);
+    filter += ' AND e.recurring_template_id = @recurringTemplateId';
   }
   if (from) {
     request.input('from', sql.Date, from);
@@ -319,6 +325,7 @@ async function createExpense(lodgeId, input, userId, billFilename) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('categoryId', sql.BigInt, input.categoryId)
     .input('vendorId', sql.BigInt, input.vendorId ?? null)
+    .input('recurringTemplateId', sql.BigInt, input.recurringTemplateId ?? null)
     .input('title', sql.NVarChar, input.title)
     .input('description', sql.NVarChar, toNullable(input.description))
     .input('amount', sql.Decimal(12, 2), input.amount)
@@ -328,12 +335,12 @@ async function createExpense(lodgeId, input, userId, billFilename) {
     .input('createdBy', sql.BigInt, userId ?? null)
     .query(`
       INSERT INTO dbo.expenses
-        (lodge_id, category_id, vendor_id, title, description, amount, payment_method,
-         expense_date, bill_document, created_by)
+        (lodge_id, category_id, vendor_id, recurring_template_id, title, description, amount,
+         payment_method, expense_date, bill_document, created_by)
       OUTPUT inserted.id
       VALUES
-        (@lodgeId, @categoryId, @vendorId, @title, @description, @amount, @paymentMethod,
-         @expenseDate, @billDocument, @createdBy)
+        (@lodgeId, @categoryId, @vendorId, @recurringTemplateId, @title, @description, @amount,
+         @paymentMethod, @expenseDate, @billDocument, @createdBy)
     `);
 
   const expenseId = result.recordset[0].id;
@@ -512,9 +519,9 @@ async function getMonthlySummary(lodgeId, year) {
 //
 // Called from assets.service.js when an asset purchase, a work order close,
 // or a coverage/AMC renewal carries a cost — so that spend logged in the
-// Assets tab shows up in the Expenses tab without being typed twice. Same
-// "auto-generate a real expenses row" model as generateDueExpenses(), with
-// asset_id as the origin marker instead of recurring_template_id.
+// Assets tab shows up in the Expenses tab without being typed twice.
+// asset_id here plays the same "origin marker" role recurring_template_id
+// plays on a logged occurrence (see logRecurringOccurrence).
 //
 // Never throws: a lodge mid-transaction in assets.service.js shouldn't fail
 // to save the asset/work order because expense-logging hit a snag. Errors
@@ -598,10 +605,7 @@ function mapTemplate(row) {
     id: row.id,
     categoryId: row.category_id,
     categoryName: row.category_name,
-    vendorId: row.vendor_id,
-    vendorName: row.vendor_name ?? null,
     title: row.title,
-    amount: Number(row.amount),
     frequency: row.frequency,
     nextDueDate: row.next_due_date,
     isActive: !!row.is_active,
@@ -609,11 +613,10 @@ function mapTemplate(row) {
 }
 
 const TEMPLATE_SELECT = `
-  SELECT t.id, t.category_id, c.name AS category_name, t.vendor_id, v.name AS vendor_name,
-         t.title, t.amount, t.frequency, t.next_due_date, t.is_active
+  SELECT t.id, t.category_id, c.name AS category_name,
+         t.title, t.frequency, t.next_due_date, t.is_active
   FROM dbo.expense_recurring_templates t
   JOIN dbo.expense_categories c ON c.id = t.category_id
-  LEFT JOIN dbo.vendors v ON v.id = t.vendor_id
 `;
 
 async function listTemplates(lodgeId, { includeInactive = false } = {}) {
@@ -637,17 +640,15 @@ async function createTemplate(lodgeId, input) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('categoryId', sql.BigInt, input.categoryId)
-    .input('vendorId', sql.BigInt, input.vendorId ?? null)
     .input('title', sql.NVarChar, input.title)
-    .input('amount', sql.Decimal(12, 2), input.amount)
     .input('frequency', sql.NVarChar, input.frequency)
     .input('nextDueDate', sql.Date, input.nextDueDate)
     .query(`
       INSERT INTO dbo.expense_recurring_templates
-        (lodge_id, category_id, vendor_id, title, amount, frequency, next_due_date)
+        (lodge_id, category_id, title, frequency, next_due_date)
       OUTPUT inserted.id
       VALUES
-        (@lodgeId, @categoryId, @vendorId, @title, @amount, @frequency, @nextDueDate)
+        (@lodgeId, @categoryId, @title, @frequency, @nextDueDate)
     `);
 
   const templates = await listTemplates(lodgeId, { includeInactive: true });
@@ -673,9 +674,7 @@ async function updateTemplate(lodgeId, templateId, input) {
 
   const next = {
     categoryId: input.categoryId !== undefined ? input.categoryId : existing.categoryId,
-    vendorId: input.vendorId !== undefined ? input.vendorId : existing.vendorId,
     title: input.title !== undefined ? input.title : existing.title,
-    amount: input.amount !== undefined ? input.amount : existing.amount,
     frequency: input.frequency !== undefined ? input.frequency : existing.frequency,
     nextDueDate: input.nextDueDate !== undefined ? input.nextDueDate : existing.nextDueDate,
     isActive: input.isActive !== undefined ? input.isActive : existing.isActive,
@@ -686,15 +685,13 @@ async function updateTemplate(lodgeId, templateId, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('templateId', sql.BigInt, templateId)
     .input('categoryId', sql.BigInt, next.categoryId)
-    .input('vendorId', sql.BigInt, next.vendorId ?? null)
     .input('title', sql.NVarChar, next.title)
-    .input('amount', sql.Decimal(12, 2), next.amount)
     .input('frequency', sql.NVarChar, next.frequency)
     .input('nextDueDate', sql.Date, next.nextDueDate)
     .input('isActive', sql.Bit, next.isActive)
     .query(`
       UPDATE dbo.expense_recurring_templates
-      SET category_id = @categoryId, vendor_id = @vendorId, title = @title, amount = @amount,
+      SET category_id = @categoryId, title = @title,
           frequency = @frequency, next_due_date = @nextDueDate, is_active = @isActive
       OUTPUT inserted.id
       WHERE id = @templateId AND lodge_id = @lodgeId
@@ -716,86 +713,38 @@ function frequencyToSqlUnit(frequency) {
   return 'year';
 }
 
-// Turns every template whose next_due_date has arrived into a logged
-// expense, then advances it — called whenever the panel loads rather than
-// on a schedule, since nothing in this codebase runs a background job today
-// (see assets.service.js's allocateAssetTag comment on avoiding new
-// infrastructure). One template at a time in its own transaction, so one bad
-// row can't roll back the others.
-async function generateDueExpenses(lodgeId) {
+// The desk's own "log this month" action — nothing generates on its own.
+// Creates a normal expense (same shape/validation as the plain "New
+// expense" form — amount, vendor, payment status, everything is typed here,
+// not inherited from the template) linked back via recurring_template_id,
+// then advances next_due_date by the template's frequency. One transaction:
+// a due-date advance with no expense behind it (or the reverse) is worse
+// than the whole thing failing together.
+async function logRecurringOccurrence(lodgeId, templateId, input, userId, billFilename) {
   const pool = await getPool();
-  const due = await pool
+  const template = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query(`
-      SELECT id, category_id, vendor_id, title, amount, frequency, next_due_date
-      FROM dbo.expense_recurring_templates
-      WHERE lodge_id = @lodgeId AND is_active = 1 AND next_due_date <= CAST(SYSDATETIMEOFFSET() AS DATE)
-    `);
-
-  const generated = [];
-  for (const row of due.recordset) {
-    const transaction = new sql.Transaction(pool);
-    await transaction.begin();
-    try {
-      const insertResult = await new sql.Request(transaction)
-        .input('lodgeId', sql.BigInt, lodgeId)
-        .input('categoryId', sql.BigInt, row.category_id)
-        .input('vendorId', sql.BigInt, row.vendor_id)
-        .input('templateId', sql.BigInt, row.id)
-        .input('title', sql.NVarChar, row.title)
-        .input('amount', sql.Decimal(12, 2), row.amount)
-        .input('expenseDate', sql.Date, row.next_due_date)
-        .query(`
-          INSERT INTO dbo.expenses
-            (lodge_id, category_id, vendor_id, recurring_template_id, title, amount,
-             payment_method, expense_date)
-          OUTPUT inserted.id
-          VALUES
-            (@lodgeId, @categoryId, @vendorId, @templateId, @title, @amount, 'CASH', @expenseDate)
-        `);
-
-      // Generated already paid, in full, by cash — same assumption the old
-      // single-status model made for every auto-generated recurring row.
-      // amount_paid/payment_status are written directly here (rather than
-      // through recalcExpensePaymentStatus) because the values are already
-      // known and this has to stay inside the one transaction.
-      await new sql.Request(transaction)
-        .input('expenseId', sql.BigInt, insertResult.recordset[0].id)
-        .input('amount', sql.Decimal(12, 2), row.amount)
-        .input('paidDate', sql.Date, row.next_due_date)
-        .query(`
-          INSERT INTO dbo.expense_payments (expense_id, amount, payment_method, paid_date)
-          VALUES (@expenseId, @amount, 'CASH', @paidDate)
-        `);
-      await new sql.Request(transaction)
-        .input('expenseId', sql.BigInt, insertResult.recordset[0].id)
-        .input('amount', sql.Decimal(12, 2), row.amount)
-        .query(`
-          UPDATE dbo.expenses SET amount_paid = @amount, payment_status = 'PAID'
-          WHERE id = @expenseId
-        `);
-
-      await new sql.Request(transaction)
-        .input('lodgeId', sql.BigInt, lodgeId)
-        .input('templateId', sql.BigInt, row.id)
-        .input('unit', sql.NVarChar, frequencyToSqlUnit(row.frequency))
-        .query(`
-          UPDATE dbo.expense_recurring_templates
-          SET next_due_date = DATEADD(month, CASE @unit WHEN 'month' THEN 1 WHEN 'quarter' THEN 3 ELSE 12 END, next_due_date)
-          WHERE id = @templateId AND lodge_id = @lodgeId
-        `);
-
-      await transaction.commit();
-      generated.push(insertResult.recordset[0].id);
-    } catch (err) {
-      await transaction.rollback();
-      // One template failing to generate (a category deleted out from under
-      // it, say) shouldn't stop the rest from being logged.
-    }
+    .input('templateId', sql.BigInt, templateId)
+    .query('SELECT id, frequency, next_due_date FROM dbo.expense_recurring_templates WHERE id = @templateId AND lodge_id = @lodgeId');
+  if (template.recordset.length === 0) {
+    throw new ApiError('Recurring expense not found.', 404);
   }
 
-  return Promise.all(generated.map((id) => getExpense(lodgeId, id)));
+  const expense = await createExpense(lodgeId, { ...input, recurringTemplateId: templateId }, userId, billFilename);
+
+  await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('templateId', sql.BigInt, templateId)
+    .input('unit', sql.NVarChar, frequencyToSqlUnit(template.recordset[0].frequency))
+    .query(`
+      UPDATE dbo.expense_recurring_templates
+      SET next_due_date = DATEADD(month, CASE @unit WHEN 'month' THEN 1 WHEN 'quarter' THEN 3 ELSE 12 END, next_due_date)
+      WHERE id = @templateId AND lodge_id = @lodgeId
+    `);
+
+  return expense;
 }
 
 module.exports = {
@@ -816,6 +765,6 @@ module.exports = {
   listTemplates,
   createTemplate,
   updateTemplate,
-  generateDueExpenses,
+  logRecurringOccurrence,
   logAssetExpense,
 };
