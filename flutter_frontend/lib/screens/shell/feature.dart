@@ -125,6 +125,26 @@ const kFeatures = <Feature>[
     permission: 'events.manage',
     capability: 'hasEvents',
   ),
+  // Same web module (AssetsPanel.jsx): register, work orders and warranty/AMC
+  // coverage for the property's physical assets. No capability gate — every
+  // property type has physical assets to track, same as the web sidebar entry.
+  Feature(
+    key: 'assets',
+    title: 'Asset inventory',
+    tabLabel: 'Assets',
+    icon: Icons.inventory_2_rounded,
+    permission: 'assets.manage',
+  ),
+  // Same web module (ExpensesPanel.jsx): log spends, recurring schedules and
+  // the monthly/by-category summary. No capability gate — every property has
+  // operating expenses, same as the web sidebar entry.
+  Feature(
+    key: 'expenses',
+    title: 'Expenses',
+    tabLabel: 'Expenses',
+    icon: Icons.receipt_long_rounded,
+    permission: 'expenses.manage',
+  ),
   // Feature(
   //   key: 'staff',
   //   title: 'Staff & roles',

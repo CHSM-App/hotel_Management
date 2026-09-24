@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../view_models/assets_viewmodel.dart';
 import '../view_models/auth_viewmodel.dart';
 import '../view_models/booking_viewmodel.dart';
 import '../view_models/billing_viewmodel.dart';
 import '../view_models/events_viewmodel.dart';
+import '../view_models/expenses_viewmodel.dart';
 import '../view_models/food_settings_viewmodel.dart';
 import '../view_models/inventory_viewmodel.dart';
 import '../view_models/menu_viewmodel.dart';
@@ -85,4 +87,17 @@ final foodSettingsViewModelProvider =
 final eventsViewModelProvider =
     StateNotifierProvider.autoDispose<EventsViewModel, EventsState>(
       (ref) => EventsViewModel(ref.watch(eventsUsecaseProvider)),
+    );
+
+/// Asset inventory. Behind "More" like Events — autoDispose so a login that
+/// never opens it never keeps this section's state warm.
+final assetsViewModelProvider =
+    StateNotifierProvider.autoDispose<AssetsViewModel, AssetsState>(
+      (ref) => AssetsViewModel(ref.watch(assetsUsecaseProvider)),
+    );
+
+/// Expense tracking. Same treatment as Assets.
+final expensesViewModelProvider =
+    StateNotifierProvider.autoDispose<ExpensesViewModel, ExpensesState>(
+      (ref) => ExpensesViewModel(ref.watch(expensesUsecaseProvider)),
     );

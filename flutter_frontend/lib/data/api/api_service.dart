@@ -2,10 +2,12 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import '../../domain/models/asset.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/event_booking.dart';
+import '../../domain/models/expense.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/guest_match.dart';
 import '../../domain/models/inventory.dart';
@@ -1322,6 +1324,283 @@ class ApiService {
     return AdvanceReceipt.fromJson(
       receipt is Map<String, dynamic> ? receipt : map,
     );
+  }
+
+  // ===== ASSETS (assets.manage) =====
+
+  Future<List<AssetCategory>> assetCategories() async {
+    final res = await _dio.get('/assets/categories');
+    return (_map(res.data)['categories'] as List? ?? [])
+        .map((e) => AssetCategory.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createAssetCategory(String name) async {
+    await _dio.post('/assets/categories', data: {'name': name});
+  }
+
+  /// dbo.vendors is a directory shared with Expenses — this and
+  /// [expenseVendors] hit the same rows through each module's own route so
+  /// neither repository has to reach across into the other's.
+  Future<List<Vendor>> assetVendors({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/assets/vendors',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['vendors'] as List? ?? [])
+        .map((e) => Vendor.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> createAssetVendor(Map<String, dynamic> body) async {
+    await _dio.post('/assets/vendors', data: body);
+  }
+
+  Future<void> updateAssetVendor(int id, Map<String, dynamic> body) async {
+    await _dio.patch('/assets/vendors/$id', data: body);
+  }
+
+  Future<List<Asset>> assets({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/assets',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['assets'] as List? ?? [])
+        .map((e) => Asset.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Asset> asset(int id) async {
+    final res = await _dio.get('/assets/$id');
+    return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
+  }
+
+  /// Resolves a scanned sticker to its asset.
+  Future<Asset> assetByQr(String token) async {
+    final res = await _dio.get('/assets/qr/$token');
+    return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
+  }
+
+  /// Register one unit. Multipart for the bill photo, the same way
+  /// [createRoom] carries room photos.
+  Future<Asset> createAsset(FormData form) async {
+    final res = await _dio.post('/assets', data: form);
+    return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
+  }
+
+  /// One purchase landing as several units — see bulkAssetSchema on the
+  /// server. `units` travels as a JSON-encoded string field inside the same
+  /// multipart body the bill photo rides on.
+  Future<List<Asset>> createAssetsBulk(FormData form) async {
+    final res = await _dio.post('/assets/bulk', data: form);
+    return (_map(res.data)['assets'] as List? ?? [])
+        .map((e) => Asset.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Asset> updateAsset(int id, FormData form) async {
+    final res = await _dio.patch('/assets/$id', data: form);
+    return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
+  }
+
+  Future<Asset> setAssetStatus(int id, String status) async {
+    final res = await _dio.patch('/assets/$id/status', data: {'status': status});
+    return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
+  }
+
+  /// Soft-delete — the server flips is_active rather than dropping the row.
+  Future<void> deleteAsset(int id) async {
+    await _dio.delete('/assets/$id');
+  }
+
+  /// The bill photo, behind the same authenticated-bytes door
+  /// [idProof]/[guestIdProof] use — this route needs the auth header, so it
+  /// cannot be hit as a bare `Image.network` url.
+  Future<Response<List<int>>> assetBill(int id) => _dio.get<List<int>>(
+    '/assets/$id/bill',
+    options: Options(responseType: ResponseType.bytes),
+  );
+
+  Future<List<CoveragePeriod>> assetCoverage(int assetId) async {
+    final res = await _dio.get('/assets/$assetId/coverage');
+    return (_map(res.data)['periods'] as List? ?? [])
+        .map((e) => CoveragePeriod.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<CoveragePeriod> addAssetCoverage(int assetId, Map<String, dynamic> body) async {
+    final res = await _dio.post('/assets/$assetId/coverage', data: body);
+    return CoveragePeriod.fromJson(_map(res.data)['period'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAssetCoverage(int assetId, int periodId) async {
+    await _dio.delete('/assets/$assetId/coverage/$periodId');
+  }
+
+  Future<List<WorkOrder>> workOrders({int? assetId, String? status}) async {
+    final res = await _dio.get(
+      '/assets/work-orders',
+      queryParameters: {
+        if (assetId != null) 'assetId': assetId,
+        if (status != null) 'status': status,
+      },
+    );
+    return (_map(res.data)['workOrders'] as List? ?? [])
+        .map((e) => WorkOrder.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<WorkOrder> createWorkOrder(Map<String, dynamic> body) async {
+    final res = await _dio.post('/assets/work-orders', data: body);
+    return WorkOrder.fromJson(_map(res.data)['workOrder'] as Map<String, dynamic>);
+  }
+
+  /// One visit covering every asset in a category — "service all the ACs".
+  Future<List<WorkOrder>> createWorkOrdersBulk(Map<String, dynamic> body) async {
+    final res = await _dio.post('/assets/work-orders/bulk', data: body);
+    return (_map(res.data)['workOrders'] as List? ?? [])
+        .map((e) => WorkOrder.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<WorkOrder> updateWorkOrder(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/assets/work-orders/$id', data: body);
+    return WorkOrder.fromJson(_map(res.data)['workOrder'] as Map<String, dynamic>);
+  }
+
+  // ===== EXPENSES (expenses.manage) =====
+
+  Future<List<ExpenseCategory>> expenseCategories({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/expenses/categories',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['categories'] as List? ?? [])
+        .map((e) => ExpenseCategory.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Answers with the created row — resolveCategoryId (the create-on-first-use
+  /// flow the expense/recurring forms both run, mirroring resolveCategoryId
+  /// in ExpensesPanel.jsx) needs the new id straight back, not a reload.
+  Future<ExpenseCategory> createExpenseCategory(String name) async {
+    final res = await _dio.post('/expenses/categories', data: {'name': name});
+    return ExpenseCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
+  }
+
+  Future<void> updateExpenseCategory(int id, {String? name, bool? isActive}) async {
+    await _dio.patch(
+      '/expenses/categories/$id',
+      data: {
+        if (name != null) 'name': name,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+  }
+
+  /// Same dbo.vendors directory [assetVendors] reads, through the Expenses
+  /// module's own route.
+  Future<List<Vendor>> expenseVendors({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/expenses/vendors',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['vendors'] as List? ?? [])
+        .map((e) => Vendor.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Answers with the created row — same reason [createExpenseCategory]
+  /// does: resolveVendorId needs the new id straight back.
+  Future<Vendor> createExpenseVendor(Map<String, dynamic> body) async {
+    final res = await _dio.post('/expenses/vendors', data: body);
+    return Vendor.fromJson(_map(res.data)['vendor'] as Map<String, dynamic>);
+  }
+
+  Future<void> updateExpenseVendor(int id, Map<String, dynamic> body) async {
+    await _dio.patch('/expenses/vendors/$id', data: body);
+  }
+
+  Future<List<Expense>> expenses({
+    int? categoryId,
+    int? vendorId,
+    String? from,
+    String? to,
+  }) async {
+    final res = await _dio.get(
+      '/expenses',
+      queryParameters: {
+        if (categoryId != null) 'categoryId': categoryId,
+        if (vendorId != null) 'vendorId': vendorId,
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+      },
+    );
+    return (_map(res.data)['expenses'] as List? ?? [])
+        .map((e) => Expense.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Expense> expense(int id) async {
+    final res = await _dio.get('/expenses/$id');
+    return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
+  }
+
+  /// Log a spend. Multipart for the receipt photo, same as [createAsset].
+  Future<Expense> createExpense(FormData form) async {
+    final res = await _dio.post('/expenses', data: form);
+    return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
+  }
+
+  Future<Expense> updateExpense(int id, FormData form) async {
+    final res = await _dio.patch('/expenses/$id', data: form);
+    return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteExpense(int id) async {
+    await _dio.delete('/expenses/$id');
+  }
+
+  /// The receipt photo, behind the same authenticated-bytes door
+  /// [assetBill] uses.
+  Future<Response<List<int>>> expenseBill(int id) => _dio.get<List<int>>(
+    '/expenses/$id/bill',
+    options: Options(responseType: ResponseType.bytes),
+  );
+
+  Future<ExpenseSummary> expenseSummary({int? year}) async {
+    final res = await _dio.get(
+      '/expenses/summary',
+      queryParameters: {if (year != null) 'year': year},
+    );
+    return ExpenseSummary.fromJson(_map(res.data)['summary'] as Map<String, dynamic>);
+  }
+
+  Future<List<RecurringTemplate>> recurringTemplates({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/expenses/recurring',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['templates'] as List? ?? [])
+        .map((e) => RecurringTemplate.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<RecurringTemplate> createRecurringTemplate(Map<String, dynamic> body) async {
+    final res = await _dio.post('/expenses/recurring', data: body);
+    return RecurringTemplate.fromJson(_map(res.data)['template'] as Map<String, dynamic>);
+  }
+
+  Future<RecurringTemplate> updateRecurringTemplate(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/expenses/recurring/$id', data: body);
+    return RecurringTemplate.fromJson(_map(res.data)['template'] as Map<String, dynamic>);
+  }
+
+  /// Turns every template whose nextDueDate has arrived into a real expense
+  /// row — answers with how many were generated.
+  Future<int> generateDueExpenses() async {
+    final res = await _dio.post('/expenses/recurring/generate-due');
+    return asInt(_map(res.data)['generated']);
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

@@ -5,10 +5,12 @@ import '../../domain/models/me.dart';
 import '../../presentation/providers/network_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../assets/assets_screen.dart';
 import '../billing/billing_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
 import '../events/events_screen.dart';
+import '../expenses/expenses_screen.dart';
 import '../food/menu_setup_screen.dart';
 import '../food/orders_screen.dart';
 import '../placeholder_screen.dart';
@@ -133,6 +135,10 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         screen = const MenuSetupScreen();
       case 'events':
         screen = const EventsScreen();
+      case 'assets':
+        screen = const AssetsScreen();
+      case 'expenses':
+        screen = const ExpensesScreen();
       // case 'reports':
       //   screen = const ReportsScreen();
       default:
