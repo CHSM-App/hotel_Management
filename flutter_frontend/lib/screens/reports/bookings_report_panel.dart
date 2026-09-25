@@ -95,11 +95,8 @@ class _BookingCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   b.guestName ?? 'Guest',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               StatusBadge(status: b.status, label: kBookingStatusLabel[b.status] ?? b.status),
@@ -107,7 +104,7 @@ class _BookingCard extends StatelessWidget {
           ),
           if (b.guestPhone != null) ...[
             const SizedBox(height: 2),
-            Text(b.guestPhone!, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+            Text(b.guestPhone!, style: Theme.of(context).textTheme.bodySmall),
           ],
           const SizedBox(height: AppTheme.s12),
           Row(
@@ -201,12 +198,25 @@ class _Field extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500)),
+        Text(
+          value,
+          style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
         if (sub != null) ...[
           const SizedBox(height: 1),
-          Text(sub!, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+          Text(
+            sub!,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ],
     );

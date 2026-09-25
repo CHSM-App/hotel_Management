@@ -199,7 +199,7 @@ class BookingActions {
               'This guest is ${late.lateLabel ?? 'late'}. '
               'The policy suggests ${late.bandLabel.toLowerCase()} at '
               '${late.percent}% of ${formatPrice(late.lastNightRate)}.',
-              style: const TextStyle(color: AppTheme.text, fontSize: 13),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppTheme.s16),
             NeuField(

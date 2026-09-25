@@ -129,7 +129,7 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
                     const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
                     const SizedBox(width: AppTheme.s8),
                     Expanded(
-                      child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
+                      child: Text(_error!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger)),
                     ),
                   ],
                 ),
@@ -166,9 +166,10 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
                     required: true,
                     errorText: _nameError,
                     onChanged: (_) => setState(() {}),
+                    forceCapitalizeWords: true,
                   ),
                   const SizedBox(height: AppTheme.s8),
-                  const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+                  Text('Type', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -205,7 +206,7 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
                     maxLength: 300,
                   ),
                   const SizedBox(height: AppTheme.s8),
-                  const Text('Photo', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+                  Text('Photo', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   _photoPicker(),
                 ],
@@ -270,11 +271,11 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
                       required: true,
                     )
                   else
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: AppTheme.s4),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppTheme.s4),
                       child: Text(
                         'The dish is ordered by size — the price above is not charged.',
-                        style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                   const SizedBox(height: AppTheme.s8),

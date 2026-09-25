@@ -444,9 +444,9 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                       Expanded(
                         child: Column(
                           children: [
-                            NeuField(controller: _brand, label: 'Brand / model', hint: 'Brand'),
+                            NeuField(controller: _brand, label: 'Brand / model', hint: 'Brand', forceCapitalizeWords: true),
                             const SizedBox(height: AppTheme.s8),
-                            NeuField(controller: _model, label: '', hint: 'Model'),
+                            NeuField(controller: _model, label: '', hint: 'Model', forceCapitalizeWords: true),
                           ],
                         ),
                       ),
@@ -622,6 +622,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                       errorText: _nameError,
                       focusNode: _nameFocus,
                       onChanged: (_) => setState(() {}),
+                      forceCapitalizeWords: true,
                     ),
                     if (_isEdit) ...[
                       const SizedBox(height: AppTheme.s12),
@@ -696,7 +697,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Expanded(child: Text('Unit ${i + 1}', style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13))),
+                                  Expanded(child: Text('Unit ${i + 1}', style: Theme.of(context).textTheme.titleSmall)),
                                   if (_units.length > 1)
                                     IconButton(
                                       icon: const Icon(Icons.close_rounded, size: 18),
@@ -729,6 +730,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                                 label: 'Name (auto-filled)',
                                 hint: 'Split AC 1.5T · Room 101',
                                 onChanged: (_) => setState(() {}),
+                                forceCapitalizeWords: true,
                               ),
                               const SizedBox(height: AppTheme.s8),
                               NeuField(controller: _units[i].serialNumber, label: 'Serial number (optional)'),

@@ -31,7 +31,7 @@ class PlaceholderScreen extends StatelessWidget {
         shadow: AppTheme.subtle,
         child: Text(
           'Needs: ${feature.permission}',
-          style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ),
     );

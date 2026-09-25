@@ -184,7 +184,7 @@ class _SectionBody extends ConsumerWidget {
                       spacing: 8,
                       children: [
                         Text('${section.items.length} dish${section.items.length == 1 ? '' : 'es'}',
-                            style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                            style: Theme.of(context).textTheme.bodySmall),
                         if (vegItems.isNotEmpty) _CountChip(count: vegItems.length, label: 'veg', color: AppTheme.vacant),
                         if (eggItems.isNotEmpty) _CountChip(count: eggItems.length, label: 'egg', color: AppTheme.draft),
                         if (nonVegItems.isNotEmpty) _CountChip(count: nonVegItems.length, label: 'non-veg', color: AppTheme.danger),
@@ -228,9 +228,9 @@ class _SectionBody extends ConsumerWidget {
         ),
         const SizedBox(height: AppTheme.s8),
         if (section.items.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
-            child: Text('Nothing in this section yet.', style: TextStyle(color: AppTheme.muted)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
+            child: Text('Nothing in this section yet.', style: Theme.of(context).textTheme.bodyMedium),
           )
         else ...[
           if (vegItems.isNotEmpty) _FoodTypeGroup(label: 'Veg', color: AppTheme.vacant, items: vegItems, sections: allSections),
@@ -275,7 +275,7 @@ class _CountChip extends StatelessWidget {
       children: [
         Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 4),
-        Text('$count $label', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+        Text('$count $label', style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }
@@ -457,7 +457,7 @@ class _DishCard extends ConsumerWidget {
                 item.description!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
           Padding(
@@ -674,6 +674,7 @@ class _SectionFormDialogState extends ConsumerState<_SectionFormDialog> {
                 hint: 'Thali',
                 required: true,
                 onChanged: (_) => setState(() {}),
+                forceCapitalizeWords: true,
               ),
               if (_suggestionsOpen && _suggestions.isNotEmpty)
                 Container(

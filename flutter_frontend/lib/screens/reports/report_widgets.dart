@@ -62,16 +62,16 @@ class StatGrid extends StatelessWidget {
                 children: [
                   Text(
                     item.label,
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     item.value,
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       color: item.accent ? AppTheme.accent : AppTheme.heading,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -102,7 +102,11 @@ class StatusBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

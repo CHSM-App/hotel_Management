@@ -225,7 +225,7 @@ class _EventCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         event.title,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14.5),
+                        style: Theme.of(context).textTheme.titleSmall,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -243,20 +243,36 @@ class _EventCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '${kEventTypeLabel[event.eventType] ?? event.eventType} · ${event.venueName}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${formatDateTime(event.startAt)} · ${event.organiserName}',
-                  style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.text),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Text(formatPrice(event.totalAmount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13)),
+                    Flexible(
+                      child: Text(
+                        formatPrice(event.totalAmount),
+                        style: Theme.of(context).textTheme.titleSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                     if (event.balanceDue > 0) ...[
                       const SizedBox(width: 8),
-                      Text('Balance ${formatPrice(event.balanceDue)}', style: const TextStyle(color: AppTheme.danger, fontSize: 11)),
+                      Flexible(
+                        child: Text(
+                          'Balance ${formatPrice(event.balanceDue)}',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.danger),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ],
                 ),

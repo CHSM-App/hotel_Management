@@ -131,6 +131,7 @@ class _TableCard extends ConsumerWidget {
                       table.label,
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17),
                       textAlign: TextAlign.center,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -157,7 +158,7 @@ class _TableCard extends ConsumerWidget {
                       style: const TextStyle(color: AppTheme.text, fontWeight: FontWeight.w600, fontSize: 11),
                     ),
                   )
-                : const Text('Seats not set', style: TextStyle(color: AppTheme.muted, fontSize: 11)),
+                : Text('Seats not set', style: Theme.of(context).textTheme.labelSmall),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: AppTheme.s8),
@@ -416,6 +417,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                       required: true,
                       errorText: _labelError,
                       onChanged: (_) => setState(() {}),
+                      forceCapitalizeWords: true,
                     )
                   else ...[
                     NeuField(controller: _prefix, label: 'Name starts with', hint: 'T'),

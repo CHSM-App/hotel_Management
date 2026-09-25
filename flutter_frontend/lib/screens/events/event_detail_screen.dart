@@ -199,7 +199,12 @@ class _Header extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(event.title, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 17)),
+                child: Text(
+                  event.title,
+                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 17),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -285,7 +290,13 @@ class _QuoteCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
-                  Expanded(child: Text(l.note != null ? '${l.label} (${l.note})' : l.label, style: const TextStyle(color: AppTheme.text, fontSize: 12))),
+                  Expanded(
+                    child: Text(
+                      l.note != null ? '${l.label} (${l.note})' : l.label,
+                      style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   Text(formatPrice(l.amount), style: const TextStyle(color: AppTheme.text, fontSize: 12)),
                 ],
               ),
@@ -310,7 +321,13 @@ class _QuoteCard extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(
       children: [
-        Expanded(child: Text(label, style: TextStyle(color: color ?? AppTheme.text, fontWeight: bold ? FontWeight.w700 : FontWeight.w500, fontSize: bold ? 13 : 12))),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(color: color ?? AppTheme.text, fontWeight: bold ? FontWeight.w700 : FontWeight.w500, fontSize: bold ? 13 : 12),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         Text(value, style: TextStyle(color: color ?? (bold ? AppTheme.heading : AppTheme.text), fontWeight: bold ? FontWeight.w700 : FontWeight.w500, fontSize: bold ? 13 : 12)),
       ],
     ),
@@ -360,7 +377,13 @@ class _HeadCountCard extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12))),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 12, fontWeight: FontWeight.w500)),
       ],
     ),
@@ -486,7 +509,7 @@ class _ExtrasCardState extends ConsumerState<_ExtrasCard> {
             const SizedBox(height: 6),
             Row(
               children: [
-                Expanded(child: NeuField(controller: _label, label: '', hint: 'Extra asked for')),
+                Expanded(child: NeuField(controller: _label, label: '', hint: 'Extra asked for', forceCapitalizeWords: true)),
                 const SizedBox(width: 6),
                 SizedBox(width: 46, child: NeuField(controller: _quantity, label: '', keyboardType: TextInputType.number)),
                 const SizedBox(width: 6),
@@ -628,6 +651,7 @@ class _AdvancesCardState extends State<_AdvancesCard> {
                     child: Text(
                       '${r.receiptNumber ?? '#${r.id}'} · ${formatIsoDate(r.createdAt)}${r.isVoid ? ' · void' : ''}',
                       style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),

@@ -82,7 +82,9 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
               child: SafeArea(
                 top: fullScreen,
                 bottom: false,
-                child: _body(state.isLoading, state.error, me),
+                child: _ResponsiveBody(
+                  child: _body(state.isLoading, state.error, me),
+                ),
               ),
             ),
           ],
@@ -256,53 +258,171 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
 }
 
+/// Caps a section's width and centers it once the surface is wider than a
+/// phone — a tablet or the desktop/web build — instead of stretching every
+/// list and form full-bleed the way a phone screen naturally does.
+class _ResponsiveBody extends StatelessWidget {
+  final Widget child;
+
+  const _ResponsiveBody({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppTheme.isCompact(context)) return child;
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+        child: child,
+      ),
+    );
+  }
+}
+
 /// The body shown for the "More" tab: the features that didn't fit on the
 /// bottom bar, listed the same way any other section fills this space —
 /// tapping one just switches `_section` like any other tab does, rather than
 /// opening a sheet or pushing a page.
+///
+/// Grouped into a single card with hairline dividers between rows rather than
+/// one shadowed card per feature — a phone's settings list, not a stack of
+/// tiles — so the list reads as one calm surface instead of repeating the
+/// same shadow five times. On a tablet/desktop width there's room to spare,
+/// so it switches to a two-column grid of its own small cards instead.
 class _MoreList extends StatelessWidget {
   final List<Feature> features;
   final ValueChanged<String> onSelect;
 
   const _MoreList({required this.features, required this.onSelect});
 
+  /// A distinct tint per feature so the list has some colour to it rather
+  /// than five identical accent-purple icons in a row — purely decorative,
+  /// picked from tones already in [AppTheme] so nothing new is introduced.
+  static const _tints = {
+    'rooms': AppTheme.accent,
+    'menu': AppTheme.checkout,
+    'events': AppTheme.reserved,
+    'assets': AppTheme.edit,
+    'expenses': AppTheme.draft,
+  };
+
+  Color _tintFor(Feature f) => _tints[f.key] ?? AppTheme.accent;
+
   @override
   Widget build(BuildContext context) {
+    if (AppTheme.isExpanded(context)) {
+      return GridView.builder(
+        padding: const EdgeInsets.all(AppTheme.s16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: AppTheme.s12,
+          crossAxisSpacing: AppTheme.s12,
+          childAspectRatio: 3.4,
+        ),
+        itemCount: features.length,
+        itemBuilder: (context, i) => NeuCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.s16,
+            vertical: AppTheme.s12,
+          ),
+          onTap: () => onSelect(features[i].key),
+          child: _MoreRowContent(feature: features[i], tint: _tintFor(features[i])),
+        ),
+      );
+    }
+
     return ListView(
-      padding: const EdgeInsets.all(AppTheme.s16),
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s16,
+        AppTheme.s16,
+        AppTheme.s16,
+        AppTheme.s24,
+      ),
       children: [
-        for (final f in features)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
-            child: NeuCard(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.s16,
-                vertical: AppTheme.s12,
-              ),
-              onTap: () => onSelect(f.key),
-              child: Row(
-                children: [
-                  Icon(f.icon, color: AppTheme.accent, size: 22),
-                  const SizedBox(width: AppTheme.s12),
-                  Expanded(
-                    child: Text(
-                      f.title,
-                      style: const TextStyle(
-                        color: AppTheme.heading,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 15,
-                      ),
+        Padding(
+          padding: const EdgeInsets.only(left: AppTheme.s4, bottom: AppTheme.s8),
+          child: Text(
+            'More tools',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  letterSpacing: 0.4,
+                ),
+          ),
+        ),
+        NeuCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (int i = 0; i < features.length; i++) ...[
+                if (i > 0)
+                  const Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: AppTheme.border,
+                    indent: AppTheme.s16 + 36 + AppTheme.s12,
+                  ),
+                InkWell(
+                  onTap: () => onSelect(features[i].key),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s16,
+                      vertical: AppTheme.s12,
+                    ),
+                    child: _MoreRowContent(
+                      feature: features[i],
+                      tint: _tintFor(features[i]),
                     ),
                   ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppTheme.muted,
-                    size: 22,
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One row's content — a tinted icon chip, the title, and a trailing chevron
+/// — shared between the grouped phone list and the tablet grid so the two
+/// layouts stay visually identical apart from their container.
+class _MoreRowContent extends StatelessWidget {
+  final Feature feature;
+  final Color tint;
+
+  const _MoreRowContent({required this.feature, required this.tint});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          ),
+          child: Icon(feature.icon, color: tint, size: 19),
+        ),
+        const SizedBox(width: AppTheme.s12),
+        Expanded(
+          child: Text(
+            feature.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontWeight: FontWeight.w500,
+              fontSize: 15,
             ),
           ),
+        ),
+        const Icon(
+          Icons.chevron_right_rounded,
+          color: AppTheme.muted,
+          size: 20,
+        ),
       ],
     );
   }

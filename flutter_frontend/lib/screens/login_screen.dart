@@ -152,11 +152,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             : _buildSignIn(context, state),
                       ),
                       const SizedBox(height: AppTheme.s24),
-                      const Center(
+                      Center(
                         child: Text(
                           'Trouble signing in? Contact your property owner or admin.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                     ],
@@ -176,9 +176,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       children: [
         Text('Welcome back', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: AppTheme.s4),
-        const Text(
+        Text(
           'Use the phone number or email your property gave you.',
-          style: TextStyle(color: AppTheme.muted, fontSize: 13),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: AppTheme.s24),
 
@@ -249,9 +249,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       children: [
         Text('Reset password', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: AppTheme.s4),
-        const Text(
+        Text(
           'Enter the phone or email your property registered with, and choose a new password.',
-          style: TextStyle(color: AppTheme.muted, fontSize: 13),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: AppTheme.s24),
 

@@ -73,14 +73,16 @@ class _VendorCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(vendor.name, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14.5)),
+                Text(vendor.name, style: Theme.of(context).textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
                 Text(
                   [
                     vendor.specialty.isEmpty ? 'No specialty set' : vendor.specialty,
                     if (vendor.phone.isNotEmpty) vendor.phone,
                   ].join(' · '),
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

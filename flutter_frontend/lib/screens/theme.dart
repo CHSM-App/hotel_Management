@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 /// resolve to the right flat colours without per-screen edits.
 class AppTheme {
   // ── Surface ───────────────────────────────────────────────────────────────
-  static const Color bg = Color(0xFFFAFAFA);
+  static const Color bg = Color(0xFFF9FAFB);
   static const Color card = Color(0xFFFFFFFF);
   static const Color border = Color(0xFFF0F1F3);
 
@@ -52,6 +52,25 @@ class AppTheme {
   static const double s24 = 24;
   static const double s32 = 32;
   static const double s48 = 48;
+
+  // ── Breakpoints ───────────────────────────────────────────────────────────
+  // Material's own compact/medium/expanded cutoffs. Every screen here was
+  // built for a phone, so "compact" is the baseline — the other two only
+  // matter on a tablet or the desktop/web build, where content should stop
+  // stretching edge-to-edge.
+  static const double bpMedium = 600;
+  static const double bpExpanded = 840;
+
+  static bool isCompact(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < bpMedium;
+
+  static bool isExpanded(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= bpExpanded;
+
+  /// A phone-width column for anything meant to be read top to bottom (a
+  /// form, a detail page) — centered rather than stretched once the surface
+  /// is wider than a phone.
+  static const double maxContentWidth = 640;
 
   // ── Radius ────────────────────────────────────────────────────────────────
   /// Inputs and small buttons.
@@ -106,19 +125,73 @@ class AppTheme {
       // family to the default, so the line read as a choice while having no
       // effect. The weights below are what actually carry the design; bundle
       // Inter and name it here if the face itself ever has to match the web.
+      //
+      // The full named scale, so a screen reaches for
+      // `Theme.of(context).textTheme.X` instead of a one-off TextStyle —
+      // every size and weight below is one already in use somewhere in the
+      // app, just given one shared name instead of forty slightly different
+      // literals.
       textTheme: const TextTheme(
+        displaySmall: TextStyle(
+          color: heading,
+          fontWeight: FontWeight.w700,
+          fontSize: 28,
+        ),
+        headlineMedium: TextStyle(
+          color: heading,
+          fontWeight: FontWeight.w600,
+          fontSize: 24,
+        ),
         headlineSmall: TextStyle(
           color: heading,
           fontWeight: FontWeight.w500,
           fontSize: 22,
+        ),
+        titleLarge: TextStyle(
+          color: heading,
+          fontWeight: FontWeight.w600,
+          fontSize: 18,
         ),
         titleMedium: TextStyle(
           color: heading,
           fontWeight: FontWeight.w500,
           fontSize: 16,
         ),
-        bodyMedium: TextStyle(color: text, fontWeight: FontWeight.w400),
-        bodySmall: TextStyle(color: muted, fontWeight: FontWeight.w400),
+        titleSmall: TextStyle(
+          color: heading,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
+        bodyLarge: TextStyle(
+          color: text,
+          fontWeight: FontWeight.w400,
+          fontSize: 16,
+        ),
+        bodyMedium: TextStyle(
+          color: text,
+          fontWeight: FontWeight.w400,
+          fontSize: 14,
+        ),
+        bodySmall: TextStyle(
+          color: muted,
+          fontWeight: FontWeight.w400,
+          fontSize: 12,
+        ),
+        labelLarge: TextStyle(
+          color: heading,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
+        labelMedium: TextStyle(
+          color: text,
+          fontWeight: FontWeight.w500,
+          fontSize: 12,
+        ),
+        labelSmall: TextStyle(
+          color: muted,
+          fontWeight: FontWeight.w500,
+          fontSize: 11,
+        ),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: bg,

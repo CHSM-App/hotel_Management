@@ -25,7 +25,7 @@ class IssueFoodBillScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(state.foodTarget?.tableLabel ?? 'Bill'),
+        title: Text(state.foodTarget?.tableLabel ?? 'Bill', overflow: TextOverflow.ellipsis),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () {
@@ -35,20 +35,26 @@ class IssueFoodBillScreen extends ConsumerWidget {
         ),
       ),
       body: SafeArea(
-        child: preview == null
-            ? Center(
-                child: state.previewing
-                    ? const CircularProgressIndicator()
-                    : NeuNotice(
-                        icon: Icons.cloud_off_rounded,
-                        message: state.error ?? 'Could not load this bill.',
-                        action: NeuButton(
-                          onPressed: vm.refreshFoodPreview,
-                          child: const Text('Try again'),
-                        ),
-                      ),
-              )
-            : _Body(state: state, preview: preview),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: preview == null
+                ? Center(
+                    child: state.previewing
+                        ? const CircularProgressIndicator()
+                        : NeuNotice(
+                            icon: Icons.cloud_off_rounded,
+                            message: state.error ?? 'Could not load this bill.',
+                            action: NeuButton(
+                              onPressed: vm.refreshFoodPreview,
+                              child: const Text('Try again'),
+                            ),
+                          ),
+                  )
+                : _Body(state: state, preview: preview),
+          ),
+        ),
       ),
     );
   }
@@ -67,26 +73,50 @@ class _Body extends ConsumerWidget {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
-        AppTheme.s16,
+        AppTheme.s12,
         AppTheme.s8,
-        AppTheme.s16,
-        AppTheme.s32,
+        AppTheme.s12,
+        AppTheme.s24,
       ),
       children: [
         // ── The document ────────────────────────────────────────────────────
         NeuCard(
-          radius: AppTheme.rLarge,
+          radius: AppTheme.rMedium,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                (preview.tableLabel ?? '—').toUpperCase(),
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.accent.withValues(alpha: 0.16),
+                          AppTheme.accent.withValues(alpha: 0.06),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: const Icon(
+                      Icons.restaurant_rounded,
+                      color: AppTheme.accent,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Text(
+                    (preview.tableLabel ?? '—').toUpperCase(),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: AppTheme.s12),
 
@@ -101,11 +131,14 @@ class _Body extends ConsumerWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
-                    Text(
-                      preview.customerPhone != null
-                          ? '${preview.customerName} · ${preview.customerPhone}'
-                          : preview.customerName!,
-                      style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                    Flexible(
+                      child: Text(
+                        preview.customerPhone != null
+                            ? '${preview.customerName} · ${preview.customerPhone}'
+                            : preview.customerName!,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
@@ -132,13 +165,12 @@ class _Body extends ConsumerWidget {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                             Text(
                               '${item.quantity} × ${formatPrice(item.unitPrice)}',
-                              style: const TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 12,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                         ),
@@ -146,7 +178,7 @@ class _Body extends ConsumerWidget {
                       const SizedBox(width: AppTheme.s8),
                       Text(
                         formatPrice(item.lineTotal),
-                        style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
                   ),
@@ -157,7 +189,7 @@ class _Body extends ConsumerWidget {
                   child: Text(
                     'From order${preview.orderNumbers.length == 1 ? '' : 's'} '
                     '${preview.orderNumbers.map((n) => '#$n').join(', ')}',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
 
@@ -165,9 +197,7 @@ class _Body extends ConsumerWidget {
 
               Text(
                 'BILL',
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 11,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
                 ),
@@ -224,20 +254,50 @@ class _Body extends ConsumerWidget {
                 value: amounts?.totalAmount ?? 0,
                 strong: true,
               ),
-              _Row(
-                label: 'Balance due',
-                value: preview.balanceDue,
-                strong: true,
+
+              const SizedBox(height: AppTheme.s4),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s12,
+                  vertical: AppTheme.s8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      'Balance due',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const Spacer(),
+                    Text(
+                      formatPrice(preview.balanceDue),
+                      style: const TextStyle(
+                        color: AppTheme.accent,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
 
         // ── How it was paid ─────────────────────────────────────────────────
-        const SizedBox(height: AppTheme.s24),
-        Text(
-          'Record how the guest paid',
-          style: Theme.of(context).textTheme.titleMedium,
+        const SizedBox(height: AppTheme.s16),
+        Row(
+          children: [
+            const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 18),
+            const SizedBox(width: AppTheme.s8),
+            Text(
+              'Record how the guest paid',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
         ),
         const SizedBox(height: AppTheme.s4),
         Text(
@@ -250,11 +310,11 @@ class _Body extends ConsumerWidget {
         const SizedBox(height: AppTheme.s12),
         if (!state.nothingDue) _PaymentRows(state: state),
 
-        const SizedBox(height: AppTheme.s24),
+        const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
           Text(
             state.error!,
-            style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
           ),
           const SizedBox(height: AppTheme.s12),
         ],
@@ -307,21 +367,16 @@ class _Body extends ConsumerWidget {
                               '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
                               '${invoice.invoiceNumber ?? ''} issued',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontSize: 17,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: AppTheme.s8),
-                            const Text(
+                            Text(
                               'The bill is cut. Open the receipt now, or '
                               'head back to the billing list.',
                               textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 13,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                             const SizedBox(height: AppTheme.s24),
                             NeuButton(
@@ -494,7 +549,7 @@ class _PaymentRows extends ConsumerWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 problem,
-                style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
               ),
             ),
           ],

@@ -143,7 +143,7 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
                   Text(_asset!.name, overflow: TextOverflow.ellipsis),
                   Text(
                     [_asset!.assetTag, _asset!.categoryName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -202,7 +202,7 @@ class _StatusCard extends ConsumerWidget {
     return NeuCard(
       child: Row(
         children: [
-          const Text('Status', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+          Text('Status', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(width: AppTheme.s12),
           Expanded(
             child: NeuPressed(
@@ -339,7 +339,7 @@ class _QrCard extends StatelessWidget {
         children: [
           QrImageView(data: url, size: 132, backgroundColor: Colors.white),
           const SizedBox(height: AppTheme.s8),
-          const Text('Scan to open this asset', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+          Text('Scan to open this asset', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
           GestureDetector(
             onTap: _download,
@@ -520,7 +520,7 @@ class _PurchasePaymentsSectionState extends ConsumerState<_PurchasePaymentsSecti
         const SizedBox(height: 4),
         Text(
           '${formatPrice(amountPaid)} of ${formatPrice(total)} paid${remaining > 0.01 ? ' · ${formatPrice(remaining)} left' : ''}',
-          style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: AppTheme.s8),
         if (widget.payments == null)
@@ -542,7 +542,7 @@ class _PurchasePaymentsSectionState extends ConsumerState<_PurchasePaymentsSecti
                               children: [
                                 Text(
                                   '${formatPrice(p.amount)} · ${kPaymentMethodLabel[p.paymentMethod] ?? p.paymentMethod}',
-                                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13),
+                                  style: Theme.of(context).textTheme.titleSmall,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -579,7 +579,7 @@ class _PurchasePaymentsSectionState extends ConsumerState<_PurchasePaymentsSecti
                 children: [
                   NeuField(controller: _amount, label: 'Amount', keyboardType: TextInputType.number),
                   const SizedBox(height: AppTheme.s12),
-                  const Text('Paid via', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text('Paid via', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   OptionDropdown(
                     values: kPaymentMethods,
@@ -627,10 +627,10 @@ class _CoverageSection extends ConsumerWidget {
         const Text('Coverage history', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
         const SizedBox(height: AppTheme.s8),
         if (sorted.isEmpty)
-          const Text(
+          Text(
             'No warranty or AMC on record yet. "Add coverage" logs the maker\'s warranty at purchase, '
             'then each AMC as it starts.',
-            style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+            style: Theme.of(context).textTheme.bodySmall,
           )
         else
           for (final period in sorted) ...[
@@ -710,15 +710,15 @@ class _CoverageCard extends StatelessWidget {
           ),
           if (period.vendorName != null) ...[
             const SizedBox(height: 6),
-            Text(period.vendorName!, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(period.vendorName!, style: Theme.of(context).textTheme.titleSmall),
           ],
           if (period.cost != null) ...[
             const SizedBox(height: 4),
-            Text('Cost: ${formatPrice(period.cost)}', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+            Text('Cost: ${formatPrice(period.cost)}', style: Theme.of(context).textTheme.bodySmall),
           ],
           if (period.coverageNote.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text('Covers: ${period.coverageNote}', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+            Text('Covers: ${period.coverageNote}', style: Theme.of(context).textTheme.bodySmall),
           ],
         ],
       ),
@@ -863,7 +863,7 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                 children: [
                   const SectionLabel('Coverage', number: 1),
                   const SizedBox(height: AppTheme.s12),
-                  const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text('Type', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   NeuPressed(
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
@@ -882,7 +882,7 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                     ),
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  const Text('Vendor (optional)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text('Vendor (optional)', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   NeuPressed(
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
@@ -948,7 +948,7 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                   // Forwarded onto the expense a costed coverage period
                   // auto-generates — mirrors coverageForm.paymentStatus/
                   // paymentMethod/amountPaid/referenceNumber in AssetsPanel.jsx.
-                  const Text('Payment status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text('Payment status', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   OptionDropdown(
                     values: kPaymentStatuses,
@@ -958,7 +958,7 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                   ),
                   if (_paymentStatus != 'PENDING') ...[
                     const SizedBox(height: AppTheme.s12),
-                    const Text('Paid via', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    Text('Paid via', style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 4),
                     OptionDropdown(
                       values: kPaymentMethods,
@@ -1028,7 +1028,7 @@ class _ServiceHistorySection extends StatelessWidget {
         const Text('Service history', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
         const SizedBox(height: AppTheme.s8),
         if (workOrders.isEmpty)
-          const Text('No work orders yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12.5))
+          Text('No work orders yet.', style: Theme.of(context).textTheme.bodySmall)
         else
           NeuCard(
             padding: const EdgeInsets.symmetric(vertical: 4),

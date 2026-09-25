@@ -79,6 +79,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
               !a.categoryName.toLowerCase().contains(needle) &&
               !a.serialNumber.toLowerCase().contains(needle)))
       ..sort((a, b) => a.name.compareTo(b.name));
+    final openWorkOrders = shown.fold<int>(0, (sum, a) => sum + a.openWorkOrders);
 
     return Stack(
       fit: StackFit.expand,
@@ -87,17 +88,21 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
           onRefresh: () => ref.read(assetsViewModelProvider.notifier).loadAssets(),
           color: AppTheme.accent,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
+            padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: NeuField(
                       controller: _search,
                       label: '',
                       hint: 'Search name, tag, category',
+                      suffix: const Padding(
+                        padding: EdgeInsets.only(right: AppTheme.s8),
+                        child: Icon(Icons.search_rounded, size: 20, color: AppTheme.muted),
+                      ),
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
@@ -112,10 +117,12 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                 NeuNotice(icon: Icons.cloud_off_rounded, message: state.error!)
               else if (shown.isEmpty)
                 const NeuNotice(icon: Icons.inventory_2_outlined, message: 'No assets match. Tap + to register one.')
-              else
+              else ...[
+                _SummaryStrip(count: shown.length, openWorkOrders: openWorkOrders),
+                const SizedBox(height: AppTheme.s8),
                 for (final a in shown)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: _AssetCard(
                       asset: a,
                       onTap: () => _viewDetails(context, ref, a),
@@ -128,6 +135,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                       onDelete: () => _confirmDelete(context, ref, a),
                     ),
                   ),
+              ],
             ],
           ),
         ),
@@ -137,6 +145,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
           child: FloatingActionButton(
             backgroundColor: AppTheme.accent,
             foregroundColor: Colors.white,
+            elevation: 2,
             onPressed: () async {
               await showAssetFormSheet(context);
               ref.read(assetsViewModelProvider.notifier).loadAssets();
@@ -144,6 +153,32 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
             child: const Icon(Icons.add_rounded),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// A quick "N assets · N open work orders" line above the list — mirrors the
+/// summary strip in ExpensesListPanel, so the register reads as one number
+/// count instead of forcing a manual scroll-and-tally.
+class _SummaryStrip extends StatelessWidget {
+  final int count;
+  final int openWorkOrders;
+
+  const _SummaryStrip({required this.count, required this.openWorkOrders});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text('$count asset${count == 1 ? '' : 's'}', style: const TextStyle(color: AppTheme.muted, fontSize: 12.5, fontWeight: FontWeight.w500)),
+        if (openWorkOrders > 0) ...[
+          const Text(' · ', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+          Text(
+            '$openWorkOrders open work order${openWorkOrders == 1 ? '' : 's'}',
+            style: const TextStyle(color: AppTheme.danger, fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ],
       ],
     );
   }
@@ -168,10 +203,31 @@ class _StatusFilterButton extends StatelessWidget {
         _item('', 'All'),
         for (final s in kAssetStatuses) _item(s, kAssetStatusLabel[s]!),
       ],
-      child: NeuPressed(
-        padding: const EdgeInsets.all(AppTheme.s12),
-        focused: isFiltered,
-        child: Icon(Icons.filter_list_rounded, size: 20, color: isFiltered ? AppTheme.accent : AppTheme.muted),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: isFiltered ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.card,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              border: Border.all(color: isFiltered ? AppTheme.accent : AppTheme.border, width: isFiltered ? 1.4 : 1),
+            ),
+            child: Icon(Icons.filter_list_rounded, size: 21, color: isFiltered ? AppTheme.accent : AppTheme.muted),
+          ),
+          if (isFiltered)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(color: AppTheme.accent, shape: BoxShape.circle),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -219,70 +275,145 @@ class _AssetCard extends StatelessWidget {
     _ => AppTheme.muted,
   };
 
+  IconData get _statusIcon => switch (asset.status) {
+    'IN_USE' => Icons.check_circle_rounded,
+    'UNDER_REPAIR' => Icons.build_rounded,
+    'TRANSFERRED' => Icons.swap_horiz_rounded,
+    _ => Icons.remove_circle_rounded,
+  };
+
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    final location = [if (asset.floor.isNotEmpty) 'Floor ${asset.floor}', asset.locationNote].where((s) => s.isNotEmpty).join(' · ');
+
+    // A colour bar down the left edge — the status reads at a glance even
+    // before the eye lands on the chip, mirrors _RegisterCard in
+    // RegisterScreen (the guest register this list borrows its look from).
+    return GestureDetector(
       onTap: onTap,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        asset.name,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14.5),
+      child: NeuCard(
+        radius: AppTheme.rMedium,
+        shadow: AppTheme.extruded,
+        padding: EdgeInsets.zero,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: _statusColor,
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(AppTheme.rMedium)),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s4, AppTheme.s8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              asset.name,
+                              style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5, letterSpacing: -0.1),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(_statusIcon, size: 10, color: _statusColor),
+                                const SizedBox(width: 3),
+                                Text(
+                                  kAssetStatusLabel[asset.status] ?? asset.status,
+                                  style: TextStyle(color: _statusColor, fontSize: 9.5, fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _AssetRowMenu(
+                            onViewDetails: onViewDetails,
+                            onEdit: onEdit,
+                            onReportIssue: onReportIssue,
+                            onDelete: onDelete,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [asset.categoryName, if (asset.assetTag != null) asset.assetTag!].join(' · '),
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
-                      child: Text(
-                        kAssetStatusLabel[asset.status] ?? asset.status,
-                        style: TextStyle(color: _statusColor, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      const SizedBox(height: AppTheme.s8),
+                      Container(height: 1, color: AppTheme.border),
+                      const SizedBox(height: AppTheme.s8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: _Field(label: 'Location', value: location.isEmpty ? '—' : location),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                          Expanded(
+                            flex: 2,
+                            child: _Field(
+                              label: 'Work orders',
+                              value: asset.openWorkOrders > 0 ? '${asset.openWorkOrders} open' : 'None open',
+                              accent: asset.openWorkOrders > 0,
+                              alignEnd: true,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    _AssetRowMenu(
-                      onViewDetails: onViewDetails,
-                      onEdit: onEdit,
-                      onReportIssue: onReportIssue,
-                      onDelete: onDelete,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  [asset.categoryName, if (asset.assetTag != null) asset.assetTag!].join(' · '),
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                ),
-                if (asset.locationNote.isNotEmpty || asset.floor.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    [if (asset.floor.isNotEmpty) 'Floor ${asset.floor}', asset.locationNote].where((s) => s.isNotEmpty).join(' · '),
-                    style: const TextStyle(color: AppTheme.text, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    ],
                   ),
-                ],
-                if (asset.openWorkOrders > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${asset.openWorkOrders} open work order${asset.openWorkOrders == 1 ? '' : 's'}',
-                    style: const TextStyle(color: AppTheme.danger, fontSize: 11.5, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool accent;
+  final bool alignEnd;
+
+  const _Field({required this.label, required this.value, this.accent = false, this.alignEnd = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 1),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+          style: TextStyle(
+            color: accent ? AppTheme.danger : AppTheme.heading,
+            fontSize: accent ? 12 : 11.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 }

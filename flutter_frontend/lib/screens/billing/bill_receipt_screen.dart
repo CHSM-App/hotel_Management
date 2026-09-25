@@ -88,6 +88,7 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
         title: Text(
           '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
           '${invoice.invoiceNumber ?? ''}',
+          overflow: TextOverflow.ellipsis,
         ),
       ),
       body: SafeArea(
@@ -186,7 +187,7 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                 const SizedBox(height: AppTheme.s4),
                 Text(
                   _error!,
-                  style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
                 ),
               ],
               const SizedBox(height: AppTheme.s12),

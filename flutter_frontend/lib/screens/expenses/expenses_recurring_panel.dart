@@ -111,7 +111,7 @@ class _TemplateCard extends ConsumerWidget {
                         Flexible(
                           child: Text(
                             template.title,
-                            style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14),
+                            style: Theme.of(context).textTheme.titleSmall,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -128,7 +128,9 @@ class _TemplateCard extends ConsumerWidget {
                     const SizedBox(height: 2),
                     Text(
                       '${template.categoryName} · ${kFrequencyLabel[template.frequency] ?? template.frequency}',
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
