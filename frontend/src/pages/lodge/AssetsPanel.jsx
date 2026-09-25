@@ -2167,6 +2167,7 @@ export default function AssetsPanel({ onViewReport }) {
                     </select>
                   </div>
 
+                  <h4>Asset Details</h4>
                   <dl className="asset-detail__grid">
                     <div>
                       <dt>Location</dt>
@@ -2180,10 +2181,14 @@ export default function AssetsPanel({ onViewReport }) {
                     </div>
                     {selectedAsset.brand && (
                       <div>
-                        <dt>Brand / model</dt>
-                        <dd>
-                          {selectedAsset.brand} {selectedAsset.model}
-                        </dd>
+                        <dt>Brand</dt>
+                        <dd>{selectedAsset.brand}</dd>
+                      </div>
+                    )}
+                    {selectedAsset.model && (
+                      <div>
+                        <dt>Model</dt>
+                        <dd>{selectedAsset.model}</dd>
                       </div>
                     )}
                     {selectedAsset.serialNumber && (
@@ -2219,11 +2224,21 @@ export default function AssetsPanel({ onViewReport }) {
                       <dt>Purchase bill</dt>
                       <dd>
                         {selectedAsset.hasBillDocument ? (
-                          <button type="button" className="inv-linkbtn" onClick={() => viewBill(selectedAsset)}>
+                          <button type="button" className="asset-bill-link" onClick={() => viewBill(selectedAsset)}>
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
+                              <path
+                                d="M5 2.5h7l3 3v12a.5.5 0 0 1-.5.5h-9.5a.5.5 0 0 1-.5-.5v-14a.5.5 0 0 1 .5-.5Z"
+                                stroke="currentColor"
+                                strokeWidth="1.4"
+                                strokeLinejoin="round"
+                              />
+                              <path d="M12 2.5V5.5a.5.5 0 0 0 .5.5H15.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                              <path d="M6.5 10.5h7M6.5 13.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                            </svg>
                             View bill
                           </button>
                         ) : (
-                          'Not uploaded'
+                          <span className="asset-detail__muted-fact">Not uploaded</span>
                         )}
                       </dd>
                     </div>
@@ -2251,12 +2266,104 @@ export default function AssetsPanel({ onViewReport }) {
                 <button type="button" className="btn-outline" onClick={() => openAssetForm(selectedAsset)}>
                   Edit asset
                 </button>
-                <RowMenu label={`More actions for ${selectedAsset.name}`}>
-                  <button type="button" className="inv-danger" onClick={() => deleteAsset(selectedAsset)}>
-                    Delete asset
-                  </button>
-                </RowMenu>
+                <button type="button" className="btn-danger" onClick={() => deleteAsset(selectedAsset)}>
+                  Delete asset
+                </button>
               </div>
+
+              <h4>Coverage details</h4>
+              {visibleCoveragePeriods === null ? (
+                <p className="inv-panel__hint">Loading…</p>
+              ) : visibleCoveragePeriods.length === 0 ? (
+                <p className="inv-panel__hint">
+                  No warranty or AMC on record yet. "Add coverage" logs the maker's warranty at purchase,
+                  then each AMC as it starts — so who covered a repair, and when the cover ran out, stays
+                  answerable after it's renewed a few times.
+                </p>
+              ) : (
+                <ul className="asset-coverage-list">
+                  {visibleCoveragePeriods.map((period) => {
+                    const flag = expiryFlag(period.endDate);
+                    const isLatestOfType =
+                      period.id ===
+                      visibleCoveragePeriods.find((p) => p.coverageType === period.coverageType)?.id;
+                    const vendor = period.vendorId ? (vendors || []).find((v) => v.id === period.vendorId) : null;
+                    return (
+                      <li key={period.id} className="asset-coverage-card">
+                        <div className="asset-coverage-card__head">
+                          <span className="inv-tag">{period.coverageType === 'AMC' ? 'AMC' : 'Warranty'}</span>
+                          <span
+                            className={`asset-coverage-card__dates${
+                              flag === 'expired' ? ' inv-tag--bad' : flag === 'soon' ? ' inv-tag--low' : ''
+                            }`}
+                          >
+                            {period.startDate ? `${formatDate(period.startDate)} – ` : 'Until '}
+                            {formatDate(period.endDate)}
+                          </span>
+                          <div className="asset-coverage-card__actions">
+                            {isLatestOfType && (
+                              <button type="button" className="inv-linkbtn" onClick={() => openCoverageForm(period)}>
+                                Renew
+                              </button>
+                            )}
+                            <button type="button" className="inv-linkbtn" onClick={() => deleteCoveragePeriod(period)}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+
+                        {vendor ? (
+                          <div className="asset-coverage-card__vendor">
+                            <strong>{vendor.name}</strong>
+                            {vendor.specialty && <span> · {vendor.specialty}</span>}
+                            {(vendor.contactPerson || vendor.phone || vendor.email) && (
+                              <div className="asset-coverage-card__vendor-contact">
+                                {[vendor.contactPerson, vendor.phone, vendor.email].filter(Boolean).join(' · ')}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          period.vendorName && (
+                            <div className="asset-coverage-card__vendor">
+                              <strong>{period.vendorName}</strong>
+                            </div>
+                          )
+                        )}
+
+                        {period.cost != null && (
+                          <div className="asset-coverage-card__line">
+                            <strong>Cost:</strong> ₹{period.cost}
+                          </div>
+                        )}
+                        {period.coverageNote && (
+                          <div className="asset-coverage-card__line">
+                            <strong>Covers:</strong> {period.coverageNote}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              <h4>Service history</h4>
+              {visibleAssetHistory === null ? (
+                <p className="inv-panel__hint">Loading…</p>
+              ) : visibleAssetHistory.length === 0 ? (
+                <p className="inv-panel__hint">No work orders yet.</p>
+              ) : (
+                <ul className="inv-ledger">
+                  {visibleAssetHistory.map((wo) => (
+                    <li key={wo.id} className="inv-ledger__row" onClick={() => openWoForm(wo)} style={{ cursor: 'pointer' }}>
+                      <div className="inv-ledger__what">
+                        <span className="inv-ledger__reason">{WO_STATUS_LABEL[wo.status]}</span>
+                        <span className="inv-ledger__detail">{wo.description}</span>
+                      </div>
+                      <div className="inv-ledger__when">{formatDate(wo.openedAt)}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               {purchaseExpense && (
                 <>
@@ -2365,100 +2472,6 @@ export default function AssetsPanel({ onViewReport }) {
                     </div>
                   )}
                 </>
-              )}
-
-              <h4>Coverage history</h4>
-              {visibleCoveragePeriods === null ? (
-                <p className="inv-panel__hint">Loading…</p>
-              ) : visibleCoveragePeriods.length === 0 ? (
-                <p className="inv-panel__hint">
-                  No warranty or AMC on record yet. "Add coverage" logs the maker's warranty at purchase,
-                  then each AMC as it starts — so who covered a repair, and when the cover ran out, stays
-                  answerable after it's renewed a few times.
-                </p>
-              ) : (
-                <ul className="asset-coverage-list">
-                  {visibleCoveragePeriods.map((period) => {
-                    const flag = expiryFlag(period.endDate);
-                    const isLatestOfType =
-                      period.id ===
-                      visibleCoveragePeriods.find((p) => p.coverageType === period.coverageType)?.id;
-                    const vendor = period.vendorId ? (vendors || []).find((v) => v.id === period.vendorId) : null;
-                    return (
-                      <li key={period.id} className="asset-coverage-card">
-                        <div className="asset-coverage-card__head">
-                          <span className="inv-tag">{period.coverageType === 'AMC' ? 'AMC' : 'Warranty'}</span>
-                          <span
-                            className={`asset-coverage-card__dates${
-                              flag === 'expired' ? ' inv-tag--bad' : flag === 'soon' ? ' inv-tag--low' : ''
-                            }`}
-                          >
-                            {period.startDate ? `${formatDate(period.startDate)} – ` : 'Until '}
-                            {formatDate(period.endDate)}
-                          </span>
-                          <div className="asset-coverage-card__actions">
-                            {isLatestOfType && (
-                              <button type="button" className="inv-linkbtn" onClick={() => openCoverageForm(period)}>
-                                Renew
-                              </button>
-                            )}
-                            <button type="button" className="inv-linkbtn" onClick={() => deleteCoveragePeriod(period)}>
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-
-                        {vendor ? (
-                          <div className="asset-coverage-card__vendor">
-                            <strong>{vendor.name}</strong>
-                            {vendor.specialty && <span> · {vendor.specialty}</span>}
-                            {(vendor.contactPerson || vendor.phone || vendor.email) && (
-                              <div className="asset-coverage-card__vendor-contact">
-                                {[vendor.contactPerson, vendor.phone, vendor.email].filter(Boolean).join(' · ')}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          period.vendorName && (
-                            <div className="asset-coverage-card__vendor">
-                              <strong>{period.vendorName}</strong>
-                            </div>
-                          )
-                        )}
-
-                        {period.cost != null && (
-                          <div className="asset-coverage-card__line">
-                            <strong>Cost:</strong> ₹{period.cost}
-                          </div>
-                        )}
-                        {period.coverageNote && (
-                          <div className="asset-coverage-card__line">
-                            <strong>Covers:</strong> {period.coverageNote}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              <h4>Service history</h4>
-              {visibleAssetHistory === null ? (
-                <p className="inv-panel__hint">Loading…</p>
-              ) : visibleAssetHistory.length === 0 ? (
-                <p className="inv-panel__hint">No work orders yet.</p>
-              ) : (
-                <ul className="inv-ledger">
-                  {visibleAssetHistory.map((wo) => (
-                    <li key={wo.id} className="inv-ledger__row" onClick={() => openWoForm(wo)} style={{ cursor: 'pointer' }}>
-                      <div className="inv-ledger__what">
-                        <span className="inv-ledger__reason">{WO_STATUS_LABEL[wo.status]}</span>
-                        <span className="inv-ledger__detail">{wo.description}</span>
-                      </div>
-                      <div className="inv-ledger__when">{formatDate(wo.openedAt)}</div>
-                    </li>
-                  ))}
-                </ul>
               )}
             </div>
           </div>
@@ -2595,7 +2608,7 @@ export default function AssetsPanel({ onViewReport }) {
                       value={assetForm.paymentStatus}
                       onChange={(e) => setAssetForm((f) => ({ ...f, paymentStatus: e.target.value }))}
                     >
-                      <option value="PAID">Paid in full</option>
+                      <option value="PAID">Paid</option>
                       <option value="PARTIAL">Partially paid</option>
                       <option value="PENDING">Pending</option>
                     </select>
@@ -2977,7 +2990,7 @@ export default function AssetsPanel({ onViewReport }) {
                     value={bulkForm.paymentStatus}
                     onChange={(e) => setBulkForm((f) => ({ ...f, paymentStatus: e.target.value }))}
                   >
-                    <option value="PAID">Paid in full</option>
+                    <option value="PAID">Paid</option>
                     <option value="PARTIAL">Partially paid</option>
                     <option value="PENDING">Pending</option>
                   </select>
@@ -3420,7 +3433,7 @@ export default function AssetsPanel({ onViewReport }) {
                           value={woForm.paymentStatus}
                           onChange={(e) => setWoForm((f) => ({ ...f, paymentStatus: e.target.value }))}
                         >
-                          <option value="PAID">Paid in full</option>
+                          <option value="PAID">Paid</option>
                           <option value="PARTIAL">Partially paid</option>
                           <option value="PENDING">Pending</option>
                         </select>
@@ -3835,7 +3848,7 @@ export default function AssetsPanel({ onViewReport }) {
                     value={coverageForm.paymentStatus}
                     onChange={(e) => setCoverageForm((f) => ({ ...f, paymentStatus: e.target.value }))}
                   >
-                    <option value="PAID">Paid in full</option>
+                    <option value="PAID">Paid</option>
                     <option value="PARTIAL">Partially paid</option>
                     <option value="PENDING">Pending</option>
                   </select>

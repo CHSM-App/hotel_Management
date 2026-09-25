@@ -335,6 +335,41 @@
   color: var(--text-muted);
 }
 
+/* A document action reads as more than a fact once it looks like something
+   to press — a bare underlined "View bill" sat in the facts grid no
+   differently from a value like "Room 204", easy to miss as clickable at
+   all. A small tinted chip with a document glyph marks it as an action the
+   way the QR download link and every other "open a file" spot in this app
+   already does. */
+.asset-bill-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--brand-wash-edge);
+  background: var(--brand-wash);
+  color: var(--brand);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.asset-bill-link:hover {
+  background: var(--brand-wash-edge);
+  box-shadow: var(--shadow-raised);
+}
+
+.asset-bill-link svg {
+  flex-shrink: 0;
+}
+
+.asset-detail__muted-fact {
+  color: var(--text-muted);
+}
+
 .inv-linkbtn {
   background: none;
   border: none;
@@ -450,6 +485,31 @@
 .asset-detail__status select {
   width: auto;
   min-width: 180px;
+  /* Left/top/bottom only — right padding stays index.css's own 34px, the
+     room its global select rule reserves for the dropdown arrow it draws
+     via background-image. Overwriting all four sides here pushed that
+     arrow out of its own padding box, so the field looked like plain text
+     with no way to tell it opens anything. */
+  padding: 8px 11px;
+  padding-right: 34px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background-color: var(--field);
+  color: var(--ink);
+  min-height: 36px;
+  box-shadow: var(--shadow-well);
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.asset-detail__status select:hover:not(:disabled) {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--shadow-well-hover);
+}
+
+.asset-detail__status select:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: var(--shadow-well-focus);
 }
 
 /* A real definition list instead of a stack of "Label: value" paragraphs —
@@ -698,12 +758,18 @@
   padding: 0;
   background: var(--paper);
   border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   text-align: left;
   font-size: 11px;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.asset-table thead th:last-child,
+.asset-table tbody td:last-child {
+  border-right: none;
 }
 
 .asset-table__sort-btn {
@@ -755,6 +821,7 @@
 .asset-table tbody td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   color: var(--ink);
   vertical-align: middle;
 }

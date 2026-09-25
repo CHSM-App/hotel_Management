@@ -421,6 +421,41 @@
   opacity: 0.5;
 }
 
+/* Same outline-pill shape as .btn-outline, in --danger — a standalone
+   Delete sitting beside Report an issue/Add coverage/Edit asset needs the
+   same weight as those, not .inv-danger's bare coloured text (which only
+   ever inherits shape from a RowMenu item or a list row it's placed in). */
+.btn-danger {
+  background: var(--surface);
+  border: 1.5px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--radius-tile);
+  padding: 10.5px 18px;
+  min-height: 44px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #ffffff;
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.btn-danger:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .checkbox-inline {
   display: flex;
   align-items: center;

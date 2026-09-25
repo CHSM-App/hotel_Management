@@ -5,7 +5,7 @@
 
 import { PAYMENT_METHOD_LABEL } from './paymentMethods';
 
-const PAYMENT_STATUS_LABEL = { PAID: 'Paid in full', PARTIAL: 'Partially paid', PENDING: 'Pending' };
+const PAYMENT_STATUS_LABEL = { PAID: 'Paid', PARTIAL: 'Partially paid', PENDING: 'Pending' };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

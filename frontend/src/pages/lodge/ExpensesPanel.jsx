@@ -43,10 +43,10 @@ function typedMobile(value) {
 }
 
 // Only PARTIAL/PENDING get a tag — PAID is the default and common case, and
-// flagging every row as "Paid in full" would just be noise next to the
+// flagging every row as "Paid" would just be noise next to the
 // payment-method tag every row already carries.
-const PAYMENT_STATUS_LABEL = { PARTIAL: 'Partially paid', PENDING: 'Pending' };
-const PAYMENT_STATUS_TAG_CLASS = { PARTIAL: 'inv-tag--low', PENDING: 'inv-tag--bad' };
+const PAYMENT_STATUS_LABEL = { PAID: 'Paid', PARTIAL: 'Partially paid', PENDING: 'Pending' };
+const PAYMENT_STATUS_TAG_CLASS = { PAID: 'inv-tag--good', PARTIAL: 'inv-tag--low', PENDING: 'inv-tag--bad' };
 
 const TABLE_SORT_ACCESSORS = {
   date: (e) => (e.expenseDate ? new Date(e.expenseDate).getTime() : 0),
@@ -55,6 +55,7 @@ const TABLE_SORT_ACCESSORS = {
   vendor: (e) => e.vendorName || '',
   amount: (e) => Number(e.amount || 0),
   method: (e) => e.paymentMethod || '',
+  status: (e) => e.paymentStatus || '',
 };
 
 // Offered as suggestions, not a fixed list — same idea as
@@ -928,6 +929,7 @@ export default function ExpensesPanel({ onViewReport }) {
                       ['category', 'Category'],
                       ['vendor', 'Vendor'],
                       ['method', 'Paid via'],
+                      ['status', 'Status'],
                       ['amount', 'Amount'],
                     ].map(([key, label]) => (
                       <th key={key}>
@@ -965,11 +967,11 @@ export default function ExpensesPanel({ onViewReport }) {
                             {PAYMENT_LABEL[expense.paymentMethod]}
                           </span>
                         )}
-                        {PAYMENT_STATUS_LABEL[expense.paymentStatus] && (
-                          <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`} style={{ marginLeft: 4 }}>
-                            {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
-                          </span>
-                        )}
+                      </td>
+                      <td>
+                        <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`}>
+                          {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
+                        </span>
                       </td>
                       <td className="asset-table__mono">{formatPrice(expense.amount)}</td>
                       <td className="asset-table__actions" onClick={(e) => e.stopPropagation()}>
@@ -1005,7 +1007,7 @@ export default function ExpensesPanel({ onViewReport }) {
                           {PAYMENT_LABEL[expense.paymentMethod]}
                         </span>
                       )}
-                      {PAYMENT_STATUS_LABEL[expense.paymentStatus] && (
+                      {expense.paymentStatus !== 'PAID' && (
                         <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`}>
                           {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
                         </span>
@@ -1355,7 +1357,7 @@ export default function ExpensesPanel({ onViewReport }) {
                             value={expenseForm.paymentStatus}
                             onChange={(e) => setExpenseForm((f) => ({ ...f, paymentStatus: e.target.value }))}
                           >
-                            <option value="PAID">Paid in full</option>
+                            <option value="PAID">Paid</option>
                             <option value="PARTIAL">Partially paid</option>
                             <option value="PENDING">Pending</option>
                           </select>
@@ -1728,7 +1730,7 @@ export default function ExpensesPanel({ onViewReport }) {
                       >
                         <div className="inv-item__name">
                           {formatDate(expense.expenseDate)}
-                          {PAYMENT_STATUS_LABEL[expense.paymentStatus] && (
+                          {expense.paymentStatus !== 'PAID' && (
                             <span className={`inv-tag ${PAYMENT_STATUS_TAG_CLASS[expense.paymentStatus]}`}>
                               {PAYMENT_STATUS_LABEL[expense.paymentStatus]}
                             </span>
