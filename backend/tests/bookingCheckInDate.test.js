@@ -100,7 +100,7 @@ test('the new check-in date is the one priced, checked and written', () => {
   );
   assert.match(
     body,
-    /SET room_id = @roomId, check_in_date = @checkInDate, check_out_date = @checkOutDate/,
+    /SET room_id = @roomId, bed_id = @bedId, check_in_date = @checkInDate, check_out_date = @checkOutDate/,
     'the UPDATE no longer writes check_in_date, so a re-dated stay would be priced ' +
       'for its new range and then stored with its old one'
   );

@@ -263,6 +263,26 @@ test('every query touching a lodge-scoped table filters by lodge', () => {
       match: 'SELECT id FROM dbo.users WHERE phone = @phone',
       why: 'Same global uniqueness rule, checked before SUPERADMIN creates a property owner. Scoping it to one lodge would let a duplicate through to the unique index.',
     },
+    {
+      file: 'expenses/expenses.service.js',
+      match: 'ISNULL(SUM(p.amount), 0) AS paid',
+      why: 'recalcExpensePaymentStatus(pool, expenseId) has no lodgeId parameter at all — every caller reaches it only after getExpense(lodgeId, expenseId) has already 404\'d on a cross-lodge id, so the id here is already proven.',
+    },
+    {
+      file: 'expenses/expenses.service.js',
+      match: 'UPDATE dbo.expenses SET amount_paid = @amountPaid',
+      why: 'Same recalcExpensePaymentStatus as above — the row was proven to belong to the lodge by getExpense before this function was ever called.',
+    },
+    {
+      file: 'rooms/rooms.service.js',
+      match: 'SELECT TOP 1 id FROM dbo.bookings WHERE bed_id = @bedId',
+      why: 'deleteBed calls assertDormitoryRoom(pool, lodgeId, roomId) first, which proves the room belongs to the lodge; bedId is then read from dbo.dormitory_beds WHERE room_id = @roomId, so it cannot name another lodge\'s bed. The proof is on dbo.rooms, one table away from the bookings this query checks, which is why the same-table proof rule above can\'t see it.',
+    },
+    {
+      file: 'rooms/rooms.service.js',
+      match: 'SELECT bed_id FROM dbo.bookings WHERE bed_id IN',
+      why: 'setBedCount, same guarantee as deleteBed above: assertDormitoryRoom proves the room first, and removeIds comes from dormitory_beds rows already scoped to that room.',
+    },
   ];
 
   const used = new Set();

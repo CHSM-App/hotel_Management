@@ -93,7 +93,7 @@ test('the quote flags its room line for the form', () => {
     'utf8'
   );
   assert.match(pricing, /isBase: true/, 'the priced night no longer marks its room line');
-  assert.match(pricing, /isBase: label === base/, 'the aggregate no longer marks its room line');
+  assert.match(pricing, /isBase: baseLabels\.includes\(label\)/, 'the aggregate no longer marks its room line');
 
   const bookings = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'modules', 'bookings', 'bookings.service.js'),

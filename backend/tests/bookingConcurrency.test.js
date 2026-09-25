@@ -31,7 +31,7 @@ test('hasOverlap can take its range lock', () => {
       'callers take compatible shared range locks and then deadlock upgrading them, ' +
       'which reaches the clerk as a 500 rather than "this room is taken".'
   );
-  assert.match(src, /SELECT TOP 1 id FROM dbo\.bookings \$\{lockHint\}/, 'the hint is no longer applied to the query');
+  assert.match(src, /SELECT TOP 1 b\.id FROM dbo\.bookings b \$\{lockHint\}/, 'the hint is no longer applied to the query');
 });
 
 test('every overlap check made inside a transaction takes the lock', () => {

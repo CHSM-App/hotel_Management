@@ -1135,7 +1135,7 @@ async function searchGuests(lodgeId, query) {
   // for up front.
   const byPerson = new Map();
   for (const row of result.recordset) {
-    const key = `${row.guest_name} ${row.guest_phone}`;
+    const key = `${row.guest_name} ${row.guest_phone}`;
     if (!byPerson.has(key)) byPerson.set(key, []);
     byPerson.get(key).push(row);
   }
