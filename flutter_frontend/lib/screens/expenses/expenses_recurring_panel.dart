@@ -148,6 +148,7 @@ class _TemplateCard extends ConsumerWidget {
                   child: NeuButton(
                     primary: true,
                     expand: true,
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4, vertical: AppTheme.s8),
                     onPressed: () => showLogOccurrenceFormSheet(context, template: template),
                     child: const Text('Log this month'),
                   ),
@@ -155,10 +156,20 @@ class _TemplateCard extends ConsumerWidget {
                 const SizedBox(width: AppTheme.s8),
               ],
               TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 onPressed: () => showRecurringTemplateFormScreen(context, template: template),
                 child: const Text('Edit'),
               ),
               TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 onPressed: () => ref.read(expensesViewModelProvider.notifier).toggleTemplate(template),
                 child: Text(template.isActive ? 'Pause' : 'Resume'),
               ),

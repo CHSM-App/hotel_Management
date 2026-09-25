@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/me.dart';
@@ -66,18 +67,28 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     final me = state.me;
     final fullScreen = _inOverflowScreen(me);
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: fullScreen ? AppTheme.bg : AppTheme.accent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        body: Column(
           children: [
             if (!fullScreen) _TopBar(me: me),
             if (!fullScreen) const _OfflineBanner(),
-            Expanded(child: _body(state.isLoading, state.error, me)),
+            Expanded(
+              child: SafeArea(
+                top: fullScreen,
+                bottom: false,
+                child: _body(state.isLoading, state.error, me),
+              ),
+            ),
           ],
         ),
+        bottomNavigationBar: (me == null || fullScreen) ? null : _bottomBar(me),
       ),
-      bottomNavigationBar: (me == null || fullScreen) ? null : _bottomBar(me),
     );
   }
 
@@ -351,27 +362,61 @@ class _OfflineBanner extends ConsumerWidget {
     final online = ref.watch(networkStatusProvider);
     // Loading and error both read as "assume it works": a banner that flashes
     // on every cold start is a banner the desk stops seeing.
-    if (online.valueOrNull != false) return const SizedBox.shrink();
+    final offline = online.valueOrNull == false;
 
-    return Container(
-      width: double.infinity,
-      color: AppTheme.danger.withValues(alpha: 0.1),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.s16,
-        vertical: AppTheme.s8,
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.wifi_off_rounded, size: 16, color: AppTheme.danger),
-          SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: Text(
-              'No connection — bookings cannot be taken until this is back.',
-              style: TextStyle(color: AppTheme.danger, fontSize: 12),
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: !offline
+          ? const SizedBox(width: double.infinity, height: 0)
+          : Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s8,
+                AppTheme.s12,
+                0,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: AppTheme.s8,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: AppTheme.danger.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.wifi_off_rounded,
+                      size: 13,
+                      color: AppTheme.danger,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  const Expanded(
+                    child: Text(
+                      'No connection — bookings can\'t be taken right now.',
+                      style: TextStyle(
+                        color: AppTheme.danger,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -388,10 +433,12 @@ class _TopBar extends ConsumerWidget {
     final lodgeName = me?.lodge.name ?? 'Loading…';
     final initial = lodgeName.isNotEmpty ? lodgeName[0].toUpperCase() : '?';
 
+    final topInset = MediaQuery.of(context).padding.top;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         AppTheme.s12,
-        AppTheme.s8,
+        AppTheme.s8 + topInset,
         AppTheme.s8,
         AppTheme.s12,
       ),
@@ -412,65 +459,57 @@ class _TopBar extends ConsumerWidget {
       child: Row(
         children: [
           Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppTheme.rMedium),
-              onTap: me == null
-                  ? null
-                  : () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                      ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.16),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: AppTheme.s8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+                ),
+                const SizedBox(width: AppTheme.s8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        lodgeName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (me != null) ...[
+                        const SizedBox(height: 1),
                         Text(
-                          lodgeName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                          '${me!.user.name} · ${me!.user.roleName ?? me!.user.role}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (me != null) ...[
-                          const SizedBox(height: 1),
-                          Text(
-                            '${me!.user.name} · ${me!.user.roleName ?? me!.user.role}',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w400,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
                       ],
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           // Opens the profile screen, where account details and sign-out live.

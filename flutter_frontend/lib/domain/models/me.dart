@@ -55,6 +55,11 @@ class MeUser {
   );
 
   bool can(String permission) => permissions.contains(permission);
+
+  /// True if this login holds any one of the given permissions — mirrors the
+  /// web's array-based `permission: [...]` any-of check in propertyProfile.js.
+  bool canAny(List<String> anyOf) =>
+      anyOf.any((permission) => permissions.contains(permission));
 }
 
 class Lodge {

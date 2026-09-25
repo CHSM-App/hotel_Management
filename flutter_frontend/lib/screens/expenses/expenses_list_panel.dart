@@ -500,35 +500,24 @@ class _ExpenseCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(formatPrice(expense.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14.5)),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (expense.hasBillDocument)
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(),
-                      padding: const EdgeInsets.all(6),
-                      icon: const Icon(Icons.receipt_long_rounded, size: 18, color: AppTheme.accent),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => IdProofViewerScreen(
-                            title: 'Receipt · ${expense.title}',
-                            load: () async {
-                              final res = await ref.read(expensesViewModelProvider.notifier).usecase.expenseBill(expense.id);
-                              return (Uint8List.fromList(res.data!), res.headers.value('content-type'));
-                            },
-                          ),
-                        ),
-                      ),
+              _ExpenseRowMenu(
+                showViewReceipt: expense.hasBillDocument,
+                onEdit: () async {
+                  await showExpenseFormSheet(context, expense: expense);
+                  ref.read(expensesViewModelProvider.notifier).loadExpenses();
+                },
+                onViewReceipt: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => IdProofViewerScreen(
+                      title: 'Receipt · ${expense.title}',
+                      load: () async {
+                        final res = await ref.read(expensesViewModelProvider.notifier).usecase.expenseBill(expense.id);
+                        return (Uint8List.fromList(res.data!), res.headers.value('content-type'));
+                      },
                     ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(),
-                    padding: const EdgeInsets.all(6),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.danger),
-                    onPressed: () => _confirmDelete(context, ref),
                   ),
-                ],
+                ),
+                onDelete: () => _confirmDelete(context, ref),
               ),
             ],
           ),
@@ -553,5 +542,40 @@ class _ExpenseCard extends ConsumerWidget {
     if (confirmed == true) {
       ref.read(expensesViewModelProvider.notifier).deleteExpense(expense.id);
     }
+  }
+}
+
+/// The ⋮ row menu — mirrors RowMenu in ExpensesPanel.jsx: "Edit expense",
+/// "View receipt" (only when a bill is attached), and "Delete expense".
+class _ExpenseRowMenu extends StatelessWidget {
+  final bool showViewReceipt;
+  final VoidCallback onEdit;
+  final VoidCallback onViewReceipt;
+  final VoidCallback onDelete;
+
+  const _ExpenseRowMenu({
+    required this.showViewReceipt,
+    required this.onEdit,
+    required this.onViewReceipt,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<VoidCallback>(
+      tooltip: 'More actions',
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
+      onSelected: (action) => action(),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
+      itemBuilder: (context) => [
+        PopupMenuItem(value: onEdit, child: const Text('Edit expense')),
+        if (showViewReceipt) PopupMenuItem(value: onViewReceipt, child: const Text('View receipt')),
+        PopupMenuItem(
+          value: onDelete,
+          child: const Text('Delete expense', style: TextStyle(color: AppTheme.danger)),
+        ),
+      ],
+    );
   }
 }
