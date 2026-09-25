@@ -2482,3 +2482,33 @@ WHERE lodge_id IS NULL AND role_key = 'RECEPTION';
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'CAPTAIN')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'CAPTAIN', 'Captain', 'Takes orders from tables and rooms.', 1, '["orders.take"]');
+
+-- Three more built-ins (migration 084), each one existing permission (or two)
+-- under a job title, so an owner doesn't recreate it by hand. Events Manager
+-- is hidden at a property with no function diary by roleAvailableFor;
+-- Assets Manager and Accountant have no capability gate — every property
+-- tracks equipment and its own costs.
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'EVENTS_MANAGER')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'EVENTS_MANAGER', 'Events Manager', 'Runs the function diary — enquiries, quotes and event bills.', 1,
+     '["events.manage"]');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ASSETS_MANAGER')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'ASSETS_MANAGER', 'Assets Manager', 'Equipment, warranty/AMC and maintenance work orders.', 1,
+     '["assets.manage"]');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'ACCOUNTANT', 'Accountant', 'Billing, payments and property expenses.', 1,
+     '["billing.manage","expenses.manage"]');
+
+-- orders.cook (migration 085): splits cooking (queued through delivered, and
+-- item-ready ticks) out of orders.manage, which now covers view/accept/cancel
+-- only. KITCHEN is the only role that picks it up — OWNER and RECEPTION keep
+-- orders.manage as shipped and stay view-plus-accept-and-cancel on the queue.
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'KITCHEN'
+           AND permissions = '["orders.manage"]')
+UPDATE dbo.roles
+SET permissions = '["orders.manage","orders.cook"]'
+WHERE lodge_id IS NULL AND role_key = 'KITCHEN';

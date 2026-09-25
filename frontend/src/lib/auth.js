@@ -25,6 +25,12 @@ export function isStaff() {
   return getSession()?.role === 'SUPERADMIN';
 }
 
+// Every non-SUPERADMIN session is a lodge role — built-in or a lodge's own
+// custom one — so this is the complement of isStaff() rather than a second
+// list of role names to keep in step with the built-ins backend/auth.service.js
+// seeds. A custom role (Night Manager, say) was never going to appear in a
+// hardcoded list anyway.
 export function isLodgeUser() {
-  return ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN'].includes(getSession()?.role);
+  const role = getSession()?.role;
+  return Boolean(role) && role !== 'SUPERADMIN';
 }

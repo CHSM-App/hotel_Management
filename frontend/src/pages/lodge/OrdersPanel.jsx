@@ -87,10 +87,14 @@ function playChime(audioContext) {
 
 export default function OrdersPanel({ lodge, permissions = [] }) {
   const session = getSession();
-  // Which half of this screen a role actually gets: the kitchen works the
-  // queue and history, a captain places new orders. Either or both — OWNER
-  // and RECEPTION hold both and see the whole screen as before.
+  // Which half of this screen a role actually gets: orders.manage is view,
+  // accept and cancel; orders.cook is the kitchen's own job of actually
+  // cooking (queued through delivered, and ticking dishes off); orders.take
+  // is placing a new order. OWNER and RECEPTION hold orders.manage but not
+  // orders.cook — they can watch the queue, take a pending order in and stop
+  // one, but not push it through the kitchen themselves.
   const canWorkQueue = permissions.includes('orders.manage');
+  const canCook = permissions.includes('orders.cook');
   const canTakeOrders = permissions.includes('orders.take');
   const [orders, setOrders] = useState(null);
   const [error, setError] = useState('');
@@ -217,12 +221,21 @@ export default function OrdersPanel({ lodge, permissions = [] }) {
     // waiting to be accepted, or sitting in the queue untouched, has nothing
     // to tick off yet; one already called ready has nothing left. Outside
     // PREPARING the lines render as plain text, so a card at rest isn't a row
-    // of boxes nobody may touch.
-    const tickable = order.status === 'PREPARING';
+    // of boxes nobody may touch. Also gated on orders.cook — Owner and
+    // Reception can watch a ticket get ticked, not do the ticking themselves.
+    const tickable = order.status === 'PREPARING' && canCook;
     const allReady = order.items.every((item) => item.readyAt);
     // The whole point of the ticks: the order can't be called ready until
     // every dish on it has come out of the kitchen.
     const blockedReady = !allReady && order.nextStatuses.includes('READY');
+
+    // Accept and Cancel are front-of-house; everything else is the kitchen
+    // actually cooking the order — see updateStatusHandler on the backend,
+    // which enforces the same split so this is a view concern, not the only
+    // guard.
+    const visibleStatuses = order.nextStatuses.filter(
+      (status) => status === 'QUEUED' || status === 'CANCELLED' || canCook
+    );
 
     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -292,12 +305,12 @@ export default function OrdersPanel({ lodge, permissions = [] }) {
           <span className="order-card__total">{formatPrice(order.subtotal)}</span>
         </div>
 
-        {blockedReady && (
+        {blockedReady && canCook && (
           <p className="order-card__tick-hint">Tick every dish to call this order ready.</p>
         )}
 
         <div className="order-card__actions">
-          {order.nextStatuses.map((status) => (
+          {visibleStatuses.map((status) => (
             <button
               key={status}
               type="button"
