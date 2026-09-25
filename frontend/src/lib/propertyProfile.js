@@ -160,7 +160,8 @@ export const FEATURES = [
     title: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and log repairs.',
     permission: 'assets.manage',
-    // No capability gate — every property type has physical assets to track.
+    // An add-on, same as Events: off until switched on for the property.
+    capability: 'hasAssets',
     icon: 'wrench',
     group: 'Setup',
   },
@@ -169,7 +170,7 @@ export const FEATURES = [
     title: 'Expenses',
     description: 'Log utility bills, salaries, repairs and other property costs.',
     permission: 'expenses.manage',
-    // No capability gate — every property type has operating expenses.
+    capability: 'hasExpenses',
     icon: 'wallet',
     group: 'Setup',
   },

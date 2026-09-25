@@ -78,6 +78,10 @@ const createLodgeSchema = z
     // two: a rooms-only lodge with a lawn and a restaurant with a party hall
     // are both real.
     hasEvents: z.boolean().default(false),
+    // Add-ons, same shape as hasEvents: off unless the admin switches them on
+    // for this property.
+    hasAssets: z.boolean().default(false),
+    hasExpenses: z.boolean().default(false),
     ownerName: z.string().trim().min(1, 'Owner name is required.'),
     ownerEmail: z.string().trim().email('Enter a valid email.').optional().or(z.literal('')).default(''),
     ownerPhone: z.string().trim().min(1, 'Owner phone is required.'),
@@ -143,6 +147,8 @@ const updateLodgeSchema = z.object({
   foodRoomService: z.boolean().optional(),
   foodTableService: z.boolean().optional(),
   hasEvents: z.boolean().optional(),
+  hasAssets: z.boolean().optional(),
+  hasExpenses: z.boolean().optional(),
   isActive: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
 });

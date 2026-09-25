@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiGet, ApiError } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
@@ -6,6 +6,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { EyeIcon } from '../../components/ActionIcons';
 import '../../components/IconButton.css';
 import { propertyTypeOf } from '../../lib/propertyProfile';
+import { downloadLodgesExcel } from '../lodge/lodgesExportFile';
 import './LodgesDashboard.css';
 
 const CHECKIN_LABEL = {
@@ -35,6 +36,22 @@ function formatDate(value) {
     year: 'numeric',
   });
 }
+
+// Every column a header can be clicked to sort by, and how to read the value
+// being compared out of a lodge row. Kept as data so the header loop and the
+// actual sort both read off the same list instead of drifting apart.
+const COLUMNS = [
+  { key: 'name', label: 'Lodge', get: (l) => l.name || '' },
+  { key: 'type', label: 'Type', get: (l) => describeType(l) },
+  { key: 'owner_name', label: 'Owner', get: (l) => l.owner_name || '' },
+  { key: 'city', label: 'Location', get: (l) => [l.city, l.state].filter(Boolean).join(', ') },
+  { key: 'checkin_mode', label: 'Check-in', get: (l) => (l.has_rooms ? CHECKIN_LABEL[l.checkin_mode] || l.checkin_mode : '') },
+  { key: 'is_gst_registered', label: 'GST', get: (l) => (l.is_gst_registered ? 1 : 0) },
+  { key: 'is_active', label: 'Status', get: (l) => (l.is_active ? 1 : 0) },
+  { key: 'created_at', label: 'Onboarded', get: (l) => l.created_at },
+];
+
+const TYPE_FILTERS = ['Lodge', 'Lodge with meals', 'Restaurant'];
 
 export default function LodgesDashboard() {
   const navigate = useNavigate();
@@ -70,6 +87,65 @@ export default function LodgesDashboard() {
     navigate('/vtadmin', { replace: true });
   };
 
+  // Search, filter chips and sort — all client-side over a list this small,
+  // the same way every other register in this app filters what's already on
+  // screen rather than round-tripping to the server for it.
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState(null);
+  const [gstFilter, setGstFilter] = useState(null); // null | 'gst' | 'non-gst'
+  const [statusFilter, setStatusFilter] = useState(null); // null | 'active' | 'inactive'
+  const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' });
+
+  const toggleSort = (key) => {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  };
+
+  const filtered = useMemo(() => {
+    if (!lodges) return null;
+    const term = search.trim().toLowerCase();
+    let rows = lodges.filter((l) => {
+      if (term) {
+        const haystack = `${l.name} ${l.slug} ${l.owner_name || ''} ${l.owner_phone || ''} ${l.city || ''}`.toLowerCase();
+        if (!haystack.includes(term)) return false;
+      }
+      if (typeFilter && describeType(l) !== typeFilter) return false;
+      if (gstFilter === 'gst' && !l.is_gst_registered) return false;
+      if (gstFilter === 'non-gst' && l.is_gst_registered) return false;
+      if (statusFilter === 'active' && !l.is_active) return false;
+      if (statusFilter === 'inactive' && l.is_active) return false;
+      return true;
+    });
+
+    const column = COLUMNS.find((c) => c.key === sort.key);
+    if (column) {
+      rows = [...rows].sort((a, b) => {
+        const av = column.get(a);
+        const bv = column.get(b);
+        const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+        return sort.dir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return rows;
+  }, [lodges, search, typeFilter, gstFilter, statusFilter, sort]);
+
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await downloadLodgesExcel(filtered || [], { describeType, checkinLabel: CHECKIN_LABEL });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const activeFilterCount = [typeFilter, gstFilter, statusFilter].filter(Boolean).length;
+  const clearFilters = () => {
+    setTypeFilter(null);
+    setGstFilter(null);
+    setStatusFilter(null);
+    setSearch('');
+  };
+
   return (
     <div className="dash-shell">
       {confirmSignOut && (
@@ -98,13 +174,77 @@ export default function LodgesDashboard() {
           <div>
             <h1>Onboarded lodges</h1>
             <p className="dash-header__count">
-              {lodges === null ? 'Loading…' : `${lodges.length} ${lodges.length === 1 ? 'lodge' : 'lodges'}`}
+              {lodges === null
+                ? 'Loading…'
+                : filtered.length === lodges.length
+                  ? `${lodges.length} ${lodges.length === 1 ? 'lodge' : 'lodges'}`
+                  : `${filtered.length} of ${lodges.length} lodges`}
             </p>
           </div>
-          <Link className="btn-accent" to="/vt-internal/lodges/new">
-            + Add new lodge
-          </Link>
+          <div className="dash-header__actions">
+            {lodges?.length > 0 && (
+              <button className="btn-outline" type="button" onClick={handleExport} disabled={exporting}>
+                {exporting ? 'Exporting…' : '⇩ Export to Excel'}
+              </button>
+            )}
+            <Link className="btn-accent" to="/vt-internal/lodges/new">
+              + Add new lodge
+            </Link>
+          </div>
         </div>
+
+        {lodges?.length > 0 && (
+          <div className="dash-toolbar">
+            <div className="dash-search">
+              <span className="dash-search__icon" aria-hidden="true">⌕</span>
+              <input
+                type="text"
+                placeholder="Search by lodge, slug, owner or phone…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="dash-filters">
+              <select
+                className={`dash-select ${typeFilter ? 'dash-select--on' : ''}`}
+                value={typeFilter || ''}
+                onChange={(e) => setTypeFilter(e.target.value || null)}
+              >
+                <option value="">All types</option>
+                {TYPE_FILTERS.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+
+              <select
+                className={`dash-select ${gstFilter ? 'dash-select--on' : ''}`}
+                value={gstFilter || ''}
+                onChange={(e) => setGstFilter(e.target.value || null)}
+              >
+                <option value="">All GST</option>
+                <option value="gst">GST registered</option>
+                <option value="non-gst">Non-GST</option>
+              </select>
+
+              <select
+                className={`dash-select ${statusFilter ? 'dash-select--on' : ''}`}
+                value={statusFilter || ''}
+                onChange={(e) => setStatusFilter(e.target.value || null)}
+              >
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+
+              {(activeFilterCount > 0 || search) && (
+                <button type="button" className="dash-clear" onClick={clearFilters}>
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="dash-card">
           {error && <div className="dash-state">{error}</div>}
@@ -115,24 +255,32 @@ export default function LodgesDashboard() {
             <div className="dash-state">No lodges yet. Add the first one to get started.</div>
           )}
 
-          {!error && lodges?.length > 0 && (
+          {!error && lodges?.length > 0 && filtered.length === 0 && (
+            <div className="dash-state">No lodges match these filters.</div>
+          )}
+
+          {!error && filtered?.length > 0 && (
             <div className="dash-table-scroll">
-              <table className="dash-table">
+              <table className="dash-table dash-table--sheet">
                 <thead>
                   <tr>
-                    <th>Lodge</th>
-                    <th>Type</th>
-                    <th>Owner</th>
-                    <th>Location</th>
-                    <th>Check-in</th>
-                    <th>GST</th>
-                    <th>Status</th>
-                    <th>Onboarded</th>
+                    {COLUMNS.map((col) => (
+                      <th
+                        key={col.key}
+                        className={`dash-th--sortable ${sort.key === col.key ? 'dash-th--sorted' : ''}`}
+                        onClick={() => toggleSort(col.key)}
+                      >
+                        <span>{col.label}</span>
+                        <span className="dash-sort-arrow" aria-hidden="true">
+                          {sort.key === col.key ? (sort.dir === 'asc' ? '▲' : '▼') : ''}
+                        </span>
+                      </th>
+                    ))}
                     <th aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
-                  {lodges.map((lodge) => (
+                  {filtered.map((lodge) => (
                     <tr key={lodge.id}>
                       <td>
                         <div className="dash-lodge-name">{lodge.name}</div>

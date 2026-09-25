@@ -49,18 +49,22 @@ async function createLodgeWithOwner(input) {
       .input('foodRoomService', sql.Bit, input.foodRoomService)
       .input('foodTableService', sql.Bit, input.foodTableService)
       .input('hasEvents', sql.Bit, input.hasEvents)
+      .input('hasAssets', sql.Bit, input.hasAssets)
+      .input('hasExpenses', sql.Bit, input.hasExpenses)
       .query(`
         INSERT INTO dbo.lodges
           (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
            latitude, longitude, checkin_mode,
            is_gst_registered, gstin, is_specified_premises,
-           has_rooms, serves_food, food_room_service, food_table_service, has_events)
+           has_rooms, serves_food, food_room_service, food_table_service, has_events,
+           has_assets, has_expenses)
         OUTPUT inserted.id
         VALUES
           (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state,
            @latitude, @longitude, @checkinMode,
            @isGstRegistered, @gstin, @isSpecifiedPremises,
-           @hasRooms, @servesFood, @foodRoomService, @foodTableService, @hasEvents)
+           @hasRooms, @servesFood, @foodRoomService, @foodTableService, @hasEvents,
+           @hasAssets, @hasExpenses)
       `);
 
     const lodgeId = lodgeResult.recordset[0].id;
@@ -110,6 +114,7 @@ async function listLodges() {
       l.id, l.name, l.slug, l.city, l.state, l.latitude, l.longitude, l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
+      l.has_assets, l.has_expenses,
       l.logo_path, l.show_logo_on_receipt,
       u.name AS owner_name, u.phone AS owner_phone
     FROM dbo.lodges l
@@ -141,6 +146,7 @@ async function getLodgeDetail(id) {
       latitude, longitude,
       checkin_mode, is_gst_registered, gstin, is_specified_premises,
       has_rooms, serves_food, food_room_service, food_table_service, has_events,
+      has_assets, has_expenses,
       check_out_time, check_in_time, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
       logo_path, show_logo_on_receipt,
@@ -259,6 +265,8 @@ async function updateLodge(id, input) {
     food_room_service: flag('foodRoomService', 'food_room_service'),
     food_table_service: flag('foodTableService', 'food_table_service'),
     has_events: flag('hasEvents', 'has_events'),
+    has_assets: flag('hasAssets', 'has_assets'),
+    has_expenses: flag('hasExpenses', 'has_expenses'),
     is_active: flag('isActive', 'is_active'),
     show_logo_on_receipt: flag('showLogoOnReceipt', 'show_logo_on_receipt'),
   };
@@ -296,6 +304,8 @@ async function updateLodge(id, input) {
     .input('foodRoomService', sql.Bit, next.food_room_service)
     .input('foodTableService', sql.Bit, next.food_table_service)
     .input('hasEvents', sql.Bit, next.has_events)
+    .input('hasAssets', sql.Bit, next.has_assets)
+    .input('hasExpenses', sql.Bit, next.has_expenses)
     .input('isActive', sql.Bit, next.is_active)
     .input('showLogoOnReceipt', sql.Bit, next.show_logo_on_receipt)
     .query(`
@@ -306,7 +316,8 @@ async function updateLodge(id, input) {
           checkin_mode = @checkinMode, is_gst_registered = @isGstRegistered, gstin = @gstin,
           is_specified_premises = @isSpecifiedPremises,
           has_rooms = @hasRooms, serves_food = @servesFood, food_room_service = @foodRoomService,
-          food_table_service = @foodTableService, has_events = @hasEvents, is_active = @isActive,
+          food_table_service = @foodTableService, has_events = @hasEvents,
+          has_assets = @hasAssets, has_expenses = @hasExpenses, is_active = @isActive,
           show_logo_on_receipt = @showLogoOnReceipt
       WHERE id = @id
     `);

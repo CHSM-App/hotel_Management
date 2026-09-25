@@ -3,7 +3,7 @@
 // (used by both preview and download, so the two never disagree),
 // download-Excel, download-PDF.
 
-const STATUS_LABEL = { IN_USE: 'In use', UNDER_REPAIR: 'Under repair', TRANSFERRED: 'Transferred', RETIRED: 'Retired' };
+const STATUS_LABEL = { IN_USE: 'In use', UNDER_REPAIR: 'Under repair', RETIRED: 'Retired' };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -49,7 +49,7 @@ function repairCost(wo) {
 function computeTotals(assets, workOrders) {
   const purchaseValue = assets.reduce((s, a) => s + Number(a.purchaseCost || 0), 0);
   const repairSpend = workOrders.reduce((s, wo) => s + repairCost(wo), 0);
-  const byStatus = { IN_USE: 0, UNDER_REPAIR: 0, TRANSFERRED: 0, RETIRED: 0 };
+  const byStatus = { IN_USE: 0, UNDER_REPAIR: 0, RETIRED: 0 };
   for (const a of assets) byStatus[a.status] = (byStatus[a.status] || 0) + 1;
   const openWorkOrders = workOrders.filter((wo) => wo.status !== 'CLOSED').length;
   return {

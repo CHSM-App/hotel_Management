@@ -39,20 +39,19 @@ const initialForm = {
   city: '',
   state: '',
   address: '',
-  // Where it is on a map. Strings like every other field; converted to
-  // numbers (or null) on submit.
   latitude: '',
   longitude: '',
   lodgeNameMr: '',
   addressMr: '',
   checkinMode: 'HOUR_24',
-  // Chosen from PROPERTY_TYPES rather than set as raw bits — see the picker in
-  // the form below. The four capability flags are derived from these two on
-  // submit, so the payload the API receives is unchanged.
   propertyType: 'LODGE',
   foodServiceStyle: 'BOTH',
-  // A hall or lawn for functions, on top of whichever type is picked.
+  // Add-ons: off by default, switched on explicitly in the Feature access
+  // section below. hasEvents already worked this way; hasAssets/hasExpenses
+  // now follow the same pattern instead of shipping on for free.
   hasEvents: false,
+  hasAssets: false,
+  hasExpenses: false,
   isGstRegistered: false,
   gstin: '',
   isSpecifiedPremises: false,
@@ -62,13 +61,11 @@ const initialForm = {
   tempPassword: '',
 };
 
-// The four bits the API stores, resolved from the two choices the form asks
-// for. Food service style only applies to a lodge that serves meals: a
-// restaurant has no rooms to serve, and a plain lodge has no food.
+// The four bits the API stores, resolved from the two choices step 1 asks
+// for. Food service style only applies to a lodge that serves meals.
 function capabilitiesFor(propertyType, foodServiceStyle) {
   const type = PROPERTY_TYPES.find((t) => t.key === propertyType) || PROPERTY_TYPES[0];
   if (propertyType !== 'LODGE_WITH_FOOD') return { ...type.flags };
-
   const style = FOOD_SERVICE_STYLES.find((s) => s.key === foodServiceStyle) || FOOD_SERVICE_STYLES[0];
   return { ...type.flags, ...style.flags };
 }
@@ -78,10 +75,6 @@ export default function LodgeRegistration() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState(null);
-  // Four steps down a single scrolling column, so a failure caught on submit
-  // has to bring itself into view rather than rely on already being on
-  // screen — same failOn/reportError shape as the lodge-side forms
-  // (pages/lodge/forms.css).
   const errorRef = useRef(null);
   const reportError = (message) => {
     setError(message);
@@ -90,8 +83,6 @@ export default function LodgeRegistration() {
       errorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   };
-  // Field-only: the message goes under the box that caused it, and must not
-  // also land in the banner above — that would render the same line twice.
   const failOn = (id, message) => {
     setFieldError({ id, message });
     const el = document.getElementById(id);
@@ -103,8 +94,6 @@ export default function LodgeRegistration() {
     id && fieldError?.id === id ? <p className="field__error">{fieldError.message}</p> : null;
   const invalid = (id) => Boolean(id) && fieldError?.id === id;
   const [success, setSuccess] = useState(false);
-  // Captured at submit, because the form resets to its Lodge default straight
-  // afterwards — otherwise creating a restaurant would report "Lodge created".
   const [successNoun, setSuccessNoun] = useState('Lodge');
   const [submitting, setSubmitting] = useState(false);
   const session = useMemo(() => getSession(), []);
@@ -114,16 +103,23 @@ export default function LodgeRegistration() {
     setForm((f) => ({ ...f, [key]: value }));
   };
 
-  // The chosen type drives both the capability flags sent to the API and the
-  // words this form uses for everything after step 1.
   const type = useMemo(
     () => PROPERTY_TYPES.find((t) => t.key === form.propertyType) || PROPERTY_TYPES[0],
     [form.propertyType]
   );
 
+  // What the property type alone unlocks — the base features that ride along
+  // with Lodge / Lodge with meals / Restaurant and can't be switched off here.
+  const baseCapabilities = useMemo(
+    () => capabilitiesFor(form.propertyType, form.foodServiceStyle),
+    [form.propertyType, form.foodServiceStyle]
+  );
+
+  // Base capabilities plus the three opt-in add-ons, for the summary rail and
+  // the payload.
   const capabilities = useMemo(
-    () => ({ ...capabilitiesFor(form.propertyType, form.foodServiceStyle), hasEvents: form.hasEvents }),
-    [form.propertyType, form.foodServiceStyle, form.hasEvents]
+    () => ({ ...baseCapabilities, hasEvents: form.hasEvents, hasAssets: form.hasAssets, hasExpenses: form.hasExpenses }),
+    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses]
   );
 
   const includedFeatures = useMemo(() => featuresForCapabilities(capabilities), [capabilities]);
@@ -135,18 +131,23 @@ export default function LodgeRegistration() {
     features: includedFeatures.filter((f) => f.group === group),
   })).filter((g) => g.features.length > 0);
 
+  // The three add-on switches in the Feature access section. Everything else
+  // FEATURES lists either has no capability gate (Billing, Staff) or is a
+  // fixed base feature the property type already decided.
+  const ADDONS = [
+    { key: 'events', formKey: 'hasEvents', feature: FEATURES.find((f) => f.key === 'events') },
+    { key: 'assets', formKey: 'hasAssets', feature: FEATURES.find((f) => f.key === 'assets') },
+    { key: 'expenses', formKey: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
+  ];
+  const baseFeatures = FEATURES.filter((f) => !ADDONS.some((a) => a.key === f.key));
+
   const handleNameChange = (e) => {
     const lodgeName = e.target.value;
-    setForm((f) => ({
-      ...f,
-      lodgeName,
-      slug: slugTouched ? f.slug : slugify(lodgeName),
-    }));
+    setForm((f) => ({ ...f, lodgeName, slug: slugTouched ? f.slug : slugify(lodgeName) }));
   };
 
   const generatePassword = () => {
-    const value = Math.random().toString(36).slice(2, 10);
-    setForm((f) => ({ ...f, tempPassword: value }));
+    setForm((f) => ({ ...f, tempPassword: Math.random().toString(36).slice(2, 10) }));
   };
 
   const handleSubmit = async (e) => {
@@ -191,16 +192,17 @@ export default function LodgeRegistration() {
     setSubmitting(true);
     try {
       const { propertyType, foodServiceStyle, ...rest } = form;
-      const caps = { ...capabilitiesFor(propertyType, foodServiceStyle), hasEvents: Boolean(rest.hasEvents) };
+      const caps = {
+        ...capabilitiesFor(propertyType, foodServiceStyle),
+        hasEvents: Boolean(rest.hasEvents),
+        hasAssets: Boolean(rest.hasAssets),
+        hasExpenses: Boolean(rest.hasExpenses),
+      };
       const payload = {
         ...rest,
         ...caps,
         latitude: coords.latitude,
         longitude: coords.longitude,
-        // The checkbox is hidden for types it can't apply to, but hiding a
-        // control doesn't clear it — ticking it as a lodge with meals and then
-        // switching to Restaurant would otherwise submit a stale true and tax
-        // their food at 18%.
         isSpecifiedPremises: caps.hasRooms && caps.servesFood ? rest.isSpecifiedPremises : false,
       };
       await apiPost('/internal/lodges', payload, { token: session?.token });
@@ -240,9 +242,8 @@ export default function LodgeRegistration() {
           <span className="reg-head__chip">Staff only</span>
           <h1>Register a new {type.noun}</h1>
           <p>
-            Pick what kind of property it is first — that decides which sections the owner gets.
-            Then create the tenant, set its GST defaults, and hand over the first login, which the
-            owner changes on their first sign-in.
+            Pick what kind of property it is first, choose which add-ons the account gets, then create
+            the tenant and hand over the first login, which the owner changes on their first sign-in.
           </p>
         </div>
 
@@ -263,18 +264,16 @@ export default function LodgeRegistration() {
               </div>
             )}
 
-            {/* Step 1, before anything else is asked. It decides which sections
-                the account gets and what the rest of this form calls things, so
-                answering it first is what makes the remaining questions read
-                sensibly — a restaurateur is never asked for their "lodge name". */}
+            {/* Step 1: property type. Decides the base features (step 3
+                shows exactly which) and what the rest of this form calls
+                things. */}
             <section className="reg-card">
               <div className="reg-card__head">
                 <span className="reg-step">1</span>
                 <div>
                   <h2 className="reg-card__title">What are you registering?</h2>
                   <p className="reg-card__hint">
-                    Everything below adapts to this answer, including what the account is allowed
-                    to bill.
+                    Fixes the base features this account gets — see Feature access below.
                   </p>
                 </div>
               </div>
@@ -303,23 +302,8 @@ export default function LodgeRegistration() {
                 ))}
               </div>
 
-              {/* Orthogonal to the type above: a plain lodge with a lawn and a
-                  restaurant with a party hall both take functions. */}
-              <div className="checkbox-field">
-                <input id="hasEvents" type="checkbox" checked={form.hasEvents} onChange={update('hasEvents')} />
-                <div>
-                  <label htmlFor="hasEvents">Lets a hall, lawn or terrace for functions</label>
-                  <span className="checkbox-field__note">
-                    Adds the Events &amp; functions section: a function diary, quotes, date holds,
-                    advances and bills for birthdays, weddings and corporate events.
-                  </span>
-                </div>
-              </div>
-
               <div className="reg-note">
-                <span className="reg-note__icon" aria-hidden="true">
-                  ⚠
-                </span>
+                <span className="reg-note__icon" aria-hidden="true">⚠</span>
                 <span>
                   Whether it has rooms is fixed after go-live — turning that off later would strand
                   their bookings behind a hidden section.
@@ -329,11 +313,7 @@ export default function LodgeRegistration() {
               {form.propertyType === 'LODGE_WITH_FOOD' && (
                 <div className="field">
                   <label htmlFor="foodServiceStyle">How do guests order food?</label>
-                  <select
-                    id="foodServiceStyle"
-                    value={form.foodServiceStyle}
-                    onChange={update('foodServiceStyle')}
-                  >
+                  <select id="foodServiceStyle" value={form.foodServiceStyle} onChange={update('foodServiceStyle')}>
                     {FOOD_SERVICE_STYLES.map((style) => (
                       <option key={style.key} value={style.key}>
                         {style.label} — {style.description}
@@ -357,8 +337,7 @@ export default function LodgeRegistration() {
 
               <div className="field">
                 <label htmlFor="lodgeName">
-                  {type.Noun} name
-                  <Req />
+                  {type.Noun} name<Req />
                 </label>
                 <input
                   id="lodgeName"
@@ -372,8 +351,7 @@ export default function LodgeRegistration() {
 
               <div className="field">
                 <label htmlFor="slug">
-                  Public link slug
-                  <Req />
+                  Public link slug<Req />
                 </label>
                 <input
                   id="slug"
@@ -415,10 +393,6 @@ export default function LodgeRegistration() {
                 <input id="address" value={form.address} onChange={update('address')} placeholder="Beach road, near jetty" />
               </div>
 
-              {/* The pin, separate from the address: the address is what a
-                  bill prints, the pin is what a directions link opens. Optional
-                  at onboarding — staff can add it from the property's page
-                  later — but worth taking now while the owner is on the line. */}
               <div className="field">
                 <label htmlFor="location-lat">Map location (optional)</label>
                 <LocationPicker
@@ -429,50 +403,88 @@ export default function LodgeRegistration() {
                 />
               </div>
 
-              {/* Typed by the property, never transliterated — a guessed
-                  Devanagari spelling of a business name has no place on a tax
-                  document. Left empty, the bill's Marathi toggle keeps the
-                  English name and only the captions translate. */}
               <div className="field-row">
                 <div className="field">
                   <label htmlFor="lodgeNameMr">Name in Marathi (optional)</label>
-                  <input
-                    id="lodgeNameMr"
-                    value={form.lodgeNameMr}
-                    onChange={update('lodgeNameMr')}
-                    placeholder="आनंद होम स्टे"
-                    lang="mr"
-                  />
+                  <input id="lodgeNameMr" value={form.lodgeNameMr} onChange={update('lodgeNameMr')} placeholder="आनंद होम स्टे" lang="mr" />
                 </div>
                 <div className="field">
                   <label htmlFor="addressMr">Address in Marathi (optional)</label>
-                  <input
-                    id="addressMr"
-                    value={form.addressMr}
-                    onChange={update('addressMr')}
-                    placeholder="मोती तलावाजवळ, सावंतवाडी, वेंगुर्ला"
-                    lang="mr"
-                  />
+                  <input id="addressMr" value={form.addressMr} onChange={update('addressMr')} placeholder="मोती तलावाजवळ, सावंतवाडी, वेंगुर्ला" lang="mr" />
                 </div>
               </div>
 
-              {capabilities.hasRooms && (
+              {baseCapabilities.hasRooms && (
                 <div className="field">
                   <label htmlFor="checkinMode">Check-in cycle</label>
                   <select id="checkinMode" value={form.checkinMode} onChange={update('checkinMode')}>
                     {CHECKIN_MODES.map((mode) => (
-                      <option key={mode.value} value={mode.value}>
-                        {mode.label}
-                      </option>
+                      <option key={mode.value} value={mode.value}>{mode.label}</option>
                     ))}
                   </select>
                 </div>
               )}
             </section>
 
+            {/* Step 3: the dedicated Feature access section this form exists
+                for. Base features (from step 1) are shown locked and already
+                checked — nothing to decide, just a promise of what ships.
+                The three add-ons get a real switch each. */}
             <section className="reg-card">
               <div className="reg-card__head">
                 <span className="reg-step">3</span>
+                <div>
+                  <h2 className="reg-card__title">Feature access</h2>
+                  <p className="reg-card__hint">
+                    Every tab the owner's dashboard can show, and who controls it.
+                  </p>
+                </div>
+              </div>
+
+              <div className="reg-access-group">
+                <div className="reg-access-group__label">
+                  Included with {type.label} — set by step 1, not editable here
+                </div>
+                <div className="reg-access-list">
+                  {baseFeatures.map((f) => {
+                    const on = includedKeys.has(f.key);
+                    return (
+                      <div key={f.key} className={`reg-access-row ${on ? '' : 'reg-access-row--off'}`}>
+                        <div className="reg-access-row__text">
+                          <span className="reg-access-row__title">{f.title}</span>
+                          <span className="reg-access-row__desc">{f.description}</span>
+                        </div>
+                        <span className={`reg-lock ${on ? 'reg-lock--on' : 'reg-lock--off'}`} aria-hidden="true">
+                          {on ? '✓' : '—'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="reg-access-group">
+                <div className="reg-access-group__label">Add-ons — switch on per property</div>
+                <div className="reg-access-list">
+                  {ADDONS.map(({ formKey, feature }) => (
+                    <label key={formKey} className="reg-access-row reg-access-row--toggle">
+                      <div className="reg-access-row__text">
+                        <span className="reg-access-row__title">{feature.title}</span>
+                        <span className="reg-access-row__desc">{feature.description}</span>
+                      </div>
+                      <span className="reg-switch">
+                        <input type="checkbox" checked={form[formKey]} onChange={update(formKey)} />
+                        <span className="reg-switch__track"><span className="reg-switch__thumb" /></span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="reg-card">
+              <div className="reg-card__head">
+                <span className="reg-step">4</span>
                 <div>
                   <h2 className="reg-card__title">Billing</h2>
                   <p className="reg-card__hint">
@@ -482,52 +494,26 @@ export default function LodgeRegistration() {
               </div>
 
               <div className="checkbox-field">
-                <input
-                  id="isGstRegistered"
-                  type="checkbox"
-                  checked={form.isGstRegistered}
-                  onChange={update('isGstRegistered')}
-                />
+                <input id="isGstRegistered" type="checkbox" checked={form.isGstRegistered} onChange={update('isGstRegistered')} />
                 <div>
                   <label htmlFor="isGstRegistered">GST registered</label>
-                  <span className="checkbox-field__note">
-                    Fixed after go-live. Decides whether tax invoices and bills of supply exist at all.
-                  </span>
+                  <span className="checkbox-field__note">Fixed after go-live. Decides whether tax invoices and bills of supply exist at all.</span>
                 </div>
               </div>
 
               {form.isGstRegistered && (
                 <div className="field">
                   <label htmlFor="gstin">
-                    GSTIN
-                    <Req label="required while GST registered" />
+                    GSTIN<Req label="required while GST registered" />
                   </label>
-                  <input
-                    id="gstin"
-                    aria-invalid={invalid('gstin')}
-                    value={form.gstin}
-                    onChange={update('gstin')}
-                    placeholder="27ABCDE1234F1Z5"
-                  />
+                  <input id="gstin" aria-invalid={invalid('gstin')} value={form.gstin} onChange={update('gstin')} placeholder="27ABCDE1234F1Z5" />
                   {fieldErr('gstin')}
                 </div>
               )}
 
-              {/* Needs rooms AND food to be a real question.
-                  "Specified premises" is a GST status defined by accommodation: a
-                  property qualifies because its rooms went above ₹7,500/night in
-                  the preceding financial year, or because the owner filed a
-                  declaration opting in. A restaurant with no rooms therefore
-                  cannot hold it (its food is 5% without ITC regardless), and a
-                  lodge with no kitchen has no food supply for it to rate. */}
-              {capabilities.hasRooms && capabilities.servesFood && (
+              {baseCapabilities.hasRooms && baseCapabilities.servesFood && (
                 <div className="checkbox-field">
-                  <input
-                    id="isSpecifiedPremises"
-                    type="checkbox"
-                    checked={form.isSpecifiedPremises}
-                    onChange={update('isSpecifiedPremises')}
-                  />
+                  <input id="isSpecifiedPremises" type="checkbox" checked={form.isSpecifiedPremises} onChange={update('isSpecifiedPremises')} />
                   <div>
                     <label htmlFor="isSpecifiedPremises">Specified premises</label>
                     <span className="checkbox-field__note">
@@ -542,7 +528,7 @@ export default function LodgeRegistration() {
 
             <section className="reg-card">
               <div className="reg-card__head">
-                <span className="reg-step">4</span>
+                <span className="reg-step">5</span>
                 <div>
                   <h2 className="reg-card__title">Owner &amp; first login</h2>
                   <p className="reg-card__hint">
@@ -553,32 +539,18 @@ export default function LodgeRegistration() {
 
               <div className="field">
                 <label htmlFor="ownerName">
-                  Owner name
-                  <Req />
+                  Owner name<Req />
                 </label>
-                <input
-                  id="ownerName"
-                  aria-invalid={invalid('ownerName')}
-                  value={form.ownerName}
-                  onChange={update('ownerName')}
-                  placeholder="Suresh Naik"
-                />
+                <input id="ownerName" aria-invalid={invalid('ownerName')} value={form.ownerName} onChange={update('ownerName')} placeholder="Suresh Naik" />
                 {fieldErr('ownerName')}
               </div>
 
               <div className="field-row">
                 <div className="field">
                   <label htmlFor="ownerPhone">
-                    Owner phone
-                    <Req />
+                    Owner phone<Req />
                   </label>
-                  <input
-                    id="ownerPhone"
-                    aria-invalid={invalid('ownerPhone')}
-                    value={form.ownerPhone}
-                    onChange={update('ownerPhone')}
-                    placeholder="9876543210"
-                  />
+                  <input id="ownerPhone" aria-invalid={invalid('ownerPhone')} value={form.ownerPhone} onChange={update('ownerPhone')} placeholder="9876543210" />
                   {fieldErr('ownerPhone')}
                 </div>
                 <div className="field">
@@ -589,20 +561,11 @@ export default function LodgeRegistration() {
 
               <div className="field">
                 <label htmlFor="tempPassword">
-                  Temporary password
-                  <Req />
+                  Temporary password<Req />
                 </label>
                 <div className="reg-password">
-                  <input
-                    id="tempPassword"
-                    aria-invalid={invalid('tempPassword')}
-                    value={form.tempPassword}
-                    onChange={update('tempPassword')}
-                    placeholder="Generate or set one"
-                  />
-                  <button className="reg-generate" type="button" onClick={generatePassword}>
-                    Generate
-                  </button>
+                  <input id="tempPassword" aria-invalid={invalid('tempPassword')} value={form.tempPassword} onChange={update('tempPassword')} placeholder="Generate or set one" />
+                  <button className="reg-generate" type="button" onClick={generatePassword}>Generate</button>
                 </div>
                 {fieldErr('tempPassword')}
               </div>
@@ -610,14 +573,9 @@ export default function LodgeRegistration() {
           </div>
 
           <aside className="reg-aside">
-            {/* Built from the same FEATURES list the dashboard renders its sidebar
-                from, so this is literally what the owner will see after signing
-                in — not a hand-maintained marketing list that can go stale. */}
             <div className="reg-summary">
               <div className="reg-summary__identity">
-                <div
-                  className={`reg-summary__name ${form.lodgeName.trim() ? '' : 'reg-summary__name--empty'}`}
-                >
+                <div className={`reg-summary__name ${form.lodgeName.trim() ? '' : 'reg-summary__name--empty'}`}>
                   {form.lodgeName.trim() || `Untitled ${type.noun}`}
                 </div>
                 <div className="reg-summary__link">/{form.slug.trim() || type.examples.slug}</div>

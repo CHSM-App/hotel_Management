@@ -215,7 +215,6 @@ class _AssetCard extends StatelessWidget {
   Color get _statusColor => switch (asset.status) {
     'IN_USE' => AppTheme.vacant,
     'UNDER_REPAIR' => AppTheme.draft,
-    'TRANSFERRED' => AppTheme.checkedIn,
     _ => AppTheme.muted,
   };
 

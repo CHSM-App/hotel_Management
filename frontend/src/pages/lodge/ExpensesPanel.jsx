@@ -335,8 +335,15 @@ export default function ExpensesPanel({ onViewReport }) {
   // Filters
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  // Date range is the least-used filter here (everything else narrows what
+  // you're looking at; this narrows when) — collapsed behind a toggle so it
+  // doesn't cost two field-widths on every visit, same reasoning as any
+  // "advanced filters" disclosure.
+  const [showDateRange, setShowDateRange] = useState(false);
 
   // Card vs table view, same toggle as AssetsPanel's asset register.
   const [expenseView, setExpenseView] = useState('table');
@@ -432,6 +439,8 @@ export default function ExpensesPanel({ onViewReport }) {
     const q = query.trim().toLowerCase();
     return (expenses || []).filter((e) => {
       if (categoryFilter && String(e.categoryId) !== String(categoryFilter)) return false;
+      if (paymentMethodFilter && e.paymentMethod !== paymentMethodFilter) return false;
+      if (paymentStatusFilter && (e.paymentStatus || 'PAID') !== paymentStatusFilter) return false;
       if (fromDate && e.expenseDate < fromDate) return false;
       if (toDate && e.expenseDate > toDate) return false;
       if (q) {
@@ -440,7 +449,7 @@ export default function ExpensesPanel({ onViewReport }) {
       }
       return true;
     });
-  }, [expenses, query, categoryFilter, fromDate, toDate]);
+  }, [expenses, query, categoryFilter, paymentMethodFilter, paymentStatusFilter, fromDate, toDate]);
 
   const filteredTotal = useMemo(
     () => filteredExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0),
@@ -907,8 +916,55 @@ export default function ExpensesPanel({ onViewReport }) {
                     ))}
                   </select>
                 )}
-                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} aria-label="From date" />
-                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} aria-label="To date" />
+                <select
+                  className="asset-category-filter"
+                  value={paymentMethodFilter}
+                  onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                  aria-label="Filter by paid via"
+                >
+                  <option value="">All payment methods</option>
+                  {PAYMENT_METHOD_OPTIONS.map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+                <select
+                  className="asset-category-filter"
+                  value={paymentStatusFilter}
+                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                  aria-label="Filter by payment status"
+                >
+                  <option value="">All payment statuses</option>
+                  {Object.entries(PAYMENT_STATUS_LABEL).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+                {showDateRange ? (
+                  <>
+                    <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} aria-label="From date" />
+                    <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} aria-label="To date" />
+                  </>
+                ) : (
+                  <button type="button" className="inv-linkbtn" onClick={() => setShowDateRange(true)}>
+                    + Date range
+                  </button>
+                )}
+                {(query || categoryFilter || paymentMethodFilter || paymentStatusFilter || fromDate || toDate) && (
+                  <button
+                    type="button"
+                    className="inv-linkbtn"
+                    onClick={() => {
+                      setQuery('');
+                      setCategoryFilter('');
+                      setPaymentMethodFilter('');
+                      setPaymentStatusFilter('');
+                      setFromDate('');
+                      setToDate('');
+                      setShowDateRange(false);
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                )}
               </div>
               <div className="asset-toolbar-row__end">
                 <div className="toggle-group asset-view-toggle" role="group" aria-label="Expense list view">
