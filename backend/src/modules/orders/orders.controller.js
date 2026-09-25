@@ -13,9 +13,14 @@ function parse(schema, body) {
 
 async function listOrdersHandler(req, res, next) {
   try {
+    // A captain without the kitchen's orders.manage only ever sees the
+    // orders they themselves rang in — everyone else's trade isn't theirs
+    // to browse. Whoever holds orders.manage still sees the whole day.
+    const captainOnly = !req.permissions.includes('orders.manage');
     const orders = await ordersService.listOrders(req.user.lodgeId, {
       status: req.query.status,
       date: req.query.date,
+      createdBy: captainOnly ? req.user.sub : null,
     });
     res.json({ orders });
   } catch (err) {

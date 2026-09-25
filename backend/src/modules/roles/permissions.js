@@ -44,8 +44,14 @@ const PERMISSIONS = [
   },
   {
     key: 'orders.manage',
-    label: 'Food orders',
-    description: 'Work the live order queue, take orders at the counter and mark items unavailable.',
+    label: 'Kitchen queue',
+    description: 'Work the live order queue — accept, cook and mark items unavailable.',
+    capability: 'servesFood',
+  },
+  {
+    key: 'orders.take',
+    label: 'Take orders',
+    description: 'Place new orders from a table, a room or the counter.',
     capability: 'servesFood',
   },
   {
@@ -70,7 +76,7 @@ const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 
 // Built-in role keys. These always exist (seeded with lodge_id NULL) and can be
 // re-scoped per lodge, but never renamed or deleted.
-const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN'];
+const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN'];
 
 // What a property has to be for a built-in role to mean anything. A rooms-only
 // lodge has no kitchen, so a Kitchen role there is a login that can reach one
@@ -79,7 +85,7 @@ const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN'];
 //
 // The same idea as the `capability` field on FEATURES in the frontend's
 // propertyProfile.js, which is what already hides the food sections.
-const SYSTEM_ROLE_CAPABILITY = { KITCHEN: 'servesFood' };
+const SYSTEM_ROLE_CAPABILITY = { KITCHEN: 'servesFood', CAPTAIN: 'servesFood' };
 
 function isValidPermission(key) {
   return PERMISSION_KEYS.includes(key);

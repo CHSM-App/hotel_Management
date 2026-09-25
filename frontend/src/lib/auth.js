@@ -26,5 +26,5 @@ export function isStaff() {
 }
 
 export function isLodgeUser() {
-  return ['OWNER', 'RECEPTION', 'KITCHEN'].includes(getSession()?.role);
+  return ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN'].includes(getSession()?.role);
 }

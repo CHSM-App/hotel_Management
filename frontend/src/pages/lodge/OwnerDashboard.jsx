@@ -330,7 +330,14 @@ export default function OwnerDashboard() {
     const keys = Array.isArray(item.capability) ? item.capability : [item.capability];
     return keys.some((key) => Boolean(me?.lodge[key]));
   };
-  const visibleFeatures = FEATURES.filter((f) => permissions.includes(f.permission) && hasCapability(f));
+  // Same any-of shape as capability: a feature like Food orders is reachable
+  // by more than one permission now (the kitchen's queue, or a captain's
+  // orders.take), and holding either is enough to see it.
+  const hasPermission = (item) => {
+    const keys = Array.isArray(item.permission) ? item.permission : [item.permission];
+    return keys.some((key) => permissions.includes(key));
+  };
+  const visibleFeatures = FEATURES.filter((f) => hasPermission(f) && hasCapability(f));
   // Resolved rather than stored, so the landing section is whatever the loaded
   // permissions allow without a second render to correct a wrong first guess.
   const activeFeature =
@@ -661,7 +668,9 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 
-              {activeFeature && activeFeature.key === 'food' && <OrdersPanel lodge={me.lodge} />}
+              {activeFeature && activeFeature.key === 'food' && (
+                <OrdersPanel lodge={me.lodge} permissions={permissions} />
+              )}
 
               {activeFeature && activeFeature.key === 'menu' && (
                 <FoodSetup

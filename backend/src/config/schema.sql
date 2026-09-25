@@ -2461,3 +2461,24 @@ IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
 UPDATE dbo.roles
 SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","events.manage","assets.manage","expenses.manage"]'
 WHERE lodge_id IS NULL AND role_key = 'OWNER';
+
+-- orders.take (migration 083): splits "food orders" into kitchen work
+-- (orders.manage — the queue) and captain work (orders.take — placing a new
+-- order from a table or room). OWNER and RECEPTION keep placing orders too,
+-- so both pick up orders.take alongside orders.manage; KITCHEN is unchanged.
+-- Only where still at shipped defaults; a customised built-in keeps its own set.
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
+           AND permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","events.manage","assets.manage","expenses.manage"]')
+UPDATE dbo.roles
+SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","orders.take","events.manage","assets.manage","expenses.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'OWNER';
+
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'RECEPTION'
+           AND permissions = '["bookings.manage","billing.manage","guests.view","orders.manage","events.manage"]')
+UPDATE dbo.roles
+SET permissions = '["bookings.manage","billing.manage","guests.view","orders.manage","orders.take","events.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'RECEPTION';
+
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'CAPTAIN')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'CAPTAIN', 'Captain', 'Takes orders from tables and rooms.', 1, '["orders.take"]');

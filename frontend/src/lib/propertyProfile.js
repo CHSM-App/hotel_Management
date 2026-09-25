@@ -113,7 +113,7 @@ export const FEATURES = [
     key: 'food',
     title: 'Food orders',
     description: 'The live kitchen queue, and taking an order at the counter.',
-    permission: 'orders.manage',
+    permission: ['orders.manage', 'orders.take'],
     capability: 'servesFood',
     icon: 'coffee',
     group: 'Front desk',

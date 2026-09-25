@@ -4,7 +4,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const loginLockout = require('./loginLockout');
 
-const LODGE_ROLES = ['OWNER', 'RECEPTION', 'KITCHEN'];
+const LODGE_ROLES = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN'];
 
 // A real bcrypt hash of a value nobody can supply, compared against when the
 // identifier matched no account. Its only job is to make the failing path cost
