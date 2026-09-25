@@ -11,9 +11,11 @@ import 'counter_order_screen.dart';
 
 /// The kitchen queue, and the day behind it.
 ///
-/// This is the section a KITCHEN login lands on, and until now the only one it
-/// could reach — the seeded role carries `orders.manage` and nothing else, so
-/// a cook signing in got a single tab with a placeholder behind it.
+/// Split the same way the web's OrdersPanel.jsx is: `orders.manage` is the
+/// queue (view, accept, cancel), `orders.cook` is ticking dishes off, and
+/// `orders.take` is placing a counter order. A CAPTAIN login (orders.take
+/// only) never sees the Kitchen queue tab or its actions — it lands on "My
+/// orders" with the "+ Take an order" button instead, exactly like the web.
 class OrdersScreen extends ConsumerStatefulWidget {
   const OrdersScreen({super.key});
 
@@ -38,10 +40,26 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     }
   }
 
+  bool _queueDefaultSet = false;
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(ordersViewModelProvider);
     final vm = ref.read(ordersViewModelProvider.notifier);
+    final permissions = ref.watch(authViewModelProvider).me?.user.permissions ?? const [];
+    final canWorkQueue = permissions.contains('orders.manage');
+    final canTakeOrders = permissions.contains('orders.take');
+
+    // A captain with no queue access lands on "My orders" instead — the
+    // Kitchen tab is never shown to them, mirroring OrdersPanel.jsx.
+    if (!_queueDefaultSet) {
+      _queueDefaultSet = true;
+      if (!canWorkQueue && state.tab == OrdersTab.queue) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => vm.setTab(OrdersTab.history),
+        );
+      }
+    }
 
     return Stack(
       fit: StackFit.expand,
@@ -60,37 +78,48 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             ),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              _TabRow(state: state, onSelect: vm.setTab),
+              _TabRow(state: state, canWorkQueue: canWorkQueue, onSelect: vm.setTab),
               const SizedBox(height: AppTheme.s16),
-              if (state.tab == OrdersTab.queue)
-                ..._queue(context, ref, state)
+              if (state.tab == OrdersTab.queue && canWorkQueue)
+                ..._queue(
+                  context,
+                  ref,
+                  state,
+                  canCook: permissions.contains('orders.cook'),
+                )
               else
                 ..._history(context, ref, state),
             ],
           ),
         ),
-        Positioned(
-          right: AppTheme.s16,
-          bottom: AppTheme.s16,
-          child: FloatingActionButton(
-            backgroundColor: AppTheme.accent,
-            foregroundColor: Colors.white,
-            onPressed: () async {
-              final placed = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(builder: (_) => const CounterOrderScreen()),
-              );
-              if (placed == true) await vm.loadQueue();
-            },
-            child: const Icon(Icons.add_rounded),
+        if (canTakeOrders)
+          Positioned(
+            right: AppTheme.s16,
+            bottom: AppTheme.s16,
+            child: FloatingActionButton(
+              backgroundColor: AppTheme.accent,
+              foregroundColor: Colors.white,
+              onPressed: () async {
+                final placed = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const CounterOrderScreen()),
+                );
+                if (placed == true) await vm.loadQueue();
+              },
+              child: const Icon(Icons.add_rounded),
+            ),
           ),
-        ),
       ],
     );
   }
 
   // ── The queue ─────────────────────────────────────────────────────────────
 
-  List<Widget> _queue(BuildContext context, WidgetRef ref, OrdersState state) {
+  List<Widget> _queue(
+    BuildContext context,
+    WidgetRef ref,
+    OrdersState state, {
+    required bool canCook,
+  }) {
     return state.queue.when(
       loading: () => const [
         SizedBox(height: 120),
@@ -121,7 +150,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           for (final order in orders)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s8),
-              child: _OrderCard(order: order, now: state.now, live: true),
+              child: _OrderCard(
+                order: order,
+                now: state.now,
+                live: true,
+                canCook: canCook,
+              ),
             ),
         ];
       },
@@ -273,14 +307,39 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
 /// read as a single tab bar.
 class _TabRow extends StatelessWidget {
   final OrdersState state;
+  final bool canWorkQueue;
   final ValueChanged<OrdersTab> onSelect;
 
-  const _TabRow({required this.state, required this.onSelect});
+  const _TabRow({
+    required this.state,
+    required this.canWorkQueue,
+    required this.onSelect,
+  });
 
   static const double _height = 44;
 
   @override
   Widget build(BuildContext context) {
+    // A captain (no orders.manage) never sees the Kitchen tab at all — same
+    // as OrdersPanel.jsx, which renders only the History tab, relabelled
+    // "My orders", for that role.
+    if (!canWorkQueue) {
+      return SizedBox(
+        height: _height,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'My orders',
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+
     // The count rides on the tab because a cook looking at the day's history
     // still needs to know something new has come in.
     final waiting = state.needsAccepting;
@@ -512,11 +571,22 @@ class _OrderCard extends ConsumerWidget {
   /// A live ticket carries its actions; a historical one is a record.
   final bool live;
 
+  /// Whether this login may actually cook — gates the item ticks and the
+  /// preparing/ready/deliver actions, same as OrdersPanel.jsx's `canCook`.
+  /// A front-of-house role (orders.manage without orders.cook, e.g. OWNER or
+  /// RECEPTION) only ever gets Accept and Cancel.
+  final bool canCook;
+
   const _OrderCard({
     required this.order,
     required this.now,
     required this.live,
+    this.canCook = false,
   });
+
+  List<String> get _visibleStatuses => order.nextStatuses
+      .where((s) => s == 'QUEUED' || s == 'CANCELLED' || canCook)
+      .toList();
 
   static Color _statusColour(String status) {
     switch (status) {
@@ -529,7 +599,7 @@ class _OrderCard extends ConsumerWidget {
       case 'DELIVERED':
         return AppTheme.stayed;
       case 'CANCELLED':
-        return AppTheme.muted;
+        return AppTheme.danger;
       default:
         return AppTheme.reserved;
     }
@@ -613,7 +683,7 @@ class _OrderCard extends ConsumerWidget {
 
           const SizedBox(height: AppTheme.s8),
           for (final item in order.items)
-            _ItemLine(order: order, item: item, live: live),
+            _ItemLine(order: order, item: item, live: live, canCook: canCook),
 
           if ((order.note ?? '').isNotEmpty) ...[
             const SizedBox(height: AppTheme.s4),
@@ -646,22 +716,38 @@ class _OrderCard extends ConsumerWidget {
           if (order.status == 'CANCELLED' &&
               (order.cancelReason ?? '').isNotEmpty) ...[
             const SizedBox(height: AppTheme.s4),
-            Text(
-              'Cancelled: ${order.cancelReason}',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: AppTheme.s4,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              ),
+              child: Text(
+                'Cancelled: ${order.cancelReason}',
+                style: const TextStyle(
+                  color: AppTheme.danger,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ],
 
-          // Rendered only from what the server offered. The phone never
-          // decides which transitions are legal — it names the ones it was
-          // handed, so a rule change on the server needs no release here.
-          if (live && order.nextStatuses.isNotEmpty) ...[
+          // Rendered only from what the server offered, filtered the same way
+          // OrdersPanel.jsx filters visibleStatuses: Accept (QUEUED) and
+          // Cancel are front-of-house, everything else is the kitchen
+          // actually cooking the order and needs orders.cook.
+          if (live && _visibleStatuses.isNotEmpty) ...[
             const SizedBox(height: AppTheme.s8),
             Wrap(
               spacing: AppTheme.s8,
               runSpacing: AppTheme.s8,
               children: [
-                for (final next in order.nextStatuses)
+                for (final next in _visibleStatuses)
                   NeuButton(
                     primary: next != 'CANCELLED',
                     padding: const EdgeInsets.symmetric(
@@ -766,23 +852,29 @@ class _ItemLine extends ConsumerWidget {
   final FoodOrder order;
   final FoodOrderItem item;
   final bool live;
+  final bool canCook;
 
   const _ItemLine({
     required this.order,
     required this.item,
     required this.live,
+    this.canCook = false,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final done = item.isReady;
+    // The tick appears only while the order is being cooked, and only for a
+    // login that may actually cook — same as OrdersPanel.jsx's `tickable`.
+    // Outside that, the line is a plain record, same as a historical order.
+    final tickable = live && order.status == 'PREPARING' && canCook;
 
     final row = Padding(
       padding: const EdgeInsets.only(bottom: AppTheme.s4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (live)
+          if (tickable)
             Padding(
               padding: const EdgeInsets.only(right: AppTheme.s4),
               child: Icon(
@@ -815,7 +907,7 @@ class _ItemLine extends ConsumerWidget {
       ),
     );
 
-    if (!live) return row;
+    if (!tickable) return row;
 
     // Tappable both ways: a cook on a wall tablet mis-taps, and the server
     // takes a boolean precisely so the tick can be taken back.

@@ -18,7 +18,13 @@ class Feature {
   final String tabLabel;
 
   final IconData icon;
+
+  /// The permission that unlocks this section, or the first of several when
+  /// more than one role can reach it (any-of, same as web's `permission: [...]`).
   final String permission;
+
+  /// Extra permissions that also unlock this section, beyond [permission].
+  final List<String> altPermissions;
 
   /// The lodge flag this section needs, or null for the universal ones.
   final String? capability;
@@ -29,11 +35,12 @@ class Feature {
     required this.tabLabel,
     required this.icon,
     required this.permission,
+    this.altPermissions = const [],
     this.capability,
   });
 
   bool availableTo(Me me) {
-    if (!me.user.can(permission)) return false;
+    if (!me.user.canAny([permission, ...altPermissions])) return false;
     switch (capability) {
       case null:
         return true;
@@ -92,6 +99,7 @@ const kFeatures = <Feature>[
     tabLabel: 'Food',
     icon: Icons.room_service_rounded,
     permission: 'orders.manage',
+    altPermissions: ['orders.take'],
     capability: 'servesFood',
   ),
   // ── Setup ────────────────────────────────────────────────────────────────

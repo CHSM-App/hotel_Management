@@ -235,9 +235,27 @@ class _OptionsCard<T extends Object> extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
                   child: Row(
                     children: [
-                      Expanded(child: Text(labelOf(v), style: const TextStyle(color: AppTheme.heading, fontSize: 13.5))),
-                      if (meta.isNotEmpty)
-                        Text(meta, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+                      Expanded(
+                        child: Text(
+                          labelOf(v),
+                          style: const TextStyle(color: AppTheme.heading, fontSize: 13.5),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                        ),
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(width: AppTheme.s8),
+                        Flexible(
+                          child: Text(
+                            meta,
+                            style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
