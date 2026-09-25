@@ -6,7 +6,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
-import 'expense_combo_fields.dart';
+import 'expense_combo_fields.dart' show CategoryComboField;
 
 /// Schedule or edit a recurring expense — its own full page rather than a
 /// dialog, the same treatment [ExpenseFormScreen] and the room/asset forms
@@ -29,10 +29,8 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
   bool get _isEdit => widget.template != null;
 
   late final _category = TextEditingController(text: widget.template?.categoryName ?? '');
-  late final _vendor = TextEditingController(text: widget.template?.vendorName ?? '');
   String _frequency = 'MONTHLY';
   late final _title = TextEditingController(text: widget.template?.title ?? '');
-  late final _amount = TextEditingController(text: widget.template?.amount == null ? '' : widget.template!.amount.toString());
   late final _nextDueDate = TextEditingController(text: widget.template?.nextDueDate ?? '');
   String? _error;
   bool _submitAttempted = false;
@@ -41,21 +39,14 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
       (_submitAttempted && _title.text.trim().isEmpty) ? 'Give this recurring expense a title.' : null;
   String? get _categoryError =>
       (_submitAttempted && _category.text.trim().isEmpty) ? 'Enter or choose a category.' : null;
-  String? get _amountError {
-    if (!_submitAttempted) return null;
-    final amount = num.tryParse(_amount.text.trim());
-    return (amount == null || amount < 0) ? 'Enter a valid amount.' : null;
-  }
 
   String? get _dateError =>
       (_submitAttempted && _nextDueDate.text.trim().isEmpty) ? 'Enter the next due date.' : null;
 
   final _titleFieldKey = GlobalKey();
   final _categoryFieldKey = GlobalKey();
-  final _amountFieldKey = GlobalKey();
   final _dateFieldKey = GlobalKey();
   final _titleFocus = FocusNode();
-  final _amountFocus = FocusNode();
 
   void _scrollToFirstError() {
     GlobalKey? key;
@@ -65,9 +56,6 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
       focus = _titleFocus;
     } else if (_categoryError != null) {
       key = _categoryFieldKey;
-    } else if (_amountError != null) {
-      key = _amountFieldKey;
-      focus = _amountFocus;
     } else if (_dateError != null) {
       key = _dateFieldKey;
     }
@@ -97,12 +85,9 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
   void dispose() {
     _category.removeListener(_onCategoryChanged);
     _category.dispose();
-    _vendor.dispose();
     _title.dispose();
-    _amount.dispose();
     _nextDueDate.dispose();
     _titleFocus.dispose();
-    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -131,17 +116,14 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
       _error = null;
       _submitAttempted = true;
     });
-    final amount = num.tryParse(_amount.text.trim());
-    if (_titleError != null || _categoryError != null || _amountError != null || _dateError != null) {
+    if (_titleError != null || _categoryError != null || _dateError != null) {
       _scrollToFirstError();
       return;
     }
     final vm = ref.read(expensesViewModelProvider.notifier);
     int categoryId;
-    int? vendorId;
     try {
       categoryId = await vm.resolveCategoryId(_category.text);
-      vendorId = await vm.resolveVendorId(_vendor.text);
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'Could not save this template.');
@@ -149,9 +131,7 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
     }
     final ok = await vm.saveTemplate({
       'categoryId': categoryId,
-      'vendorId': vendorId,
       'title': _title.text.trim(),
-      'amount': amount,
       'frequency': _frequency,
       'nextDueDate': _nextDueDate.text.trim(),
     }, id: widget.template?.id);
@@ -205,21 +185,12 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
                       padding: EdgeInsets.only(top: 4),
                       child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
                     ),
-                  const SizedBox(height: AppTheme.s12),
-                  VendorComboField(controller: _vendor, vendors: state.vendors, label: 'Vendor'),
-
                   const SectionDivider(),
-                  const SectionLabel('Amount & schedule', number: 2),
+                  const SectionLabel('Schedule', number: 2),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    key: _amountFieldKey,
-                    controller: _amount,
-                    label: 'Amount',
-                    keyboardType: TextInputType.number,
-                    required: true,
-                    errorText: _amountError,
-                    focusNode: _amountFocus,
-                    onChanged: (_) => setState(() {}),
+                  const Text(
+                    "How much and who gets paid are entered each time — \"Log this month\" records that occurrence once it's actually due.",
+                    style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
                   ),
                   const SizedBox(height: AppTheme.s12),
                   const RequiredLabel('Repeats'),

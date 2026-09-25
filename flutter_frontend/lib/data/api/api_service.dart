@@ -1526,6 +1526,7 @@ class ApiService {
     int? categoryId,
     int? vendorId,
     int? assetId,
+    int? recurringTemplateId,
     String? from,
     String? to,
   }) async {
@@ -1535,6 +1536,7 @@ class ApiService {
         if (categoryId != null) 'categoryId': categoryId,
         if (vendorId != null) 'vendorId': vendorId,
         if (assetId != null) 'assetId': assetId,
+        if (recurringTemplateId != null) 'recurringTemplateId': recurringTemplateId,
         if (from != null) 'from': from,
         if (to != null) 'to': to,
       },
@@ -1621,11 +1623,13 @@ class ApiService {
     return RecurringTemplate.fromJson(_map(res.data)['template'] as Map<String, dynamic>);
   }
 
-  /// Turns every template whose nextDueDate has arrived into a real expense
-  /// row — answers with how many were generated.
-  Future<int> generateDueExpenses() async {
-    final res = await _dio.post('/expenses/recurring/generate-due');
-    return asInt(_map(res.data)['generated']);
+  /// "Log this month" — one occurrence of a recurring template, entered by
+  /// hand with its own amount/vendor/payment (same shape as [createExpense]),
+  /// linked back via recurringTemplateId. Advances the template's
+  /// nextDueDate server-side.
+  Future<Expense> logRecurringOccurrence(int templateId, FormData form) async {
+    final res = await _dio.post('/expenses/recurring/$templateId/log', data: form);
+    return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

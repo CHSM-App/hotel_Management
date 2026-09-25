@@ -102,7 +102,10 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       final results = await Future.wait([
         usecase.categories(includeInactive: true),
         usecase.vendors(includeInactive: true),
-        usecase.templates(includeInactive: true),
+        // Mirrors loadTemplates in ExpensesPanel.jsx, which never sends
+        // includeInactive — a paused template drops out of the list
+        // entirely on the web too, not just here.
+        usecase.templates(),
       ]);
       state = state.copyWith(
         catalogueLoading: false,
@@ -125,23 +128,6 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
   }
 
   void _bump() => state = state.copyWith(bumps: state.bumps + 1);
-
-  /// Recurring templates whose nextDueDate has arrived are turned into real
-  /// expense rows the moment the section opens — mirrors
-  /// generateDueThenLoad in ExpensesPanel.jsx. Silent on failure: this is a
-  /// convenience, not something worth surfacing an error banner over.
-  Future<int> generateDueSilently() async {
-    try {
-      final count = await usecase.generateDue();
-      if (count > 0) _bump();
-      return count;
-    } catch (_) {
-      return 0;
-    } finally {
-      loadExpenses();
-      loadCatalogue();
-    }
-  }
 
   /// Resolves a typed category name to its id, creating the category first
   /// if nothing on file matches it (case-insensitively) — mirrors
@@ -332,6 +318,37 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     } catch (e) {
       state = state.copyWith(error: apiErrorMessage(e));
       return false;
+    }
+  }
+
+  /// "Log this month" — records one occurrence of a recurring template as a
+  /// real expense (its own amount/vendor/payment, entered in the form),
+  /// linked back via recurringTemplateId. Advances the template's
+  /// nextDueDate server-side, so the catalogue is reloaded too. Mirrors
+  /// handleExpenseSubmit's logUrl branch in ExpensesPanel.jsx.
+  Future<bool> logOccurrence(int templateId, FormData form) async {
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      await usecase.logOccurrence(templateId, form);
+      state = state.copyWith(submitting: false);
+      _bump();
+      await Future.wait([loadExpenses(), loadCatalogue()]);
+      return true;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      return false;
+    }
+  }
+
+  /// Every expense a given template has generated, oldest to newest — mirrors
+  /// openTemplateHistory in ExpensesPanel.jsx. Doesn't touch state.expenses;
+  /// this is its own read for the template's history screen.
+  Future<List<Expense>> templateHistory(int templateId) async {
+    try {
+      return await usecase.expenses(recurringTemplateId: templateId);
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return const [];
     }
   }
 

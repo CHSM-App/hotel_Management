@@ -150,16 +150,15 @@ const kPaymentReferenceLabel = {
   'OTHER': 'Reference number',
 };
 
-/// A schedule that "Generate due" turns into real [Expense] rows once
-/// [nextDueDate] arrives — mirrors mapTemplate in expenses.service.js.
+/// A repeat schedule only — no amount or vendor. Those aren't known until the
+/// desk actually logs an occurrence ("Log this month"), which creates a real
+/// [Expense] with its own amount/vendor/payment, linked back via
+/// recurringTemplateId. Mirrors mapTemplate in expenses.service.js.
 class RecurringTemplate {
   final int id;
   final int categoryId;
   final String categoryName;
-  final int? vendorId;
-  final String? vendorName;
   final String title;
-  final num amount;
   final String frequency; // MONTHLY | QUARTERLY | YEARLY
   final String nextDueDate;
   final bool isActive;
@@ -168,10 +167,7 @@ class RecurringTemplate {
     required this.id,
     this.categoryId = 0,
     this.categoryName = '',
-    this.vendorId,
-    this.vendorName,
     this.title = '',
-    this.amount = 0,
     this.frequency = 'MONTHLY',
     this.nextDueDate = '',
     this.isActive = true,
@@ -181,10 +177,7 @@ class RecurringTemplate {
     id: asInt(json['id']),
     categoryId: asInt(json['categoryId']),
     categoryName: asStringOrNull(json['categoryName']) ?? '',
-    vendorId: asIntOrNull(json['vendorId']),
-    vendorName: asStringOrNull(json['vendorName']),
     title: asStringOrNull(json['title']) ?? '',
-    amount: asNum(json['amount']),
     frequency: asStringOrNull(json['frequency']) ?? 'MONTHLY',
     nextDueDate: asStringOrNull(json['nextDueDate']) ?? '',
     isActive: asBool(json['isActive']),

@@ -30,10 +30,21 @@ Future<void> showExpenseFormSheet(BuildContext context, {Expense? expense, bool 
   );
 }
 
+/// "Log this month" — opens this same form pre-filled from a recurring
+/// template (category, title, due date), amount left blank for the desk to
+/// type. Submitting posts to /expenses/recurring/:id/log instead of the
+/// plain create endpoint — mirrors openOccurrenceForm in ExpensesPanel.jsx.
+Future<void> showLogOccurrenceFormSheet(BuildContext context, {required RecurringTemplate template}) {
+  return Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => ExpenseFormScreen(loggingTemplate: template)),
+  );
+}
+
 class ExpenseFormScreen extends ConsumerStatefulWidget {
   final Expense? expense;
   final bool viewMode;
-  const ExpenseFormScreen({super.key, this.expense, this.viewMode = false});
+  final RecurringTemplate? loggingTemplate;
+  const ExpenseFormScreen({super.key, this.expense, this.viewMode = false, this.loggingTemplate});
 
   @override
   ConsumerState<ExpenseFormScreen> createState() => _ExpenseFormScreenState();
@@ -41,21 +52,22 @@ class ExpenseFormScreen extends ConsumerStatefulWidget {
 
 class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   bool get _isEdit => widget.expense != null;
+  bool get _isLogging => widget.loggingTemplate != null;
   // Always false for a brand-new expense — nothing to view yet. "Edit
   // details" flips this off to turn the same screen into the form.
   late bool _viewMode = widget.viewMode && _isEdit;
 
-  late final _category = TextEditingController(text: widget.expense?.categoryName ?? '');
+  late final _category = TextEditingController(text: widget.expense?.categoryName ?? widget.loggingTemplate?.categoryName ?? '');
   late final _vendor = TextEditingController(text: widget.expense?.vendorName ?? '');
   String _paymentMethod = 'CASH';
   String _paymentStatus = 'PAID';
   late final _amountPaid = TextEditingController();
   late final _referenceNumber = TextEditingController();
-  late final _title = TextEditingController(text: widget.expense?.title ?? '');
+  late final _title = TextEditingController(text: widget.expense?.title ?? widget.loggingTemplate?.title ?? '');
   late final _description = TextEditingController(text: widget.expense?.description ?? '');
   late final _amount = TextEditingController(text: widget.expense?.amount == null ? '' : widget.expense!.amount.toString());
   late final _expenseDate = TextEditingController(
-    text: widget.expense?.expenseDate ?? _isoToday(),
+    text: widget.expense?.expenseDate ?? widget.loggingTemplate?.nextDueDate ?? _isoToday(),
   );
   XFile? _billPhoto;
   String? _error;
@@ -296,7 +308,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     return Scaffold(
       appBar: AppBar(
         title: !_viewMode
-            ? Text(_isEdit ? 'Edit expense' : 'Log an expense')
+            ? Text(_isEdit ? 'Edit expense' : (_isLogging ? 'Log this month' : 'Log an expense'))
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -526,7 +538,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 onPressed: state.submitting ? null : _submit,
                 child: state.submitting
                     ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_isEdit ? 'Save changes' : 'Log expense'),
+                    : Text(_isEdit ? 'Save changes' : (_isLogging ? 'Log this occurrence' : 'Log expense')),
               ),
           ],
         ),
@@ -572,7 +584,10 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     if (_billPhoto != null) {
       formMap['billDocument'] = dio.MultipartFile.fromFileSync(_billPhoto!.path, filename: _billPhoto!.name);
     }
-    final ok = await vm.saveExpense(dio.FormData.fromMap(formMap), id: widget.expense?.id);
+    final form = dio.FormData.fromMap(formMap);
+    final ok = _isLogging
+        ? await vm.logOccurrence(widget.loggingTemplate!.id, form)
+        : await vm.saveExpense(form, id: widget.expense?.id);
     if (!mounted) return;
     if (ok) {
       Navigator.pop(context);

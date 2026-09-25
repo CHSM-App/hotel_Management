@@ -37,9 +37,17 @@ class ExpensesImpl implements ExpensesRepository {
     int? categoryId,
     int? vendorId,
     int? assetId,
+    int? recurringTemplateId,
     String? from,
     String? to,
-  }) => api.expenses(categoryId: categoryId, vendorId: vendorId, assetId: assetId, from: from, to: to);
+  }) => api.expenses(
+    categoryId: categoryId,
+    vendorId: vendorId,
+    assetId: assetId,
+    recurringTemplateId: recurringTemplateId,
+    from: from,
+    to: to,
+  );
 
   @override
   Future<Expense> expense(int id) => api.expense(id);
@@ -83,5 +91,6 @@ class ExpensesImpl implements ExpensesRepository {
       api.updateRecurringTemplate(id, body);
 
   @override
-  Future<int> generateDue() => api.generateDueExpenses();
+  Future<Expense> logOccurrence(int templateId, FormData form) =>
+      api.logRecurringOccurrence(templateId, form);
 }

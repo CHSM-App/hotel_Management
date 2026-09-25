@@ -26,18 +26,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
   @override
   void initState() {
     super.initState();
-    // Recurring templates that came due are generated into real expense
-    // rows the moment the section opens — mirrors generateDueThenLoad in
-    // ExpensesPanel.jsx, including the flash notice when something fires.
-    Future.microtask(() async {
-      final vm = ref.read(expensesViewModelProvider.notifier);
-      vm.loadCatalogue();
-      final generated = await vm.generateDueSilently();
-      if (!mounted || generated <= 0) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$generated recurring expense${generated == 1 ? '' : 's'} logged automatically.')),
-      );
-    });
+    Future.microtask(() => ref.read(expensesViewModelProvider.notifier).loadCatalogue());
   }
 
   @override
