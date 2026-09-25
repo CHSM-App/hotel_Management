@@ -4,8 +4,6 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const loginLockout = require('./loginLockout');
 
-const LODGE_ROLES = ['OWNER', 'RECEPTION', 'KITCHEN'];
-
 // A real bcrypt hash of a value nobody can supply, compared against when the
 // identifier matched no account. Its only job is to make the failing path cost
 // the same as the succeeding one — see the note in loginWithRoles. Generated at
@@ -42,7 +40,7 @@ function issueToken(user) {
   };
 }
 
-async function loginWithRoles({ identifier, password }, allowedRoles, door) {
+async function loginWithRoles({ identifier, password }, isAllowedRole, door) {
   // Checked before the account is looked up, so a locked identifier behaves the
   // same whether or not it names a real account.
   await loginLockout.assertNotLockedOut(identifier, door);
@@ -51,7 +49,7 @@ async function loginWithRoles({ identifier, password }, allowedRoles, door) {
 
   // Same message for "no such account", "wrong password" and "wrong
   // login door" — don't tell an attacker which one it was.
-  const rejected = !user || !user.is_active || !allowedRoles.includes(user.role);
+  const rejected = !user || !user.is_active || !isAllowedRole(user.role);
 
   // The comparison runs even when the account was already rejected, against a
   // dummy hash. Short-circuiting here would leak by timing what the identical
@@ -80,9 +78,16 @@ async function loginWithRoles({ identifier, password }, allowedRoles, door) {
   return issueToken(user);
 }
 
-// Lodge staff only — the public-facing /login page.
+// Lodge staff only — the public-facing /login page. A lodge role is anything
+// that isn't SUPERADMIN, built-in or a lodge's own custom role alike — the
+// same rule the frontend's isLodgeUser() checks, so a custom role (Night
+// Manager, say) was never excluded here the way a hardcoded list would.
+function isLodgeRole(role) {
+  return role !== 'SUPERADMIN';
+}
+
 function login(credentials) {
-  return loginWithRoles(credentials, LODGE_ROLES, 'STAFF');
+  return loginWithRoles(credentials, isLodgeRole, 'STAFF');
 }
 
 // Forgot-password, reached from the same login page by someone who cannot
@@ -102,7 +107,7 @@ async function resetPasswordByIdentifier(identifier, newPassword) {
   await loginLockout.assertNotLockedOut(identifier, 'FORGOT');
 
   const user = await findUserByIdentifier(identifier);
-  if (!user || !user.is_active || !LODGE_ROLES.includes(user.role)) {
+  if (!user || !user.is_active || !isLodgeRole(user.role)) {
     await loginLockout.recordFailure(identifier, 'FORGOT');
     throw new ApiError('No account found for that phone or email.', 404);
   }
@@ -122,7 +127,7 @@ async function resetPasswordByIdentifier(identifier, newPassword) {
 // staff door: the two have different budgets, and this one opens every property
 // rather than one.
 function adminLogin(credentials) {
-  return loginWithRoles(credentials, ['SUPERADMIN'], 'ADMIN');
+  return loginWithRoles(credentials, (role) => role === 'SUPERADMIN', 'ADMIN');
 }
 
 module.exports = { login, adminLogin, resetPasswordByIdentifier };

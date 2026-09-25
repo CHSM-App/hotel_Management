@@ -193,7 +193,7 @@ const SECTIONS = [
   {
     key: 'food',
     title: 'Food orders',
-    permission: 'orders.manage',
+    permission: ['orders.manage', 'orders.take'],
     when: (f) => f.servesFood,
     summary:
       'The live kitchen queue, and the counter form for taking an order yourself.',
@@ -459,9 +459,12 @@ export function guideForLodge(lodge, permissions = []) {
     hasEvents: !!lodge?.hasEvents,
   };
 
-  const sections = SECTIONS.filter(
-    (s) => passes(s, flags) && (!s.permission || permissions.includes(s.permission))
-  )
+  const sections = SECTIONS.filter((s) => {
+    if (!passes(s, flags)) return false;
+    if (!s.permission) return true;
+    const keys = Array.isArray(s.permission) ? s.permission : [s.permission];
+    return keys.some((key) => permissions.includes(key));
+  })
     .map((section) => ({
       ...section,
       steps: section.steps.filter((step) => passes(step, flags)),

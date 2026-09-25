@@ -354,7 +354,7 @@ function mapOrder(row, items) {
   };
 }
 
-async function listOrders(lodgeId, { status, date, live } = {}) {
+async function listOrders(lodgeId, { status, date, live, createdBy } = {}) {
   const pool = await getPool();
 
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
@@ -372,6 +372,14 @@ async function listOrders(lodgeId, { status, date, live } = {}) {
       request.input('status', sql.NVarChar, status);
       filters.push('o.status = @status');
     }
+  }
+
+  // A captain sees only what they themselves rang in, not the whole day's
+  // trade — this is what lets orders.take read history at all without also
+  // handing them the kitchen's full day.
+  if (createdBy) {
+    request.input('createdBy', sql.BigInt, createdBy);
+    filters.push('o.created_by = @createdBy');
   }
 
   const ordersResult = await request.query(`

@@ -12,9 +12,10 @@ const {
 
 const router = Router();
 
-// Reception picks a table when typing in a counter order, so listing takes
-// either permission; everything that changes the floor plan is food.manage.
-router.get('/', authenticate, requirePermission('food.manage', 'orders.manage'), listTablesHandler);
+// Reception or a captain picks a table when typing in a counter order, so
+// listing takes any of the three; everything that changes the floor plan is
+// food.manage.
+router.get('/', authenticate, requirePermission('food.manage', 'orders.manage', 'orders.take'), listTablesHandler);
 
 router.post('/', authenticate, requirePermission('food.manage'), createTableHandler);
 router.post('/bulk', authenticate, requirePermission('food.manage'), bulkCreateTablesHandler);

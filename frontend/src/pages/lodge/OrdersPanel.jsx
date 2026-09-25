@@ -85,8 +85,17 @@ function playChime(audioContext) {
   });
 }
 
-export default function OrdersPanel({ lodge }) {
+export default function OrdersPanel({ lodge, permissions = [] }) {
   const session = getSession();
+  // Which half of this screen a role actually gets: orders.manage is view,
+  // accept and cancel; orders.cook is the kitchen's own job of actually
+  // cooking (queued through delivered, and ticking dishes off); orders.take
+  // is placing a new order. OWNER and RECEPTION hold orders.manage but not
+  // orders.cook — they can watch the queue, take a pending order in and stop
+  // one, but not push it through the kitchen themselves.
+  const canWorkQueue = permissions.includes('orders.manage');
+  const canCook = permissions.includes('orders.cook');
+  const canTakeOrders = permissions.includes('orders.take');
   const [orders, setOrders] = useState(null);
   const [error, setError] = useState('');
   // Lazy initialiser: Date.now() is impure, so it belongs in a callback React
@@ -103,7 +112,14 @@ export default function OrdersPanel({ lodge }) {
   const knownIdsRef = useRef(null);
 
   const [showCounterForm, setShowCounterForm] = useState(false);
-  const [view, setView] = useState('QUEUE');
+  // A captain with no queue access lands on the take-order view instead —
+  // the queue tab isn't rendered for them at all (see below).
+  const [view, setView] = useState(canWorkQueue ? 'QUEUE' : 'HISTORY');
+  // Bumped after placing an order to force History/My orders to re-fetch —
+  // its own effect only re-runs on a date change otherwise. Also carries the
+  // one-line confirmation a captain has no other way to see.
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [placedNotice, setPlacedNotice] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -126,6 +142,9 @@ export default function OrdersPanel({ lodge }) {
   }, [session?.token]);
 
   useEffect(() => {
+    // A captain-only login can't reach /orders/queue at all — nothing to
+    // poll, and polling it anyway would just 403 every ten seconds.
+    if (!canWorkQueue) return undefined;
     // load() is async — every setState inside it runs after an await, not
     // synchronously in the effect body. The lint rule can't see through the
     // promise, so it's silenced here rather than restructured.
@@ -139,7 +158,7 @@ export default function OrdersPanel({ lodge }) {
       clearInterval(poll);
       clearInterval(clock);
     };
-  }, [load]);
+  }, [load, canWorkQueue]);
 
   const enableSound = () => {
     const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -202,12 +221,21 @@ export default function OrdersPanel({ lodge }) {
     // waiting to be accepted, or sitting in the queue untouched, has nothing
     // to tick off yet; one already called ready has nothing left. Outside
     // PREPARING the lines render as plain text, so a card at rest isn't a row
-    // of boxes nobody may touch.
-    const tickable = order.status === 'PREPARING';
+    // of boxes nobody may touch. Also gated on orders.cook — Owner and
+    // Reception can watch a ticket get ticked, not do the ticking themselves.
+    const tickable = order.status === 'PREPARING' && canCook;
     const allReady = order.items.every((item) => item.readyAt);
     // The whole point of the ticks: the order can't be called ready until
     // every dish on it has come out of the kitchen.
     const blockedReady = !allReady && order.nextStatuses.includes('READY');
+
+    // Accept and Cancel are front-of-house; everything else is the kitchen
+    // actually cooking the order — see updateStatusHandler on the backend,
+    // which enforces the same split so this is a view concern, not the only
+    // guard.
+    const visibleStatuses = order.nextStatuses.filter(
+      (status) => status === 'QUEUED' || status === 'CANCELLED' || canCook
+    );
 
     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -277,12 +305,12 @@ export default function OrdersPanel({ lodge }) {
           <span className="order-card__total">{formatPrice(order.subtotal)}</span>
         </div>
 
-        {blockedReady && (
+        {blockedReady && canCook && (
           <p className="order-card__tick-hint">Tick every dish to call this order ready.</p>
         )}
 
         <div className="order-card__actions">
-          {order.nextStatuses.map((status) => (
+          {visibleStatuses.map((status) => (
             <button
               key={status}
               type="button"
@@ -301,29 +329,34 @@ export default function OrdersPanel({ lodge }) {
   return (
     <div className="orders-panel">
       <div className="orders-panel__toolbar">
-        {/* The queue keeps polling behind the history tab on purpose — the
-            chime is the alert, and it has to sound whichever tab is open. */}
-        <div className="orders-tabs">
-          <button
-            type="button"
-            className={`orders-tab${view === 'QUEUE' ? ' orders-tab--on' : ''}`}
-            aria-pressed={view === 'QUEUE'}
-            onClick={() => setView('QUEUE')}
-          >
-            Kitchen queue
-          </button>
-          <button
-            type="button"
-            className={`orders-tab${view === 'HISTORY' ? ' orders-tab--on' : ''}`}
-            aria-pressed={view === 'HISTORY'}
-            onClick={() => setView('HISTORY')}
-          >
-            History
-          </button>
-        </div>
+        {/* Kitchen queue is the kitchen's own tab — a captain with no queue
+            access never sees it. History (or "My orders" for a captain, who
+            only gets their own back from the API) shows for either. */}
+        {(canWorkQueue || canTakeOrders) && (
+          <div className="orders-tabs">
+            {canWorkQueue && (
+              <button
+                type="button"
+                className={`orders-tab${view === 'QUEUE' ? ' orders-tab--on' : ''}`}
+                aria-pressed={view === 'QUEUE'}
+                onClick={() => setView('QUEUE')}
+              >
+                Kitchen queue
+              </button>
+            )}
+            <button
+              type="button"
+              className={`orders-tab${view === 'HISTORY' ? ' orders-tab--on' : ''}`}
+              aria-pressed={view === 'HISTORY'}
+              onClick={() => setView('HISTORY')}
+            >
+              {canWorkQueue ? 'History' : 'My orders'}
+            </button>
+          </div>
+        )}
 
         <div className="orders-panel__tools">
-          {!soundOn ? (
+          {canWorkQueue && (!soundOn ? (
             <button
               type="button"
               className="btn-secondary orders-panel__sound"
@@ -333,16 +366,31 @@ export default function OrdersPanel({ lodge }) {
             </button>
           ) : (
             <span className="orders-panel__sound-on">🔔 Sound on</span>
+          ))}
+          {canTakeOrders && (
+            <button
+              type="button"
+              className="btn-accent"
+              onClick={() => {
+                setPlacedNotice('');
+                setShowCounterForm(true);
+              }}
+            >
+              + Take an order
+            </button>
           )}
-          <button type="button" className="btn-accent" onClick={() => setShowCounterForm(true)}>
-            + Take an order
-          </button>
         </div>
       </div>
 
-      {view === 'HISTORY' && <OrderHistory />}
+      {placedNotice && (
+        <div className="form-banner form-banner--info form-banner--flash">{placedNotice}</div>
+      )}
 
-      {view === 'QUEUE' && (
+      {view === 'HISTORY' && (canWorkQueue || canTakeOrders) && (
+        <OrderHistory mine={!canWorkQueue} refreshKey={historyRefresh} />
+      )}
+
+      {view === 'QUEUE' && canWorkQueue && (
         <>
           {error && (
             <div className="dash-card">
@@ -388,9 +436,15 @@ export default function OrdersPanel({ lodge }) {
         <CounterOrderForm
           lodge={lodge}
           onClose={() => setShowCounterForm(false)}
-          onPlaced={() => {
+          onPlaced={(order) => {
             setShowCounterForm(false);
-            load();
+            if (canWorkQueue) load();
+            // The only confirmation a captain gets that the order actually
+            // went in — the form just closes otherwise, and silence reads as
+            // failure when you can't see the kitchen queue to check.
+            setPlacedNotice(`Order #${order.orderNumber} sent to the kitchen.`);
+            setHistoryRefresh((n) => n + 1);
+            setView('HISTORY');
           }}
         />
       )}
@@ -412,7 +466,7 @@ const HISTORY_FILTERS = [
   { key: 'CANCELLED', label: 'Cancelled' },
 ];
 
-function OrderHistory() {
+function OrderHistory({ mine = false, refreshKey = 0 }) {
   const session = getSession();
   const [date, setDate] = useState(todayIsoLocal);
   const [filter, setFilter] = useState('ALL');
@@ -439,7 +493,11 @@ function OrderHistory() {
     return () => {
       stale = true;
     };
-  }, [date, session?.token]);
+    // refreshKey isn't read, only bumped — it exists purely to force this
+    // effect to re-run after a captain places an order on the same date,
+    // the one case this screen has no other way to notice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, session?.token, refreshKey]);
 
   const orders = loaded.orders;
   const shown = filter === 'ALL' ? orders : orders.filter((o) => o.status === filter);
@@ -509,7 +567,9 @@ function OrderHistory() {
             <div className="dash-card">
               <div className="dash-state">
                 {orders.length === 0
-                  ? 'No orders on that day.'
+                  ? mine
+                    ? "You haven't taken any orders on that day."
+                    : 'No orders on that day.'
                   : 'Nothing on that day matches this filter.'}
               </div>
             </div>
@@ -797,7 +857,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
 
     setSubmitting(true);
     try {
-      await apiPost(
+      const placed = await apiPost(
         '/orders',
         {
           roomId: target.kind === 'ROOM' ? target.id : null,
@@ -815,7 +875,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
         },
         { token: session?.token }
       );
-      onPlaced();
+      onPlaced(placed);
     } catch (err) {
       reportError(err instanceof ApiError ? err.message : 'Could not place the order.');
     } finally {

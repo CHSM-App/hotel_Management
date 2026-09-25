@@ -13,9 +13,14 @@ function parse(schema, body) {
 
 async function listOrdersHandler(req, res, next) {
   try {
+    // A captain without the kitchen's orders.manage only ever sees the
+    // orders they themselves rang in — everyone else's trade isn't theirs
+    // to browse. Whoever holds orders.manage still sees the whole day.
+    const captainOnly = !req.permissions.includes('orders.manage');
     const orders = await ordersService.listOrders(req.user.lodgeId, {
       status: req.query.status,
       date: req.query.date,
+      createdBy: captainOnly ? req.user.sub : null,
     });
     res.json({ orders });
   } catch (err) {
@@ -173,9 +178,20 @@ async function createCounterOrderHandler(req, res, next) {
   }
 }
 
+// Accepting a pending order and cancelling one are front-of-house calls —
+// "yes, make this" or "stop, this isn't happening" — so orders.manage alone
+// covers them. Actually cooking it (queued through delivered) is a kitchen
+// judgment about the food itself, gated on orders.cook. Checked against the
+// requested status rather than the route, because PATCH /status is the one
+// endpoint both jobs share.
+const FRONT_OF_HOUSE_STATUSES = ['QUEUED', 'CANCELLED'];
+
 async function updateStatusHandler(req, res, next) {
   try {
     const input = parse(updateStatusSchema, req.body);
+    if (!FRONT_OF_HOUSE_STATUSES.includes(input.status) && !req.permissions.includes('orders.cook')) {
+      throw new ApiError('Not allowed.', 403);
+    }
     const order = await ordersService.updateStatus(req.user.lodgeId, Number(req.params.id), input.status, {
       cancelReason: input.cancelReason,
       userId: req.user.sub,
@@ -188,9 +204,13 @@ async function updateStatusHandler(req, res, next) {
 
 // The kitchen ticking a single dish off a ticket. Returns the whole order so
 // the screen re-renders from the server's answer rather than guessing at what
-// the tick did to the rest of the ticket.
+// the tick did to the rest of the ticket. Cooking work, so orders.cook only —
+// see updateStatusHandler.
 async function updateItemReadyHandler(req, res, next) {
   try {
+    if (!req.permissions.includes('orders.cook')) {
+      throw new ApiError('Not allowed.', 403);
+    }
     const input = parse(updateItemReadySchema, req.body);
     const order = await ordersService.setItemReady(
       req.user.lodgeId,

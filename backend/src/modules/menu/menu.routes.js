@@ -21,8 +21,9 @@ const {
 const router = Router();
 
 // Reading the menu is also what the kitchen screen does to render its
-// availability switches, so it takes either permission.
-router.get('/', authenticate, requirePermission('food.manage', 'orders.manage'), getMenuHandler);
+// availability switches, and what a captain does to take an order, so it
+// takes any of the three.
+router.get('/', authenticate, requirePermission('food.manage', 'orders.manage', 'orders.take'), getMenuHandler);
 
 router.get('/settings', authenticate, requirePermission('food.manage'), getFoodSettingsHandler);
 router.patch('/settings', authenticate, requirePermission('food.manage'), updateFoodSettingsHandler);

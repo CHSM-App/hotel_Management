@@ -19,24 +19,28 @@ const router = Router();
 router.delete(
   '/pin-lockouts/:roomNumber',
   authenticate,
-  requirePermission('orders.manage', 'bookings.manage'),
+  requirePermission('orders.manage', 'orders.take', 'bookings.manage'),
   clearPinLockoutHandler
 );
 
 // /queue is declared before /:id so "queue" isn't swallowed as an order id.
+// Kitchen work only — the captain taking an order never needs the queue.
 router.get('/queue', authenticate, requirePermission('orders.manage'), listQueueHandler);
 
-// Like /queue, declared ahead of /:id so the literal segment wins over the
-// order-id route.
+// Looking up who's in a room is how a captain places a room order, so it
+// takes orders.take as well as the kitchen's orders.manage.
 router.get(
   '/room-occupancy/:roomId',
   authenticate,
-  requirePermission('orders.manage'),
+  requirePermission('orders.manage', 'orders.take'),
   roomOccupancyHandler
 );
-router.get('/', authenticate, requirePermission('orders.manage'), listOrdersHandler);
+// Kitchen sees the whole day; a captain sees only their own orders — the
+// handler itself does that narrowing once it knows which permission got them
+// in the door.
+router.get('/', authenticate, requirePermission('orders.manage', 'orders.take'), listOrdersHandler);
 router.get('/:id', authenticate, requirePermission('orders.manage'), getOrderHandler);
-router.post('/', authenticate, requirePermission('orders.manage'), createCounterOrderHandler);
+router.post('/', authenticate, requirePermission('orders.manage', 'orders.take'), createCounterOrderHandler);
 router.patch('/:id/status', authenticate, requirePermission('orders.manage'), updateStatusHandler);
 router.patch(
   '/:id/items/:itemId/ready',
