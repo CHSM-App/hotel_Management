@@ -601,6 +601,8 @@ export default function AssetsPanel({ onViewReport }) {
   // offered (see categoryFilterOptions), so this never ends up pointed at
   // an empty result on its own.
   const [categoryFilter, setCategoryFilter] = useState('');
+  // '' means "every status" — same convention as categoryFilter.
+  const [statusFilter, setStatusFilter] = useState('');
   // Retiring an asset drops it from the everyday list (see setAssetStatus on
   // the backend) — this is the escape hatch to find one again, e.g. to
   // un-retire it or check its old service history.
@@ -766,6 +768,7 @@ export default function AssetsPanel({ onViewReport }) {
     const needle = query.trim().toLowerCase();
     return assets.filter((a) => {
       if (categoryFilter && String(a.categoryId) !== categoryFilter) return false;
+      if (statusFilter && a.status !== statusFilter) return false;
       if (!needle) return true;
       return (
         a.name.toLowerCase().includes(needle) ||
@@ -774,7 +777,7 @@ export default function AssetsPanel({ onViewReport }) {
         (a.department || '').toLowerCase().includes(needle)
       );
     });
-  }, [assets, query, categoryFilter]);
+  }, [assets, query, categoryFilter, statusFilter]);
 
   const sortedAssets = useMemo(() => {
     if (!tableSort.key) return visibleAssets;
@@ -1846,6 +1849,17 @@ export default function AssetsPanel({ onViewReport }) {
                     ))}
                   </select>
                 )}
+                <select
+                  className="asset-category-filter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  aria-label="Filter by status"
+                >
+                  <option value="">All statuses</option>
+                  {Object.entries(STATUS_LABEL).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
                 <label className="asset-show-retired">
                   <input
                     type="checkbox"

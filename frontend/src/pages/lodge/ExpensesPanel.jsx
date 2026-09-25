@@ -379,6 +379,7 @@ export default function ExpensesPanel({ onViewReport }) {
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
+  const [templateFieldErrors, setTemplateFieldErrors] = useState({});
 
   // Occurrence history — every expense a recurring template has generated
   // so far. { template, expenses } rather than just an id, so the modal's
@@ -736,7 +737,6 @@ export default function ExpensesPanel({ onViewReport }) {
     e.preventDefault();
     if (!templateForm.categoryName.trim()) return setFormError('Enter or choose a category.');
     if (!templateForm.title.trim()) return setFormError('Give this recurring expense a title.');
-    if (!templateForm.amount || Number(templateForm.amount) < 0) return setFormError('Enter a valid amount.');
     if (!templateForm.nextDueDate) return setFormError('Enter the next due date.');
 
     setSubmitting(true);
@@ -1714,31 +1714,6 @@ export default function ExpensesPanel({ onViewReport }) {
                   ) : (
                     <span className="field__hint">Pick from the list or type a new one — it's added the first time it's used.</span>
                   )}
-                </div>
-
-                <div className="field">
-                  <label htmlFor="templateVendor">Vendor</label>
-                  <VendorField
-                    id="templateVendor"
-                    value={templateForm.vendorName}
-                    vendors={vendors}
-                    onChange={(name) => setTemplateForm((f) => ({ ...f, vendorName: name, vendorId: '' }))}
-                    onPick={(vendor) => setTemplateForm((f) => ({ ...f, vendorName: vendor.name, vendorId: String(vendor.id) }))}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="templateAmount">
-                    Amount <Req />
-                  </label>
-                  <input
-                    id="templateAmount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={templateForm.amount}
-                    onChange={(e) => setTemplateForm((f) => ({ ...f, amount: e.target.value }))}
-                  />
                 </div>
 
                 <div className="field">
