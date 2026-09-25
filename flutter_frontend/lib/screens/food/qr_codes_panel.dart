@@ -71,10 +71,10 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
       children: [
         Text('Ordering codes', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 2),
-        const Text(
+        Text(
           'One code covers the whole property — put copies in the rooms and at reception. '
           'Print exports a PDF at whatever copy counts and size you choose below.',
-          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: AppTheme.s8),
         NeuCard(
@@ -82,13 +82,13 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _copiesField('Copies of the property code', _propertyCopies, (v) => setState(() => _propertyCopies = v)),
+              _copiesField(context, 'Copies of the property code', _propertyCopies, (v) => setState(() => _propertyCopies = v)),
               if (activeTables.isNotEmpty) ...[
                 const SizedBox(height: AppTheme.s8),
-                _copiesField('Copies of each table code (${activeTables.length} tables)', _tableCopies, (v) => setState(() => _tableCopies = v)),
+                _copiesField(context, 'Copies of each table code (${activeTables.length} tables)', _tableCopies, (v) => setState(() => _tableCopies = v)),
               ],
               const SizedBox(height: AppTheme.s8),
-              const Text('Size on the page', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+              Text('Size on the page', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 4),
               Row(
                 children: [
@@ -124,7 +124,8 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
                   Expanded(
                     child: Text(
                       totalCards == 0 ? 'Nothing selected to print.' : '$totalCards card${totalCards == 1 ? '' : 's'} on $sheets sheet${sheets == 1 ? '' : 's'}',
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                      style: Theme.of(context).textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   NeuButton(
@@ -140,7 +141,7 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
           ),
         ),
         const SizedBox(height: AppTheme.s12),
-        Text('Your ordering code', style: Theme.of(context).textTheme.titleMedium),
+        Text('Your ordering code', style: Theme.of(context).textTheme.titleMedium, overflow: TextOverflow.ellipsis),
         const SizedBox(height: AppTheme.s8),
         _QrCard(
           title: lodge.name,
@@ -148,30 +149,30 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
           url: propertyUrl,
         ),
         if (lodge.foodRoomService)
-          const Padding(
-            padding: EdgeInsets.only(top: AppTheme.s8),
+          Padding(
+            padding: const EdgeInsets.only(top: AppTheme.s8),
             child: Text(
               'Each guest\'s PIN is on their booking, under Bookings — read it out at '
               'check-in. It stops working the moment they check out.',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         if (lodge.foodTableService) ...[
           const SizedBox(height: AppTheme.s12),
           Row(
             children: [
-              Expanded(child: Text('Tables', style: Theme.of(context).textTheme.titleMedium)),
-              if (activeTables.isNotEmpty) Text('${activeTables.length} codes', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+              Expanded(child: Text('Tables', style: Theme.of(context).textTheme.titleMedium, overflow: TextOverflow.ellipsis)),
+              if (activeTables.isNotEmpty) Text('${activeTables.length} codes', style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
           const SizedBox(height: 2),
-          const Text(
+          Text(
             'One code per table. These need no PIN — orders wait in the queue until the kitchen accepts them.',
-            style: TextStyle(color: AppTheme.muted, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: AppTheme.s8),
           if (activeTables.isEmpty)
-            const Text('No active tables to make codes for.', style: TextStyle(color: AppTheme.muted, fontSize: 12))
+            Text('No active tables to make codes for.', style: Theme.of(context).textTheme.bodySmall)
           else
             // A grid, not one full-width card per table — the QR itself is
             // small enough now that two fit side by side on a phone.
@@ -197,10 +198,10 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
     );
   }
 
-  Widget _copiesField(String label, int value, ValueChanged<int> onChanged) {
+  Widget _copiesField(BuildContext context, String label, int value, ValueChanged<int> onChanged) {
     return Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
+        Expanded(child: Text(label, style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
         IconButton(
           icon: const Icon(Icons.remove_circle_outline, size: 18, color: AppTheme.muted),
           padding: EdgeInsets.zero,

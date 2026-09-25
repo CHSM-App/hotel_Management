@@ -157,10 +157,12 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
                               Row(
                                 children: [
                                   if (categoriesWithSpend.isNotEmpty) ...[
-                                    _CategoryFilterButton(
-                                      categories: categoriesWithSpend,
-                                      selected: _categoryId,
-                                      onSelect: (id) => setState(() => _categoryId = id),
+                                    Flexible(
+                                      child: _CategoryFilterButton(
+                                        categories: categoriesWithSpend,
+                                        selected: _categoryId,
+                                        onSelect: (id) => setState(() => _categoryId = id),
+                                      ),
                                     ),
                                     const SizedBox(width: AppTheme.s8),
                                   ],
@@ -388,9 +390,13 @@ class _CategoryFilterButton extends StatelessWidget {
           children: [
             Icon(Icons.category_rounded, size: 15, color: isFiltered ? AppTheme.accent : AppTheme.muted),
             const SizedBox(width: 6),
-            Text(
-              selectedName ?? 'Category',
-              style: TextStyle(color: isFiltered ? AppTheme.accent : AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w500),
+            Flexible(
+              child: Text(
+                selectedName ?? 'Category',
+                style: TextStyle(color: isFiltered ? AppTheme.accent : AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -463,11 +469,11 @@ class _ExpenseCard extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(expense.title, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(expense.title, style: Theme.of(context).textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 3),
                 Text(
                   [expense.categoryName, if (expense.vendorName != null) expense.vendorName!].join(' · '),
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

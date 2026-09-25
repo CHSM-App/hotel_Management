@@ -48,7 +48,7 @@ class _FoodSettingsPanelState extends ConsumerState<FoodSettingsPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (state.error != null) ...[
-                Text(state.error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
+                Text(state.error!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger)),
                 const SizedBox(height: AppTheme.s12),
               ],
               _Toggle(
@@ -79,7 +79,7 @@ class _FoodSettingsPanelState extends ConsumerState<FoodSettingsPanel> {
                 'room out of ordering for fifteen minutes; reception can unlock it from the '
                 'booking. Table orders have no PIN — they wait in the queue until the kitchen '
                 'accepts them, so a prank order costs a tap, not a dish.',
-                style: TextStyle(color: AppTheme.muted, fontSize: 12.5, height: 1.4),
+                style: TextStyle(color: AppTheme.muted, fontSize: 12, height: 1.4),
               ),
             ],
           ),
@@ -142,12 +142,12 @@ class _Toggle extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w500, fontSize: 14),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
               if (subtitle != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Text(subtitle!, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  child: Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
                 ),
             ],
           ),

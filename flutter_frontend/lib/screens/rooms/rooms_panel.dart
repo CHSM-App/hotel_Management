@@ -57,80 +57,131 @@ class _RoomsPanelState extends ConsumerState<RoomsPanel> {
         RefreshIndicator(
           onRefresh: () => ref.read(roomsViewModelProvider.notifier).loadAll(),
           color: AppTheme.accent,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s16,
-              AppTheme.s4,
-              AppTheme.s16,
-              96,
-            ),
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              if (noCategories)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: AppTheme.s12),
-                  child: Text(
-                    'Set up the price chart before adding rooms.',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                  ),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s16,
+                  AppTheme.s4,
+                  AppTheme.s16,
+                  96,
                 ),
-              NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
-                    const SizedBox(width: AppTheme.s8),
-                    Expanded(
-                      child: TextField(
-                        controller: _search,
-                        onChanged: (v) => setState(() => _query = v),
-                        style: const TextStyle(color: AppTheme.heading, fontSize: 14),
-                        decoration: const InputDecoration(
-                          hintText: 'Search room, category, floor',
-                          hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
-                        ),
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  if (noCategories)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                      child: Text(
+                        'Set up the price chart before adding rooms.',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
-                    if (_query.isNotEmpty)
-                      GestureDetector(
-                        onTap: () => setState(() {
-                          _search.clear();
-                          _query = '';
-                        }),
-                        child: const Icon(Icons.close_rounded, size: 18, color: AppTheme.muted),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppTheme.s12),
-              Text(
-                searching
-                    ? '${rooms.length} of ${allRooms.length} room${allRooms.length == 1 ? '' : 's'}'
-                    : '${allRooms.length} room${allRooms.length == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: AppTheme.s12),
-              if (allRooms.isEmpty)
-                const NeuNotice(
-                  icon: Icons.bed_rounded,
-                  message: 'No rooms yet. Add your first room to start\n'
-                      'filling the chart.',
-                )
-              else if (rooms.isEmpty)
-                const NeuNotice(
-                  icon: Icons.search_off_rounded,
-                  message: 'Nothing matches that search.',
-                )
-              else
-                for (final room in rooms)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.s16),
-                    child: _RoomCard(room: room),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.card,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: AppTheme.border),
+                      boxShadow: AppTheme.subtle,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppTheme.accent.withValues(alpha: 0.10),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.search_rounded,
+                            size: 17,
+                            color: AppTheme.accent,
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(
+                          child: TextField(
+                            controller: _search,
+                            onChanged: (v) => setState(() => _query = v),
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontSize: 14,
+                            ),
+                            decoration: const InputDecoration(
+                              hintText: 'Search room, category, floor',
+                              hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 13),
+                            ),
+                          ),
+                        ),
+                        if (_query.isNotEmpty)
+                          GestureDetector(
+                            onTap: () => setState(() {
+                              _search.clear();
+                              _query = '';
+                            }),
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              width: 30,
+                              height: 30,
+                              margin: const EdgeInsets.only(right: 2),
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(
+                                color: AppTheme.bg,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close_rounded,
+                                size: 15,
+                                color: AppTheme.muted,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-            ],
+                  const SizedBox(height: AppTheme.s16),
+                  Row(
+                    children: [
+                      Icon(Icons.meeting_room_outlined, size: 15, color: AppTheme.muted),
+                      const SizedBox(width: 6),
+                      Text(
+                        searching
+                            ? '${rooms.length} of ${allRooms.length} room${allRooms.length == 1 ? '' : 's'}'
+                            : '${allRooms.length} room${allRooms.length == 1 ? '' : 's'}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  if (allRooms.isEmpty)
+                    const NeuNotice(
+                      icon: Icons.bed_rounded,
+                      message: 'No rooms yet. Add your first room to start\n'
+                          'filling the chart.',
+                    )
+                  else if (rooms.isEmpty)
+                    const NeuNotice(
+                      icon: Icons.search_off_rounded,
+                      message: 'Nothing matches that search.',
+                    )
+                  else
+                    for (final room in rooms)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                        child: _RoomCard(room: room),
+                      ),
+                ],
+              ),
+            ),
           ),
         ),
         Positioned(
@@ -150,10 +201,19 @@ class _RoomsPanelState extends ConsumerState<RoomsPanel> {
   }
 }
 
-class _RoomCard extends ConsumerWidget {
+class _RoomCard extends ConsumerStatefulWidget {
   final RoomListing room;
 
   const _RoomCard({required this.room});
+
+  @override
+  ConsumerState<_RoomCard> createState() => _RoomCardState();
+}
+
+class _RoomCardState extends ConsumerState<_RoomCard> {
+  bool _down = false;
+
+  RoomListing get room => widget.room;
 
   String? get _bedSummary {
     if (room.beds.isEmpty) return null;
@@ -173,32 +233,32 @@ class _RoomCard extends ConsumerWidget {
   };
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return GestureDetector(
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
       onTap: () => showRoomFormSheet(
         context,
         categories: ref.read(roomsViewModelProvider).categories,
         room: room,
       ),
-      child: NeuCard(
-        padding: EdgeInsets.zero,
-        radius: AppTheme.rMedium,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _CoverImage(
-              room: room,
-              size: 64,
-              onToggleActive: () => _confirmToggleActive(context, ref),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s12,
-                  AppTheme.s8,
-                  AppTheme.s8,
-                  AppTheme.s8,
-                ),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 120),
+        opacity: _down ? 0.85 : 1,
+        child: NeuCard(
+          padding: const EdgeInsets.all(AppTheme.s12),
+          radius: AppTheme.rMedium,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _CoverImage(
+                room: room,
+                size: 72,
+                onToggleActive: () => _confirmToggleActive(context, ref),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -215,21 +275,35 @@ class _RoomCard extends ConsumerWidget {
                                 style: const TextStyle(
                                   color: AppTheme.heading,
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 14,
+                                  fontSize: 15,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              Text(
-                                room.category.name,
-                                style: const TextStyle(
-                                  color: AppTheme.accent,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 11.5,
+                              const SizedBox(height: 3),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accent.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  room.category.name,
+                                  style: const TextStyle(
+                                    color: AppTheme.accent,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ),
                             ],
                           ),
                         ),
+                        const SizedBox(width: AppTheme.s8),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisSize: MainAxisSize.min,
@@ -239,12 +313,17 @@ class _RoomCard extends ConsumerWidget {
                               style: const TextStyle(
                                 color: AppTheme.heading,
                                 fontWeight: FontWeight.w700,
-                                fontSize: 14,
+                                fontSize: 15,
                               ),
                             ),
+                            const SizedBox(height: 2),
                             const Text(
                               'per night',
-                              style: TextStyle(color: AppTheme.muted, fontSize: 9.5),
+                              style: TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                         ),
@@ -258,7 +337,7 @@ class _RoomCard extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
                       runSpacing: 4,
@@ -284,12 +363,11 @@ class _RoomCard extends ConsumerWidget {
                         if (_bathroomLabel != null) _Chip(Icons.bathtub_outlined, _bathroomLabel!),
                       ],
                     ),
-                    const SizedBox(height: 4),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -420,7 +498,7 @@ class _CoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasPhoto = room.images.isNotEmpty;
     return ClipRRect(
-      borderRadius: const BorderRadius.horizontal(left: Radius.circular(AppTheme.rMedium)),
+      borderRadius: BorderRadius.circular(AppTheme.rSmall),
       child: SizedBox(
         height: size,
         width: size,
@@ -531,18 +609,24 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 10, color: AppTheme.muted),
-          const SizedBox(width: 3),
-          Text(label, style: const TextStyle(color: AppTheme.text, fontSize: 9.5)),
+          Icon(icon, size: 10.5, color: AppTheme.muted),
+          const SizedBox(width: 3.5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.text,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

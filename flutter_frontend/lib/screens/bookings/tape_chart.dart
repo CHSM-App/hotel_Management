@@ -554,7 +554,7 @@ class _SearchBarState extends State<_SearchBar> {
               widget.hitCount == 0
                   ? 'No matches'
                   : '${widget.hitIndex + 1}/${widget.hitCount}',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             IconButton(
               icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 20),

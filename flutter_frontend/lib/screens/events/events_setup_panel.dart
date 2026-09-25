@@ -122,7 +122,7 @@ class _SectionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
-                    Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    Text(hint, style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),
@@ -148,7 +148,7 @@ class _Empty extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-    child: Text(message, style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+    child: Text(message, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted)),
   );
 }
 
@@ -215,7 +215,7 @@ class _VenueRow extends ConsumerWidget {
                 ),
                 Text(
                   '${venue.capacityPax != null ? '${venue.capacityPax} pax · ' : ''}${formatPrice(venue.baseCharge)}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
@@ -268,7 +268,7 @@ class _AddonRow extends ConsumerWidget {
                 ),
                 Text(
                   '${formatPrice(addon.defaultAmount)}${addon.isPerUnit ? ' each' : ''}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
@@ -383,10 +383,10 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_error != null) ...[
-              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+              Text(_error!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger)),
               const SizedBox(height: AppTheme.s8),
             ],
-            NeuField(controller: _name, label: 'Name', hint: 'Lotus Lawn', required: true),
+            NeuField(controller: _name, label: 'Name', hint: 'Lotus Lawn', required: true, forceCapitalizeWords: true),
             const SizedBox(height: AppTheme.s8),
             NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number),
             const SizedBox(height: AppTheme.s8),
@@ -394,7 +394,7 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
             const SizedBox(height: AppTheme.s12),
             Align(
               alignment: Alignment.centerLeft,
-              child: Text('Photos (up to $maxVenueImages)', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+              child: Text('Photos (up to $maxVenueImages)', style: Theme.of(context).textTheme.bodySmall),
             ),
             const SizedBox(height: AppTheme.s8),
             Wrap(
@@ -476,10 +476,10 @@ class _AddonDialogState extends ConsumerState<_AddonDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_error != null) ...[
-              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+              Text(_error!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger)),
               const SizedBox(height: AppTheme.s8),
             ],
-            NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true),
+            NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true, forceCapitalizeWords: true),
             const SizedBox(height: AppTheme.s8),
             NeuField(controller: _amount, label: 'Price', hint: '5000', keyboardType: TextInputType.number),
             const SizedBox(height: AppTheme.s8),

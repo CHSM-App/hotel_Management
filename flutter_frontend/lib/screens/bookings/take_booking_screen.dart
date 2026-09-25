@@ -661,10 +661,55 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _editing
-              ? 'Edit booking · ${widget.editBooking!.roomNumber ?? ''}'
-              : 'New booking',
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _editing ? Icons.edit_calendar_rounded : Icons.add_home_work_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _editing
+                    ? 'Edit booking · ${widget.editBooking!.roomNumber ?? ''}'
+                    : 'New booking',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
         ),
       ),
       body: SafeArea(
@@ -672,7 +717,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s16,
-            AppTheme.s8,
+            AppTheme.s12,
             AppTheme.s16,
             AppTheme.s32,
           ),
@@ -700,6 +745,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             // steps used to be separate cards with headings; a section label
             // plus a hairline divider says the same thing in less height.
             NeuCard(
+              radius: AppTheme.rLarge,
+              shadow: AppTheme.elevated,
+              padding: const EdgeInsets.all(AppTheme.s16 + AppTheme.s4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -792,6 +840,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                     required: true,
                                     errorText: _nameError,
                                     onChanged: (_) => setState(() {}),
+                                    forceCapitalizeWords: true,
                                   )
                                 : CompositedTransformTarget(
                                     link: _nameLink,
@@ -841,6 +890,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                           required: true,
                                           errorText: _nameError,
                                           onChanged: _onNameTyped,
+                                          forceCapitalizeWords: true,
                                           onTap: () {
                                             if (_nameMatches.isNotEmpty) {
                                               _namePortal.show();
@@ -1039,13 +1089,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 const SizedBox(width: AppTheme.s12),
                 Expanded(
                   flex: 2,
-                  child: NeuButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s8,
-                      vertical: AppTheme.s16,
-                    ),
-                    primary: true,
-                    expand: true,
+                  child: _PrimaryCta(
                     // Held shut while the request is in flight, and until
                     // there is a room to save against. The server holds a
                     // lock that stops two devices booking one room; nothing
@@ -1053,22 +1097,17 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     onPressed: (state.submitting || state.room == null)
                         ? null
                         : _submit,
-                    child: state.submitting
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(
-                            _editing
-                                ? 'Save changes'
-                                : state.isWalkIn
-                                ? 'Add and check in'
-                                : 'Create reservation',
-                          ),
+                    loading: state.submitting,
+                    icon: _editing
+                        ? Icons.save_rounded
+                        : state.isWalkIn
+                        ? Icons.how_to_reg_rounded
+                        : Icons.event_available_rounded,
+                    label: _editing
+                        ? 'Save changes'
+                        : state.isWalkIn
+                        ? 'Add and check in'
+                        : 'Create reservation',
                   ),
                 ),
               ],
@@ -1132,6 +1171,14 @@ class _DraftBanner extends StatelessWidget {
   }
 }
 
+/// One icon per top-level step, purely decorative — a glance at the badge
+/// says what kind of section this is before the eye reaches the label text.
+const _kSectionIcons = <int, IconData>{
+  1: Icons.calendar_month_rounded,
+  2: Icons.groups_rounded,
+  3: Icons.payments_rounded,
+};
+
 class _SectionLabel extends StatelessWidget {
   final String title;
   final String? trailing;
@@ -1150,37 +1197,59 @@ class _SectionLabel extends StatelessWidget {
       children: [
         if (number != null) ...[
           Container(
-            width: 18,
-            height: 18,
+            width: 26,
+            height: 26,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: AppTheme.accent,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              '$number',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppTheme.accent, Color(0xFF434FC1)],
               ),
+              shape: BoxShape.circle,
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x2A5A67D8),
+                  offset: Offset(0, 2),
+                  blurRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              _kSectionIcons[number] ?? Icons.directions_car_rounded,
+              color: Colors.white,
+              size: 14,
             ),
           ),
-          const SizedBox(width: AppTheme.s8),
+          const SizedBox(width: AppTheme.s12),
         ],
         Expanded(
           child: Text(
             title.toUpperCase(),
-            style: const TextStyle(
-              color: AppTheme.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+            style: TextStyle(
+              color: number != null ? AppTheme.heading : AppTheme.muted,
+              fontSize: number != null ? 13.5 : 12,
+              fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
             ),
           ),
         ),
         if (trailing != null)
-          Text(trailing!, style: Theme.of(context).textTheme.bodySmall),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              trailing!,
+              style: const TextStyle(
+                color: AppTheme.accent,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1218,7 +1287,109 @@ class _SectionDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
-      child: Divider(height: 1, color: AppTheme.border),
+      child: SizedBox(
+        height: 1.4,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppTheme.border, Colors.transparent],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The form's main call to action — a gradient-filled, elevated button so the
+/// one thing that actually saves the booking reads as heavier than "Close" or
+/// "Save draft" beside it, the way a primary action does on the web form.
+class _PrimaryCta extends StatefulWidget {
+  final VoidCallback? onPressed;
+  final bool loading;
+  final IconData icon;
+  final String label;
+
+  const _PrimaryCta({
+    required this.onPressed,
+    required this.loading,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  State<_PrimaryCta> createState() => _PrimaryCtaState();
+}
+
+class _PrimaryCtaState extends State<_PrimaryCta> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    return Opacity(
+      opacity: enabled ? (_down ? 0.88 : 1) : 0.5,
+      child: GestureDetector(
+        onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+        onTapCancel: enabled ? () => setState(() => _down = false) : null,
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppTheme.accent, Color(0xFF434FC1)],
+            ),
+            borderRadius: BorderRadius.circular(AppTheme.rMedium + 2),
+            boxShadow: enabled
+                ? const [
+                    BoxShadow(
+                      color: Color(0x3A5A67D8),
+                      offset: Offset(0, 6),
+                      blurRadius: 16,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: widget.loading
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(widget.icon, size: 17, color: Colors.white),
+                      const SizedBox(width: AppTheme.s8),
+                      Flexible(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1270,13 +1441,24 @@ class _BookingSavedDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: 60,
+              height: 60,
               decoration: const BoxDecoration(
-                color: AppTheme.accent,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x405A67D8),
+                    offset: Offset(0, 6),
+                    blurRadius: 16,
+                  ),
+                ],
               ),
-              child: const Icon(Icons.check, color: Colors.white, size: 28),
+              child: const Icon(Icons.check_rounded, color: Colors.white, size: 30),
             ),
             const SizedBox(height: AppTheme.s16),
             Text('Booking saved', style: Theme.of(context).textTheme.headlineSmall),
@@ -1306,7 +1488,7 @@ class _BookingSavedDialog extends StatelessWidget {
                         '${advanceMethod != null ? ' by ${advanceMethod!.toLowerCase()}' : ''} '
                         'taken — its receipt has been issued automatically.'
                   : 'No advance was taken, so there is nothing to receipt yet.',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppTheme.s24),
@@ -1456,10 +1638,8 @@ class _DateBox extends StatelessWidget {
                 Expanded(
                   child: Text(
                     value == null ? 'Choose' : formatDate(value),
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: value == null ? AppTheme.muted : AppTheme.heading,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13.5,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1505,12 +1685,14 @@ class _BookingTypeHeader extends ConsumerWidget {
             if (!futureCheckIn)
               _TogglePill(
                 label: 'Walk-in',
+                icon: Icons.directions_walk_rounded,
                 active: walkIn,
                 onTap: () => vm.setBookingType('WALK_IN'),
               ),
             if (!futureCheckIn) const SizedBox(width: AppTheme.s8),
             _TogglePill(
               label: 'Pre-reservation',
+              icon: Icons.event_available_rounded,
               active: !walkIn,
               onTap: () => vm.setBookingType('RESERVATION'),
             ),
@@ -1535,29 +1717,64 @@ class _BookingTypeHeader extends ConsumerWidget {
 
 class _TogglePill extends StatelessWidget {
   final String label;
+  final IconData? icon;
   final bool active;
   final VoidCallback onTap;
 
-  const _TogglePill({required this.label, required this.active, required this.onTap});
+  const _TogglePill({
+    required this.label,
+    this.icon,
+    required this.active,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: active ? AppTheme.accent : AppTheme.card,
+          gradient: active
+              ? const LinearGradient(
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                )
+              : null,
+          color: active ? null : AppTheme.card,
           border: Border.all(color: active ? AppTheme.accent : AppTheme.border),
           borderRadius: BorderRadius.circular(999),
+          boxShadow: active
+              ? const [
+                  BoxShadow(
+                    color: Color(0x2A5A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ]
+              : null,
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.white : AppTheme.text,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 14,
+                color: active ? Colors.white : AppTheme.muted,
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: active ? Colors.white : AppTheme.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1626,11 +1843,7 @@ class _RoomPicker extends ConsumerWidget {
                       'Room ${room.roomNumber} · ${room.categoryName} · '
                       '${formatPrice(room.categoryBasePrice)}/night',
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.heading,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13.5,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
               ],
@@ -1688,19 +1901,20 @@ class _RoomChips extends StatelessWidget {
               ? '${formatPrice(room.dormitoryPrice ?? room.categoryBasePrice)}/bed/night'
               : '${formatPrice(room.categoryBasePrice)}/night',
           accent: true,
+          icon: Icons.sell_rounded,
         ),
-        _Chip(room.categoryName),
+        _Chip(room.categoryName, icon: Icons.category_rounded),
         if (room.isDormitory) ...[
-          _Chip('Dormitory'),
+          _Chip('Dormitory', icon: Icons.holiday_village_rounded),
           if (room.dormitoryGender != null)
             _Chip(dormitoryGenderLabel[room.dormitoryGender!] ?? room.dormitoryGender!),
           if (room.dormitoryIsAc != null)
-            _Chip(dormitoryAcLabel[room.dormitoryIsAc!] ?? room.dormitoryIsAc!),
+            _Chip(dormitoryAcLabel[room.dormitoryIsAc!] ?? room.dormitoryIsAc!, icon: Icons.ac_unit_rounded),
         ] else ...[
-          if (bedLabel != null) _Chip(bedLabel),
-          if (room.maxOccupancy != null) _Chip('Sleeps ${room.maxOccupancy}'),
+          if (bedLabel != null) _Chip(bedLabel, icon: Icons.bed_rounded),
+          if (room.maxOccupancy != null) _Chip('Sleeps ${room.maxOccupancy}', icon: Icons.person_rounded),
         ],
-        if (bathroomLabel != null) _Chip(bathroomLabel),
+        if (bathroomLabel != null) _Chip(bathroomLabel, icon: Icons.bathtub_rounded),
       ],
     );
   }
@@ -1830,25 +2044,53 @@ class _BedChoiceChip extends StatelessWidget {
 class _Chip extends StatelessWidget {
   final String label;
   final bool accent;
+  final IconData? icon;
 
-  const _Chip(this.label, {this.accent = false});
+  const _Chip(this.label, {this.accent = false, this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
       decoration: BoxDecoration(
-        color: accent ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.bg,
+        gradient: accent
+            ? const LinearGradient(
+                colors: [AppTheme.accent, Color(0xFF434FC1)],
+              )
+            : null,
+        color: accent ? null : AppTheme.bg,
         border: accent ? null : Border.all(color: AppTheme.border),
         borderRadius: BorderRadius.circular(999),
+        boxShadow: accent
+            ? const [
+                BoxShadow(
+                  color: Color(0x225A67D8),
+                  offset: Offset(0, 2),
+                  blurRadius: 6,
+                ),
+              ]
+            : null,
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: accent ? AppTheme.accent : AppTheme.text,
-          fontSize: 11.5,
-          fontWeight: accent ? FontWeight.w700 : FontWeight.w500,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(
+              icon,
+              size: 12,
+              color: accent ? Colors.white : AppTheme.muted,
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: accent ? Colors.white : AppTheme.text,
+              fontSize: 11.5,
+              fontWeight: accent ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2004,10 +2246,9 @@ class _QuoteCard extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       line.label,
-                      style: const TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 13,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
@@ -2029,10 +2270,7 @@ class _QuoteCard extends ConsumerWidget {
                   else
                     Text(
                       formatPrice(line.amount),
-                      style: const TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 13,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                 ],
               ),
@@ -2045,10 +2283,10 @@ class _QuoteCard extends ConsumerWidget {
             const Divider(height: AppTheme.s16),
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Concession',
-                    style: TextStyle(color: AppTheme.text, fontSize: 13),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
                 const SizedBox(width: AppTheme.s8),
@@ -2060,33 +2298,53 @@ class _QuoteCard extends ConsumerWidget {
               ],
             ),
           ],
-          const Divider(height: AppTheme.s16),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Stay total · ${nightsLabel(quote.nightCount)}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+          const SizedBox(height: AppTheme.s4),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s8,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppTheme.accent.withValues(alpha: 0.10),
+                  AppTheme.accent.withValues(alpha: 0.04),
+                ],
               ),
-              if (state.quoting)
-                const SizedBox(
-                  height: 14,
-                  width: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Text(
-                  formatPrice(quote.totalPrice),
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Stay total · ${nightsLabel(quote.nightCount)}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.heading,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-            ],
+                if (state.quoting)
+                  const SizedBox(
+                    height: 13,
+                    width: 13,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Text(
+                    formatPrice(quote.totalPrice),
+                    style: const TextStyle(
+                      color: AppTheme.accent,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppTheme.s4),
+          const SizedBox(height: AppTheme.s8),
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -2277,9 +2535,9 @@ class _IdProofFields extends StatelessWidget {
           ),
           if (!required && numberErrorText == null) ...[
             const SizedBox(height: AppTheme.s4),
-            const Text(
+            Text(
               'Not required',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
           if (onFile != null) ...[
@@ -2341,11 +2599,7 @@ class _GuestSuggestions extends StatelessWidget {
                   children: [
                     Text(
                       guest.name,
-                      style: const TextStyle(
-                        color: AppTheme.heading,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13.5,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -2430,6 +2684,7 @@ class _GuestCardState extends State<_GuestCard> {
             controller: _name,
             label: 'Name',
             onChanged: (v) => widget.guest.name = v,
+            forceCapitalizeWords: true,
           ),
           const SizedBox(height: AppTheme.s12),
           NeuField(
@@ -2731,11 +2986,7 @@ class _AdvanceCard extends StatelessWidget {
                 ),
                 Text(
                   formatPrice(total),
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ],
             ),

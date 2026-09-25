@@ -93,7 +93,7 @@ class _VendorCard extends ConsumerWidget {
                     Flexible(
                       child: Text(
                         vendor.name,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14.5),
+                        style: Theme.of(context).textTheme.titleSmall,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -110,7 +110,9 @@ class _VendorCard extends ConsumerWidget {
                 const SizedBox(height: 2),
                 Text(
                   [vendor.specialty.isEmpty ? 'No specialty set' : vendor.specialty, vendor.phone].where((s) => s.isNotEmpty).join(' · '),
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -211,9 +213,10 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
                     errorText: _nameError,
                     focusNode: _nameFocus,
                     onChanged: (_) => setState(() {}),
+                    forceCapitalizeWords: true,
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _contact, label: 'Contact person'),
+                  NeuField(controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(controller: _phone, label: 'Phone', keyboardType: TextInputType.phone),
                   const SizedBox(height: AppTheme.s12),

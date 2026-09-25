@@ -96,7 +96,13 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     final submitting = ref.watch(roomsViewModelProvider).submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Edit room · ${widget.room.roomNumber}')),
+      appBar: AppBar(
+        title: Text(
+          'Edit room · ${widget.room.roomNumber}',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -179,10 +185,10 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                         onChanged: (v) => setState(() => _isDormitory = v),
                         activeThumbColor: AppTheme.accent,
                       ),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'This is a dormitory (sold bed-by-bed)',
-                          style: TextStyle(color: AppTheme.text, fontSize: 13.5),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
                     ],
@@ -248,11 +254,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                                         value: s,
                                         child: Text(
                                           bedSizeLabel[s]!,
-                                          style: const TextStyle(
-                                            color: AppTheme.heading,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13.5,
-                                          ),
+                                          style: Theme.of(context).textTheme.titleSmall,
                                         ),
                                       ),
                                   ],

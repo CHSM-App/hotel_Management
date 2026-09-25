@@ -40,18 +40,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const _SectionLabel('Contact', icon: Icons.person_outline_rounded),
-                          if (_hasText(me.user.phone))
-                            _LinkButton(
-                              icon: Icons.call_rounded,
-                              label: 'Get in touch',
-                              onTap: () => launchUrl(Uri.parse('tel:${me.user.phone}')),
-                            ),
-                        ],
-                      ),
+                      const _SectionLabel('Contact', icon: Icons.person_outline_rounded),
                       const SizedBox(height: AppTheme.s12),
                       NeuCard(
                         padding: EdgeInsets.zero,
@@ -70,7 +59,7 @@ class ProfileScreen extends ConsumerWidget {
                                 iconColor: const Color(0xFFE0457C),
                                 label: 'Email',
                                 subtitle: me.user.email,
-                                onTap: () => launchUrl(Uri.parse('mailto:${me.user.email}')),
+                                onTap: null,
                               ),
                             ],
                             const _RowDivider(),
@@ -79,9 +68,7 @@ class ProfileScreen extends ConsumerWidget {
                               iconColor: AppTheme.vacant,
                               label: 'Phone',
                               subtitle: me.user.phone ?? '—',
-                              onTap: _hasText(me.user.phone)
-                                  ? () => launchUrl(Uri.parse('tel:${me.user.phone}'))
-                                  : null,
+                              onTap: null,
                             ),
                           ],
                         ),
@@ -165,9 +152,7 @@ class ProfileScreen extends ConsumerWidget {
                               iconColor: AppTheme.vacant,
                               label: 'Lodge phone',
                               subtitle: me.lodge.phone ?? '—',
-                              onTap: _hasText(me.lodge.phone)
-                                  ? () => launchUrl(Uri.parse('tel:${me.lodge.phone}'))
-                                  : null,
+                              onTap: null,
                             ),
                             if (_hasText(me.lodge.whatsappNumber)) ...[
                               const _RowDivider(),
@@ -176,9 +161,7 @@ class ProfileScreen extends ConsumerWidget {
                                 iconColor: AppTheme.vacant,
                                 label: 'WhatsApp',
                                 subtitle: me.lodge.whatsappNumber!,
-                                onTap: () => launchUrl(
-                                  Uri.parse('https://wa.me/${me.lodge.whatsappNumber}'),
-                                ),
+                                onTap: null,
                               ),
                             ],
                             if (me.lodge.isGstRegistered) ...[
@@ -394,11 +377,7 @@ class _Sheet extends StatelessWidget {
                       ),
                       Text(
                         title,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ],
                   ),
@@ -687,12 +666,10 @@ class _SectionLabel extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           text.toUpperCase(),
-          style: const TextStyle(
-            color: AppTheme.muted,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.6,
-          ),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
         ),
       ],
     );
@@ -738,16 +715,17 @@ class _InfoRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontSize: 14.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -815,17 +793,18 @@ class _ActionRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontSize: 14.5),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],
@@ -887,18 +866,20 @@ class _PublicLinkCardState extends State<_PublicLinkCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Public link',
-                  style: TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontSize: 13.5),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   'View this profile publicly',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontSize: 11.5),
                 ),
               ],
             ),
@@ -1141,9 +1122,12 @@ class _EditLodgeSheetState extends ConsumerState<_EditLodgeSheet> {
             ],
           ),
           const SizedBox(height: AppTheme.s16),
-          const Text(
+          Text(
             'Map location',
-            style: TextStyle(color: AppTheme.muted, fontSize: 12.5, fontWeight: FontWeight.w500),
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(fontSize: 12.5),
           ),
           const SizedBox(height: AppTheme.s8),
           Row(
@@ -1414,7 +1398,10 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
           _maskedPhone == null
               ? 'Enter the 6-digit code sent to your phone.'
               : 'Enter the 6-digit code sent to $_maskedPhone.',
-          style: const TextStyle(color: AppTheme.text, fontSize: 13.5),
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(fontSize: 13.5),
         ),
         const SizedBox(height: AppTheme.s16),
         NeuField(

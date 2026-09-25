@@ -107,9 +107,10 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
                     errorText: _nameError,
                     focusNode: _nameFocus,
                     onChanged: (_) => setState(() {}),
+                    forceCapitalizeWords: true,
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _contact, label: 'Contact person'),
+                  NeuField(controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
 
                   const SectionDivider(),
                   const SectionLabel('Contact details', number: 2),

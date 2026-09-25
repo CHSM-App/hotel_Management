@@ -212,9 +212,9 @@ class _InventoryPanelState extends ConsumerState<InventoryPanel> {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Text(
+                        Text(
                           'Retired',
-                          style: TextStyle(color: AppTheme.text, fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.text),
                         ),
                       ],
                     ),
@@ -242,11 +242,11 @@ class _InventoryPanelState extends ConsumerState<InventoryPanel> {
                   padding: const EdgeInsets.only(bottom: AppTheme.s12),
                   child: NeuCard(
                     padding: const EdgeInsets.all(AppTheme.s12),
-                    child: const Text(
+                    child: Text(
                       'Something has been cooked more than the books say you bought. Open a '
                       'material below zero, choose "Correct to a counted total", and put in '
                       'what is actually on the shelf.',
-                      style: TextStyle(color: AppTheme.danger, fontSize: 12.5),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
                     ),
                   ),
                 ),
@@ -359,10 +359,7 @@ class _InventoryPanelState extends ConsumerState<InventoryPanel> {
                         ),
                         Text(
                           '${g.materials.length}',
-                          style: const TextStyle(
-                            color: AppTheme.muted,
-                            fontSize: 12,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                         if (g.materials.any((m) => m.isNegative))
                           _Tag(
@@ -482,7 +479,7 @@ class _MaterialCard extends ConsumerWidget {
                   metaLine,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                  style: Theme.of(context).textTheme.labelSmall,
                 ),
               ],
             ),
@@ -810,6 +807,7 @@ class _MaterialFormPageState extends ConsumerState<_MaterialFormPage> {
                     required: true,
                     errorText: _nameError,
                     onChanged: (_) => setState(() {}),
+                    forceCapitalizeWords: true,
                   ),
                   const SizedBox(height: AppTheme.s8),
                   const Text(
@@ -1249,11 +1247,7 @@ class _MovementsSheetState extends ConsumerState<_MovementsSheet> {
                                     children: [
                                       Text(
                                         _kReasonLabel[m.reason] ?? m.reason,
-                                        style: const TextStyle(
-                                          color: AppTheme.heading,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                        ),
+                                        style: Theme.of(context).textTheme.titleSmall,
                                       ),
                                       Text(
                                         m.orderNumber != null
@@ -1261,10 +1255,9 @@ class _MovementsSheetState extends ConsumerState<_MovementsSheet> {
                                             : (m.note?.isNotEmpty == true
                                                   ? m.note!
                                                   : (m.byName ?? '—')),
-                                        style: const TextStyle(
-                                          color: AppTheme.muted,
-                                          fontSize: 11.5,
-                                        ),
+                                        style: Theme.of(context).textTheme.labelSmall,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
                                   ),

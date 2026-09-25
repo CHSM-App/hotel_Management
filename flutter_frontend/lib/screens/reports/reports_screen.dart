@@ -96,11 +96,11 @@ class _SubTabs extends StatelessWidget {
                       child: Center(
                         child: Text(
                           entry.value,
-                          style: const TextStyle(
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: AppTheme.accent,
                             fontWeight: FontWeight.w500,
-                            fontSize: 13,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     )
@@ -111,7 +111,8 @@ class _SubTabs extends StatelessWidget {
                       child: Center(
                         child: Text(
                           entry.value,
-                          style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
@@ -197,7 +198,10 @@ class _DateField extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+          ),
           const SizedBox(height: 2),
           NeuPressed(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
@@ -206,11 +210,14 @@ class _DateField extends StatelessWidget {
               children: [
                 const Icon(Icons.event_rounded, size: 14, color: AppTheme.muted),
                 const SizedBox(width: AppTheme.s8),
-                Text(
-                  parsed == null
-                      ? value
-                      : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                Flexible(
+                  child: Text(
+                    parsed == null
+                        ? value
+                        : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
+                    style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),

@@ -172,6 +172,7 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
                     errorText: _titleError,
                     focusNode: _titleFocus,
                     onChanged: (_) => setState(() {}),
+                    forceCapitalizeWords: true,
                   ),
                   const SizedBox(height: AppTheme.s12),
                   CategoryComboField(

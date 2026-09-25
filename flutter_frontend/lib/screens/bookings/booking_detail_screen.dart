@@ -165,7 +165,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     final booking = _booking;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.bg,
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -184,160 +184,207 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             : RefreshIndicator(
                 onRefresh: _load,
                 color: AppTheme.accent,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTheme.s16,
-                    AppTheme.s12,
-                    AppTheme.s16,
-                    AppTheme.s32,
-                  ),
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  children: [
-                    _TopBar(booking: booking),
-                    const SizedBox(height: AppTheme.s16),
-                    _StayRoomSection(
-                      booking: booking,
-                      clearingLockout: _clearingLockout,
-                      onClearLockout: _clearFoodLockout,
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-                    _GuestSection(
-                      booking: booking,
-                      onViewIdProof: () =>
-                          _viewIdProof('ID proof · ${booking.guestName ?? 'Guest'}'),
-                      onViewGuestIdProof: (g) =>
-                          _viewIdProof('ID proof · ${g.name}', guestId: g.id),
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        // Side by side above a phone's own width, the way the
-                        // web panel pairs them — both are usually short, and
-                        // stacked they push the money section further down
-                        // than either earns.
-                        final wide = constraints.maxWidth >= 480;
-                        final advance = _AdvanceSection(booking: booking);
-                        final vehicles = _VehiclesSection(booking: booking);
-                        return wide
-                            ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(child: advance),
-                                  const SizedBox(width: AppTheme.s16),
-                                  Expanded(child: vehicles),
-                                ],
-                              )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  advance,
-                                  const SizedBox(height: AppTheme.s16),
-                                  vehicles,
-                                ],
-                              );
-                      },
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-                    _ChargesSection(booking: booking),
-                    if (booking.invoice != null) ...[
-                      const SizedBox(height: AppTheme.s16),
-                      _BillSection(invoice: booking.invoice!),
-                    ],
-                    if (booking.status == 'BOOKED' ||
-                        booking.status == 'CHECKED_IN') ...[
-                      const SizedBox(height: AppTheme.s24),
-                      _actions(booking),
-                    ],
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, outer) {
+                    final wide = outer.maxWidth >= 480;
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: AppTheme.maxContentWidth,
+                        ),
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppTheme.s16,
+                            AppTheme.s12,
+                            AppTheme.s16,
+                            AppTheme.s32,
+                          ),
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          children: [
+                            _TopBar(booking: booking),
+                            const SizedBox(height: AppTheme.s12),
+                            _StayRoomSection(
+                              booking: booking,
+                              clearingLockout: _clearingLockout,
+                              onClearLockout: _clearFoodLockout,
+                            ),
+                            const SizedBox(height: AppTheme.s12),
+                            _GuestSection(
+                              booking: booking,
+                              onViewIdProof: () => _viewIdProof(
+                                'ID proof · ${booking.guestName ?? 'Guest'}',
+                              ),
+                              onViewGuestIdProof: (g) =>
+                                  _viewIdProof('ID proof · ${g.name}', guestId: g.id),
+                            ),
+                            const SizedBox(height: AppTheme.s12),
+                            Builder(
+                              builder: (context) {
+                                // Side by side above a phone's own width, the
+                                // way the web panel pairs them — both are
+                                // usually short, and stacked they push the
+                                // money section further down than either
+                                // earns.
+                                final advance = _AdvanceSection(booking: booking);
+                                final vehicles = _VehiclesSection(booking: booking);
+                                return wide
+                                    ? Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(child: advance),
+                                          const SizedBox(width: AppTheme.s12),
+                                          Expanded(child: vehicles),
+                                        ],
+                                      )
+                                    : Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          advance,
+                                          const SizedBox(height: AppTheme.s12),
+                                          vehicles,
+                                        ],
+                                      );
+                              },
+                            ),
+                            const SizedBox(height: AppTheme.s12),
+                            _ChargesSection(booking: booking),
+                            if (booking.invoice != null) ...[
+                              const SizedBox(height: AppTheme.s12),
+                              _BillSection(invoice: booking.invoice!),
+                            ],
+                            if (booking.status == 'BOOKED' ||
+                                booking.status == 'CHECKED_IN') ...[
+                              const SizedBox(height: AppTheme.s24),
+                              _actions(booking),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
       ),
     );
   }
 
-  // The same order the web page's own footer row uses: cancelling first and
-  // set apart as a plain danger link rather than a peer of the others (it is
-  // the one irreversible move here), then advance receipt, then edit, then
-  // whichever status move — check in or check out — actually applies.
+  // A uniform 2-column grid — cancel, advance receipt, edit and the status
+  // move (check in / check out) all drawn as the same size and shape of
+  // button, rather than one plain text link plus a row of two plus a lone
+  // full-width one. Order still follows the web page's own footer: cancel
+  // first (it is the one irreversible move here), then advance receipt,
+  // then edit, then whichever status move applies.
   Widget _actions(Booking booking) {
     final checkInOpen = BookingActions.checkInOpen(booking.checkInDate);
     final reserved = booking.status == 'BOOKED';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (reserved) ...[
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _busy ? null : () => _run(_cancel),
-              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
-              child: const Text('Cancel booking'),
-            ),
-          ),
-          const SizedBox(height: AppTheme.s8),
-        ],
+    const pairedPadding = EdgeInsets.symmetric(
+      horizontal: AppTheme.s12,
+      vertical: 13,
+    );
 
-        // An advance can be taken while a stay is reserved or in house — the
-        // same window the web page's own button is offered in, gated one
-        // level up by [_load]'s BOOKED-or-CHECKED_IN condition.
+    final tiles = <Widget>[
+      if (reserved)
         NeuButton(
-          primary: true,
+          padding: pairedPadding,
           expand: true,
-          onPressed: _openAdvanceReceipts,
-          child: Text(
-            _receiptCount != null && _receiptCount! > 0
-                ? 'Advance receipt ($_receiptCount)'
-                : 'Advance receipt',
+          onPressed: _busy ? null : () => _run(_cancel),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cancel_outlined, size: 16, color: AppTheme.danger),
+              SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Cancel booking',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: AppTheme.danger),
+                ),
+              ),
+            ],
           ),
         ),
+      NeuButton(
+        primary: true,
+        expand: true,
+        padding: pairedPadding,
+        onPressed: _openAdvanceReceipts,
+        child: Text(
+          _receiptCount != null && _receiptCount! > 0
+              ? 'Advance receipt ($_receiptCount)'
+              : 'Advance receipt',
+        ),
+      ),
 
-        // A stay stays editable right up until its own bill is issued — the
-        // same window the web page's own "Edit booking" button is offered
-        // in. Only offered on a stay that has not been billed: once it has,
-        // there is no stay left to move or extend, only the register entry
-        // for it.
-        if (!booking.hasIssuedInvoice) ...[
-          const SizedBox(height: AppTheme.s12),
-          NeuButton(
-            expand: true,
-            onPressed: _openEdit,
-            child: const Text('Edit booking'),
-          ),
-        ],
+      // A stay stays editable right up until its own bill is issued — the
+      // same window the web page's own "Edit booking" button is offered
+      // in. Only offered on a stay that has not been billed: once it has,
+      // there is no stay left to move or extend, only the register entry
+      // for it.
+      if (!booking.hasIssuedInvoice)
+        NeuButton(
+          expand: true,
+          padding: pairedPadding,
+          onPressed: _openEdit,
+          child: const Text('Edit booking'),
+        ),
 
-        const SizedBox(height: AppTheme.s12),
-        if (reserved) ...[
-          if (checkInOpen)
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: _busy
-                  ? null
-                  : () => _run(
-                      (a) => a.checkIn(
-                        widget.bookingId,
-                        guestName: booking.guestName,
-                      ),
-                    ),
-              child: const Text('Check in'),
-            )
-          else
-            Text(
-              'Check-in opens ${formatIsoDate(booking.checkInDate)}.',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-            ),
-        ] else
+      if (reserved)
+        if (checkInOpen)
           NeuButton(
             primary: true,
-            color: AppTheme.text,
             expand: true,
+            padding: pairedPadding,
             onPressed: _busy
                 ? null
-                : () => _run((a) => a.checkOut(widget.bookingId, booking: booking)),
-            child: const Text('Check out'),
+                : () => _run(
+                    (a) => a.checkIn(
+                      widget.bookingId,
+                      guestName: booking.guestName,
+                    ),
+                  ),
+            child: const Text('Check in'),
+          )
+        else
+          NeuButton(
+            expand: true,
+            padding: pairedPadding,
+            onPressed: null,
+            child: Text(
+              'Opens ${formatIsoDate(booking.checkInDate)}',
+              style: const TextStyle(fontSize: 12.5),
+            ),
+          )
+      else
+        NeuButton(
+          primary: true,
+          color: AppTheme.text,
+          expand: true,
+          padding: pairedPadding,
+          onPressed: _busy
+              ? null
+              : () => _run((a) => a.checkOut(widget.bookingId, booking: booking)),
+          child: const Text('Check out'),
+        ),
+    ];
+
+    return Column(
+      children: [
+        for (var i = 0; i < tiles.length; i += 2)
+          Padding(
+            padding: EdgeInsets.only(bottom: i + 2 < tiles.length ? AppTheme.s8 : 0),
+            child: Row(
+              children: [
+                Expanded(child: tiles[i]),
+                if (i + 1 < tiles.length) ...[
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(child: tiles[i + 1]),
+                ],
+              ],
+            ),
           ),
       ],
     );
@@ -354,50 +401,83 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final checkedIn = booking.status == 'CHECKED_IN';
+    final statusColor = BookingActions.statusColor(booking.status);
 
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            (booking.guestName ?? '').trim().isEmpty
-                ? 'Guest'
-                : booking.guestName!,
-            style: const TextStyle(
-              color: AppTheme.heading,
-              fontSize: 19,
-              fontWeight: FontWeight.w700,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(width: AppTheme.s8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: checkedIn
-                ? const Color(0xFFE3F6E9)
-                : AppTheme.border.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            BookingActions.statusLabel(booking.status),
-            style: TextStyle(
-              color: checkedIn ? const Color(0xFF1E824C) : AppTheme.text,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.extruded,
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s16,
+        AppTheme.s12,
+        AppTheme.s8,
+        AppTheme.s12,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 32,
+            decoration: BoxDecoration(
+              color: statusColor,
+              borderRadius: BorderRadius.circular(999),
             ),
           ),
-        ),
-        const SizedBox(width: AppTheme.s8),
-        InkResponse(
-          onTap: () => Navigator.of(context).pop(),
-          radius: 20,
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.close_rounded, color: AppTheme.muted, size: 22),
+          const SizedBox(width: AppTheme.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  (booking.guestName ?? '').trim().isEmpty
+                      ? 'Guest'
+                      : booking.guestName!,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Room ${booking.roomNumber ?? '—'}'
+                  '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}',
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          const SizedBox(width: AppTheme.s8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: checkedIn
+                  ? const Color(0xFFE3F6E9)
+                  : statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              BookingActions.statusLabel(booking.status),
+              style: TextStyle(
+                color: checkedIn ? const Color(0xFF1E824C) : statusColor,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          InkResponse(
+            onTap: () => Navigator.of(context).pop(),
+            radius: 20,
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(Icons.close_rounded, color: AppTheme.muted, size: 20),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -572,10 +652,10 @@ class _FoodPinBox extends StatelessWidget {
           if (locked)
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Too many wrong PINs — ordering is blocked for this room.',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
                 TextButton(
@@ -587,10 +667,10 @@ class _FoodPinBox extends StatelessWidget {
               ],
             )
           else
-            const Text(
+            Text(
               'Read this out to the guest — they need it to order food from '
               'the QR code.',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
       ),
@@ -640,11 +720,7 @@ class _GuestSection extends StatelessWidget {
                 Text(
                   '${booking.numGuests ?? 1} '
                   '${(booking.numGuests ?? 1) == 1 ? 'guest' : 'guests'}',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
@@ -713,6 +789,12 @@ class _PersonRow extends StatelessWidget {
     this.onViewIdProof,
   });
 
+  String get _initials {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    final letters = parts.take(2).map((p) => p[0].toUpperCase());
+    return letters.isEmpty ? '?' : letters.join();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -723,77 +805,97 @@ class _PersonRow extends StatelessWidget {
         vertical: AppTheme.s12,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: AppTheme.border),
+        color: const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              _initials,
+              style: const TextStyle(
+                color: AppTheme.accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTheme.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Flexible(
-                      child: Text(
-                        name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Expanded(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                          if (role != null) ...[
+                            const SizedBox(width: AppTheme.s8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accent.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                role!.toUpperCase(),
+                                style: const TextStyle(
+                                  color: AppTheme.accent,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    if (role != null) ...[
-                      const SizedBox(width: AppTheme.s8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          role!.toUpperCase(),
-                          style: const TextStyle(
+                    if (onViewIdProof != null)
+                      InkResponse(
+                        onTap: onViewIdProof,
+                        radius: 18,
+                        child: const Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.visibility_outlined,
                             color: AppTheme.accent,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3,
+                            size: 18,
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
-              ),
-              if (onViewIdProof != null)
-                InkResponse(
-                  onTap: onViewIdProof,
-                  radius: 18,
-                  child: const Padding(
-                    padding: EdgeInsets.all(2),
-                    child: Icon(
-                      Icons.visibility_outlined,
-                      color: AppTheme.accent,
-                      size: 18,
-                    ),
+                if (meta.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    meta,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                ),
-            ],
-          ),
-          if (meta.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              meta,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1118,7 +1220,7 @@ class _BillSectionState extends State<_BillSection> {
 
         const SizedBox(height: AppTheme.s12),
         Container(
-          height: MediaQuery.of(context).size.height * 0.8,
+          height: 480,
           decoration: BoxDecoration(
             border: Border.all(color: AppTheme.border),
             borderRadius: BorderRadius.circular(12),
@@ -1137,36 +1239,34 @@ class _BillSectionState extends State<_BillSection> {
 
         const SizedBox(height: AppTheme.s12),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            IconButton(
-              tooltip: 'Download',
-              onPressed: _pdfBusy
-                  ? null
-                  : () => _runPdfAction(() async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      final where = await BillPdf.download(invoice);
-                      if (!mounted) return;
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('Saved to $where'),
-                          backgroundColor: AppTheme.heading,
-                        ),
-                      );
-                    }),
-              icon: const Icon(Icons.download_rounded),
-              color: Colors.white,
-              style: IconButton.styleFrom(
-                backgroundColor: AppTheme.accent,
+            Expanded(
+              child: _PdfActionButton(
+                icon: Icons.download_rounded,
+                label: 'Download',
+                primary: true,
+                busy: _pdfBusy,
+                onPressed: () => _runPdfAction(() async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final where = await BillPdf.download(invoice);
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Saved to $where'),
+                      backgroundColor: AppTheme.heading,
+                    ),
+                  );
+                }),
               ),
             ),
-            IconButton(
-              tooltip: 'Share',
-              onPressed: _pdfBusy
-                  ? null
-                  : () => _runPdfAction(() => BillPdf.share(invoice)),
-              icon: const Icon(Icons.share_rounded),
-              color: AppTheme.text,
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: _PdfActionButton(
+                icon: Icons.share_rounded,
+                label: 'Share',
+                busy: _pdfBusy,
+                onPressed: () => _runPdfAction(() => BillPdf.share(invoice)),
+              ),
             ),
           ],
         ),
@@ -1179,11 +1279,53 @@ class _BillSectionState extends State<_BillSection> {
           ),
 
         const SizedBox(height: AppTheme.s8),
-        const Text(
+        Text(
           'This stay has been billed — extras are locked.',
-          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
+    );
+  }
+}
+
+/// A compact, labelled pill for the bill's own download/share pair — same
+/// height and shape as the primary/secondary [NeuButton]s below it, so the
+/// two rows of actions on this page read as one family instead of two
+/// different button languages.
+class _PdfActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool primary;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  const _PdfActionButton({
+    required this.icon,
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+    this.primary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuButton(
+      primary: primary,
+      expand: true,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: AppTheme.s12,
+      ),
+      onPressed: busy ? null : onPressed,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: primary ? Colors.white : AppTheme.heading),
+          const SizedBox(width: 6),
+          Text(label),
+        ],
+      ),
     );
   }
 }
@@ -1258,43 +1400,48 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 20,
-              height: 20,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: AppTheme.accent,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '$number',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.extruded,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppTheme.accent,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Text(
-              title.toUpperCase(),
-              style: const TextStyle(
-                color: AppTheme.heading,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.4,
+              const SizedBox(width: AppTheme.s8),
+              Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        child,
-      ],
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -1362,16 +1509,12 @@ class _Fact extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             value,
-            style: const TextStyle(
-              color: AppTheme.heading,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(context).textTheme.titleSmall,
           ),
           if (note != null && note!.isNotEmpty)
             Text(
               note!,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
       ),

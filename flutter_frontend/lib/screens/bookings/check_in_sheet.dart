@@ -114,9 +114,9 @@ class _CheckInSheetState extends State<_CheckInSheet> {
             // ── ID proof ─────────────────────────────────────────────────
             const _Heading('ID proof'),
             const SizedBox(height: AppTheme.s4),
-            const Text(
+            Text(
               'Only needed if none was recorded when the booking was taken.',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: AppTheme.s12),
             NeuPressed(
@@ -159,7 +159,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                   ? '${formatPrice(b.advanceAmount)} was already taken. '
                         'Anything added here is on top of it.'
                   : 'Nothing has been taken against this stay yet.',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: AppTheme.s12),
             for (var i = 0; i < _lines.length; i++)
@@ -185,19 +185,15 @@ class _CheckInSheetState extends State<_CheckInSheet> {
             const SizedBox(height: AppTheme.s16),
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Still to pay',
-                    style: TextStyle(color: AppTheme.text, fontSize: 13),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
                 Text(
                   formatPrice(_remaining),
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ],
             ),

@@ -192,16 +192,55 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add room'),
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.meeting_room_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            const Expanded(
+              child: Text('Add room', overflow: TextOverflow.ellipsis, maxLines: 1),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
+        ),
       ),
       body: SafeArea(
         child: ListView(
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
+            AppTheme.s12,
+            AppTheme.s12,
+            AppTheme.s12,
             AppTheme.s16,
-            AppTheme.s16,
-            AppTheme.s16,
-            AppTheme.s24,
           ),
           children: [
                   Align(
@@ -217,7 +256,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           : (v) => setState(() => _bulkMode = v == 'bulk'),
                     ),
                   ),
-                  const SizedBox(height: AppTheme.s16),
+                  const SizedBox(height: AppTheme.s12),
                   if (_error != null) ...[
                     Container(
                       padding: const EdgeInsets.all(AppTheme.s12),
@@ -235,10 +274,13 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppTheme.s16),
+                    const SizedBox(height: AppTheme.s12),
                   ],
 
                   NeuCard(
+                    radius: AppTheme.rLarge,
+                    shadow: AppTheme.elevated,
+                    padding: const EdgeInsets.all(AppTheme.s16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -254,6 +296,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             errorText: _roomNumberError,
                             keyboardType: TextInputType.text,
                             onChanged: (_) => setState(() {}),
+                            forceUppercase: true,
                           )
                         else
                           KeyedSubtree(
@@ -296,15 +339,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                               ],
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-
-                  NeuCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        const SectionDivider(),
                         const SectionLabel('Pricing', number: 2),
                         const SizedBox(height: AppTheme.s12),
                         const RequiredLabel('Category'),
@@ -339,15 +374,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ],
                           ),
                         ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-
-                  NeuCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        const SectionDivider(),
                         const SectionLabel('Room details', number: 3),
                         const SizedBox(height: AppTheme.s12),
                         Row(
@@ -407,10 +434,10 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                 }),
                                 activeThumbColor: AppTheme.accent,
                               ),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'This is a dormitory (sold bed-by-bed)',
-                                  style: TextStyle(color: AppTheme.text, fontSize: 13.5),
+                                  style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                               ),
                             ],
@@ -549,16 +576,8 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           hint: 'Corner room, quiet side, good morning light',
                           maxLength: 200,
                         ),
-                      ],
-                    ),
-                  ),
-
-                  if (!_bulkMode) ...[
-                    const SizedBox(height: AppTheme.s16),
-                    NeuCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                        if (!_bulkMode) ...[
+                          const SectionDivider(),
                           SectionLabel(
                             'Photos',
                             number: 4,
@@ -584,9 +603,9 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                   const SizedBox(height: AppTheme.s16),
                   _Footer(
                     roomCountLabel: _roomCountLabel,
@@ -704,69 +723,6 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   }
 }
 
-// ── Header ───────────────────────────────────────────────────────────────────
-
-/// Title, the Single/Bulk switch and the close action on one row, and a
-/// caption underneath that explains whichever mode is active — the same
-/// shape the website's own modal head carries, kept in view while the body
-/// scrolls beneath it.
-class _Header extends StatelessWidget {
-  final bool bulkMode;
-  final ValueChanged<bool> onModeChanged;
-  final bool submitting;
-
-  const _Header({
-    required this.bulkMode,
-    required this.onModeChanged,
-    required this.submitting,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s8, AppTheme.s16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppTheme.accent.withValues(alpha: 0.08), AppTheme.card],
-        ),
-        border: const Border(bottom: BorderSide(color: AppTheme.border)),
-        boxShadow: AppTheme.subtle,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Add room',
-                  style: TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 19,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ),
-              ModeToggle(
-                options: const {'single': 'Single', 'bulk': 'Bulk range'},
-                selected: bulkMode ? 'bulk' : 'single',
-                onSelect: (v) => onModeChanged(v == 'bulk'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded),
-                color: AppTheme.muted,
-                onPressed: submitting ? null : () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ── Footer ───────────────────────────────────────────────────────────────────
 
@@ -796,90 +752,92 @@ class _Footer extends StatelessWidget {
         color: AppTheme.bg,
         border: Border(top: BorderSide(color: AppTheme.border)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: category == null
-                ? const SizedBox.shrink()
-                : Container(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.accent.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (category != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$roomCountLabel · ${category!.name}',
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '$roomCountLabel · ${category!.name}',
-                          style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
+                    Text.rich(
+                      TextSpan(
+                        text: formatPrice(category!.basePrice),
+                        style: const TextStyle(
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
                         ),
-                        Text.rich(
+                        children: const [
                           TextSpan(
-                            text: formatPrice(category!.basePrice),
-                            style: const TextStyle(
-                              color: AppTheme.accent,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 17,
+                            text: ' /night',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontWeight: FontWeight.w400,
+                              fontSize: 11,
                             ),
-                            children: const [
-                              TextSpan(
-                                text: ' /night',
-                                style: TextStyle(
-                                  color: AppTheme.muted,
-                                  fontWeight: FontWeight.w400,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-          ),
-          const SizedBox(width: AppTheme.s12),
-          // Cancel and Add room ride together in one FittedBox so a narrow
-          // screen shrinks the pair as a unit — rather than the Row running
-          // out of width and clipping them, or NeuButton's own text wrapping
-          // one letter per line.
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  NeuButton(
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: NeuButton(
                     onPressed: submitting ? null : onCancel,
+                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
                     child: const Text('Cancel'),
                   ),
-                  const SizedBox(width: AppTheme.s8),
-                  NeuButton(
+                ),
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  flex: 2,
+                  child: NeuButton(
                     primary: true,
                     onPressed: submitting ? null : onSubmit,
+                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
                     child: submitting
                         ? const SizedBox(
                             height: 16,
                             width: 16,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                              SizedBox(width: 4),
-                              Text('Add room'),
-                            ],
+                        : const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                                SizedBox(width: 4),
+                                Text('Add room'),
+                              ],
+                            ),
                           ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

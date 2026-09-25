@@ -26,7 +26,7 @@ class IssueBillScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(state.target?.guestName ?? 'Bill'),
+        title: Text(state.target?.guestName ?? 'Bill', overflow: TextOverflow.ellipsis),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () {
@@ -36,20 +36,26 @@ class IssueBillScreen extends ConsumerWidget {
         ),
       ),
       body: SafeArea(
-        child: preview == null
-            ? Center(
-                child: state.previewing
-                    ? const CircularProgressIndicator()
-                    : NeuNotice(
-                        icon: Icons.cloud_off_rounded,
-                        message: state.error ?? 'Could not load this bill.',
-                        action: NeuButton(
-                          onPressed: vm.refreshPreview,
-                          child: const Text('Try again'),
-                        ),
-                      ),
-              )
-            : _Body(state: state, preview: preview),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: preview == null
+                ? Center(
+                    child: state.previewing
+                        ? const CircularProgressIndicator()
+                        : NeuNotice(
+                            icon: Icons.cloud_off_rounded,
+                            message: state.error ?? 'Could not load this bill.',
+                            action: NeuButton(
+                              onPressed: vm.refreshPreview,
+                              child: const Text('Try again'),
+                            ),
+                          ),
+                  )
+                : _Body(state: state, preview: preview),
+          ),
+        ),
       ),
     );
   }
@@ -77,20 +83,42 @@ class _Body extends ConsumerWidget {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
-        AppTheme.s16,
+        AppTheme.s12,
         AppTheme.s8,
-        AppTheme.s16,
-        AppTheme.s32,
+        AppTheme.s12,
+        AppTheme.s24,
       ),
       children: [
         // ── The document ────────────────────────────────────────────────────
         NeuCard(
-          radius: AppTheme.rLarge,
+          radius: AppTheme.rMedium,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.accent.withValues(alpha: 0.16),
+                          AppTheme.accent.withValues(alpha: 0.06),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      color: AppTheme.accent,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
                   Expanded(
                     child: Text(
                       kDocumentLabels[amounts?.documentType] ?? 'Bill',
@@ -100,13 +128,24 @@ class _Body extends ConsumerWidget {
                   // Which document is issued is the property's business, not
                   // the desk's: a registered lodge issues on the GST side, and
                   // an unregistered one has nothing else to issue.
-                  Text(
-                    preview.isGstRegistered ? 'GST' : 'Non-GST',
-                    style: Theme.of(context).textTheme.bodySmall,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      preview.isGstRegistered ? 'GST' : 'Non-GST',
+                      style: const TextStyle(
+                        color: AppTheme.accent,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: AppTheme.s8),
               Text(
                 'Room ${preview.roomNumber ?? '—'} · '
                 '${nightsLabel(preview.nights)}',
@@ -197,11 +236,33 @@ class _Body extends ConsumerWidget {
                   value: -preview.advancePaid,
                 ),
 
-              const Divider(height: AppTheme.s16),
-              _Row(
-                label: 'Balance due',
-                value: preview.balanceDue,
-                strong: true,
+              const SizedBox(height: AppTheme.s4),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s12,
+                  vertical: AppTheme.s8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      'Balance due',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const Spacer(),
+                    Text(
+                      formatPrice(preview.balanceDue),
+                      style: const TextStyle(
+                        color: AppTheme.accent,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -209,7 +270,7 @@ class _Body extends ConsumerWidget {
 
         // ── The overstay charge ─────────────────────────────────────────────
         if (preview.lateCheckoutAgreed) ...[
-          const SizedBox(height: AppTheme.s16),
+          const SizedBox(height: AppTheme.s12),
           NeuCard(
             child: Row(
               children: [
@@ -217,12 +278,9 @@ class _Body extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Bill the late checkout',
-                        style: TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 14,
-                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.heading),
                       ),
                       Text(
                         // Agreed at the desk already; this is the last chance
@@ -248,7 +306,7 @@ class _Body extends ConsumerWidget {
         // that was sold, and this is where the desk decides whether to give
         // the unused ones back. It fills the discount below.
         if (preview.earlyCheckout != null) ...[
-          const SizedBox(height: AppTheme.s16),
+          const SizedBox(height: AppTheme.s12),
           _EarlyCheckoutNotice(state: state, earlyCheckout: preview.earlyCheckout!),
         ],
 
@@ -257,15 +315,21 @@ class _Body extends ConsumerWidget {
         // bill is what the stay costs and any concession is settled through
         // what the guest hands over.
         if (state.isCycleStay) ...[
-          const SizedBox(height: AppTheme.s16),
+          const SizedBox(height: AppTheme.s12),
           _DiscountSection(state: state),
         ],
 
         // ── How it was paid ─────────────────────────────────────────────────
-        const SizedBox(height: AppTheme.s24),
-        Text(
-          'Record how the guest paid',
-          style: Theme.of(context).textTheme.titleMedium,
+        const SizedBox(height: AppTheme.s16),
+        Row(
+          children: [
+            const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 18),
+            const SizedBox(width: AppTheme.s8),
+            Text(
+              'Record how the guest paid',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
         ),
         const SizedBox(height: AppTheme.s4),
         Text(
@@ -282,11 +346,11 @@ class _Body extends ConsumerWidget {
         // saying there is nothing to collect is a form contradicting itself.
         if (!state.nothingDue) _PaymentRows(state: state),
 
-        const SizedBox(height: AppTheme.s24),
+        const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
           Text(
             state.error!,
-            style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
           ),
           const SizedBox(height: AppTheme.s12),
         ],
@@ -349,21 +413,16 @@ class _Body extends ConsumerWidget {
                               '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
                               '${invoice.invoiceNumber ?? ''} issued',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontSize: 17,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: AppTheme.s8),
-                            const Text(
+                            Text(
                               'The bill is cut. Open the receipt now, or '
                               'head back to the billing list.',
                               textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 13,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                             const SizedBox(height: AppTheme.s24),
                             NeuButton(
@@ -459,8 +518,10 @@ class _Row extends StatelessWidget {
                 fontSize: strong ? 15 : 13,
                 fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: AppTheme.s8),
           Text(
             formatPrice(value),
             style: TextStyle(
@@ -539,13 +600,9 @@ class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Guest left early',
-                      style: TextStyle(
-                        color: AppTheme.heading,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     Text(
                       'Stayed ${early.actualNights} of ${early.plannedNights} '
@@ -558,11 +615,7 @@ class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
               ),
               Text(
                 formatPrice(early.unusedAmount),
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(context).textTheme.titleSmall,
               ),
             ],
           ),
@@ -598,7 +651,7 @@ class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
                       vm.setDiscount(v);
                       vm.setDiscountReason(v.trim().isEmpty ? '' : _kEarlyDiscountReason);
                     },
-                    style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.heading),
                     decoration: const InputDecoration(
                       prefixText: '₹ ',
                       hintText: '0',
@@ -786,7 +839,7 @@ class _PaymentRows extends ConsumerWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 problem,
-                style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
               ),
             ),
           ],

@@ -179,7 +179,7 @@ class _CancelBookingDialogState extends State<_CancelBookingDialog> {
                     : 'No advance was taken on this stay. The booking can be '
                           'cancelled as it is, or a cancellation charge collected '
                           'from the guest now.',
-                style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: AppTheme.s16),
 
@@ -205,12 +205,12 @@ class _CancelBookingDialogState extends State<_CancelBookingDialog> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Expanded(
+                          Expanded(
                             child: Padding(
-                              padding: EdgeInsets.only(top: AppTheme.s16),
+                              padding: const EdgeInsets.only(top: AppTheme.s16),
                               child: Text(
                                 'Refund to guest',
-                                style: TextStyle(color: AppTheme.text, fontSize: 13),
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             ),
                           ),
@@ -267,9 +267,9 @@ class _CancelBookingDialogState extends State<_CancelBookingDialog> {
                       activeColor: AppTheme.accent,
                       onChanged: (v) => setState(() => _collectCharge = v ?? false),
                     ),
-                    const Text(
+                    Text(
                       'Collect a cancellation charge',
-                      style: TextStyle(color: AppTheme.text, fontSize: 13),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 ),
@@ -288,12 +288,12 @@ class _CancelBookingDialogState extends State<_CancelBookingDialog> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Expanded(
+                            Expanded(
                               child: Padding(
-                                padding: EdgeInsets.only(top: AppTheme.s16),
+                                padding: const EdgeInsets.only(top: AppTheme.s16),
                                 child: Text(
                                   'Cancellation charge',
-                                  style: TextStyle(color: AppTheme.text, fontSize: 13),
+                                  style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                               ),
                             ),
@@ -408,7 +408,7 @@ class _SettleRow extends StatelessWidget {
                 if (note != null)
                   TextSpan(
                     text: '  · $note',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
               ],
             ),

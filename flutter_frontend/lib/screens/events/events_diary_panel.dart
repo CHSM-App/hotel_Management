@@ -296,7 +296,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                               Flexible(
                                 child: Text(
                                   '${state.events.where((e) => !_isClosed(e.status)).length} function${state.events.where((e) => !_isClosed(e.status)).length == 1 ? '' : 's'} in view',
-                                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                                  style: Theme.of(context).textTheme.labelSmall,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -313,7 +313,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                       color: AppTheme.muted,
                                     ),
                                     const SizedBox(width: 4),
-                                    const Text('Show cancelled', style: TextStyle(color: AppTheme.muted, fontSize: 11)),
+                                    Text('Show cancelled', style: Theme.of(context).textTheme.labelSmall),
                                   ],
                                 ),
                               ),
@@ -589,7 +589,7 @@ class _LegendItem extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
       ],
     );
   }

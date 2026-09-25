@@ -227,11 +227,7 @@ class OptionDropdown extends StatelessWidget {
                   labels[v] ?? v,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13.5,
-                  ),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
           ],
@@ -388,11 +384,7 @@ class CategoryDropdown extends StatelessWidget {
                 child: Text(
                   '${c.name} · ${formatPrice(c.basePrice)}/night',
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13.5,
-                  ),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
           ],

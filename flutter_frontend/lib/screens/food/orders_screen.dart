@@ -29,7 +29,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   /// register page's own status filter does.
   bool _filterOpen = false;
   final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController = OverlayPortalController();
+  final OverlayPortalController _filterPortalController =
+      OverlayPortalController();
 
   void _toggleFilterOpen() {
     setState(() => _filterOpen = !_filterOpen);
@@ -46,7 +47,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(ordersViewModelProvider);
     final vm = ref.read(ordersViewModelProvider.notifier);
-    final permissions = ref.watch(authViewModelProvider).me?.user.permissions ?? const [];
+    final permissions =
+        ref.watch(authViewModelProvider).me?.user.permissions ?? const [];
     final canWorkQueue = permissions.contains('orders.manage');
     final canTakeOrders = permissions.contains('orders.take');
 
@@ -65,21 +67,24 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
-          onRefresh: () => state.tab == OrdersTab.queue
-              ? vm.loadQueue()
-              : vm.loadHistory(),
+          onRefresh: () =>
+              state.tab == OrdersTab.queue ? vm.loadQueue() : vm.loadHistory(),
           color: AppTheme.accent,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
               AppTheme.s16,
               AppTheme.s8,
               AppTheme.s16,
-              96,
+              88,
             ),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              _TabRow(state: state, canWorkQueue: canWorkQueue, onSelect: vm.setTab),
-              const SizedBox(height: AppTheme.s16),
+              _TabRow(
+                state: state,
+                canWorkQueue: canWorkQueue,
+                onSelect: vm.setTab,
+              ),
+              const SizedBox(height: AppTheme.s12),
               if (state.tab == OrdersTab.queue && canWorkQueue)
                 ..._queue(
                   context,
@@ -149,7 +154,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         return [
           for (final order in orders)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s8),
+              padding: const EdgeInsets.only(bottom: AppTheme.s4),
               child: _OrderCard(
                 order: order,
                 now: state.now,
@@ -203,10 +208,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                     const SizedBox(width: AppTheme.s8),
                     Text(
                       formatDate(state.historyDate),
-                      style: const TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 13,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 ),
@@ -257,7 +259,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ),
         ],
       ),
-      const SizedBox(height: AppTheme.s16),
+      const SizedBox(height: AppTheme.s12),
     ];
 
     final body = state.history.when(
@@ -288,7 +290,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         return [
           for (final order in orders)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s8),
+              padding: const EdgeInsets.only(bottom: AppTheme.s4),
               child: _OrderCard(order: order, now: state.now, live: false),
             ),
         ];
@@ -316,7 +318,7 @@ class _TabRow extends StatelessWidget {
     required this.onSelect,
   });
 
-  static const double _height = 44;
+  static const double _height = 38;
 
   @override
   Widget build(BuildContext context) {
@@ -330,11 +332,7 @@ class _TabRow extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             'My orders',
-            style: const TextStyle(
-              color: AppTheme.heading,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
       );
@@ -382,8 +380,9 @@ class _TabRow extends StatelessWidget {
           AnimatedAlign(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
-            alignment:
-                selectedIndex == 0 ? Alignment.centerLeft : Alignment.centerRight,
+            alignment: selectedIndex == 0
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
             child: FractionallySizedBox(
               widthFactor: 0.5,
               child: Container(
@@ -398,8 +397,16 @@ class _TabRow extends StatelessWidget {
           ),
           Row(
             children: [
-              segment(kitchenLabel, selectedIndex == 0, () => onSelect(OrdersTab.queue)),
-              segment('Earlier', selectedIndex == 1, () => onSelect(OrdersTab.history)),
+              segment(
+                kitchenLabel,
+                selectedIndex == 0,
+                () => onSelect(OrdersTab.queue),
+              ),
+              segment(
+                'Earlier',
+                selectedIndex == 1,
+                () => onSelect(OrdersTab.history),
+              ),
             ],
           ),
         ],
@@ -535,7 +542,9 @@ class _Chip extends StatelessWidget {
           vertical: AppTheme.s8,
         ),
         decoration: BoxDecoration(
-          color: on ? AppTheme.accent.withValues(alpha: 0.10) : Colors.transparent,
+          color: on
+              ? AppTheme.accent.withValues(alpha: 0.10)
+              : Colors.transparent,
           border: Border(
             left: BorderSide(
               color: on ? AppTheme.accent : Colors.transparent,
@@ -609,161 +618,241 @@ class _OrderCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colour = _statusColour(order.status);
     final waited = order.waitingFor(now);
+    final overdue = waited != null && waited.inMinutes >= 20;
+    final actions = _visibleStatuses;
 
-    return NeuCard(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.s12,
-        vertical: AppTheme.s8,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      child: NeuCard(
+        radius: AppTheme.rMedium,
+        padding: EdgeInsets.zero,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // A thin status-colour rail down the left edge — the ticket's
+              // state readable at a glance, before any text is parsed.
+              Container(width: 4, color: colour),
               Expanded(
-                child: Text(
-                  // The number the kitchen calls out, then who it is for.
-                  '#${order.orderNumber} · ${order.target}',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s12,
+                    AppTheme.s8,
+                    AppTheme.s12,
+                    AppTheme.s8,
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: colour.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  order.statusLabel,
-                  style: TextStyle(
-                    color: colour,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              // The number the kitchen calls out, then who it
+                              // is for.
+                              '#${order.orderNumber} · ${order.target}',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.titleSmall?.copyWith(fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colour.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              order.statusLabel,
+                              style: TextStyle(
+                                color: colour,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if ((live && waited != null) ||
+                          (order.guestName ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            if (live && waited != null) ...[
+                              Icon(
+                                Icons.access_time_filled_rounded,
+                                size: 12,
+                                color: overdue
+                                    ? AppTheme.danger
+                                    : AppTheme.muted,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                'Waiting ${_elapsed(waited)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: overdue
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  // A ticket that has sat for twenty minutes
+                                  // should read as a problem without anybody
+                                  // having to do the subtraction.
+                                  color: overdue
+                                      ? AppTheme.danger
+                                      : AppTheme.muted,
+                                ),
+                              ),
+                            ],
+                            if ((order.guestName ?? '').isNotEmpty) ...[
+                              if (live && waited != null) ...[
+                                const SizedBox(width: AppTheme.s8),
+                                const Text(
+                                  '·',
+                                  style: TextStyle(
+                                    color: AppTheme.muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                const SizedBox(width: AppTheme.s8),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  order.guestName!,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+
+                      const SizedBox(height: AppTheme.s8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.s8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.bg,
+                          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final item in order.items)
+                              _ItemLine(
+                                order: order,
+                                item: item,
+                                live: live,
+                                canCook: canCook,
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      if ((order.note ?? '').isNotEmpty) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(
+                          'Note: ${order.note}',
+                          style: Theme.of(context).textTheme.labelSmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+
+                      const SizedBox(height: AppTheme.s4),
+                      const Divider(height: 1, color: AppTheme.border),
+                      const SizedBox(height: AppTheme.s4),
+                      Row(
+                        children: [
+                          Text(
+                            'Total',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                          const Spacer(),
+                          Text(
+                            formatPrice(order.subtotal),
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      if (order.status == 'CANCELLED' &&
+                          (order.cancelReason ?? '').isNotEmpty) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: AppTheme.s4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.rSmall,
+                            ),
+                          ),
+                          child: Text(
+                            'Cancelled: ${order.cancelReason}',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: AppTheme.danger),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+
+                      // Rendered only from what the server offered, filtered
+                      // the same way OrdersPanel.jsx filters visibleStatuses:
+                      // Accept (QUEUED) and Cancel are front-of-house,
+                      // everything else is the kitchen actually cooking the
+                      // order and needs orders.cook. A single action fills
+                      // the row; several share it evenly rather than
+                      // wrapping.
+                      if (live && actions.isNotEmpty) ...[
+                        const SizedBox(height: AppTheme.s8),
+                        Row(
+                          children: [
+                            for (var i = 0; i < actions.length; i++) ...[
+                              if (i > 0) const SizedBox(width: AppTheme.s8),
+                              Expanded(
+                                child: NeuButton(
+                                  primary: actions[i] != 'CANCELLED',
+                                  expand: true,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppTheme.s8 + 2,
+                                  ),
+                                  onPressed: () =>
+                                      _advance(context, ref, actions[i]),
+                                  child: Text(
+                                    kOrderActionLabels[actions[i]] ??
+                                        actions[i],
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
             ],
           ),
-          if ((live && waited != null) || (order.guestName ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s4),
-            Row(
-              children: [
-                if ((order.guestName ?? '').isNotEmpty)
-                  Expanded(
-                    child: Text(
-                      order.guestName!,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                if (live && waited != null)
-                  Text(
-                    'Waiting ${_elapsed(waited)}',
-                    style: TextStyle(
-                      // A ticket that has sat for twenty minutes should read
-                      // as a problem without anybody having to do the
-                      // subtraction.
-                      color: waited.inMinutes >= 20
-                          ? AppTheme.danger
-                          : AppTheme.muted,
-                      fontSize: 11,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-
-          const SizedBox(height: AppTheme.s8),
-          for (final item in order.items)
-            _ItemLine(order: order, item: item, live: live, canCook: canCook),
-
-          if ((order.note ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s4),
-            Text(
-              'Note: ${order.note}',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-            ),
-          ],
-
-          const SizedBox(height: AppTheme.s4),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Total',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
-                ),
-              ),
-              Text(
-                formatPrice(order.subtotal),
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-
-          if (order.status == 'CANCELLED' &&
-              (order.cancelReason ?? '').isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.s8,
-                vertical: AppTheme.s4,
-              ),
-              decoration: BoxDecoration(
-                color: AppTheme.danger.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              ),
-              child: Text(
-                'Cancelled: ${order.cancelReason}',
-                style: const TextStyle(
-                  color: AppTheme.danger,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-
-          // Rendered only from what the server offered, filtered the same way
-          // OrdersPanel.jsx filters visibleStatuses: Accept (QUEUED) and
-          // Cancel are front-of-house, everything else is the kitchen
-          // actually cooking the order and needs orders.cook.
-          if (live && _visibleStatuses.isNotEmpty) ...[
-            const SizedBox(height: AppTheme.s8),
-            Wrap(
-              spacing: AppTheme.s8,
-              runSpacing: AppTheme.s8,
-              children: [
-                for (final next in _visibleStatuses)
-                  NeuButton(
-                    primary: next != 'CANCELLED',
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s12,
-                      vertical: AppTheme.s8,
-                    ),
-                    onPressed: () => _advance(context, ref, next),
-                    child: Text(
-                      kOrderActionLabels[next] ?? next,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -870,7 +959,7 @@ class _ItemLine extends ConsumerWidget {
     final tickable = live && order.status == 'PREPARING' && canCook;
 
     final row = Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s4),
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4 - 1),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -887,21 +976,30 @@ class _ItemLine extends ConsumerWidget {
             ),
           Text(
             '${item.quantity}×  ',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.text,
+            ),
           ),
           Expanded(
             child: Text(
               item.name,
               style: TextStyle(
+                fontSize: 13,
                 color: done ? AppTheme.muted : AppTheme.text,
-                fontSize: 12,
                 decoration: done ? TextDecoration.lineThrough : null,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(
             formatPrice(item.lineTotal),
-            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.heading,
+            ),
           ),
         ],
       ),

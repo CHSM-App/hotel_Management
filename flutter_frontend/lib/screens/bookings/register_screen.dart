@@ -171,7 +171,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
-    final stats = _Stats.of(filtered);
     final counts = <String, int>{};
     for (final b in _searched) {
       counts[b.status ?? ''] = (counts[b.status ?? ''] ?? 0) + 1;
@@ -244,40 +243,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           else if (_error != null)
             ReportError(message: _error!)
           else ...[
-            _CompactStatGrid(
-              items: [
-                _Stat(
-                  label: 'Stays',
-                  value: '${stats.stays}',
-                  note: stats.cancelled > 0 ? '${stats.cancelled} cancelled' : null,
-                ),
-                _Stat(
-                  label: 'Guests',
-                  value: '${stats.people}',
-                  note: 'people booked in',
-                ),
-                _Stat(
-                  label: 'In house',
-                  value: '${stats.inHouse}',
-                  note: 'not checked out yet',
-                ),
-                _Stat(
-                  label: 'Billed',
-                  value: formatPrice(stats.billedAmount),
-                  note: '${stats.billedCount} '
-                      '${stats.billedCount == 1 ? 'bill' : 'bills'} issued',
-                  accent: true,
-                ),
-                if (stats.pending > 0)
-                  _Stat(
-                    label: 'Pending',
-                    value: formatPrice(stats.pending),
-                    note: '${stats.pendingCount} '
-                        '${stats.pendingCount == 1 ? 'stay' : 'stays'} not billed yet',
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.s16),
             if (filtered.isEmpty)
               const NeuNotice(
                 icon: Icons.groups_outlined,
@@ -286,7 +251,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             else
               for (final b in filtered)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
                   child: _RegisterCard(
                     booking: b,
                     onTap: () async {
@@ -330,150 +295,6 @@ const _kStatusIcon = <String, IconData>{
   'CANCELLED': Icons.cancel_rounded,
 };
 
-class _Stats {
-  final int stays;
-  final int people;
-  final int inHouse;
-  final num billedAmount;
-  final int billedCount;
-  final num pending;
-  final int pendingCount;
-  final int cancelled;
-
-  const _Stats({
-    required this.stays,
-    required this.people,
-    required this.inHouse,
-    required this.billedAmount,
-    required this.billedCount,
-    required this.pending,
-    required this.pendingCount,
-    required this.cancelled,
-  });
-
-  /// Cancelled stays count toward neither a stay nor its money, the same way
-  /// the web page's own reduce skips them — a cancelled booking is nobody
-  /// staying and nothing owed.
-  factory _Stats.of(List<Booking> rows) {
-    var stays = 0, people = 0, inHouse = 0, billedCount = 0, pendingCount = 0, cancelled = 0;
-    num billed = 0, pending = 0;
-    for (final b in rows) {
-      if (b.status == 'CANCELLED') {
-        cancelled++;
-        continue;
-      }
-      stays++;
-      people += b.numGuests ?? 0;
-      if (b.status == 'CHECKED_IN') inHouse++;
-      final isBilled = (b.invoiceNumber ?? '').isNotEmpty;
-      final amount = b.billAmount ?? b.totalPrice ?? 0;
-      if (isBilled) {
-        billed += amount;
-        billedCount++;
-      } else {
-        pending += amount;
-        pendingCount++;
-      }
-    }
-    return _Stats(
-      stays: stays,
-      people: people,
-      inHouse: inHouse,
-      billedAmount: billed,
-      billedCount: billedCount,
-      pending: pending,
-      pendingCount: pendingCount,
-      cancelled: cancelled,
-    );
-  }
-}
-
-/// One tile's worth of content — [StatItem] plus the small caption line the
-/// web page's own tiles carry under the figure ("1 bill issued", "people
-/// booked in").
-class _Stat {
-  final String label;
-  final String value;
-  final String? note;
-  final bool accent;
-
-  const _Stat({
-    required this.label,
-    required this.value,
-    this.note,
-    this.accent = false,
-  });
-}
-
-/// The summary strip, three tiles to a row rather than two — a phone screen
-/// has room for it once each tile carries only a label, a number and a
-/// caption, and three narrower tiles read as one glance instead of two.
-class _CompactStatGrid extends StatelessWidget {
-  final List<_Stat> items;
-
-  const _CompactStatGrid({required this.items});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = AppTheme.s8;
-        final width = (constraints.maxWidth - gap * 2) / 3;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final item in items)
-              SizedBox(
-                width: width,
-                child: NeuCard(
-                  radius: AppTheme.rSmall,
-                  shadow: AppTheme.subtle,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.s8,
-                    vertical: AppTheme.s8,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        item.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 10),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        item.value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: item.accent ? AppTheme.accent : AppTheme.heading,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (item.note != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          item.note!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppTheme.muted, fontSize: 9),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 // ── Range + search ───────────────────────────────────────────────────────────
 
 class _RangeAndSearch extends StatelessWidget {
@@ -509,8 +330,8 @@ class _RangeAndSearch extends StatelessWidget {
   Widget build(BuildContext context) {
     return NeuCard(
       radius: AppTheme.rMedium,
-      shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s8),
+      shadow: AppTheme.extruded,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -534,16 +355,17 @@ class _RangeAndSearch extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s12),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
                   child: NeuPressed(
+                    radius: AppTheme.rMedium,
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppTheme.s12,
-                      vertical: 2,
+                      vertical: 4,
                     ),
                     child: Row(
                       children: [
@@ -623,6 +445,7 @@ class _FilterButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: NeuPressed(
+        radius: AppTheme.rMedium,
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
         child: SizedBox(
           width: 18,
@@ -863,6 +686,8 @@ class _RegisterCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: NeuCard(
+        radius: AppTheme.rMedium,
+        shadow: AppTheme.extruded,
         padding: EdgeInsets.zero,
         child: IntrinsicHeight(
           child: Row(
@@ -884,10 +709,10 @@ class _RegisterCard extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s16,
                   AppTheme.s12,
-                  AppTheme.s8,
-                  AppTheme.s8,
-                  AppTheme.s8,
+                  AppTheme.s12,
+                  AppTheme.s12,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -902,7 +727,8 @@ class _RegisterCard extends StatelessWidget {
                             style: const TextStyle(
                               color: AppTheme.heading,
                               fontWeight: FontWeight.w700,
-                              fontSize: 14,
+                              fontSize: 15,
+                              letterSpacing: -0.1,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -910,36 +736,49 @@ class _RegisterCard extends StatelessWidget {
                         const SizedBox(width: AppTheme.s8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
+                            horizontal: 9,
+                            vertical: 4,
                           ),
                           decoration: BoxDecoration(
                             color: statusColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: Text(
-                            kRegisterStatusLabel[b.status] ?? b.status ?? '',
-                            style: TextStyle(
-                              color: statusColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _kStatusIcon[b.status] ?? Icons.circle,
+                                size: 11,
+                                color: statusColor,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                kRegisterStatusLabel[b.status] ?? b.status ?? '',
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(height: 3),
                     Text(
                       'Room ${b.roomNumber ?? '—'}'
                       '${b.categoryName != null ? ' · ${b.categoryName}' : ''}'
                       '${(b.guestPhone ?? '').isNotEmpty ? ' · ${b.guestPhone}' : ''}',
                       style: const TextStyle(
                         color: AppTheme.muted,
-                        fontSize: 11,
+                        fontSize: 11.5,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: AppTheme.s8),
+                    const SizedBox(height: AppTheme.s12),
+                    Container(height: 1, color: AppTheme.border),
+                    const SizedBox(height: AppTheme.s12),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1007,8 +846,15 @@ class _Field extends StatelessWidget {
       crossAxisAlignment:
           alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
-        const SizedBox(height: 1),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
         Text(
           value,
           maxLines: 1,
@@ -1016,8 +862,8 @@ class _Field extends StatelessWidget {
           textAlign: alignEnd ? TextAlign.end : TextAlign.start,
           style: TextStyle(
             color: accent ? AppTheme.accent : AppTheme.heading,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontSize: accent ? 13 : 12,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],

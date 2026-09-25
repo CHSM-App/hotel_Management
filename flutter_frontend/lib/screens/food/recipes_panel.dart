@@ -111,10 +111,10 @@ class _RecipesPanelState extends ConsumerState<RecipesPanel> {
             ],
           ),
           const SizedBox(height: AppTheme.s8),
-          const Text(
+          Text(
             'A dish with no recipe still sells — it just doesn\'t take anything '
             'out of the store cupboard when it\'s cooked.',
-            style: TextStyle(color: AppTheme.muted, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: AppTheme.s12),
           if (dishes.isEmpty)
@@ -148,6 +148,8 @@ class _DishCard extends ConsumerWidget {
                 Text(
                   dish.name,
                   style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -155,15 +157,14 @@ class _DishCard extends ConsumerWidget {
                       ? 'No recipe — nothing is deducted'
                       : '${dish.lineCount} ingredient${dish.lineCount == 1 ? '' : 's'}'
                           '${dish.portionCount > 0 ? ' · ${dish.portionCount} sizes' : ''}',
-                  style: TextStyle(
-                    color: dish.lineCount == 0 ? AppTheme.draft : AppTheme.muted,
-                    fontSize: 12,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: dish.lineCount == 0 ? AppTheme.draft : null,
                   ),
                 ),
                 if (dish.partialSizes)
                   const Text(
                     'Some sizes have no recipe',
-                    style: TextStyle(color: AppTheme.danger, fontSize: 11.5),
+                    style: TextStyle(color: AppTheme.danger, fontSize: 11),
                   ),
               ],
             ),
@@ -266,9 +267,9 @@ class _RecipeEditorSheetState extends ConsumerState<_RecipeEditorSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(widget.recipe.name, style: Theme.of(context).textTheme.titleMedium),
-              const Text(
+              Text(
                 'What one serving takes out of the store cupboard.',
-                style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: AppTheme.s12),
               if (_error != null) ...[

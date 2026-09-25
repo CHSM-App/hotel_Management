@@ -141,12 +141,63 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.bg,
+      // Same gradient icon-badge + accent underline the new-booking screen's
+      // app bar carries, so the two full-page forms this desk fills in most
+      // read as one system rather than two different styles.
       appBar: AppBar(
         backgroundColor: AppTheme.bg,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         foregroundColor: AppTheme.heading,
-        title: const Text('Take an order'),
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.restaurant_menu_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            const Expanded(
+              child: Text(
+                'Take an order',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
+        ),
       ),
       body: SafeArea(child: _body()),
     );
@@ -174,27 +225,31 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppTheme.s16,
-        AppTheme.s16,
+        AppTheme.s12,
         AppTheme.s16,
         AppTheme.s24,
       ),
       children: [
-        const Text(
+        Text(
           'Goes straight into the kitchen queue — staff took it, so it '
           'skips the accept step.',
-          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SizedBox(height: AppTheme.s16),
+        const SizedBox(height: AppTheme.s8),
 
-        // Same numbered-step framing the room and booking forms use, so a
-        // page a cook or a receptionist has never opened before still reads
-        // as a short sequence rather than a wall of unrelated fields.
+        // Every step on one card, same as the new-booking form — a section
+        // is a small caption plus a hairline divider rather than a card of
+        // its own, so three separate cards' worth of borders, shadows and
+        // padding collapse into one compact surface.
         NeuCard(
+          radius: AppTheme.rLarge,
+          shadow: AppTheme.elevated,
+          padding: const EdgeInsets.all(AppTheme.s12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SectionLabel("Where's it going", number: 1),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               _TargetField(
                 tables: _tables,
                 rooms: _rooms,
@@ -217,7 +272,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
               // else, so it's required rather than optional, same as the web
               // counter form.
               if (_isCounter) ...[
-                const SizedBox(height: AppTheme.s16),
+                const SizedBox(height: AppTheme.s8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -234,6 +289,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                             setState(() => _guestNameError = null);
                           }
                         },
+                        forceCapitalizeWords: true,
                       ),
                     ),
                     const SizedBox(width: AppTheme.s12),
@@ -241,11 +297,11 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                       child: NeuField(
                         controller: _guestPhone,
                         label: 'Phone',
-                        hint: "To call when it's ready",
+                        hint: '10-digit mobile',
                         required: true,
                         errorText: _guestPhoneError,
                         keyboardType: TextInputType.phone,
-                        maxLength: 15,
+                        maxLength: 10,
                         onChanged: (_) {
                           if (_guestPhoneError != null) {
                             setState(() => _guestPhoneError = null);
@@ -256,17 +312,10 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                   ],
                 ),
               ],
-            ],
-          ),
-        ),
-        const SizedBox(height: AppTheme.s16),
 
-        NeuCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+              const SectionDivider(),
               const SectionLabel('Menu', number: 2),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -297,7 +346,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                   ],
                 ],
               ),
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s8),
 
               if (visible.isEmpty)
                 const NeuNotice(
@@ -311,11 +360,8 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                       padding: const EdgeInsets.only(bottom: AppTheme.s8),
                       child: Text(
                         section.name,
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: AppTheme.muted),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -328,26 +374,36 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                   const SizedBox(height: AppTheme.s8),
                 ],
 
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s4),
               NeuField(
                 controller: _note,
                 label: 'Note for the kitchen',
                 hint: 'Less spicy, no onion',
-                labelAction: const Text(
+                labelAction: Text(
                   'optional',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
+
+              if (_lines.isNotEmpty) ...[
+                const SectionDivider(),
+                SectionLabel('Order (${_lines.length})', number: 3),
+                const SizedBox(height: AppTheme.s8),
+                for (final line in _lines)
+                  _CartLine(
+                    line: line,
+                    onRemove: () => _setQty(line.item, line.portion, 0),
+                  ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: AppTheme.s16),
+        const SizedBox(height: AppTheme.s12),
 
-        _Footer(
+        _OrderBar(
           lines: _lines,
           total: _total,
           working: working,
-          onRemove: (line) => _setQty(line.item, line.portion, 0),
           onCancel: working ? null : () => Navigator.of(context).pop(),
           onPlace: (working || _lines.isEmpty) ? null : _place,
         ),
@@ -414,13 +470,18 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     // counter form: guest details before anything else, so the first thing
     // reported is the first thing the eye reaches scrolling down.
     if (_isCounter) {
+      final phone = _guestPhone.text.trim();
       setState(() {
         _guestNameError = _guestName.text.trim().isEmpty
             ? "Add the guest's name for a counter order."
             : null;
-        _guestPhoneError = _guestPhone.text.trim().isEmpty
+        // Same 10-digit mobile rule the new-booking form checks — a landline
+        // or a mistyped number isn't something the kitchen can call back.
+        _guestPhoneError = phone.isEmpty
             ? 'Add a phone number for a counter order.'
-            : null;
+            : (phone.length != 10 || int.tryParse(phone) == null)
+                ? 'Enter a valid 10-digit mobile number.'
+                : null;
       });
       if (_guestNameError != null || _guestPhoneError != null) return;
     }
@@ -561,45 +622,65 @@ class _SectionField extends StatelessWidget {
     final current = selected;
     if (current == null) return const SizedBox.shrink();
 
-    return GestureDetector(
-      onTap: () => _open(context),
-      child: NeuCard(
-        radius: AppTheme.rSmall,
-        shadow: AppTheme.subtle,
+    return PopupMenuButton<MenuSection>(
+      initialValue: current,
+      onSelected: onSelect,
+      offset: const Offset(0, 8),
+      color: AppTheme.card,
+      elevation: 6,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
+      itemBuilder: (context) => [
+        for (final section in sections)
+          PopupMenuItem<MenuSection>(
+            value: section,
+            height: 44,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${section.name} (${section.items.length})',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (section.id == current.id)
+                  const Icon(Icons.check_rounded, color: AppTheme.accent, size: 18),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTheme.s12,
           vertical: 14,
         ),
-        child: Text(
-          '${current.name} (${current.items.length})',
-          style: const TextStyle(color: AppTheme.text, fontSize: 13),
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(color: AppTheme.border),
         ),
-      ),
-    );
-  }
-
-  Future<void> _open(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppTheme.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
-      ),
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            for (final section in sections)
-              ListTile(
-                title: Text('${section.name} (${section.items.length})'),
-                trailing: section.id == selected?.id
-                    ? const Icon(Icons.check_rounded, color: AppTheme.accent)
-                    : null,
-                onTap: () {
-                  onSelect(section);
-                  Navigator.of(context).pop();
-                },
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                '${current.name} (${current.items.length})',
+                style: Theme.of(context).textTheme.bodyMedium,
+                overflow: TextOverflow.ellipsis,
               ),
+            ),
+            const SizedBox(width: AppTheme.s4),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 18,
+              color: AppTheme.muted,
+            ),
           ],
         ),
       ),
@@ -634,15 +715,16 @@ class _MenuRow extends StatelessWidget {
             children: [
               Text(
                 item.name,
-                style: TextStyle(
-                  color: off ? AppTheme.muted : AppTheme.text,
-                  fontSize: 13,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: off ? AppTheme.muted : null,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               if (off)
-                const Text(
+                Text(
                   'Off today',
-                  style: TextStyle(color: AppTheme.danger, fontSize: 11),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.danger),
                 ),
             ],
           ),
@@ -663,7 +745,7 @@ class _MenuRow extends StatelessWidget {
               child: Text(
                 formatPrice(item.price),
                 textAlign: TextAlign.right,
-                style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
               ),
             ),
             const SizedBox(width: AppTheme.s8),
@@ -698,7 +780,9 @@ class _MenuRow extends StatelessWidget {
                   Expanded(
                     child: Text(
                       portion.label,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   SizedBox(
@@ -706,7 +790,7 @@ class _MenuRow extends StatelessWidget {
                     child: Text(
                       formatPrice(portion.price),
                       textAlign: TextAlign.right,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
@@ -826,108 +910,96 @@ class _DietMark extends StatelessWidget {
   }
 }
 
-// ── The ticket total, and Cancel / Place order ──────────────────────────────
+// ── The total + Cancel / Place order row ────────────────────────────────────
 
-/// Same shape as the room form's own footer: the running total pinned in an
-/// accent-tinted chip on the left, Cancel and the primary action riding
-/// together on the right in one `FittedBox` so a narrow screen shrinks the
-/// pair as a unit instead of clipping or wrapping either button's text.
-class _Footer extends StatelessWidget {
+/// Same layout the new-booking form's own closing row uses: the total sits
+/// on its own line, then Cancel and the primary action each take an
+/// [Expanded] share of full width below it — full-size buttons that read
+/// clearly at any screen width, rather than a [FittedBox] shrinking both
+/// down to fit beside a total chip.
+class _OrderBar extends StatelessWidget {
   final List<OrderLineDraft> lines;
   final num total;
   final bool working;
-  final ValueChanged<OrderLineDraft> onRemove;
   final VoidCallback? onCancel;
   final VoidCallback? onPlace;
 
-  const _Footer({
+  const _OrderBar({
     required this.lines,
     required this.total,
     required this.working,
-    required this.onRemove,
     required this.onCancel,
     required this.onPlace,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (lines.isEmpty)
-          const Text(
-            'Nothing added yet.',
-            style: TextStyle(color: AppTheme.muted, fontSize: 13),
-          )
-        else
-          for (final line in lines)
-            _CartLine(line: line, onRemove: () => onRemove(line)),
-        const SizedBox(height: AppTheme.s16),
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s12,
-                  vertical: AppTheme.s8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.accent.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      lines.isEmpty
-                          ? 'Total'
-                          : '${lines.length} item${lines.length == 1 ? '' : 's'}',
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                    ),
-                    Text(
-                      formatPrice(total),
-                      style: const TextStyle(
-                        color: AppTheme.accent,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 17,
-                      ),
-                    ),
-                  ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s16,
+        AppTheme.s12,
+        AppTheme.s16,
+        AppTheme.s12,
+      ),
+      decoration: const BoxDecoration(
+        color: AppTheme.card,
+        border: Border(top: BorderSide(color: AppTheme.border)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Text(
+                lines.isEmpty
+                    ? 'Total'
+                    : '${lines.length} item${lines.length == 1 ? '' : 's'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const Spacer(),
+              Text(
+                formatPrice(total),
+                style: const TextStyle(
+                  color: AppTheme.accent,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
                 ),
               ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    NeuButton(onPressed: onCancel, child: const Text('Cancel')),
-                    const SizedBox(width: AppTheme.s8),
-                    NeuButton(
-                      primary: true,
-                      onPressed: onPlace,
-                      child: working
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Place order'),
-                    ),
-                  ],
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          Row(
+            children: [
+              Expanded(
+                child: NeuButton(
+                  onPressed: onCancel,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: const Text('Cancel'),
                 ),
               ),
-            ),
-          ],
-        ),
-      ],
+              const SizedBox(width: AppTheme.s12),
+              Expanded(
+                flex: 2,
+                child: NeuButton(
+                  primary: true,
+                  onPressed: onPlace,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: working
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Place order'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -948,20 +1020,20 @@ class _CartLine extends StatelessWidget {
         children: [
           Text(
             '${line.quantity}×',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
           ),
           const SizedBox(width: AppTheme.s8),
           Expanded(
             child: Text(
               line.label,
-              style: const TextStyle(color: AppTheme.text, fontSize: 13),
+              style: Theme.of(context).textTheme.bodyMedium,
               overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: AppTheme.s8),
           Text(
             formatPrice(line.lineTotal),
-            style: const TextStyle(color: AppTheme.text, fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           SizedBox(
             width: 32,

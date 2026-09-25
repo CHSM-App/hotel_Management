@@ -58,7 +58,7 @@ class _RecurringTemplateHistoryScreenState extends ConsumerState<RecurringTempla
             Text(template.title, overflow: TextOverflow.ellipsis),
             Text(
               '${template.categoryName} · ${kFrequencyLabel[template.frequency] ?? template.frequency}',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -128,14 +128,14 @@ class _OccurrenceCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(formatIsoDate(expense.expenseDate), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                Text(formatIsoDate(expense.expenseDate), style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 3),
                 Row(
                   children: [
                     Flexible(
                       child: Text(
                         expense.vendorName ?? kPaymentMethodLabel[expense.paymentMethod] ?? expense.paymentMethod,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

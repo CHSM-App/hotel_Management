@@ -1,6 +1,45 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../screens/theme.dart';
+
+/// Rewrites typed/pasted text so the first letter of every word is
+/// uppercase, e.g. "john smith" -> "John Smith". Unlike
+/// [TextCapitalization], which only hints the on-screen keyboard, this
+/// actually enforces the casing of the stored text.
+class _CapitalizeWordsFormatter extends TextInputFormatter {
+  const _CapitalizeWordsFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    if (text.isEmpty) return newValue;
+    final capitalized = text.replaceAllMapped(
+      RegExp(r'(^|[\s\-])([a-z])'),
+      (m) => '${m[1]}${m[2]!.toUpperCase()}',
+    );
+    if (capitalized == text) return newValue;
+    return newValue.copyWith(text: capitalized, selection: newValue.selection);
+  }
+}
+
+/// Rewrites typed/pasted text to all-uppercase, e.g. "abc001" -> "ABC001".
+class _UppercaseFormatter extends TextInputFormatter {
+  const _UppercaseFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final upper = newValue.text.toUpperCase();
+    if (upper == newValue.text) return newValue;
+    return newValue.copyWith(text: upper, selection: newValue.selection);
+  }
+}
 
 /// A raised surface — a white card on the grey-50 page.
 class NeuCard extends StatelessWidget {
@@ -58,41 +97,56 @@ class NeuRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Widget item(IconData icon, String label, Color color) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 15, color: color),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w600),
+          ),
+        ],
+      );
+    }
+
     return PopupMenuButton<String>(
       padding: EdgeInsets.zero,
       splashRadius: 18,
       icon: Icon(Icons.more_vert_rounded, size: iconSize, color: AppTheme.muted),
-      elevation: 3,
+      elevation: 6,
       color: AppTheme.card,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: const Color(0x33101828),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         side: const BorderSide(color: AppTheme.border),
       ),
+      constraints: const BoxConstraints(minWidth: 148),
       onSelected: (v) => v == 'edit' ? onEdit() : onDelete(),
       itemBuilder: (context) => [
         PopupMenuItem(
           value: 'edit',
-          height: 40,
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.edit_outlined, size: 17, color: AppTheme.heading),
-              SizedBox(width: 10),
-              Text('Edit', style: TextStyle(color: AppTheme.heading, fontSize: 13.5)),
-            ],
-          ),
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          child: item(Icons.edit_outlined, 'Edit', AppTheme.heading),
         ),
+        const PopupMenuDivider(height: 1),
         PopupMenuItem(
           value: 'delete',
-          height: 40,
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.delete_outline_rounded, size: 17, color: AppTheme.danger),
-              SizedBox(width: 10),
-              Text('Delete', style: TextStyle(color: AppTheme.danger, fontSize: 13.5)),
-            ],
-          ),
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          child: item(Icons.delete_outline_rounded, 'Delete', AppTheme.danger),
         ),
       ],
     );
@@ -198,7 +252,7 @@ class _NeuButtonState extends State<NeuButton> {
     final label = DefaultTextStyle(
       style: TextStyle(
         color: widget.primary ? Colors.white : AppTheme.heading,
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: FontWeight.w600,
       ),
       // Squeezed too tight (three buttons sharing a narrow row, say), Text
@@ -274,6 +328,15 @@ class NeuField extends StatefulWidget {
   /// fields are left untouched.
   final TextCapitalization? textCapitalization;
 
+  /// When true, forces the first letter of every word typed or pasted
+  /// into this field to be uppercase (e.g. name fields), regardless of
+  /// the on-screen keyboard's own capitalization hint.
+  final bool forceCapitalizeWords;
+
+  /// When true, forces everything typed or pasted into this field to
+  /// uppercase (e.g. room numbers like "ABC001").
+  final bool forceUppercase;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -291,6 +354,8 @@ class NeuField extends StatefulWidget {
     this.labelAction,
     this.focusNode,
     this.textCapitalization,
+    this.forceCapitalizeWords = false,
+    this.forceUppercase = false,
   });
 
   @override
@@ -385,12 +450,20 @@ class _NeuFieldState extends State<NeuField> {
                   focusNode: _node,
                   obscureText: widget.obscure,
                   keyboardType: widget.keyboardType,
-                  textCapitalization: widget.textCapitalization ?? _defaultCapitalization,
+                  textCapitalization: widget.textCapitalization ??
+                      (widget.forceUppercase || widget.forceCapitalizeWords
+                          ? TextCapitalization.words
+                          : _defaultCapitalization),
+                  inputFormatters: widget.forceUppercase
+                      ? const [_UppercaseFormatter()]
+                      : widget.forceCapitalizeWords
+                          ? const [_CapitalizeWordsFormatter()]
+                          : null,
                   maxLength: widget.maxLength,
                   readOnly: widget.readOnly,
                   onTap: widget.onTap,
                   onChanged: widget.onChanged,
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 15),
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 16),
                   cursorColor: AppTheme.accent,
                   decoration: InputDecoration(
                     hintText: widget.hint,

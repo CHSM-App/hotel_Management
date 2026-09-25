@@ -89,12 +89,14 @@ class _DayRow extends StatelessWidget {
           child: Text(
             formatIsoDate(day.date),
             style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         Expanded(
           child: Text(
             '${day.occupiedRooms} / ${day.totalRooms}',
-            style: const TextStyle(color: AppTheme.text, fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         SizedBox(
@@ -102,7 +104,10 @@ class _DayRow extends StatelessWidget {
           child: Text(
             '${day.occupancyPercent}%',
             textAlign: TextAlign.right,
-            style: const TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppTheme.accent,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

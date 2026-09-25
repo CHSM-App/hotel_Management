@@ -47,6 +47,18 @@ class FrontDeskApp extends StatelessWidget {
       themeMode: ThemeMode.light,
       scrollBehavior: _AppScrollBehavior(),
       navigatorObservers: [routeObserver],
+      // Layouts are tuned against the platform's default text scale. Left
+      // unclamped, a desk's own accessibility font-size setting can grow
+      // past what a card or button was measured for and overflow it —
+      // clamping keeps every screen legible without ever breaking layout.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: MediaQuery.textScalerOf(
+            context,
+          ).clamp(minScaleFactor: 0.9, maxScaleFactor: 1.25),
+        ),
+        child: child!,
+      ),
       home: const AuthGate(),
     );
   }

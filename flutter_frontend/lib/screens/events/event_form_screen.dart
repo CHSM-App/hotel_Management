@@ -554,6 +554,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           hint: 'Sharma–Patil reception',
                           required: true,
                           errorText: _submitAttempted && _fieldError == 'title' ? _error : null,
+                          forceCapitalizeWords: true,
                         ),
                         const SizedBox(height: AppTheme.s8),
                         RequiredLabel('Venue'),
@@ -623,7 +624,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                       children: [
                         const SectionLabel('Organiser', number: 2),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(key: _fieldKeys['organiserName'], controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null),
+                        NeuField(key: _fieldKeys['organiserName'], controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null, forceCapitalizeWords: true),
                         const SizedBox(height: AppTheme.s8),
                         NeuField(
                           key: _fieldKeys['organiserPhone'],
@@ -890,7 +891,7 @@ class _AddonLineTile extends StatelessWidget {
               onChanged();
             },
           ),
-          Expanded(child: Text(line.label, style: const TextStyle(color: AppTheme.text, fontSize: 13))),
+          Expanded(child: Text(line.label, style: const TextStyle(color: AppTheme.text, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)),
           if (line.selected) ...[
             SizedBox(
               width: 46,
@@ -1082,7 +1083,7 @@ class _QuoteCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
-                  Expanded(child: Text(l.note != null ? '${l.label} (${l.note})' : l.label, style: const TextStyle(color: AppTheme.text, fontSize: 12))),
+                  Expanded(child: Text(l.note != null ? '${l.label} (${l.note})' : l.label, style: const TextStyle(color: AppTheme.text, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
                   Text(formatPrice(l.amount), style: const TextStyle(color: AppTheme.text, fontSize: 12)),
                 ],
               ),

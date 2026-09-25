@@ -105,17 +105,23 @@ class _DocTypeRow extends StatelessWidget {
           child: Text(
             kDocumentTypeLabel[type] ?? type,
             style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         Expanded(
-          child: Text('${totals.count}', style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+          child: Text(
+            '${totals.count}',
+            style: Theme.of(context).textTheme.bodyMedium,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         Expanded(
           flex: 2,
           child: Text(
             formatPrice(totals.totalAmount),
             textAlign: TextAlign.right,
-            style: const TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.accent),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -141,27 +147,22 @@ class _InvoiceCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   inv.invoiceNumber ?? '—',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+                  style: Theme.of(context).textTheme.titleSmall,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: AppTheme.s8),
               Text(
                 formatPrice(inv.totalAmount),
-                style: const TextStyle(
-                  color: AppTheme.accent,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.accent),
               ),
             ],
           ),
           const SizedBox(height: 2),
           Text(
             inv.guestName ?? '—',
-            style: const TextStyle(color: AppTheme.text, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.text),
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: AppTheme.s8),
           Row(
@@ -169,26 +170,34 @@ class _InvoiceCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   kDocumentTypeLabel[inv.documentType] ?? inv.documentType ?? '—',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: AppTheme.s8),
               Text(
                 formatIsoDate(inv.createdAt),
-                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Row(
             children: [
-              Text(
-                'CGST ${formatPrice(inv.cgstAmount)}',
-                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+              Flexible(
+                child: Text(
+                  'CGST ${formatPrice(inv.cgstAmount)}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               const SizedBox(width: AppTheme.s12),
-              Text(
-                'SGST ${formatPrice(inv.sgstAmount)}',
-                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+              Flexible(
+                child: Text(
+                  'SGST ${formatPrice(inv.sgstAmount)}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),

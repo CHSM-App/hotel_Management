@@ -199,7 +199,7 @@ class _WorkOrderCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         workOrder.assetName,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14.5),
+                        style: Theme.of(context).textTheme.titleSmall,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -217,7 +217,9 @@ class _WorkOrderCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '${kIssueTypeLabel[workOrder.issueType] ?? workOrder.issueType} · ${formatDateTime(workOrder.openedAt)}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -231,6 +233,8 @@ class _WorkOrderCard extends StatelessWidget {
                   Text(
                     [workOrder.assignedToName, workOrder.vendorName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
                     style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],
@@ -462,10 +466,10 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                     SectionLabel(_bulk ? 'Category' : 'Asset', number: 1),
                     const SizedBox(height: AppTheme.s12),
                     if (_bulk) ...[
-                      const Text(
+                      Text(
                         'Opens one work order for every active asset in the category you pick — e.g. every '
                         "split AC, all at once, for a contractor's routine visit.",
-                        style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: AppTheme.s12),
                       const RequiredLabel('Category'),
@@ -531,7 +535,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                 children: [
                   SectionLabel('Issue', number: _bulk || !_isEdit ? 2 : 1),
                   const SizedBox(height: AppTheme.s12),
-                  const Text('Type', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text('Type', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   NeuPressed(
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
@@ -562,7 +566,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                   ),
                   if (_isEdit) ...[
                     const SizedBox(height: AppTheme.s12),
-                    const Text('Status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    Text('Status', style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 4),
                     Wrap(
                       spacing: AppTheme.s8,
@@ -587,9 +591,9 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                 children: [
                   SectionLabel('Assignment', number: _bulk || !_isEdit ? 3 : 2),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _assignedTo, label: 'Assigned to (optional)', hint: 'In-house handyman name'),
+                  NeuField(controller: _assignedTo, label: 'Assigned to (optional)', hint: 'In-house handyman name', forceCapitalizeWords: true),
                   const SizedBox(height: AppTheme.s12),
-                  const Text('Vendor', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text('Vendor', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   NeuPressed(
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
@@ -630,7 +634,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                     // paymentMethod/amountPaid/referenceNumber in
                     // AssetsPanel.jsx.
                     const SizedBox(height: AppTheme.s12),
-                    const Text('Payment status', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    Text('Payment status', style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 4),
                     OptionDropdown(
                       values: kPaymentStatuses,
@@ -640,7 +644,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                     ),
                     if (_paymentStatus != 'PENDING') ...[
                       const SizedBox(height: AppTheme.s12),
-                      const Text('Paid via', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                      Text('Paid via', style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: 4),
                       OptionDropdown(
                         values: kPaymentMethods,

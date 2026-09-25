@@ -22,28 +22,37 @@ class PriceChartPanel extends ConsumerWidget {
     return RefreshIndicator(
       onRefresh: () => ref.read(roomsViewModelProvider.notifier).loadAll(),
       color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          _Section(
-            title: 'Categories',
-            hint: 'Base price is the cheapest version of that room',
-            child: _CategoriesSection(categories: state.categories),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              _Section(
+                icon: Icons.category_rounded,
+                title: 'Categories',
+                hint: 'Base price is the cheapest version of that room',
+                child: _CategoriesSection(categories: state.categories),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              _Section(
+                icon: Icons.local_offer_rounded,
+                title: 'Booking extras',
+                hint: 'Optional add-ons staff can check off for a guest',
+                child: _ChargesSection(charges: state.switchableCharges),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              _Section(
+                icon: Icons.calendar_month_rounded,
+                title: 'Seasons',
+                hint: 'Paint festivals and weekends onto the calendar',
+                child: _SeasonsSection(seasons: state.seasons),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          _Section(
-            title: 'Booking extras',
-            hint: 'Optional add-ons staff can check off for a guest',
-            child: _ChargesSection(charges: state.switchableCharges),
-          ),
-          const SizedBox(height: 20),
-          _Section(
-            title: 'Seasons',
-            hint: 'Paint festivals and weekends onto the calendar',
-            child: _SeasonsSection(seasons: state.seasons),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -52,21 +61,73 @@ class PriceChartPanel extends ConsumerWidget {
 // ── Section shell ────────────────────────────────────────────────────────────
 
 class _Section extends StatelessWidget {
+  final IconData icon;
   final String title;
   final String hint;
   final Widget child;
 
-  const _Section({required this.title, required this.hint, required this.child});
+  const _Section({
+    required this.icon,
+    required this.title,
+    required this.hint,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     return NeuCard(
+      radius: AppTheme.rLarge,
+      padding: const EdgeInsets.all(AppTheme.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 2),
-          Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  ),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x2A5A67D8),
+                      offset: Offset(0, 2),
+                      blurRadius: 5,
+                    ),
+                  ],
+                ),
+                child: Icon(icon, size: 16, color: Colors.white),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Text(
+                      hint,
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: AppTheme.s12),
           child,
         ],
@@ -131,11 +192,7 @@ class _Row extends StatelessWidget {
                     Flexible(
                       child: Text(
                         name,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
+                        style: Theme.of(context).textTheme.titleSmall,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -196,8 +253,9 @@ class _AddToggleRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
+          color: AppTheme.accent.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
-          border: Border.all(color: AppTheme.border, style: BorderStyle.solid),
+          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -356,7 +414,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
           Row(
             children: [
               Expanded(
-                child: NeuField(controller: _name, label: '', hint: 'Deluxe'),
+                child: NeuField(controller: _name, label: '', hint: 'Deluxe', forceCapitalizeWords: true),
               ),
               const SizedBox(width: AppTheme.s8),
               Expanded(
@@ -374,12 +432,21 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
             children: [
               Expanded(
                 child: NeuButton(
-                  onPressed: submitting ? null : _submit,
-                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                  onPressed: submitting ? null : _cancelEdit,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: const Text('Cancel'),
                 ),
               ),
               const SizedBox(width: AppTheme.s8),
-              TextButton(onPressed: _cancelEdit, child: const Text('Cancel')),
+              Expanded(
+                flex: 2,
+                child: NeuButton(
+                  primary: true,
+                  onPressed: submitting ? null : _submit,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                ),
+              ),
             ],
           ),
         ],
@@ -485,7 +552,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
           ],
           Row(
             children: [
-              Expanded(child: NeuField(controller: _name, label: '', hint: 'AC')),
+              Expanded(child: NeuField(controller: _name, label: '', hint: 'AC', forceCapitalizeWords: true)),
               const SizedBox(width: AppTheme.s8),
               Expanded(
                 child: NeuField(
@@ -502,12 +569,21 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
             children: [
               Expanded(
                 child: NeuButton(
-                  onPressed: submitting ? null : _submit,
-                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                  onPressed: submitting ? null : _cancelEdit,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: const Text('Cancel'),
                 ),
               ),
               const SizedBox(width: AppTheme.s8),
-              TextButton(onPressed: _cancelEdit, child: const Text('Cancel')),
+              Expanded(
+                flex: 2,
+                child: NeuButton(
+                  primary: true,
+                  onPressed: submitting ? null : _submit,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                ),
+              ),
             ],
           ),
         ],
@@ -662,7 +738,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
             Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
             const SizedBox(height: AppTheme.s8),
           ],
-          NeuField(controller: _name, label: '', hint: 'Diwali'),
+          NeuField(controller: _name, label: '', hint: 'Diwali', forceCapitalizeWords: true),
           const SizedBox(height: AppTheme.s8),
           Row(
             children: [
@@ -697,12 +773,21 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
             children: [
               Expanded(
                 child: NeuButton(
-                  onPressed: submitting ? null : _submit,
-                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                  onPressed: submitting ? null : _cancelEdit,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: const Text('Cancel'),
                 ),
               ),
               const SizedBox(width: AppTheme.s8),
-              TextButton(onPressed: _cancelEdit, child: const Text('Cancel')),
+              Expanded(
+                flex: 2,
+                child: NeuButton(
+                  primary: true,
+                  onPressed: submitting ? null : _submit,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: Text(_editingId != null ? 'Save' : 'Add'),
+                ),
+              ),
             ],
           ),
         ],

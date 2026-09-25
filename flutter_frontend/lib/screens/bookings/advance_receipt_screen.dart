@@ -242,13 +242,17 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                   size: 18,
                 ),
               ),
-              Text(
-                existing
-                    ? (shown.receiptNumber ?? 'Receipt')
-                    : 'Advance receipt',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
+              Flexible(
+                child: Text(
+                  existing
+                      ? (shown.receiptNumber ?? 'Receipt')
+                      : 'Advance receipt',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
             ],
@@ -502,14 +506,13 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           'Stay total ${formatPrice(_stayTotal)}',
-                          style: const TextStyle(
-                            color: AppTheme.muted,
-                            fontSize: 12,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -578,7 +581,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
             _alreadyHeld > 0
                 ? '${formatPrice(_alreadyHeld)} is recorded against this stay but has no receipt.'
                 : 'No advance has been taken against this stay yet.',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
 
@@ -666,7 +669,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
           const SizedBox(height: AppTheme.s4),
           Text(
             'Up to ${formatPrice(_remaining)} still to pay.',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: AppTheme.s12),
           for (var i = 0; i < _lines.length; i++)
@@ -690,19 +693,15 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
           const SizedBox(height: AppTheme.s16),
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Amount',
-                  style: TextStyle(color: AppTheme.text, fontSize: 13),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
               Text(
                 formatPrice(_amount),
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ],
           ),
@@ -1041,10 +1040,10 @@ class _VoidReasonDialogState extends State<_VoidReasonDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'The advance comes back off the booking, so the balance at '
             'checkout is the full amount again. Say why.',
-            style: TextStyle(color: AppTheme.text, fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: AppTheme.s16),
           NeuField(controller: _reason, label: 'Reason'),

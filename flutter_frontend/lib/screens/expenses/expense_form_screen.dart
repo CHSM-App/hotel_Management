@@ -316,7 +316,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                   Text(widget.expense!.title, overflow: TextOverflow.ellipsis),
                   Text(
                     [widget.expense!.categoryName, widget.expense!.vendorName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -385,6 +385,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                       errorText: _titleError,
                       focusNode: _titleFocus,
                       onChanged: (_) => setState(() {}),
+                      forceCapitalizeWords: true,
                     ),
                     const SizedBox(height: AppTheme.s12),
                     CategoryComboField(
@@ -466,7 +467,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                     const SizedBox(height: AppTheme.s12),
                     NeuField(controller: _description, label: 'Notes', maxLength: 400),
                     const SizedBox(height: AppTheme.s16),
-                    const Text('Receipt / bill (image or PDF)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    Text('Receipt / bill (image or PDF)', style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: AppTheme.s8),
                     Row(
                       children: [
@@ -670,7 +671,7 @@ class _ExpenseHeroCard extends StatelessWidget {
                         expense.paymentStatus == 'PENDING'
                             ? formatIsoDate(expense.expenseDate)
                             : '${formatIsoDate(expense.expenseDate)} · ${kPaymentMethodLabel[expense.paymentMethod] ?? expense.paymentMethod}',
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                        style: Theme.of(context).textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -751,7 +752,7 @@ class _PaymentsSection extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           '${formatPrice(amountPaid)} of ${formatPrice(amount)} paid${remaining > 0.01 ? ' · ${formatPrice(remaining)} left' : ''}',
-          style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: AppTheme.s8),
         if (loading)
@@ -773,7 +774,7 @@ class _PaymentsSection extends StatelessWidget {
                               children: [
                                 Text(
                                   '${formatPrice(p.amount)} · ${kPaymentMethodLabel[p.paymentMethod] ?? p.paymentMethod}',
-                                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13),
+                                  style: Theme.of(context).textTheme.titleSmall,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -808,7 +809,7 @@ class _PaymentsSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Add a payment against what's left", style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text("Add a payment against what's left", style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
                   const SizedBox(height: AppTheme.s12),
