@@ -35,6 +35,12 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
   late final _specialty = TextEditingController(text: widget.vendor?.specialty ?? '');
   late final _notes = TextEditingController(text: widget.vendor?.notes ?? '');
   String? _error;
+  bool _submitAttempted = false;
+
+  String? get _nameError =>
+      (_submitAttempted && _name.text.trim().isEmpty) ? 'Vendor name is required.' : null;
+
+  final _nameFocus = FocusNode();
 
   @override
   void dispose() {
@@ -44,13 +50,17 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
     _email.dispose();
     _specialty.dispose();
     _notes.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    setState(() => _error = null);
-    if (_name.text.trim().isEmpty) {
-      setState(() => _error = 'Vendor name is required.');
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
+    if (_nameError != null) {
+      _nameFocus.requestFocus();
       return;
     }
     final body = {
@@ -90,7 +100,14 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
 
                   const SectionLabel('Identity', number: 1),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _name, label: 'Name', required: true),
+                  NeuField(
+                    controller: _name,
+                    label: 'Name',
+                    required: true,
+                    errorText: _nameError,
+                    focusNode: _nameFocus,
+                    onChanged: (_) => setState(() {}),
+                  ),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(controller: _contact, label: 'Contact person'),
 

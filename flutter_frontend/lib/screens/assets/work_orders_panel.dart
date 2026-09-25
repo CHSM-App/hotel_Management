@@ -317,8 +317,39 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
   final _amountPaid = TextEditingController();
   final _referenceNumber = TextEditingController();
   String? _error;
+  bool _submitAttempted = false;
 
   bool get _isEdit => widget.workOrder != null;
+
+  String? get _categoryError =>
+      (_submitAttempted && _bulk && _categoryId == null) ? 'Choose a category.' : null;
+  String? get _assetError =>
+      (_submitAttempted && !_bulk && _assetId == null) ? 'Choose an asset.' : null;
+  String? get _descriptionError =>
+      (_submitAttempted && _description.text.trim().isEmpty) ? 'Describe the issue.' : null;
+
+  final _categoryOrAssetFieldKey = GlobalKey();
+  final _descriptionFieldKey = GlobalKey();
+  final _descriptionFocus = FocusNode();
+
+  void _scrollToFirstError() {
+    GlobalKey? key;
+    FocusNode? focus;
+    if (_categoryError != null || _assetError != null) {
+      key = _categoryOrAssetFieldKey;
+    } else if (_descriptionError != null) {
+      key = _descriptionFieldKey;
+      focus = _descriptionFocus;
+    }
+    if (key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key!.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.15);
+      }
+      focus?.requestFocus();
+    });
+  }
 
   @override
   void initState() {
@@ -341,21 +372,14 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
     _resolutionNote.dispose();
     _amountPaid.dispose();
     _referenceNumber.dispose();
+    _descriptionFocus.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    if (_bulk) {
-      if (_categoryId == null) {
-        setState(() => _error = 'Choose a category.');
-        return;
-      }
-    } else if (_assetId == null) {
-      setState(() => _error = 'Choose an asset.');
-      return;
-    }
-    if (_description.text.trim().isEmpty) {
-      setState(() => _error = 'Describe the issue.');
+    setState(() => _submitAttempted = true);
+    if (_categoryError != null || _assetError != null || _descriptionError != null) {
+      _scrollToFirstError();
       return;
     }
     final vm = ref.read(assetsViewModelProvider.notifier);
@@ -431,6 +455,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
 
             if (_bulk || !_isEdit) ...[
               NeuCard(
+                key: _categoryOrAssetFieldKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -446,6 +471,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                       const RequiredLabel('Category'),
                       const SizedBox(height: 4),
                       NeuPressed(
+                        hasError: _categoryError != null,
                         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
@@ -461,10 +487,15 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                           ),
                         ),
                       ),
+                      if (_categoryError != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(_categoryError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      ],
                     ] else ...[
                       const RequiredLabel('Asset'),
                       const SizedBox(height: 4),
                       NeuPressed(
+                        hasError: _assetError != null,
                         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
@@ -483,6 +514,10 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                           ),
                         ),
                       ),
+                      if (_assetError != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(_assetError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      ],
                     ],
                   ],
                 ),
@@ -515,11 +550,15 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                   ),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(
+                    key: _descriptionFieldKey,
                     controller: _description,
                     label: 'Description',
                     hint: _bulk ? 'e.g. Quarterly AMC service visit' : "Won't switch on",
                     required: true,
                     maxLength: 400,
+                    errorText: _descriptionError,
+                    focusNode: _descriptionFocus,
+                    onChanged: (_) => setState(() {}),
                   ),
                   if (_isEdit) ...[
                     const SizedBox(height: AppTheme.s12),

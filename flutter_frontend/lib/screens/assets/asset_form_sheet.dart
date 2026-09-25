@@ -70,6 +70,10 @@ class _BulkUnit {
   final floor = TextEditingController();
   final department = TextEditingController();
   int? roomId;
+  // Its own row's position on the page moves as units are added/removed —
+  // a GlobalKey (rather than an index) is what lets a failed Save scroll to
+  // this exact row regardless of what happened to the list around it.
+  final rowKey = GlobalKey();
 
   void dispose() {
     name.dispose();
@@ -109,6 +113,47 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   XFile? _billPhoto;
   String? _error;
   String? _bulkImportNote;
+  bool _submitAttempted = false;
+
+  String? get _categoryError =>
+      (_submitAttempted && _categoryName.text.trim().isEmpty) ? 'Enter or choose a category.' : null;
+  String? get _nameError =>
+      (_submitAttempted && !(_bulk && !_isEdit) && _name.text.trim().isEmpty) ? 'Enter a name for the asset.' : null;
+
+  bool _unitInvalid(_BulkUnit u) => u.name.text.trim().isEmpty && u.department.text.trim().isEmpty && u.roomId == null;
+  static const _kUnitErrorText = 'Needs a room, a location, or a name to tell it apart from the others.';
+
+  // Keyed so a failed Save scrolls straight to whichever required field is
+  // empty — this form runs across several cards, long enough that an error
+  // left where it was typed can sit off-screen unseen.
+  final _categoryFieldKey = GlobalKey();
+  final _nameFieldKey = GlobalKey();
+  final _nameFocus = FocusNode();
+
+  void _scrollToFirstError() {
+    GlobalKey? key;
+    FocusNode? focus;
+    if (_categoryError != null) {
+      key = _categoryFieldKey;
+    } else if (_bulk && !_isEdit && _units.any(_unitInvalid)) {
+      key = _units.firstWhere(_unitInvalid).rowKey;
+    } else if (_nameError != null) {
+      key = _nameFieldKey;
+      focus = _nameFocus;
+    }
+    _scrollToKey(key, focus);
+  }
+
+  void _scrollToKey(GlobalKey? key, [FocusNode? focus]) {
+    if (key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.15);
+      }
+      focus?.requestFocus();
+    });
+  }
 
   @override
   void initState() {
@@ -119,10 +164,16 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
       ref.read(assetsViewModelProvider.notifier).loadCatalogue();
       ref.read(roomsViewModelProvider.notifier).loadAll();
     });
+    _categoryName.addListener(_onCategoryChanged);
+  }
+
+  void _onCategoryChanged() {
+    if (_submitAttempted) setState(() {});
   }
 
   @override
   void dispose() {
+    _categoryName.removeListener(_onCategoryChanged);
     _categoryName.dispose();
     _name.dispose();
     _brand.dispose();
@@ -138,6 +189,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     for (final u in _units) {
       u.dispose();
     }
+    _nameFocus.dispose();
     super.dispose();
   }
 
@@ -366,9 +418,10 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   const SizedBox(height: AppTheme.s12),
                   const RequiredLabel('Category'),
                   const SizedBox(height: 4),
-                  CategoryComboField(controller: _categoryName, options: categoryOptions, label: ''),
+                  CategoryComboField(key: _categoryFieldKey, controller: _categoryName, options: categoryOptions, label: '', errorText: _categoryError),
                   const SizedBox(height: 4),
-                  const Text("Pick from the list or type a new one — it's added the first time it's used.", style: _kFieldHintStyle),
+                  if (_categoryError == null)
+                    const Text("Pick from the list or type a new one — it's added the first time it's used.", style: _kFieldHintStyle),
                   if (_bulk && !_isEdit) ...[
                     const SizedBox(height: 2),
                     const Text('Every unit in this batch shares one category.', style: _kFieldHintStyle),
@@ -560,7 +613,16 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                     const SizedBox(height: 4),
                     const Text("A short label, not a sentence — it's also used to build the asset's name below.", style: _kFieldHintStyle),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _name, label: 'Name', hint: 'Filled in from category and room above — edit freely', required: true),
+                    NeuField(
+                      key: _nameFieldKey,
+                      controller: _name,
+                      label: 'Name',
+                      hint: 'Filled in from category and room above — edit freely',
+                      required: true,
+                      errorText: _nameError,
+                      focusNode: _nameFocus,
+                      onChanged: (_) => setState(() {}),
+                    ),
                     if (_isEdit) ...[
                       const SizedBox(height: AppTheme.s12),
                       const Text('Asset tag', style: _kFieldLabelStyle),
@@ -617,10 +679,18 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                     const SizedBox(height: AppTheme.s12),
                     for (var i = 0; i < _units.length; i++)
                       Padding(
+                        key: _units[i].rowKey,
                         padding: const EdgeInsets.only(bottom: AppTheme.s12),
                         child: Container(
                           padding: const EdgeInsets.all(AppTheme.s12),
-                          decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rSmall), border: Border.all(color: AppTheme.border)),
+                          decoration: BoxDecoration(
+                            color: AppTheme.bg,
+                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                            border: Border.all(
+                              color: (_submitAttempted && _unitInvalid(_units[i])) ? AppTheme.danger : AppTheme.border,
+                              width: (_submitAttempted && _unitInvalid(_units[i])) ? 1.6 : 1,
+                            ),
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -648,11 +718,24 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                               const SizedBox(height: AppTheme.s8),
                               NeuField(controller: _units[i].floor, label: 'Floor'),
                               const SizedBox(height: AppTheme.s8),
-                              NeuField(controller: _units[i].department, label: 'Location description'),
+                              NeuField(
+                                controller: _units[i].department,
+                                label: 'Location description',
+                                onChanged: (_) => setState(() {}),
+                              ),
                               const SizedBox(height: AppTheme.s8),
-                              NeuField(controller: _units[i].name, label: 'Name (auto-filled)', hint: 'Split AC 1.5T · Room 101'),
+                              NeuField(
+                                controller: _units[i].name,
+                                label: 'Name (auto-filled)',
+                                hint: 'Split AC 1.5T · Room 101',
+                                onChanged: (_) => setState(() {}),
+                              ),
                               const SizedBox(height: AppTheme.s8),
                               NeuField(controller: _units[i].serialNumber, label: 'Serial number (optional)'),
+                              if (_submitAttempted && _unitInvalid(_units[i])) ...[
+                                const SizedBox(height: AppTheme.s4),
+                                const Text(_kUnitErrorText, style: TextStyle(color: AppTheme.danger, fontSize: 12)),
+                              ],
                             ],
                           ),
                         ),
@@ -683,9 +766,12 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   }
 
   Future<void> _submit() async {
-    setState(() => _error = null);
-    if (_categoryName.text.trim().isEmpty) {
-      setState(() => _error = 'Enter or choose a category.');
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
+    if (_categoryError != null) {
+      _scrollToFirstError();
       return;
     }
 
@@ -698,8 +784,9 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     }
 
     if (_bulk && !_isEdit) {
-      if (_units.any((u) => u.name.text.trim().isEmpty && u.department.text.trim().isEmpty && u.roomId == null)) {
-        setState(() => _error = 'Every unit needs a room, a location, or a name to tell it apart from the others.');
+      if (_units.any(_unitInvalid)) {
+        setState(() {});
+        _scrollToKey(_units.firstWhere(_unitInvalid).rowKey);
         return;
       }
       final formMap = <String, dynamic>{
@@ -729,8 +816,8 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
       return;
     }
 
-    if (_name.text.trim().isEmpty) {
-      setState(() => _error = 'Enter a name for the asset.');
+    if (_nameError != null) {
+      _scrollToFirstError();
       return;
     }
     final formMap = <String, dynamic>{

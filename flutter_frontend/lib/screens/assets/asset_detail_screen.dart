@@ -761,6 +761,12 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
   final _amountPaid = TextEditingController();
   final _referenceNumber = TextEditingController();
   String? _error;
+  bool _submitAttempted = false;
+
+  String? get _endDateError =>
+      (_submitAttempted && _endDate.text.trim().isEmpty) ? 'Enter when this coverage ends.' : null;
+
+  final _endDateFieldKey = GlobalKey();
 
   @override
   void dispose() {
@@ -794,8 +800,17 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
   }
 
   Future<void> _save() async {
-    if (_endDate.text.trim().isEmpty) {
-      setState(() => _error = 'Enter when this coverage ends.');
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
+    if (_endDateError != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _endDateFieldKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.15);
+        }
+      });
       return;
     }
     final ok = await ref.read(assetsViewModelProvider.notifier).addCoverage(widget.assetId, {
@@ -903,7 +918,18 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                     children: [
                       Expanded(child: NeuField(controller: _startDate, label: 'Start date (optional)', hint: 'Tap to pick', readOnly: true, onTap: () => _pickDate(_startDate))),
                       const SizedBox(width: AppTheme.s8),
-                      Expanded(child: NeuField(controller: _endDate, label: 'End date', hint: 'Tap to pick', readOnly: true, onTap: () => _pickDate(_endDate), required: true)),
+                      Expanded(
+                        child: NeuField(
+                          key: _endDateFieldKey,
+                          controller: _endDate,
+                          label: 'End date',
+                          hint: 'Tap to pick',
+                          readOnly: true,
+                          onTap: () => _pickDate(_endDate),
+                          required: true,
+                          errorText: _endDateError,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: AppTheme.s12),

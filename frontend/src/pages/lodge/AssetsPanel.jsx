@@ -677,19 +677,23 @@ export default function AssetsPanel({ onViewReport }) {
   const [editingWoId, setEditingWoId] = useState(null);
   const [woForm, setWoForm] = useState(emptyWorkOrderForm);
   const [woStatusFilter, setWoStatusFilter] = useState('OPEN');
+  const [woFieldErrors, setWoFieldErrors] = useState({});
 
   const [bulkWoForm, setBulkWoForm] = useState(emptyBulkWoForm);
   const [bulkWoSubmitting, setBulkWoSubmitting] = useState(false);
   const [bulkWoError, setBulkWoError] = useState('');
+  const [bulkWoFieldErrors, setBulkWoFieldErrors] = useState({});
 
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState(null);
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
+  const [vendorFieldErrors, setVendorFieldErrors] = useState({});
 
   const [showCoverageForm, setShowCoverageForm] = useState(false);
   const [coverageForm, setCoverageForm] = useState(emptyCoverageForm);
   const [coverageSubmitting, setCoverageSubmitting] = useState(false);
   const [coverageError, setCoverageError] = useState('');
+  const [coverageFieldErrors, setCoverageFieldErrors] = useState({});
 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1466,6 +1470,7 @@ export default function AssetsPanel({ onViewReport }) {
     setWoForm({ ...emptyWorkOrderForm, assetId: String(asset.id), vendorId: vendor ? String(vendor.vendorId) : '' });
     setEditingWoId(null);
     setFormError('');
+    setWoFieldErrors({});
     setShowWoForm(true);
   };
 
@@ -1489,13 +1494,17 @@ export default function AssetsPanel({ onViewReport }) {
         : emptyCoverageForm
     );
     setCoverageError('');
+    setCoverageFieldErrors({});
     setShowCoverageForm(true);
   };
 
   const handleCoverageSubmit = async (e) => {
     e.preventDefault();
-    if (!coverageForm.endDate) {
-      setCoverageError('Enter when this coverage ends.');
+    const errors = {};
+    if (!coverageForm.endDate) errors.endDate = 'Enter when this coverage ends.';
+    setCoverageFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, { endDate: 'coverageEnd' });
       return;
     }
     if (!selectedAsset) return;
@@ -1577,6 +1586,7 @@ export default function AssetsPanel({ onViewReport }) {
     );
     setWoMode('single');
     setFormError('');
+    setWoFieldErrors({});
     setShowWoForm(true);
   };
 
@@ -1585,6 +1595,7 @@ export default function AssetsPanel({ onViewReport }) {
     setBulkWoForm(emptyBulkWoForm);
     setWoMode('bulk');
     setBulkWoError('');
+    setBulkWoFieldErrors({});
     setShowWoForm(true);
   };
 
@@ -1598,12 +1609,12 @@ export default function AssetsPanel({ onViewReport }) {
 
   const handleWoSubmit = async (e) => {
     e.preventDefault();
-    if (!woForm.assetId) {
-      setFormError('Choose an asset.');
-      return;
-    }
-    if (!woForm.description.trim()) {
-      setFormError('Describe the issue.');
+    const errors = {};
+    if (!woForm.assetId) errors.assetId = 'Choose an asset.';
+    if (!woForm.description.trim()) errors.description = 'Describe the issue.';
+    setWoFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, { assetId: 'woAsset', description: 'woDescription' });
       return;
     }
 
@@ -1660,12 +1671,12 @@ export default function AssetsPanel({ onViewReport }) {
 
   const handleBulkWoSubmit = async (e) => {
     e.preventDefault();
-    if (!bulkWoForm.categoryId) {
-      setBulkWoError('Choose a category.');
-      return;
-    }
-    if (!bulkWoForm.description.trim()) {
-      setBulkWoError('Describe the work.');
+    const errors = {};
+    if (!bulkWoForm.categoryId) errors.categoryId = 'Choose a category.';
+    if (!bulkWoForm.description.trim()) errors.description = 'Describe the work.';
+    setBulkWoFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, { categoryId: 'bulkWoCategory', description: 'bulkWoDescription' });
       return;
     }
 
@@ -1714,13 +1725,17 @@ export default function AssetsPanel({ onViewReport }) {
         : emptyVendorForm
     );
     setFormError('');
+    setVendorFieldErrors({});
     setShowVendorForm(true);
   };
 
   const handleVendorSubmit = async (e) => {
     e.preventDefault();
-    if (!vendorForm.name.trim()) {
-      setFormError('Vendor name is required.');
+    const errors = {};
+    if (!vendorForm.name.trim()) errors.name = 'Vendor name is required.';
+    setVendorFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, { name: 'vendorName' });
       return;
     }
 
@@ -3325,12 +3340,16 @@ export default function AssetsPanel({ onViewReport }) {
                       selectedId={woForm.assetId}
                       onPick={(asset) => {
                         setWoForm((f) => ({ ...f, assetId: String(asset.id) }));
+                        if (woFieldErrors.assetId) setWoFieldErrors((f) => ({ ...f, assetId: undefined }));
                         resolveActiveCoverageVendor(asset.id).then((vendor) => {
                           if (vendor) setWoForm((f) => ({ ...f, vendorId: String(vendor.vendorId) }));
                         });
                       }}
                       disabled={Boolean(editingWoId)}
                     />
+                    {woFieldErrors.assetId ? (
+                      <span className="field__error">{woFieldErrors.assetId}</span>
+                    ) : null}
                   </div>
 
                   <div className="field">
@@ -3351,10 +3370,17 @@ export default function AssetsPanel({ onViewReport }) {
                     </label>
                     <input
                       id="woDescription"
+                      aria-invalid={Boolean(woFieldErrors.description)}
                       value={woForm.description}
-                      onChange={(e) => setWoForm((f) => ({ ...f, description: e.target.value }))}
+                      onChange={(e) => {
+                        setWoForm((f) => ({ ...f, description: e.target.value }));
+                        if (woFieldErrors.description) setWoFieldErrors((f) => ({ ...f, description: undefined }));
+                      }}
                       placeholder="What's wrong, or what needs doing"
                     />
+                    {woFieldErrors.description ? (
+                      <span className="field__error">{woFieldErrors.description}</span>
+                    ) : null}
                   </div>
 
                   {editingWoId && (
@@ -3560,8 +3586,12 @@ export default function AssetsPanel({ onViewReport }) {
                     </label>
                     <select
                       id="bulkWoCategory"
+                      aria-invalid={Boolean(bulkWoFieldErrors.categoryId)}
                       value={bulkWoForm.categoryId}
-                      onChange={(e) => setBulkWoForm((f) => ({ ...f, categoryId: e.target.value }))}
+                      onChange={(e) => {
+                        setBulkWoForm((f) => ({ ...f, categoryId: e.target.value }));
+                        if (bulkWoFieldErrors.categoryId) setBulkWoFieldErrors((f) => ({ ...f, categoryId: undefined }));
+                      }}
                     >
                       <option value="">Choose a category</option>
                       {categoryFilterOptions.map((c) => (
@@ -3570,6 +3600,9 @@ export default function AssetsPanel({ onViewReport }) {
                         </option>
                       ))}
                     </select>
+                    {bulkWoFieldErrors.categoryId ? (
+                      <span className="field__error">{bulkWoFieldErrors.categoryId}</span>
+                    ) : null}
                   </div>
 
                   <div className="field">
@@ -3590,10 +3623,17 @@ export default function AssetsPanel({ onViewReport }) {
                     </label>
                     <input
                       id="bulkWoDescription"
+                      aria-invalid={Boolean(bulkWoFieldErrors.description)}
                       value={bulkWoForm.description}
-                      onChange={(e) => setBulkWoForm((f) => ({ ...f, description: e.target.value }))}
+                      onChange={(e) => {
+                        setBulkWoForm((f) => ({ ...f, description: e.target.value }));
+                        if (bulkWoFieldErrors.description) setBulkWoFieldErrors((f) => ({ ...f, description: undefined }));
+                      }}
                       placeholder="e.g. Quarterly AMC service visit"
                     />
+                    {bulkWoFieldErrors.description ? (
+                      <span className="field__error">{bulkWoFieldErrors.description}</span>
+                    ) : null}
                   </div>
 
                   <div className="field">
@@ -3679,10 +3719,15 @@ export default function AssetsPanel({ onViewReport }) {
                   </label>
                   <input
                     id="vendorName"
+                    aria-invalid={Boolean(vendorFieldErrors.name)}
                     value={vendorForm.name}
-                    onChange={(e) => setVendorForm((f) => ({ ...f, name: e.target.value }))}
+                    onChange={(e) => {
+                      setVendorForm((f) => ({ ...f, name: e.target.value }));
+                      if (vendorFieldErrors.name) setVendorFieldErrors((f) => ({ ...f, name: undefined }));
+                    }}
                     autoFocus
                   />
+                  {vendorFieldErrors.name ? <span className="field__error">{vendorFieldErrors.name}</span> : null}
                 </div>
                 <div className="field">
                   <label htmlFor="vendorContact">Contact person</label>
@@ -3825,9 +3870,16 @@ export default function AssetsPanel({ onViewReport }) {
                   <input
                     id="coverageEnd"
                     type="date"
+                    aria-invalid={Boolean(coverageFieldErrors.endDate)}
                     value={coverageForm.endDate}
-                    onChange={(e) => setCoverageForm((f) => ({ ...f, endDate: e.target.value }))}
+                    onChange={(e) => {
+                      setCoverageForm((f) => ({ ...f, endDate: e.target.value }));
+                      if (coverageFieldErrors.endDate) setCoverageFieldErrors((f) => ({ ...f, endDate: undefined }));
+                    }}
                   />
+                  {coverageFieldErrors.endDate ? (
+                    <span className="field__error">{coverageFieldErrors.endDate}</span>
+                  ) : null}
                 </div>
 
                 <div className="field">
