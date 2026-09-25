@@ -96,6 +96,130 @@
   margin-top: 4px;
 }
 
+.dash-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-outline {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  padding: 12px 16px;
+  min-height: 44px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.btn-outline:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.btn-outline:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Toolbar: search + filter chips, above the sheet ------------------------ */
+
+.dash-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dash-search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.dash-search__icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.dash-search input {
+  width: 100%;
+  padding: 10px 12px 10px 34px;
+  min-height: 40px;
+  border-radius: var(--radius-tile);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.dash-search input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+}
+
+.dash-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash-select {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23768096' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 8px 30px 8px 14px;
+  min-height: 36px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 130ms ease, color 130ms ease;
+}
+
+.dash-select:hover {
+  border-color: #c2ccd4;
+  color: var(--ink);
+}
+
+.dash-select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+}
+
+.dash-select--on {
+  border-color: var(--brand);
+  color: var(--brand);
+  background-color: var(--brand-wash);
+}
+
+.dash-clear {
+  border: none;
+  background: none;
+  color: var(--brand);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 4px;
+  text-decoration: underline;
+}
+
 /* The primary action, in the brand violet. It carried the gold accent and a
    pair of red-tinted neumorphic shadows left over from an earlier palette —
    three unrelated hues in one control. It is now the same violet as the topbar
@@ -174,6 +298,75 @@
   border-bottom: none;
 }
 
+/* Spreadsheet finish: vertical gridlines between every column, a zebra so a
+   row can be traced across a wide table without a ruler, and the header
+   pinned so a long list still shows what each column is while scrolling.
+   .dash-table--sheet only — kept off the base .dash-table in case something
+   else in the app reuses that class without wanting the grid look. */
+.dash-table--sheet {
+  table-layout: auto;
+}
+
+.dash-table--sheet th,
+.dash-table--sheet td {
+  border-right: 1px solid var(--border);
+}
+
+.dash-table--sheet th:last-child,
+.dash-table--sheet td:last-child {
+  border-right: none;
+}
+
+.dash-table--sheet thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--paper);
+}
+
+.dash-table--sheet tbody tr:nth-child(even) td {
+  background: #fafbfd;
+}
+
+.dash-table--sheet tbody tr:hover td {
+  background: var(--brand-wash);
+}
+
+.dash-table-scroll {
+  overflow-x: auto;
+  /* A sheet is read by comparing rows over a long list — cap the visible
+     height and let the sticky header stay put while the body scrolls,
+     rather than pushing "Add new lodge" a screen down for fifty rows. */
+  max-height: 72vh;
+  overflow-y: auto;
+}
+
+.dash-th--sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.dash-th--sortable span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dash-th--sortable:hover {
+  color: var(--ink);
+}
+
+.dash-th--sorted {
+  color: var(--brand);
+}
+
+.dash-sort-arrow {
+  display: inline-block;
+  width: 9px;
+  font-size: 9px;
+  margin-left: 3px;
+}
+
 .dash-lodge-name {
   font-weight: 600;
   color: var(--ink);
@@ -220,10 +413,6 @@
 .badge--accent {
   background: #fbf1e0;
   color: var(--accent-ink);
-}
-
-.dash-table-scroll {
-  overflow-x: auto;
 }
 
 /* Last column, so it sits hard right and never widens as names get longer. */

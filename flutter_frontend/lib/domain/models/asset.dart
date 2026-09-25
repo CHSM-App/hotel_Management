@@ -137,12 +137,11 @@ class Asset {
   );
 }
 
-const kAssetStatuses = ['IN_USE', 'UNDER_REPAIR', 'TRANSFERRED', 'RETIRED'];
+const kAssetStatuses = ['IN_USE', 'UNDER_REPAIR', 'RETIRED'];
 
 const kAssetStatusLabel = {
   'IN_USE': 'In use',
   'UNDER_REPAIR': 'Under repair',
-  'TRANSFERRED': 'Transferred',
   'RETIRED': 'Retired',
 };
 

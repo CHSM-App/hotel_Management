@@ -384,6 +384,137 @@
   margin-top: 3px;
 }
 
+/* Feature access ------------------------------------------------------------ */
+
+.reg-access-group + .reg-access-group {
+  margin-top: 22px;
+}
+
+.reg-access-group__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.reg-access-list {
+  display: grid;
+  gap: 8px;
+}
+
+.reg-access-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--paper);
+}
+
+.reg-access-row--off {
+  opacity: 0.6;
+}
+
+.reg-access-row--toggle {
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.reg-access-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reg-access-row__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.reg-access-row__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* A locked base feature: no control to press, just a stamp of whether it's
+   included — the point of this row is "you can't change this here". */
+.reg-lock {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reg-lock--on {
+  background: #e3f3e9;
+  color: #2f8a58;
+}
+
+.reg-lock--off {
+  background: #eceff3;
+  color: var(--text-muted);
+}
+
+/* A real switch, for the three add-ons only. */
+.reg-switch {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.reg-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.reg-switch__track {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cfd5dc;
+  display: block;
+  position: relative;
+  transition: background 150ms ease;
+}
+
+.reg-switch__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 150ms ease;
+}
+
+.reg-switch input:checked + .reg-switch__track {
+  background: #2f8a58;
+}
+
+.reg-switch input:checked + .reg-switch__track .reg-switch__thumb {
+  transform: translateX(18px);
+}
+
+.reg-switch input:focus-visible + .reg-switch__track {
+  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.25);
+}
+
 /* Temporary password ------------------------------------------------------ */
 
 .reg-password {

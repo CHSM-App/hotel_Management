@@ -5,7 +5,7 @@ import { downloadAssetsReportExcel, downloadAssetsReportPdf, buildAssetsReportPd
 import './AnalyticsCharts.css';
 import './ExpensesReportPanel.css';
 
-const STATUS_LABEL = { IN_USE: 'In use', UNDER_REPAIR: 'Under repair', TRANSFERRED: 'Transferred', RETIRED: 'Retired' };
+const STATUS_LABEL = { IN_USE: 'In use', UNDER_REPAIR: 'Under repair', RETIRED: 'Retired' };
 const CATEGORY_COLORS = ['var(--brand)', 'var(--accent)', '#2FA0A0', '#C77D3A', '#7A5FD1', '#3A8FC7'];
 
 function repairCost(wo) {
@@ -45,7 +45,7 @@ export default function AssetsReportPanel({ assets, workOrders, onClose }) {
   }, [assets, workOrders]);
 
   const byStatus = useMemo(() => {
-    const map = { IN_USE: 0, UNDER_REPAIR: 0, TRANSFERRED: 0, RETIRED: 0 };
+    const map = { IN_USE: 0, UNDER_REPAIR: 0, RETIRED: 0 };
     for (const a of assets) map[a.status] = (map[a.status] || 0) + 1;
     return map;
   }, [assets]);

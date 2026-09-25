@@ -123,7 +123,7 @@ const coveragePeriodSchema = z.object({
 });
 
 const updateAssetStatusSchema = z.object({
-  status: z.enum(['IN_USE', 'UNDER_REPAIR', 'TRANSFERRED', 'RETIRED'], {
+  status: z.enum(['IN_USE', 'UNDER_REPAIR', 'RETIRED'], {
     error: 'Choose a status.',
   }),
 });

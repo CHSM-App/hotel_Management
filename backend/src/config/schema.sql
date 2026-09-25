@@ -1807,6 +1807,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_booking_swit
 IF COL_LENGTH('dbo.lodges', 'has_events') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD has_events BIT NOT NULL CONSTRAINT df_lodges_has_events DEFAULT 0');
 
+-- Asset inventory and expense tracking (migration 087): add-ons like Events
+-- rather than something every property gets for free. Default 0 so an
+-- existing lodge is unaffected until staff switches one on for it.
+IF COL_LENGTH('dbo.lodges', 'has_assets') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD has_assets BIT NOT NULL CONSTRAINT df_lodges_has_assets DEFAULT 0');
+IF COL_LENGTH('dbo.lodges', 'has_expenses') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD has_expenses BIT NOT NULL CONSTRAINT df_lodges_has_expenses DEFAULT 0');
+
 -- The spaces a property lets. The diary and the clash check are per venue.
 IF OBJECT_ID('dbo.event_venues', 'U') IS NULL
 CREATE TABLE dbo.event_venues (
@@ -2248,7 +2256,7 @@ CREATE TABLE dbo.assets (
     -- through GET /assets/:id/bill rather than a public URL.
     bill_document      NVARCHAR(255) NULL,
     status             NVARCHAR(20) NOT NULL DEFAULT 'IN_USE'
-        CONSTRAINT ck_assets_status CHECK (status IN ('IN_USE', 'UNDER_REPAIR', 'TRANSFERRED', 'RETIRED')),
+        CONSTRAINT ck_assets_status CHECK (status IN ('IN_USE', 'UNDER_REPAIR', 'RETIRED')),
     qr_token           UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
     is_active          BIT NOT NULL DEFAULT 1,
     created_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),

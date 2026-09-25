@@ -20,7 +20,6 @@ import './InventoryPanel.css';
 const STATUS_LABEL = {
   IN_USE: 'In use',
   UNDER_REPAIR: 'Under repair',
-  TRANSFERRED: 'Transferred',
   RETIRED: 'Retired',
 };
 
@@ -47,7 +46,6 @@ function typedMobile(value) {
 const STATUS_TAG_CLASS = {
   IN_USE: 'inv-tag--good',
   UNDER_REPAIR: 'inv-tag--low',
-  TRANSFERRED: 'inv-tag--info',
   RETIRED: 'inv-tag--off',
 };
 
