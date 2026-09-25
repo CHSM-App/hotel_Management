@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/me.dart';
@@ -66,18 +67,28 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     final me = state.me;
     final fullScreen = _inOverflowScreen(me);
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: fullScreen ? AppTheme.bg : AppTheme.accent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        body: Column(
           children: [
             if (!fullScreen) _TopBar(me: me),
             if (!fullScreen) const _OfflineBanner(),
-            Expanded(child: _body(state.isLoading, state.error, me)),
+            Expanded(
+              child: SafeArea(
+                top: fullScreen,
+                bottom: false,
+                child: _body(state.isLoading, state.error, me),
+              ),
+            ),
           ],
         ),
+        bottomNavigationBar: (me == null || fullScreen) ? null : _bottomBar(me),
       ),
-      bottomNavigationBar: (me == null || fullScreen) ? null : _bottomBar(me),
     );
   }
 
@@ -422,10 +433,12 @@ class _TopBar extends ConsumerWidget {
     final lodgeName = me?.lodge.name ?? 'Loading…';
     final initial = lodgeName.isNotEmpty ? lodgeName[0].toUpperCase() : '?';
 
+    final topInset = MediaQuery.of(context).padding.top;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         AppTheme.s12,
-        AppTheme.s8,
+        AppTheme.s8 + topInset,
         AppTheme.s8,
         AppTheme.s12,
       ),
