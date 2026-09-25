@@ -5,10 +5,15 @@ const { z } = require('zod');
 // auto-generates (see logAssetExpense in expenses.service.js). Assets itself
 // has no column for this; it's not stored on the asset/work order/coverage
 // row, only forwarded.
-const paymentMethodSchema = z
-  .enum(['CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER'])
-  .optional()
-  .default('CASH');
+// z.preprocess so a blank string (an unset <select>, or a field this form
+// never touched at all — see openAssetForm's edit-populate note) falls back
+// to CASH the same way undefined does. z's own .optional() only forgives an
+// absent key; '' still fails .enum() and surfaces as the raw
+// "Invalid option: expected one of ..." message with no field name.
+const paymentMethodSchema = z.preprocess(
+  (v) => (v === '' || v == null ? undefined : v),
+  z.enum(['CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER']).optional().default('CASH')
+);
 // Cheque number, UTR, transaction id, … — same free-text field the
 // Expenses tab's own payment form has, forwarded the same way paymentMethod
 // is.
@@ -132,9 +137,11 @@ const vendorSchema = z.object({
   name: z.string().trim().min(1, 'Vendor name is required.').max(120),
   contactPerson: z.string().trim().max(80).optional().default(''),
   // Optional — not every vendor has one on file — but when given it has to
-  // be a real 10-digit mobile number, same TEN_DIGITS rule bookings.schema.js
-  // and staff.controller.js already use for guest/staff phone numbers.
-  phone: z.string().trim().regex(/^$|^\d{10}$/, 'Enter a 10-digit mobile number.').optional().default(''),
+  // be a real Indian mobile number: 10 digits, starting 6-9 (landlines and
+  // 0/1-5-leading numbers aren't mobiles).
+  phone: z.string().trim().regex(/^$|^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number.').optional().default(''),
+  // Same rule, same reason — a second number the vendor can be reached on.
+  altPhone: z.string().trim().regex(/^$|^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number.').optional().default(''),
   email: z.string().trim().max(120).optional().default(''),
   specialty: z.string().trim().max(80).optional().default(''),
   notes: z.string().trim().max(400).optional().default(''),

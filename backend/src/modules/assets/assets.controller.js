@@ -187,6 +187,20 @@ async function createCoveragePeriodHandler(req, res, next) {
   }
 }
 
+async function updateCoveragePeriodHandler(req, res, next) {
+  try {
+    const period = await assetsService.updateCoveragePeriod(
+      req.user.lodgeId,
+      Number(req.params.id),
+      Number(req.params.periodId),
+      parse(coveragePeriodSchema, req.body)
+    );
+    res.json({ period });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteCoveragePeriodHandler(req, res, next) {
   try {
     await assetsService.deleteCoveragePeriod(req.user.lodgeId, Number(req.params.id), Number(req.params.periodId));
@@ -294,6 +308,7 @@ module.exports = {
   deleteAssetHandler,
   listCoveragePeriodsHandler,
   createCoveragePeriodHandler,
+  updateCoveragePeriodHandler,
   deleteCoveragePeriodHandler,
   listVendorsHandler,
   createVendorHandler,

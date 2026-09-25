@@ -636,13 +636,14 @@
   margin-right: 4px;
 }
 
-/* The Asset Register toolbar: search + category filter on the left (they
-   grow/shrink as a pair), the view toggle and Register button pinned to the
-   right as their own group. Four controls jammed onto .inv-bar__row's
-   single flex line with a flat 12px gap read as one undifferentiated row;
-   splitting it into two visual groups with real space between them is what
-   actually reads as "find/filter" vs "view/act" instead of a wall of
-   controls. */
+/* The Asset Register toolbar: search + filters on the left (their own
+   wrapping group), the view toggle and action button pinned to the right as
+   their own group. Both sit on one line whenever there's room for both in
+   full — .asset-toolbar-row__end never shrinks, so it's either placed
+   whole or, once .asset-toolbar-row wraps, dropped whole onto its own line
+   below; it can't end up half-squeezed past the card's edge the way it
+   could when __filters' flex:1 was free to keep taking space right up
+   until __end had none left. */
 .asset-toolbar-row {
   justify-content: space-between;
   flex-wrap: wrap;
@@ -652,16 +653,31 @@
 .asset-toolbar-row__filters {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 240px;
+}
+
+.asset-toolbar-row__filters .inv-search {
+  flex: 1 1 220px;
 }
 
 .asset-toolbar-row__end {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+}
+
+/* From/to keeps its two fields together when the row wraps — the pair reads
+   as one control, so one landing alone at the start of the next line while
+   the other stays on the first looks broken in a way an unpaired field
+   wrapping alone doesn't. */
+.asset-toolbar-row__date-pair {
+  display: flex;
+  gap: 12px;
 }
 
 /* Bare <input type="date"> pair (expense from/to range): match the search
@@ -712,12 +728,10 @@
 }
 
 @media (max-width: 720px) {
-  .asset-toolbar-row__filters {
-    width: 100%;
-  }
-
+  /* On a narrow screen the view toggle and New expense button read better
+     spread apart (one at each edge) than clustered at the right like on
+     desktop. */
   .asset-toolbar-row__end {
-    width: 100%;
     justify-content: space-between;
   }
 }

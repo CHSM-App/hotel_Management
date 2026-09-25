@@ -145,6 +145,15 @@ class AdvanceReceiptPdf {
       if (nights != null) '($nights ${nights == 1 ? 'Day' : 'Days'})',
       if (r.numGuests != null) 'Persons - ${r.numGuests}',
     ].join('  ');
+    // Same rule and same strings as bill_pdf.dart's bed line — said plainly
+    // on its own line, or a guest reading "Room No. 002" has no way to tell
+    // the advance was taken against a shared dormitory room rather than the
+    // whole room.
+    final bedLine = r.isDormitory
+        ? (r.bedLabel != null
+            ? 'Dormitory bed — ${r.bedLabel}'
+            : 'Dormitory (whole room)')
+        : null;
 
     return pw.Container(
       decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8)),
@@ -237,6 +246,10 @@ class AdvanceReceiptPdf {
           _rule(),
           _strip([_filled(stayLine, flex: 1)]),
           _rule(),
+          if (bedLine != null) ...[
+            _strip([_label('Bed'), _filled(bedLine, flex: 3)]),
+            _rule(),
+          ],
           _strip([
             _label('the sum of Rupees'),
             _filled(_ascii(_inWords(r.amountReceived)), flex: 1),

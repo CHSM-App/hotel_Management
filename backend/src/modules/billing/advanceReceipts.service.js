@@ -83,7 +83,17 @@ async function loadBookingForReceipt(request, lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, c.name AS category_name, ${LODGE_COLUMNS}
+      SELECT b.*, r.room_number, r.is_dormitory, c.name AS category_name, ${LODGE_COLUMNS},
+             -- Every bed this booking holds, comma-joined in bed order — same
+             -- aggregate billing.service.js uses for the printed bill.
+             (SELECT STRING_AGG(all_db.bed_label, ', ') WITHIN GROUP (ORDER BY all_db.id)
+              FROM (
+                SELECT db.id, db.bed_label FROM dbo.dormitory_beds db WHERE db.id = b.bed_id
+                UNION ALL
+                SELECT bed.id, bed.bed_label FROM dbo.booking_beds bb
+                JOIN dbo.dormitory_beds bed ON bed.id = bb.bed_id
+                WHERE bb.booking_id = b.id
+              ) all_db) AS bed_labels
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -201,6 +211,11 @@ function mapReceipt(row) {
     guestPhone: row.guest_phone,
     numGuests: row.num_guests ?? null,
     roomNumber: row.room_number ?? null,
+    // Same fields the printed bill reads (BillDocument.jsx), so the advance
+    // receipt says just as plainly that this stay is a dormitory booking —
+    // bedLabel null means a whole-room buyout, same as the bill.
+    isDormitory: !!row.is_dormitory,
+    bedLabel: row.bed_labels ?? null,
     categoryName: row.category_name ?? null,
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
@@ -234,7 +249,19 @@ const RECEIPT_SELECT = `
          COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
          COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
          b.num_guests, b.check_in_date, b.check_out_date,
-         r.room_number, c.name AS category_name,
+         r.room_number, r.is_dormitory, c.name AS category_name,
+         -- Every bed this booking holds, comma-joined in bed order — same
+         -- aggregate billing.service.js uses for the printed bill. NULL (and
+         -- the LEFT JOINs above making b.id NULL) on an event receipt, where
+         -- there is no stay or bed at all.
+         (SELECT STRING_AGG(all_db.bed_label, ', ') WITHIN GROUP (ORDER BY all_db.id)
+          FROM (
+            SELECT db.id, db.bed_label WHERE db.id IS NOT NULL
+            UNION ALL
+            SELECT bed.id, bed.bed_label FROM dbo.booking_beds bb
+            JOIN dbo.dormitory_beds bed ON bed.id = bb.bed_id
+            WHERE bb.booking_id = b.id
+          ) all_db) AS bed_labels,
          eb.title AS event_title, eb.event_type, ev.name AS venue_name,
          eb.start_at AS event_start_at, eb.end_at AS event_end_at,
          ${LODGE_COLUMNS}
@@ -243,6 +270,7 @@ const RECEIPT_SELECT = `
   LEFT JOIN dbo.bookings b ON b.id = ar.booking_id
   LEFT JOIN dbo.rooms r ON r.id = b.room_id
   LEFT JOIN dbo.room_categories c ON c.id = r.category_id
+  LEFT JOIN dbo.dormitory_beds db ON db.id = b.bed_id
   LEFT JOIN dbo.event_bookings eb ON eb.id = ar.event_booking_id
   LEFT JOIN dbo.event_venues ev ON ev.id = eb.venue_id
   JOIN dbo.lodges l ON l.id = ar.lodge_id

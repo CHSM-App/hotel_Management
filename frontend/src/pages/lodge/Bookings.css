@@ -378,43 +378,6 @@
   color: var(--text-muted);
 }
 
-/* The buyout option keeps the dashed "different kind of choice" framing —
-   it isn't a bed, it's the whole room at once — but picks up the same
-   checked-in blue when taken, so "selected" reads the same way across both
-   controls. */
-.booking-form__buyout-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 12.5px;
-  color: var(--text);
-  background: var(--surface);
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
-}
-
-.booking-form__buyout-option:hover:not(:disabled) {
-  border-color: var(--tape-checked-in);
-}
-
-.booking-form__buyout-option--selected {
-  border-color: var(--tape-checked-in);
-  border-style: solid;
-  background: var(--tape-checked-in);
-  color: #fff;
-}
-
-.booking-form__buyout-option--disabled,
-.booking-form__buyout-option:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .booking-form__warn {
   font-size: 12px;
   font-weight: 600;

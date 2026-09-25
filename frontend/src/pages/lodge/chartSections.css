@@ -119,6 +119,7 @@
 
 .inline-add-form__row input,
 .inline-add-form__row select {
+  width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--field-border);
   border-radius: 8px;
@@ -126,6 +127,19 @@
   color: var(--ink);
   min-height: 42px;
   box-shadow: var(--shadow-well);
+}
+
+/* Native number spinners render at wildly different sizes per browser and
+   throw off the grid's column widths (see the oversized stepper on the
+   amount field) — the field is validated on submit anyway, so drop them. */
+.inline-add-form__row input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+.inline-add-form__row input[type='number']::-webkit-outer-spin-button,
+.inline-add-form__row input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* Save and Cancel share one grid cell, so the row keeps the same number of

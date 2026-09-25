@@ -70,6 +70,15 @@ async function loadBed(pool, roomId, bedId) {
   return { label: bed.bed_label };
 }
 
+// One or more beds in the same room, same shape as loadBed but for a
+// booking that holds several beds at once. Order follows bedIds so the bill
+// lists beds in the order they were picked, not id order.
+async function loadBeds(pool, roomId, bedIds) {
+  if (!bedIds || bedIds.length === 0) return [];
+  const beds = await Promise.all(bedIds.map((bedId) => loadBed(pool, roomId, bedId)));
+  return beds;
+}
+
 // Every season that touches any night in [checkInDate, checkOutDate) is
 // fetched once for the whole range — a 30-night quote must not turn into 30
 // round trips. end_date is inclusive in the table, start_date is compared
@@ -256,11 +265,24 @@ function chargeLabel(charge) {
     : `${charge.name} ${money(charge.unitAmount)}`;
 }
 
-// One night's line-by-line breakdown, from data already in memory.
-function priceNight(room, seasons, charges, dateStr, basePriceOverride = null, bed = null) {
+// One night's line-by-line breakdown, from data already in memory. beds is
+// zero or more dormitory beds this booking holds; each gets its own base
+// price line at the room's rate, same as booking that many beds separately
+// would total — an empty array (a whole-room or non-dormitory stay) falls
+// back to the single room-rate line baseLabel already produced.
+function priceNight(room, seasons, charges, dateStr, basePriceOverride = null, beds = []) {
   const lines = [];
-  let subtotal = basePriceOf(room, basePriceOverride);
-  lines.push({ label: baseLabel(room, basePriceOverride, bed), amount: subtotal, isBase: true });
+  const nightRate = basePriceOf(room, basePriceOverride);
+  let subtotal = 0;
+  if (beds.length > 0) {
+    for (const bed of beds) {
+      lines.push({ label: baseLabel(room, basePriceOverride, bed), amount: nightRate, isBase: true });
+      subtotal += nightRate;
+    }
+  } else {
+    lines.push({ label: baseLabel(room, basePriceOverride, null), amount: nightRate, isBase: true });
+    subtotal = nightRate;
+  }
 
   for (const season of seasons) {
     if (dateStr < season.startDate || dateStr > season.endDate) continue;
@@ -287,14 +309,24 @@ function priceNight(room, seasons, charges, dateStr, basePriceOverride = null, b
   return { date: dateStr, lines, total: round2(subtotal) };
 }
 
-async function simulate(lodgeId, roomId, dateStr, chargeSelections = [], basePriceOverride = null, bedId = null) {
+// bedId is a single id for back-compat; bedIds (an array) is the multi-bed
+// form. Passing both is not expected — bedIds wins when both are given.
+async function simulate(
+  lodgeId,
+  roomId,
+  dateStr,
+  chargeSelections = [],
+  basePriceOverride = null,
+  bedId = null,
+  bedIds = null
+) {
   const pool = await getPool();
   const room = await loadRoom(pool, lodgeId, roomId);
-  const bed = await loadBed(pool, roomId, bedId);
+  const beds = bedIds && bedIds.length > 0 ? await loadBeds(pool, roomId, bedIds) : bedId != null ? [await loadBed(pool, roomId, bedId)] : [];
   const seasons = await loadSeasons(pool, lodgeId, dateStr, addDays(dateStr, 1));
   const charges = await loadCharges(pool, lodgeId, chargeSelections);
 
-  const night = priceNight(room, seasons, charges, dateStr, basePriceOverride, bed);
+  const night = priceNight(room, seasons, charges, dateStr, basePriceOverride, beds);
 
   return {
     roomNumber: room.room_number,
@@ -307,6 +339,8 @@ async function simulate(lodgeId, roomId, dateStr, chargeSelections = [], basePri
 // A whole stay in one call. `lines` is the same shape the single-date
 // simulate returns — each label summed across the nights it applied to — so
 // the panel can show a stay total the same way it shows one night.
+// bedId is a single id for back-compat; bedIds (an array) is the multi-bed
+// form. Passing both is not expected — bedIds wins when both are given.
 async function simulateRange(
   lodgeId,
   roomId,
@@ -314,25 +348,27 @@ async function simulateRange(
   checkOutDate,
   chargeSelections = [],
   basePriceOverride = null,
-  bedId = null
+  bedId = null,
+  bedIds = null
 ) {
   const pool = await getPool();
   const room = await loadRoom(pool, lodgeId, roomId);
-  const bed = await loadBed(pool, roomId, bedId);
+  const beds = bedIds && bedIds.length > 0 ? await loadBeds(pool, roomId, bedIds) : bedId != null ? [await loadBed(pool, roomId, bedId)] : [];
   const seasons = await loadSeasons(pool, lodgeId, checkInDate, checkOutDate);
   const charges = await loadCharges(pool, lodgeId, chargeSelections);
 
   const nights = datesInRange(checkInDate, checkOutDate).map((date) =>
-    priceNight(room, seasons, charges, date, basePriceOverride, bed)
+    priceNight(room, seasons, charges, date, basePriceOverride, beds)
   );
 
-  // Seeded in the order a night is priced — base, then seasons, then extras —
-  // so a season that only covers the tail of the stay still reads above the
-  // extras instead of wherever the first night happened to put it.
+  // Seeded in the order a night is priced — base (one label per bed, or the
+  // single room line), then seasons, then extras — so a season that only
+  // covers the tail of the stay still reads above the extras instead of
+  // wherever the first night happened to put it.
   const totals = new Map();
-  const base = baseLabel(room, basePriceOverride, bed);
-  for (const label of [base, ...seasons.map(seasonLabel)]) {
-    if (!totals.has(label)) totals.set(label, { label, amount: 0, nights: 0, isBase: label === base });
+  const baseLabels = beds.length > 0 ? beds.map((bed) => baseLabel(room, basePriceOverride, bed)) : [baseLabel(room, basePriceOverride, null)];
+  for (const label of [...baseLabels, ...seasons.map(seasonLabel)]) {
+    if (!totals.has(label)) totals.set(label, { label, amount: 0, nights: 0, isBase: baseLabels.includes(label) });
   }
   for (const charge of charges) {
     const label = chargeLabel(charge);

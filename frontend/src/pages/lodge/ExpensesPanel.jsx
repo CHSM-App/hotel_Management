@@ -209,6 +209,7 @@ function VendorField({ id, value, vendors, onChange, onPick }) {
         (v) =>
           v.name.toLowerCase().includes(needle) ||
           (v.phone || '').toLowerCase().includes(needle) ||
+          (v.altPhone || '').toLowerCase().includes(needle) ||
           (v.email || '').toLowerCase().includes(needle)
       )
     : vendors || [];
@@ -292,6 +293,7 @@ const emptyExpenseForm = {
   vendorName: '',
   vendorContactPerson: '',
   vendorPhone: '',
+  vendorAltPhone: '',
   vendorEmail: '',
   vendorSpecialty: '',
   title: '',
@@ -318,7 +320,7 @@ const emptyTemplateForm = {
   nextDueDate: todayIso(),
 };
 
-const emptyVendorForm = { name: '', contactPerson: '', phone: '', email: '', specialty: '', notes: '' };
+const emptyVendorForm = { name: '', contactPerson: '', phone: '', altPhone: '', email: '', specialty: '', notes: '' };
 
 export default function ExpensesPanel({ onViewReport }) {
   const session = getSession();
@@ -413,8 +415,12 @@ export default function ExpensesPanel({ onViewReport }) {
 
   const loadVendors = () =>
     apiGet('/expenses/vendors', { token: session?.token })
-      .then((data) => setVendors(writeCache('/expenses/vendors', data.vendors)))
-      .catch(() => {});
+      .then((data) => {
+        const list = writeCache('/expenses/vendors', data.vendors);
+        setVendors(list);
+        return list;
+      })
+      .catch(() => vendors);
 
   const loadTemplates = () =>
     apiGet('/expenses/recurring', { token: session?.token })
@@ -522,6 +528,7 @@ export default function ExpensesPanel({ onViewReport }) {
         name: trimmed,
         contactPerson: form.vendorContactPerson,
         phone: form.vendorPhone,
+        altPhone: form.vendorAltPhone,
         email: form.vendorEmail,
         specialty: form.vendorSpecialty,
       },
@@ -543,7 +550,7 @@ export default function ExpensesPanel({ onViewReport }) {
   // mode 'view' opens read-only (a row click); 'edit' opens the form
   // straight away (the RowMenu's "Edit expense", or "Edit details" from
   // inside the view). Always 'edit' for a brand-new expense.
-  const openExpenseForm = (expense, mode = 'edit') => {
+  const openExpenseForm = async (expense, mode = 'edit') => {
     setFormError('');
     setExpenseFieldErrors({});
     setPaymentError('');
@@ -553,14 +560,23 @@ export default function ExpensesPanel({ onViewReport }) {
     setLoggingTemplate(null);
     if (expense) {
       setEditingExpenseId(expense.id);
+      // The expense's own vendor summary (name only) doesn't carry contact
+      // details, so they're looked up from the loaded vendor list — same
+      // fix as AssetsPanel's openAssetForm. Refreshed here rather than
+      // trusting whatever was cached on mount: a vendor's phone/contact
+      // person edited from the Assets tab (dbo.vendors is shared) wouldn't
+      // otherwise show up here until something else happened to reload it.
+      const freshVendors = await loadVendors();
+      const vendor = expense.vendorId ? (freshVendors || []).find((v) => v.id === expense.vendorId) : null;
       setExpenseForm({
         categoryName: expense.categoryName || '',
         vendorId: expense.vendorId ? String(expense.vendorId) : '',
         vendorName: expense.vendorName || '',
-        vendorContactPerson: '',
-        vendorPhone: '',
-        vendorEmail: '',
-        vendorSpecialty: '',
+        vendorContactPerson: vendor?.contactPerson || '',
+        vendorPhone: vendor?.phone || '',
+        vendorAltPhone: vendor?.altPhone || '',
+        vendorEmail: vendor?.email || '',
+        vendorSpecialty: vendor?.specialty || '',
         title: expense.title,
         description: expense.description || '',
         amount: String(expense.amount),
@@ -645,6 +661,12 @@ export default function ExpensesPanel({ onViewReport }) {
     if (!expenseForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
     if (!expenseForm.amount || Number(expenseForm.amount) < 0) errors.amount = 'Enter a valid amount.';
     if (!expenseForm.expenseDate) errors.expenseDate = 'Enter the expense date.';
+    if (expenseForm.vendorPhone && !/^[6-9]\d{9}$/.test(expenseForm.vendorPhone)) {
+      errors.vendorPhone = 'Enter a valid 10-digit mobile number.';
+    }
+    if (expenseForm.vendorAltPhone && !/^[6-9]\d{9}$/.test(expenseForm.vendorAltPhone)) {
+      errors.vendorAltPhone = 'Enter a valid 10-digit mobile number.';
+    }
     setExpenseFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
       focusFirstError(errors, {
@@ -652,6 +674,8 @@ export default function ExpensesPanel({ onViewReport }) {
         categoryName: 'expenseCategory',
         amount: 'expenseAmount',
         expenseDate: 'expenseDate',
+        vendorPhone: 'expenseVendorPhone',
+        vendorAltPhone: 'expenseVendorAltPhone',
       });
       return;
     }
@@ -811,6 +835,7 @@ export default function ExpensesPanel({ onViewReport }) {
         name: vendor.name,
         contactPerson: vendor.contactPerson || '',
         phone: vendor.phone || '',
+        altPhone: vendor.altPhone || '',
         email: vendor.email || '',
         specialty: vendor.specialty || '',
         notes: vendor.notes || '',
@@ -827,9 +852,31 @@ export default function ExpensesPanel({ onViewReport }) {
     e.preventDefault();
     const errors = {};
     if (!vendorForm.name.trim()) errors.name = 'Vendor name is required.';
+    if (vendorForm.phone && !/^[6-9]\d{9}$/.test(vendorForm.phone)) {
+      errors.phone = 'Enter a valid 10-digit mobile number.';
+    } else if (vendorForm.phone) {
+      const clash = (vendors || []).find(
+        (v) => v.id !== editingVendorId && (v.phone || '') === vendorForm.phone
+      );
+      if (clash) errors.phone = `This number is already used by vendor "${clash.name}".`;
+    }
+    if (vendorForm.altPhone && !/^[6-9]\d{9}$/.test(vendorForm.altPhone)) {
+      errors.altPhone = 'Enter a valid 10-digit mobile number.';
+    } else if (vendorForm.altPhone) {
+      if (vendorForm.altPhone === vendorForm.phone) {
+        errors.altPhone = 'Alternate number is the same as the primary number.';
+      } else {
+        const clash = (vendors || []).find(
+          (v) =>
+            v.id !== editingVendorId &&
+            ((v.phone || '') === vendorForm.altPhone || (v.altPhone || '') === vendorForm.altPhone)
+        );
+        if (clash) errors.altPhone = `This number is already used by vendor "${clash.name}".`;
+      }
+    }
     setVendorFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
-      focusFirstError(errors, { name: 'expVendorName' });
+      focusFirstError(errors, { name: 'expVendorName', phone: 'expVendorPhone', altPhone: 'expVendorAltPhone' });
       return;
     }
     setSubmitting(true);
@@ -939,10 +986,10 @@ export default function ExpensesPanel({ onViewReport }) {
                   ))}
                 </select>
                 {showDateRange ? (
-                  <>
+                  <div className="asset-toolbar-row__date-pair">
                     <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} aria-label="From date" />
                     <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} aria-label="To date" />
-                  </>
+                  </div>
                 ) : (
                   <button type="button" className="inv-linkbtn" onClick={() => setShowDateRange(true)}>
                     + Date range
@@ -1242,6 +1289,7 @@ export default function ExpensesPanel({ onViewReport }) {
                     <div className="inv-item__meta">
                       {vendor.specialty || 'No specialty set'}
                       {vendor.phone && ` · ${vendor.phone}`}
+                      {vendor.altPhone && ` / ${vendor.altPhone}`}
                     </div>
                   </div>
                 </li>
@@ -1261,7 +1309,14 @@ export default function ExpensesPanel({ onViewReport }) {
             aria-labelledby="expenseModalTitle"
             onClick={(e) => e.stopPropagation()}
           >
-            <form className="modal-form" onSubmit={handleExpenseSubmit} noValidate>
+            {/* Not a <form onSubmit> — this modal also holds the read-only
+                summary view (viewMode) and the inline "add payment" fields,
+                and a native form submits on Enter from any text input inside
+                it. That fired handleExpenseSubmit by accident (e.g. focus
+                landing in a text field right as "Edit details" swapped this
+                same panel into the editable form). Save below calls it
+                directly instead, so only that click can trigger a save. */}
+            <div className="modal-form">
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3 id="expenseModalTitle">
@@ -1347,7 +1402,11 @@ export default function ExpensesPanel({ onViewReport }) {
                           if (expenseFieldErrors.title) setExpenseFieldErrors((f) => ({ ...f, title: undefined }));
                         }}
                         placeholder="MSEB electricity bill, June salaries…"
-                        autoFocus
+                        // Only grabs focus opening a blank form. Autofocusing
+                        // it after "Edit details" put the cursor mid-click,
+                        // which is how a leftover Enter keypress ended up
+                        // submitting the form right after opening it.
+                        autoFocus={!editingExpenseId}
                       />
                       {expenseFieldErrors.title ? (
                         <span className="field__error">{expenseFieldErrors.title}</span>
@@ -1388,6 +1447,7 @@ export default function ExpensesPanel({ onViewReport }) {
                             vendorName: vendor.name,
                             vendorContactPerson: vendor.contactPerson || '',
                             vendorPhone: vendor.phone || '',
+                            vendorAltPhone: vendor.altPhone || '',
                             vendorEmail: vendor.email || '',
                             vendorSpecialty: vendor.specialty || '',
                           }))
@@ -1414,13 +1474,39 @@ export default function ExpensesPanel({ onViewReport }) {
                       <label htmlFor="expenseVendorPhone">Vendor phone</label>
                       <input
                         id="expenseVendorPhone"
+                        aria-invalid={Boolean(expenseFieldErrors.vendorPhone)}
                         value={expenseForm.vendorPhone}
-                        onChange={(e) => setExpenseForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }))}
+                        onChange={(e) => {
+                          setExpenseForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }));
+                          if (expenseFieldErrors.vendorPhone) setExpenseFieldErrors((f) => ({ ...f, vendorPhone: undefined }));
+                        }}
                         type="tel"
                         inputMode="numeric"
                         maxLength={10}
                         placeholder="10-digit mobile"
                       />
+                      {expenseFieldErrors.vendorPhone ? (
+                        <span className="field__error">{expenseFieldErrors.vendorPhone}</span>
+                      ) : null}
+                    </div>
+                    <div className="field">
+                      <label htmlFor="expenseVendorAltPhone">Vendor alternate phone</label>
+                      <input
+                        id="expenseVendorAltPhone"
+                        aria-invalid={Boolean(expenseFieldErrors.vendorAltPhone)}
+                        value={expenseForm.vendorAltPhone}
+                        onChange={(e) => {
+                          setExpenseForm((f) => ({ ...f, vendorAltPhone: typedMobile(e.target.value) }));
+                          if (expenseFieldErrors.vendorAltPhone) setExpenseFieldErrors((f) => ({ ...f, vendorAltPhone: undefined }));
+                        }}
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        placeholder="10-digit mobile (optional)"
+                      />
+                      {expenseFieldErrors.vendorAltPhone ? (
+                        <span className="field__error">{expenseFieldErrors.vendorAltPhone}</span>
+                      ) : null}
                     </div>
                     <div className="field">
                       <label htmlFor="expenseVendorEmail">Vendor email</label>
@@ -1605,13 +1691,14 @@ export default function ExpensesPanel({ onViewReport }) {
 
                     {paymentError && <div className="form-banner form-banner--error form-banner--flash">{paymentError}</div>}
 
-                    {/* No separate "Add payment" button — Enter in any of
-                        these three fields submits the payment directly.
+                    {/* Enter in any of these three fields still submits the
+                        payment directly (handy for keyboard-only entry).
                         This section lives inside the same <form> as the
                         expense's own Save button, so Enter's default
                         (submitting the nearest form) has to be stopped from
                         reaching handleExpenseSubmit and redirected here
-                        instead. */}
+                        instead. The button below is the discoverable path —
+                        Enter alone wasn't obvious. */}
                     {Number(expenseForm.amountPaid || 0) < Number(expenseForm.amount || 0) && (
                       <div
                         className="field-row field-row--triple"
@@ -1666,9 +1753,16 @@ export default function ExpensesPanel({ onViewReport }) {
                             />
                           </div>
                         )}
-                        <span className="field__hint" style={{ gridColumn: '1 / -1' }}>
-                          {addingPayment ? 'Adding…' : 'Press Enter to add this payment.'}
-                        </span>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <button
+                            type="button"
+                            className="btn-accent"
+                            disabled={addingPayment}
+                            onClick={(e) => handleAddPayment(e)}
+                          >
+                            {addingPayment ? 'Adding…' : 'Add payment'}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1691,14 +1785,14 @@ export default function ExpensesPanel({ onViewReport }) {
                       <button type="button" className="btn-secondary" onClick={() => setShowExpenseForm(false)} disabled={submitting}>
                         Cancel
                       </button>
-                      <button type="submit" className="btn-accent" disabled={submitting}>
+                      <button type="button" className="btn-accent" disabled={submitting} onClick={handleExpenseSubmit}>
                         {submitting ? 'Saving…' : 'Save'}
                       </button>
                     </>
                   )}
                 </div>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
@@ -1951,13 +2045,37 @@ export default function ExpensesPanel({ onViewReport }) {
                   <label htmlFor="expVendorPhone">Phone</label>
                   <input
                     id="expVendorPhone"
+                    aria-invalid={Boolean(vendorFieldErrors.phone)}
                     value={vendorForm.phone}
-                    onChange={(e) => setVendorForm((f) => ({ ...f, phone: typedMobile(e.target.value) }))}
+                    onChange={(e) => {
+                      setVendorForm((f) => ({ ...f, phone: typedMobile(e.target.value) }));
+                      if (vendorFieldErrors.phone) setVendorFieldErrors((f) => ({ ...f, phone: undefined }));
+                    }}
                     type="tel"
                     inputMode="numeric"
                     maxLength={10}
                     placeholder="10-digit mobile"
                   />
+                  {vendorFieldErrors.phone ? <span className="field__error">{vendorFieldErrors.phone}</span> : null}
+                </div>
+                <div className="field">
+                  <label htmlFor="expVendorAltPhone">Alternate phone</label>
+                  <input
+                    id="expVendorAltPhone"
+                    aria-invalid={Boolean(vendorFieldErrors.altPhone)}
+                    value={vendorForm.altPhone}
+                    onChange={(e) => {
+                      setVendorForm((f) => ({ ...f, altPhone: typedMobile(e.target.value) }));
+                      if (vendorFieldErrors.altPhone) setVendorFieldErrors((f) => ({ ...f, altPhone: undefined }));
+                    }}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile (optional)"
+                  />
+                  {vendorFieldErrors.altPhone ? (
+                    <span className="field__error">{vendorFieldErrors.altPhone}</span>
+                  ) : null}
                 </div>
                 <div className="field">
                   <label htmlFor="expVendorEmail">Email</label>

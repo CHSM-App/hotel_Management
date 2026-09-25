@@ -1,9 +1,20 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import LocationPicker from '../../components/LocationPicker';
 import { validateCoordinates } from '../../lib/coordinates';
+import { FEATURES, SIDEBAR_GROUP_ORDER, featuresForCapabilities } from '../../lib/propertyProfile';
+import '../auth/AuthLayout.css';
+import './LodgeRegistration.css';
 import './LodgeEditModal.css';
+
+// Same three add-ons and same copy as the registration form's Feature access
+// step (LodgeRegistration.jsx) — one property's wording for these, not two.
+const ADDONS = [
+  { key: 'hasEvents', feature: FEATURES.find((f) => f.key === 'events') },
+  { key: 'hasAssets', feature: FEATURES.find((f) => f.key === 'assets') },
+  { key: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
+];
 
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
@@ -42,6 +53,8 @@ function formFromLodge(lodge) {
     foodRoomService: !!lodge.food_room_service,
     foodTableService: !!lodge.food_table_service,
     hasEvents: !!lodge.has_events,
+    hasAssets: !!lodge.has_assets,
+    hasExpenses: !!lodge.has_expenses,
     isActive: !!lodge.is_active,
     showLogoOnReceipt: !!lodge.show_logo_on_receipt,
   };
@@ -99,6 +112,17 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
   // here where it can actually happen.
   const roomsLocked = lodge.has_rooms && (stats?.bookings ?? 0) > 0;
 
+  // Same summary rail as the registration form's aside — reads straight off
+  // the live flags instead of a propertyType, since edit exposes those flags
+  // directly rather than a locked-in type.
+  const includedFeatures = useMemo(() => featuresForCapabilities(form), [form]);
+  const includedKeys = new Set(includedFeatures.map((f) => f.key));
+  const excludedFeatures = FEATURES.filter((f) => !includedKeys.has(f.key));
+  const includedGroups = SIDEBAR_GROUP_ORDER.map((group) => ({
+    group,
+    features: includedFeatures.filter((f) => f.group === group),
+  })).filter((g) => g.features.length > 0);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -152,7 +176,12 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
 
   return (
     <div className="lodge-edit__backdrop" onClick={saving ? undefined : onClose}>
-      <form className="lodge-edit" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit} noValidate>
+      <form
+        className="lodge-edit reg-shell"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        noValidate
+      >
         <div className="lodge-edit__head">
           <h2>Edit {lodge.name}</h2>
           <button type="button" className="lodge-edit__close" onClick={onClose} disabled={saving} aria-label="Close">
@@ -167,8 +196,43 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           </div>
         )}
 
-        <section className="lodge-edit__section">
-          <h3>Property &amp; contact</h3>
+        {/* Same summary as the registration form's sticky aside, run as a
+            card at the top instead of a side rail — this modal isn't wide
+            enough for two columns without cramping the fields next to it. */}
+        <div className="reg-summary">
+          <div className="reg-summary__head">
+            <span className="reg-summary__eyebrow">This property has</span>
+            <span className="reg-summary__count">{includedFeatures.length} sections</span>
+          </div>
+          {includedGroups.map(({ group, features }) => (
+            <div className="reg-summary__group" key={group}>
+              <div className="reg-summary__group-name">{group}</div>
+              <ul className="reg-summary__list">
+                {features.map((f) => (
+                  <li key={f.key}>
+                    <strong>{f.title}</strong>
+                    <span>{f.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {excludedFeatures.length > 0 && (
+            <div className="reg-summary__excluded">
+              <div className="reg-summary__group-name">Hidden for this property</div>
+              {excludedFeatures.map((f) => f.title).join(' · ')}
+            </div>
+          )}
+        </div>
+
+        <section className="reg-card">
+          <div className="reg-card__head">
+            <span className="reg-step">1</span>
+            <div>
+              <h2 className="reg-card__title">Property &amp; contact</h2>
+              <p className="reg-card__hint">The name and slug appear on their public page and on every bill.</p>
+            </div>
+          </div>
           <div className="field-row">
             <div className="field">
               <label htmlFor="edit-name">Name</label>
@@ -237,8 +301,14 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           </div>
         </section>
 
-        <section className="lodge-edit__section">
-          <h3>What the property is</h3>
+        <section className="reg-card">
+          <div className="reg-card__head">
+            <span className="reg-step">2</span>
+            <div>
+              <h2 className="reg-card__title">What the property is</h2>
+              <p className="reg-card__hint">Turning a section off hides it from the owner's dashboard; it doesn't delete anything already there.</p>
+            </div>
+          </div>
           <Check
             id="edit-hasRooms"
             label="Lets rooms"
@@ -272,17 +342,44 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
               />
             </div>
           )}
-          <Check
-            id="edit-hasEvents"
-            label="Lets a hall, lawn or terrace for functions"
-            note="The Events & functions section: diary, quotes, holds, advances and bills."
-            checked={form.hasEvents}
-            onChange={update('hasEvents')}
-          />
         </section>
 
-        <section className="lodge-edit__section">
-          <h3>Billing &amp; GST</h3>
+        {/* Feature access — same three add-on switches and copy as the
+            registration form's step 3, restyled here rather than rebuilt. */}
+        <section className="reg-card">
+          <div className="reg-card__head">
+            <span className="reg-step">3</span>
+            <div>
+              <h2 className="reg-card__title">Feature access</h2>
+              <p className="reg-card__hint">Every tab the owner's dashboard can show, and who controls it.</p>
+            </div>
+          </div>
+          <div className="reg-access-group">
+            <div className="reg-access-list">
+              {ADDONS.map(({ key, feature }) => (
+                <label key={key} className="reg-access-row reg-access-row--toggle">
+                  <div className="reg-access-row__text">
+                    <span className="reg-access-row__title">{feature.title}</span>
+                    <span className="reg-access-row__desc">{feature.description}</span>
+                  </div>
+                  <span className="reg-switch">
+                    <input type="checkbox" checked={form[key]} onChange={update(key)} />
+                    <span className="reg-switch__track"><span className="reg-switch__thumb" /></span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="reg-card">
+          <div className="reg-card__head">
+            <span className="reg-step">4</span>
+            <div>
+              <h2 className="reg-card__title">Billing &amp; GST</h2>
+              <p className="reg-card__hint">These set the tax defaults every document this account issues is built from.</p>
+            </div>
+          </div>
           {form.hasRooms && (
             <div className="field">
               <label htmlFor="edit-checkin">Check-in cycle</label>
@@ -326,8 +423,13 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           )}
         </section>
 
-        <section className="lodge-edit__section">
-          <h3>Account</h3>
+        <section className="reg-card">
+          <div className="reg-card__head">
+            <span className="reg-step">5</span>
+            <div>
+              <h2 className="reg-card__title">Account</h2>
+            </div>
+          </div>
           <Check
             id="edit-active"
             label="Active"

@@ -88,11 +88,19 @@ class TapeChartBooking {
   final int id;
   final int roomId;
 
-  /// Which bed this stay holds, on a dormitory room — null there means a
-  /// buyout of the whole dormitory, and is meaningless (always null) on an
-  /// ordinary room.
+  /// The first (or only) bed this stay holds, on a dormitory room — null
+  /// there means a buyout of the whole dormitory, and is meaningless (always
+  /// null) on an ordinary room. bedIds/bedLabels below are the full list a
+  /// multi-bed stay holds.
   final int? bedId;
   final String? bedLabel;
+
+  /// Every bed this stay holds — empty on a whole-room or non-dormitory
+  /// booking, [bedId] for the common single-bed case, more for a multi-bed
+  /// one. Occupancy math sums this, not booking-row counts, so a multi-bed
+  /// booking is counted for every bed it actually holds.
+  final List<int> bedIds;
+  final List<String> bedLabels;
   final String? guestName;
   final String? guestPhone;
   final String? idProofNumber;
@@ -109,6 +117,8 @@ class TapeChartBooking {
     required this.roomId,
     this.bedId,
     this.bedLabel,
+    this.bedIds = const [],
+    this.bedLabels = const [],
     this.guestName,
     this.guestPhone,
     this.idProofNumber,
@@ -127,6 +137,8 @@ class TapeChartBooking {
         roomId: asInt(json['roomId']),
         bedId: asIntOrNull(json['bedId']),
         bedLabel: asStringOrNull(json['bedLabel']),
+        bedIds: (json['bedIds'] as List?)?.map((e) => asInt(e)).toList() ?? const [],
+        bedLabels: _stringList(json['bedLabels']),
         guestName: asStringOrNull(json['guestName']),
         guestPhone: asStringOrNull(json['guestPhone']),
         idProofNumber: asStringOrNull(json['idProofNumber']),

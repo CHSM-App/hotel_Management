@@ -32,7 +32,7 @@ class BookingUsecase {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
-    int? bedId,
+    List<int>? bedIds,
   }) => repository.priceQuote(
     roomId: roomId,
     checkInDate: checkInDate,
@@ -40,7 +40,7 @@ class BookingUsecase {
     chargeIds: chargeIds,
     basePriceOverride: basePriceOverride,
     discountAmount: discountAmount,
-    bedId: bedId,
+    bedIds: bedIds,
   );
 
   /// The bed picker's own fetch, for a dormitory room and a chosen stay.

@@ -85,6 +85,7 @@ const emptyAssetForm = {
   vendorName: '',
   vendorContactPerson: '',
   vendorPhone: '',
+  vendorAltPhone: '',
   vendorEmail: '',
   vendorSpecialty: '',
   // Only ever sent at registration — see the note above the field in the
@@ -124,6 +125,7 @@ const emptyCoverageForm = {
   vendorName: '',
   vendorContactPerson: '',
   vendorPhone: '',
+  vendorAltPhone: '',
   vendorEmail: '',
   vendorSpecialty: '',
   startDate: '',
@@ -153,6 +155,7 @@ const emptyBulkForm = {
   vendorName: '',
   vendorContactPerson: '',
   vendorPhone: '',
+  vendorAltPhone: '',
   vendorEmail: '',
   vendorSpecialty: '',
   warrantyExpiry: '',
@@ -170,7 +173,7 @@ function emptyBulkUnit() {
 
 const BULK_TEMPLATE_HEADERS = ['Name (optional)', 'Serial number', 'Room number', 'Floor', 'Location description'];
 
-const emptyVendorForm = { name: '', contactPerson: '', phone: '', email: '', specialty: '', notes: '' };
+const emptyVendorForm = { name: '', contactPerson: '', phone: '', altPhone: '', email: '', specialty: '', notes: '' };
 
 // Maps a field's key in an errors object to the DOM id its input actually
 // carries, then focuses and scrolls to the first one that has a message —
@@ -343,6 +346,7 @@ function VendorField({ id, value, vendors, onChange, onPick }) {
         (v) =>
           v.name.toLowerCase().includes(needle) ||
           (v.phone || '').toLowerCase().includes(needle) ||
+          (v.altPhone || '').toLowerCase().includes(needle) ||
           (v.email || '').toLowerCase().includes(needle)
       )
     : vendors || [];
@@ -377,7 +381,7 @@ function VendorField({ id, value, vendors, onChange, onPick }) {
       <input
         id={id}
         value={value}
-        placeholder="Vendor name or phone…"
+        placeholder="Shop / company name or phone…"
         role="combobox"
         aria-expanded={open}
         aria-controls={`${id}-suggestions`}
@@ -694,6 +698,9 @@ export default function AssetsPanel({ onViewReport }) {
   const [coverageSubmitting, setCoverageSubmitting] = useState(false);
   const [coverageError, setCoverageError] = useState('');
   const [coverageFieldErrors, setCoverageFieldErrors] = useState({});
+  // Set only when the form opened on an existing period ("Edit"), not a
+  // fresh add or a renewal — those two still create a new row.
+  const [editingCoveragePeriodId, setEditingCoveragePeriodId] = useState(null);
 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -833,6 +840,16 @@ export default function AssetsPanel({ onViewReport }) {
             serialNumber: asset.serialNumber || '',
             purchaseDate: asset.purchaseDate ? asset.purchaseDate.slice(0, 10) : '',
             purchaseCost: asset.purchaseCost ?? '',
+            // Not stored on the asset itself (see assets.schema.js's
+            // paymentMethodSchema note) and not read back from it either —
+            // editing an asset's purchase details never had a payment
+            // record to restore, so this always resets to the same default
+            // a fresh registration starts with rather than being left
+            // undefined, which the "Paid via" <select> can't represent.
+            paymentMethod: 'CASH',
+            paymentStatus: 'PAID',
+            amountPaid: '',
+            referenceNumber: '',
             roomId: asset.roomId ? String(asset.roomId) : '',
             floor: asset.floor || '',
             department: asset.department || '',
@@ -841,6 +858,7 @@ export default function AssetsPanel({ onViewReport }) {
             vendorName: asset.vendorName || '',
             vendorContactPerson: vendor?.contactPerson || '',
             vendorPhone: vendor?.phone || '',
+            vendorAltPhone: vendor?.altPhone || '',
             vendorEmail: vendor?.email || '',
             vendorSpecialty: vendor?.specialty || '',
             // Not read back for editing — warrantyExpiry only means
@@ -933,6 +951,7 @@ export default function AssetsPanel({ onViewReport }) {
         name: trimmed,
         contactPerson: form.vendorContactPerson,
         phone: form.vendorPhone,
+        altPhone: form.vendorAltPhone,
         email: form.vendorEmail,
         specialty: form.vendorSpecialty,
       },
@@ -948,9 +967,25 @@ export default function AssetsPanel({ onViewReport }) {
     const errors = {};
     if (!name) errors.name = 'Asset name is required.';
     if (!assetForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
+    if (assetForm.vendorPhone && !/^[6-9]\d{9}$/.test(assetForm.vendorPhone)) {
+      errors.vendorPhone = 'Enter a valid 10-digit mobile number.';
+    } else if (assetForm.vendorPhone) {
+      const clash = (vendors || []).find(
+        (v) => String(v.id) !== assetForm.vendorId && (v.phone || '') === assetForm.vendorPhone
+      );
+      if (clash) errors.vendorPhone = `This number is already used by vendor "${clash.name}".`;
+    }
+    if (assetForm.vendorAltPhone && !/^[6-9]\d{9}$/.test(assetForm.vendorAltPhone)) {
+      errors.vendorAltPhone = 'Enter a valid 10-digit mobile number.';
+    }
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
-      focusFirstError(errors, { categoryName: 'assetCategory', name: 'assetName' });
+      focusFirstError(errors, {
+        categoryName: 'assetCategory',
+        name: 'assetName',
+        vendorPhone: 'assetVendorPhone',
+        vendorAltPhone: 'assetVendorAltPhone',
+      });
       return;
     }
 
@@ -1483,6 +1518,7 @@ export default function AssetsPanel({ onViewReport }) {
   // type carry over so extending an AMC is just picking new dates, not
   // re-typing who covers it. Left out for "Add coverage" from a blank slate.
   const openCoverageForm = (renewFrom) => {
+    setEditingCoveragePeriodId(null);
     setCoverageForm(
       renewFrom
         ? {
@@ -1494,6 +1530,35 @@ export default function AssetsPanel({ onViewReport }) {
           }
         : emptyCoverageForm
     );
+    setCoverageError('');
+    setCoverageFieldErrors({});
+    setShowCoverageForm(true);
+  };
+
+  // Corrects a period already on file, rather than adding a new one — same
+  // vendor-detail lookup openAssetForm does, since the period only carries
+  // vendorId/vendorName.
+  const openCoverageEditForm = (period) => {
+    setEditingCoveragePeriodId(period.id);
+    const vendor = period.vendorId ? (vendors || []).find((v) => v.id === period.vendorId) : null;
+    setCoverageForm({
+      coverageType: period.coverageType,
+      vendorId: period.vendorId ? String(period.vendorId) : '',
+      vendorName: period.vendorName || '',
+      vendorContactPerson: vendor?.contactPerson || '',
+      vendorPhone: vendor?.phone || '',
+      vendorAltPhone: vendor?.altPhone || '',
+      vendorEmail: vendor?.email || '',
+      vendorSpecialty: vendor?.specialty || '',
+      startDate: period.startDate ? period.startDate.slice(0, 10) : '',
+      endDate: period.endDate ? period.endDate.slice(0, 10) : '',
+      cost: period.cost ?? '',
+      paymentMethod: 'CASH',
+      paymentStatus: 'PAID',
+      amountPaid: '',
+      referenceNumber: '',
+      coverageNote: period.coverageNote || '',
+    });
     setCoverageError('');
     setCoverageFieldErrors({});
     setShowCoverageForm(true);
@@ -1514,22 +1579,25 @@ export default function AssetsPanel({ onViewReport }) {
     setCoverageError('');
     try {
       const vendorId = await resolveVendorId(coverageForm);
-      await apiPost(
-        `/assets/${selectedAsset.id}/coverage`,
-        {
-          coverageType: coverageForm.coverageType,
-          vendorId: vendorId ?? '',
-          startDate: coverageForm.startDate,
-          endDate: coverageForm.endDate,
-          cost: coverageForm.cost,
-          paymentMethod: coverageForm.paymentMethod,
-          paymentStatus: coverageForm.paymentStatus,
-          amountPaid: coverageForm.paymentStatus === 'PARTIAL' ? coverageForm.amountPaid : '',
-          referenceNumber: coverageForm.paymentStatus !== 'PENDING' ? coverageForm.referenceNumber : '',
-          coverageNote: coverageForm.coverageNote,
-        },
-        { token: session?.token }
-      );
+      const body = {
+        coverageType: coverageForm.coverageType,
+        vendorId: vendorId ?? '',
+        startDate: coverageForm.startDate,
+        endDate: coverageForm.endDate,
+        cost: coverageForm.cost,
+        paymentMethod: coverageForm.paymentMethod,
+        paymentStatus: coverageForm.paymentStatus,
+        amountPaid: coverageForm.paymentStatus === 'PARTIAL' ? coverageForm.amountPaid : '',
+        referenceNumber: coverageForm.paymentStatus !== 'PENDING' ? coverageForm.referenceNumber : '',
+        coverageNote: coverageForm.coverageNote,
+      };
+      if (editingCoveragePeriodId) {
+        await apiPatch(`/assets/${selectedAsset.id}/coverage/${editingCoveragePeriodId}`, body, {
+          token: session?.token,
+        });
+      } else {
+        await apiPost(`/assets/${selectedAsset.id}/coverage`, body, { token: session?.token });
+      }
       setShowCoverageForm(false);
       const [periodsData] = await Promise.all([
         apiGet(`/assets/${selectedAsset.id}/coverage`, { token: session?.token }),
@@ -1719,6 +1787,7 @@ export default function AssetsPanel({ onViewReport }) {
             name: vendor.name,
             contactPerson: vendor.contactPerson || '',
             phone: vendor.phone || '',
+            altPhone: vendor.altPhone || '',
             email: vendor.email || '',
             specialty: vendor.specialty || '',
             notes: vendor.notes || '',
@@ -1734,9 +1803,31 @@ export default function AssetsPanel({ onViewReport }) {
     e.preventDefault();
     const errors = {};
     if (!vendorForm.name.trim()) errors.name = 'Vendor name is required.';
+    if (vendorForm.phone && !/^[6-9]\d{9}$/.test(vendorForm.phone)) {
+      errors.phone = 'Enter a valid 10-digit mobile number.';
+    } else if (vendorForm.phone) {
+      const clash = (vendors || []).find(
+        (v) => v.id !== editingVendorId && (v.phone || '') === vendorForm.phone
+      );
+      if (clash) errors.phone = `This number is already used by vendor "${clash.name}".`;
+    }
+    if (vendorForm.altPhone && !/^[6-9]\d{9}$/.test(vendorForm.altPhone)) {
+      errors.altPhone = 'Enter a valid 10-digit mobile number.';
+    } else if (vendorForm.altPhone) {
+      if (vendorForm.altPhone === vendorForm.phone) {
+        errors.altPhone = 'Alternate number is the same as the primary number.';
+      } else {
+        const clash = (vendors || []).find(
+          (v) =>
+            v.id !== editingVendorId &&
+            ((v.phone || '') === vendorForm.altPhone || (v.altPhone || '') === vendorForm.altPhone)
+        );
+        if (clash) errors.altPhone = `This number is already used by vendor "${clash.name}".`;
+      }
+    }
     setVendorFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
-      focusFirstError(errors, { name: 'vendorName' });
+      focusFirstError(errors, { name: 'vendorName', phone: 'vendorPhone', altPhone: 'vendorAltPhone' });
       return;
     }
 
@@ -2145,6 +2236,7 @@ export default function AssetsPanel({ onViewReport }) {
                     <div className="inv-item__meta">
                       {vendor.specialty || 'No specialty set'}
                       {vendor.phone && ` · ${vendor.phone}`}
+                      {vendor.altPhone && ` / ${vendor.altPhone}`}
                     </div>
                   </div>
                 </li>
@@ -2333,6 +2425,9 @@ export default function AssetsPanel({ onViewReport }) {
                                 Renew
                               </button>
                             )}
+                            <button type="button" className="inv-linkbtn" onClick={() => openCoverageEditForm(period)}>
+                              Edit
+                            </button>
                             <button type="button" className="inv-linkbtn" onClick={() => deleteCoveragePeriod(period)}>
                               Delete
                             </button>
@@ -2686,7 +2781,7 @@ export default function AssetsPanel({ onViewReport }) {
                 )}
 
                 <div className="field field--span2">
-                  <label htmlFor="assetVendor">Vendor</label>
+                  <label htmlFor="assetVendor">Vendor (shop / company name)</label>
                   <VendorField
                     id="assetVendor"
                     value={assetForm.vendorName}
@@ -2704,6 +2799,7 @@ export default function AssetsPanel({ onViewReport }) {
                         vendorName: vendor.name,
                         vendorContactPerson: vendor.contactPerson || '',
                         vendorPhone: vendor.phone || '',
+                        vendorAltPhone: vendor.altPhone || '',
                         vendorEmail: vendor.email || '',
                         vendorSpecialty: vendor.specialty || '',
                       }))
@@ -2731,13 +2827,38 @@ export default function AssetsPanel({ onViewReport }) {
                   <label htmlFor="assetVendorPhone">Vendor phone</label>
                   <input
                     id="assetVendorPhone"
+                    aria-invalid={Boolean(fieldErrors.vendorPhone)}
                     value={assetForm.vendorPhone}
-                    onChange={(e) => setAssetForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }))}
+                    onChange={(e) => {
+                      setAssetForm((f) => ({ ...f, vendorPhone: typedMobile(e.target.value) }));
+                      if (fieldErrors.vendorPhone) setFieldErrors((f) => ({ ...f, vendorPhone: undefined }));
+                    }}
                     type="tel"
                     inputMode="numeric"
                     maxLength={10}
                     placeholder="10-digit mobile"
                   />
+                  {fieldErrors.vendorPhone ? <span className="field__error">{fieldErrors.vendorPhone}</span> : null}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="assetVendorAltPhone">Vendor alternate phone</label>
+                  <input
+                    id="assetVendorAltPhone"
+                    aria-invalid={Boolean(fieldErrors.vendorAltPhone)}
+                    value={assetForm.vendorAltPhone}
+                    onChange={(e) => {
+                      setAssetForm((f) => ({ ...f, vendorAltPhone: typedMobile(e.target.value) }));
+                      if (fieldErrors.vendorAltPhone) setFieldErrors((f) => ({ ...f, vendorAltPhone: undefined }));
+                    }}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile (optional)"
+                  />
+                  {fieldErrors.vendorAltPhone ? (
+                    <span className="field__error">{fieldErrors.vendorAltPhone}</span>
+                  ) : null}
                 </div>
 
                 <div className="field">
@@ -3067,7 +3188,7 @@ export default function AssetsPanel({ onViewReport }) {
                 )}
 
                 <div className="field field--span2">
-                  <label htmlFor="bulkVendor">Vendor</label>
+                  <label htmlFor="bulkVendor">Vendor (shop / company name)</label>
                   <VendorField
                     id="bulkVendor"
                     value={bulkForm.vendorName}
@@ -3080,6 +3201,7 @@ export default function AssetsPanel({ onViewReport }) {
                         vendorName: vendor.name,
                         vendorContactPerson: vendor.contactPerson || '',
                         vendorPhone: vendor.phone || '',
+                        vendorAltPhone: vendor.altPhone || '',
                         vendorEmail: vendor.email || '',
                         vendorSpecialty: vendor.specialty || '',
                       }))
@@ -3113,6 +3235,19 @@ export default function AssetsPanel({ onViewReport }) {
                     inputMode="numeric"
                     maxLength={10}
                     placeholder="10-digit mobile"
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="bulkVendorAltPhone">Vendor alternate phone</label>
+                  <input
+                    id="bulkVendorAltPhone"
+                    value={bulkForm.vendorAltPhone}
+                    onChange={(e) => setBulkForm((f) => ({ ...f, vendorAltPhone: typedMobile(e.target.value) }))}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile (optional)"
                   />
                 </div>
 
@@ -3753,13 +3888,37 @@ export default function AssetsPanel({ onViewReport }) {
                   <label htmlFor="vendorPhone">Phone</label>
                   <input
                     id="vendorPhone"
+                    aria-invalid={Boolean(vendorFieldErrors.phone)}
                     value={vendorForm.phone}
-                    onChange={(e) => setVendorForm((f) => ({ ...f, phone: typedMobile(e.target.value) }))}
+                    onChange={(e) => {
+                      setVendorForm((f) => ({ ...f, phone: typedMobile(e.target.value) }));
+                      if (vendorFieldErrors.phone) setVendorFieldErrors((f) => ({ ...f, phone: undefined }));
+                    }}
                     type="tel"
                     inputMode="numeric"
                     maxLength={10}
                     placeholder="10-digit mobile"
                   />
+                  {vendorFieldErrors.phone ? <span className="field__error">{vendorFieldErrors.phone}</span> : null}
+                </div>
+                <div className="field">
+                  <label htmlFor="vendorAltPhone">Alternate phone</label>
+                  <input
+                    id="vendorAltPhone"
+                    aria-invalid={Boolean(vendorFieldErrors.altPhone)}
+                    value={vendorForm.altPhone}
+                    onChange={(e) => {
+                      setVendorForm((f) => ({ ...f, altPhone: typedMobile(e.target.value) }));
+                      if (vendorFieldErrors.altPhone) setVendorFieldErrors((f) => ({ ...f, altPhone: undefined }));
+                    }}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile (optional)"
+                  />
+                  {vendorFieldErrors.altPhone ? (
+                    <span className="field__error">{vendorFieldErrors.altPhone}</span>
+                  ) : null}
                 </div>
                 <div className="field">
                   <label htmlFor="vendorEmail">Email</label>
@@ -3816,7 +3975,7 @@ export default function AssetsPanel({ onViewReport }) {
             <form className="modal-form" onSubmit={handleCoverageSubmit} noValidate>
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
-                  <h3 id="coverageModalTitle">Add coverage</h3>
+                  <h3 id="coverageModalTitle">{editingCoveragePeriodId ? 'Edit coverage' : 'Add coverage'}</h3>
                   <button
                     type="button"
                     className="modal-form__close"
@@ -3858,6 +4017,7 @@ export default function AssetsPanel({ onViewReport }) {
                         vendorName: vendor.name,
                         vendorContactPerson: vendor.contactPerson || '',
                         vendorPhone: vendor.phone || '',
+                        vendorAltPhone: vendor.altPhone || '',
                         vendorEmail: vendor.email || '',
                         vendorSpecialty: vendor.specialty || '',
                       }))

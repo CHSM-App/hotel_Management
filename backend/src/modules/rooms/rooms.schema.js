@@ -44,6 +44,13 @@ const optionalMaxOccupancy = z.coerce
   .positive('Enter a max occupancy greater than 0.')
   .optional();
 
+// Arrives as the string "true"/"false" (multipart body, see bedsSchema above)
+// — z.coerce.boolean() reads any non-empty string as true, so an unchecked
+// box's "false" was silently becoming true and forcing every ordinary room
+// through the dormitory-only validation below.
+const isDormitoryField = () =>
+  z.preprocess((value) => (typeof value === 'string' ? value === 'true' : value), z.boolean().optional().default(false));
+
 const DORMITORY_GENDERS = ['MALE', 'FEMALE', 'BOTH'];
 
 // Which guests a dormitory can hold — required on a dormitory room (see the
@@ -74,7 +81,7 @@ const createRoomSchema = z
   .object({
     categoryId: z.coerce.number().int().positive('Choose a category.'),
     switchableChargeIds: z.array(z.coerce.number().int().positive()).optional().default([]),
-    floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
+    floor: z.string().trim().optional().default(''),
     beds: optionalBedsSchema,
     bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
     maxOccupancy: optionalMaxOccupancy,
@@ -85,7 +92,7 @@ const createRoomSchema = z
     // Sold bed by bed rather than as one whole room. A bulk range can't be a
     // dormitory — dormitory beds are added one at a time after the room
     // exists, the same reason bulk-created rooms get no photos either.
-    isDormitory: z.coerce.boolean().optional().default(false),
+    isDormitory: isDormitoryField(),
     dormitoryGender: dormitoryGenderField(),
     dormitoryPrice: dormitoryPriceField(),
     dormitoryIsAc: dormitoryIsAcField(),
@@ -152,12 +159,12 @@ const updateRoomSchema = z
     roomNumber: z.string({ error: 'Enter a room number.' }).trim().min(1, 'Enter a room number.'),
     categoryId: z.coerce.number().int().positive('Choose a category.'),
     switchableChargeIds: z.array(z.coerce.number().int().positive()).optional(),
-    floor: z.string({ error: 'Enter the floor.' }).trim().min(1, 'Enter the floor.'),
+    floor: z.string().trim().optional().default(''),
     beds: optionalBedsSchema,
     bathroomType: z.enum(['ATTACHED', 'COMMON'], { error: 'Choose a bathroom type.' }),
     maxOccupancy: optionalMaxOccupancy,
     description: z.string().trim().max(200, 'Keep the description under 200 characters.').optional().default(''),
-    isDormitory: z.coerce.boolean().optional().default(false),
+    isDormitory: isDormitoryField(),
     dormitoryGender: dormitoryGenderField(),
     dormitoryPrice: dormitoryPriceField(),
     dormitoryIsAc: dormitoryIsAcField(),

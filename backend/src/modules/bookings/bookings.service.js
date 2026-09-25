@@ -101,7 +101,8 @@ async function priceStay(
   chargeIds = [],
   basePriceOverride = null,
   discountAmount = 0,
-  bedId = null
+  bedId = null,
+  bedIds = null
 ) {
   const quote = await pricingService.simulateRange(
     lodgeId,
@@ -110,7 +111,8 @@ async function priceStay(
     checkOutDate,
     chargeIds,
     basePriceOverride,
-    bedId
+    bedId,
+    bedIds
   );
 
   const grossTotal = quote.total;
@@ -268,40 +270,58 @@ async function autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input) {
 //   room is taken". Update range locks are mutually exclusive, so the second
 //   transaction waits instead, then re-reads, sees the committed booking, and
 //   returns a clean 409.
-// bedId, when passed, narrows this from "is the room free" to "is this one
-// bed free" — but a bed booking still has to lose to a whole-room buyout on
-// the same room (bed_id IS NULL there), and a buyout (bedId omitted) still
-// has to lose to ANY booking already on the room, bed-level or not. That is
-// the whole of the dormitory overlap rule, in the one AND clause below —
-// not a second function, so the UPDLOCK/HOLDLOCK discipline above can never
-// drift between the room case and the bed case.
+// bedIds, when passed, narrows this from "is the room free" to "is any one
+// of these beds free" — but a bed booking still has to lose to a whole-room
+// buyout on the same room (bed_id IS NULL there), and a buyout (bedIds
+// omitted) still has to lose to ANY booking already on the room, bed-level
+// or not. That is the whole of the dormitory overlap rule, in the one AND
+// clause below — not a second function, so the UPDLOCK/HOLDLOCK discipline
+// above can never drift between the room case and the bed case.
+//
+// A multi-bed booking's other beds live in booking_beds, not in bed_id, so
+// checking bed_id alone would miss them — the EXISTS clause covers both.
 async function hasOverlap(
   makeRequest,
   roomId,
   checkInDate,
   checkOutDate,
   excludeBookingId,
-  { lock = false, bedId = null } = {}
+  { lock = false, bedIds = null } = {}
 ) {
+  const ids = (bedIds || []).filter((id) => id != null);
   const request = makeRequest()
     .input('roomId', sql.BigInt, roomId)
-    .input('bedId', sql.BigInt, bedId)
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate);
   let excludeClause = '';
   if (excludeBookingId) {
     request.input('excludeBookingId', sql.BigInt, excludeBookingId);
-    excludeClause = 'AND id <> @excludeBookingId';
+    excludeClause = 'AND b.id <> @excludeBookingId';
   }
-  // Fixed strings selected by a boolean, never interpolated input — as far as
-  // anything arriving from a request is concerned, this query is a constant.
+  // No bedIds at all means this call is asking about a whole-room booking
+  // (a buyout), which loses to ANY booking already on the room — bed-level
+  // or not — same as passing bedId=null always did. Bed ids are validated
+  // integers from the service layer (never raw request input) by the time
+  // they reach here, so building the IN-list by interpolation is safe — the
+  // same trust boundary rooms.service.js's setBedCount already relies on for
+  // the same shape of list.
+  let bedClause = '1 = 1';
+  if (ids.length > 0) {
+    const idList = ids.map((id) => Number(id)).join(',');
+    bedClause = `b.bed_id IS NULL OR b.bed_id IN (${idList}) OR EXISTS (
+      SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id IN (${idList})
+    )`;
+  }
+  // Fixed strings selected by a boolean/array shape, never interpolated
+  // request input — as far as anything arriving from a request is
+  // concerned, this query is a constant.
   const lockHint = lock ? 'WITH (UPDLOCK, HOLDLOCK)' : '';
   const result = await request.query(`
-    SELECT TOP 1 id FROM dbo.bookings ${lockHint}
-    WHERE room_id = @roomId AND status IN ('BOOKED', 'CHECKED_IN')
-      AND check_in_date < @checkOutDate AND check_out_date > @checkInDate
+    SELECT TOP 1 b.id FROM dbo.bookings b ${lockHint}
+    WHERE b.room_id = @roomId AND b.status IN ('BOOKED', 'CHECKED_IN')
+      AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
       ${excludeClause}
-      AND (@bedId IS NULL OR bed_id = @bedId OR bed_id IS NULL)
+      AND (${bedClause})
   `);
   return result.recordset.length > 0;
 }
@@ -405,8 +425,12 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
               WHERE db.room_id = r.id AND db.is_active = 1
                 AND NOT EXISTS (
                   SELECT 1 FROM dbo.bookings b
-                  WHERE b.bed_id = db.id AND b.status IN ('BOOKED', 'CHECKED_IN')
+                  WHERE b.status IN ('BOOKED', 'CHECKED_IN')
                     AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+                    AND (
+                      b.bed_id = db.id
+                      OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
+                    )
                 )
             )
           )
@@ -485,7 +509,10 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
                SELECT 1 FROM dbo.bookings b
                WHERE b.room_id = @roomId AND b.status IN ('BOOKED', 'CHECKED_IN')
                  AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
-                 AND (b.bed_id = db.id OR b.bed_id IS NULL)
+                 AND (
+                   b.bed_id = db.id OR b.bed_id IS NULL
+                   OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
+                 )
              ) THEN 1 ELSE 0 END AS is_taken
       FROM dbo.dormitory_beds db
       WHERE db.room_id = @roomId AND db.is_active = 1
@@ -736,6 +763,14 @@ async function getTapeChart(lodgeId, startDate, endDate) {
     .query(`
       SELECT b.id, b.room_id, b.bed_id, db.bed_label, b.guest_name, b.guest_phone, b.id_proof_number,
              b.check_in_date, b.check_out_date, b.status, b.total_price,
+             -- Every bed beyond bed_id, for a multi-bed booking (empty for
+             -- every other kind). Same CHAR(31)-joined shape as the co-guest
+             -- lists just below, for the same reason.
+             (SELECT STRING_AGG(CAST(bb.bed_id AS NVARCHAR(20)), CHAR(31)) FROM dbo.booking_beds bb
+              WHERE bb.booking_id = b.id) AS extra_bed_ids,
+             (SELECT STRING_AGG(edb.bed_label, CHAR(31)) FROM dbo.booking_beds bb
+              JOIN dbo.dormitory_beds edb ON edb.id = bb.bed_id
+              WHERE bb.booking_id = b.id) AS extra_bed_labels,
              -- What the chart's search box matches on beyond the primary guest.
              -- Both are aggregated here rather than fetched per booking: the
              -- chart already draws every stay in the window, and a second round
@@ -808,6 +843,18 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       roomId: b.room_id,
       bedId: b.bed_id,
       bedLabel: b.bed_label,
+      // Every bed this booking holds, id order — [bedId, ...extra_bed_ids]
+      // for a multi-bed booking, just [bedId] otherwise, [] on a whole-room
+      // or non-dormitory booking. The chart uses this to count occupied beds
+      // instead of counting booking rows, which undercounts a multi-bed one.
+      bedIds: [
+        ...(b.bed_id != null ? [b.bed_id] : []),
+        ...(b.extra_bed_ids ? b.extra_bed_ids.split('\u001f').map(Number) : []),
+      ],
+      bedLabels: [
+        ...(b.bed_label != null ? [b.bed_label] : []),
+        ...(b.extra_bed_labels ? b.extra_bed_labels.split('\u001f') : []),
+      ],
       guestName: b.guest_name,
       guestPhone: b.guest_phone,
       // The rest of what the stay can be looked up by on the chart. Names, not
@@ -865,11 +912,25 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     // NULL wherever the property never recorded one.
     roomMaxOccupancy: row.max_occupancy ?? null,
     isDormitory: !!row.is_dormitory,
-    // The one bed this booking holds, on a dormitory room — NULL on every
-    // other booking, and on a dormitory room deliberately how a buyout reads:
-    // the whole room, no single bed.
+    // The first (or only) bed this booking holds, on a dormitory room — NULL
+    // on every other booking, and on a dormitory room deliberately how a
+    // buyout reads: the whole room, no single bed. Kept for every screen
+    // that only ever needed one; bedIds/bedLabels below are the full list.
     bedId: row.bed_id ?? null,
     bedLabel: row.bed_label ?? null,
+    // Every bed this booking holds — [] on a whole-room or non-dormitory
+    // booking, [bedId] for the common single-bed case, more for a multi-bed
+    // one. extra.extraBeds is only populated by getBooking (the one caller
+    // that queries booking_beds); every other mapBooking caller leaves it
+    // out and gets back just [bedId], which is correct for them too.
+    bedIds: [
+      ...(row.bed_id != null ? [row.bed_id] : []),
+      ...(extra.extraBeds || []).map((b) => b.id),
+    ],
+    bedLabels: [
+      ...(row.bed_label != null ? [row.bed_label] : []),
+      ...(extra.extraBeds || []).map((b) => b.bedLabel),
+    ],
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
@@ -1277,6 +1338,19 @@ async function getBooking(lodgeId, bookingId) {
 
   const availableSwitchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
 
+  // Every bed beyond bed_id, for a multi-bed booking — empty for every
+  // other kind, same as the tape chart's own extra_bed_ids/labels.
+  const extraBedsResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT bb.bed_id, db.bed_label
+      FROM dbo.booking_beds bb
+      JOIN dbo.dormitory_beds db ON db.id = bb.bed_id
+      WHERE bb.booking_id = @bookingId
+      ORDER BY bb.id ASC
+    `);
+
   // How the advance on this stay actually arrived, one entry per method.
   //
   // Grouped, so an advance taken across two receipts by the same method reads
@@ -1312,6 +1386,7 @@ async function getBooking(lodgeId, bookingId) {
     invoice,
     availableSwitchableCharges,
     foodOrderingLockedUntil: lockoutResult.recordset[0]?.locked_until ?? null,
+    extraBeds: extraBedsResult.recordset.map((r) => ({ id: r.bed_id, bedLabel: r.bed_label })),
   });
 }
 
@@ -1328,20 +1403,29 @@ async function createBooking(lodgeId, userId, input) {
   }
   const room = roomResult.recordset[0];
 
-  // A bed only makes sense against its own dormitory room — omitted, this is
-  // a whole-room booking exactly as it always was, buyout included on a
-  // dormitory room.
-  const bedId = input.bedId ?? null;
-  if (bedId != null) {
+  // bedIds is the multi-bed form; a lone bedId (legacy, still accepted) is
+  // just a one-element list. A dormitory room now always requires at least
+  // one bed — whole-room buyout bookings are no longer offered. (Existing
+  // bed_id-less bookings from before that change still read fine everywhere
+  // else; this only blocks creating new ones.) bedId, the column, always
+  // mirrors the first bed picked; the rest (if any) go in booking_beds.
+  const bedIds = Array.from(
+    new Set((input.bedIds && input.bedIds.length > 0 ? input.bedIds : input.bedId != null ? [input.bedId] : []).map(Number))
+  );
+  const bedId = bedIds[0] ?? null;
+  if (room.is_dormitory && bedIds.length === 0) {
+    throw new ApiError('Choose a bed.', 400);
+  }
+  if (bedIds.length > 0) {
     if (!room.is_dormitory) {
       throw new ApiError('This room isn’t set up as a dormitory.', 400);
     }
     const bedResult = await pool
       .request()
       .input('roomId', sql.BigInt, input.roomId)
-      .input('bedId', sql.BigInt, bedId)
-      .query('SELECT id FROM dbo.dormitory_beds WHERE id = @bedId AND room_id = @roomId AND is_active = 1');
-    if (bedResult.recordset.length === 0) {
+      .query('SELECT id FROM dbo.dormitory_beds WHERE room_id = @roomId AND is_active = 1');
+    const validIds = new Set(bedResult.recordset.map((r) => Number(r.id)));
+    if (!bedIds.every((id) => validIds.has(id))) {
       throw new ApiError('Choose a valid bed.', 400);
     }
   }
@@ -1354,11 +1438,11 @@ async function createBooking(lodgeId, userId, input) {
   // the outcome is the one inside the transaction.
   if (
     await hasOverlap(() => pool.request(), input.roomId, input.checkInDate, input.checkOutDate, undefined, {
-      bedId,
+      bedIds,
     })
   ) {
     throw new ApiError(
-      bedId != null
+      bedIds.length > 0
         ? 'That bed is already booked for part of that date range.'
         : 'This room is already booked for part of that date range.',
       409
@@ -1375,7 +1459,8 @@ async function createBooking(lodgeId, userId, input) {
     switchableCharges,
     input.basePriceOverride ?? null,
     requestedDiscount,
-    bedId
+    bedId,
+    bedIds
   );
 
   // priceStay clamps for the sake of the live quote; a save is a decision, so
@@ -1398,11 +1483,11 @@ async function createBooking(lodgeId, userId, input) {
       input.checkInDate,
       input.checkOutDate,
       undefined,
-      { lock: true, bedId }
+      { lock: true, bedIds }
     );
     if (conflict) {
       throw new ApiError(
-        bedId != null
+        bedIds.length > 0
           ? 'That bed is already booked for part of that date range.'
           : 'This room is already booked for part of that date range.',
         409
@@ -1442,6 +1527,16 @@ async function createBooking(lodgeId, userId, input) {
       `);
 
     const bookingId = insertResult.recordset[0].id;
+
+    // bed_id already holds the first bed (or null). The rest of a multi-bed
+    // pick — everything past index 0 — go here; a single-bed or whole-room
+    // booking leaves this table untouched, same as before this table existed.
+    for (const extraBedId of bedIds.slice(1)) {
+      await new sql.Request(transaction)
+        .input('bookingId', sql.BigInt, bookingId)
+        .input('bedId', sql.BigInt, extraBedId)
+        .query('INSERT INTO dbo.booking_beds (booking_id, bed_id) VALUES (@bookingId, @bedId)');
+    }
 
     await replaceBookingCharges(transaction, bookingId, switchableCharges);
 
@@ -1885,6 +1980,17 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     throw new ApiError('This booking is cancelled and can’t be edited.', 409);
   }
 
+  // The beds this booking holds today: bed_id plus whatever booking_beds
+  // carries beyond it (empty for every single-bed or whole-room booking).
+  const existingExtraBedsResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .query('SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId');
+  const existingBedIds = [
+    ...(bookingRow.bed_id != null ? [bookingRow.bed_id] : []),
+    ...existingExtraBedsResult.recordset.map((r) => r.bed_id),
+  ];
+
   const invoiceResult = await pool
     .request()
     .input('bookingId', sql.BigInt, bookingId)
@@ -1932,23 +2038,39 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     }
   }
 
-  // Absent means "keep the bed this booking already holds" — an edit that
+  // Absent means "keep the beds this booking already holds" — an edit that
   // only moves dates must not silently drop back to a whole-room booking.
-  // null is how the desk deliberately switches to a buyout, or a normal
-  // room deliberately has no bed to begin with. A bed only exists at all on
-  // a dormitory room, so finding it scoped to newRoomId is itself the check
-  // that the room can carry one — no separate is_dormitory lookup needed.
-  const newBedId = input.bedId !== undefined ? input.bedId : bookingRow.bed_id;
-  if (newBedId != null) {
+  // bedIds (or a lone bedId) explicitly sent is the desk's new pick, blank
+  // meaning "no bed" — a normal room deliberately has no bed to begin with.
+  // A bed only exists at all on a dormitory room, so finding it scoped to
+  // newRoomId is itself the check that the room can carry one — no separate
+  // is_dormitory lookup needed.
+  const bedsGiven = input.bedIds !== undefined || input.bedId !== undefined;
+  const newBedIds = bedsGiven
+    ? Array.from(new Set((input.bedIds && input.bedIds.length > 0 ? input.bedIds : input.bedId != null ? [input.bedId] : []).map(Number)))
+    : existingBedIds;
+  const newBedId = newBedIds[0] ?? null;
+  // Buyout is no longer offered: an edit that explicitly clears the bed (or
+  // moves a bed-having booking to a dormitory room) can't newly go bedless.
+  // A booking that was already bedless before this change is left alone —
+  // it isn't required to pick a bed just because something else was edited.
+  if (newBedIds.length === 0 && existingBedIds.length > 0) {
+    throw new ApiError('Choose a bed.', 400);
+  }
+  if (newBedIds.length > 0) {
     const bedResult = await pool
       .request()
       .input('roomId', sql.BigInt, newRoomId)
-      .input('bedId', sql.BigInt, newBedId)
-      .query('SELECT id FROM dbo.dormitory_beds WHERE id = @bedId AND room_id = @roomId AND is_active = 1');
-    if (bedResult.recordset.length === 0) {
+      .query('SELECT id FROM dbo.dormitory_beds WHERE room_id = @roomId AND is_active = 1');
+    const validIds = new Set(bedResult.recordset.map((r) => Number(r.id)));
+    if (!newBedIds.every((id) => validIds.has(id))) {
       throw new ApiError('Choose a valid bed.', 400);
     }
   }
+
+  const bedsChanged =
+    newBedIds.length !== existingBedIds.length ||
+    newBedIds.some((id) => !existingBedIds.includes(id));
 
   // Whether this edit can free or take a night. An edit that only corrects a
   // phone number moves no dates and needs no availability check at all.
@@ -1956,7 +2078,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     newRoomId !== bookingRow.room_id ||
     newCheckInDate !== currentCheckInDate ||
     newCheckOutDate !== currentCheckOutDate ||
-    newBedId !== bookingRow.bed_id;
+    bedsChanged;
 
   // Pre-flight only — see the matching note in createBooking. The binding check
   // is inside the transaction below, because everything between here and there
@@ -1969,11 +2091,11 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       newCheckInDate,
       newCheckOutDate,
       bookingId,
-      { bedId: newBedId }
+      { bedIds: newBedIds }
     );
     if (conflict) {
       throw new ApiError(
-        newBedId != null
+        newBedIds.length > 0
           ? 'That bed is already booked for part of this date range.'
           : 'That room is already booked for part of this date range.',
         409
@@ -2049,7 +2171,8 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     switchableCharges,
     newBaseRate,
     requestedDiscount,
-    newBedId
+    newBedId,
+    newBedIds
   );
 
   if (round2(requestedDiscount) > discountAmount) {
@@ -2082,11 +2205,11 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
         newCheckInDate,
         newCheckOutDate,
         bookingId,
-        { lock: true, bedId: newBedId }
+        { lock: true, bedIds: newBedIds }
       );
       if (conflict) {
         throw new ApiError(
-          newBedId != null
+          newBedIds.length > 0
             ? 'That bed is already booked for part of this date range.'
             : 'That room is already booked for part of this date range.',
           409
@@ -2095,6 +2218,22 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     }
 
     await replaceBookingCharges(transaction, bookingId, switchableCharges);
+
+    // Full replace, not a diff — the same "delete then re-insert" shape
+    // replaceBookingCharges already uses, and safe here for the same reason:
+    // booking_beds has no foreign row (like an uploaded ID proof) that would
+    // be orphaned by deleting it.
+    if (bedsChanged) {
+      await new sql.Request(transaction)
+        .input('bookingId', sql.BigInt, bookingId)
+        .query('DELETE FROM dbo.booking_beds WHERE booking_id = @bookingId');
+      for (const extraBedId of newBedIds.slice(1)) {
+        await new sql.Request(transaction)
+          .input('bookingId', sql.BigInt, bookingId)
+          .input('bedId', sql.BigInt, extraBedId)
+          .query('INSERT INTO dbo.booking_beds (booking_id, bed_id) VALUES (@bookingId, @bedId)');
+      }
+    }
 
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)

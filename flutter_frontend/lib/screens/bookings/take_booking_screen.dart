@@ -210,9 +210,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     final state = ref.read(bookingViewModelProvider);
     final room = state.room;
     if (room == null || !room.isDormitory) return null;
-    return (state.bedId == null && !state.buyout)
-        ? 'Choose a bed, or book the whole dormitory as a buyout.'
-        : null;
+    return (state.bedIds.isEmpty && !state.buyout) ? 'Choose a bed.' : null;
   }
 
   // Mirrors the web form's own client-side checks on the advance rows,
@@ -1710,10 +1708,10 @@ class _RoomChips extends StatelessWidget {
 
 // ── Dormitory bed picker ────────────────────────────────────────────────────
 
-/// One bed, or the whole room as a buyout — the desk's own choice for a
-/// dormitory stay, mirroring the web form's bed-vs-buyout picker
-/// (Bookings.jsx). Fetches GET /bookings/available-beds itself through
-/// [BookingViewModel.loadAvailableBeds] once a dormitory room is selected.
+/// One or more beds — the desk's own choice for a dormitory stay, mirroring
+/// the web form's own multi-select bed picker (Bookings.jsx). Fetches GET
+/// /bookings/available-beds itself through [BookingViewModel.loadAvailableBeds]
+/// once a dormitory room is selected.
 class _BedPicker extends ConsumerWidget {
   final BookingState state;
 
@@ -1743,10 +1741,10 @@ class _BedPicker extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _RequiredLabel('Bed'),
+            _RequiredLabel(state.bedIds.length > 1 ? 'Beds' : 'Bed'),
             const SizedBox(height: AppTheme.s4),
             Text(
-              '${formatPrice(data.pricePerNight)}/night, any bed or the whole room.',
+              '${formatPrice(data.pricePerNight)}/bed/night — pick as many as the party needs.',
               style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
             ),
             const SizedBox(height: AppTheme.s8),
@@ -1754,21 +1752,19 @@ class _BedPicker extends ConsumerWidget {
               spacing: AppTheme.s8,
               runSpacing: AppTheme.s8,
               children: [
+                // Buyout ("whole dormitory") is no longer offered as a new
+                // choice — only the per-bed chips remain, and several can be
+                // selected at once. state.buyout is kept only so reopening an
+                // already-buyout booking still shows correctly (see
+                // BookingViewModel).
                 for (final bed in data.beds)
                   _BedChoiceChip(
                     label: bed.bedLabel,
                     sublabel: bed.isTaken ? 'Taken' : 'Free',
-                    selected: state.bedId == bed.id,
+                    selected: state.bedIds.contains(bed.id),
                     enabled: !bed.isTaken && !state.buyout,
-                    onTap: () => vm.selectBed(bedId: bed.id),
+                    onTap: () => vm.toggleBed(bed.id),
                   ),
-                _BedChoiceChip(
-                  label: 'Whole dormitory',
-                  sublabel: data.roomAvailableForBuyout ? 'Buyout' : 'Unavailable',
-                  selected: state.buyout,
-                  enabled: data.roomAvailableForBuyout,
-                  onTap: () => vm.selectBed(buyout: true),
-                ),
               ],
             ),
           ],

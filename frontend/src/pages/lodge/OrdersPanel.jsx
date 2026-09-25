@@ -10,6 +10,20 @@ import './OrdersPanel.css';
 
 const POLL_MS = 10000;
 
+const capitalizeName = (value) => value.replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Mirrors mobileDigits/isMobile in Bookings.jsx — duplicated rather than
+// shared for the same reason FoodTypeMark below is: this panel doesn't
+// import from Bookings.jsx, and it's a few lines either way.
+function mobileDigits(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+const typedMobile = (value) => mobileDigits(value).slice(0, 10);
+const isMobile = (value) => /^\d{10}$/.test(mobileDigits(value));
+
 // Same mark as the menu editor and the guest's page. Defined here rather than
 // shared because it is four lines and MenuPanel.css — already imported above
 // for the modal chrome — is where the shape actually lives.
@@ -841,6 +855,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
         failOn('orderPhone', 'Add a phone number for a counter order.');
         return;
       }
+      if (!isMobile(guestPhone)) {
+        failOn('orderPhone', 'Enter a 10-digit mobile number.');
+        return;
+      }
     }
 
     // No banner here: the note beside the room picker already says this, and
@@ -993,7 +1011,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
                     id="orderGuest"
                     aria-invalid={invalid('orderGuest')}
                     value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
+                    onChange={(e) => setGuestName(capitalizeName(e.target.value))}
                     placeholder="Who's collecting"
                   />
                   {fieldErr('orderGuest')}
@@ -1008,7 +1026,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
                     inputMode="tel"
                     aria-invalid={invalid('orderPhone')}
                     value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
+                    onChange={(e) => setGuestPhone(typedMobile(e.target.value))}
                     placeholder="To call when it's ready"
                   />
                   {fieldErr('orderPhone')}

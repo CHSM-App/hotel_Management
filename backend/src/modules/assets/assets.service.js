@@ -444,6 +444,24 @@ async function updateAsset(lodgeId, assetId, input, billFilename) {
     fs.unlink(path.join(BILL_UPLOAD_DIR, path.basename(previousBill))).catch(() => {});
   }
 
+  // The purchase expense this asset was registered with (logAssetExpense's
+  // "Asset purchase: <name>" row) records who was paid for it — correcting
+  // the vendor here is fixing that same purchase, not a new transaction, so
+  // it follows here. Unlike coverage/work-order vendors (their own, later
+  // transactions this deliberately never touches), there's exactly one
+  // purchase per asset, so nothing else can be mistaken for it.
+  pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('assetId', sql.BigInt, assetId)
+    .input('vendorId', sql.BigInt, input.vendorId ?? null)
+    .query(`
+      UPDATE dbo.expenses
+      SET vendor_id = @vendorId
+      WHERE asset_id = @assetId AND lodge_id = @lodgeId AND title LIKE 'Asset purchase:%'
+    `)
+    .catch(() => {});
+
   return getAsset(lodgeId, assetId);
 }
 
@@ -656,6 +674,50 @@ async function addCoveragePeriod(lodgeId, assetId, input) {
     await transaction.rollback();
     throw err;
   }
+}
+
+// Corrects a coverage period already on file — a typo'd end date, the wrong
+// vendor picked, cost entered wrong. Unlike addCoveragePeriod this never
+// touches dbo.expenses: the expense logged when the period was first added
+// is its own record, and editing coverage details later shouldn't reach back
+// and rewrite it (the same reason editing an asset doesn't retro-edit past
+// expenses either).
+async function updateCoveragePeriod(lodgeId, assetId, periodId, input) {
+  const pool = await getPool();
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const result = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('assetId', sql.BigInt, assetId)
+      .input('periodId', sql.BigInt, periodId)
+      .input('coverageType', sql.NVarChar, input.coverageType)
+      .input('vendorId', sql.BigInt, input.vendorId ?? null)
+      .input('startDate', sql.Date, toNullable(input.startDate))
+      .input('endDate', sql.Date, input.endDate)
+      .input('cost', sql.Decimal(12, 2), input.cost ?? null)
+      .input('coverageNote', sql.NVarChar, toNullable(input.coverageNote))
+      .query(`
+        UPDATE dbo.asset_coverage_periods
+        SET coverage_type = @coverageType, vendor_id = @vendorId, start_date = @startDate,
+            end_date = @endDate, cost = @cost, coverage_note = @coverageNote
+        OUTPUT inserted.id
+        WHERE id = @periodId AND asset_id = @assetId AND lodge_id = @lodgeId
+      `);
+    if (result.recordset.length === 0) {
+      throw new ApiError('Coverage period not found.', 404);
+    }
+
+    await refreshAssetCoverageCache(new sql.Request(transaction), lodgeId, assetId);
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+
+  const periods = await listCoveragePeriods(lodgeId, assetId);
+  return periods.find((p) => p.id === periodId);
 }
 
 async function deleteCoveragePeriod(lodgeId, assetId, periodId) {
@@ -959,6 +1021,7 @@ module.exports = {
   setAssetActive,
   listCoveragePeriods,
   addCoveragePeriod,
+  updateCoveragePeriod,
   deleteCoveragePeriod,
   listVendors,
   createVendor,

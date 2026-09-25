@@ -45,6 +45,12 @@ const STRINGS_EN = {
   mobNo: 'Mob. No.',
   roomNo: 'Room No.',
   persons: 'Persons -',
+  // Same strings and same rule as BillDocument.jsx's bed line: bedLabel null
+  // means a whole-room buyout, not "not a dormitory" — isDormitory decides
+  // whether this line shows at all.
+  bedTag: 'Bed',
+  dormitory: 'Dormitory bed',
+  dormitoryWhole: 'Dormitory (whole room)',
   rs: 'Rs.',
   ps: 'Ps.',
   forStay: 'For',
@@ -225,6 +231,16 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
     .filter(Boolean)
     .join('  ');
 
+  // Same rule and same strings as BillDocument.jsx's bed line — said plainly
+  // on its own line, or a guest reading "Room No. 002" has no way to tell
+  // the advance was taken against a shared dormitory room rather than the
+  // whole room. Never shown for a function, which has no room at all.
+  const bedLine = !isEvent && receipt.isDormitory
+    ? receipt.bedLabel
+      ? `${T.dormitory} — ${receipt.bedLabel}`
+      : T.dormitoryWhole
+    : null;
+
   // The stay as the final bill will ask for it, and the rounding that got it
   // there. Both frozen at issue rather than re-derived, so a reprint states
   // the figures the guest was actually handed.
@@ -297,6 +313,13 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
       <div className="memo__row">
         <Filled>{stayLine}</Filled>
       </div>
+
+      {bedLine && (
+        <div className="memo__row">
+          <span className="memo__label">{T.bedTag}</span>
+          <Filled>{bedLine}</Filled>
+        </div>
+      )}
 
       <div className="memo__row">
         <span className="memo__label">{T.sumOfRupees}</span>

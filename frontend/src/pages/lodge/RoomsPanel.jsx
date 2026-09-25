@@ -303,7 +303,6 @@ export default function RoomsPanel() {
     if (
       !form.categoryId ||
       !form.roomNumber.trim() ||
-      !form.floor.trim() ||
       !form.bathroomType ||
       !form.dormitoryGender ||
       !form.dormitoryPrice ||
@@ -506,10 +505,6 @@ export default function RoomsPanel() {
     }
     if (!editingRoomId && form.mode === 'bulk' && form.isDormitory) {
       failOn('isDormitory', 'A dormitory room can’t be added as a bulk range — add it as a single room, then add its beds.');
-      return;
-    }
-    if (!form.floor.trim()) {
-      failOn('floor', 'Enter the floor.');
       return;
     }
     // A dormitory has neither field: its beds are added one at a time after
@@ -716,7 +711,6 @@ export default function RoomsPanel() {
     1: numberDone,
     2: form.categoryId !== '',
     3:
-      form.floor.trim() !== '' &&
       form.bathroomType !== '' &&
       (form.isDormitory || (form.beds.some((b) => b.size !== '') && form.maxOccupancy !== '')),
     4: photoCount > 0,
@@ -1222,10 +1216,7 @@ export default function RoomsPanel() {
                 </div>
                 <div className="field-row">
                   <div className="field">
-                    <label htmlFor="floor">
-                      Floor
-                      <Req />
-                    </label>
+                    <label htmlFor="floor">Floor</label>
                     <input
                       id="floor"
                       aria-invalid={invalid('floor')}

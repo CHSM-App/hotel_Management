@@ -790,6 +790,12 @@ class AdvanceReceipt {
   final String? checkInDate;
   final String? checkOutDate;
 
+  // Same fields the printed bill reads (Invoice below), so the advance
+  // receipt says just as plainly that this stay is a dormitory booking —
+  // bedLabel null means a whole-room buyout, not "not a dormitory".
+  final bool isDormitory;
+  final String? bedLabel;
+
   // ── The property, as it prints on the document ───────────────────────────
   final String? gstin;
   final bool isGstRegistered;
@@ -825,6 +831,8 @@ class AdvanceReceipt {
     this.categoryName,
     this.checkInDate,
     this.checkOutDate,
+    this.isDormitory = false,
+    this.bedLabel,
     this.gstin,
     this.isGstRegistered = false,
     this.lodgeName,
@@ -864,6 +872,8 @@ class AdvanceReceipt {
     categoryName: asStringOrNull(json['categoryName']),
     checkInDate: asStringOrNull(json['checkInDate']),
     checkOutDate: asStringOrNull(json['checkOutDate']),
+    isDormitory: asBool(json['isDormitory']),
+    bedLabel: asStringOrNull(json['bedLabel']),
     gstin: asStringOrNull(json['gstin']),
     isGstRegistered: asBool(json['isGstRegistered']),
     lodgeName: asStringOrNull(json['lodgeName']),

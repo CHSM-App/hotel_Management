@@ -17,6 +17,7 @@ function mapVendor(row) {
     name: row.name,
     contactPerson: row.contact_person,
     phone: row.phone,
+    altPhone: row.alt_phone,
     email: row.email,
     specialty: row.specialty,
     notes: row.notes,
@@ -56,13 +57,14 @@ async function createVendor(lodgeId, input) {
     .input('name', sql.NVarChar, input.name)
     .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
     .input('phone', sql.NVarChar, toNullable(input.phone))
+    .input('altPhone', sql.NVarChar, toNullable(input.altPhone))
     .input('email', sql.NVarChar, toNullable(input.email))
     .input('specialty', sql.NVarChar, toNullable(input.specialty))
     .input('notes', sql.NVarChar, toNullable(input.notes))
     .query(`
-      INSERT INTO dbo.vendors (lodge_id, name, contact_person, phone, email, specialty, notes)
+      INSERT INTO dbo.vendors (lodge_id, name, contact_person, phone, alt_phone, email, specialty, notes)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @contactPerson, @phone, @email, @specialty, @notes)
+      VALUES (@lodgeId, @name, @contactPerson, @phone, @altPhone, @email, @specialty, @notes)
     `);
 
   const id = result.recordset[0].id;
@@ -90,13 +92,14 @@ async function updateVendor(lodgeId, vendorId, input) {
     .input('name', sql.NVarChar, input.name)
     .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
     .input('phone', sql.NVarChar, toNullable(input.phone))
+    .input('altPhone', sql.NVarChar, toNullable(input.altPhone))
     .input('email', sql.NVarChar, toNullable(input.email))
     .input('specialty', sql.NVarChar, toNullable(input.specialty))
     .input('notes', sql.NVarChar, toNullable(input.notes))
     .query(`
       UPDATE dbo.vendors
-      SET name = @name, contact_person = @contactPerson, phone = @phone, email = @email,
-          specialty = @specialty, notes = @notes
+      SET name = @name, contact_person = @contactPerson, phone = @phone, alt_phone = @altPhone,
+          email = @email, specialty = @specialty, notes = @notes
       OUTPUT inserted.id
       WHERE id = @vendorId AND lodge_id = @lodgeId
     `);

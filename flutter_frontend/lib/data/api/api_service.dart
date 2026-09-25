@@ -132,7 +132,7 @@ class ApiService {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
-    int? bedId,
+    List<int>? bedIds,
   }) async {
     final res = await _dio.get(
       '/bookings/price-quote',
@@ -143,7 +143,7 @@ class ApiService {
         if (chargeIds != null && chargeIds.isNotEmpty) 'chargeIds': chargeIds,
         if (basePriceOverride != null) 'basePriceOverride': basePriceOverride,
         if (discountAmount != null) 'discountAmount': discountAmount,
-        if (bedId != null) 'bedId': bedId,
+        if (bedIds != null && bedIds.isNotEmpty) 'bedIds': bedIds.join(','),
       },
     );
     return Quote.fromJson(_map(res.data));

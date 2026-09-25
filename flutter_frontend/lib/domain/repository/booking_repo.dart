@@ -25,7 +25,7 @@ abstract class BookingRepository {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
-    int? bedId,
+    List<int>? bedIds,
   });
 
   /// The bed picker's own fetch for a dormitory room and a chosen stay.

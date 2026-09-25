@@ -15,6 +15,7 @@ const {
   deleteAssetHandler,
   listCoveragePeriodsHandler,
   createCoveragePeriodHandler,
+  updateCoveragePeriodHandler,
   deleteCoveragePeriodHandler,
   listVendorsHandler,
   createVendorHandler,
@@ -64,6 +65,7 @@ router.delete('/:id', authenticate, canAccess, deleteAssetHandler);
 
 router.get('/:id/coverage', authenticate, canAccess, listCoveragePeriodsHandler);
 router.post('/:id/coverage', authenticate, canAccess, createCoveragePeriodHandler);
+router.patch('/:id/coverage/:periodId', authenticate, canAccess, updateCoveragePeriodHandler);
 router.delete('/:id/coverage/:periodId', authenticate, canAccess, deleteCoveragePeriodHandler);
 
 module.exports = router;

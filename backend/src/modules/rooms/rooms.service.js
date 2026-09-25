@@ -599,7 +599,11 @@ async function deleteBed(lodgeId, roomId, bedId) {
   const bookingsResult = await pool
     .request()
     .input('bedId', sql.BigInt, bedId)
-    .query('SELECT TOP 1 id FROM dbo.bookings WHERE bed_id = @bedId');
+    .query(`
+      SELECT TOP 1 id FROM dbo.bookings WHERE bed_id = @bedId
+      UNION ALL
+      SELECT TOP 1 booking_id FROM dbo.booking_beds WHERE bed_id = @bedId
+    `);
   if (bookingsResult.recordset.length > 0) {
     throw new ApiError('This bed has bookings on record and can’t be permanently deleted — deactivate it instead.', 409);
   }
@@ -655,7 +659,11 @@ async function setBedCount(lodgeId, roomId, targetCount) {
   const removeIds = toRemove.map((b) => Number(b.id));
   const bookedResult = await pool
     .request()
-    .query(`SELECT DISTINCT bed_id FROM dbo.bookings WHERE bed_id IN (${removeIds.join(',')})`);
+    .query(`
+      SELECT bed_id FROM dbo.bookings WHERE bed_id IN (${removeIds.join(',')})
+      UNION
+      SELECT bed_id FROM dbo.booking_beds WHERE bed_id IN (${removeIds.join(',')})
+    `);
   if (bookedResult.recordset.length > 0) {
     throw new ApiError(
       `Can’t reduce below ${currentCount - bookedResult.recordset.length} — some of those beds have bookings on record. Deactivate them instead of removing the room's count.`,

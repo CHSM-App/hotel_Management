@@ -20,6 +20,8 @@ import './Events.css';
 
 const DEBOUNCE_MS = 400;
 
+const capitalizeName = (value) => value.replace(/\b\w/g, (c) => c.toUpperCase());
+
 // What is already on the slot, written out for the dialog. One line per
 // function rather than the banner's run-on sentence: the desk is deciding
 // against these, and a semicolon-joined list is the thing they were skimming
@@ -605,7 +607,7 @@ export default function EventForm({
                 id="ev-title"
                 ref={firstInput}
                 value={form.title}
-                onChange={(e) => update('title', e.target.value)}
+                onChange={(e) => update('title', capitalizeName(e.target.value))}
                 placeholder="Sharma–Patil reception"
               />
             </Field>
@@ -691,7 +693,7 @@ export default function EventForm({
           <div className="form-section__title">Organiser</div>
           <div className="field-row field-row--triple">
             <Field label="Name" name="organiserName" error={errFor('organiserName')} required>
-              <input id="ev-organiserName" value={form.organiserName} onChange={(e) => update('organiserName', e.target.value)} />
+              <input id="ev-organiserName" value={form.organiserName} onChange={(e) => update('organiserName', capitalizeName(e.target.value))} />
             </Field>
             <Field label="Mobile" name="organiserPhone" error={errFor('organiserPhone')} required>
               <input
@@ -857,7 +859,7 @@ export default function EventForm({
               <input
                 placeholder="One-off item (e.g. mandap flowers)"
                 value={oneOff.label}
-                onChange={(e) => setOneOff((o) => ({ ...o, label: e.target.value }))}
+                onChange={(e) => setOneOff((o) => ({ ...o, label: capitalizeName(e.target.value) }))}
               />
               <input
                 type="number"

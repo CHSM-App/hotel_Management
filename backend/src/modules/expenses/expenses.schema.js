@@ -27,9 +27,10 @@ const vendorSchema = z.object({
   name: z.string().trim().min(1, 'Vendor name is required.').max(120),
   contactPerson: z.string().trim().max(80).optional().default(''),
   // Optional — not every vendor has one on file — but when given it has to
-  // be a real 10-digit mobile number, same TEN_DIGITS rule bookings.schema.js
-  // and staff.controller.js already use for guest/staff phone numbers.
-  phone: z.string().trim().regex(/^$|^\d{10}$/, 'Enter a 10-digit mobile number.').optional().default(''),
+  // be a real Indian mobile number: 10 digits, starting 6-9. Same rule
+  // assets.schema.js's vendorSchema uses — dbo.vendors is shared by both.
+  phone: z.string().trim().regex(/^$|^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number.').optional().default(''),
+  altPhone: z.string().trim().regex(/^$|^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number.').optional().default(''),
   email: z.string().trim().max(120).optional().default(''),
   specialty: z.string().trim().max(80).optional().default(''),
   notes: z.string().trim().max(400).optional().default(''),
@@ -55,8 +56,14 @@ const expenseSchema = z.object({
   description: z.string().trim().max(400).optional().default(''),
   amount: z.coerce.number().min(0, 'Amount can’t be negative.'),
   // Meaningless while nothing's actually been paid — optional, and the
-  // frontend hides the field entirely when paymentStatus is PENDING.
-  paymentMethod: z.enum(PAYMENT_METHODS, { error: 'Choose how this was paid.' }).optional().default('CASH'),
+  // frontend hides the field entirely when paymentStatus is PENDING, which
+  // can leave it as '' rather than absent. z.preprocess so that still falls
+  // back to CASH instead of failing .enum() with a raw, field-less message
+  // (same trap assets.schema.js's paymentMethodSchema had).
+  paymentMethod: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.enum(PAYMENT_METHODS, { error: 'Choose how this was paid.' }).optional().default('CASH')
+  ),
   paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional().default('PAID'),
   amountPaid: z.coerce.number().min(0, 'Amount paid can’t be negative.').optional().nullable(),
   referenceNumber: z.string().trim().max(80).optional().default(''),

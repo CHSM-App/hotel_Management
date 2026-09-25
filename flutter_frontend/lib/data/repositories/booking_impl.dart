@@ -45,7 +45,7 @@ class BookingImpl implements BookingRepository {
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
-    int? bedId,
+    List<int>? bedIds,
   }) => api.priceQuote(
     roomId: roomId,
     checkInDate: checkInDate,
@@ -53,7 +53,7 @@ class BookingImpl implements BookingRepository {
     chargeIds: chargeIds,
     basePriceOverride: basePriceOverride,
     discountAmount: discountAmount,
-    bedId: bedId,
+    bedIds: bedIds,
   );
 
   @override

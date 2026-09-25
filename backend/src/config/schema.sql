@@ -2116,6 +2116,25 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bookings_bed_dates' AN
         WHERE bed_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
+-- Multiple dormitory beds in one booking (migration 089)
+-- ---------------------------------------------------------------------------
+-- A booking that holds two or more beds gets one row here per bed (bed_id
+-- above also mirrors the first of them, kept in sync, so every existing
+-- reader that only ever looked at bookings.bed_id still sees a real bed and
+-- keeps working unchanged). A booking that holds only one bed, or the whole
+-- room, or isn't a dormitory booking at all, gets no rows here at all.
+IF OBJECT_ID('dbo.booking_beds', 'U') IS NULL
+CREATE TABLE dbo.booking_beds (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    booking_id  BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    bed_id      BIGINT NOT NULL REFERENCES dbo.dormitory_beds(id),
+    CONSTRAINT uq_booking_beds_booking_bed UNIQUE (booking_id, bed_id)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_beds_booking' AND object_id = OBJECT_ID('dbo.booking_beds'))
+    CREATE INDEX ix_booking_beds_booking ON dbo.booking_beds(booking_id);
+
+-- ---------------------------------------------------------------------------
 -- Dormitory room price and gender (migration 065)
 -- ---------------------------------------------------------------------------
 -- Price moves from the bed to the room: one rate for the whole dormitory,
@@ -2196,6 +2215,9 @@ CREATE TABLE dbo.vendors (
     name            NVARCHAR(120) NOT NULL,
     contact_person  NVARCHAR(80) NULL,
     phone           NVARCHAR(20) NULL,
+    -- A second number — the shop's owner and staff often carry different
+    -- phones. Optional, same shape as phone. Added in 088_vendors_alt_phone.sql.
+    alt_phone       NVARCHAR(20) NULL,
     email           NVARCHAR(120) NULL,
     specialty       NVARCHAR(80) NULL,
     notes           NVARCHAR(400) NULL,

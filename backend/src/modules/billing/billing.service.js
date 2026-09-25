@@ -325,6 +325,17 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     .query(`
       SELECT b.*, r.room_number, r.is_dormitory, c.name AS category_name,
              db.bed_label,
+             -- Every bed this booking holds, comma-joined in bed order — the
+             -- same single bed_label for the common case, a list for a
+             -- multi-bed booking, NULL for a whole-room or non-dormitory one.
+             (SELECT STRING_AGG(all_db.bed_label, ', ') WITHIN GROUP (ORDER BY all_db.id)
+              FROM (
+                SELECT db.id, db.bed_label
+                UNION ALL
+                SELECT bed.id, bed.bed_label FROM dbo.booking_beds bb
+                JOIN dbo.dormitory_beds bed ON bed.id = bb.bed_id
+                WHERE bb.booking_id = b.id
+              ) all_db) AS bed_labels,
              l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
              l.late_grace_minutes,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
@@ -1055,7 +1066,10 @@ function mapInvoice(row) {
     // bill opened from the list loses its bed line the moment the list is
     // the source that wins (see detailInvoice in Billing.jsx).
     isDormitory: !!row.is_dormitory,
-    bedLabel: row.bed_label ?? null,
+    // bed_labels is the comma-joined list (every bed a multi-bed booking
+    // holds); bed_label alone still covers the single-bed case, so it's the
+    // fallback for a row that predates bed_labels being selected at all.
+    bedLabel: row.bed_labels ?? row.bed_label ?? null,
     checkInDate: isoDate(row.check_in_date),
     checkOutDate: isoDate(row.check_out_date),
     actualCheckInAt: row.actual_check_in_at,
@@ -1195,13 +1209,15 @@ function buildPreviewDocument({
     numGuests: row.num_guests ?? null,
     roomNumber: row.room_number ?? null,
     categoryName: row.category_name ?? null,
-    // A dormitory bill is for one bed, not the room — printed alongside the
-    // room number so the guest and the desk both read it as "your bed in a
-    // shared room" rather than mistaking it for exclusive use of the room.
-    // bedLabel is null on a whole-room buyout (bed_id IS NULL), same as a
-    // dormitory room booked outright — that one still just says "dormitory".
+    // A dormitory bill is for one or more beds, not the room — printed
+    // alongside the room number so the guest and the desk both read it as
+    // "your bed(s) in a shared room" rather than mistaking it for exclusive
+    // use of the room. bedLabel is null on a whole-room buyout (bed_id IS
+    // NULL), same as a dormitory room booked outright — that one still just
+    // says "dormitory". bed_labels is the comma-joined list for a multi-bed
+    // booking; bed_label alone still covers the single-bed case.
     isDormitory: !!row.is_dormitory,
-    bedLabel: row.bed_label ?? null,
+    bedLabel: row.bed_labels ?? row.bed_label ?? null,
     checkInDate: isoDate(row.check_in_date),
     checkOutDate: isoDate(row.check_out_date),
     actualCheckInAt: row.actual_check_in_at ?? null,
@@ -1264,6 +1280,16 @@ async function getInvoice(lodgeId, invoiceId) {
              b.nightly_breakdown,
              r.room_number, r.is_dormitory, c.name AS category_name,
              db.bed_label,
+             -- Every bed this booking holds, comma-joined in bed order — same
+             -- aggregate as loadBookingForBilling.
+             (SELECT STRING_AGG(all_db.bed_label, ', ') WITHIN GROUP (ORDER BY all_db.id)
+              FROM (
+                SELECT db.id, db.bed_label WHERE db.id IS NOT NULL
+                UNION ALL
+                SELECT bed.id, bed.bed_label FROM dbo.booking_beds bb
+                JOIN dbo.dormitory_beds bed ON bed.id = bb.bed_id
+                WHERE bb.booking_id = b.id
+              ) all_db) AS bed_labels,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
@@ -1355,6 +1381,16 @@ async function listInvoices(lodgeId) {
              b.nightly_breakdown,
              r.room_number, r.is_dormitory, c.name AS category_name,
              db.bed_label,
+             -- Every bed this booking holds, comma-joined in bed order — same
+             -- aggregate as loadBookingForBilling and getInvoice.
+             (SELECT STRING_AGG(all_db.bed_label, ', ') WITHIN GROUP (ORDER BY all_db.id)
+              FROM (
+                SELECT db.id, db.bed_label WHERE db.id IS NOT NULL
+                UNION ALL
+                SELECT bed.id, bed.bed_label FROM dbo.booking_beds bb
+                JOIN dbo.dormitory_beds bed ON bed.id = bb.bed_id
+                WHERE bb.booking_id = b.id
+              ) all_db) AS bed_labels,
              l.gstin, l.is_gst_registered, l.checkin_mode, l.check_out_time, l.name AS lodge_name,
              l.phone AS lodge_phone, l.address AS lodge_address, l.city AS lodge_city, l.state AS lodge_state,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,

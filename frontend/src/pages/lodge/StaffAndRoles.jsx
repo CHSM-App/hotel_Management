@@ -157,7 +157,7 @@ export default function StaffAndRoles() {
     setStaffBusy(true);
     try {
       const body = {
-        name: staffForm.name.trim(),
+        name: staffForm.name.trim().replace(/\b\w/g, (c) => c.toUpperCase()),
         phone: staffForm.phone.trim(),
         email: staffForm.email.trim(),
         roleKey: staffForm.roleKey,

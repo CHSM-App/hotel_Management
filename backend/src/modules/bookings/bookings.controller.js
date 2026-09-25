@@ -132,6 +132,14 @@ async function priceQuoteHandler(req, res, next) {
     const { checkInDate, checkOutDate } = parseDateRange(req.query);
     const chargeIds = parseChargeIds(req.query.chargeIds);
     const bedId = req.query.bedId ? Number(req.query.bedId) : null;
+    // "3,5" — several beds picked at once. Comma-separated to match every
+    // other multi-value query param on this endpoint (chargeIds).
+    const bedIds = req.query.bedIds
+      ? String(req.query.bedIds)
+          .split(',')
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n > 0)
+      : null;
     const result = await bookingsService.priceStay(
       req.user.lodgeId,
       roomId,
@@ -140,7 +148,8 @@ async function priceQuoteHandler(req, res, next) {
       chargeIds,
       parseBasePriceOverride(req.query.basePriceOverride),
       parseDiscountAmount(req.query.discountAmount),
-      bedId
+      bedId,
+      bedIds
     );
     res.json(result);
   } catch (err) {
@@ -230,6 +239,10 @@ async function createBookingHandler(req, res, next) {
     body.vehicles = parseJsonArrayField(body.vehicles);
     body.guests = parseJsonArrayField(body.guests);
     body.advanceLines = parseJsonArrayField(body.advanceLines);
+    // bedIds arrives as a JSON array string (several beds picked at once);
+    // a lone bedId (a plain field, not JSON) is the older single-bed shape
+    // and is left alone for the schema to coerce as before.
+    if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
 
     const parsed = createBookingSchema.safeParse(body);
     if (!parsed.success) {
@@ -381,6 +394,9 @@ async function updateBookingHandler(req, res, next) {
     }
     if (body.guests !== undefined) body.guests = parseJsonArrayField(body.guests);
     if (body.vehicles !== undefined) body.vehicles = parseJsonArrayField(body.vehicles);
+    // Same JSON-array shape as create — a lone bedId (plain field) is still
+    // the single-bed shape and reaches the schema untouched.
+    if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
 
     const parsed = updateBookingSchema.safeParse(body);
     if (!parsed.success) {

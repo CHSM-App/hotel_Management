@@ -10,10 +10,18 @@ class Booking {
   final int? roomId;
   final String? roomNumber;
 
-  /// Which bed this stay holds, on a dormitory room — null means either an
-  /// ordinary room, or a buyout of the whole dormitory.
+  /// The first (or only) bed this stay holds, on a dormitory room — null
+  /// means either an ordinary room, or a buyout of the whole dormitory. Kept
+  /// for every screen that only ever needed one; bedIds/bedLabels below are
+  /// the full list a multi-bed stay holds.
   final int? bedId;
   final String? bedLabel;
+
+  /// Every bed this stay holds — empty on a whole-room or non-dormitory
+  /// booking, [bedId] for the common single-bed case, more for a multi-bed
+  /// one.
+  final List<int> bedIds;
+  final List<String> bedLabels;
   final String? categoryName;
   final String? guestName;
   final String? guestPhone;
@@ -106,6 +114,8 @@ class Booking {
     this.roomNumber,
     this.bedId,
     this.bedLabel,
+    this.bedIds = const [],
+    this.bedLabels = const [],
     this.categoryName,
     this.guestName,
     this.guestPhone,
@@ -154,6 +164,8 @@ class Booking {
     roomNumber: asStringOrNull(json['roomNumber']),
     bedId: asIntOrNull(json['bedId']),
     bedLabel: asStringOrNull(json['bedLabel']),
+    bedIds: (json['bedIds'] as List<dynamic>?)?.map(asInt).toList() ?? const [],
+    bedLabels: (json['bedLabels'] as List<dynamic>?)?.map((v) => v.toString()).toList() ?? const [],
     categoryName: asStringOrNull(json['categoryName']),
     guestName: asStringOrNull(json['guestName']),
     guestPhone: asStringOrNull(json['guestPhone']),

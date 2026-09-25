@@ -60,11 +60,12 @@ class BookingState {
   final AsyncValue<List<Room>>? rooms;
   final Room? room;
 
-  /// Which bed of a dormitory [room] this stay holds — null with [buyout]
-  /// false means nothing chosen yet (the dormitory bed-vs-buyout picker asks
-  /// before this stay can be saved); null with [buyout] true means the whole
-  /// room. Always null on an ordinary room.
-  final int? bedId;
+  /// Which bed(s) of a dormitory [room] this stay holds — one or more, picked
+  /// by tapping multiple chips. Empty with [buyout] false means nothing
+  /// chosen yet (the bed picker asks before this stay can be saved); empty
+  /// with [buyout] true means the whole room. Always empty on an ordinary
+  /// room.
+  final List<int> bedIds;
   final bool buyout;
   final AsyncValue<AvailableBeds>? availableBeds;
 
@@ -112,7 +113,7 @@ class BookingState {
     this.checkOut,
     this.rooms,
     this.room,
-    this.bedId,
+    this.bedIds = const [],
     this.buyout = false,
     this.availableBeds,
     this.extras = const {},
@@ -152,8 +153,8 @@ class BookingState {
     AsyncValue<List<Room>>? rooms,
     Room? room,
     bool clearRoom = false,
-    int? bedId,
-    bool clearBedId = false,
+    List<int>? bedIds,
+    bool clearBedIds = false,
     bool? buyout,
     AsyncValue<AvailableBeds>? availableBeds,
     bool clearAvailableBeds = false,
@@ -183,7 +184,7 @@ class BookingState {
     checkOut: checkOut ?? this.checkOut,
     rooms: rooms ?? this.rooms,
     room: clearRoom ? null : (room ?? this.room),
-    bedId: (clearRoom || clearBedId) ? null : (bedId ?? this.bedId),
+    bedIds: (clearRoom || clearBedIds) ? const [] : (bedIds ?? this.bedIds),
     buyout: clearRoom ? false : (buyout ?? this.buyout),
     availableBeds: (clearRoom || clearAvailableBeds)
         ? null
@@ -409,12 +410,18 @@ class ChartRoom {
     if (!room.isDormitory) return null;
     final bs = bedStaysOn(day);
     if (bs.isEmpty) return null;
-    // A buyout (bedId null on a dormitory booking) holds every bed at once,
-    // whatever the bed count says — the same as the server's own
+    // A buyout (no bedIds at all on a dormitory booking) holds every bed at
+    // once, whatever the bed count says — the same as the server's own
     // "roomAvailableForBuyout" check treats it.
-    final buyout = bs.any((b) => b.bedId == null);
+    final buyout = bs.any((b) => b.bedIds.isEmpty);
+    // How many beds these stays actually occupy — not how many booking rows
+    // there are, since one booking can hold several beds at once. Falls back
+    // to 1 per stay for a row that predates bedIds.
+    final occupied = buyout
+        ? room.dormitoryBedCount
+        : bs.fold<int>(0, (sum, b) => sum + (b.bedIds.isNotEmpty ? b.bedIds.length : 1));
     return DormitoryOccupancy(
-      occupied: buyout ? room.dormitoryBedCount : bs.length,
+      occupied: occupied,
       total: room.dormitoryBedCount,
       buyout: buyout,
       stays: bs,
@@ -854,9 +861,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // clears both, since a freshly picked room starts with neither.
         if (match.isDormitory) {
           state = state.copyWith(
-            bedId: booking.bedId,
-            clearBedId: booking.bedId == null,
-            buyout: booking.bedId == null,
+            bedIds: booking.bedIds,
+            clearBedIds: booking.bedIds.isEmpty,
+            buyout: booking.bedIds.isEmpty,
           );
         }
       }
@@ -974,7 +981,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
   Future<void> selectRoom(Room room) async {
     state = state.copyWith(
       room: room,
-      clearBedId: true,
+      clearBedIds: true,
       clearAvailableBeds: true,
       extras: const {},
       roomTotal: '',
@@ -1003,13 +1010,17 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
-  /// The desk's pick from the bed picker — one bed, or the whole dormitory
-  /// as a buyout. Re-quotes against it: a bed's price is the dormitory's own
-  /// rate, a buyout is nights × beds, and only the server works either out.
-  Future<void> selectBed({int? bedId, bool buyout = false}) async {
-    state = bedId != null
-        ? state.copyWith(bedId: bedId, buyout: false)
-        : state.copyWith(clearBedId: true, buyout: buyout);
+  /// The desk's pick from the bed picker — toggles one bed in or out of the
+  /// set this stay holds; several can be held at once for a group booking.
+  /// Re-quotes against it: each bed's price is the dormitory's own rate, and
+  /// only the server works out the total for however many are picked.
+  Future<void> toggleBed(int bedId) async {
+    final next = state.bedIds.contains(bedId)
+        ? state.bedIds.where((id) => id != bedId).toList()
+        : [...state.bedIds, bedId];
+    state = next.isEmpty
+        ? state.copyWith(clearBedIds: true, buyout: false)
+        : state.copyWith(bedIds: next, buyout: false);
     await refreshQuote();
   }
 
@@ -1094,7 +1105,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         chargeIds: chargeIdsParam(),
         basePriceOverride: perNight(state.roomTotal, state.nights),
         discountAmount: wholeAmount(state.discount),
-        bedId: state.bedId,
+        bedIds: state.bedIds,
       );
       state = state.copyWith(quoting: false, quote: quote);
     } catch (e) {
@@ -1153,9 +1164,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // Not a fixed value: a stay starting today is a walk-in and is checked
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,
-        // A dormitory always sends this — blank means buyout — the same as
-        // the web form; meaningless (and simply omitted) on an ordinary room.
-        if (room.isDormitory) 'bedId': state.bedId == null ? '' : '${state.bedId}',
+        // A dormitory always sends this — an empty list means buyout — the
+        // same as the web form; meaningless (and simply omitted) on an
+        // ordinary room. A list of plain numbers, so no escaping is needed.
+        if (room.isDormitory) 'bedIds': '[${state.bedIds.join(',')}]',
         if (rate != null) 'basePriceOverride': '$rate',
         // Sent whole. The quote the desk agreed to was priced with this off
         // it, so leaving it out here would book the stay at a total nobody
@@ -1275,10 +1287,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // explicit 0 rather than being read as "leave it alone".
         'discountAmount': '${discount ?? 0}',
         if (rate != null) 'basePriceOverride': '$rate',
-        // Only sent when the dormitory bed-vs-buyout picker was actually
-        // touched — omitted otherwise, the server's cue to leave the bed
-        // this stay already holds alone.
-        if (room.isDormitory && state.bedId != null) 'bedId': '${state.bedId}',
+        // Always sent for a dormitory room — state.bedIds was preloaded with
+        // whatever this stay already held (see selectRoom's caller in
+        // openForEdit), so it reflects either that or whatever the picker
+        // was since changed to, same as the web form's edit path.
+        if (room.isDormitory) 'bedIds': '[${state.bedIds.join(',')}]',
         if (idProofType != null) 'idProofType': idProofType,
         if (idProofNumber != null && idProofNumber.trim().isNotEmpty)
           'idProofNumber': idProofNumber.trim(),
