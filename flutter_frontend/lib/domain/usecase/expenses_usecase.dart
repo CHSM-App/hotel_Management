@@ -29,9 +29,17 @@ class ExpensesUsecase {
     int? categoryId,
     int? vendorId,
     int? assetId,
+    int? recurringTemplateId,
     String? from,
     String? to,
-  }) => repository.expenses(categoryId: categoryId, vendorId: vendorId, assetId: assetId, from: from, to: to);
+  }) => repository.expenses(
+    categoryId: categoryId,
+    vendorId: vendorId,
+    assetId: assetId,
+    recurringTemplateId: recurringTemplateId,
+    from: from,
+    to: to,
+  );
 
   Future<Expense> expense(int id) => repository.expense(id);
 
@@ -63,5 +71,6 @@ class ExpensesUsecase {
   Future<RecurringTemplate> updateTemplate(int id, Map<String, dynamic> body) =>
       repository.updateTemplate(id, body);
 
-  Future<int> generateDue() => repository.generateDue();
+  Future<Expense> logOccurrence(int templateId, FormData form) =>
+      repository.logOccurrence(templateId, form);
 }

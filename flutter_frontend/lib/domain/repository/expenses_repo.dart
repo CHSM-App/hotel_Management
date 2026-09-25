@@ -22,6 +22,7 @@ abstract class ExpensesRepository {
     int? categoryId,
     int? vendorId,
     int? assetId,
+    int? recurringTemplateId,
     String? from,
     String? to,
   });
@@ -50,5 +51,5 @@ abstract class ExpensesRepository {
 
   Future<RecurringTemplate> updateTemplate(int id, Map<String, dynamic> body);
 
-  Future<int> generateDue();
+  Future<Expense> logOccurrence(int templateId, FormData form);
 }

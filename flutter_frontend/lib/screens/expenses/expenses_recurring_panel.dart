@@ -6,14 +6,15 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'expense_form_screen.dart';
 import 'recurring_template_form_screen.dart';
+import 'recurring_template_history_screen.dart';
 
-/// Expenses > Recurring — mirrors the Recurring tab in ExpensesPanel.jsx
-/// exactly: a list of templates with their next due date and a "+" to
-/// schedule a new one. There is no manual "Generate due" control here on
-/// the web either — a template that's come due is turned into a real
-/// expense row silently, once, when the Expenses section opens (see
-/// ExpensesScreen.initState / generateDueThenLoad in ExpensesPanel.jsx).
+/// Expenses > Recurring — mirrors the Recurring tab in ExpensesPanel.jsx: a
+/// repeat schedule only, no amount or vendor on the template itself. Those
+/// are entered each cycle via "Log this month", which is also the only way
+/// an occurrence gets created — there is no background job that generates
+/// due expenses on its own.
 class ExpensesRecurringPanel extends ConsumerWidget {
   const ExpensesRecurringPanel({super.key});
 
@@ -35,7 +36,12 @@ class ExpensesRecurringPanel extends ConsumerWidget {
               if (state.catalogueLoading && state.templates.isEmpty)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
               else if (sorted.isEmpty)
-                const NeuNotice(icon: Icons.event_repeat_rounded, message: 'No recurring expenses yet. Tap + to schedule one.')
+                const NeuNotice(
+                  icon: Icons.event_repeat_rounded,
+                  message: 'No recurring expenses set up. Add rent, electricity or any other bill that repeats on a '
+                      'schedule — "Log this month" records each occurrence by hand, with its own amount and vendor, '
+                      'once it\'s actually due.',
+                )
               else
                 for (final t in sorted)
                   Padding(
@@ -66,46 +72,97 @@ class _TemplateCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final daysUntilDue = template.nextDueDate.isEmpty
+        ? null
+        : DateTime.tryParse(template.nextDueDate)?.difference(DateTime.now()).inDays;
+    final Color dueColor;
+    final String dueLabel;
+    if (daysUntilDue == null) {
+      dueColor = AppTheme.muted;
+      dueLabel = formatIsoDate(template.nextDueDate);
+    } else if (daysUntilDue < 0) {
+      dueColor = AppTheme.danger;
+      dueLabel = 'Overdue since ${formatIsoDate(template.nextDueDate)}';
+    } else if (daysUntilDue == 0) {
+      dueColor = AppTheme.danger;
+      dueLabel = 'Due today';
+    } else if (daysUntilDue <= 7) {
+      dueColor = const Color(0xFFB7791F);
+      dueLabel = 'Due in $daysUntilDue day${daysUntilDue == 1 ? '' : 's'}';
+    } else {
+      dueColor = AppTheme.checkout;
+      dueLabel = 'Due in $daysUntilDue day${daysUntilDue == 1 ? '' : 's'}';
+    }
+
     return NeuCard(
       padding: const EdgeInsets.all(AppTheme.s12),
-      onTap: () => showRecurringTemplateFormScreen(context, template: template),
-      child: Row(
+      onTap: () => showRecurringTemplateHistoryScreen(context, template: template),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        template.title,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            template.title,
+                            style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (!template.isActive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(6)),
+                            child: const Text('Paused', style: TextStyle(color: AppTheme.muted, fontSize: 10)),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (!template.isActive) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(6)),
-                        child: const Text('inactive', style: TextStyle(color: AppTheme.muted, fontSize: 10)),
-                      ),
-                    ],
+                    const SizedBox(height: 2),
+                    Text(
+                      '${template.categoryName} · ${kFrequencyLabel[template.frequency] ?? template.frequency}',
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${template.categoryName} · ${kFrequencyLabel[template.frequency] ?? template.frequency} · next ${formatIsoDate(template.nextDueDate)}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                ),
-              ],
-            ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(color: dueColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+                child: Text(dueLabel, style: TextStyle(color: dueColor, fontSize: 10.5, fontWeight: FontWeight.w700)),
+              ),
+            ],
           ),
-          Text(formatPrice(template.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5)),
-          TextButton(
-            onPressed: () => ref.read(expensesViewModelProvider.notifier).toggleTemplate(template),
-            child: Text(template.isActive ? 'Pause' : 'Resume'),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              if (template.isActive) ...[
+                Expanded(
+                  child: NeuButton(
+                    primary: true,
+                    expand: true,
+                    onPressed: () => showLogOccurrenceFormSheet(context, template: template),
+                    child: const Text('Log this month'),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s8),
+              ],
+              TextButton(
+                onPressed: () => showRecurringTemplateFormScreen(context, template: template),
+                child: const Text('Edit'),
+              ),
+              TextButton(
+                onPressed: () => ref.read(expensesViewModelProvider.notifier).toggleTemplate(template),
+                child: Text(template.isActive ? 'Pause' : 'Resume'),
+              ),
+            ],
           ),
         ],
       ),
