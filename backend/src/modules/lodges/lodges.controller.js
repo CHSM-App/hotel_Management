@@ -104,45 +104,6 @@ async function importLodgeMenuHandler(req, res, next) {
   }
 }
 
-// TEMPORARY — for pushing the demo dish photos a local seed script downloaded
-// onto the live server's disk, since uploads/ is gitignored and never reaches
-// production through a normal deploy (see .github/workflows/deploy.yml). One
-// file per call, matched to an item already on this lodge's menu by dish name
-// (the pusher script only has names, from menu-image-credits.json — no id).
-// Remove once the one-off backfill this exists for is done; nothing else
-// calls it.
-async function uploadLodgeMenuItemImageHandler(req, res, next) {
-  try {
-    const lodgeId = Number(req.params.id);
-    if (!req.file) {
-      throw new ApiError('No image file was sent.', 400);
-    }
-    const dishName = String(req.body.dishName || '').trim().toLowerCase();
-    if (!dishName) {
-      throw new ApiError('dishName is required.', 400);
-    }
-
-    const current = await menuService.getMenu(lodgeId);
-    const item = current.flatMap((c) => c.items).find((i) => i.name.trim().toLowerCase() === dishName);
-    if (!item) {
-      throw new ApiError('That item was not found on this lodge’s menu.', 404);
-    }
-
-    const result = await menuService.updateItem(lodgeId, item.id, {
-      categoryId: item.categoryId,
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      foodType: item.foodType,
-      sortOrder: item.sortOrder,
-      imageFilename: req.file.filename,
-    });
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
 module.exports = {
   createLodgeHandler,
   listLodgesHandler,
@@ -151,5 +112,4 @@ module.exports = {
   updateLodgeLogoHandler,
   removeLodgeLogoHandler,
   importLodgeMenuHandler,
-  uploadLodgeMenuItemImageHandler,
 };
