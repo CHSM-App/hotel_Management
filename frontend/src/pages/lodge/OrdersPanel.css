@@ -20,6 +20,10 @@
   color: var(--color-success);
 }
 
+.orders-panel__sound-on:hover {
+  color: var(--color-success);
+}
+
 /* A segmented control rather than underlined tabs: there are two views and
    they are peers, and this reads as a switch at a glance on a tablet. */
 .orders-tabs {

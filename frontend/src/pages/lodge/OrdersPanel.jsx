@@ -184,6 +184,16 @@ export default function OrdersPanel({ lodge, permissions = [] }) {
     playChime(context);
   };
 
+  // Closing the AudioContext rather than just flipping soundOn off: a
+  // suspended/closed context is what actually stops playChime from being
+  // able to make sound again by accident, instead of merely hiding the badge
+  // while a stray audioRef.current still works.
+  const disableSound = () => {
+    audioRef.current?.close();
+    audioRef.current = null;
+    setSoundOn(false);
+  };
+
   const move = async (order, status) => {
     let cancelReason = '';
     if (status === 'CANCELLED') {
@@ -379,7 +389,14 @@ export default function OrdersPanel({ lodge, permissions = [] }) {
               🔔 Turn on new-order sound
             </button>
           ) : (
-            <span className="orders-panel__sound-on">🔔 Sound on</span>
+            <button
+              type="button"
+              className="btn-secondary orders-panel__sound-on"
+              onClick={disableSound}
+              title="Turn off new-order sound"
+            >
+              🔔 Sound on
+            </button>
           ))}
           {canTakeOrders && (
             <button

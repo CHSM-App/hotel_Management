@@ -52,6 +52,13 @@ function Fact({ label, value }) {
 
 export default function HotelProfileModal({ lodge, onSaved, onClose }) {
   const token = getSession()?.token;
+  // Editing the property's own masthead/GSTIN/location is Owner-only on the
+  // backend (see me.routes.js — PATCH /me/lodge is requireRole('OWNER')), not
+  // a permission a role can be granted or denied. Every other role could open
+  // this screen, see "Edit details", and only find out it's refused after
+  // filling the form in and hitting Save — so the button is hidden here to
+  // match what the server was already enforcing, not to add a new rule.
+  const isOwner = getSession()?.role === 'OWNER';
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(() => formFromLodge(lodge));
   const [error, setError] = useState('');
@@ -307,9 +314,11 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
                 <button type="button" className="btn-secondary" onClick={onClose}>
                   Close
                 </button>
-                <button type="button" className="btn-accent" onClick={startEditing}>
-                  Edit details
-                </button>
+                {isOwner && (
+                  <button type="button" className="btn-accent" onClick={startEditing}>
+                    Edit details
+                  </button>
+                )}
               </div>
             </div>
           </div>

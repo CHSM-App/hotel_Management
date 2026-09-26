@@ -91,10 +91,14 @@ const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'EVENTS_MA
 //
 // The same idea as the `capability` field on FEATURES in the frontend's
 // propertyProfile.js, which is what already hides the food sections.
-// ASSETS_MANAGER and ACCOUNTANT aren't listed: both permissions they carry
-// (assets.manage, billing.manage, expenses.manage) have no capability gate of
-// their own — every property type has assets and money — so those roles are
-// offered everywhere, the same as the permissions behind them.
+// ASSETS_MANAGER and ACCOUNTANT aren't listed: assets.manage, billing.manage
+// and expenses.manage have no capability gate of their own — every property
+// type has assets and money — so those roles are offered everywhere. This is
+// about the role itself staying on the picker, not about every permission it
+// carries: ACCOUNTANT also carries events.manage, which *is* gated (hasEvents)
+// at the individual-permission level in PERMISSIONS/permissionsFor below, so a
+// non-event property's Accountant simply comes without it rather than the
+// whole role being hidden over one permission it can't use.
 const SYSTEM_ROLE_CAPABILITY = {
   KITCHEN: 'servesFood',
   CAPTAIN: 'servesFood',

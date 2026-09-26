@@ -967,6 +967,11 @@ export default function AssetsPanel({ onViewReport }) {
     const errors = {};
     if (!name) errors.name = 'Asset name is required.';
     if (!assetForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
+    // The date input's max blocks the native picker but not a typed date, so
+    // this is the check that actually holds on every browser.
+    if (assetForm.purchaseDate && assetForm.purchaseDate > todayIso()) {
+      errors.purchaseDate = 'Purchase date cannot be in the future.';
+    }
     if (assetForm.vendorPhone && !/^[6-9]\d{9}$/.test(assetForm.vendorPhone)) {
       errors.vendorPhone = 'Enter a valid 10-digit mobile number.';
     } else if (assetForm.vendorPhone) {
@@ -983,6 +988,7 @@ export default function AssetsPanel({ onViewReport }) {
       focusFirstError(errors, {
         categoryName: 'assetCategory',
         name: 'assetName',
+        purchaseDate: 'assetPurchaseDate',
         vendorPhone: 'assetVendorPhone',
         vendorAltPhone: 'assetVendorAltPhone',
       });
@@ -1210,6 +1216,9 @@ export default function AssetsPanel({ onViewReport }) {
     e.preventDefault();
     const errors = {};
     if (!bulkForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
+    if (bulkForm.purchaseDate && bulkForm.purchaseDate > todayIso()) {
+      errors.purchaseDate = 'Purchase date cannot be in the future.';
+    }
     setBulkFieldErrors(errors);
 
     const unitErrors = {};
@@ -1221,7 +1230,7 @@ export default function AssetsPanel({ onViewReport }) {
     setBulkUnitErrors(unitErrors);
 
     if (Object.keys(errors).length > 0) {
-      focusFirstError(errors, { categoryName: 'bulkCategory' });
+      focusFirstError(errors, { categoryName: 'bulkCategory', purchaseDate: 'bulkPurchaseDate' });
       return;
     }
     if (Object.keys(unitErrors).length > 0) {
@@ -1296,32 +1305,49 @@ export default function AssetsPanel({ onViewReport }) {
     }
     try {
       await apiDelete(`/assets/${asset.id}`, { token: session?.token });
-      if (selectedAssetId === asset.id) setSelectedAssetId(null);
+      if (selectedAssetId === asset.id) {
+        setSelectedAssetId(null);
+        closeBillPreview();
+      }
       await loadAssets();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete that asset.');
     }
   };
 
+  const [billPreviewUrl, setBillPreviewUrl] = useState('');
+  // Called at every point selectedAssetId changes (Close, Delete, opening a
+  // different asset) so a leftover preview never outlives the detail panel
+  // it was shown in.
+  const closeBillPreview = () => {
+    setBillPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  };
+
   const closeAssetDetail = () => {
     if (scannedToken) setConsumedAssetToken(scannedToken);
     setSelectedAssetId(null);
+    closeBillPreview();
   };
 
   const openAssetDetail = (asset) => {
     if (scannedToken) setConsumedAssetToken(scannedToken);
     setSelectedAssetId(asset.id);
+    closeBillPreview();
   };
 
-  // Opened in a new tab rather than downloaded straight away — a bill is
-  // read more often than it's saved, and the browser's own viewer (or its
-  // save button) covers the rest without a bespoke modal for one file.
+  // Shown inline (see billPreviewUrl below) rather than in a new tab — a new
+  // tab left a blank/loading one behind on every view, and the desk is
+  // already looking at this asset's own detail panel when they ask for it.
   const viewBill = async (asset) => {
     try {
       const blob = await apiGetBlob(`/assets/${asset.id}/bill`, { token: session?.token });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setBillPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not open that bill.');
     }
@@ -2537,8 +2563,6 @@ export default function AssetsPanel({ onViewReport }) {
                     <div className="form-banner form-banner--error form-banner--flash">{assetPaymentError}</div>
                   )}
 
-                  {/* No separate "Add payment" button — Enter in any of
-                      these three fields submits the payment directly. */}
                   {purchaseExpense.amount > (purchaseExpense.amountPaid || 0) && (
                     <div
                       className="field-row field-row--triple"
@@ -2595,13 +2619,52 @@ export default function AssetsPanel({ onViewReport }) {
                           />
                         </div>
                       )}
-                      <span className="field__hint" style={{ gridColumn: '1 / -1' }}>
-                        {addingAssetPayment ? 'Adding…' : 'Press Enter to add this payment.'}
-                      </span>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={addingAssetPayment || !newAssetPayment.amount}
+                          onClick={(e) => handleAddAssetPayment(e)}
+                        >
+                          {addingAssetPayment ? 'Adding…' : 'Add payment'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* The purchase bill, in its own modal over the asset detail panel
+          rather than squeezed into it — the detail panel is already a fixed
+          two-column layout, and a full document had no room to be read at
+          any real size inside it. Same width class as the detail modal
+          (inv-panel__modal--asset-detail) and a fixed height at the same
+          88vh cap, rather than inv-panel__modal's default content-driven
+          height, so this one fully covers the panel behind it instead of
+          leaving a strip of it showing at the edges. */}
+      {billPreviewUrl && (
+        <div className="glass-backdrop inv-panel__backdrop" onClick={closeBillPreview}>
+          <div
+            className="glass-panel inv-panel__modal inv-panel__modal--asset-detail inv-panel__modal--fixed modal-form__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Purchase bill"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-form">
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>Purchase bill</h3>
+                  <button type="button" className="btn-secondary" onClick={closeBillPreview}>
+                    Close
+                  </button>
+                </div>
+              </div>
+              <iframe className="document-preview__frame document-preview__frame--fill" src={billPreviewUrl} title="Purchase bill" />
             </div>
           </div>
         </div>
@@ -2714,9 +2777,17 @@ export default function AssetsPanel({ onViewReport }) {
                     <input
                       id="assetPurchaseDate"
                       type="date"
+                      max={todayIso()}
+                      aria-invalid={Boolean(fieldErrors.purchaseDate)}
                       value={assetForm.purchaseDate}
-                      onChange={(e) => setAssetForm((f) => ({ ...f, purchaseDate: e.target.value }))}
+                      onChange={(e) => {
+                        setAssetForm((f) => ({ ...f, purchaseDate: e.target.value }));
+                        if (fieldErrors.purchaseDate) setFieldErrors((f) => ({ ...f, purchaseDate: undefined }));
+                      }}
                     />
+                    {fieldErrors.purchaseDate ? (
+                      <span className="field__error">{fieldErrors.purchaseDate}</span>
+                    ) : null}
                   </div>
 
                   <div className="field">
@@ -3122,9 +3193,17 @@ export default function AssetsPanel({ onViewReport }) {
                   <input
                     id="bulkPurchaseDate"
                     type="date"
+                    max={todayIso()}
+                    aria-invalid={Boolean(bulkFieldErrors.purchaseDate)}
                     value={bulkForm.purchaseDate}
-                    onChange={(e) => setBulkForm((f) => ({ ...f, purchaseDate: e.target.value }))}
+                    onChange={(e) => {
+                      setBulkForm((f) => ({ ...f, purchaseDate: e.target.value }));
+                      if (bulkFieldErrors.purchaseDate) setBulkFieldErrors((f) => ({ ...f, purchaseDate: undefined }));
+                    }}
                   />
+                  {bulkFieldErrors.purchaseDate ? (
+                    <span className="field__error">{bulkFieldErrors.purchaseDate}</span>
+                  ) : null}
                 </div>
 
                 <div className="field">

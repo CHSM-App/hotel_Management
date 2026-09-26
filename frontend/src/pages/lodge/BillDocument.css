@@ -677,6 +677,21 @@
      so the box needs a floor to centre against on a short masthead —
      otherwise "centred" collapses to wherever the text happens to end. */
   min-height: 72px;
+  /* Stacked explicitly rather than left to plain block flow. The PDF capture
+     clones this box and its computed height along with it (html-to-image
+     freezes each node's height at clone time); a plain block's height is
+     "however tall the content happens to be right now", and a name that
+     wraps to a second line a moment after cloning bakes in the shorter,
+     one-line height — the next line then prints on top of .memo__addr
+     instead of pushing it down. A flex column's height is never a frozen
+     number to fall out of step with, only "the sum of what's inside it". */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Lets .memo__name size itself off this box's own width (cqw) rather than
+     the viewport's — the masthead is a fixed-width slip of paper regardless
+     of what screen or capture canvas it's drawn on. */
+  container-type: inline-size;
 }
 
 .memo__kind {
@@ -731,11 +746,18 @@
   text-align: center;
   font-family: 'Baloo 2', var(--serif);
   font-weight: 800;
-  font-size: 34px;
+  /* Auto-adjustable for a long hotel name: shrinks toward 22px inside its own
+     box (cqw, not the viewport — this is a fixed-width slip of paper on
+     screen and in the capture alike) rather than wrapping onto a second line
+     the masthead had no reserved room for. Short names ("ANAND HOME STAY")
+     still hit the 34px ceiling; "HOTEL RENUKA PALACE" is what needed the
+     floor to actually bite. */
+  font-size: clamp(22px, 6.5cqw, 34px);
   line-height: 1.15;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: #101820;
+  max-width: 100%;
 }
 
 /* Devanagari joins its letters under one headstroke — tracking it apart

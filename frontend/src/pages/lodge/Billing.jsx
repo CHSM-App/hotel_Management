@@ -95,7 +95,16 @@ const SOURCE_LABEL = {
 function billSource(inv) {
   if (inv.kind === 'ADVANCE') return 'ADVANCE';
   if (inv.kind === 'EVENT') return 'EVENT';
-  if (inv.kind === 'FOOD') return 'TABLE';
+  // A food bill is one of three tabs (see tabIdentity on the backend): a
+  // dining table, room service with nobody checked in to carry it on a stay
+  // bill, or the counter. Only the first of those is actually a table — a
+  // room-service order billed on its own still names a room, which is exactly
+  // what tableLabel already says for that case ("Room 007", stamped by
+  // mapInvoice off the food bill's own room join — roomNumber is a stay's
+  // room and is never set on a food-only bill). Tagging every FOOD invoice
+  // TABLE told the kitchen and front desk it was food eaten at a table that
+  // was never occupied.
+  if (inv.kind === 'FOOD') return /^Room\b/.test(inv.tableLabel || '') ? 'ROOM' : 'TABLE';
   // A stay whose guest ordered to the room is neither a plain stay bill nor a
   // food bill — it carries two taxed blocks, and staff reconciling the kitchen
   // against the front desk need to spot it without opening it.

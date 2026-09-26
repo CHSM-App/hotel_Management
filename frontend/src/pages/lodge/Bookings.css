@@ -1978,3 +1978,14 @@
   font-weight: 700;
   color: var(--danger, #c0392b);
 }
+
+/* An ID proof, shown inline in its own small modal rather than a new tab —
+   a document view leaving a blank/loading tab behind it every time it's
+   opened is worse than a modal over the booking it was opened from. */
+.id-proof-preview__frame {
+  width: 100%;
+  height: 60vh;
+  min-height: 360px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}

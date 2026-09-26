@@ -369,8 +369,14 @@ async function createAssetsBulk(lodgeId, sharedInput, units, billFilename) {
     await transaction.commit();
 
     if (sharedInput.purchaseCost) {
+      // Sequential, not fire-and-forget-in-parallel: logAssetExpense does a
+      // check-then-insert against expense_categories (unique lodge_id+name),
+      // so N concurrent calls race that check and only one insert wins —
+      // every other asset in the batch silently loses its purchase expense
+      // (logAssetExpenseQuietly swallows the constraint error), which is why
+      // only one asset showed a payment option after a bulk create.
       for (const [i, assetId] of insertedIds.entries()) {
-        logAssetExpenseQuietly(lodgeId, {
+        await expensesService.logAssetExpense(lodgeId, {
           assetId,
           vendorId: sharedInput.vendorId ?? null,
           title: `Asset purchase: ${units[i].name}`,
@@ -383,7 +389,7 @@ async function createAssetsBulk(lodgeId, sharedInput, units, billFilename) {
           amountPaid: sharedInput.amountPaid,
           referenceNumber: sharedInput.referenceNumber,
           expenseDate: sharedInput.purchaseDate || new Date().toISOString().slice(0, 10),
-        });
+        }).catch(() => {});
       }
     }
 

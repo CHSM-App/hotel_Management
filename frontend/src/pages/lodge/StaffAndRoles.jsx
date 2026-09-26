@@ -37,13 +37,26 @@ function compareValues(a, b) {
   return String(a).localeCompare(String(b), 'en-IN', { numeric: true, sensitivity: 'base' });
 }
 
-// A staff phone is an Indian mobile number: exactly ten digits, nothing else.
-// Non-digits are dropped and the eleventh digit is refused as they are typed,
-// so the field can only ever hold a number of the right shape rather than
-// taking anything and rejecting it at save time. Separators aren't allowed
-// either — with a fixed ten-digit number there is nothing left to separate.
+// A staff phone is an Indian mobile number: exactly ten digits, starting with
+// 6-9 — 0-5 has never been an allotted starting digit here, so a number in
+// that range is a typo, not a valid subscriber number. Non-digits are dropped
+// and the eleventh digit is refused as they are typed, so the field can only
+// ever hold a number of the right shape rather than taking anything and
+// rejecting it at save time. Separators aren't allowed either — with a fixed
+// ten-digit number there is nothing left to separate.
 const PHONE_MAX = 10;
-const PHONE_TEN = /^\d{10}$/;
+const PHONE_TEN = /^[6-9]\d{9}$/;
+
+// Strips what a pasted Indian number carries besides the ten digits
+// themselves: a leading country code (+91/91) or the domestic trunk prefix
+// (0), so pasting "+91 98765 43210" or "098765 43210" keeps the real number
+// instead of the code eating into it once sliced to ten digits.
+function toIndianDigits(raw) {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length > PHONE_MAX && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length > PHONE_MAX && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
 
 export default function StaffAndRoles() {
   const token = getSession()?.token;
@@ -139,10 +152,12 @@ export default function StaffAndRoles() {
       return;
     }
     // The input already refuses anything but ten digits, so this only catches a
-    // number left half-typed — but it is what stops a nine-digit number being
-    // saved as though it were a phone number.
+    // number left half-typed, or one starting 0-5 — typing can't refuse that
+    // digit up front the way it refuses an eleventh one, since 0-5 is only
+    // invalid as the *first* digit and the field can't know that's the one
+    // being typed until the rest follows.
     if (!PHONE_TEN.test(staffForm.phone.trim())) {
-      failOnStaff('staffPhone', 'Enter a 10-digit mobile number.');
+      failOnStaff('staffPhone', 'Enter a valid 10-digit mobile number (starting 6-9).');
       return;
     }
     if (!staffForm.roleKey) {
@@ -699,7 +714,7 @@ export default function StaffAndRoles() {
                         // written with spaces or a +91 should keep its ten
                         // digits rather than losing the last few to characters
                         // that were never going to be stored.
-                        phone: e.target.value.replace(/\D/g, '').slice(0, PHONE_MAX),
+                        phone: toIndianDigits(e.target.value).slice(0, PHONE_MAX),
                       }))
                     }
                     placeholder="9876543210"
