@@ -1935,6 +1935,12 @@ IF COL_LENGTH('dbo.event_bookings', 'cancellation_charge') IS NULL
 IF COL_LENGTH('dbo.event_bookings', 'cancelled_at') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD cancelled_at DATETIMEOFFSET NULL');
 
+-- How the refund went back (091) — the same gap 056 closed for bookings.
+IF COL_LENGTH('dbo.event_bookings', 'refund_payment_method') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD refund_payment_method NVARCHAR(20) NULL
+            CONSTRAINT ck_event_bookings_refund_method
+            CHECK (refund_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
+
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_venue_time' AND object_id = OBJECT_ID('dbo.event_bookings'))
     CREATE INDEX ix_event_bookings_venue_time ON dbo.event_bookings(venue_id, start_at, end_at) INCLUDE (status);
 

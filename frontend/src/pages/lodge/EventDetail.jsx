@@ -3,6 +3,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { buildWhatsAppLink, openExternal } from '../../lib/shareLinks';
 import { formatPrice } from './priceFormat';
+import { PAYMENT_METHOD_LABEL } from './paymentSplit';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import EventForm from './EventForm';
 import {
@@ -352,7 +353,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   const [editing, setEditing] = useState(false);
   const [takingAdvance, setTakingAdvance] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [cancelForm, setCancelForm] = useState({ reason: '', refundAmount: '' });
+  const [cancelForm, setCancelForm] = useState({ reason: '', refundAmount: '', refundPaymentMethod: '' });
   const [holdHours, setHoldHours] = useState('48');
   const [now, setNow] = useState(() => Date.now());
 
@@ -426,7 +427,11 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   // it is a decision made by typing a smaller figure, not a forgotten default.
   const openCancel = () => {
     setActionError('');
-    setCancelForm({ reason: '', refundAmount: event?.advanceAmount > 0 ? String(event.advanceAmount) : '' });
+    setCancelForm({
+      reason: '',
+      refundAmount: event?.advanceAmount > 0 ? String(event.advanceAmount) : '',
+      refundPaymentMethod: '',
+    });
     setCancelling(true);
   };
 
@@ -447,7 +452,12 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
         setActionError(`The refund can’t be more than the ${formatPrice(advance)} advance held.`);
         return;
       }
+      if (refund > 0 && !cancelForm.refundPaymentMethod) {
+        setActionError('Choose how the refund was given.');
+        return;
+      }
       body.refundAmount = refund;
+      if (refund > 0) body.refundPaymentMethod = cancelForm.refundPaymentMethod;
     } else if (cancelForm.refundAmount !== '') {
       body.refundAmount = Number(cancelForm.refundAmount);
     }
@@ -536,7 +546,10 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
           {status === 'CANCELLED' && (
             <div className="events-detail__cancelled">
               Cancelled{event.cancelReason ? `: ${event.cancelReason}` : ''}
-              {Number(event.refundAmount) > 0 && ` · Refunded ${formatPrice(event.refundAmount)}`}
+              {Number(event.refundAmount) > 0 &&
+                ` · Refunded ${formatPrice(event.refundAmount)}${
+                  event.refundPaymentMethod ? ` via ${PAYMENT_METHOD_LABEL[event.refundPaymentMethod] || event.refundPaymentMethod}` : ''
+                }`}
               {Number(event.cancellationCharge) > 0 &&
                 ` · Cancellation charge kept ${formatPrice(event.cancellationCharge)}`}
             </div>
@@ -550,7 +563,10 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             </div>
           )}
 
-          {actionError && <div className="form-banner form-banner--error">{actionError}</div>}
+          {/* Not shown while the cancel card is open — that card is far down
+              the page from here, so its own errors render inline inside it
+              instead, where the desk is actually looking. */}
+          {actionError && !cancelling && <div className="form-banner form-banner--error">{actionError}</div>}
 
           <div className="events-detail__grid">
             <div className="events-detail__card">
@@ -664,6 +680,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
           {cancelling && (
             <div className="events-cancel">
               <h4>Cancel this function</h4>
+              {actionError && <div className="form-banner form-banner--error">{actionError}</div>}
               <div className="field">
                 <label htmlFor="ev-cancel-reason">Reason</label>
                 <input id="ev-cancel-reason" value={cancelForm.reason} onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))} autoFocus />
@@ -674,17 +691,36 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                     An advance of <strong>{formatPrice(event.advanceAmount)}</strong> is held on this function.
                     Whatever is not refunded is recorded as a cancellation charge.
                   </p>
-                  <div className="field">
-                    <label htmlFor="ev-cancel-refund">Refund to organiser</label>
-                    <input
-                      id="ev-cancel-refund"
-                      type="number"
-                      min="0"
-                      max={event.advanceAmount}
-                      step="0.01"
-                      value={cancelForm.refundAmount}
-                      onChange={(e) => setCancelForm((f) => ({ ...f, refundAmount: e.target.value }))}
-                    />
+                  <div className="field-row">
+                    <div className="field">
+                      <label htmlFor="ev-cancel-refund">Refund to organiser</label>
+                      <input
+                        id="ev-cancel-refund"
+                        type="number"
+                        min="0"
+                        max={event.advanceAmount}
+                        step="0.01"
+                        value={cancelForm.refundAmount}
+                        onChange={(e) => setCancelForm((f) => ({ ...f, refundAmount: e.target.value }))}
+                      />
+                    </div>
+                    {Number(cancelForm.refundAmount) > 0 && (
+                      <div className="field">
+                        <label htmlFor="ev-cancel-refund-method">Refunded via</label>
+                        <select
+                          id="ev-cancel-refund-method"
+                          value={cancelForm.refundPaymentMethod}
+                          onChange={(e) => setCancelForm((f) => ({ ...f, refundPaymentMethod: e.target.value }))}
+                        >
+                          <option value="">Choose type</option>
+                          {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <p className="events-cancel__hint">
                     Kept as cancellation charge:{' '}

@@ -307,6 +307,10 @@ const holdSchema = z.object({
 const cancelSchema = z.object({
   reason: z.string({ error: 'Enter a reason for cancelling.' }).trim().min(1, 'Enter a reason for cancelling.').max(200),
   refundAmount: moneyField('Enter the refund as a number.'),
+  refundPaymentMethod: z.preprocess(
+    (value) => (value === '' || value == null ? undefined : value),
+    z.enum(PAYMENT_METHODS, { error: 'Choose how the refund was given.' }).optional()
+  ),
 });
 
 module.exports = {

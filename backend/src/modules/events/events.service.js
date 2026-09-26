@@ -544,6 +544,7 @@ function mapEvent(row) {
     holdExpiresAt: toIso(row.hold_expires_at),
     cancelReason: row.cancel_reason ?? null,
     refundAmount: row.refund_amount == null ? null : Number(row.refund_amount),
+    refundPaymentMethod: row.refund_payment_method ?? null,
     // The other half of the same settlement: what the house kept of the
     // advance. NULL until a cancellation settles the money.
     cancellationCharge: row.cancellation_charge == null ? null : Number(row.cancellation_charge),
@@ -1000,20 +1001,29 @@ function releaseEventBooking(lodgeId, id) {
 // stands there, so the split can never drift from the advance it divides. A
 // cancel with no refund figure leaves both NULL: "not settled", not "kept
 // nothing".
-async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null }) {
+async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, refundPaymentMethod = null }) {
   if (refundAmount != null) {
     const current = await getEventBooking(lodgeId, id);
     if (round2(Number(refundAmount)) > round2(current.advanceAmount || 0)) {
       throw new ApiError('The refund can’t be more than the advance held on this function.', 400);
     }
   }
+  // A tender only means anything against money that actually moved — same
+  // rule cancelBooking (bookings.service.js) applies to a room's refund.
+  if (Number(refundAmount) > 0 && !refundPaymentMethod) {
+    throw new ApiError('Choose how the refund was given.', 400);
+  }
   return transition(lodgeId, id, {
     from: ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'],
     to: 'CANCELLED',
-    set: `, hold_expires_at = NULL, cancel_reason = @reason, refund_amount = @refund, cancelled_at = SYSDATETIMEOFFSET(),
+    set: `, hold_expires_at = NULL, cancel_reason = @reason, refund_amount = @refund,
+          refund_payment_method = @refundMethod, cancelled_at = SYSDATETIMEOFFSET(),
           cancellation_charge = CASE WHEN @refund IS NULL THEN NULL ELSE ISNULL(advance_amount, 0) - @refund END`,
     bind: (r) =>
-      r.input('reason', sql.NVarChar(200), reason).input('refund', sql.Decimal(10, 2), refundAmount ?? null),
+      r
+        .input('reason', sql.NVarChar(200), reason)
+        .input('refund', sql.Decimal(10, 2), refundAmount ?? null)
+        .input('refundMethod', sql.NVarChar(20), Number(refundAmount) > 0 ? (refundPaymentMethod ?? null) : null),
   });
 }
 
