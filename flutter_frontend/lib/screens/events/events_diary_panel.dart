@@ -42,7 +42,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
 
   static const _tile = 32.0;
   static const _venueCol = 72.0;
-  static const _rowHeight = 36.0;
+  static const _rowHeight = 40.0;
   static const _dateHeadHeight = 32.0;
 
   final _hScroll = ScrollController();
@@ -594,6 +594,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                                         fontSize: 11.5,
                                                         fontWeight:
                                                             FontWeight.w700,
+                                                        height: 1.0,
                                                       ),
                                                       maxLines: 1,
                                                       overflow:
@@ -606,6 +607,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                                         style: const TextStyle(
                                                           color: AppTheme.muted,
                                                           fontSize: 9.5,
+                                                          height: 1.0,
                                                         ),
                                                       ),
                                                   ],

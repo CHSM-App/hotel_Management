@@ -116,11 +116,20 @@ class EventPricingLine {
   final String? note;
   final String? side;
 
+  /// What this line costs a day, and how many days it's billed for — set on
+  /// add-on lines instead of [note] so the screen can build the same
+  /// "rate × count" text the venue-hire line gets [note] pre-formatted with,
+  /// using its own money formatter. Mirrors lineNote() in EventForm.jsx.
+  final num? perDayAmount;
+  final int? numberOfDays;
+
   const EventPricingLine({
     required this.label,
     required this.amount,
     this.note,
     this.side,
+    this.perDayAmount,
+    this.numberOfDays,
   });
 
   factory EventPricingLine.fromJson(Map<String, dynamic> json) => EventPricingLine(
@@ -128,7 +137,19 @@ class EventPricingLine {
     amount: asNum(json['amount']),
     note: asStringOrNull(json['note']),
     side: asStringOrNull(json['side']),
+    perDayAmount: asNumOrNull(json['perDayAmount']),
+    numberOfDays: asIntOrNull(json['numberOfDays']),
   );
+
+  /// The note to show next to this line: the server's own text when it sent
+  /// one (venue hire, catering), or a "rate × N days" built from
+  /// [perDayAmount] for an add-on billed over more than one day.
+  String? displayNote(String Function(num) formatPrice) {
+    if ((numberOfDays ?? 1) > 1 && perDayAmount != null) {
+      return '${formatPrice(perDayAmount!)} × $numberOfDays days';
+    }
+    return note;
+  }
 }
 
 /// The full breakdown priceEvent() on the server returns — the live quote
@@ -136,6 +157,7 @@ class EventPricingLine {
 class EventPricing {
   final List<EventPricingLine> lines;
   final int billablePax;
+  final int numberOfDays;
   final num venueCharge;
   final num perPlateRate;
   final num cateringAmount;
@@ -147,6 +169,7 @@ class EventPricing {
   const EventPricing({
     this.lines = const [],
     this.billablePax = 0,
+    this.numberOfDays = 1,
     this.venueCharge = 0,
     this.perPlateRate = 0,
     this.cateringAmount = 0,
@@ -161,6 +184,7 @@ class EventPricing {
         .map((e) => EventPricingLine.fromJson(e as Map<String, dynamic>))
         .toList(),
     billablePax: asInt(json['billablePax']),
+    numberOfDays: asInt(json['numberOfDays'], fallback: 1),
     venueCharge: asNum(json['venueCharge']),
     perPlateRate: asNum(json['perPlateRate']),
     cateringAmount: asNum(json['cateringAmount']),
