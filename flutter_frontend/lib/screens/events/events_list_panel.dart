@@ -79,11 +79,57 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: NeuField(
-                      controller: _search,
-                      label: '',
-                      hint: 'Search title, organiser, phone',
-                      onChanged: (_) => setState(() {}),
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.card,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppTheme.border),
+                        boxShadow: AppTheme.subtle,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.10),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                          Expanded(
+                            child: TextField(
+                              controller: _search,
+                              onChanged: (_) => setState(() {}),
+                              style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                              decoration: const InputDecoration(
+                                hintText: 'Search title, organiser, phone',
+                                hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(vertical: 13),
+                              ),
+                            ),
+                          ),
+                          if (_search.text.isNotEmpty)
+                            GestureDetector(
+                              onTap: () => setState(() => _search.clear()),
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                margin: const EdgeInsets.only(right: 2),
+                                alignment: Alignment.center,
+                                decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
+                                child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),

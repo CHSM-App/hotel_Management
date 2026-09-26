@@ -291,11 +291,14 @@ class _QuoteCard extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      l.note != null ? '${l.label} (${l.note})' : l.label,
-                      style: const TextStyle(color: AppTheme.text, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Builder(builder: (context) {
+                      final note = l.displayNote(formatPrice);
+                      return Text(
+                        note != null ? '${l.label} ($note)' : l.label,
+                        style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    }),
                   ),
                   Text(formatPrice(l.amount), style: const TextStyle(color: AppTheme.text, fontSize: 12)),
                 ],

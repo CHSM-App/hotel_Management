@@ -673,10 +673,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                             ),
                             const SizedBox(width: AppTheme.s8),
                             Expanded(
-                              child: NeuField(controller: _venueCharge, label: 'Venue hire charge', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote()),
+                              child: NeuField(controller: _venueCharge, label: 'Venue hire charge (per day)', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote()),
                             ),
                           ],
                         ),
+                        if (_quote != null && _quote!.pricing.numberOfDays > 1)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '${formatPrice(num.tryParse(_venueCharge.text.trim()) ?? 0)} × ${_quote!.pricing.numberOfDays} days = ${formatPrice(_quote!.pricing.venueCharge)}',
+                              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                            ),
+                          ),
                         if (canCater || canRooms) ...[
                           const SizedBox(height: AppTheme.s8),
                           Wrap(
@@ -740,7 +748,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           NeuField(controller: _roomsNotes, label: 'Room notes (optional)', hint: 'Two on the ground floor for grandparents, …'),
                         ],
                         const SizedBox(height: AppTheme.s8),
-                        const Text('Add-ons', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                        const Text('Add-ons (per day)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                         const SizedBox(height: 6),
                         if (_lines.isEmpty) const Text('No add-ons in the catalogue yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                         for (final l in _lines) _AddonLineTile(line: l, onChanged: () { setState(() {}); _scheduleQuote(); }),
@@ -900,6 +908,8 @@ class _AddonLineTile extends StatelessWidget {
             },
           ),
           Expanded(child: Text(line.label, style: const TextStyle(color: AppTheme.text, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          if (!line.selected && line.unitAmount != null)
+            Text('${formatPrice(line.unitAmount!)}/day', style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
           if (line.selected) ...[
             SizedBox(
               width: 46,
@@ -1091,7 +1101,7 @@ class _QuoteCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
-                  Expanded(child: Text(l.note != null ? '${l.label} (${l.note})' : l.label, style: const TextStyle(color: AppTheme.text, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Expanded(child: Text(l.displayNote(formatPrice) != null ? '${l.label} (${l.displayNote(formatPrice)})' : l.label, style: const TextStyle(color: AppTheme.text, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
                   Text(formatPrice(l.amount), style: const TextStyle(color: AppTheme.text, fontSize: 12)),
                 ],
               ),
