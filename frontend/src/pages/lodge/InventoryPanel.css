@@ -370,6 +370,27 @@
   color: var(--text-muted);
 }
 
+/* A document (purchase bill, receipt, ID proof) shown in its own modal
+   rather than a new tab — a document view leaving a blank tab behind it
+   every time it's opened is worse than a modal over the page it was opened
+   from. Shared by AssetsPanel, ExpensesPanel and Bookings. */
+.document-preview__frame {
+  width: 100%;
+  height: 75vh;
+  min-height: 480px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Inside inv-panel__modal--fixed: fills whatever height the head leaves,
+   rather than the fixed vh figure above, which would run past the flex
+   parent's own fixed height instead of stopping at its edge. */
+.document-preview__frame--fill {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
 .inv-linkbtn {
   background: none;
   border: none;
@@ -449,6 +470,20 @@
 
 .inv-panel__modal--wide {
   max-width: 620px;
+}
+
+/* inv-panel__modal sizes itself off its content (max-height only), so a
+   short modal opened over a taller one behind it leaves the taller one's
+   edges showing. This pins the height to the same 88vh cap instead, so a
+   modal using it always fully covers whatever's behind it. */
+.inv-panel__modal--fixed {
+  height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.inv-panel__modal--fixed .modal-form {
+  height: 100%;
 }
 
 /* The asset detail view: wider still than --wide, because its top section

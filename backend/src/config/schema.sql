@@ -2531,7 +2531,13 @@ INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permiss
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'ACCOUNTANT', 'Accountant', 'Billing, payments and property expenses.', 1,
-     '["billing.manage","expenses.manage"]');
+     '["billing.manage","expenses.manage","events.manage"]');
+-- events.manage rides along on the global default (migration 090) so a
+-- property with the function diary switched on has its Accountant reconcile
+-- event revenue too, the same as room and food revenue. No capability gate
+-- needed here beyond events.manage's own: permissionsFor/validatePermissions
+-- already drop it from what a rooms-only or restaurant-only lodge can see or
+-- save, the same way it already hides from every other role.
 
 -- orders.cook (migration 085): splits cooking (queued through delivered, and
 -- item-ready ticks) out of orders.manage, which now covers view/accept/cancel

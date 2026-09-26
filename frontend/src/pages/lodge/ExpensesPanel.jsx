@@ -378,6 +378,9 @@ export default function ExpensesPanel({ onViewReport }) {
   const [paymentError, setPaymentError] = useState('');
   const [addingPayment, setAddingPayment] = useState(false);
 
+  // The receipt/bill preview, shown in its own small modal (see viewBill).
+  const [billPreviewUrl, setBillPreviewUrl] = useState('');
+
   // Set while the expense form is open for "Log this month" rather than a
   // plain new/edit expense — routes the submit to POST
   // /expenses/recurring/:id/log instead of POST /expenses, so the template's
@@ -661,6 +664,7 @@ export default function ExpensesPanel({ onViewReport }) {
     if (!expenseForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
     if (!expenseForm.amount || Number(expenseForm.amount) < 0) errors.amount = 'Enter a valid amount.';
     if (!expenseForm.expenseDate) errors.expenseDate = 'Enter the expense date.';
+    else if (expenseForm.expenseDate > todayIso()) errors.expenseDate = 'Expense date cannot be in the future.';
     if (expenseForm.vendorPhone && !/^[6-9]\d{9}$/.test(expenseForm.vendorPhone)) {
       errors.vendorPhone = 'Enter a valid 10-digit mobile number.';
     }
@@ -734,14 +738,26 @@ export default function ExpensesPanel({ onViewReport }) {
     }
   };
 
+  // Shown inline in a small modal (see billPreviewUrl below) rather than a
+  // new tab — a document view leaving a blank/loading tab behind every time
+  // it's opened is worse than a modal over the page it was opened from.
   const viewBill = async (expense) => {
     try {
       const blob = await apiGetBlob(`/expenses/${expense.id}/bill`, { token: session?.token });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      setBillPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not open that receipt.');
     }
+  };
+
+  const closeBillPreview = () => {
+    setBillPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
   };
 
   // ---------------------------------------------------------------------
@@ -987,8 +1003,20 @@ export default function ExpensesPanel({ onViewReport }) {
                 </select>
                 {showDateRange ? (
                   <div className="asset-toolbar-row__date-pair">
-                    <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} aria-label="From date" />
-                    <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} aria-label="To date" />
+                    <input
+                      type="date"
+                      value={fromDate}
+                      max={toDate || undefined}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      aria-label="From date"
+                    />
+                    <input
+                      type="date"
+                      value={toDate}
+                      min={fromDate || undefined}
+                      onChange={(e) => setToDate(e.target.value)}
+                      aria-label="To date"
+                    />
                   </div>
                 ) : (
                   <button type="button" className="inv-linkbtn" onClick={() => setShowDateRange(true)}>
@@ -1618,6 +1646,7 @@ export default function ExpensesPanel({ onViewReport }) {
                       <input
                         id="expenseDate"
                         type="date"
+                        max={todayIso()}
                         aria-invalid={Boolean(expenseFieldErrors.expenseDate)}
                         value={expenseForm.expenseDate}
                         onChange={(e) => {
@@ -2114,6 +2143,30 @@ export default function ExpensesPanel({ onViewReport }) {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {billPreviewUrl && (
+        <div className="glass-backdrop inv-panel__backdrop" onClick={closeBillPreview}>
+          <div
+            className="glass-panel inv-panel__modal inv-panel__modal--wide modal-form__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Bill preview"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-form">
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3>Bill</h3>
+                  <button type="button" className="btn-secondary" onClick={closeBillPreview}>
+                    Close
+                  </button>
+                </div>
+              </div>
+              <iframe className="document-preview__frame" src={billPreviewUrl} title="Bill" />
+            </div>
           </div>
         </div>
       )}

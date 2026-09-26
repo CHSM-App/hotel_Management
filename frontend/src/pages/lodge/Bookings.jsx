@@ -2475,15 +2475,33 @@ export default function Bookings({ onBillStay, onShowRegister }) {
   const closeDetail = () => {
     if (actionSubmitting) return;
     setSelectedBookingId(null);
+    setIdProofPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
   };
 
   const [idProofError, setIdProofError] = useState('');
+  // Shown inline in a small modal (see below) rather than a new tab — a
+  // document view leaving a blank/loading tab behind it every time it's
+  // opened is worse than a modal over the booking it was opened from.
+  const [idProofPreviewUrl, setIdProofPreviewUrl] = useState('');
+
+  const closeIdProofPreview = () => {
+    setIdProofPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  };
 
   const handleViewIdProof = async () => {
     setIdProofError('');
     try {
       const blob = await apiGetBlob(`/bookings/${selectedBookingId}/id-proof`, { token });
-      window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+      setIdProofPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
     } catch (err) {
       setIdProofError(err instanceof ApiError ? err.message : 'Could not open the ID proof.');
     }
@@ -2493,7 +2511,10 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setIdProofError('');
     try {
       const blob = await apiGetBlob(`/bookings/${selectedBookingId}/guests/${guestId}/id-proof`, { token });
-      window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+      setIdProofPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
     } catch (err) {
       setIdProofError(err instanceof ApiError ? err.message : 'Could not open the ID proof.');
     }
@@ -4537,6 +4558,30 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     onClearFoodLockout={handleClearFoodLockout}
                     clearingLockout={clearingLockout}
                   />
+                )}
+
+                {idProofPreviewUrl && (
+                  <div className="glass-backdrop bookings-panel__backdrop" onClick={closeIdProofPreview}>
+                    <div
+                      className="glass-panel modal-form__panel"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="ID proof"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="modal-form">
+                        <div className="modal-form__head">
+                          <div className="modal-form__head-row">
+                            <h3>ID proof</h3>
+                            <button type="button" className="btn-secondary" onClick={closeIdProofPreview}>
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                        <iframe className="id-proof-preview__frame" src={idProofPreviewUrl} title="ID proof" />
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {actionError && <div className="form-banner form-banner--error">{actionError}</div>}
