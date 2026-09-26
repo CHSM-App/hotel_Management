@@ -69,7 +69,10 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   static String _dateKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  late List<DateTime> _dates = List.generate(_windowDays, (i) => _start.add(Duration(days: i)));
+  late List<DateTime> _dates = List.generate(
+    _windowDays,
+    (i) => _start.add(Duration(days: i)),
+  );
 
   @override
   void initState() {
@@ -124,11 +127,19 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     setState(() {
       _start = _start.subtract(const Duration(days: _growDays));
       _daysBeforeGrown += _growDays;
-      _dates = List.generate(_dates.length + _growDays, (i) => _start.add(Duration(days: i)));
+      _dates = List.generate(
+        _dates.length + _growDays,
+        (i) => _start.add(Duration(days: i)),
+      );
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_hScroll.hasClients) {
-        _hScroll.jumpTo((_hScroll.offset + _growDays * _tile).clamp(0.0, _hScroll.position.maxScrollExtent));
+        _hScroll.jumpTo(
+          (_hScroll.offset + _growDays * _tile).clamp(
+            0.0,
+            _hScroll.position.maxScrollExtent,
+          ),
+        );
       }
       _growingPast = false;
     });
@@ -142,27 +153,39 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     _growingFuture = true;
     setState(() {
       _daysAfterGrown += _growDays;
-      _dates = List.generate(_dates.length + _growDays, (i) => _start.add(Duration(days: i)));
+      _dates = List.generate(
+        _dates.length + _growDays,
+        (i) => _start.add(Duration(days: i)),
+      );
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _growingFuture = false);
     _load();
   }
 
   Future<void> _load() {
-    return ref.read(eventsViewModelProvider.notifier).loadEvents(
-      fromDate: _dateKey(_dates.first),
-      toDate: _dateKey(_dates.last),
-      includeClosed: true,
-    );
+    return ref
+        .read(eventsViewModelProvider.notifier)
+        .loadEvents(
+          fromDate: _dateKey(_dates.first),
+          toDate: _dateKey(_dates.last),
+          includeClosed: true,
+        );
   }
 
   void _scrollToToday({bool animate = true}) {
     if (!_hScroll.hasClients) return;
     // One tile of margin before today, the same "just landed, not flush
     // against the edge" spot TapeChart's own jump leaves.
-    final target = (_tile * (_daysBeforeGrown - 1)).clamp(0.0, _hScroll.position.maxScrollExtent);
+    final target = (_tile * (_daysBeforeGrown - 1)).clamp(
+      0.0,
+      _hScroll.position.maxScrollExtent,
+    );
     if (animate) {
-      _hScroll.animateTo(target, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      _hScroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     } else {
       _hScroll.jumpTo(target);
     }
@@ -170,13 +193,30 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
 
   void _step(int days) {
     if (!_hScroll.hasClients) return;
-    final target = (_hScroll.offset + days * _tile).clamp(0.0, _hScroll.position.maxScrollExtent);
-    _hScroll.animateTo(target, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    final target = (_hScroll.offset + days * _tile).clamp(
+      0.0,
+      _hScroll.position.maxScrollExtent,
+    );
+    _hScroll.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   static const _monthName = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   /// Every local day an event touches — mirrors eventDayKeys in
@@ -228,7 +268,9 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
         byDay.putIfAbsent(key, () => []).add(ev);
       }
     }
-    final rows = venues.where((v) => v.isActive || cells.containsKey(v.id)).toList();
+    final rows = venues
+        .where((v) => v.isActive || cells.containsKey(v.id))
+        .toList();
 
     // The strip opens on today the first time it has something to scroll,
     // the same "land here once, then leave the desk's own drag alone" rule
@@ -241,267 +283,455 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
       });
     }
 
-    return Column(
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        const SizedBox(height: AppTheme.s8),
-        Expanded(
-          child: state.isLoading && state.events.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : rows.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Add a venue on the Setup tab first.', style: TextStyle(color: AppTheme.muted)),
-                  ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(AppTheme.s16, 0, AppTheme.s16, AppTheme.s16),
-                  child: Stack(
-                    alignment: Alignment.bottomCenter,
-                    children: [
-                      NeuCard(
-                    padding: EdgeInsets.zero,
-                    radius: AppTheme.rMedium,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Card head — mirrors the web card's own "Function
-                        // diary" title and venue count.
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, 2),
-                          child: Row(
-                            children: [
-                              const Text('Function diary', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(999), border: Border.all(color: AppTheme.border)),
-                                child: Text(
-                                  '${rows.length} venue${rows.length == 1 ? '' : 's'}',
-                                  style: const TextStyle(color: AppTheme.text, fontSize: 10.5, fontWeight: FontWeight.w600),
-                                  maxLines: 1,
-                                ),
-                              ),
-                            ],
-                          ),
+        Column(
+          children: [
+            const SizedBox(height: AppTheme.s8),
+            Expanded(
+              child: state.isLoading && state.events.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : rows.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Add a venue on the Setup tab first.',
+                          style: TextStyle(color: AppTheme.muted),
                         ),
-                        // The live tally and "Show cancelled" share their
-                        // own row underneath, rather than crowding onto the
-                        // title's — each gets room to sit beside the other
-                        // without either having to ellipsize.
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(AppTheme.s12, 0, AppTheme.s12, AppTheme.s8),
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  '${state.events.where((e) => !_isClosed(e.status)).length} function${state.events.where((e) => !_isClosed(e.status)).length == 1 ? '' : 's'} in view',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const Spacer(),
-                              GestureDetector(
-                                onTap: () => setState(() => _showClosed = !_showClosed),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _showClosed ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                                      size: 15,
-                                      color: AppTheme.muted,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text('Show cancelled', style: Theme.of(context).textTheme.labelSmall),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      color: AppTheme.accent,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.s16,
+                          0,
+                          AppTheme.s16,
+                          AppTheme.s16,
                         ),
-                        // The colour legend — mirrors the web diary's own
-                        // tape-legend row, so a desk reading either surface
-                        // sees the same status → colour vocabulary.
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(AppTheme.s12, 0, AppTheme.s12, AppTheme.s8),
-                          child: Wrap(
-                            spacing: 12,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              for (final status in const ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'])
-                                _LegendItem(color: _statusColor(status), label: kEventStatusLabel[status] ?? status),
-                              const _LegendItem(color: AppTheme.vacant, label: 'Vacant', outlined: true),
-                            ],
-                          ),
-                        ),
-                        // The sticky month band — full width, never
-                        // scrolls, "Today" riding its right edge exactly
-                        // the way TapeChart's own date-header band carries
-                        // it. Reads off [_visibleIndex], the date currently
-                        // sitting at the grid's own left edge, so it always
-                        // names whichever month is actually on screen.
-                        Container(
-                          height: _monthBandHeight,
-                          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                          decoration: const BoxDecoration(
-                            color: AppTheme.bg,
-                            border: Border(bottom: BorderSide(color: AppTheme.border)),
-                          ),
-                          child: Row(
-                            children: [
-                              Text(
-                                _visibleIndex < _dates.length
-                                    ? '${_monthName[_dates[_visibleIndex].month - 1].toUpperCase()} ${_dates[_visibleIndex].year}'
-                                    : '',
-                                style: const TextStyle(color: AppTheme.heading, fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.3),
-                              ),
-                              const Spacer(),
-                              // Only once today has actually scrolled out of
-                              // view — the same rule TapeChart's own sticky
-                              // "Today" pill follows, rather than a label
-                              // sitting there doing nothing the rest of the
-                              // time.
-                              if (!_todayVisible)
-                                GestureDetector(
-                                  onTap: () => _scrollToToday(),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.accent.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(color: AppTheme.accent.withValues(alpha: 0.4)),
-                                    ),
-                                    child: const Text('Today', style: TextStyle(color: AppTheme.accent, fontSize: 10.5, fontWeight: FontWeight.w700)),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        // The venue column pinned outside the scroll, the
-                        // date grid the one thing that moves — same split
-                        // TapeChart's own room column and night grid keep.
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
                           children: [
-                            SizedBox(
-                              width: _venueCol,
+                            NeuCard(
+                              padding: EdgeInsets.zero,
+                              radius: AppTheme.rMedium,
                               child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    height: _dateHeadHeight,
-                                    alignment: Alignment.centerLeft,
-                                    padding: const EdgeInsets.only(left: 8),
-                                    child: const Text(
-                                      'Venue',
-                                      style: TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w700),
+                                  // Card head — mirrors the web card's own "Function
+                                  // diary" title and venue count.
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      AppTheme.s12,
+                                      AppTheme.s12,
+                                      AppTheme.s12,
+                                      2,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Text(
+                                          'Function diary',
+                                          style: TextStyle(
+                                            color: AppTheme.heading,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.bg,
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: AppTheme.border,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '${rows.length} venue${rows.length == 1 ? '' : 's'}',
+                                            style: const TextStyle(
+                                              color: AppTheme.text,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const Divider(height: 1, color: AppTheme.border),
-                                  for (var i = 0; i < rows.length; i++) ...[
-                                    if (i > 0) const Divider(height: 1, color: AppTheme.border),
-                                    Container(
-                                      height: _rowHeight,
-                                      alignment: Alignment.centerLeft,
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                                      color: i.isOdd ? AppTheme.bg.withValues(alpha: 0.5) : null,
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            rows[i].name,
-                                            style: const TextStyle(color: AppTheme.heading, fontSize: 11.5, fontWeight: FontWeight.w700),
+                                  // The live tally and "Show cancelled" share their
+                                  // own row underneath, rather than crowding onto the
+                                  // title's — each gets room to sit beside the other
+                                  // without either having to ellipsize.
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      AppTheme.s12,
+                                      0,
+                                      AppTheme.s12,
+                                      AppTheme.s8,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            '${state.events.where((e) => !_isClosed(e.status)).length} function${state.events.where((e) => !_isClosed(e.status)).length == 1 ? '' : 's'} in view',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.labelSmall,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
-                                          if (rows[i].capacityPax != null)
-                                            Text(
-                                              'up to ${rows[i].capacityPax}',
-                                              style: const TextStyle(color: AppTheme.muted, fontSize: 9.5),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            Container(width: 1, color: AppTheme.border),
-                            Expanded(
-                              child: Scrollbar(
-                                controller: _hScroll,
-                                thumbVisibility: true,
-                                trackVisibility: true,
-                                child: SingleChildScrollView(
-                                  controller: _hScroll,
-                                  scrollDirection: Axis.horizontal,
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: Column(
-                                    children: [
-                                      SizedBox(
-                                        height: _dateHeadHeight,
-                                        child: Row(
-                                          children: [
-                                            for (final d in _dates) _DateHead(date: d, today: today, width: _tile),
-                                          ],
                                         ),
-                                      ),
-                                      const Divider(height: 1, color: AppTheme.border),
-                                      for (var i = 0; i < rows.length; i++) ...[
-                                        if (i > 0) const Divider(height: 1, color: AppTheme.border),
-                                        Container(
-                                          height: _rowHeight,
-                                          color: i.isOdd ? AppTheme.bg.withValues(alpha: 0.5) : null,
+                                        const Spacer(),
+                                        GestureDetector(
+                                          onTap: () => setState(
+                                            () => _showClosed = !_showClosed,
+                                          ),
                                           child: Row(
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              for (final d in _dates)
-                                                _cell(rows[i].id, d, d == today, cells[rows[i].id]?[_dateKey(d)] ?? const []),
+                                              Icon(
+                                                _showClosed
+                                                    ? Icons.check_box_rounded
+                                                    : Icons
+                                                          .check_box_outline_blank_rounded,
+                                                size: 15,
+                                                color: AppTheme.muted,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                'Show cancelled',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.labelSmall,
+                                              ),
                                             ],
                                           ),
                                         ),
                                       ],
+                                    ),
+                                  ),
+                                  // The colour legend — mirrors the web diary's own
+                                  // tape-legend row, so a desk reading either surface
+                                  // sees the same status → colour vocabulary.
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      AppTheme.s12,
+                                      0,
+                                      AppTheme.s12,
+                                      AppTheme.s8,
+                                    ),
+                                    child: Wrap(
+                                      spacing: 12,
+                                      runSpacing: 4,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        for (final status in const [
+                                          'ENQUIRY',
+                                          'TENTATIVE',
+                                          'CONFIRMED',
+                                          'SETTLED',
+                                        ])
+                                          _LegendItem(
+                                            color: _statusColor(status),
+                                            label:
+                                                kEventStatusLabel[status] ??
+                                                status,
+                                          ),
+                                        const _LegendItem(
+                                          color: AppTheme.vacant,
+                                          label: 'Vacant',
+                                          outlined: true,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // The sticky month band — full width, never
+                                  // scrolls, "Today" riding its right edge exactly
+                                  // the way TapeChart's own date-header band carries
+                                  // it. Reads off [_visibleIndex], the date currently
+                                  // sitting at the grid's own left edge, so it always
+                                  // names whichever month is actually on screen.
+                                  Container(
+                                    height: _monthBandHeight,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppTheme.s12,
+                                    ),
+                                    decoration: const BoxDecoration(
+                                      color: AppTheme.bg,
+                                      border: Border(
+                                        bottom: BorderSide(
+                                          color: AppTheme.border,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          _visibleIndex < _dates.length
+                                              ? '${_monthName[_dates[_visibleIndex].month - 1].toUpperCase()} ${_dates[_visibleIndex].year}'
+                                              : '',
+                                          style: const TextStyle(
+                                            color: AppTheme.heading,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 0.3,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        // Only once today has actually scrolled out of
+                                        // view — the same rule TapeChart's own sticky
+                                        // "Today" pill follows, rather than a label
+                                        // sitting there doing nothing the rest of the
+                                        // time.
+                                        if (!_todayVisible)
+                                          GestureDetector(
+                                            onTap: () => _scrollToToday(),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.accent
+                                                    .withValues(alpha: 0.12),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                                border: Border.all(
+                                                  color: AppTheme.accent
+                                                      .withValues(alpha: 0.4),
+                                                ),
+                                              ),
+                                              child: const Text(
+                                                'Today',
+                                                style: TextStyle(
+                                                  color: AppTheme.accent,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  // The venue column pinned outside the scroll, the
+                                  // date grid the one thing that moves — same split
+                                  // TapeChart's own room column and night grid keep.
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      SizedBox(
+                                        width: _venueCol,
+                                        child: Column(
+                                          children: [
+                                            Container(
+                                              height: _dateHeadHeight,
+                                              alignment: Alignment.centerLeft,
+                                              padding: const EdgeInsets.only(
+                                                left: 8,
+                                              ),
+                                              child: const Text(
+                                                'Venue',
+                                                style: TextStyle(
+                                                  color: AppTheme.muted,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                            const Divider(
+                                              height: 1,
+                                              color: AppTheme.border,
+                                            ),
+                                            for (
+                                              var i = 0;
+                                              i < rows.length;
+                                              i++
+                                            ) ...[
+                                              if (i > 0)
+                                                const Divider(
+                                                  height: 1,
+                                                  color: AppTheme.border,
+                                                ),
+                                              Container(
+                                                height: _rowHeight,
+                                                alignment: Alignment.centerLeft,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
+                                                color: i.isOdd
+                                                    ? AppTheme.bg.withValues(
+                                                        alpha: 0.5,
+                                                      )
+                                                    : null,
+                                                child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      rows[i].name,
+                                                      style: const TextStyle(
+                                                        color: AppTheme.heading,
+                                                        fontSize: 11.5,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                    if (rows[i].capacityPax !=
+                                                        null)
+                                                      Text(
+                                                        'up to ${rows[i].capacityPax}',
+                                                        style: const TextStyle(
+                                                          color: AppTheme.muted,
+                                                          fontSize: 9.5,
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        width: 1,
+                                        color: AppTheme.border,
+                                      ),
+                                      Expanded(
+                                        child: Scrollbar(
+                                          controller: _hScroll,
+                                          thumbVisibility: true,
+                                          trackVisibility: true,
+                                          child: SingleChildScrollView(
+                                            controller: _hScroll,
+                                            scrollDirection: Axis.horizontal,
+                                            padding: const EdgeInsets.only(
+                                              bottom: 10,
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                SizedBox(
+                                                  height: _dateHeadHeight,
+                                                  child: Row(
+                                                    children: [
+                                                      for (final d in _dates)
+                                                        _DateHead(
+                                                          date: d,
+                                                          today: today,
+                                                          width: _tile,
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const Divider(
+                                                  height: 1,
+                                                  color: AppTheme.border,
+                                                ),
+                                                for (
+                                                  var i = 0;
+                                                  i < rows.length;
+                                                  i++
+                                                ) ...[
+                                                  if (i > 0)
+                                                    const Divider(
+                                                      height: 1,
+                                                      color: AppTheme.border,
+                                                    ),
+                                                  Container(
+                                                    height: _rowHeight,
+                                                    color: i.isOdd
+                                                        ? AppTheme.bg
+                                                              .withValues(
+                                                                alpha: 0.5,
+                                                              )
+                                                        : null,
+                                                    child: Row(
+                                                      children: [
+                                                        for (final d in _dates)
+                                                          _cell(
+                                                            rows[i].id,
+                                                            d,
+                                                            d == today,
+                                                            cells[rows[i]
+                                                                    .id]?[_dateKey(
+                                                                  d,
+                                                                )] ??
+                                                                const [],
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                ),
+                                  const SizedBox(height: AppTheme.s4),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              left: 4,
+                              bottom: 4,
+                              child: _ScrollArrow(
+                                icon: Icons.chevron_left_rounded,
+                                onTap: () => _step(-5),
+                              ),
+                            ),
+                            Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: _ScrollArrow(
+                                icon: Icons.chevron_right_rounded,
+                                onTap: () => _step(5),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppTheme.s4),
-                      ],
+                      ),
                     ),
-                  ),
-                      Positioned(
-                        left: 4,
-                        bottom: 4,
-                        child: _ScrollArrow(icon: Icons.chevron_left_rounded, onTap: () => _step(-5)),
-                      ),
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: _ScrollArrow(icon: Icons.chevron_right_rounded, onTap: () => _step(5)),
-                      ),
-                      Positioned(
-                        right: AppTheme.s16,
-                        bottom: 40,
-                        child: FloatingActionButton(
-                          backgroundColor: AppTheme.accent,
-                          foregroundColor: Colors.white,
-                          onPressed: () async {
-                            await Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const EventFormScreen()),
-                            );
-                            _load();
-                          },
-                          child: const Icon(Icons.add_rounded),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+            ),
+          ],
+        ),
+        Positioned(
+          right: AppTheme.s16,
+          bottom: AppTheme.s16,
+          child: FloatingActionButton(
+            backgroundColor: AppTheme.accent,
+            foregroundColor: Colors.white,
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const EventFormScreen()),
+              );
+              _load();
+            },
+            child: const Icon(Icons.add_rounded),
+          ),
         ),
       ],
     );
@@ -509,12 +739,22 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
 
   static const _monthBandHeight = 28.0;
 
-  Widget _cell(int venueId, DateTime d, bool isToday, List<EventBooking> events) {
+  Widget _cell(
+    int venueId,
+    DateTime d,
+    bool isToday,
+    List<EventBooking> events,
+  ) {
     if (events.isEmpty) {
       return GestureDetector(
         onTap: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => EventFormScreen(initialDate: _dateKey(d), initialVenueId: venueId)),
+            MaterialPageRoute(
+              builder: (_) => EventFormScreen(
+                initialDate: _dateKey(d),
+                initialVenueId: venueId,
+              ),
+            ),
           );
           _load();
         },
@@ -527,7 +767,9 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
               color: AppTheme.vacant.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isToday ? AppTheme.accent : AppTheme.vacant.withValues(alpha: 0.35),
+                color: isToday
+                    ? AppTheme.accent
+                    : AppTheme.vacant.withValues(alpha: 0.35),
                 width: isToday ? 1.4 : 1,
               ),
             ),
@@ -552,12 +794,19 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
         height: _rowHeight,
         padding: const EdgeInsets.all(3),
         child: Container(
-          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(6),
+          ),
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: Text(
             ev.title.isEmpty ? '' : ev.title[0].toUpperCase(),
-            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),
@@ -572,7 +821,11 @@ class _LegendItem extends StatelessWidget {
   final String label;
   final bool outlined;
 
-  const _LegendItem({required this.color, required this.label, this.outlined = false});
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    this.outlined = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -585,7 +838,9 @@ class _LegendItem extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: outlined ? color.withValues(alpha: 0.16) : color,
-            border: outlined ? Border.all(color: color.withValues(alpha: 0.6)) : null,
+            border: outlined
+                ? Border.all(color: color.withValues(alpha: 0.6))
+                : null,
           ),
         ),
         const SizedBox(width: 4),
@@ -628,12 +883,17 @@ class _DateHead extends StatelessWidget {
   final DateTime today;
   final double width;
 
-  const _DateHead({required this.date, required this.today, required this.width});
+  const _DateHead({
+    required this.date,
+    required this.today,
+    required this.width,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isToday = date == today;
-    final isWeekend = date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+    final isWeekend =
+        date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
     return Container(
       width: width,
       alignment: Alignment.center,
@@ -649,7 +909,9 @@ class _DateHead extends StatelessWidget {
           Text(
             const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][date.weekday - 1],
             style: TextStyle(
-              color: isToday ? AppTheme.accent : (isWeekend ? const Color(0xFFC0392B) : AppTheme.muted),
+              color: isToday
+                  ? AppTheme.accent
+                  : (isWeekend ? const Color(0xFFC0392B) : AppTheme.muted),
               fontSize: 8,
               fontWeight: FontWeight.w700,
               height: 1,
@@ -663,7 +925,12 @@ class _DateHead extends StatelessWidget {
             width: 18,
             height: 18,
             alignment: Alignment.center,
-            decoration: isToday ? const BoxDecoration(color: AppTheme.accent, shape: BoxShape.circle) : null,
+            decoration: isToday
+                ? const BoxDecoration(
+                    color: AppTheme.accent,
+                    shape: BoxShape.circle,
+                  )
+                : null,
             child: Text(
               '${date.day}',
               style: TextStyle(
@@ -678,4 +945,3 @@ class _DateHead extends StatelessWidget {
     );
   }
 }
-
