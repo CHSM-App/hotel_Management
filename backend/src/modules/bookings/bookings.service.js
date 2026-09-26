@@ -1675,7 +1675,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.room_id, b.num_guests, b.id_proof_type, b.check_in_date,
+      SELECT b.room_id, b.bed_id, b.num_guests, b.id_proof_type, b.check_in_date,
              b.total_price, b.advance_amount,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
@@ -1686,6 +1686,19 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
   if (!bookingRow) {
     throw new ApiError('Booking not found or not ready for check-in.', 409);
   }
+
+  // A dormitory sells one room bed by bed — this booking's own bed(s), if it
+  // has any. Empty means a whole-room booking (bed_id IS NULL), which is
+  // occupied by anyone still in the room, the same as an ordinary room.
+  const ownBedsResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId
+      UNION
+      SELECT bed_id FROM dbo.bookings WHERE id = @bookingId AND bed_id IS NOT NULL
+    `);
+  const ownBedIds = ownBedsResult.recordset.map((r) => Number(r.bed_id));
 
   // A pre-reservation holds the room for a future date — it can't be
   // checked in early, only from its reserved date onward. A walk-in is
@@ -1701,13 +1714,24 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
   // reservation is valid. This is the same case a hotel desk calls "room not
   // vacated" — check-in has to wait for the previous occupant's real checkout,
   // not just their booked one.
+  // A dormitory's beds turn over one at a time, so another guest still
+  // checked in on a *different* bed doesn't block this one — only someone
+  // still in this booking's own bed(s), or a whole-room buyout, does. Same
+  // bed-vs-room rule hasOverlap uses for the date clash check.
+  const bedClause =
+    ownBedIds.length > 0
+      ? `b.bed_id IS NULL OR b.bed_id IN (${ownBedIds.join(',')}) OR EXISTS (
+           SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id IN (${ownBedIds.join(',')})
+         )`
+      : '1 = 1';
   const stillOccupiedResult = await pool
     .request()
     .input('roomId', sql.BigInt, bookingRow.room_id)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT TOP 1 id FROM dbo.bookings
-      WHERE room_id = @roomId AND id <> @bookingId AND status = 'CHECKED_IN'
+      SELECT TOP 1 b.id FROM dbo.bookings b
+      WHERE b.room_id = @roomId AND b.id <> @bookingId AND b.status = 'CHECKED_IN'
+        AND (${bedClause})
     `);
   if (stillOccupiedResult.recordset.length > 0) {
     throw new ApiError(

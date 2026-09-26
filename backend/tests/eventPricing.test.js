@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { priceEvent, billablePax } = require('../src/modules/events/eventPricing');
+const { priceEvent, billablePax, numberOfDays } = require('../src/modules/events/eventPricing');
 
 // How a function is quoted, in the owner's words: the hall is one charge, the
 // food is so much a plate for however many come — but never fewer than they
@@ -73,4 +73,48 @@ test('no catering means no catering line', () => {
 test('money is kept to the paisa', () => {
   const q = priceEvent({ venueCharge: 0, perPlateRate: 333.33, expectedPax: 3 });
   assert.equal(q.cateringAmount, 999.99);
+});
+
+test('day count is the span of start to end, rounded up, midnight spillover included', () => {
+  assert.equal(numberOfDays({ startAt: '2026-01-01T18:00:00Z', endAt: '2026-01-02T01:00:00Z' }), 1);
+  assert.equal(numberOfDays({ startAt: '2026-01-01T18:00:00Z', endAt: '2026-01-03T10:00:00Z' }), 2);
+  assert.equal(numberOfDays({ startAt: null, endAt: null }), 1);
+});
+
+test('venue and add-ons are per-day rates, multiplied by the span; catering is not', () => {
+  const q = priceEvent({
+    venueCharge: 25000,
+    perPlateRate: 450,
+    expectedPax: 200,
+    addons: [{ label: 'DJ', quantity: 1, unitAmount: 8000 }],
+    startAt: '2026-01-01T18:00:00Z',
+    endAt: '2026-01-03T10:00:00Z', // 2 days
+  });
+  assert.equal(q.numberOfDays, 2);
+  assert.equal(q.venueCharge, 50000);
+  assert.equal(q.addonsTotal, 16000);
+  assert.equal(q.cateringAmount, 90000); // unaffected by day count
+});
+
+test('an add-on agreedAmount is still multiplied by days — it is the per-day rate, same as unitAmount', () => {
+  const q = priceEvent({
+    venueCharge: 0,
+    addons: [{ label: 'Chairs', quantity: 100, unitAmount: 20, agreedAmount: 1500 }],
+    startAt: '2026-01-01T00:00:00Z',
+    endAt: '2026-01-03T00:00:00Z', // 2 days
+  });
+  assert.equal(q.addonsTotal, 3000);
+});
+
+test('an add-on line carries its per-day rate and day count for the quote breakdown to show as a note', () => {
+  const q = priceEvent({
+    venueCharge: 0,
+    addons: [{ label: 'DJ', quantity: 1, unitAmount: 15000 }],
+    startAt: '2026-01-01T00:00:00Z',
+    endAt: '2026-01-03T00:00:00Z', // 2 days
+  });
+  const dj = q.lines.find((l) => l.label === 'DJ');
+  assert.equal(dj.perDayAmount, 15000);
+  assert.equal(dj.numberOfDays, 2);
+  assert.equal(dj.amount, 30000);
 });

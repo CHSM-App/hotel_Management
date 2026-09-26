@@ -367,6 +367,8 @@ async function quote(lodgeId, input, { pool = null, request = null } = {}) {
     finalPax: input.finalPax ?? null,
     addons,
     discountAmount: input.discountAmount ?? 0,
+    startAt: input.startAt ?? null,
+    endAt: input.endAt ?? null,
   });
   const overCapacity =
     venue.capacityPax != null && pricing.billablePax > venue.capacityPax

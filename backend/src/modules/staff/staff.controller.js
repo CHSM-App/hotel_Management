@@ -7,8 +7,8 @@ const { ApiError } = require('../../middleware/errorHandler');
 // stops a stale form or a direct call storing anything else, and it is applied
 // to staff only — an owner's number arrives through lodge registration, which
 // records landlines and so keeps its own looser field.
-const TEN_DIGIT_PHONE = /^\d{10}$/;
-const phoneField = (schema) => schema.trim().regex(TEN_DIGIT_PHONE, 'Enter a 10-digit mobile number.');
+const TEN_DIGIT_PHONE = /^[6-9]\d{9}$/;
+const phoneField = (schema) => schema.trim().regex(TEN_DIGIT_PHONE, 'Enter a valid 10-digit mobile number.');
 
 const createStaffSchema = z.object({
   name: z.string({ error: 'Enter a name.' }).trim().min(1, 'Enter a name.').max(200),

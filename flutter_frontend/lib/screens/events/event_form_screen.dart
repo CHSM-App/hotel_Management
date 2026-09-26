@@ -392,7 +392,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     if (_venueId == null) return ('venue', 'Pick a venue.');
     if (!_endAt.isAfter(_startAt)) return ('end', 'The function has to end after it starts.');
     if (_organiserName.text.trim().isEmpty) return ('organiserName', "Who is organising it?");
-    if (!RegExp(r'^\d{10}$').hasMatch(_organiserPhone.text.trim())) return ('organiserPhone', 'Enter a 10-digit mobile number.');
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(_organiserPhone.text.trim())) return ('organiserPhone', 'Enter a valid 10-digit mobile number.');
     final pax = num.tryParse(_expectedPax.text.trim());
     if (pax == null || pax <= 0) return ('expectedPax', 'How many guests are expected?');
     final venue = _venue;

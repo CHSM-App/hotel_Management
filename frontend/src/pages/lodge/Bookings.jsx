@@ -229,6 +229,18 @@ function bedSummary(room) {
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
 const DORMITORY_GENDER_LABEL = { MALE: 'Male', FEMALE: 'Female', BOTH: 'Both' };
 const DORMITORY_AC_LABEL = { AC: 'AC', NON_AC: 'Non-AC' };
+// Which beds a dormitory is open to, and AC/Non-AC — the same tags shown on
+// the room row, reused wherever a room is named again (tooltips) so the
+// facts stay visible without hovering back to the row itself.
+function dormitoryTags(room) {
+  if (!room?.isDormitory || (!room.dormitoryGender && !room.dormitoryIsAc)) return null;
+  return (
+    <span className="tape-tooltip__tags">
+      {room.dormitoryGender && <span className="tape-month__room-tag">{DORMITORY_GENDER_LABEL[room.dormitoryGender]}</span>}
+      {room.dormitoryIsAc && <span className="tape-month__room-tag">{DORMITORY_AC_LABEL[room.dormitoryIsAc]}</span>}
+    </span>
+  );
+}
 // Today by the IST calendar, which is the only "today" this app has: every
 // lodge on it is in India, and UTC lags IST by up to 5.5 hours — a plain
 // toISOString() would still read "yesterday" for the first few hours of an IST
@@ -355,8 +367,8 @@ const usableNumber = (raw, max) => {
   return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
 };
 
-const TEN_DIGITS = /^\d{10}$/;
-const MOBILE_MESSAGE = 'Enter a 10-digit mobile number.';
+const TEN_DIGITS = /^[6-9]\d{9}$/;
+const MOBILE_MESSAGE = 'Enter a valid 10-digit mobile number.';
 
 // Mirrors normaliseMobile in bookings.schema.js. Duplicated rather than shared
 // because the two live either side of the wire, but they must agree: a form
@@ -2906,15 +2918,6 @@ export default function Bookings({ onBillStay, onShowRegister }) {
         <div className="tape-month__room">
           <strong>{room.roomNumber}</strong>
           {room.floor != null && <span>Floor {room.floor}</span>}
-          {/* Which beds this dormitory is actually open to, and AC/Non-AC —
-              the section header already says "Dormitory", these are the
-              facts within it that still vary room to room. */}
-          {room.isDormitory && room.dormitoryGender && (
-            <span className="tape-month__room-tag">{DORMITORY_GENDER_LABEL[room.dormitoryGender]}</span>
-          )}
-          {room.isDormitory && room.dormitoryIsAc && (
-            <span className="tape-month__room-tag">{DORMITORY_AC_LABEL[room.dormitoryIsAc]}</span>
-          )}
         </div>
         {dates.map((d) => {
           // The occupancy map extends an overdue CHECKED_IN stay's nights
@@ -3551,6 +3554,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               </span>
               <strong>Room {hoverTile.room.roomNumber}</strong>
               <span className="tape-tooltip__meta">{hoverTile.room.categoryName}</span>
+              {dormitoryTags(hoverTile.room)}
               {hoverTile.bookings.map((b) => (
                 <span className="tape-tooltip__meta" key={b.id}>
                   {b.bedLabels && b.bedLabels.length > 0 ? b.bedLabels.join(', ') : 'Bed'} · {b.guestName}
@@ -3665,6 +3669,7 @@ export default function Bookings({ onBillStay, onShowRegister }) {
               </span>
               <strong>Room {hoverTile.room.roomNumber}</strong>
               <span className="tape-tooltip__meta">{hoverTile.room.categoryName}</span>
+              {dormitoryTags(hoverTile.room)}
               <span className="tape-tooltip__dates">{formatDateLong(hoverTile.date)}</span>
               <span className="tape-tooltip__hint">
                 {hoverTile.past ? 'This night has passed — it can’t be booked' : 'Click to book this night'}
@@ -4659,6 +4664,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
                     )}
 
                     <div className="form-section__title">Advance payment (optional)</div>
+                    <p className="bookings-panel__hint">
+                      Stay total: {formatPrice(bookingDetail.totalPrice)}
+                    </p>
                     <PaymentLines
                       lines={checkInForm.advanceLines}
                       onChange={setAdvanceLines(setCheckInForm)}

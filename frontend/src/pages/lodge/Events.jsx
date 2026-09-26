@@ -877,7 +877,7 @@ function Setup({ venues, addons, reloadCatalogue }) {
         columns={[
           { key: 'name', label: 'Name' },
           { key: 'capacityPax', label: 'Capacity', type: 'number' },
-          { key: 'baseCharge', label: 'Hire charge', type: 'number' },
+          { key: 'baseCharge', label: 'Hire charge (per day)', type: 'number' },
         ]}
         rowClass={(v) => (
           <span>
@@ -909,11 +909,11 @@ function Setup({ venues, addons, reloadCatalogue }) {
       />
       <CatalogueCard
         title="Add-ons"
-        hint="Extras quoted on top of venue and plates — DJ, decor, mandap."
+        hint="Extras quoted on top of venue and plates — DJ, decor, mandap. Priced per day."
         items={addons}
         columns={[
           { key: 'name', label: 'Name' },
-          { key: 'defaultAmount', label: 'Price', type: 'number' },
+          { key: 'defaultAmount', label: 'Price (per day)', type: 'number' },
           { key: 'isPerUnit', label: 'Per unit', type: 'checkbox' },
         ]}
         rowClass={(a) => (
