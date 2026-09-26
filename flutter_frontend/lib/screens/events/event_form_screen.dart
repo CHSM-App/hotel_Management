@@ -286,7 +286,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final today = DateTime(now.year, now.month, now.day);
     final picked = await showDatePicker(
       context: context,
-      firstDate: _isEdit ? today.subtract(const Duration(days: 3650)) : today,
+      // An event can't end before it starts, so the end calendar starts there.
+      firstDate: isStart
+          ? (_isEdit ? today.subtract(const Duration(days: 3650)) : today)
+          : _startDate,
       lastDate: today.add(const Duration(days: 730)),
       initialDate: isStart ? _startDate : _endDate,
       helpText: isStart ? 'Starts' : 'Ends',
@@ -337,11 +340,16 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   Future<void> _pickRoomsDate({required bool isFrom}) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final firstDate = isFrom
+        ? today.subtract(const Duration(days: 365))
+        : (_roomsFrom ?? today.subtract(const Duration(days: 365)));
+    var initialDate = (isFrom ? _roomsFrom : _roomsTo) ?? _startDate;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
     final picked = await showDatePicker(
       context: context,
-      firstDate: today.subtract(const Duration(days: 365)),
+      firstDate: firstDate,
       lastDate: today.add(const Duration(days: 730)),
-      initialDate: (isFrom ? _roomsFrom : _roomsTo) ?? _startDate,
+      initialDate: initialDate,
     );
     if (picked == null) return;
     setState(() {

@@ -50,11 +50,16 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
   Future<void> _pickRangeBound({required bool isFrom}) async {
     final now = DateTime.now();
     final current = isFrom ? _fromDate : _toDate;
+    final earliest = DateTime(now.year - 5);
+    // The to-date can't precede whatever from-date is already set.
+    final firstDate = isFrom ? earliest : (DateTime.tryParse(_fromDate ?? '') ?? earliest);
+    var initialDate = current != null ? (DateTime.tryParse(current) ?? now) : now;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
     final picked = await showDatePicker(
       context: context,
-      firstDate: DateTime(now.year - 5),
+      firstDate: firstDate,
       lastDate: DateTime(now.year + 1),
-      initialDate: current != null ? (DateTime.tryParse(current) ?? now) : now,
+      initialDate: initialDate,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: const ColorScheme.light(primary: AppTheme.accent, onPrimary: Colors.white, surface: AppTheme.bg, onSurface: AppTheme.heading),

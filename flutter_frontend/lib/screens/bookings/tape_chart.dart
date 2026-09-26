@@ -1097,6 +1097,15 @@ class _DateHeaderState extends State<_DateHeader> {
   // overhead keeps naming a month no longer on screen at all.
   late final ScrollController _tracker = widget.hSync.attach();
 
+  /// The last tile index this rebuilt for. A drag fires this listener on
+  /// every sub-pixel move — many times a frame — but the sticky month label
+  /// and the today-button's visibility only ever change once a whole tile of
+  /// movement has gone by. Rebuilding the header on every one of those
+  /// intermediate notifications was pure wasted work fighting the drag for
+  /// frame time; gating on the index actually changing cuts that down to
+  /// once per tile, which is what was stuttering the drag in the first place.
+  int? _lastVisibleIndex;
+
   @override
   void initState() {
     super.initState();
@@ -1110,7 +1119,15 @@ class _DateHeaderState extends State<_DateHeader> {
     super.dispose();
   }
 
-  void _onScroll() => setState(() {});
+  void _onScroll() {
+    final dates = widget.dates;
+    final tile = widget.tile;
+    if (dates.isEmpty || tile <= 0 || !_tracker.hasClients) return;
+    final index = (_tracker.offset / tile).floor().clamp(0, dates.length - 1);
+    if (index == _lastVisibleIndex) return;
+    _lastVisibleIndex = index;
+    setState(() {});
+  }
 
   bool _isWeekend(DateTime d) =>
       d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
@@ -1441,19 +1458,27 @@ class _CategoryBand extends StatelessWidget {
           ),
         ),
         for (final room in section.rooms)
-          _RoomRow(
-            room: room,
-            dates: dates,
-            today: today,
-            tile: tile,
-            roomCol: roomCol,
-            rowHeight: rowHeight,
-            hSync: hSync,
-            onTapStay: onTapStay,
-            onTapVacant: onTapVacant,
-            onTapDraft: onTapDraft,
-            hitIds: hitIds,
-            activeHitId: activeHitId,
+          // Every room row is mounted up front, not lazily (see the
+          // SliverToBoxAdapter note above) — a large property can be dozens
+          // of these stacked in one Column. A boundary per row keeps
+          // scrolling the outer vertical list a matter of repositioning
+          // already-rasterised layers instead of repainting every row's
+          // tiles again each frame.
+          RepaintBoundary(
+            child: _RoomRow(
+              room: room,
+              dates: dates,
+              today: today,
+              tile: tile,
+              roomCol: roomCol,
+              rowHeight: rowHeight,
+              hSync: hSync,
+              onTapStay: onTapStay,
+              onTapVacant: onTapVacant,
+              onTapDraft: onTapDraft,
+              hitIds: hitIds,
+              activeHitId: activeHitId,
+            ),
           ),
         // The web tape chart's own scroller is a plain `overflow-x: auto`
         // div, so the browser draws its own thumb under it for free — there
@@ -1584,37 +1609,51 @@ class _RoomRow extends StatelessWidget {
               builder: (context, controller) => SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 controller: controller,
-                child: Row(
-                  children: [
-                    for (final d in dates)
-                      _Tile(
-                        stay: room.stayOn(d),
-                        dormitoryOccupancy: room.dormitoryOccupancyOn(d),
-                        draft: room.draftOn(d),
-                        // A run of nights on the same stay draws as one
-                        // unbroken bar — rounded only where the bar itself
-                        // starts or ends, square everywhere it butts against
-                        // its own next or previous night — the same
-                        // continuous block the web tape chart draws, rather
-                        // than a row of separately rounded, gapped boxes.
-                        isRunStart: room.stayOn(d.subtract(const Duration(days: 1)))?.id !=
-                            room.stayOn(d)?.id,
-                        isRunEnd: room.stayOn(d.add(const Duration(days: 1)))?.id !=
-                            room.stayOn(d)?.id,
-                        isToday: _isSameDay(d, today),
-                        isPast: d.isBefore(today),
-                        isWeekend: d.weekday == DateTime.saturday ||
-                            d.weekday == DateTime.sunday,
-                        isHit: hitIds.contains(room.stayOn(d)?.id),
-                        isActiveHit: activeHitId != null &&
-                            room.stayOn(d)?.id == activeHitId,
-                        size: tile,
-                        height: rowHeight,
-                        onTapStay: (b) => onTapStay(b, room),
-                        onTapVacant: () => onTapVacant(room.room.id, d),
-                        onTapDraft: onTapDraft,
-                      ),
-                  ],
+                // Isolates this row's tiles into their own compositing layer.
+                // Every drag jumps every other row's controller too (see
+                // _HorizontalSync._onMoved), and without a boundary here that
+                // repaints the whole chart's paint tree on every one of those
+                // jumps rather than just translating this row's own layer —
+                // the difference between a smooth drag and a stutter once
+                // there's more than a handful of rooms on screen.
+                child: RepaintBoundary(
+                  child: Row(
+                    children: [
+                      for (final d in dates)
+                        _Tile(
+                          stay: room.stayOn(d),
+                          dormitoryOccupancy: room.dormitoryOccupancyOn(d),
+                          draft: room.draftOn(d),
+                          // A run of nights on the same stay draws as one
+                          // unbroken bar — rounded only where the bar itself
+                          // starts or ends, square everywhere it butts
+                          // against its own next or previous night — the
+                          // same continuous block the web tape chart draws,
+                          // rather than a row of separately rounded, gapped
+                          // boxes.
+                          isRunStart:
+                              room.stayOn(d.subtract(const Duration(days: 1)))
+                                  ?.id !=
+                              room.stayOn(d)?.id,
+                          isRunEnd:
+                              room.stayOn(d.add(const Duration(days: 1)))
+                                  ?.id !=
+                              room.stayOn(d)?.id,
+                          isToday: _isSameDay(d, today),
+                          isPast: d.isBefore(today),
+                          isWeekend: d.weekday == DateTime.saturday ||
+                              d.weekday == DateTime.sunday,
+                          isHit: hitIds.contains(room.stayOn(d)?.id),
+                          isActiveHit: activeHitId != null &&
+                              room.stayOn(d)?.id == activeHitId,
+                          size: tile,
+                          height: rowHeight,
+                          onTapStay: (b) => onTapStay(b, room),
+                          onTapVacant: () => onTapVacant(room.room.id, d),
+                          onTapDraft: onTapDraft,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
