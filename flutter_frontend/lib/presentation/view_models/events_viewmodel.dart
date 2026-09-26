@@ -285,8 +285,8 @@ class EventsViewModel extends StateNotifier<EventsState> {
 
   Future<EventBooking?> release(int id) => _transition(() => usecase.release(id));
 
-  Future<EventBooking?> cancel(int id, {required String reason, num? refundAmount}) =>
-      _transition(() => usecase.cancel(id, reason: reason, refundAmount: refundAmount));
+  Future<EventBooking?> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>
+      _transition(() => usecase.cancel(id, reason: reason, refundAmount: refundAmount, refundPaymentMethod: refundPaymentMethod));
 
   Future<EventBooking?> _transition(Future<EventBooking> Function() run) async {
     state = state.copyWith(submitting: true, clearError: true);

@@ -272,6 +272,14 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
         .where((v) => v.isActive || cells.containsKey(v.id))
         .toList();
 
+    // Matches the grid's own content height exactly — date head, its
+    // divider, every venue row and the dividers between them, plus the 10px
+    // the scrollbar's thumb sits in below — so an arrow pinned to the
+    // bottom of a box this tall lands right beside that thumb rather than
+    // at some hand-tuned pixel guess.
+    final gridContentHeight =
+        _dateHeadHeight + 1 + rows.length * _rowHeight + (rows.isEmpty ? 0 : (rows.length - 1)) + 10;
+
     // The strip opens on today the first time it has something to scroll,
     // the same "land here once, then leave the desk's own drag alone" rule
     // TapeChart's _snapToToday follows.
@@ -313,10 +321,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                           AppTheme.s16,
                           AppTheme.s16,
                         ),
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            NeuCard(
+                        child: NeuCard(
                               padding: EdgeInsets.zero,
                               radius: AppTheme.rMedium,
                               child: Column(
@@ -621,6 +626,16 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                         width: 1,
                                         color: AppTheme.border,
                                       ),
+                                      SizedBox(
+                                        height: gridContentHeight,
+                                        child: Align(
+                                          alignment: Alignment.bottomLeft,
+                                          child: _ScrollArrow(
+                                            icon: Icons.chevron_left_rounded,
+                                            onTap: () => _step(-5),
+                                          ),
+                                        ),
+                                      ),
                                       Expanded(
                                         child: Scrollbar(
                                           controller: _hScroll,
@@ -691,30 +706,21 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                           ),
                                         ),
                                       ),
+                                      SizedBox(
+                                        height: gridContentHeight,
+                                        child: Align(
+                                          alignment: Alignment.bottomRight,
+                                          child: _ScrollArrow(
+                                            icon: Icons.chevron_right_rounded,
+                                            onTap: () => _step(5),
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                  const SizedBox(height: AppTheme.s4),
                                 ],
                               ),
                             ),
-                            Positioned(
-                              left: 4,
-                              bottom: 4,
-                              child: _ScrollArrow(
-                                icon: Icons.chevron_left_rounded,
-                                onTap: () => _step(-5),
-                              ),
-                            ),
-                            Positioned(
-                              right: 4,
-                              bottom: 4,
-                              child: _ScrollArrow(
-                                icon: Icons.chevron_right_rounded,
-                                onTap: () => _step(5),
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
             ),
@@ -852,9 +858,10 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
-/// One of the two circular arrows riding the card's own bottom edge — the
-/// same step-by-a-few-days control the web diary's stepper offers, sized to
-/// sit over the scrollbar track rather than taking a row of its own.
+/// One of the two arrows riding the card's own bottom edge — the same
+/// step-by-a-few-days control the web diary's stepper offers. A bare icon,
+/// no circle chrome or elevation behind it, so it reads as part of the
+/// scrollbar track rather than a button floating in a little box on top of it.
 class _ScrollArrow extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -863,18 +870,12 @@ class _ScrollArrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppTheme.card,
-      shape: const CircleBorder(side: BorderSide(color: AppTheme.border)),
-      elevation: 1,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 26,
-          height: 26,
-          child: Icon(icon, size: 16, color: AppTheme.heading),
-        ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Icon(icon, size: 14, color: AppTheme.muted),
       ),
     );
   }

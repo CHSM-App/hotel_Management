@@ -34,6 +34,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   bool _cancelling = false;
   final _cancelReason = TextEditingController();
   final _refundAmount = TextEditingController();
+  String? _refundMethod;
   final _holdHours = TextEditingController(text: '48');
 
   @override
@@ -97,7 +98,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       const SizedBox(height: AppTheme.s12),
                       _Timeline(status: ev.status),
                     ],
-                    if (ev.status == 'CANCELLED') _ClosedBanner(text: 'Cancelled${ev.cancelReason != null ? ': ${ev.cancelReason}' : ''}${(ev.refundAmount ?? 0) > 0 ? ' · Refunded ${formatPrice(ev.refundAmount)}' : ''}'),
+                    if (ev.status == 'CANCELLED') _ClosedBanner(text: 'Cancelled${ev.cancelReason != null ? ': ${ev.cancelReason}' : ''}${(ev.refundAmount ?? 0) > 0 ? ' · Refunded ${formatPrice(ev.refundAmount)}${ev.refundPaymentMethod != null ? ' via ${kPaymentMethods[ev.refundPaymentMethod] ?? ev.refundPaymentMethod}' : ''}' : ''}'),
                     if (ev.status == 'EXPIRED') const _ClosedBanner(text: 'The hold on this date lapsed.'),
                     if (ev.status == 'TENTATIVE' && ev.holdExpiresAt != null)
                       _ClosedBanner(text: 'Hold expires ${formatDateTime(ev.holdExpiresAt)}', color: AppTheme.draft),
@@ -131,6 +132,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                         event: ev,
                         reasonController: _cancelReason,
                         refundController: _refundAmount,
+                        refundMethod: _refundMethod,
+                        onRefundMethodChanged: (m) => setState(() => _refundMethod = m),
                         onCancel: () async {
                           if (_cancelReason.text.trim().isEmpty) {
                             setState(() => _actionError = 'Give a reason for the cancellation.');
@@ -146,7 +149,16 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                           } else if (_refundAmount.text.trim().isNotEmpty) {
                             refund = num.tryParse(_refundAmount.text.trim());
                           }
-                          await _run(() => ref.read(eventsViewModelProvider.notifier).cancel(ev.id, reason: _cancelReason.text.trim(), refundAmount: refund));
+                          if ((refund ?? 0) > 0 && _refundMethod == null) {
+                            setState(() => _actionError = 'Choose how the refund was given.');
+                            return;
+                          }
+                          await _run(() => ref.read(eventsViewModelProvider.notifier).cancel(
+                                ev.id,
+                                reason: _cancelReason.text.trim(),
+                                refundAmount: refund,
+                                refundPaymentMethod: refund != null && refund > 0 ? _refundMethod : null,
+                              ));
                           if (mounted) setState(() => _cancelling = false);
                         },
                         onKeep: () => setState(() => _cancelling = false),
@@ -167,6 +179,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                         onCancel: () {
                           _cancelReason.clear();
                           _refundAmount.text = (ev.advanceAmount) > 0 ? ev.advanceAmount.toString() : '';
+                          _refundMethod = null;
                           setState(() => _cancelling = true);
                         },
                       ),
@@ -765,10 +778,20 @@ class _CancelCard extends StatelessWidget {
   final EventBooking event;
   final TextEditingController reasonController;
   final TextEditingController refundController;
+  final String? refundMethod;
+  final ValueChanged<String?> onRefundMethodChanged;
   final VoidCallback onCancel;
   final VoidCallback onKeep;
 
-  const _CancelCard({required this.event, required this.reasonController, required this.refundController, required this.onCancel, required this.onKeep});
+  const _CancelCard({
+    required this.event,
+    required this.reasonController,
+    required this.refundController,
+    required this.refundMethod,
+    required this.onRefundMethodChanged,
+    required this.onCancel,
+    required this.onKeep,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -784,6 +807,25 @@ class _CancelCard extends StatelessWidget {
             Text('An advance of ${formatPrice(event.advanceAmount)} is held. Whatever is not refunded is kept as a cancellation charge.', style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
             const SizedBox(height: AppTheme.s8),
             NeuField(controller: refundController, label: 'Refund to organiser', keyboardType: TextInputType.number),
+            const SizedBox(height: AppTheme.s8),
+            Text('Refunded via', style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+            const SizedBox(height: 4),
+            NeuPressed(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: refundMethod,
+                  isExpanded: true,
+                  dropdownColor: AppTheme.bg,
+                  hint: const Text('Choose type', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+                  items: [
+                    for (final e in kPaymentMethods.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: onRefundMethodChanged,
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: AppTheme.s12),
           Row(

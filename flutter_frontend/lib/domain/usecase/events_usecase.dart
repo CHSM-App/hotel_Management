@@ -97,8 +97,8 @@ class EventsUsecase {
 
   Future<EventBooking> release(int id) => repository.release(id);
 
-  Future<EventBooking> cancel(int id, {required String reason, num? refundAmount}) =>
-      repository.cancel(id, reason: reason, refundAmount: refundAmount);
+  Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>
+      repository.cancel(id, reason: reason, refundAmount: refundAmount, refundPaymentMethod: refundPaymentMethod);
 
   Future<List<AdvanceReceipt>> advanceReceipts(int eventId) =>
       repository.advanceReceipts(eventId);

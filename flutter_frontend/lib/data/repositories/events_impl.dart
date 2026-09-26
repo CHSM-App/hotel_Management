@@ -119,8 +119,8 @@ class EventsImpl implements EventsRepository {
   Future<EventBooking> release(int id) => api.releaseEvent(id);
 
   @override
-  Future<EventBooking> cancel(int id, {required String reason, num? refundAmount}) =>
-      api.cancelEvent(id, reason: reason, refundAmount: refundAmount);
+  Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>
+      api.cancelEvent(id, reason: reason, refundAmount: refundAmount, refundPaymentMethod: refundPaymentMethod);
 
   @override
   Future<List<AdvanceReceipt>> advanceReceipts(int eventId) =>

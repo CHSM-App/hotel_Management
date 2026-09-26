@@ -1292,12 +1292,15 @@ class ApiService {
     int id, {
     required String reason,
     num? refundAmount,
+    String? refundPaymentMethod,
   }) async {
     final res = await _dio.patch(
       '/events/$id/cancel',
       data: {
         'reason': reason,
         if (refundAmount != null) 'refundAmount': refundAmount,
+        if (refundAmount != null && refundAmount > 0 && refundPaymentMethod != null)
+          'refundPaymentMethod': refundPaymentMethod,
       },
     );
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);

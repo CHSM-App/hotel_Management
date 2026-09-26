@@ -257,6 +257,7 @@ class EventBooking {
   final String? holdExpiresAt;
   final String? cancelReason;
   final num? refundAmount;
+  final String? refundPaymentMethod;
   final num? cancellationCharge;
   final List<EventAddonLine> addons;
   final EventInvoiceRef? invoice;
@@ -298,6 +299,7 @@ class EventBooking {
     this.holdExpiresAt,
     this.cancelReason,
     this.refundAmount,
+    this.refundPaymentMethod,
     this.cancellationCharge,
     this.addons = const [],
     this.invoice,
@@ -342,6 +344,7 @@ class EventBooking {
     holdExpiresAt: asStringOrNull(json['holdExpiresAt']),
     cancelReason: asStringOrNull(json['cancelReason']),
     refundAmount: asNumOrNull(json['refundAmount']),
+    refundPaymentMethod: asStringOrNull(json['refundPaymentMethod']),
     cancellationCharge: asNumOrNull(json['cancellationCharge']),
     addons: (json['addons'] as List? ?? [])
         .map((e) => EventAddonLine.fromJson(e as Map<String, dynamic>))
