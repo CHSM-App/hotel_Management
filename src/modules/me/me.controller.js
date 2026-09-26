@@ -1,0 +1,89 @@
+const meService = require('./me.service');
+const { changePasswordSchema, sendPasswordOtpSchema, updateMyLodgeSchema } = require('./me.schema');
+const { ApiError } = require('../../middleware/errorHandler');
+
+async function getMeHandler(req, res, next) {
+  try {
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateMyLodgeHandler(req, res, next) {
+  try {
+    const parsed = updateMyLodgeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    await meService.updateMyLodge(req.user.lodgeId, parsed.data);
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateMyLodgeLogoHandler(req, res, next) {
+  try {
+    await meService.updateMyLodgeLogo(req.user.lodgeId, req.file.filename);
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function removeMyLodgeLogoHandler(req, res, next) {
+  try {
+    await meService.removeMyLodgeLogo(req.user.lodgeId);
+    const me = await meService.getMe(req.user.sub);
+    res.json(me);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function sendPasswordOtpHandler(req, res, next) {
+  try {
+    const parsed = sendPasswordOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const { phone, expiresAt } = await meService.sendPasswordChangeOtp(
+      req.user.sub,
+      parsed.data.currentPassword
+    );
+    res.json({ phone, expiresAt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function changePasswordHandler(req, res, next) {
+  try {
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    await meService.changePassword(
+      req.user.sub,
+      parsed.data.currentPassword,
+      parsed.data.newPassword,
+      parsed.data.otp
+    );
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  getMeHandler,
+  sendPasswordOtpHandler,
+  changePasswordHandler,
+  updateMyLodgeHandler,
+  updateMyLodgeLogoHandler,
+  removeMyLodgeLogoHandler,
+};
