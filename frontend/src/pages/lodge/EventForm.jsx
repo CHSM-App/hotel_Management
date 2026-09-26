@@ -66,7 +66,10 @@ function catalogueLine(addon) {
     label: addon.name,
     quantity: 1,
     unitAmount: addon.defaultAmount,
-    agreedAmount: '',
+    // The catalogue's own price, pre-filled as a real value — same as the
+    // venue charge defaults to the venue's base charge — not left as a greyed
+    // placeholder the desk has to notice and retype.
+    agreedAmount: addon.defaultAmount != null ? String(addon.defaultAmount) : '',
     selected: false,
   };
 }
@@ -106,18 +109,20 @@ function initialForm(event, initialDate, venues, initialVenueId = null) {
       holdHours: '48',
     };
   }
-  // Started from a venue's row on the diary, that venue; otherwise the first
-  // one still taking bookings.
-  const firstVenue =
-    (initialVenueId != null && venues.find((v) => String(v.id) === String(initialVenueId))) ||
-    venues.find((v) => v.isActive) ||
-    venues[0];
+  // Started from a venue's row on the diary, that venue; from the plain "New
+  // enquiry" button, none — silently picking one for the desk is how the
+  // wrong venue gets booked unnoticed, so the field starts blank and the
+  // "Choose a venue" option shows until the desk actually picks one.
+  const firstVenue = initialVenueId != null ? venues.find((v) => String(v.id) === String(initialVenueId)) : null;
   const date = initialDate || toDateKey(new Date());
   return {
     eventType: 'BIRTHDAY',
     title: '',
     venueId: firstVenue ? String(firstVenue.id) : '',
-    slot: 'EVENING',
+    // No slot forced by default — Evening's fixed hours are wrong the moment
+    // this is a multi-day function, and the desk can still pick Morning/
+    // Evening/Full day for a same-day one with one click below.
+    slot: 'CUSTOM',
     startDate: date,
     startTime: SLOT_HOURS.EVENING[0],
     endDate: date,
@@ -185,6 +190,17 @@ function numOrUndef(v) {
   if (v === '' || v == null) return undefined;
   const n = Number(v);
   return Number.isNaN(n) ? undefined : n;
+}
+
+// A quote line's note: catering already sends its own "pax × rate" string;
+// venue hire sends a plain "N days"; an add-on carries the numbers instead
+// of pre-built text, so its rate reads through the same ₹ formatter as the
+// amount next to it.
+function lineNote(line) {
+  if (line.numberOfDays > 1 && line.perDayAmount != null) {
+    return `${formatPrice(line.perDayAmount)} × ${line.numberOfDays} days`;
+  }
+  return line.note || null;
 }
 
 export default function EventForm({
@@ -341,8 +357,22 @@ export default function EventForm({
       perPlateRate: catering ? Number(form.perPlateRate) : 0,
       addons: addonPayload,
       discountAmount: numOrUndef(form.discountAmount),
+      startAt: startAt || undefined,
+      endAt: endAt || undefined,
     };
-  }, [form.venueId, form.expectedPax, form.guaranteedPax, form.venueCharge, form.perPlateRate, form.discountAmount, addonPayload, event?.finalPax, catering]);
+  }, [
+    form.venueId,
+    form.expectedPax,
+    form.guaranteedPax,
+    form.venueCharge,
+    form.perPlateRate,
+    form.discountAmount,
+    addonPayload,
+    event?.finalPax,
+    catering,
+    startAt,
+    endAt,
+  ]);
 
   const quoteKey = quoteBody ? JSON.stringify(quoteBody) : '';
   useEffect(() => {
@@ -387,7 +417,7 @@ export default function EventForm({
     if (!startAt || !endAt) return ['startDate', 'Enter the start and end date and time.'];
     if (new Date(endAt) <= new Date(startAt)) return ['endDate', 'The function has to end after it starts.'];
     if (!form.organiserName.trim()) return ['organiserName', 'Who is organising it?'];
-    if (!/^\d{10}$/.test(form.organiserPhone.trim())) return ['organiserPhone', 'Enter a 10-digit mobile number.'];
+    if (!/^[6-9]\d{9}$/.test(form.organiserPhone.trim())) return ['organiserPhone', 'Enter a valid 10-digit mobile number.'];
     if (form.expectedPax === '' || Number(form.expectedPax) <= 0) return ['expectedPax', 'How many guests are expected?'];
     // Over the venue's seating is a real refusal, not a note on the quote: the
     // count goes back to the field that owns it. Which field that is depends on
@@ -736,7 +766,16 @@ export default function EventForm({
                 onChange={(e) => update('expectedPax', e.target.value)}
               />
             </Field>
-            <Field label="Venue hire charge" name="venueCharge" error={errFor('venueCharge')}>
+            <Field
+              label="Venue hire charge (per day)"
+              name="venueCharge"
+              error={errFor('venueCharge')}
+              hint={
+                pricing && pricing.numberOfDays > 1
+                  ? `${formatPrice(Number(form.venueCharge) || 0)} × ${pricing.numberOfDays} days = ${formatPrice(pricing.venueCharge)}`
+                  : undefined
+              }
+            >
               <input id="ev-venueCharge" type="number" min="0" value={form.venueCharge} onChange={(e) => update('venueCharge', e.target.value)} />
             </Field>
           </div>
@@ -824,7 +863,7 @@ export default function EventForm({
           )}
 
           <div className="field">
-            <label>Add-ons</label>
+            <label>Add-ons (per day)</label>
             <div className="events-addons">
               {lines.map((l) => (
                 <label key={l.key} className="checkbox-chip">
@@ -840,16 +879,26 @@ export default function EventForm({
                         title="Quantity"
                         onChange={(e) => setLine(l.key, { quantity: e.target.value })}
                       />
-                      <input
-                        className="checkbox-chip__price"
-                        type="number"
-                        min="0"
-                        value={l.agreedAmount}
-                        placeholder={l.unitAmount != null ? String(l.unitAmount) : '₹'}
-                        title="Agreed amount"
-                        onChange={(e) => setLine(l.key, { agreedAmount: e.target.value })}
-                      />
+                      <span className="checkbox-chip__price-wrap" title="Agreed amount — editable">
+                        <input
+                          className="checkbox-chip__price"
+                          type="number"
+                          min="0"
+                          value={l.agreedAmount}
+                          placeholder={l.unitAmount != null ? String(l.unitAmount) : '₹'}
+                          onChange={(e) => setLine(l.key, { agreedAmount: e.target.value })}
+                        />
+                        <svg className="checkbox-chip__price-pencil" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                          <path
+                            fill="currentColor"
+                            d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                          />
+                        </svg>
+                      </span>
                     </>
+                  )}
+                  {!l.selected && l.unitAmount != null && (
+                    <span className="checkbox-chip__price-preview">{formatPrice(l.unitAmount)}/day</span>
                   )}
                 </label>
               ))}
@@ -891,7 +940,7 @@ export default function EventForm({
                 <div key={`v${i}`} className="events-quote__line">
                   <span>
                     {l.label}
-                    {l.note && <small>{l.note}</small>}
+                    {lineNote(l) && <small>{lineNote(l)}</small>}
                   </span>
                   <span>{formatPrice(l.amount)}</span>
                 </div>
@@ -901,7 +950,7 @@ export default function EventForm({
                 <div key={`f${i}`} className="events-quote__line">
                   <span>
                     {l.label}
-                    {l.note && <small>{l.note}</small>}
+                    {lineNote(l) && <small>{lineNote(l)}</small>}
                   </span>
                   <span>{formatPrice(l.amount)}</span>
                 </div>

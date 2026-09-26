@@ -5,8 +5,10 @@ const dateField = (message) => z.string({ error: message }).regex(DATE_RE, messa
 
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
 
-const TEN_DIGITS = /^\d{10}$/;
-const MOBILE_MESSAGE = 'Enter a 10-digit mobile number.';
+// An Indian mobile number: 10 digits, the first from 6-9 — landlines and
+// invalid ranges (0-5) are rejected, not just "any 10 digits".
+const TEN_DIGITS = /^[6-9]\d{9}$/;
+const MOBILE_MESSAGE = 'Enter a valid 10-digit mobile number.';
 
 // Takes what a desk actually types and keeps the ten digits that matter.
 //

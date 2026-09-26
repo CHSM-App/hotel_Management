@@ -106,7 +106,14 @@ const pricingFields = {
   discountReason: optionalText(100),
 };
 
-const quoteSchema = z.object(pricingFields);
+// The live quote is asked for before the rest of the form is filled in, so
+// startAt/endAt ride along here too, optionally — without them the venue and
+// add-ons price as a single day, same as a booking with no dates yet.
+const quoteSchema = z.object({
+  ...pricingFields,
+  startAt: instantField('Choose when the function starts.').optional(),
+  endAt: instantField('Choose when the function ends.').optional(),
+});
 
 // A date the way the stay form sends one, blank meaning "not given".
 const optionalDateField = (message) =>

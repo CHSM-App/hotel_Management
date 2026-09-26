@@ -1131,6 +1131,19 @@
   color: rgba(255, 255, 255, 0.72);
 }
 
+.tape-tooltip__tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* The room-row tag reused inside the tooltip's dark background, where its
+   light-paper styling would be unreadable. */
+.tape-tooltip__tags .tape-month__room-tag {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
+}
+
 .tape-tooltip__dates {
   display: flex;
   align-items: center;

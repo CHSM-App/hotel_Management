@@ -22,7 +22,7 @@ function mobileDigits(value) {
   return digits;
 }
 const typedMobile = (value) => mobileDigits(value).slice(0, 10);
-const isMobile = (value) => /^\d{10}$/.test(mobileDigits(value));
+const isMobile = (value) => /^[6-9]\d{9}$/.test(mobileDigits(value));
 
 // Same mark as the menu editor and the guest's page. Defined here rather than
 // shared because it is four lines and MenuPanel.css — already imported above
@@ -873,7 +873,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced }) {
         return;
       }
       if (!isMobile(guestPhone)) {
-        failOn('orderPhone', 'Enter a 10-digit mobile number.');
+        failOn('orderPhone', 'Enter a valid 10-digit mobile number.');
         return;
       }
     }

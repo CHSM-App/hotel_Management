@@ -24,6 +24,15 @@ test('anything that is not ten digits is refused', () => {
   }
 });
 
+test('a real Indian mobile starts 6-9 — a landline or invalid range does not pass just for being ten digits', () => {
+  for (const good of ['6000000000', '7000000000', '8000000000', '9000000000']) {
+    assert.ok(parse(good).success, `${good} was rejected`);
+  }
+  for (const bad of ['0123456789', '1234567890', '5000000000']) {
+    assert.ok(!parse(bad).success, `${bad} was accepted`);
+  }
+});
+
 test('an additional guest may have no number, but not half of one', () => {
   const withGuest = (phone) =>
     createBookingSchema.safeParse({ ...base, guestPhone: '9876543210', numGuests: 2, guests: [{ name: 'B', phone }] });
