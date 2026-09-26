@@ -798,7 +798,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ],
                     ],
 
-                    if (state.room!.switchableCharges.isNotEmpty) ...[
+                    if (!state.room!.isDormitory && state.room!.switchableCharges.isNotEmpty) ...[
                       const SizedBox(height: AppTheme.s16),
                       const Text(
                         'EXTRAS',
@@ -1538,8 +1538,11 @@ class _DatesRow extends ConsumerWidget {
     final picked = await showDatePicker(
       context: context,
       // A stay taken on paper over the weekend has to be enterable against
-      // the nights it actually happened on, so the past is open.
-      firstDate: today.subtract(const Duration(days: 365)),
+      // the nights it actually happened on, so the past is open for check-in.
+      // Check-out can never precede check-in, so its calendar starts there.
+      firstDate: isCheckIn
+          ? today.subtract(const Duration(days: 365))
+          : (state.checkIn ?? today).add(const Duration(days: 1)),
       lastDate: today.add(const Duration(days: 365)),
       initialDate: initial,
       helpText: isCheckIn ? 'Check-in' : 'Check-out',

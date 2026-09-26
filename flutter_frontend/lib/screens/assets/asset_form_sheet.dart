@@ -193,14 +193,14 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     super.dispose();
   }
 
-  Future<void> _pickDate(TextEditingController controller) async {
+  Future<void> _pickDate(TextEditingController controller, {bool allowFuture = true}) async {
     final now = DateTime.now();
     final initial = DateTime.tryParse(controller.text) ?? now;
     final picked = await showDatePicker(
       context: context,
       firstDate: DateTime(now.year - 15),
-      lastDate: DateTime(now.year + 15),
-      initialDate: initial,
+      lastDate: allowFuture ? DateTime(now.year + 15) : now,
+      initialDate: initial.isAfter(now) && !allowFuture ? now : initial,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: const ColorScheme.light(primary: AppTheme.accent, onPrimary: Colors.white, surface: AppTheme.bg, onSurface: AppTheme.heading),
@@ -459,7 +459,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                                 label: 'Purchase date',
                                 hint: 'Tap to pick',
                                 readOnly: true,
-                                onTap: () => _pickDate(_purchaseDate),
+                                onTap: () => _pickDate(_purchaseDate, allowFuture: false),
                               ),
                       ),
                     ],
@@ -475,7 +475,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                             label: 'Purchase date',
                             hint: 'Tap to pick',
                             readOnly: true,
-                            onTap: () => _pickDate(_purchaseDate),
+                            onTap: () => _pickDate(_purchaseDate, allowFuture: false),
                           ),
                         ),
                         const SizedBox(width: AppTheme.s8),

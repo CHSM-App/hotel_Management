@@ -201,8 +201,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     final picked = await showDatePicker(
       context: context,
       firstDate: DateTime(now.year - 5),
-      lastDate: DateTime(now.year + 1),
-      initialDate: initial,
+      lastDate: now,
+      initialDate: initial.isAfter(now) ? now : initial,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: const ColorScheme.light(primary: AppTheme.accent, onPrimary: Colors.white, surface: AppTheme.bg, onSurface: AppTheme.heading),

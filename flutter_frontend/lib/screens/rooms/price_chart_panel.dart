@@ -646,10 +646,14 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
   }
 
   Future<void> _pickDate({required bool start}) async {
+    final earliest = DateTime.now().subtract(const Duration(days: 365));
+    final firstDate = start ? earliest : _startDate;
+    var initialDate = start ? _startDate : _endDate;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: start ? _startDate : _endDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      initialDate: initialDate,
+      firstDate: firstDate,
       lastDate: DateTime.now().add(const Duration(days: 730)),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
@@ -664,7 +668,14 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
       ),
     );
     if (picked == null) return;
-    setState(() => start ? _startDate = picked : _endDate = picked);
+    setState(() {
+      if (start) {
+        _startDate = picked;
+        if (_endDate.isBefore(_startDate)) _endDate = _startDate;
+      } else {
+        _endDate = picked;
+      }
+    });
   }
 
   Future<void> _submit() async {
