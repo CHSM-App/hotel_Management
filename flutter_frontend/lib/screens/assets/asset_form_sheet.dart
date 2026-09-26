@@ -806,7 +806,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
         'units': _unitsJson(),
       };
       if (_billPhoto != null) {
-        formMap['bill'] = dio.MultipartFile.fromFileSync(_billPhoto!.path, filename: _billPhoto!.name);
+        formMap['billDocument'] = dio.MultipartFile.fromFileSync(_billPhoto!.path, filename: _billPhoto!.name);
       }
       final ok = await vm.saveAssetsBulk(dio.FormData.fromMap(formMap));
       if (!mounted) return;

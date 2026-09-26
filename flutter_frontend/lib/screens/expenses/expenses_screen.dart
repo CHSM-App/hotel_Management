@@ -35,10 +35,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _SubTabs(selected: _tab, onSelect: (t) => setState(() => _tab = t)),
-          ),
+          child: _SubTabs(selected: _tab, onSelect: (t) => setState(() => _tab = t)),
         ),
         Expanded(
           child: switch (_tab) {
@@ -52,50 +49,86 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
   }
 }
 
+/// Same sliding-pill segmented control the Assets / Rooms & Rates / Billing
+/// screens use — one connected control with a moving highlight, rather than
+/// a content-hugging pill row.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = [
-    ('expenses', 'Expenses'),
-    ('recurring', 'Recurring'),
-    ('vendors', 'Vendors'),
-  ];
+  static const _tabs = {
+    'expenses': 'Expenses',
+    'recurring': 'Recurring',
+    'vendors': 'Vendors',
+  };
+
+  static const double _height = 44;
 
   @override
   Widget build(BuildContext context) {
+    final keys = _tabs.keys.toList();
+    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
+
+    Widget segment(String key, String label) {
+      final isSelected = key == selected;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onSelect(key),
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: _height,
+            child: Center(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : AppTheme.text,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  fontSize: 13,
+                ),
+                child: Text(label, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.all(2),
+      height: _height,
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
         children: [
-          for (final t in _tabs)
-            GestureDetector(
-              onTap: () => onSelect(t.$1),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s8),
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment(
+              -1 + (2 / (keys.length - 1)) * selectedIndex,
+              0,
+            ),
+            child: FractionallySizedBox(
+              widthFactor: 1 / keys.length,
+              child: Container(
+                height: _height - 8,
                 decoration: BoxDecoration(
-                  color: t.$1 == selected ? AppTheme.accent : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  t.$2,
-                  style: TextStyle(
-                    color: t.$1 == selected ? Colors.white : AppTheme.text,
-                    fontWeight: t.$1 == selected ? FontWeight.w600 : FontWeight.w500,
-                    fontSize: 13,
-                  ),
+                  color: AppTheme.accent,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
                 ),
               ),
             ),
+          ),
+          Row(
+            children: [
+              for (final entry in _tabs.entries) segment(entry.key, entry.value),
+            ],
+          ),
         ],
       ),
     );

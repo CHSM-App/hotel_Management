@@ -860,9 +860,12 @@ class ApiService {
   }
 
   /// Add one room, or a bulk range. Multipart because photos ride along on a
-  /// single-room add.
-  Future<void> createRoom(FormData form) async {
-    await _dio.post('/rooms', data: form);
+  /// single-room add. Returns the created room's id(s) — a single-room
+  /// (non-bulk) create is always exactly one, which is what a freshly
+  /// created dormitory needs to know to ask for its own bed count next.
+  Future<List<int>> createRoom(FormData form) async {
+    final res = await _dio.post('/rooms', data: form);
+    return (_map(res.data)['roomIds'] as List? ?? []).map((e) => asInt(e)).toList();
   }
 
   Future<void> updateRoom(int id, FormData form) async {

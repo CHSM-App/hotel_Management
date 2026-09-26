@@ -2005,36 +2005,37 @@ class _BedChoiceChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = !enabled
-        ? AppTheme.muted
-        : selected
+    // Same vocabulary as the tape chart itself (AppTheme.vacant/reserved) —
+    // a taken bed reads as the chart's own booked red, a free one as its
+    // vacant green, so the desk isn't learning a second colour language
+    // (mirrors the website's own booking-form__bed-option, Bookings.css).
+    final fill = selected
         ? AppTheme.accent
-        : AppTheme.text;
+        : !enabled
+        ? AppTheme.reserved
+        : AppTheme.vacant;
     return GestureDetector(
       onTap: enabled ? onTap : null,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.5,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.bg,
-            border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
-            borderRadius: BorderRadius.circular(AppTheme.rSmall),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5),
-              ),
-              Text(
-                sublabel,
-                style: TextStyle(color: color, fontSize: 10.5),
-              ),
-            ],
-          ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: fill,
+          border: Border.all(color: fill),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5),
+            ),
+            Text(
+              sublabel,
+              style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
       ),
     );

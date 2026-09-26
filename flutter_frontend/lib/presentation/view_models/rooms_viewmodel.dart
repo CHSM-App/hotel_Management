@@ -81,21 +81,28 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
 
   // ── Rooms ─────────────────────────────────────────────────────────────────
 
-  Future<bool> saveRoom(FormData form, {int? roomId}) async {
-    if (state.submitting) return false;
+  /// Saves a room (create or, with [roomId], update). `createdRoomId` is
+  /// only ever set on a successful single-room create — a fresh dormitory's
+  /// cue that it now has an id to ask for its own bed count against (see
+  /// AddRoomPage). Null there on an update (the caller already has the id)
+  /// or a bulk create (which can't be a dormitory — see rooms.schema.js).
+  Future<({bool ok, int? createdRoomId})> saveRoom(FormData form, {int? roomId}) async {
+    if (state.submitting) return (ok: false, createdRoomId: null);
     state = state.copyWith(submitting: true, clearError: true);
     try {
+      int? createdRoomId;
       if (roomId != null) {
         await usecase.updateRoom(roomId, form);
       } else {
-        await usecase.createRoom(form);
+        final roomIds = await usecase.createRoom(form);
+        if (roomIds.length == 1) createdRoomId = roomIds.first;
       }
       state = state.copyWith(submitting: false);
       await loadAll();
-      return true;
+      return (ok: true, createdRoomId: createdRoomId);
     } catch (e) {
       state = state.copyWith(submitting: false, error: messageFor(e));
-      return false;
+      return (ok: false, createdRoomId: null);
     }
   }
 

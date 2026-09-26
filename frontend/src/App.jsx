@@ -8,6 +8,7 @@ import LodgeRegistration from './pages/internal/LodgeRegistration';
 import LodgeDetail from './pages/internal/LodgeDetail';
 import LodgePublicPage from './pages/public/LodgePublicPage';
 import OrderPage from './pages/public/OrderPage';
+import AssetQrPage from './pages/lodge/AssetQrPage';
 import NotFound from './pages/NotFound';
 import RequireStaff from './components/RequireStaff';
 import RequireLodgeAuth from './components/RequireLodgeAuth';
@@ -34,6 +35,12 @@ function App() {
               more scannable QR. */}
           <Route path="/order/t/:token" element={<OrderPage mode="table" />} />
           <Route path="/order/:slug" element={<OrderPage mode="lodge" />} />
+
+          {/* Public, unauthenticated — what a scanned asset QR opens: one
+              standalone page with just that asset's record, same trust model
+              as the table route above (the qr_token in the URL is the whole
+              credential). No sidebar, no dashboard, nothing to navigate. */}
+          <Route path="/asset/:token" element={<AssetQrPage />} />
 
           {/* Lodge owner / reception / kitchen sign-in. Wrapped so Back from the
               dashboard cannot land on a sign-in form the user has already

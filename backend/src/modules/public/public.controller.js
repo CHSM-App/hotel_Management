@@ -1,9 +1,12 @@
+const path = require('path');
 const { z } = require('zod');
 const publicService = require('./public.service');
 const billShareService = require('../billing/billShare.service');
 const receiptShareService = require('../billing/receiptShare.service');
+const assetsService = require('../assets/assets.service');
 const { orderItemsSchema } = require('../orders/orders.schema');
 const { ApiError } = require('../../middleware/errorHandler');
+const { UPLOAD_DIR: ASSET_BILL_UPLOAD_DIR } = require('../../middleware/assetBillUpload');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -87,6 +90,37 @@ async function getTableOrderPageHandler(req, res, next) {
   try {
     const context = await publicService.getTableOrderingContext(String(req.params.token || ''));
     res.json(context);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// What a scanned asset QR opens — a bare deep link like the table order
+// page above, no login. The qr_token in the URL is the whole of the
+// credential (see getAssetByQrTokenAnyLodge), the same trust model as the
+// table token.
+async function getAssetQrPageHandler(req, res, next) {
+  try {
+    const asset = await assetsService.getAssetByQrTokenAnyLodge(String(req.params.token || ''));
+    const [periods, workOrders] = await Promise.all([
+      assetsService.listCoveragePeriods(asset.lodgeId, asset.id),
+      assetsService.listWorkOrders(asset.lodgeId, { assetId: asset.id }),
+    ]);
+    res.json({ asset, periods, workOrders });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAssetQrBillHandler(req, res, next) {
+  try {
+    const asset = await assetsService.getAssetByQrTokenAnyLodge(String(req.params.token || ''));
+    const filename = await assetsService.getBillFilename(asset.lodgeId, asset.id);
+    if (!(await assetsService.billExists(filename))) {
+      throw new ApiError('That bill is no longer on file.', 404);
+    }
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.sendFile(path.join(ASSET_BILL_UPLOAD_DIR, path.basename(filename)));
   } catch (err) {
     next(err);
   }
@@ -394,4 +428,6 @@ module.exports = {
   placeRoomOrderHandler,
   placeTableOrderHandler,
   getOrderStatusHandler,
+  getAssetQrPageHandler,
+  getAssetQrBillHandler,
 };

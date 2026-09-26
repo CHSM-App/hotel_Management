@@ -90,11 +90,16 @@ function mapAsset(row) {
     qrToken: row.qr_token,
     isActive: !!row.is_active,
     openWorkOrders: row.open_work_orders ?? 0,
+    // Only present so getAssetByQrTokenAnyLodge (a public, token-only lookup
+    // with no lodgeId to scope by yet) can tell which lodge's coverage/bill
+    // to fetch next. Every other caller already knows its own lodgeId and
+    // ignores this field.
+    lodgeId: row.lodge_id,
   };
 }
 
 const ASSET_SELECT = `
-  SELECT a.id, a.name, a.category_id, c.name AS category_name, a.asset_tag, a.brand, a.model,
+  SELECT a.id, a.lodge_id, a.name, a.category_id, c.name AS category_name, a.asset_tag, a.brand, a.model,
          a.serial_number, a.purchase_date, a.purchase_cost, a.room_id, r.room_number, a.floor,
          a.department, a.location_note, a.vendor_id, v.name AS vendor_name, a.warranty_expiry,
          a.amc_expiry, a.amc_coverage_note, a.bill_document, a.status, a.qr_token, a.is_active,
@@ -147,6 +152,25 @@ async function getAssetByQrToken(lodgeId, qrToken) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('qrToken', sql.UniqueIdentifier, qrToken)
     .query(`${ASSET_SELECT} WHERE a.qr_token = @qrToken AND a.lodge_id = @lodgeId`);
+
+  const row = result.recordset[0];
+  if (!row) {
+    throw new ApiError('Asset not found.', 404);
+  }
+  return mapAsset(row);
+}
+
+// The public QR landing page (see public.routes.js) is reached straight off
+// a scanned code, before any login — there is no lodgeId to scope by yet.
+// qr_token is a GUID assigned to exactly one asset ever, so it alone is
+// enough to find both the asset and (via the lodgeId now on the mapped
+// result) the lodge whose coverage/bill to fetch next.
+async function getAssetByQrTokenAnyLodge(qrToken) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('qrToken', sql.UniqueIdentifier, qrToken)
+    .query(`${ASSET_SELECT} WHERE a.qr_token = @qrToken`);
 
   const row = result.recordset[0];
   if (!row) {
@@ -1018,6 +1042,7 @@ module.exports = {
   listAssets,
   getAsset,
   getAssetByQrToken,
+  getAssetByQrTokenAnyLodge,
   createAsset,
   createAssetsBulk,
   updateAsset,

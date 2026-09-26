@@ -1893,12 +1893,19 @@ export default function AssetsPanel({ onViewReport }) {
 
   // The data URL is already sitting in memory — saving it is just handing
   // the browser a filename, not a second network round trip.
+  //
+  // The link has to actually sit in the DOM before .click() — some mobile
+  // browsers (Android Chrome included) ignore the download attribute on a
+  // detached <a> and just navigate to the data: URL instead, opening the QR
+  // image in a new tab rather than saving it.
   const downloadQr = () => {
     if (!qrDataUrl || !selectedAsset) return;
     const link = document.createElement('a');
     link.href = qrDataUrl;
     link.download = `${selectedAsset.assetTag || selectedAsset.name}-qr.png`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
   if (error && !assets) {

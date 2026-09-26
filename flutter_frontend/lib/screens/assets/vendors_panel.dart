@@ -68,14 +68,14 @@ class VendorsPanel extends ConsumerWidget {
   }
 }
 
-class _VendorCard extends ConsumerWidget {
+class _VendorCard extends StatelessWidget {
   final Vendor vendor;
   final VoidCallback onTap;
 
   const _VendorCard({required this.vendor, required this.onTap});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return NeuCard(
       onTap: onTap,
       padding: const EdgeInsets.all(AppTheme.s12),
@@ -116,10 +116,6 @@ class _VendorCard extends ConsumerWidget {
                 ),
               ],
             ),
-          ),
-          TextButton(
-            onPressed: () => ref.read(assetsViewModelProvider.notifier).saveVendor({'isActive': !vendor.isActive}, id: vendor.id),
-            child: Text(vendor.isActive ? 'Deactivate' : 'Activate'),
           ),
         ],
       ),

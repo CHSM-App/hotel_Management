@@ -63,13 +63,25 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   final List<BedDraft> _beds = [BedDraft()];
   final List<XFile> _newPhotos = [];
 
-  // A dormitory answers "beds" and "occupancy" through its own bed list
-  // instead (added after the room is saved — see DormitoryBedCountField), so
-  // it skips both fields and forces single-room mode, matching the server's
-  // own refine rules (rooms.schema.js).
+  // A dormitory answers "beds" and "occupancy" through its own bed count
+  // instead, so it skips both fields and forces single-room mode, matching
+  // the server's own refine rules (rooms.schema.js).
   bool _isDormitory = false;
   String? _dormitoryGender;
   String? _dormitoryIsAc;
+
+  // How many beds the dormitory being created should start with — asked for
+  // right here, same as the website's own always-visible Beds field
+  // (RoomsPanel.jsx's DormitoryBedCountField), even though the room doesn't
+  // exist yet: the count can't be sent with the create call (a bed needs a
+  // real room id — see beds.schema.js), so it's applied via its own PUT
+  // /rooms/:id/beds/count call right after the room saves (see _submit).
+  int _dormitoryBedCount = 1;
+
+  // Set only if that follow-up bed-count call above fails — the room itself
+  // did save, so this switches the page to a focused retry step instead of
+  // losing track of the now-bedless room (see build's early return below).
+  int? _createdRoomId;
 
   String? _error;
 
@@ -130,6 +142,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
     final price = num.tryParse(_dormitoryPrice.text.trim());
     if (price == null || price <= 0) return 'Enter a price per night for this dormitory.';
     if (_dormitoryIsAc == null) return 'Choose AC or Non-AC.';
+    if (_dormitoryBedCount < 1) return 'Enter at least 1 bed.';
     return null;
   }
 
@@ -473,6 +486,49 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             hasError: _dormitoryError != null && _dormitoryIsAc == null,
                             onSelect: (v) => setState(() => _dormitoryIsAc = v),
                           ),
+                          const SizedBox(height: AppTheme.s12),
+                          const RequiredLabel('Beds'),
+                          const SizedBox(height: AppTheme.s4),
+                          const Text(
+                            'Every bed charges the room\'s own rate, set above.',
+                            style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                          ),
+                          const SizedBox(height: AppTheme.s8),
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline_rounded),
+                                color: AppTheme.muted,
+                                onPressed: _dormitoryBedCount <= 1
+                                    ? null
+                                    : () => setState(() => _dormitoryBedCount--),
+                              ),
+                              SizedBox(
+                                width: 40,
+                                child: Text(
+                                  '$_dormitoryBedCount',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: AppTheme.heading,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline_rounded),
+                                color: AppTheme.accent,
+                                onPressed: _dormitoryBedCount >= 60
+                                    ? null
+                                    : () => setState(() => _dormitoryBedCount++),
+                              ),
+                              const SizedBox(width: AppTheme.s4),
+                              Text(
+                                'bed${_dormitoryBedCount == 1 ? '' : 's'} in this room',
+                                style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                              ),
+                            ],
+                          ),
                           if (_dormitoryError != null) ...[
                             const SizedBox(height: AppTheme.s4),
                             Text(
@@ -482,7 +538,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           ],
                           const SizedBox(height: AppTheme.s4),
                           const Text(
-                            'Add this dormitory\'s beds after saving it — edit the room to set a bed count.',
+                            'Fill in the room number, category, floor, bathroom, who this dormitory is for, its price and bed count. The room then saves with its beds.',
                             style: TextStyle(color: AppTheme.muted, fontSize: 11),
                           ),
                         ] else ...[
@@ -640,10 +696,24 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   }
 
   Future<void> _submit() async {
-    setState(() {
-      _error = null;
-      _submitAttempted = true;
-    });
+    setState(() => _error = null);
+
+    // The room already exists — only its bed count didn't save last time
+    // (see below). Nothing else on the form to validate or send again, just
+    // this one call, retried.
+    if (_createdRoomId != null) {
+      final vm = ref.read(roomsViewModelProvider.notifier);
+      final bedsOk = await vm.setBedCount(_createdRoomId!, _dormitoryBedCount);
+      if (!mounted) return;
+      if (bedsOk) {
+        Navigator.pop(context);
+      } else {
+        setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Could not save the bed count.');
+      }
+      return;
+    }
+
+    setState(() => _submitAttempted = true);
 
     // Checked in the order the form asks them, so the scroll lands on
     // whichever one the desk would hit first reading top to bottom.
@@ -713,13 +783,35 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
     final form = dio.FormData.fromMap(formMap);
 
     final vm = ref.read(roomsViewModelProvider.notifier);
-    final ok = await vm.saveRoom(form);
+    final result = await vm.saveRoom(form);
     if (!mounted) return;
-    if (ok) {
-      Navigator.pop(context);
-    } else {
+    if (!result.ok) {
       setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Could not save the room.');
+      return;
     }
+
+    // The room saved, but a dormitory still has no beds — a bed needs a real
+    // room id, so this is the earliest it could be asked for (see
+    // beds.schema.js). The count was already picked before this submit, so
+    // it's applied right away rather than making the desk enter it twice.
+    if (_isDormitory && result.createdRoomId != null) {
+      final bedsOk = await vm.setBedCount(result.createdRoomId!, _dormitoryBedCount);
+      if (!mounted) return;
+      if (bedsOk) {
+        Navigator.pop(context);
+      } else {
+        // The room exists but its beds didn't save — stay on this same form
+        // (see the top of _submit) rather than losing track of a now-bedless
+        // room; the next "Add room" tap retries just the bed count.
+        setState(() {
+          _createdRoomId = result.createdRoomId;
+          _error = ref.read(roomsViewModelProvider).error ?? 'Room saved, but its bed count didn\'t — tap Add room to retry.';
+        });
+      }
+      return;
+    }
+
+    Navigator.pop(context);
   }
 }
 

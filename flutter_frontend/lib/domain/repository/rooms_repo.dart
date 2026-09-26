@@ -10,7 +10,7 @@ import '../models/switchable_charge_listing.dart';
 abstract class RoomsRepository {
   // Rooms
   Future<List<RoomListing>> rooms();
-  Future<void> createRoom(FormData form);
+  Future<List<int>> createRoom(FormData form);
   Future<void> updateRoom(int id, FormData form);
   Future<void> setRoomActive(int id, bool isActive);
   Future<void> deleteRoom(int id);
