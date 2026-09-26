@@ -1,0 +1,89 @@
+.menu-import-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(22, 33, 46, 0.45);
+  z-index: 100;
+}
+
+.menu-import-card {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  padding: 22px;
+}
+
+.menu-import-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.menu-import-card__head h3 {
+  margin: 0;
+}
+
+.menu-import-close {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.menu-import-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+.menu-import-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.menu-import-status {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.menu-import-error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--color-danger);
+}
+
+.menu-import-result {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.menu-import-errors {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--color-danger);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.menu-import-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}

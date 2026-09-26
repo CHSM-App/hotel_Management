@@ -71,6 +71,28 @@ const foodSettingsSchema = z.object({
   foodTableService: z.boolean({ error: 'foodTableService must be true or false.' }),
 });
 
+// One row of a parsed menu spreadsheet — already turned into JS values by
+// read-excel-file on the client, so this only has to check what a human
+// editing a cell could still get wrong (a blank name, a non-numeric price, a
+// "Veg?" typo), not parse text itself. Left loose (raw strings/unknowns pass
+// through) rather than as the array element type of menuImportSchema below —
+// one malformed row has to fail on its own inside importRows, not sink the
+// zod parse for every row that came with it.
+const menuImportRowSchema = z.object({
+  section: z.string().trim().min(1, 'Section is required.'),
+  name: z.string().trim().min(1, 'Item name is required.'),
+  description: z.string().trim().max(300).optional().default(''),
+  price: z.coerce.number().min(0, 'Price can’t be negative.'),
+  foodType: z.enum(FOOD_TYPES, { error: 'Type must be VEG or NON_VEG.' }).optional().default('VEG'),
+});
+
+// The envelope only checks there's a non-empty, not-absurd array of raw row
+// objects — each row's own fields are validated individually in importRows
+// via menuImportRowSchema, so a typo in row 40 doesn't block rows 1-39.
+const menuImportSchema = z.object({
+  rows: z.array(z.record(z.string(), z.unknown())).min(1, 'The file has no rows to import.').max(2000),
+});
+
 module.exports = {
   FOOD_TYPES,
   normaliseFoodType,
@@ -82,4 +104,5 @@ module.exports = {
   availabilitySchema,
   statusSchema,
   foodSettingsSchema,
+  menuImportSchema,
 };

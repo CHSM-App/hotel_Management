@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { apiGet, apiPutForm, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { clearSession, getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import MenuExcelImport from '../../components/MenuExcelImport';
 import LodgeEditModal from './LodgeEditModal';
 import { featuresForCapabilities, propertyTypeOf, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import './LodgesDashboard.css';
@@ -84,24 +85,17 @@ export default function LodgeDetail() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
+  const load = () => {
+    apiGet(`/internal/lodges/${id}`, { token: session?.token })
+      .then((payload) => setData(payload))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load this lodge.'));
+  };
+
   useEffect(() => {
-    let ignore = false;
     setData(null);
     setError('');
-
-    apiGet(`/internal/lodges/${id}`, { token: session?.token })
-      .then((payload) => {
-        if (!ignore) setData(payload);
-      })
-      .catch((err) => {
-        if (!ignore) {
-          setError(err instanceof ApiError ? err.message : 'Could not load this lodge.');
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, session?.token]);
 
   // Signing out drops the session and everything cached behind it, and a
@@ -295,6 +289,13 @@ export default function LodgeDetail() {
                     value={stats.food_orders}
                     note={lodge.food_table_service ? `${stats.dining_tables} dining tables` : 'Room service only'}
                   />
+                  <div className="detail-stat detail-stat--action">
+                    <MenuExcelImport
+                      importPath={`/internal/lodges/${id}/menu/import`}
+                      token={session?.token}
+                      onImported={load}
+                    />
+                  </div>
                 </>
               )}
               <Stat

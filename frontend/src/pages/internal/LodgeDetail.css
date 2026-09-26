@@ -111,6 +111,14 @@
   margin-top: 6px;
 }
 
+/* A tile that holds a button instead of a number — the menu import action,
+   sitting beside the menu stats it affects. */
+.detail-stat--action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .detail-stat__note {
   font-size: 12px;
   color: var(--text-muted);

@@ -8,6 +8,7 @@ const {
   availabilitySchema,
   statusSchema,
   foodSettingsSchema,
+  menuImportSchema,
 } = require('./menu.schema');
 const menuService = require('./menu.service');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -170,6 +171,21 @@ async function updateFoodSettingsHandler(req, res, next) {
   }
 }
 
+// Bulk import from a spreadsheet the client already parsed into rows — see
+// menu.service.importRows. A 207-ish shape (200 either way, errors listed
+// alongside the counts) rather than failing the request on any bad row: a
+// hundred-dish menu with one typo'd price should still land the other ninety-
+// nine, with that one row named so it can be fixed and re-uploaded alone.
+async function importMenuHandler(req, res, next) {
+  try {
+    const { rows } = parse(menuImportSchema, req.body);
+    const result = await menuService.importRows(req.user.lodgeId, rows);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function updateItemPortionsHandler(req, res, next) {
   try {
     const result = await menuService.setItemPortions(
@@ -185,6 +201,7 @@ async function updateItemPortionsHandler(req, res, next) {
 
 module.exports = {
   getMenuHandler,
+  importMenuHandler,
   updateItemPortionsHandler,
   createCategoryHandler,
   updateCategoryHandler,

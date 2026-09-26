@@ -14,6 +14,7 @@ import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import StepNum from '../../components/StepNum';
+import MenuExcelImport from '../../components/MenuExcelImport';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
@@ -757,6 +758,7 @@ export default function MenuPanel() {
             />
           </div>
           <div className="menu-bar__actions">
+            <MenuExcelImport importPath="/menu/import" token={session?.token} onImported={load} />
             <button type="button" className="btn-secondary" onClick={() => openSectionForm(null)}>
               + Section
             </button>

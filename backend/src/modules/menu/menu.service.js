@@ -4,7 +4,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('../../middleware/menuImageUpload');
 const inventoryService = require('../inventory/inventory.service');
-const { normaliseFoodType } = require('./menu.schema');
+const { normaliseFoodType, menuImportRowSchema } = require('./menu.schema');
 
 // A dish photo the property uploaded, or nothing. The filename alone travels —
 // the browser builds the URL against the /menu-images static mount, the same
@@ -588,6 +588,70 @@ async function updateFoodSettings(lodgeId, input) {
   return getFoodSettings(lodgeId);
 }
 
+// Bulk-loads dishes from a spreadsheet upload. Section and item are matched by
+// name and updated in place — the same idempotent rule scripts/seed-menu.js
+// uses — so re-importing a corrected file after fixing a few prices doesn't
+// duplicate the rest of the menu. One bad row doesn't sink the file: it's
+// collected and reported, and every good row before and after it still saves.
+async function importRows(lodgeId, rows) {
+  const pool = await getPool();
+  const categoryIds = new Map(); // name -> id, cached for the run
+  const errors = [];
+  let created = 0;
+  let updated = 0;
+
+  for (const [index, raw] of rows.entries()) {
+    const rowNum = index + 2; // header is row 1
+    try {
+      const parsed = menuImportRowSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues[0].message);
+      }
+      const row = parsed.data;
+
+      let categoryId = categoryIds.get(row.section);
+      if (!categoryId) {
+        const existing = await pool
+          .request()
+          .input('lodgeId', sql.BigInt, lodgeId)
+          .input('name', sql.NVarChar, row.section)
+          .query('SELECT id FROM dbo.menu_categories WHERE lodge_id = @lodgeId AND name = @name');
+        categoryId =
+          existing.recordset[0]?.id ??
+          (await createCategory(lodgeId, { name: row.section, sortOrder: categoryIds.size })).id;
+        categoryIds.set(row.section, categoryId);
+      }
+
+      const existingItem = await pool
+        .request()
+        .input('categoryId', sql.BigInt, categoryId)
+        .input('name', sql.NVarChar, row.name)
+        .query('SELECT id FROM dbo.menu_items WHERE category_id = @categoryId AND name = @name');
+
+      const itemInput = {
+        categoryId,
+        name: row.name,
+        description: row.description || '',
+        price: row.price,
+        foodType: row.foodType,
+        sortOrder: 0,
+      };
+
+      if (existingItem.recordset.length > 0) {
+        await updateItem(lodgeId, existingItem.recordset[0].id, itemInput);
+        updated += 1;
+      } else {
+        await createItem(lodgeId, itemInput);
+        created += 1;
+      }
+    } catch (err) {
+      errors.push({ row: rowNum, name: raw.name ?? '', message: err.message });
+    }
+  }
+
+  return { created, updated, failed: errors.length, errors };
+}
+
 module.exports = {
   getMenu,
   createCategory,
@@ -603,4 +667,5 @@ module.exports = {
   setItemPortions,
   getFoodSettings,
   updateFoodSettings,
+  importRows,
 };

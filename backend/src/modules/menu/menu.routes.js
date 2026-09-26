@@ -3,6 +3,7 @@ const { authenticate, requirePermission } = require('../../middleware/authentica
 const { menuImageUpload } = require('../../middleware/menuImageUpload');
 const {
   getMenuHandler,
+  importMenuHandler,
   createCategoryHandler,
   updateCategoryHandler,
   updateCategoryStatusHandler,
@@ -27,6 +28,9 @@ router.get('/', authenticate, requirePermission('food.manage', 'orders.manage', 
 
 router.get('/settings', authenticate, requirePermission('food.manage'), getFoodSettingsHandler);
 router.patch('/settings', authenticate, requirePermission('food.manage'), updateFoodSettingsHandler);
+
+// Bulk add/update dishes from a spreadsheet, already parsed to rows client-side.
+router.post('/import', authenticate, requirePermission('food.manage'), importMenuHandler);
 
 router.post('/categories', authenticate, requirePermission('food.manage'), createCategoryHandler);
 router.patch('/categories/:id', authenticate, requirePermission('food.manage'), updateCategoryHandler);
