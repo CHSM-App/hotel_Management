@@ -16,7 +16,7 @@ class RoomsImpl implements RoomsRepository {
   Future<List<RoomListing>> rooms() => api.rooms();
 
   @override
-  Future<void> createRoom(FormData form) => api.createRoom(form);
+  Future<List<int>> createRoom(FormData form) => api.createRoom(form);
 
   @override
   Future<void> updateRoom(int id, FormData form) => api.updateRoom(id, form);

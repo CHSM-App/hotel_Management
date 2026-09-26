@@ -12,7 +12,7 @@ class RoomsUsecase {
   RoomsUsecase(this.repository);
 
   Future<List<RoomListing>> rooms() => repository.rooms();
-  Future<void> createRoom(FormData form) => repository.createRoom(form);
+  Future<List<int>> createRoom(FormData form) => repository.createRoom(form);
   Future<void> updateRoom(int id, FormData form) => repository.updateRoom(id, form);
   Future<void> setRoomActive(int id, bool isActive) => repository.setRoomActive(id, isActive);
   Future<void> deleteRoom(int id) => repository.deleteRoom(id);

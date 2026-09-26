@@ -1,0 +1,204 @@
+/* Standalone page a scanned asset QR opens — deliberately not the dashboard
+   shell: one card, no sidebar, no nav, so it reads correctly on the phone
+   that just scanned it. */
+
+.asset-qr-page {
+  min-height: 100svh;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px 48px;
+  background: var(--paper);
+}
+
+.asset-qr-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  height: fit-content;
+}
+
+.asset-qr-card--center {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 48px 20px;
+}
+
+.asset-qr-error {
+  color: var(--danger);
+  font-size: 13.5px;
+  margin-top: 8px;
+}
+
+.asset-qr-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.asset-qr-avatar {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.asset-qr-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.asset-qr-heading h1 {
+  font-family: var(--sans);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-qr-heading p {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-qr-status {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.asset-qr-status--ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.asset-qr-status--warn {
+  background: #FEF3E0;
+  color: var(--warning);
+}
+
+.asset-qr-status--off {
+  background: var(--neu-sunken);
+  color: var(--text-muted);
+}
+
+.asset-qr-facts {
+  margin: 16px 0 0;
+}
+
+.asset-qr-fact {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.asset-qr-fact:first-child {
+  border-top: none;
+}
+
+.asset-qr-fact dt {
+  flex: none;
+  width: 108px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.asset-qr-fact dd {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.asset-qr-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.asset-qr-coverage {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.asset-qr-coverage h2 {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+
+.asset-qr-coverage ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.asset-qr-coverage li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+
+.asset-qr-coverage-tag {
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.asset-qr-coverage-when {
+  color: var(--text);
+}
+
+.asset-qr-coverage-vendor {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+@media (min-width: 480px) {
+  .asset-qr-page {
+    padding-top: 48px;
+  }
+}

@@ -151,6 +151,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
     }
   }
 
+
   Future<bool> saveAsset(FormData form, {int? id}) async {
     state = state.copyWith(submitting: true, clearError: true);
     try {

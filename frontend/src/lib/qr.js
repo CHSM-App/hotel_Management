@@ -32,10 +32,11 @@ export function tableOrderUrl(origin, token) {
   return `${origin}/order/t/${token}`;
 }
 
-// A staff-only deep link, not a public route: scanning this on a signed-out
-// device bounces through the ordinary login redirect and lands back on the
-// asset it names. Asset cost, vendor and AMC details aren't guest-facing the
-// way a food menu is, so there is no unauthenticated landing page for it.
+// A public route, same trust model as tableOrderUrl above: the qr_token in
+// the link is the whole credential, so scanning this opens the asset
+// straight away with no login. It's still not the full dashboard — it opens
+// AssetQrPage, one standalone card with just this asset's record, not the
+// whole app's sidebar and other panels.
 export function assetUrl(origin, qrToken) {
-  return `${origin}/dashboard?section=assets&assetToken=${qrToken}`;
+  return `${origin}/asset/${qrToken}`;
 }

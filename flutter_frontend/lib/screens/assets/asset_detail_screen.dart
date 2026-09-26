@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/constant.dart';
@@ -15,19 +14,21 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../bookings/id_proof_viewer_screen.dart';
+import '../bookings/receipt_download.dart';
 import '../rooms/room_form_pieces.dart' show OptionDropdown, SectionLabel;
 import '../theme.dart';
 import 'asset_form_sheet.dart';
+import 'asset_icons.dart';
 import 'work_orders_panel.dart';
 
 // Full option set for the payment-status dropdown — same reasoning as its
 // twin in expense_form_screen.dart / asset_form_sheet.dart.
 const _paymentStatusOptionLabel = {'PAID': 'Paid in full', 'PARTIAL': 'Partially paid', 'PENDING': 'Pending'};
 
-/// The staff-only deep link a scanned asset QR resolves to — mirrors
-/// assetUrl() in lib/qr.js so the code printed here and the one the web app
-/// decodes never drift apart. Opens a standalone page with just this asset's
-/// record, not the full dashboard.
+/// The public deep link a scanned asset QR resolves to — mirrors assetUrl()
+/// in lib/qr.js so the code printed here and the one the web app decodes
+/// never drift apart. Opens a standalone page with just this asset's record,
+/// no login and no dashboard chrome, straight off the scan.
 String _assetUrl(String qrToken) => '$baseUrl/asset/$qrToken';
 
 /// One asset's full record — mirrors the "Asset detail" modal in
@@ -156,31 +157,53 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
             : RefreshIndicator(
                 onRefresh: _load,
                 color: AppTheme.accent,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
-                  children: [
-                    _StatusCard(asset: _asset!, onChanged: _load),
-                    const SizedBox(height: AppTheme.s12),
-                    _FactsCard(asset: _asset!),
-                    if (_asset!.qrToken != null) ...[
-                      const SizedBox(height: AppTheme.s12),
-                      _QrCard(asset: _asset!),
-                    ],
-                    const SizedBox(height: AppTheme.s12),
-                    _ActionsRow(asset: _asset!, onChanged: _load, onDelete: _deleteAsset),
-                    if (_purchaseExpense != null) ...[
-                      const SizedBox(height: AppTheme.s16),
-                      _PurchasePaymentsSection(
-                        expense: _purchaseExpense!,
-                        payments: _purchasePayments,
-                        onChanged: _loadPurchasePayments,
-                      ),
-                    ],
-                    const SizedBox(height: AppTheme.s16),
-                    _CoverageSection(asset: _asset!, coverage: _coverage, onChanged: _load),
-                    const SizedBox(height: AppTheme.s16),
-                    _ServiceHistorySection(asset: _asset!, workOrders: workOrders, onChanged: _load),
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Tablets/landscape get the facts and QR side by side —
+                    // on a phone-width column they'd otherwise leave the QR
+                    // card floating in a lot of empty horizontal space.
+                    final wide = constraints.maxWidth >= 640;
+                    final hasQr = _asset!.qrToken != null;
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
+                      children: [
+                        _HeaderCard(asset: _asset!, onChanged: _load),
+                        const SizedBox(height: AppTheme.s12),
+                        if (wide && hasQr)
+                          IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(flex: 3, child: _FactsCard(asset: _asset!)),
+                                const SizedBox(width: AppTheme.s12),
+                                Expanded(flex: 2, child: _QrCard(asset: _asset!)),
+                              ],
+                            ),
+                          )
+                        else ...[
+                          _FactsCard(asset: _asset!),
+                          if (hasQr) ...[
+                            const SizedBox(height: AppTheme.s12),
+                            _QrCard(asset: _asset!),
+                          ],
+                        ],
+                        const SizedBox(height: AppTheme.s12),
+                        _ActionsRow(asset: _asset!, onChanged: _load, onDelete: _deleteAsset),
+                        if (_purchaseExpense != null) ...[
+                          const SizedBox(height: AppTheme.s24),
+                          _PurchasePaymentsSection(
+                            expense: _purchaseExpense!,
+                            payments: _purchasePayments,
+                            onChanged: _loadPurchasePayments,
+                          ),
+                        ],
+                        const SizedBox(height: AppTheme.s24),
+                        _CoverageSection(asset: _asset!, coverage: _coverage, onChanged: _load),
+                        const SizedBox(height: AppTheme.s24),
+                        _ServiceHistorySection(asset: _asset!, workOrders: workOrders, onChanged: _load),
+                      ],
+                    );
+                  },
                 ),
               ),
       ),
@@ -188,40 +211,97 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
   }
 }
 
-/// Status — a dropdown rather than chips, same control the web detail modal
-/// uses: this is the one field on the whole screen someone changes often
-/// enough that a single tap-and-pick beats a picker sheet.
-class _StatusCard extends ConsumerWidget {
+Color _assetStatusColor(String status) => switch (status) {
+  'IN_USE' => AppTheme.vacant,
+  'UNDER_REPAIR' => AppTheme.draft,
+  _ => AppTheme.muted,
+};
+
+IconData _assetStatusIcon(String status) => switch (status) {
+  'IN_USE' => Icons.check_circle_rounded,
+  'UNDER_REPAIR' => Icons.build_rounded,
+  'TRANSFERRED' => Icons.swap_horiz_rounded,
+  _ => Icons.remove_circle_rounded,
+};
+
+/// Identity + status in one card: a category icon badge tinted by status,
+/// the asset's name/tag, and a colored status chip that opens the same
+/// picker the old plain dropdown did — same data, one glance instead of two
+/// separate cards to read top to bottom.
+class _HeaderCard extends ConsumerWidget {
   final Asset asset;
   final VoidCallback onChanged;
 
-  const _StatusCard({required this.asset, required this.onChanged});
+  const _HeaderCard({required this.asset, required this.onChanged});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final color = _assetStatusColor(asset.status);
     return NeuCard(
       child: Row(
         children: [
-          Text('Status', style: Theme.of(context).textTheme.bodySmall),
+          IconBadge(icon: categoryIcon(asset.categoryName), color: color, size: 46),
           const SizedBox(width: AppTheme.s12),
           Expanded(
-            child: NeuPressed(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: asset.status,
-                  dropdownColor: AppTheme.card,
-                  items: [
-                    for (final s in kAssetStatuses)
-                      DropdownMenuItem(value: s, child: Text(kAssetStatusLabel[s]!, style: const TextStyle(fontSize: 13.5))),
-                  ],
-                  onChanged: (v) async {
-                    if (v == null || v == asset.status) return;
-                    final ok = await ref.read(assetsViewModelProvider.notifier).setStatus(asset.id, v);
-                    if (ok) onChanged();
-                  },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  asset.name,
+                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.2),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  [asset.assetTag, asset.categoryName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.s8),
+          PopupMenuButton<String>(
+            tooltip: 'Change status',
+            initialValue: asset.status,
+            onSelected: (v) async {
+              if (v == asset.status) return;
+              final ok = await ref.read(assetsViewModelProvider.notifier).setStatus(asset.id, v);
+              if (ok) onChanged();
+            },
+            offset: const Offset(0, 44),
+            elevation: 6,
+            color: AppTheme.card,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
+            itemBuilder: (context) => [
+              for (final s in kAssetStatuses)
+                PopupMenuItem(
+                  value: s,
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(_assetStatusIcon(s), size: 16, color: _assetStatusColor(s)),
+                      const SizedBox(width: AppTheme.s8),
+                      Text(kAssetStatusLabel[s]!, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_assetStatusIcon(asset.status), size: 14, color: color),
+                  const SizedBox(width: 5),
+                  Text(kAssetStatusLabel[asset.status] ?? asset.status, style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 2),
+                  Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: color),
+                ],
               ),
             ),
           ),
@@ -241,75 +321,82 @@ class _FactsCard extends ConsumerWidget {
         ? 'Room ${asset.roomNumber}'
         : [if (asset.floor.isNotEmpty) 'Floor ${asset.floor}', asset.department].where((s) => s.isNotEmpty).join(' · ');
 
+    final rows = [
+      _fact(Icons.location_on_outlined, 'Location', location.isEmpty ? 'Not set' : location),
+      if (asset.brand.isNotEmpty || asset.model.isNotEmpty)
+        _fact(Icons.precision_manufacturing_outlined, 'Brand / model', [asset.brand, asset.model].where((s) => s.isNotEmpty).join(' ')),
+      if (asset.serialNumber.isNotEmpty) _fact(Icons.qr_code_2_rounded, 'Serial number', asset.serialNumber),
+      if (asset.purchaseDate.isNotEmpty)
+        _fact(
+          Icons.calendar_month_outlined,
+          'Purchased',
+          [formatIsoDate(asset.purchaseDate), if (asset.purchaseCost != null) formatPrice(asset.purchaseCost)].join(' · '),
+        ),
+      _fact(Icons.verified_user_outlined, 'Warranty', asset.warrantyExpiry != null ? formatIsoDate(asset.warrantyExpiry!) : '—'),
+      _fact(Icons.build_circle_outlined, 'AMC', asset.amcExpiry != null ? formatIsoDate(asset.amcExpiry!) : '—'),
+      if (asset.vendorName != null) _fact(Icons.storefront_outlined, 'Vendor', asset.vendorName!),
+      if (asset.locationNote.isNotEmpty) _fact(Icons.sticky_note_2_outlined, 'Note', asset.locationNote),
+      _fact(
+        Icons.receipt_long_outlined,
+        'Purchase bill',
+        null,
+        valueWidget: asset.hasBillDocument
+            ? GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => IdProofViewerScreen(
+                      title: 'Bill · ${asset.name}',
+                      load: () async {
+                        final res = await ref.read(assetsViewModelProvider.notifier).usecase.assetBill(asset.id);
+                        return (Uint8List.fromList(res.data!), res.headers.value('content-type'));
+                      },
+                    ),
+                  ),
+                ),
+                child: const Text('View bill', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
+              )
+            : const Text('Not uploaded', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+      ),
+    ];
+
     return NeuCard(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4, horizontal: AppTheme.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _fact('Location', location.isEmpty ? 'Not set' : location),
-          if (asset.brand.isNotEmpty || asset.model.isNotEmpty)
-            _fact('Brand / model', [asset.brand, asset.model].where((s) => s.isNotEmpty).join(' ')),
-          if (asset.serialNumber.isNotEmpty) _fact('Serial number', asset.serialNumber),
-          if (asset.purchaseDate.isNotEmpty)
-            _fact(
-              'Purchased',
-              [formatIsoDate(asset.purchaseDate), if (asset.purchaseCost != null) formatPrice(asset.purchaseCost)].join(' · '),
-            ),
-          _fact('Warranty', asset.warrantyExpiry != null ? formatIsoDate(asset.warrantyExpiry!) : '—'),
-          _fact('AMC', asset.amcExpiry != null ? formatIsoDate(asset.amcExpiry!) : '—'),
-          if (asset.vendorName != null) _fact('Vendor', asset.vendorName!),
-          if (asset.locationNote.isNotEmpty) _fact('Note', asset.locationNote),
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(width: 110, child: Text('Purchase bill', style: TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-                Expanded(
-                  child: asset.hasBillDocument
-                      ? GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => IdProofViewerScreen(
-                                title: 'Bill · ${asset.name}',
-                                load: () async {
-                                  final res = await ref.read(assetsViewModelProvider.notifier).usecase.assetBill(asset.id);
-                                  return (Uint8List.fromList(res.data!), res.headers.value('content-type'));
-                                },
-                              ),
-                            ),
-                          ),
-                          child: const Text('View bill', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
-                        )
-                      : const Text('Not uploaded', style: TextStyle(color: AppTheme.text, fontSize: 13)),
-                ),
-              ],
-            ),
-          ),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const Divider(height: 1, color: AppTheme.border),
+            rows[i],
+          ],
         ],
       ),
     );
   }
 
-  Widget _fact(String label, String value) => Padding(
-    padding: const EdgeInsets.only(top: 6),
+  Widget _fact(IconData icon, String label, String? value, {Widget? valueWidget}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 110, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-        Expanded(child: Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13))),
+        Icon(icon, size: 17, color: AppTheme.muted),
+        const SizedBox(width: AppTheme.s12),
+        SizedBox(width: 92, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
+        Expanded(child: valueWidget ?? Text(value ?? '', style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w500))),
       ],
     ),
   );
 }
 
 /// "Scan to open this asset" — same deep link the web QR encodes. Download
-/// builds a one-page PDF (name, tag, QR) and hands it to the OS print/share
-/// sheet, the mobile equivalent of the web's browser download.
+/// builds a one-page PDF (name, tag, QR) and saves it straight to the
+/// device via saveBytesToDevice — the same real-download path bill_pdf.dart
+/// uses, not Printing.layoutPdf's print/share preview, which made "Download
+/// QR" feel like it never actually downloaded anything.
 class _QrCard extends StatelessWidget {
   final Asset asset;
   const _QrCard({required this.asset});
 
-  Future<void> _download() async {
+  Future<String> _download() async {
     final url = _assetUrl(asset.qrToken!);
     final doc = pw.Document();
     doc.addPage(
@@ -328,7 +415,9 @@ class _QrCard extends StatelessWidget {
         ),
       ),
     );
-    await Printing.layoutPdf(onLayout: (_) async => doc.save());
+    final bytes = await doc.save();
+    final safe = ((asset.assetTag ?? '').isNotEmpty ? asset.assetTag! : asset.name).replaceAll(RegExp(r'[\\/]'), '-');
+    return saveBytesToDevice(bytes, '$safe-qr.pdf');
   }
 
   @override
@@ -337,13 +426,40 @@ class _QrCard extends StatelessWidget {
     return NeuCard(
       child: Column(
         children: [
-          QrImageView(data: url, size: 132, backgroundColor: Colors.white),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.s12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: QrImageView(data: url, size: 128, backgroundColor: Colors.white),
+          ),
+          const SizedBox(height: AppTheme.s12),
+          Text('Scan to open this asset', style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
           const SizedBox(height: AppTheme.s8),
-          Text('Scan to open this asset', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 4),
           GestureDetector(
-            onTap: _download,
-            child: const Text('Download QR', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                final where = await _download();
+                messenger.showSnackBar(SnackBar(content: Text('Saved to $where'), backgroundColor: AppTheme.heading));
+              } catch (_) {
+                messenger.showSnackBar(const SnackBar(content: Text('Could not save the QR code.')));
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+              decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(999)),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.download_rounded, size: 15, color: AppTheme.accent),
+                  SizedBox(width: 5),
+                  Text('Download QR', style: TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -352,7 +468,9 @@ class _QrCard extends StatelessWidget {
 }
 
 /// Report an issue / Add coverage / Edit asset / Delete asset — same order
-/// as the web modal's action row, all as direct buttons.
+/// as the web modal's action row: one full-width primary button for the
+/// action taken most often, then the other three as a compact icon row so
+/// the group reads as one unit instead of four same-weight buttons.
 class _ActionsRow extends ConsumerWidget {
   final Asset asset;
   final VoidCallback onChanged;
@@ -362,39 +480,98 @@ class _ActionsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Wrap(
-      spacing: AppTheme.s8,
-      runSpacing: AppTheme.s8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Column(
       children: [
         NeuButton(
           primary: true,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
+          expand: true,
+          padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
           onPressed: () => showReportIssueDialog(context, assetId: asset.id),
-          child: const Text('Report an issue'),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.report_problem_rounded, size: 17, color: Colors.white),
+              SizedBox(width: AppTheme.s8),
+              Text('Report an issue'),
+            ],
+          ),
         ),
-        NeuButton(
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-          onPressed: () async {
-            final saved = await showCoverageForm(context, assetId: asset.id);
-            if (saved == true) onChanged();
-          },
-          child: const Text('Add coverage'),
-        ),
-        NeuButton(
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-          onPressed: () async {
-            await showAssetFormSheet(context, asset: asset);
-            onChanged();
-          },
-          child: const Text('Edit asset'),
-        ),
-        NeuButton(
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-          onPressed: onDelete,
-          child: const Text('Delete asset', style: TextStyle(color: AppTheme.danger)),
+        const SizedBox(height: AppTheme.s8),
+        Row(
+          children: [
+            Expanded(
+              child: _SecondaryAction(
+                icon: Icons.shield_outlined,
+                label: 'Add coverage',
+                onTap: () async {
+                  final saved = await showCoverageForm(context, assetId: asset.id);
+                  if (saved == true) onChanged();
+                },
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: _SecondaryAction(
+                icon: Icons.edit_outlined,
+                label: 'Edit asset',
+                onTap: () async {
+                  await showAssetFormSheet(context, asset: asset);
+                  onChanged();
+                },
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: _SecondaryAction(
+                icon: Icons.delete_outline_rounded,
+                label: 'Delete',
+                color: AppTheme.danger,
+                onTap: onDelete,
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+class _SecondaryAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+
+  const _SecondaryAction({required this.icon, required this.label, required this.onTap, this.color = AppTheme.heading});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 60),
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.s8, horizontal: AppTheme.s4),
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+          border: Border.all(color: color == AppTheme.danger ? AppTheme.danger.withValues(alpha: 0.3) : AppTheme.border),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 19, color: color),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

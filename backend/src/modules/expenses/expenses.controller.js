@@ -212,6 +212,12 @@ async function getExpenseBillHandler(req, res, next) {
       throw new ApiError('That receipt is no longer on file.', 404);
     }
     // basename, not the stored string — same guard as assets.controller.js.
+    // Cross-origin, not the strict default: a Flutter web build served from
+    // its own dev-server origin is still same-site by IP, but the bare-IP
+    // case (see PUBLIC_IMAGE_CORP in app.js) trips Chrome's Cross-Origin-
+    // Resource-Policy check anyway — the fetch just fails with no console
+    // error pointing here. CORS above still gates who the origin can be.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.sendFile(path.join(BILL_UPLOAD_DIR, path.basename(filename)));
   } catch (err) {
     next(err);

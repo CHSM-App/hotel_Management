@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/inventory.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../rooms/room_form_pieces.dart' show SectionLabel;
 import '../theme.dart';
 
 const _kUnitLabel = {'KG': 'kg', 'G': 'g', 'L': 'L', 'ML': 'ml', 'PCS': 'pcs'};
@@ -183,12 +184,8 @@ class _DishCard extends ConsumerWidget {
     final vm = ref.read(inventoryViewModelProvider.notifier);
     final recipe = await vm.openRecipe(dish.itemId);
     if (recipe == null || !context.mounted) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.bg,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge))),
-      builder: (_) => _RecipeEditorSheet(recipe: recipe),
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => _RecipeEditorScreen(recipe: recipe)),
     );
   }
 }
@@ -199,15 +196,15 @@ class _Row {
   _Row({this.materialId, this.quantity = ''});
 }
 
-class _RecipeEditorSheet extends ConsumerStatefulWidget {
+class _RecipeEditorScreen extends ConsumerStatefulWidget {
   final ItemRecipe recipe;
-  const _RecipeEditorSheet({required this.recipe});
+  const _RecipeEditorScreen({required this.recipe});
 
   @override
-  ConsumerState<_RecipeEditorSheet> createState() => _RecipeEditorSheetState();
+  ConsumerState<_RecipeEditorScreen> createState() => _RecipeEditorScreenState();
 }
 
-class _RecipeEditorSheetState extends ConsumerState<_RecipeEditorSheet> {
+class _RecipeEditorScreenState extends ConsumerState<_RecipeEditorScreen> {
   bool _perSize = false;
   int? _scope; // null == 'ALL'
   late Map<int?, List<_Row>> _rowsByScope;
@@ -252,101 +249,122 @@ class _RecipeEditorSheetState extends ConsumerState<_RecipeEditorSheet> {
         .toList();
     final submitting = ref.watch(inventoryViewModelProvider).submitting;
 
-    return SafeArea(
-      top: false,
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.85,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: AppTheme.s16,
-            right: AppTheme.s16,
-            top: AppTheme.s16,
-            bottom: AppTheme.s16 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.recipe.name, style: Theme.of(context).textTheme.titleMedium),
-              Text(
-                'What one serving takes out of the store cupboard.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: AppTheme.s12),
-              if (_error != null) ...[
-                Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
-                const SizedBox(height: AppTheme.s8),
-              ],
-              if (widget.recipe.portions.isNotEmpty) ...[
-                Row(
+    final ingredientSectionNumber = widget.recipe.portions.isNotEmpty ? 2 : 1;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.recipe.name)),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s16, AppTheme.s32),
+          children: [
+            Text(
+              'What one serving takes out of the store cupboard.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppTheme.s16),
+            if (_error != null) ...[
+              _ErrorBanner(_error!),
+              const SizedBox(height: AppTheme.s16),
+            ],
+            if (widget.recipe.portions.isNotEmpty) ...[
+              NeuCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: NeuButton(
-                        onPressed: () => setState(() {
-                          _perSize = false;
-                          _scope = null;
-                        }),
-                        primary: !_perSize,
-                        child: const Text('Same for every size'),
-                      ),
+                    const SectionLabel('Portion size', number: 1),
+                    const SizedBox(height: AppTheme.s12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: NeuButton(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12),
+                            onPressed: () => setState(() {
+                              _perSize = false;
+                              _scope = null;
+                            }),
+                            primary: !_perSize,
+                            child: const Text(
+                              'Same for every size',
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(
+                          child: NeuButton(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12),
+                            onPressed: () => setState(() {
+                              _perSize = true;
+                              _scope = widget.recipe.portions.first.id;
+                              for (final p in widget.recipe.portions) {
+                                _rowsByScope.putIfAbsent(p.id, () => [_Row()]);
+                              }
+                            }),
+                            primary: _perSize,
+                            child: const Text(
+                              'Different per size',
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: AppTheme.s8),
-                    Expanded(
-                      child: NeuButton(
-                        onPressed: () => setState(() {
-                          _perSize = true;
-                          _scope = widget.recipe.portions.first.id;
-                          for (final p in widget.recipe.portions) {
-                            _rowsByScope.putIfAbsent(p.id, () => [_Row()]);
-                          }
-                        }),
-                        primary: _perSize,
-                        child: const Text('Different per size'),
+                    if (_perSize) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      Wrap(
+                        spacing: AppTheme.s8,
+                        children: [
+                          for (final p in widget.recipe.portions)
+                            ChoiceChip(
+                              label: Text(p.label),
+                              selected: _scope == p.id,
+                              onSelected: (_) => setState(() => _scope = p.id),
+                            ),
+                        ],
                       ),
-                    ),
+                    ],
                   ],
                 ),
-                if (_perSize) ...[
-                  const SizedBox(height: AppTheme.s8),
-                  Wrap(
-                    spacing: AppTheme.s8,
-                    children: [
-                      for (final p in widget.recipe.portions)
-                        ChoiceChip(
-                          label: Text(p.label),
-                          selected: _scope == p.id,
-                          onSelected: (_) => setState(() => _scope = p.id),
-                        ),
-                    ],
+              ),
+              const SizedBox(height: AppTheme.s16),
+            ],
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SectionLabel('Ingredients', number: ingredientSectionNumber),
+                  const SizedBox(height: AppTheme.s12),
+                  for (var i = 0; i < _rows.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                      child: _ingredientRow(i, materials),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => setState(() => _rows.add(_Row())),
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Add an ingredient'),
                   ),
                 ],
-                const SizedBox(height: AppTheme.s12),
-              ],
-              Expanded(
-                child: ListView(
-                  children: [
-                    for (var i = 0; i < _rows.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                        child: _ingredientRow(i, materials),
-                      ),
-                    TextButton.icon(
-                      onPressed: () => setState(() => _rows.add(_Row())),
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text('Add an ingredient'),
-                    ),
-                  ],
-                ),
               ),
-              NeuButton(
-                primary: true,
-                expand: true,
-                onPressed: submitting ? null : _save,
-                child: submitting
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Save recipe'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: AppTheme.s24),
+            NeuButton(
+              primary: true,
+              expand: true,
+              onPressed: submitting ? null : _save,
+              child: submitting
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Save recipe'),
+            ),
+          ],
         ),
       ),
     );
@@ -443,5 +461,25 @@ class _RecipeEditorSheetState extends ConsumerState<_RecipeEditorSheet> {
     } else {
       setState(() => _error = ref.read(inventoryViewModelProvider).error ?? 'Could not save that recipe.');
     }
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  const _ErrorBanner(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(color: AppTheme.danger.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(child: Text(message, style: const TextStyle(color: AppTheme.danger, fontSize: 13))),
+        ],
+      ),
+    );
   }
 }

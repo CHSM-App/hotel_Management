@@ -17,6 +17,8 @@ const {
   getSharedReceiptHandler,
   viewSharedReceiptHandler,
   downloadSharedReceiptHandler,
+  getAssetQrPageHandler,
+  getAssetQrBillHandler,
 } = require('./public.controller');
 
 const router = Router();
@@ -76,5 +78,11 @@ router.get('/bills/:token/download', downloadSharedBillHandler);
 router.get('/receipts/:token', getSharedReceiptHandler);
 router.get('/receipts/:token/view', viewSharedReceiptHandler);
 router.get('/receipts/:token/download', downloadSharedReceiptHandler);
+
+// What a scanned asset QR opens — one asset's record, same trust model as
+// the table route above: the qr_token in the link is the whole credential,
+// not rate limited for the same reason (it's a GUID, nothing useful to guess).
+router.get('/assets/:token', getAssetQrPageHandler);
+router.get('/assets/:token/bill', getAssetQrBillHandler);
 
 module.exports = router;

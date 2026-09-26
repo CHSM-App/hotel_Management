@@ -483,9 +483,9 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     final form = dio.FormData.fromMap(formMap);
 
     final vm = ref.read(roomsViewModelProvider.notifier);
-    final ok = await vm.saveRoom(form, roomId: widget.room.id);
+    final result = await vm.saveRoom(form, roomId: widget.room.id);
     if (!mounted) return;
-    if (ok) {
+    if (result.ok) {
       Navigator.pop(context);
     } else {
       setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Could not save the room.');

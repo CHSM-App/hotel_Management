@@ -140,6 +140,10 @@ async function getAssetBillHandler(req, res, next) {
     // database, and joining it unexamined is how "../.." reaches somewhere
     // it should not. The upload middleware writes UUID names, so this can
     // only ever be a no-op — which is the point of it being here anyway.
+    // Same Cross-Origin-Resource-Policy relaxation as expenses.controller.js —
+    // otherwise a cross-origin fetch (e.g. a Flutter web build) is silently
+    // blocked by the browser even though CORS allows the origin.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.sendFile(path.join(BILL_UPLOAD_DIR, path.basename(filename)));
   } catch (err) {
     next(err);
