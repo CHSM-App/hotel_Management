@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/draft.dart';
 import '../../presentation/providers/usecase_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
@@ -9,6 +10,7 @@ import '../reports/report_widgets.dart';
 import '../theme.dart';
 import 'booking_actions.dart';
 import 'booking_detail_screen.dart';
+import 'take_booking_screen.dart';
 
 /// The guest register: every stay whose dates overlap a range, searchable and
 /// cut by status, with the same summary strip the web's own Guest register
@@ -33,6 +35,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final Set<String> _statuses = {};
 
   List<Booking>? _bookings;
+  List<BookingDraft> _drafts = const [];
   bool _loading = true;
   String? _error;
 
@@ -97,9 +100,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       final rows = await ref
           .read(bookingUsecaseProvider)
           .bookings(fromDate: _fromDate, toDate: _toDate);
+      // Drafts have no date range: some are parked before room or dates are
+      // chosen. Keep them available to the register's Draft filter.
+      final drafts = await ref.read(bookingUsecaseProvider).drafts().catchError(
+        (_) => <BookingDraft>[],
+      );
       if (!mounted) return;
       setState(() {
         _bookings = rows;
+        _drafts = drafts;
         _loading = false;
       });
     } catch (e) {
@@ -168,6 +177,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return rows.where((b) => _statuses.contains(b.status)).toList();
   }
 
+  List<BookingDraft> get _searchedDrafts {
+    final query = _search.trim().toLowerCase();
+    if (query.isEmpty) return _drafts;
+    return _drafts.where((d) {
+      final form = d.form;
+      return (d.guestName ?? form.guestName).toLowerCase().contains(query) ||
+          (d.roomNumber ?? '').toLowerCase().contains(query) ||
+          form.guestPhone.toLowerCase().contains(query);
+    }).toList();
+  }
+
+  List<BookingDraft> get _filteredDrafts =>
+      _statuses.isEmpty || _statuses.contains('DRAFT') ? _searchedDrafts : const [];
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -175,6 +198,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     for (final b in _searched) {
       counts[b.status ?? ''] = (counts[b.status ?? ''] ?? 0) + 1;
     }
+    counts['DRAFT'] = _searchedDrafts.length;
+    final showingStays = _statuses.isEmpty || _statuses.any((s) => s != 'DRAFT');
+    final visibleBookings = showingStays ? filtered : const <Booking>[];
+    final visibleDrafts = _filteredDrafts;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -218,7 +245,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       child: _StatusChips(
                         selected: _statuses,
                         counts: counts,
-                        allCount: _searched.length,
+                        allCount: _searched.length + _searchedDrafts.length,
                         onToggle: (key) {
                           _toggleStatus(key);
                           _toggleFilterOpen();
@@ -243,13 +270,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           else if (_error != null)
             ReportError(message: _error!)
           else ...[
-            if (filtered.isEmpty)
+            if (visibleBookings.isEmpty && visibleDrafts.isEmpty)
               const NeuNotice(
                 icon: Icons.groups_outlined,
                 message: 'No guests match this range and filter.',
               )
             else
-              for (final b in filtered)
+              for (final b in visibleBookings)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppTheme.s12),
                   child: _RegisterCard(
@@ -264,6 +291,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     },
                   ),
                 ),
+            for (final d in visibleDrafts)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                child: _DraftRegisterCard(
+                  draft: d,
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => TakeBookingScreen(draft: d)),
+                    );
+                    _load();
+                  },
+                ),
+              ),
           ],
         ],
       ),
@@ -599,7 +639,68 @@ class _StatusChips extends StatelessWidget {
               icon: _kStatusIcon[key]!,
               onTap: () => onToggle(key),
             ),
+          _Chip(
+            label: 'Draft',
+            count: counts['DRAFT'] ?? 0,
+            on: selected.contains('DRAFT'),
+            color: AppTheme.draft,
+            icon: Icons.edit_note_rounded,
+            onTap: () => onToggle('DRAFT'),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _DraftRegisterCard extends StatelessWidget {
+  final BookingDraft draft;
+  final VoidCallback onTap;
+
+  const _DraftRegisterCard({required this.draft, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final form = draft.form;
+    final name = (draft.guestName ?? form.guestName).trim();
+    final dates = [draft.checkInDate, draft.checkOutDate]
+        .whereType<String>()
+        .join(' – ');
+    return GestureDetector(
+      onTap: onTap,
+      child: NeuCard(
+        radius: AppTheme.rMedium,
+        shadow: AppTheme.extruded,
+        padding: const EdgeInsets.all(AppTheme.s16),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppTheme.draft,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name.isEmpty ? 'Draft booking' : name,
+                      style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text([
+                    if (draft.roomNumber != null) 'Room ${draft.roomNumber}',
+                    if (dates.isNotEmpty) dates,
+                    'Draft',
+                  ].join(' · '), style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppTheme.muted),
+          ],
+        ),
       ),
     );
   }
@@ -870,3 +971,4 @@ class _Field extends StatelessWidget {
     );
   }
 }
+
