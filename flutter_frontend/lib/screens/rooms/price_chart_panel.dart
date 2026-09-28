@@ -329,6 +329,7 @@ class _CategoriesSection extends ConsumerStatefulWidget {
 class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
   final _name = TextEditingController();
   final _price = TextEditingController();
+  final _tapeOrder = TextEditingController();
   int? _editingId;
   String? _error;
   bool _formOpen = false;
@@ -337,6 +338,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
   void dispose() {
     _name.dispose();
     _price.dispose();
+    _tapeOrder.dispose();
     super.dispose();
   }
 
@@ -346,6 +348,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
       _formOpen = true;
       _name.text = c.name;
       _price.text = '${c.basePrice}';
+      _tapeOrder.text = c.tapeOrder != null ? '${c.tapeOrder}' : '';
       _error = null;
     });
   }
@@ -356,6 +359,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
       _formOpen = false;
       _name.clear();
       _price.clear();
+      _tapeOrder.clear();
       _error = null;
     });
   }
@@ -370,8 +374,19 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
       setState(() => _error = 'Enter a base price greater than 0.');
       return;
     }
+    final tapeOrderText = _tapeOrder.text.trim();
+    final tapeOrder = tapeOrderText.isEmpty ? null : int.tryParse(tapeOrderText);
+    if (tapeOrderText.isNotEmpty && (tapeOrder == null || tapeOrder < 1)) {
+      setState(() => _error = 'Tape chart order must be a whole number of 1 or more.');
+      return;
+    }
     final vm = ref.read(roomsViewModelProvider.notifier);
-    final ok = await vm.saveCategory(id: _editingId, name: _name.text.trim(), basePrice: price);
+    final ok = await vm.saveCategory(
+      id: _editingId,
+      name: _name.text.trim(),
+      basePrice: price,
+      tapeOrder: tapeOrder,
+    );
     if (!mounted) return;
     if (ok) {
       _cancelEdit();
@@ -426,6 +441,13 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _tapeOrder,
+            label: '',
+            hint: 'Tape chart order (optional)',
+            keyboardType: TextInputType.number,
           ),
           const SizedBox(height: AppTheme.s8),
           Row(

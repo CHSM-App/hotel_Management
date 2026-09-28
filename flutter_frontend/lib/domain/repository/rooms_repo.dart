@@ -25,8 +25,8 @@ abstract class RoomsRepository {
 
   // Categories
   Future<List<RoomCategory>> categories();
-  Future<void> createCategory({required String name, required num basePrice});
-  Future<void> updateCategory(int id, {required String name, required num basePrice});
+  Future<void> createCategory({required String name, required num basePrice, int? tapeOrder});
+  Future<void> updateCategory(int id, {required String name, required num basePrice, int? tapeOrder});
   Future<void> setCategoryActive(int id, bool isActive);
   Future<void> deleteCategory(int id);
 

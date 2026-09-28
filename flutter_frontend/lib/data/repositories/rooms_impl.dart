@@ -50,12 +50,12 @@ class RoomsImpl implements RoomsRepository {
   Future<List<RoomCategory>> categories() => api.categories();
 
   @override
-  Future<void> createCategory({required String name, required num basePrice}) =>
-      api.createCategory(name: name, basePrice: basePrice);
+  Future<void> createCategory({required String name, required num basePrice, int? tapeOrder}) =>
+      api.createCategory(name: name, basePrice: basePrice, tapeOrder: tapeOrder);
 
   @override
-  Future<void> updateCategory(int id, {required String name, required num basePrice}) =>
-      api.updateCategory(id, name: name, basePrice: basePrice);
+  Future<void> updateCategory(int id, {required String name, required num basePrice, int? tapeOrder}) =>
+      api.updateCategory(id, name: name, basePrice: basePrice, tapeOrder: tapeOrder);
 
   @override
   Future<void> setCategoryActive(int id, bool isActive) => api.setCategoryActive(id, isActive);
