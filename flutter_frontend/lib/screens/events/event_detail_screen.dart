@@ -8,6 +8,9 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/payment_row.dart';
+import '../billing/advance_receipt_screen.dart';
+import '../billing/invoice_preview_screen.dart';
+import '../billing/issue_event_bill_screen.dart';
 import '../theme.dart';
 import 'event_form_screen.dart';
 
@@ -181,6 +184,23 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                           _refundAmount.text = (ev.advanceAmount) > 0 ? ev.advanceAmount.toString() : '';
                           _refundMethod = null;
                           setState(() => _cancelling = true);
+                        },
+                        onSettle: () async {
+                          await ref.read(billingViewModelProvider.notifier).openEvent(ev);
+                          if (!context.mounted) return;
+                          final invoice = await Navigator.of(context).push<Invoice>(
+                            MaterialPageRoute(builder: (_) => const IssueEventBillScreen()),
+                          );
+                          if (invoice != null) await _load();
+                        },
+                        onViewBill: () async {
+                          final invoiceId = ev.invoice?.id;
+                          if (invoiceId == null) return;
+                          final invoice = await ref.read(billingViewModelProvider.notifier).fetchInvoice(invoiceId);
+                          if (!context.mounted || invoice == null) return;
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => InvoicePreviewScreen(invoice: invoice)),
+                          );
                         },
                       ),
                   ],
@@ -654,24 +674,40 @@ class _AdvancesCardState extends State<_AdvancesCard> {
             children: [
               const Expanded(child: Text('Advances', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
               if (widget.canTake && !_taking)
-                TextButton(onPressed: () => setState(() => _taking = true), child: const Text('Take advance')),
+                TextButton(
+                  onPressed: () async {
+                    if (widget.receipts.isEmpty) {
+                      setState(() => _taking = true);
+                      return;
+                    }
+                    // Same door the web's own link opens onto — show the
+                    // latest receipt, which itself offers "Take another".
+                    await _openReceipt(widget.receipts.first);
+                  },
+                  child: const Text('Take advance / print receipt'),
+                ),
             ],
           ),
           if (widget.receipts.isEmpty) const Text('No advance taken yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
           for (final r in widget.receipts)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${r.receiptNumber ?? '#${r.id}'} · ${formatIsoDate(r.createdAt)}${r.isVoid ? ' · void' : ''}',
-                      style: const TextStyle(color: AppTheme.text, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
+            InkWell(
+              onTap: () => _openReceipt(r),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${r.receiptNumber ?? '#${r.id}'} · ${formatIsoDate(r.createdAt)}${r.isVoid ? ' · void' : ''}',
+                        style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
-                ],
+                    Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.muted),
+                  ],
+                ),
               ),
             ),
           if (widget.event.invoice != null)
@@ -682,9 +718,10 @@ class _AdvancesCardState extends State<_AdvancesCard> {
           if (_taking)
             _TakeAdvanceForm(
               event: widget.event,
-              onDone: () {
+              onIssued: (receipt) async {
                 setState(() => _taking = false);
                 widget.onTaken();
+                await _openReceipt(receipt);
               },
               onCancel: () => setState(() => _taking = false),
             ),
@@ -692,14 +729,24 @@ class _AdvancesCardState extends State<_AdvancesCard> {
       ),
     );
   }
+
+  Future<void> _openReceipt(AdvanceReceipt r) async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AdvanceReceiptScreen(receipt: r, canTakeAnother: widget.canTake)),
+    );
+    widget.onTaken();
+    if (result == AdvanceReceiptScreen.takeAnother && mounted) {
+      setState(() => _taking = true);
+    }
+  }
 }
 
 class _TakeAdvanceForm extends ConsumerStatefulWidget {
   final EventBooking event;
-  final VoidCallback onDone;
+  final ValueChanged<AdvanceReceipt> onIssued;
   final VoidCallback onCancel;
 
-  const _TakeAdvanceForm({required this.event, required this.onDone, required this.onCancel});
+  const _TakeAdvanceForm({required this.event, required this.onIssued, required this.onCancel});
 
   @override
   ConsumerState<_TakeAdvanceForm> createState() => _TakeAdvanceFormState();
@@ -731,7 +778,7 @@ class _TakeAdvanceFormState extends ConsumerState<_TakeAdvanceForm> {
     final receipt = await ref.read(eventsViewModelProvider.notifier).issueAdvanceReceipt(widget.event.id, body);
     if (!mounted) return;
     if (receipt != null) {
-      widget.onDone();
+      widget.onIssued(receipt);
     } else {
       setState(() {
         _busy = false;
@@ -849,6 +896,8 @@ class _Actions extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
+  final VoidCallback onSettle;
+  final VoidCallback onViewBill;
 
   const _Actions({
     required this.event,
@@ -858,6 +907,8 @@ class _Actions extends StatelessWidget {
     required this.onConfirm,
     required this.onEdit,
     required this.onCancel,
+    required this.onSettle,
+    required this.onViewBill,
   });
 
   @override
@@ -879,6 +930,8 @@ class _Actions extends StatelessWidget {
         ],
         if (status == 'TENTATIVE') NeuButton(onPressed: onRelease, child: const Text('Release hold')),
         if (['ENQUIRY', 'TENTATIVE', 'EXPIRED'].contains(status)) NeuButton(primary: true, onPressed: onConfirm, child: const Text('Confirm')),
+        if (status == 'CONFIRMED') NeuButton(primary: true, onPressed: onSettle, child: const Text('Settle & bill')),
+        if (status == 'SETTLED') NeuButton(primary: true, onPressed: onViewBill, child: const Text('View bill')),
         if (canEdit && status != 'EXPIRED') NeuButton(onPressed: onEdit, child: const Text('Edit')),
         if (!closed && status != 'SETTLED') NeuButton(color: AppTheme.danger, primary: true, onPressed: onCancel, child: const Text('Cancel event')),
       ],

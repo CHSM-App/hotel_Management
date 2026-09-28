@@ -67,4 +67,15 @@ class BillingUsecase {
   /// Cancel one that should not have been issued.
   Future<AdvanceReceipt> voidAdvanceReceipt(int id, String reason) =>
       repository.voidAdvanceReceipt(id, reason);
+
+  /// One bill, fetched by its own id.
+  Future<Invoice> invoice(int id) => repository.invoice(id);
+
+  /// What a function's bill will say.
+  Future<EventBillPreview> previewEventBill(int eventId) =>
+      repository.previewEventBill(eventId);
+
+  /// Cut the bill for a function.
+  Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>
+      repository.issueEventInvoice(eventId, body);
 }

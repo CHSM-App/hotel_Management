@@ -45,4 +45,7 @@ class OrdersImpl implements OrdersRepository {
   @override
   Future<void> clearFoodPinLockout(String roomNumber) =>
       api.clearFoodPinLockout(roomNumber);
+
+  @override
+  Future<RoomOccupancy> roomOccupancy(int roomId) => api.roomOccupancy(roomId);
 }

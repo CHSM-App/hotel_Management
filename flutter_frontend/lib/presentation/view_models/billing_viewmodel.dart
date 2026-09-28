@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/draft.dart';
+import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/usecase/billing_usecase.dart';
 // A pure formatter over intl, no widgets — the message it builds is read by
@@ -27,6 +28,12 @@ class BillingState {
   /// whichever is in flight, since the desk only ever has one bill open.
   final FoodTab? foodTarget;
   final FoodBillPreview? foodPreview;
+
+  /// Set instead of the two pairs above when a function is being settled —
+  /// the event detail screen's "Settle & bill". Same rule: only one of the
+  /// three targets is ever non-null.
+  final EventBooking? eventTarget;
+  final EventBillPreview? eventPreview;
   final bool previewing;
   final String? error;
 
@@ -63,6 +70,8 @@ class BillingState {
     this.preview,
     this.foodTarget,
     this.foodPreview,
+    this.eventTarget,
+    this.eventPreview,
     this.previewing = false,
     this.error,
     this.includeLateCheckout = true,
@@ -85,6 +94,10 @@ class BillingState {
     bool clearFoodTarget = false,
     FoodBillPreview? foodPreview,
     bool clearFoodPreview = false,
+    EventBooking? eventTarget,
+    bool clearEventTarget = false,
+    EventBillPreview? eventPreview,
+    bool clearEventPreview = false,
     bool? previewing,
     String? error,
     bool clearError = false,
@@ -102,6 +115,8 @@ class BillingState {
     preview: clearPreview ? null : (preview ?? this.preview),
     foodTarget: clearFoodTarget ? null : (foodTarget ?? this.foodTarget),
     foodPreview: clearFoodPreview ? null : (foodPreview ?? this.foodPreview),
+    eventTarget: clearEventTarget ? null : (eventTarget ?? this.eventTarget),
+    eventPreview: clearEventPreview ? null : (eventPreview ?? this.eventPreview),
     previewing: previewing ?? this.previewing,
     error: clearError ? null : (error ?? this.error),
     includeLateCheckout: includeLateCheckout ?? this.includeLateCheckout,
@@ -125,6 +140,8 @@ class BillingState {
   /// of bill is open.
   num get balanceDue => foodTarget != null
       ? (foodPreview?.balanceDue ?? 0)
+      : eventTarget != null
+      ? (eventPreview?.balanceDue ?? 0)
       : (preview?.balanceDue ?? 0);
 
   /// A stay paid in full up front, or (for a table) nothing at all still
@@ -149,7 +166,12 @@ class BillingState {
   /// nothing typed into the payment rows moves it. A bill cannot be cut until
   /// the money recorded equals it.
   String? get settlementProblem {
-    if (preview == null && foodPreview == null) return null;
+    if (preview == null && foodPreview == null && eventPreview == null) {
+      return null;
+    }
+    if (eventPreview?.hasUnpricedExtras == true) {
+      return 'Price the extras noted on the day before this bill can be issued.';
+    }
     // Nothing to reconcile against when the advance already covers the bill
     // — there is no payment to enter, so there is nothing to be wrong.
     if (nothingDue) return null;
@@ -459,6 +481,116 @@ class BillingViewModel extends StateNotifier<BillingState> {
         issuing: false,
         error: BookingViewModel.messageFor(e),
       );
+      return null;
+    }
+  }
+
+  /// Open a function for billing — the event detail screen's "Settle & bill".
+  Future<void> openEvent(EventBooking event) async {
+    state = state.copyWith(
+      eventTarget: event,
+      clearEventPreview: true,
+      clearError: true,
+      payment: [PaymentDraft()],
+      paymentTouched: false,
+    );
+    await refreshEventPreview();
+  }
+
+  void closeEvent() => state = state.copyWith(
+    clearEventTarget: true,
+    clearEventPreview: true,
+    clearError: true,
+    payment: const [],
+    paymentTouched: false,
+  );
+
+  Future<void> refreshEventPreview() async {
+    final event = state.eventTarget;
+    if (event == null) return;
+
+    state = state.copyWith(previewing: true, clearError: true);
+    try {
+      final preview = await usecase.previewEventBill(event.id);
+      final rows = state.payment.isEmpty
+          ? <PaymentDraft>[PaymentDraft()]
+          : state.payment;
+      if (rows.length == 1 && !state.paymentTouched) {
+        rows.first.amount = preview.balanceDue > 0
+            ? '${preview.balanceDue}'
+            : '';
+      }
+      state = state.copyWith(
+        previewing: false,
+        eventPreview: preview,
+        payment: List.of(rows),
+      );
+    } catch (e) {
+      state = state.copyWith(
+        previewing: false,
+        error: BookingViewModel.messageFor(e),
+      );
+    }
+  }
+
+  /// Cut the bill for a function — moves it CONFIRMED → SETTLED server-side.
+  ///
+  /// Returns the invoice on success, null on failure with the error set.
+  Future<Invoice?> issueEvent() async {
+    final event = state.eventTarget;
+    final preview = state.eventPreview;
+    if (event == null || preview == null || state.issuing) return null;
+
+    final problem = state.settlementProblem;
+    if (problem != null) {
+      state = state.copyWith(error: problem);
+      return null;
+    }
+
+    state = state.copyWith(issuing: true, clearError: true);
+    try {
+      final rows = state.payment.where((p) => p.value > 0).toList();
+      final invoice = await usecase.issueEventInvoice(event.id, {
+        'billingSide': preview.billingSide,
+        'discountAmount': preview.amounts?.discountAmount ?? 0,
+        'collectedAmount': state.collected,
+        if (rows.isNotEmpty) ...{
+          'paymentMethod': rows.first.method,
+          if (needsPaymentReference(rows.first.method) &&
+              rows.first.reference.trim().isNotEmpty)
+            'paymentReference': rows.first.reference.trim(),
+          if (rows.length > 1)
+            'paymentLines': rows.map((r) => r.toJson()).toList(),
+        },
+      });
+      state = state.copyWith(issuing: false);
+      return invoice;
+    } catch (e) {
+      state = state.copyWith(
+        issuing: false,
+        error: BookingViewModel.messageFor(e),
+      );
+      return null;
+    }
+  }
+
+  /// One bill, fetched by its own id — "View bill" from a function that
+  /// only carries the invoice's id/number on it.
+  Future<Invoice?> fetchInvoice(int id) async {
+    try {
+      return await usecase.invoice(id);
+    } catch (e) {
+      state = state.copyWith(error: BookingViewModel.messageFor(e));
+      return null;
+    }
+  }
+
+  /// Cancel an advance receipt that should not have been issued.
+  Future<AdvanceReceipt?> voidAdvanceReceipt(int id, String reason) async {
+    try {
+      return await usecase.voidAdvanceReceipt(id, reason);
+    } catch (e) {
+      state = state.copyWith(error: BookingViewModel.messageFor(e));
       return null;
     }
   }

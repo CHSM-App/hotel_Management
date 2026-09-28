@@ -59,4 +59,9 @@ class OrdersUsecase {
   /// Clear a room's food-PIN lockout.
   Future<void> clearFoodPinLockout(String roomNumber) =>
       repository.clearFoodPinLockout(roomNumber);
+
+  /// Who is checked into a room, so the counter order screen can show it
+  /// beside the picker once a room is selected.
+  Future<RoomOccupancy> roomOccupancy(int roomId) =>
+      repository.roomOccupancy(roomId);
 }

@@ -145,3 +145,24 @@ class FoodOrder {
     return elapsed.isNegative ? Duration.zero : elapsed;
   }
 }
+
+/// Who is checked into a room, looked up when it's picked as a counter
+/// order's destination — so staff can eyeball the register before charging
+/// food to somebody's stay. Mirrors the web's /orders/room-occupancy/:id.
+class RoomOccupancy {
+  final bool occupied;
+  final String? guestName;
+  final String? guestPhone;
+
+  const RoomOccupancy({
+    required this.occupied,
+    this.guestName,
+    this.guestPhone,
+  });
+
+  factory RoomOccupancy.fromJson(Map<String, dynamic> json) => RoomOccupancy(
+    occupied: json['occupied'] == true,
+    guestName: json['guestName'] as String?,
+    guestPhone: json['guestPhone'] as String?,
+  );
+}

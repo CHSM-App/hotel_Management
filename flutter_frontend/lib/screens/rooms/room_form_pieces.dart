@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
 import '../../domain/models/room.dart';
-import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
@@ -554,45 +552,17 @@ String jsonEncodeBeds(List<Map<String, dynamic>> beds) {
 /// per-bed add/remove UI. Only meaningful once the room already exists: a
 /// dormitory being created for the first time has no id yet for this to call
 /// against, so this only ever appears on the edit screen.
-class DormitoryBedCountField extends ConsumerStatefulWidget {
-  final int roomId;
+class DormitoryBedCountField extends StatelessWidget {
   final List<DormitoryBed> beds;
+  final int count;
+  final ValueChanged<int> onChanged;
 
-  const DormitoryBedCountField({super.key, required this.roomId, required this.beds});
-
-  @override
-  ConsumerState<DormitoryBedCountField> createState() => _DormitoryBedCountFieldState();
-}
-
-class _DormitoryBedCountFieldState extends ConsumerState<DormitoryBedCountField> {
-  late int _count = widget.beds.length;
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void didUpdateWidget(covariant DormitoryBedCountField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.beds.length != widget.beds.length) _count = widget.beds.length;
-  }
-
-  Future<void> _apply(int next) async {
-    if (next < 0 || next > 60 || next == widget.beds.length) return;
-    setState(() {
-      _count = next;
-      _saving = true;
-      _error = null;
-    });
-    final vm = ref.read(roomsViewModelProvider.notifier);
-    final ok = await vm.setBedCount(widget.roomId, next);
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-      if (!ok) {
-        _count = widget.beds.length;
-        _error = ref.read(roomsViewModelProvider).error ?? 'Could not update the bed count.';
-      }
-    });
-  }
+  const DormitoryBedCountField({
+    super.key,
+    required this.beds,
+    required this.count,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -606,12 +576,12 @@ class _DormitoryBedCountFieldState extends ConsumerState<DormitoryBedCountField>
             IconButton(
               icon: const Icon(Icons.remove_circle_outline_rounded),
               color: AppTheme.muted,
-              onPressed: _saving ? null : () => _apply(_count - 1),
+              onPressed: count <= 0 ? null : () => onChanged(count - 1),
             ),
             SizedBox(
               width: 48,
               child: Text(
-                '$_count',
+                '$count',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: AppTheme.heading,
@@ -623,29 +593,17 @@ class _DormitoryBedCountFieldState extends ConsumerState<DormitoryBedCountField>
             IconButton(
               icon: const Icon(Icons.add_circle_outline_rounded),
               color: AppTheme.accent,
-              onPressed: _saving ? null : () => _apply(_count + 1),
+              onPressed: count >= 60 ? null : () => onChanged(count + 1),
             ),
-            if (_saving) ...[
-              const SizedBox(width: AppTheme.s8),
-              const SizedBox(
-                height: 14,
-                width: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
           ],
         ),
-        if (_error != null) ...[
-          const SizedBox(height: AppTheme.s4),
-          Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-        ],
-        if (widget.beds.isNotEmpty) ...[
+        if (beds.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s8),
           Wrap(
             spacing: AppTheme.s8,
             runSpacing: AppTheme.s8,
             children: [
-              for (final bed in widget.beds)
+              for (final bed in beds)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 4),
                   decoration: BoxDecoration(

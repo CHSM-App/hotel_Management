@@ -50,6 +50,10 @@ class Feature {
         return me.lodge.servesFood;
       case 'hasEvents':
         return me.lodge.hasEvents;
+      case 'hasAssets':
+        return me.lodge.hasAssets;
+      case 'hasExpenses':
+        return me.lodge.hasExpenses;
       default:
         return true;
     }
@@ -93,14 +97,17 @@ const kFeatures = <Feature>[
   // Guest register ('guests', permission 'guests.view') is deliberately not
   // listed: it has no phone screen, and Rooms & rates now does (see
   // dashboard_shell.dart), so that tab took its primary-bar slot instead.
+  //
+  // Same web module (Events.jsx): diary, list and venue/add-on setup for
+  // halls and functions. Given Food's old primary-bar slot — a banquet
+  // enquiry is taken often enough at this desk to warrant its own tab.
   Feature(
-    key: 'food',
-    title: 'Food orders',
-    tabLabel: 'Food',
-    icon: Icons.room_service_rounded,
-    permission: 'orders.manage',
-    altPermissions: ['orders.take'],
-    capability: 'servesFood',
+    key: 'events',
+    title: 'Events & functions',
+    tabLabel: 'Events',
+    icon: Icons.celebration_rounded,
+    permission: 'events.manage',
+    capability: 'hasEvents',
   ),
   // ── Setup ────────────────────────────────────────────────────────────────
   // Rooms and Menu & QR codes are both setup screens touched far less often
@@ -122,36 +129,38 @@ const kFeatures = <Feature>[
     permission: 'food.manage',
     capability: 'servesFood',
   ),
-  // Same web module (Events.jsx): diary, list and venue/add-on setup for
-  // halls and functions. Folded into "More" beside Rooms and Menu — a
-  // banquet enquiry is taken far less often than a walk-in booking.
+  // Folded into "More" beside Rooms and Menu, taking Events' old spot — food
+  // orders are checked less often here than an events booking is taken.
   Feature(
-    key: 'events',
-    title: 'Events & functions',
-    tabLabel: 'Events',
-    icon: Icons.celebration_rounded,
-    permission: 'events.manage',
-    capability: 'hasEvents',
+    key: 'food',
+    title: 'Food orders',
+    tabLabel: 'Food',
+    icon: Icons.room_service_rounded,
+    permission: 'orders.manage',
+    altPermissions: ['orders.take'],
+    capability: 'servesFood',
   ),
   // Same web module (AssetsPanel.jsx): register, work orders and warranty/AMC
-  // coverage for the property's physical assets. No capability gate — every
-  // property type has physical assets to track, same as the web sidebar entry.
+  // coverage for the property's physical assets. An add-on, same as Events:
+  // off until switched on for the property (frontend/src/lib/propertyProfile.js).
   Feature(
     key: 'assets',
     title: 'Asset inventory',
     tabLabel: 'Assets',
     icon: Icons.inventory_2_rounded,
     permission: 'assets.manage',
+    capability: 'hasAssets',
   ),
   // Same web module (ExpensesPanel.jsx): log spends, recurring schedules and
-  // the monthly/by-category summary. No capability gate — every property has
-  // operating expenses, same as the web sidebar entry.
+  // the monthly/by-category summary. An add-on, same as Assets: off until
+  // switched on for the property (frontend/src/lib/propertyProfile.js).
   Feature(
     key: 'expenses',
     title: 'Expenses',
     tabLabel: 'Expenses',
     icon: Icons.receipt_long_rounded,
     permission: 'expenses.manage',
+    capability: 'hasExpenses',
   ),
   // Feature(
   //   key: 'staff',
@@ -174,8 +183,8 @@ const kFeatures = <Feature>[
 
 /// How many sections get their own tab before the rest go behind "More".
 ///
-/// Four plus More: Bookings, Register, Billing and Food are what the desk
-/// opens every shift; Rooms & rates and Menu & QR codes are setup screens
-/// opened far less often, so both fold into "More" rather than crowding the
-/// bar.
+/// Four plus More: Bookings, Register, Billing and Events are what the desk
+/// opens every shift; Rooms & rates, Menu & QR codes and Food orders are
+/// checked far less often, so all three fold into "More" rather than
+/// crowding the bar.
 const int kPrimaryTabs = 4;

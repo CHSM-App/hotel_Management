@@ -50,6 +50,22 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     Future.microtask(() => ref.read(authViewModelProvider.notifier).loadMe());
   }
 
+  /// Splits the sections this login can see into what sits directly on the
+  /// bottom bar versus what folds into "More".
+  ///
+  /// A "More" tab that opens to a single row is pointless chrome — the desk
+  /// taps More just to tap the one thing inside it. So when only one section
+  /// would overflow, it gets a tab of its own instead and there's no More
+  /// tab at all; the fold only kicks in once there are at least two things
+  /// to group behind it. 
+  (List<Feature> primary, List<Feature> overflow) _splitTabs(
+    List<Feature> features,
+  ) {
+    final overflow = features.skip(kPrimaryTabs).toList();
+    if (overflow.length <= 1) return (features, const []);
+    return (features.take(kPrimaryTabs).toList(), overflow);
+  }
+
   /// True once the desk has followed the More list into Rooms & rates or
   /// Menu & QR codes. Those screens then take the whole page — no top bar,
   /// no bottom bar, just their own back row — the same way a pushed page
@@ -58,7 +74,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   bool _inOverflowScreen(Me? me) {
     if (me == null || _section == null || _section == _kMoreKey) return false;
     final features = kFeatures.where((f) => f.availableTo(me)).toList();
-    return features.skip(kPrimaryTabs).any((f) => f.key == _section);
+    final (_, overflow) = _splitTabs(features);
+    return overflow.any((f) => f.key == _section);
   }
 
   @override
@@ -120,7 +137,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     }
 
     if (_section == _kMoreKey) {
-      final overflow = features.skip(kPrimaryTabs).toList();
+      final (_, overflow) = _splitTabs(features);
       return _MoreList(
         features: overflow,
         onSelect: (key) => setState(() => _section = key),
@@ -164,7 +181,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     // back to that list once inside one — a back row does the one thing a
     // pushed page's AppBar would have, without turning this into a real
     // Navigator.push (which would fight the tab bar's own section switching).
-    final cameFromMore = features.skip(kPrimaryTabs).any((f) => f.key == active.key);
+    final (_, overflowFeatures) = _splitTabs(features);
+    final cameFromMore = overflowFeatures.any((f) => f.key == active.key);
     if (!cameFromMore) return screen;
 
     return Column(
@@ -182,8 +200,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     final features = kFeatures.where((f) => f.availableTo(me)).toList();
     if (features.isEmpty) return const SizedBox.shrink();
 
-    final primary = features.take(kPrimaryTabs).toList();
-    final overflow = features.skip(kPrimaryTabs).toList();
+    final (primary, overflow) = _splitTabs(features);
 
     final onMoreList = _section == _kMoreKey;
     final active = onMoreList
@@ -301,7 +318,7 @@ class _MoreList extends StatelessWidget {
   static const _tints = {
     'rooms': AppTheme.accent,
     'menu': AppTheme.checkout,
-    'events': AppTheme.reserved,
+    'food': AppTheme.reserved,
     'assets': AppTheme.edit,
     'expenses': AppTheme.draft,
   };
