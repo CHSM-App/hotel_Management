@@ -50,6 +50,10 @@ class Feature {
         return me.lodge.servesFood;
       case 'hasEvents':
         return me.lodge.hasEvents;
+      case 'hasAssets':
+        return me.lodge.hasAssets;
+      case 'hasExpenses':
+        return me.lodge.hasExpenses;
       default:
         return true;
     }
@@ -134,24 +138,26 @@ const kFeatures = <Feature>[
     capability: 'hasEvents',
   ),
   // Same web module (AssetsPanel.jsx): register, work orders and warranty/AMC
-  // coverage for the property's physical assets. No capability gate — every
-  // property type has physical assets to track, same as the web sidebar entry.
+  // coverage for the property's physical assets. An add-on, same as Events:
+  // off until switched on for the property (frontend/src/lib/propertyProfile.js).
   Feature(
     key: 'assets',
     title: 'Asset inventory',
     tabLabel: 'Assets',
     icon: Icons.inventory_2_rounded,
     permission: 'assets.manage',
+    capability: 'hasAssets',
   ),
   // Same web module (ExpensesPanel.jsx): log spends, recurring schedules and
-  // the monthly/by-category summary. No capability gate — every property has
-  // operating expenses, same as the web sidebar entry.
+  // the monthly/by-category summary. An add-on, same as Assets: off until
+  // switched on for the property (frontend/src/lib/propertyProfile.js).
   Feature(
     key: 'expenses',
     title: 'Expenses',
     tabLabel: 'Expenses',
     icon: Icons.receipt_long_rounded,
     permission: 'expenses.manage',
+    capability: 'hasExpenses',
   ),
   // Feature(
   //   key: 'staff',

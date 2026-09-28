@@ -60,6 +60,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
   late bool _isDormitory;
   String? _dormitoryGender;
   String? _dormitoryIsAc;
+  late int _dormitoryBedCount;
 
   String? _error;
 
@@ -76,6 +77,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     _isDormitory = room.isDormitory;
     _dormitoryGender = room.dormitoryGender;
     _dormitoryIsAc = room.dormitoryIsAc;
+    _dormitoryBedCount = room.dormitoryBeds.isNotEmpty ? room.dormitoryBeds.length : 1;
   }
 
   @override
@@ -220,7 +222,11 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                       onSelect: (v) => setState(() => _dormitoryIsAc = v),
                     ),
                     const SizedBox(height: AppTheme.s16),
-                    DormitoryBedCountField(roomId: widget.room.id, beds: widget.room.dormitoryBeds),
+                    DormitoryBedCountField(
+                      beds: widget.room.dormitoryBeds,
+                      count: _dormitoryBedCount,
+                      onChanged: (v) => setState(() => _dormitoryBedCount = v),
+                    ),
                   ] else ...[
                   const SectionDivider(),
                   SectionLabel(
@@ -485,10 +491,20 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     final vm = ref.read(roomsViewModelProvider.notifier);
     final result = await vm.saveRoom(form, roomId: widget.room.id);
     if (!mounted) return;
-    if (result.ok) {
-      Navigator.pop(context);
-    } else {
+    if (!result.ok) {
       setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Could not save the room.');
+      return;
     }
+
+    if (_isDormitory && _dormitoryBedCount != widget.room.dormitoryBeds.length) {
+      final bedsOk = await vm.setBedCount(widget.room.id, _dormitoryBedCount);
+      if (!mounted) return;
+      if (!bedsOk) {
+        setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Room saved, but its bed count didn\'t.');
+        return;
+      }
+    }
+
+    Navigator.pop(context);
   }
 }

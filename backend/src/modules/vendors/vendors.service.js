@@ -51,12 +51,24 @@ async function createVendor(lodgeId, input) {
     throw new ApiError('A vendor with that name already exists.', 409, 'name');
   }
 
+  const phone = toNullable(input.phone);
+  if (phone) {
+    const phoneConflict = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('phone', sql.NVarChar, phone)
+      .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND phone = @phone');
+    if (phoneConflict.recordset.length > 0) {
+      throw new ApiError('A vendor with that phone number already exists.', 409, 'phone');
+    }
+  }
+
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('name', sql.NVarChar, input.name)
     .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
-    .input('phone', sql.NVarChar, toNullable(input.phone))
+    .input('phone', sql.NVarChar, phone)
     .input('altPhone', sql.NVarChar, toNullable(input.altPhone))
     .input('email', sql.NVarChar, toNullable(input.email))
     .input('specialty', sql.NVarChar, toNullable(input.specialty))
@@ -85,13 +97,26 @@ async function updateVendor(lodgeId, vendorId, input) {
     throw new ApiError('A vendor with that name already exists.', 409, 'name');
   }
 
+  const phone = toNullable(input.phone);
+  if (phone) {
+    const phoneConflict = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('phone', sql.NVarChar, phone)
+      .input('vendorId', sql.BigInt, vendorId)
+      .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND phone = @phone AND id <> @vendorId');
+    if (phoneConflict.recordset.length > 0) {
+      throw new ApiError('A vendor with that phone number already exists.', 409, 'phone');
+    }
+  }
+
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('vendorId', sql.BigInt, vendorId)
     .input('name', sql.NVarChar, input.name)
     .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
-    .input('phone', sql.NVarChar, toNullable(input.phone))
+    .input('phone', sql.NVarChar, phone)
     .input('altPhone', sql.NVarChar, toNullable(input.altPhone))
     .input('email', sql.NVarChar, toNullable(input.email))
     .input('specialty', sql.NVarChar, toNullable(input.specialty))

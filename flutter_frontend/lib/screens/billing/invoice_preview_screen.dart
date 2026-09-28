@@ -244,37 +244,55 @@ class InvoicePreviewScreen extends ConsumerWidget {
 
   Future<void> _confirmVoid(BuildContext context, WidgetRef ref) async {
     final controller = TextEditingController();
+    String? errorText;
     final reason = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text('Void this bill?', style: TextStyle(color: AppTheme.heading)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              // A void is not a delete: the document stays on file and its
-              // number is never reused, because a gap in the series is what an
-              // auditor asks about.
-              'The bill stays on file marked void, and its number is not '
-              'reused. Say why.',
-              style: Theme.of(context).textTheme.bodyMedium,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.bg,
+            title: const Text('Void this bill?', style: TextStyle(color: AppTheme.heading)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  // A void is not a delete: the document stays on file and its
+                  // number is never reused, because a gap in the series is what an
+                  // auditor asks about.
+                  'The bill stays on file marked void, and its number is not '
+                  'reused. Say why.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuField(
+                  controller: controller,
+                  label: 'Reason',
+                  maxLength: 200,
+                  required: true,
+                  errorText: errorText,
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.s16),
-            NeuField(controller: controller, label: 'Reason', maxLength: 200),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Keep it'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Void', style: TextStyle(color: AppTheme.danger)),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Keep it'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final value = controller.text.trim();
+                  if (value.isEmpty) {
+                    setState(() => errorText = 'Reason is required');
+                    return;
+                  }
+                  Navigator.pop(context, value);
+                },
+                child: const Text('Void', style: TextStyle(color: AppTheme.danger)),
+              ),
+            ],
+          );
+        },
       ),
     );
 
