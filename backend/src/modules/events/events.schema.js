@@ -226,15 +226,6 @@ const createEventSchema = withRoomsCheck(
       message: 'Choose how the advance was paid.',
       path: ['advancePaymentMethod'],
     })
-    .refine(
-      (data) =>
-        !takesAdvance(data) ||
-        (data.advanceLines?.length ?? 0) > 1 ||
-        data.advancePaymentMethod === 'CASH' ||
-        data.advancePaymentMethod == null ||
-        data.advanceReference != null,
-      { message: 'Enter the UPI or card transaction number for the advance.', path: ['advanceReference'] }
-    )
     .refine((data) => !takesAdvance(data) || advanceLinesSettle(data), {
       message: 'The split payments have to add up to the advance.',
       path: ['advanceLines'],

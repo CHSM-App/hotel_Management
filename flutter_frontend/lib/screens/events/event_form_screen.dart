@@ -524,7 +524,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
                 children: [
-                  if (_error != null) ...[
+                  if (_error != null && _fieldError == null) ...[
                     Container(
                       padding: const EdgeInsets.all(AppTheme.s8),
                       decoration: BoxDecoration(color: AppTheme.danger.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AppTheme.rSmall)),

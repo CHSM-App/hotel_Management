@@ -23,14 +23,13 @@ test('no advance, no questions', () => {
   assert.equal(parsed.data.advanceAmount, undefined);
 });
 
-test('an advance needs a method, and UPI or card needs a number', () => {
+test('an advance needs a method; UPI or card is fine without a number', () => {
   const noMethod = createEventSchema.safeParse({ ...base, advanceAmount: 5000 });
   assert.equal(noMethod.success, false);
   assert.deepEqual(noMethod.error.issues[0].path, ['advancePaymentMethod']);
 
   const upiNoRef = createEventSchema.safeParse({ ...base, advanceAmount: 5000, advancePaymentMethod: 'UPI' });
-  assert.equal(upiNoRef.success, false);
-  assert.deepEqual(upiNoRef.error.issues[0].path, ['advanceReference']);
+  assert.equal(upiNoRef.success, true);
 
   const cash = createEventSchema.safeParse({ ...base, advanceAmount: '5000', advancePaymentMethod: 'CASH' });
   assert.equal(cash.success, true);

@@ -443,8 +443,6 @@ export default function EventForm({
         if (missingMethod >= 0) return [paymentFieldId('eventAdvance', 'Method', missingMethod), problem];
         return [paymentFieldId('eventAdvance', 'Amount', Math.max(0, advanceLines.findIndex((l) => !(Number(l.amount) > 0)))), problem];
       }
-      const noRef = advanceLines.findIndex((l) => needsPaymentReference(l.method) && !l.reference.trim());
-      if (noRef >= 0) return [paymentFieldId('eventAdvance', 'Reference', noRef), 'Enter the UPI or card transaction number.'];
       if (pricing && advanceAmount > pricing.totalAmount + 0.005) {
         return [paymentFieldId('eventAdvance', 'Amount'), `The advance can’t be more than the quote of ${formatPrice(pricing.totalAmount)}.`];
       }
