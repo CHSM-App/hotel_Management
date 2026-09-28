@@ -50,17 +50,16 @@ const ALL_TABS = [
   { key: 'events', label: 'Events & functions', capability: 'hasEvents' },
   { key: 'food', label: 'Food orders', capability: 'servesFood' },
   { key: 'gst', label: 'Tax & GST' },
-  // Gated by its own permission, on top of reports.view — P&L surfaces
-  // expense/income category detail that expenses.manage/income.manage
-  // individually gate elsewhere, so seeing it needs more than plain
-  // Reports access.
-  { key: 'profitLoss', label: 'Profit & Loss', permission: 'profitLoss.view' },
-  // Gated by permission rather than a lodge capability — every property has
-  // expenses/assets/income, but not every role is allowed to see them, the
-  // same check OwnerDashboard's own sidebar already makes for these sections.
-  { key: 'expenses', label: 'Expenses', permission: 'expenses.manage' },
-  { key: 'income', label: 'Other Income', permission: 'income.manage' },
-  { key: 'assets', label: 'Assets', permission: 'assets.manage' },
+  // Needs both permissions, not either — P&L surfaces the same expense
+  // figures expenses.manage individually gates elsewhere, so profitLoss.view
+  // alone isn't enough to see it.
+  { key: 'profitLoss', label: 'Profit & Loss', requiresAll: ['profitLoss.view', 'expenses.manage'], capability: 'hasExpenses' },
+  // Same permission + capability gate as OwnerDashboard's own sidebar
+  // (propertyProfile.js FEATURES) — expenses/assets are an add-on a property
+  // can have switched off entirely, not just a permission a role can lack.
+  { key: 'expenses', label: 'Expenses', permission: 'expenses.manage', capability: 'hasExpenses' },
+  { key: 'income', label: 'Other Income', permission: 'income.manage', capability: 'hasExpenses' },
+  { key: 'assets', label: 'Assets', permission: 'assets.manage', capability: 'hasAssets' },
 ];
 
 const EVENT_TYPE_LABEL = {
@@ -224,7 +223,10 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
   // hall gets no Events tab. Same gate OwnerDashboard applies to the sidebar.
   // Expenses/Assets are gated by permission instead, for the same reason.
   const TABS = ALL_TABS.filter(
-    (t) => (!t.capability || Boolean(lodge?.[t.capability])) && (!t.permission || permissions.includes(t.permission))
+    (t) =>
+      (!t.capability || Boolean(lodge?.[t.capability])) &&
+      (!t.permission || permissions.includes(t.permission)) &&
+      (!t.requiresAll || t.requiresAll.every((p) => permissions.includes(p)))
   );
   const [tab, setTab] = useUrlState('tab', 'overview');
   // A ?tab= this screen doesn't own falls back to the first available tab
