@@ -25,7 +25,6 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
 
           {/* Public, unauthenticated — a lodge's customer-facing room/rate page. */}
-          <Route path="/lodge/:slug" element={<LodgePublicPage />} />
           <Route path="/hotel/:slug" element={<LodgePublicPage />} />
 
           {/* Public, unauthenticated — what the food QR codes point at. One link

@@ -331,8 +331,8 @@ export default function LodgeDetail() {
                   </Row>
                   <Row label="Onboarded">{formatDate(lodge.created_at)}</Row>
                   <Row label="Public page">
-                    <a href={`/lodge/${lodge.slug}`} target="_blank" rel="noreferrer">
-                      /lodge/{lodge.slug}
+                    <a href={`/hotel/${lodge.slug}`} target="_blank" rel="noreferrer">
+                      /hotel/{lodge.slug}
                     </a>
                   </Row>
                   {lodge.food_room_service && (
