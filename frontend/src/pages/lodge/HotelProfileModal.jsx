@@ -124,7 +124,7 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
     setForm((f) => ({ ...f, [key]: value }));
   };
 
-  const publicUrl = `${window.location.origin}${lodge.hasRooms ? `/lodge/${lodge.slug}` : `/order/${lodge.slug}`}`;
+  const publicUrl = `${window.location.origin}${lodge.hasRooms ? `/hotel/${lodge.slug}` : `/order/${lodge.slug}`}`;
   const handleCopyPublicLink = async () => {
     const copied = await copyText(publicUrl);
     setLinkCopied(copied ? 'copied' : 'failed');

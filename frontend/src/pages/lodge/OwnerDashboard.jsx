@@ -426,7 +426,7 @@ export default function OwnerDashboard() {
               className="dash-topbar__link-copy"
               title="Copy this hotel's public booking link"
               onClick={async () => {
-                const path = me.lodge.hasRooms ? `/lodge/${me.lodge.slug}` : `/order/${me.lodge.slug}`;
+                const path = me.lodge.hasRooms ? `/hotel/${me.lodge.slug}` : `/order/${me.lodge.slug}`;
                 const copied = await copyText(`${window.location.origin}${path}`);
                 setLinkCopied(copied ? 'copied' : 'failed');
                 setTimeout(() => setLinkCopied(''), 2000);
