@@ -283,6 +283,16 @@ test('every query touching a lodge-scoped table filters by lodge', () => {
       match: 'SELECT bed_id FROM dbo.bookings WHERE bed_id IN',
       why: 'setBedCount, same guarantee as deleteBed above: assertDormitoryRoom proves the room first, and removeIds comes from dormitory_beds rows already scoped to that room.',
     },
+    {
+      file: 'income/income.service.js',
+      match: 'ISNULL(SUM(p.amount), 0) AS received',
+      why: 'recalcIncomePaymentStatus(pool, incomeId) has no lodgeId parameter at all — every caller reaches it only after getIncome(lodgeId, incomeId) has already 404\'d on a cross-lodge id, so the id here is already proven.',
+    },
+    {
+      file: 'income/income.service.js',
+      match: 'UPDATE dbo.income_entries SET amount_received = @amountReceived',
+      why: 'Same recalcIncomePaymentStatus as above — the row was proven to belong to the lodge by getIncome before this function was ever called.',
+    },
   ];
 
   const used = new Set();
