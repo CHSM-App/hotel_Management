@@ -1340,6 +1340,23 @@ class ApiService {
     );
   }
 
+  /// What a function's bill will say — the detail screen's "Settle & bill".
+  Future<EventBillPreview> previewEventBill(int eventId) async {
+    final res = await _dio.get('/billing/events/$eventId/preview');
+    return EventBillPreview.fromJson(_map(res.data));
+  }
+
+  /// Cut the bill for a function — moves it CONFIRMED → SETTLED server-side.
+  Future<Invoice> issueEventInvoice(
+    int eventId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post('/billing/events/$eventId/invoice', data: body);
+    final map = _map(res.data);
+    final invoice = map['invoice'];
+    return Invoice.fromJson(invoice is Map<String, dynamic> ? invoice : map);
+  }
+
   // ===== ASSETS (assets.manage) =====
 
   Future<List<AssetCategory>> assetCategories() async {

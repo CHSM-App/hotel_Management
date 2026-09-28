@@ -399,6 +399,123 @@ class FoodBillPreview {
   num get balanceDue => amounts?.totalAmount ?? 0;
 }
 
+/// One extra noted on the day of a function, not part of the original
+/// quote — "50 more chairs", possibly still waiting on a price before the
+/// function can be billed.
+class EventExtraLine {
+  final String label;
+  final num quantity;
+  final num amount;
+  final bool needsPricing;
+
+  const EventExtraLine({
+    required this.label,
+    this.quantity = 1,
+    this.amount = 0,
+    this.needsPricing = false,
+  });
+
+  factory EventExtraLine.fromJson(Map<String, dynamic> json) => EventExtraLine(
+    label: json['label']?.toString() ?? '',
+    quantity: asNum(json['quantity']),
+    amount: asNum(json['amount']),
+    needsPricing: asBool(json['needsPricing']),
+  );
+}
+
+/// What a function's bill will say, before it is issued — GET
+/// /billing/events/{id}/preview. No nights, no room: a function bill is the
+/// venue hire plus whatever catering and extras rode with it.
+class EventBillPreview {
+  final int? eventBookingId;
+  final String? guestName;
+  final String? eventTitle;
+  final String? venueName;
+  final int billablePax;
+  final List<BillLine> roomCharges;
+  final List<FoodItemLine> foodItems;
+
+  /// What was asked for on the day, named apart from the quoted add-ons.
+  final List<EventExtraLine> extrasOnDay;
+  final num advancePaid;
+  final String? advanceReceiptNumbers;
+  final bool isGstRegistered;
+  final String? gstin;
+  final BillSide? gst;
+  final BillSide? nonGst;
+
+  /// True once a bill has already been issued for this function.
+  final bool alreadyInvoiced;
+
+  const EventBillPreview({
+    this.eventBookingId,
+    this.guestName,
+    this.eventTitle,
+    this.venueName,
+    this.billablePax = 0,
+    this.roomCharges = const [],
+    this.foodItems = const [],
+    this.extrasOnDay = const [],
+    this.advancePaid = 0,
+    this.advanceReceiptNumbers,
+    this.isGstRegistered = false,
+    this.gstin,
+    this.gst,
+    this.nonGst,
+    this.alreadyInvoiced = false,
+  });
+
+  factory EventBillPreview.fromJson(Map<String, dynamic> json) =>
+      EventBillPreview(
+        eventBookingId: asIntOrNull(json['eventBookingId']),
+        guestName: asStringOrNull(json['guestName']),
+        eventTitle: asStringOrNull(json['eventTitle']),
+        venueName: asStringOrNull(json['venueName']),
+        billablePax: asInt(json['billablePax']),
+        roomCharges:
+            (json['roomCharges'] as List?)
+                ?.map((e) => BillLine.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        foodItems:
+            (json['foodItems'] as List?)
+                ?.map((e) => FoodItemLine.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        extrasOnDay:
+            (json['extrasOnDay'] as List?)
+                ?.map((e) => EventExtraLine.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        advancePaid: asNum(json['advancePaid']),
+        advanceReceiptNumbers: asStringOrNull(json['advanceReceiptNumbers']),
+        isGstRegistered: asBool(json['isGstRegistered']),
+        gstin: asStringOrNull(json['gstin']),
+        gst: json['gst'] == null
+            ? null
+            : BillSide.fromJson(json['gst'] as Map<String, dynamic>),
+        nonGst: json['nonGst'] == null
+            ? null
+            : BillSide.fromJson(json['nonGst'] as Map<String, dynamic>),
+        alreadyInvoiced: asBool(json['alreadyInvoiced']),
+      );
+
+  /// Which side is actually issued — decided by the property, not the desk.
+  String get billingSide => isGstRegistered ? 'GST' : 'NON_GST';
+
+  BillSide? get amounts => isGstRegistered ? gst : nonGst;
+
+  /// What the organiser still owes.
+  num get balanceDue {
+    final total = amounts?.totalAmount ?? 0;
+    return ((total - advancePaid) * 100).round() / 100;
+  }
+
+  /// Extras noted on the day that still need a price before the bill can be
+  /// issued — the server refuses to bill while any of these are unpriced.
+  bool get hasUnpricedExtras => extrasOnDay.any((e) => e.needsPricing);
+}
+
 /// An issued bill.
 class Invoice {
   final int id;
@@ -790,6 +907,12 @@ class AdvanceReceipt {
   final String? checkInDate;
   final String? checkOutDate;
 
+  /// 'EVENT' or 'STAY' — which of the two this advance was taken against.
+  final String? kind;
+  final int? eventBookingId;
+  final String? eventTitle;
+  final String? venueName;
+
   // Same fields the printed bill reads (Invoice below), so the advance
   // receipt says just as plainly that this stay is a dormitory booking —
   // bedLabel null means a whole-room buyout, not "not a dormitory".
@@ -831,6 +954,10 @@ class AdvanceReceipt {
     this.categoryName,
     this.checkInDate,
     this.checkOutDate,
+    this.kind,
+    this.eventBookingId,
+    this.eventTitle,
+    this.venueName,
     this.isDormitory = false,
     this.bedLabel,
     this.gstin,
@@ -872,6 +999,10 @@ class AdvanceReceipt {
     categoryName: asStringOrNull(json['categoryName']),
     checkInDate: asStringOrNull(json['checkInDate']),
     checkOutDate: asStringOrNull(json['checkOutDate']),
+    kind: asStringOrNull(json['kind']),
+    eventBookingId: asIntOrNull(json['eventBookingId']),
+    eventTitle: asStringOrNull(json['eventTitle']),
+    venueName: asStringOrNull(json['venueName']),
     isDormitory: asBool(json['isDormitory']),
     bedLabel: asStringOrNull(json['bedLabel']),
     gstin: asStringOrNull(json['gstin']),
@@ -882,6 +1013,12 @@ class AdvanceReceipt {
     lodgeCity: asStringOrNull(json['lodgeCity']),
     lodgeState: asStringOrNull(json['lodgeState']),
   );
+
+  /// A function's advance — checked off [kind] where the server sent one;
+  /// [eventBookingId] is the fallback for a cached object from before [kind]
+  /// existed.
+  bool get isEventReceipt =>
+      kind == 'EVENT' || (kind == null && eventBookingId != null);
 
   bool get isVoid => status == 'VOID';
 

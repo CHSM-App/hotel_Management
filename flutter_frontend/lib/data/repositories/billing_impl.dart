@@ -75,4 +75,15 @@ class BillingImpl implements BillingRepository {
   @override
   Future<AdvanceReceipt> voidAdvanceReceipt(int id, String reason) =>
       api.voidAdvanceReceipt(id, reason);
+
+  @override
+  Future<Invoice> invoice(int id) => api.invoice(id);
+
+  @override
+  Future<EventBillPreview> previewEventBill(int eventId) =>
+      api.previewEventBill(eventId);
+
+  @override
+  Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>
+      api.issueEventInvoice(eventId, body);
 }

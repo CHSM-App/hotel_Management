@@ -40,4 +40,14 @@ abstract class BillingRepository {
   );
 
   Future<AdvanceReceipt> voidAdvanceReceipt(int id, String reason);
+
+  /// One bill, fetched by its own id — used to open "View bill" from a
+  /// function that only carries the invoice's id/number on it.
+  Future<Invoice> invoice(int id);
+
+  /// What a function's bill will say.
+  Future<EventBillPreview> previewEventBill(int eventId);
+
+  /// Cut the bill for a function.
+  Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body);
 }
