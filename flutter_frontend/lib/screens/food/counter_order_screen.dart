@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/food_order.dart';
 import '../../domain/models/menu.dart';
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
@@ -51,6 +52,12 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   String _query = '';
   String? _guestNameError;
   String? _guestPhoneError;
+
+  // Who is checked into the selected room, so staff can eyeball the register
+  // before charging food to somebody's stay. Null while nothing is selected.
+  RoomOccupancy? _occupancy;
+  bool _occupancyLoading = false;
+  bool _occupancyFailed = false;
 
   @override
   void initState() {
@@ -117,6 +124,46 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     } catch (_) {
       return const <RoomListing>[];
     }
+  }
+
+  /// Who is checked into [roomId], so staff can eyeball the register before
+  /// charging food to somebody's stay. Mirrors the web: resolved server-side
+  /// against the live booking rather than read off the room list.
+  ///
+  /// The room id is captured per-call and checked before the result is
+  /// applied — a quick change of selection can land two responses out of
+  /// order, and the wrong guest shown next to the wrong room is exactly the
+  /// error this guards against.
+  Future<void> _loadOccupancy(int roomId) async {
+    setState(() {
+      _occupancy = null;
+      _occupancyFailed = false;
+      _occupancyLoading = true;
+    });
+    final vm = ref.read(ordersViewModelProvider.notifier);
+    try {
+      final occupancy = await vm.roomOccupancy(roomId);
+      if (!mounted || _room?.id != roomId) return;
+      setState(() {
+        _occupancy = occupancy;
+        _occupancyLoading = false;
+      });
+    } catch (_) {
+      // A lookup failure must not block the order — the desk can still take
+      // it. Say the check failed rather than asserting the room is empty,
+      // which would be a worse lie than saying nothing.
+      if (!mounted || _room?.id != roomId) return;
+      setState(() {
+        _occupancyFailed = true;
+        _occupancyLoading = false;
+      });
+    }
+  }
+
+  void _clearOccupancy() {
+    _occupancy = null;
+    _occupancyFailed = false;
+    _occupancyLoading = false;
   }
 
   /// Neither a room nor a table — a walk-in paying at the till, same as the
@@ -258,12 +305,26 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                 onSelectTable: (t) => setState(() {
                   _table = t;
                   _room = null;
+                  _clearOccupancy();
                 }),
-                onSelectRoom: (r) => setState(() {
-                  _room = r;
-                  _table = null;
-                }),
+                onSelectRoom: (r) {
+                  setState(() {
+                    _room = r;
+                    _table = null;
+                    _clearOccupancy();
+                  });
+                  if (r != null) _loadOccupancy(r.id);
+                },
               ),
+
+              if (_room != null) ...[
+                const SizedBox(height: AppTheme.s8),
+                _OccupancyCard(
+                  loading: _occupancyLoading,
+                  failed: _occupancyFailed,
+                  occupancy: _occupancy,
+                ),
+              ],
 
               // Only a true counter order — no room and no table — asks for
               // these. A room or a table already identifies who the food is
@@ -599,6 +660,106 @@ class _TargetField extends StatelessWidget {
             }
           },
         ),
+      ),
+    );
+  }
+}
+
+// ── Who's checked into the selected room ────────────────────────────────────
+
+/// Mirrors the web's occupancy panel below the target picker: a muted line
+/// while the lookup is in flight, the guest's name and phone once it lands,
+/// or a loud warning when the room turns out to be empty.
+class _OccupancyCard extends StatelessWidget {
+  final bool loading;
+  final bool failed;
+  final RoomOccupancy? occupancy;
+
+  const _OccupancyCard({
+    required this.loading,
+    required this.failed,
+    required this.occupancy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Text(
+        "Checking who's in this room…",
+        style: TextStyle(color: AppTheme.muted, fontSize: 13),
+      );
+    }
+
+    if (failed) {
+      return const Text(
+        "Couldn't check the register just now — confirm the guest at the desk.",
+        style: TextStyle(color: AppTheme.muted, fontSize: 13),
+      );
+    }
+
+    final occ = occupancy;
+    if (occ == null) return const SizedBox.shrink();
+
+    if (!occ.occupied) {
+      return Container(
+        padding: const EdgeInsets.all(AppTheme.s12),
+        decoration: BoxDecoration(
+          color: AppTheme.danger.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(color: AppTheme.danger.withValues(alpha: 0.3)),
+        ),
+        child: const Text(
+          'Nobody is checked in to this room. Select a different room, or '
+          'the counter, to place this order.',
+          style: TextStyle(color: AppTheme.danger, fontSize: 13),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'CHECKED IN TO THIS ROOM',
+            style: TextStyle(
+              color: AppTheme.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: AppTheme.s4),
+          Text(
+            occ.guestName?.isNotEmpty == true
+                ? occ.guestName!
+                : 'Name not on the booking',
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (occ.guestPhone?.isNotEmpty == true) ...[
+            const SizedBox(height: AppTheme.s4),
+            Text(
+              occ.guestPhone!,
+              style: const TextStyle(color: AppTheme.text, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: AppTheme.s4),
+          const Text(
+            'Check this matches the guest ordering before you charge it to '
+            'the room.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 12),
+          ),
+        ],
       ),
     );
   }

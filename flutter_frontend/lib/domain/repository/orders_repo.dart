@@ -29,4 +29,8 @@ abstract class OrdersRepository {
   /// Clear a room's food-PIN lockout so the guest can order again without
   /// waiting out the timer.
   Future<void> clearFoodPinLockout(String roomNumber);
+
+  /// Who is checked into a room, for the counter order screen to show
+  /// beside the picker once a room is selected.
+  Future<RoomOccupancy> roomOccupancy(int roomId);
 }

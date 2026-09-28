@@ -584,6 +584,14 @@ class ApiService {
     await _dio.delete('/orders/pin-lockouts/${Uri.encodeComponent(roomNumber)}');
   }
 
+  /// Who is checked into a room right now, resolved server-side against the
+  /// live booking — same lookup the web does before letting staff charge a
+  /// counter order to a room.
+  Future<RoomOccupancy> roomOccupancy(int roomId) async {
+    final res = await _dio.get('/orders/room-occupancy/$roomId');
+    return RoomOccupancy.fromJson(_map(res.data)['occupancy'] as Map<String, dynamic>);
+  }
+
   // ===== MENU (read-only, for taking an order) =====
 
   /// The menu, in sections. Readable with orders.manage as well as

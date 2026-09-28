@@ -286,4 +286,9 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
   /// the web's own attempt, and the screen treats that the same as "no rooms
   /// to offer" rather than surfacing it as an error.
   Future<List<RoomListing>> roomsForOrder() => usecase.roomsForOrder();
+
+  /// Who is checked into a room, so staff can eyeball the register before
+  /// charging food to somebody's stay. Left for the screen to catch: a
+  /// lookup failure must not block the order.
+  Future<RoomOccupancy> roomOccupancy(int roomId) => usecase.roomOccupancy(roomId);
 }
