@@ -76,6 +76,16 @@ const PERMISSIONS = [
     label: 'Expenses',
     description: 'Log and review property expenses, vendors and recurring bills.',
   },
+  {
+    key: 'income.manage',
+    label: 'Other Income',
+    description: 'Log and review income outside room/food/function billing — interest, scrap sale, rent received, and the like.',
+  },
+  {
+    key: 'profitLoss.view',
+    label: 'Profit & Loss',
+    description: 'View the combined revenue, expense, other-income and depreciation figures behind Profit & Loss.',
+  },
 ];
 
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

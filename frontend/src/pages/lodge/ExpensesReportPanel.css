@@ -31,8 +31,42 @@
 
 .expense-report__actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Compact From/To pair, sitting in the actions row ahead of Preview PDF.
+   Boxed as one pill (border + bg) so it reads as a single grouped control
+   next to the buttons, not two stray inputs; margin-right adds the extra
+   breathing room the plain 8px actions gap doesn't give a boxed group. */
+.expense-report__range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #e2e2e8);
+  border-radius: 8px;
+  background: var(--surface-muted, #f6f6f9);
+  margin-right: 6px;
+}
+
+.expense-report__range input[type='date'] {
+  width: 128px;
+  padding: 5px 6px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+}
+
+.expense-report__range input[type='date']:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.expense-report__range span {
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .expense-report__preview-card {

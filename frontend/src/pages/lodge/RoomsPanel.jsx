@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPut, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
-import { useSearchTerm, matchesSearch } from '../../lib/searchContext';
+import { matchesSearch } from '../../lib/searchContext';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import IconButton from '../../components/IconButton';
@@ -642,7 +642,10 @@ export default function RoomsPanel() {
   const hasCover = (room) =>
     room.images.length > 0 && !brokenPhotos.has(room.images[0].filename);
 
-  const searchTerm = useSearchTerm();
+  // Lives in this panel rather than the shared topbar box: "Rooms & Rates" has
+  // three other sub-tabs the box did nothing on, so it moved down here, right
+  // by the list it actually filters.
+  const [searchTerm, setSearchTerm] = useState('');
   // A hotel with dozens of rooms turns "find the deluxe rooms" into a lot of
   // scrolling through the grid, or typing the category name into the search
   // box and hoping it's spelled the way the card shows it. A dropdown next to
@@ -730,6 +733,14 @@ export default function RoomsPanel() {
               : `${rooms.length} room${rooms.length === 1 ? '' : 's'}`
             : ' '}
         </span>
+        <input
+          type="search"
+          className="rooms-panel__search"
+          placeholder="Search rooms, type, status…"
+          aria-label="Search rooms, type, status"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
         {categories && categories.length > 0 && (
           <select
             className="rooms-panel__type-filter"

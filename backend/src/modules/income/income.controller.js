@@ -1,18 +1,18 @@
 const {
   categorySchema,
   updateCategorySchema,
-  vendorSchema,
-  expenseSchema,
-  expensePaymentSchema,
+  incomeEntrySchema,
+  incomeReceiptSchema,
   recurringTemplateSchema,
   updateRecurringTemplateSchema,
-} = require('./expenses.schema');
+} = require('./income.schema');
 const fs = require('fs');
 const path = require('path');
-const expensesService = require('./expenses.service');
+const incomeService = require('./income.service');
 const vendorsService = require('../vendors/vendors.service');
+const { vendorSchema } = require('../expenses/expenses.schema');
 const { ApiError } = require('../../middleware/errorHandler');
-const { UPLOAD_DIR: BILL_UPLOAD_DIR } = require('../../middleware/expenseBillUpload');
+const { UPLOAD_DIR: RECEIPT_UPLOAD_DIR } = require('../../middleware/incomeReceiptUpload');
 
 function parse(schema, body) {
   const parsed = schema.safeParse(body);
@@ -28,7 +28,7 @@ function parse(schema, body) {
 
 async function listCategoriesHandler(req, res, next) {
   try {
-    const categories = await expensesService.listCategories(req.user.lodgeId, {
+    const categories = await incomeService.listCategories(req.user.lodgeId, {
       includeInactive: req.query.includeInactive === 'true',
     });
     res.json({ categories });
@@ -39,7 +39,7 @@ async function listCategoriesHandler(req, res, next) {
 
 async function createCategoryHandler(req, res, next) {
   try {
-    const category = await expensesService.createCategory(req.user.lodgeId, parse(categorySchema, req.body));
+    const category = await incomeService.createCategory(req.user.lodgeId, parse(categorySchema, req.body));
     res.status(201).json({ category });
   } catch (err) {
     next(err);
@@ -48,7 +48,7 @@ async function createCategoryHandler(req, res, next) {
 
 async function updateCategoryHandler(req, res, next) {
   try {
-    const category = await expensesService.updateCategory(
+    const category = await incomeService.updateCategory(
       req.user.lodgeId,
       Number(req.params.id),
       parse(updateCategorySchema, req.body)
@@ -59,119 +59,105 @@ async function updateCategoryHandler(req, res, next) {
   }
 }
 
-// The blast-radius check the frontend calls before actually saving
-// is_interest/is_tax — see previewCategoryTagImpact for why.
-async function previewCategoryTagImpactHandler(req, res, next) {
-  try {
-    const impact = await expensesService.previewCategoryTagImpact(req.user.lodgeId, Number(req.params.id));
-    res.json({ impact });
-  } catch (err) {
-    next(err);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Vendors — same shared service Assets uses.
+// Payers — same shared vendor directory Assets/Expenses use.
 // ---------------------------------------------------------------------------
 
-async function listVendorsHandler(req, res, next) {
+async function listPayersHandler(req, res, next) {
   try {
-    const vendors = await vendorsService.listVendors(req.user.lodgeId, 'expense', {
+    const payers = await vendorsService.listVendors(req.user.lodgeId, 'income', {
       includeInactive: req.query.includeInactive === 'true',
     });
-    res.json({ vendors });
+    res.json({ payers });
   } catch (err) {
     next(err);
   }
 }
 
-async function createVendorHandler(req, res, next) {
+async function createPayerHandler(req, res, next) {
   try {
-    const vendor = await vendorsService.createVendor(req.user.lodgeId, 'expense', parse(vendorSchema, req.body));
-    res.status(201).json({ vendor });
+    const payer = await vendorsService.createVendor(req.user.lodgeId, 'income', parse(vendorSchema, req.body));
+    res.status(201).json({ payer });
   } catch (err) {
     next(err);
   }
 }
 
-async function updateVendorHandler(req, res, next) {
+async function updatePayerHandler(req, res, next) {
   try {
-    const vendor = await vendorsService.updateVendor(
+    const payer = await vendorsService.updateVendor(
       req.user.lodgeId,
-      'expense',
+      'income',
       Number(req.params.id),
       parse(vendorSchema, req.body)
     );
-    res.json({ vendor });
+    res.json({ payer });
   } catch (err) {
     next(err);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Expenses
+// Income entries
 // ---------------------------------------------------------------------------
 
-async function listExpensesHandler(req, res, next) {
+async function listIncomeHandler(req, res, next) {
   try {
-    const expenses = await expensesService.listExpenses(req.user.lodgeId, {
+    const income = await incomeService.listIncome(req.user.lodgeId, {
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
-      vendorId: req.query.vendorId ? Number(req.query.vendorId) : undefined,
-      assetId: req.query.assetId ? Number(req.query.assetId) : undefined,
+      payerId: req.query.payerId ? Number(req.query.payerId) : undefined,
       recurringTemplateId: req.query.recurringTemplateId ? Number(req.query.recurringTemplateId) : undefined,
       from: req.query.from || undefined,
       to: req.query.to || undefined,
     });
-    res.json({ expenses });
+    res.json({ income });
   } catch (err) {
     next(err);
   }
 }
 
-async function getExpenseHandler(req, res, next) {
+async function getIncomeHandler(req, res, next) {
   try {
-    const expense = await expensesService.getExpense(req.user.lodgeId, Number(req.params.id));
-    res.json({ expense });
+    const income = await incomeService.getIncome(req.user.lodgeId, Number(req.params.id));
+    res.json({ income });
   } catch (err) {
     next(err);
   }
 }
 
-async function createExpenseHandler(req, res, next) {
+async function createIncomeHandler(req, res, next) {
   try {
-    const expense = await expensesService.createExpense(
+    const income = await incomeService.createIncome(
       req.user.lodgeId,
-      parse(expenseSchema, req.body),
+      parse(incomeEntrySchema, req.body),
       req.user.sub,
       req.file?.filename
     );
-    res.status(201).json({ expense });
+    res.status(201).json({ income });
   } catch (err) {
-    // A validation failure after multer already wrote the file leaves it
-    // orphaned on disk — nothing in the database ever points to it.
     if (req.file) fs.unlink(req.file.path, () => {});
     next(err);
   }
 }
 
-async function updateExpenseHandler(req, res, next) {
+async function updateIncomeHandler(req, res, next) {
   try {
-    const expense = await expensesService.updateExpense(
+    const income = await incomeService.updateIncome(
       req.user.lodgeId,
       Number(req.params.id),
-      parse(expenseSchema, req.body),
+      parse(incomeEntrySchema, req.body),
       req.file?.filename
     );
-    res.json({ expense });
+    res.json({ income });
   } catch (err) {
     if (req.file) fs.unlink(req.file.path, () => {});
     next(err);
   }
 }
 
-async function deleteExpenseHandler(req, res, next) {
+async function deleteIncomeHandler(req, res, next) {
   try {
-    await expensesService.deleteExpense(req.user.lodgeId, Number(req.params.id));
+    await incomeService.deleteIncome(req.user.lodgeId, Number(req.params.id));
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -179,58 +165,52 @@ async function deleteExpenseHandler(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
-// Payments — several per expense, see dbo.expense_payments.
+// Receipts — several per income entry, see dbo.income_receipts.
 // ---------------------------------------------------------------------------
 
-async function listPaymentsHandler(req, res, next) {
+async function listReceiptsHandler(req, res, next) {
   try {
-    const payments = await expensesService.listPayments(req.user.lodgeId, Number(req.params.id));
-    res.json({ payments });
+    const receipts = await incomeService.listReceipts(req.user.lodgeId, Number(req.params.id));
+    res.json({ receipts });
   } catch (err) {
     next(err);
   }
 }
 
-async function addPaymentHandler(req, res, next) {
+async function addReceiptHandler(req, res, next) {
   try {
-    const expense = await expensesService.addPayment(
+    const income = await incomeService.addReceipt(
       req.user.lodgeId,
       Number(req.params.id),
-      parse(expensePaymentSchema, req.body)
+      parse(incomeReceiptSchema, req.body)
     );
-    res.status(201).json({ expense });
+    res.status(201).json({ income });
   } catch (err) {
     next(err);
   }
 }
 
-async function deletePaymentHandler(req, res, next) {
+async function deleteReceiptHandler(req, res, next) {
   try {
-    const expense = await expensesService.deletePayment(
+    const income = await incomeService.deleteReceipt(
       req.user.lodgeId,
       Number(req.params.id),
-      Number(req.params.paymentId)
+      Number(req.params.receiptId)
     );
-    res.json({ expense });
+    res.json({ income });
   } catch (err) {
     next(err);
   }
 }
 
-async function getExpenseBillHandler(req, res, next) {
+async function getIncomeReceiptFileHandler(req, res, next) {
   try {
-    const filename = await expensesService.getBillFilename(req.user.lodgeId, Number(req.params.id));
-    if (!(await expensesService.billExists(filename))) {
+    const filename = await incomeService.getReceiptFilename(req.user.lodgeId, Number(req.params.id));
+    if (!(await incomeService.receiptExists(filename))) {
       throw new ApiError('That receipt is no longer on file.', 404);
     }
-    // basename, not the stored string — same guard as assets.controller.js.
-    // Cross-origin, not the strict default: a Flutter web build served from
-    // its own dev-server origin is still same-site by IP, but the bare-IP
-    // case (see PUBLIC_IMAGE_CORP in app.js) trips Chrome's Cross-Origin-
-    // Resource-Policy check anyway — the fetch just fails with no console
-    // error pointing here. CORS above still gates who the origin can be.
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.sendFile(path.join(BILL_UPLOAD_DIR, path.basename(filename)));
+    res.sendFile(path.join(RECEIPT_UPLOAD_DIR, path.basename(filename)));
   } catch (err) {
     next(err);
   }
@@ -243,7 +223,7 @@ async function getExpenseBillHandler(req, res, next) {
 async function getSummaryHandler(req, res, next) {
   try {
     const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
-    const summary = await expensesService.getMonthlySummary(req.user.lodgeId, year);
+    const summary = await incomeService.getMonthlySummary(req.user.lodgeId, year);
     res.json({ summary });
   } catch (err) {
     next(err);
@@ -256,7 +236,7 @@ async function getSummaryHandler(req, res, next) {
 
 async function listTemplatesHandler(req, res, next) {
   try {
-    const templates = await expensesService.listTemplates(req.user.lodgeId, {
+    const templates = await incomeService.listTemplates(req.user.lodgeId, {
       includeInactive: req.query.includeInactive === 'true',
     });
     res.json({ templates });
@@ -267,7 +247,7 @@ async function listTemplatesHandler(req, res, next) {
 
 async function createTemplateHandler(req, res, next) {
   try {
-    const template = await expensesService.createTemplate(
+    const template = await incomeService.createTemplate(
       req.user.lodgeId,
       parse(recurringTemplateSchema, req.body)
     );
@@ -279,7 +259,7 @@ async function createTemplateHandler(req, res, next) {
 
 async function updateTemplateHandler(req, res, next) {
   try {
-    const template = await expensesService.updateTemplate(
+    const template = await incomeService.updateTemplate(
       req.user.lodgeId,
       Number(req.params.id),
       parse(updateRecurringTemplateSchema, req.body)
@@ -290,20 +270,16 @@ async function updateTemplateHandler(req, res, next) {
   }
 }
 
-// "Log this month" — the desk manually recording one occurrence of a
-// recurring template, entering amount/vendor/payment right here (this IS
-// the expense form; expenseSchema covers it) rather than inheriting a
-// guessed amount from the template.
 async function logOccurrenceHandler(req, res, next) {
   try {
-    const expense = await expensesService.logRecurringOccurrence(
+    const income = await incomeService.logRecurringOccurrence(
       req.user.lodgeId,
       Number(req.params.id),
-      parse(expenseSchema, req.body),
+      parse(incomeEntrySchema, req.body),
       req.user.sub,
       req.file?.filename
     );
-    res.status(201).json({ expense });
+    res.status(201).json({ income });
   } catch (err) {
     if (req.file) fs.unlink(req.file.path, () => {});
     next(err);
@@ -314,19 +290,18 @@ module.exports = {
   listCategoriesHandler,
   createCategoryHandler,
   updateCategoryHandler,
-  previewCategoryTagImpactHandler,
-  listVendorsHandler,
-  createVendorHandler,
-  updateVendorHandler,
-  listExpensesHandler,
-  getExpenseHandler,
-  createExpenseHandler,
-  updateExpenseHandler,
-  deleteExpenseHandler,
-  listPaymentsHandler,
-  addPaymentHandler,
-  deletePaymentHandler,
-  getExpenseBillHandler,
+  listPayersHandler,
+  createPayerHandler,
+  updatePayerHandler,
+  listIncomeHandler,
+  getIncomeHandler,
+  createIncomeHandler,
+  updateIncomeHandler,
+  deleteIncomeHandler,
+  listReceiptsHandler,
+  addReceiptHandler,
+  deleteReceiptHandler,
+  getIncomeReceiptFileHandler,
   getSummaryHandler,
   listTemplatesHandler,
   createTemplateHandler,

@@ -4,6 +4,7 @@ const { assetBillUpload } = require('../../middleware/assetBillUpload');
 const {
   listCategoriesHandler,
   createCategoryHandler,
+  updateCategoryDepreciationHandler,
   listAssetsHandler,
   getAssetHandler,
   getAssetByQrHandler,
@@ -34,6 +35,7 @@ const canAccess = requirePermission('assets.manage');
 
 router.get('/categories', authenticate, canAccess, listCategoriesHandler);
 router.post('/categories', authenticate, canAccess, createCategoryHandler);
+router.patch('/categories/:id/depreciation', authenticate, canAccess, updateCategoryDepreciationHandler);
 
 router.get('/vendors', authenticate, canAccess, listVendorsHandler);
 router.post('/vendors', authenticate, canAccess, createVendorHandler);

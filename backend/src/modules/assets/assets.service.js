@@ -17,18 +17,28 @@ function logAssetExpenseQuietly(lodgeId, entry) {
 // Categories
 // ---------------------------------------------------------------------------
 
+function mapCategory(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    depreciationBlock: row.depreciation_block,
+    depreciationRatePercent: row.depreciation_rate_percent == null ? null : Number(row.depreciation_rate_percent),
+    isActive: !!row.is_active,
+  };
+}
+
 async function listCategories(lodgeId) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, is_active
+      SELECT id, name, depreciation_block, depreciation_rate_percent, is_active
       FROM dbo.asset_categories
       WHERE lodge_id = @lodgeId AND is_active = 1
       ORDER BY name ASC
     `);
-  return result.recordset.map((row) => ({ id: row.id, name: row.name, isActive: !!row.is_active }));
+  return result.recordset.map(mapCategory);
 }
 
 async function createCategory(lodgeId, input) {
@@ -47,13 +57,45 @@ async function createCategory(lodgeId, input) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('name', sql.NVarChar, input.name)
+    .input('depreciationBlock', sql.NVarChar, toNullable(input.depreciationBlock))
+    .input('depreciationRatePercent', sql.Decimal(5, 2), input.depreciationRatePercent ?? null)
     .query(`
-      INSERT INTO dbo.asset_categories (lodge_id, name)
+      INSERT INTO dbo.asset_categories (lodge_id, name, depreciation_block, depreciation_rate_percent)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name)
+      VALUES (@lodgeId, @name, @depreciationBlock, @depreciationRatePercent)
     `);
 
-  return { id: result.recordset[0].id, name: input.name, isActive: true };
+  return {
+    id: result.recordset[0].id,
+    name: input.name,
+    depreciationBlock: toNullable(input.depreciationBlock),
+    depreciationRatePercent: input.depreciationRatePercent ?? null,
+    isActive: true,
+  };
+}
+
+// The only field an existing category needs editing for after the fact —
+// its depreciation rate, assigned once an owner (or their CA) decides which
+// IT Act block it belongs to. Name isn't editable here: nothing else in the
+// module needs to rename a category once assets are filed under it.
+async function updateCategoryDepreciation(lodgeId, categoryId, input) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .input('depreciationBlock', sql.NVarChar, toNullable(input.depreciationBlock))
+    .input('depreciationRatePercent', sql.Decimal(5, 2), input.depreciationRatePercent ?? null)
+    .query(`
+      UPDATE dbo.asset_categories
+      SET depreciation_block = @depreciationBlock, depreciation_rate_percent = @depreciationRatePercent
+      OUTPUT inserted.id, inserted.name, inserted.depreciation_block, inserted.depreciation_rate_percent, inserted.is_active
+      WHERE id = @categoryId AND lodge_id = @lodgeId
+    `);
+  if (result.recordset.length === 0) {
+    throw new ApiError('Category not found.', 404);
+  }
+  return mapCategory(result.recordset[0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -66,12 +108,15 @@ function mapAsset(row) {
     name: row.name,
     categoryId: row.category_id,
     categoryName: row.category_name,
+    depreciationRatePercent: row.depreciation_rate_percent == null ? null : Number(row.depreciation_rate_percent),
     assetTag: row.asset_tag,
     brand: row.brand,
     model: row.model,
     serialNumber: row.serial_number,
     purchaseDate: row.purchase_date,
     purchaseCost: row.purchase_cost == null ? null : Number(row.purchase_cost),
+    usefulLifeYears: row.useful_life_years,
+    usefulLifeMonths: row.useful_life_months,
     roomId: row.room_id,
     roomNumber: row.room_number ?? null,
     floor: row.floor,
@@ -87,6 +132,11 @@ function mapAsset(row) {
     // reaches the file through GET /assets/:id/bill on the asset's own id.
     hasBillDocument: !!row.bill_document,
     status: row.status,
+    deadDate: row.dead_date,
+    deadReason: row.dead_reason,
+    disposalNote: row.disposal_note,
+    recoveryCost: row.recovery_cost == null ? null : Number(row.recovery_cost),
+    disposedBy: row.disposed_by,
     qrToken: row.qr_token,
     isActive: !!row.is_active,
     openWorkOrders: row.open_work_orders ?? 0,
@@ -99,10 +149,14 @@ function mapAsset(row) {
 }
 
 const ASSET_SELECT = `
-  SELECT a.id, a.lodge_id, a.name, a.category_id, c.name AS category_name, a.asset_tag, a.brand, a.model,
-         a.serial_number, a.purchase_date, a.purchase_cost, a.room_id, r.room_number, a.floor,
+  SELECT a.id, a.lodge_id, a.name, a.category_id, c.name AS category_name, c.depreciation_rate_percent,
+         a.asset_tag, a.brand, a.model,
+         a.serial_number, a.purchase_date, a.purchase_cost, a.useful_life_years, a.useful_life_months,
+         a.room_id, r.room_number, a.floor,
          a.department, a.location_note, a.vendor_id, v.name AS vendor_name, a.warranty_expiry,
-         a.amc_expiry, a.amc_coverage_note, a.bill_document, a.status, a.qr_token, a.is_active,
+         a.amc_expiry, a.amc_coverage_note, a.bill_document, a.status,
+         a.dead_date, a.dead_reason, a.disposal_note, a.recovery_cost, a.disposed_by,
+         a.qr_token, a.is_active,
          (SELECT COUNT(*) FROM dbo.asset_work_orders w WHERE w.asset_id = a.id AND w.status <> 'CLOSED') AS open_work_orders
   FROM dbo.assets a
   JOIN dbo.asset_categories c ON c.id = a.category_id
@@ -260,6 +314,8 @@ async function createAsset(lodgeId, input, billFilename) {
       .input('serialNumber', sql.NVarChar, toNullable(input.serialNumber))
       .input('purchaseDate', sql.Date, toNullable(input.purchaseDate))
       .input('purchaseCost', sql.Decimal(12, 2), input.purchaseCost ?? null)
+      .input('usefulLifeYears', sql.TinyInt, input.usefulLifeYears ?? null)
+      .input('usefulLifeMonths', sql.TinyInt, input.usefulLifeMonths ?? null)
       .input('roomId', sql.BigInt, input.roomId ?? null)
       .input('floor', sql.NVarChar, toNullable(input.floor))
       .input('department', sql.NVarChar, toNullable(input.department))
@@ -270,12 +326,13 @@ async function createAsset(lodgeId, input, billFilename) {
       .query(`
         INSERT INTO dbo.assets
           (lodge_id, category_id, name, asset_tag, brand, model, serial_number, purchase_date,
-           purchase_cost, room_id, floor, department, location_note, vendor_id, warranty_expiry,
-           bill_document)
+           purchase_cost, useful_life_years, useful_life_months, room_id, floor, department,
+           location_note, vendor_id, warranty_expiry, bill_document)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @categoryId, @name, @assetTag, @brand, @model, @serialNumber, @purchaseDate,
-           @purchaseCost, @roomId, @floor, @department, @locationNote, @vendorId, @warrantyExpiry,
+           @purchaseCost, @usefulLifeYears, @usefulLifeMonths, @roomId, @floor, @department,
+           @locationNote, @vendorId, @warrantyExpiry,
            @billDocument)
       `);
 
@@ -342,6 +399,8 @@ async function createAssetsBulk(lodgeId, sharedInput, units, billFilename) {
         .input('serialNumber', sql.NVarChar, toNullable(unit.serialNumber))
         .input('purchaseDate', sql.Date, toNullable(sharedInput.purchaseDate))
         .input('purchaseCost', sql.Decimal(12, 2), sharedInput.purchaseCost ?? null)
+        .input('usefulLifeYears', sql.TinyInt, sharedInput.usefulLifeYears ?? null)
+        .input('usefulLifeMonths', sql.TinyInt, sharedInput.usefulLifeMonths ?? null)
         .input('roomId', sql.BigInt, unit.roomId ?? null)
         .input('floor', sql.NVarChar, toNullable(unit.floor))
         .input('department', sql.NVarChar, toNullable(unit.department))
@@ -352,13 +411,13 @@ async function createAssetsBulk(lodgeId, sharedInput, units, billFilename) {
         .query(`
           INSERT INTO dbo.assets
             (lodge_id, category_id, name, asset_tag, brand, model, serial_number, purchase_date,
-             purchase_cost, room_id, floor, department, location_note, vendor_id, warranty_expiry,
-             bill_document)
+             purchase_cost, useful_life_years, useful_life_months, room_id, floor, department,
+             location_note, vendor_id, warranty_expiry, bill_document)
           OUTPUT inserted.id
           VALUES
             (@lodgeId, @categoryId, @name, @assetTag, @brand, @model, @serialNumber, @purchaseDate,
-             @purchaseCost, @roomId, @floor, @department, @locationNote, @vendorId, @warrantyExpiry,
-             @billDocument)
+             @purchaseCost, @usefulLifeYears, @usefulLifeMonths, @roomId, @floor, @department,
+             @locationNote, @vendorId, @warrantyExpiry, @billDocument)
         `);
 
       const insertedId = result.recordset[0].id;
@@ -529,17 +588,31 @@ async function getBillFilename(lodgeId, assetId) {
 // keeping its row (and its work orders' history) intact. Moving a retired
 // asset back to any other status reverses that, since "un-retiring" should
 // put it back in the list it disappeared from.
-async function setAssetStatus(lodgeId, assetId, status) {
+// Dead stock register fields (deadDate/deadReason/disposalNote/
+// recoveryCost/disposedBy) are only ever written when retiring — moving an
+// asset to any other status clears them, the same way "un-retiring" already
+// reverses is_active. A dead stock record that's been un-retired shouldn't
+// keep showing a disposal note for equipment that's back in service.
+async function setAssetStatus(lodgeId, assetId, status, deadStock = {}) {
   const pool = await getPool();
+  const retiring = status === 'RETIRED';
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('assetId', sql.BigInt, assetId)
     .input('status', sql.NVarChar, status)
-    .input('isActive', sql.Bit, status === 'RETIRED' ? 0 : 1)
+    .input('isActive', sql.Bit, retiring ? 0 : 1)
+    .input('deadDate', sql.Date, retiring ? toNullable(deadStock.deadDate) : null)
+    .input('deadReason', sql.NVarChar, retiring ? toNullable(deadStock.deadReason) : null)
+    .input('disposalNote', sql.NVarChar, retiring ? toNullable(deadStock.disposalNote) : null)
+    .input('recoveryCost', sql.Decimal(12, 2), retiring ? (deadStock.recoveryCost ?? null) : null)
+    .input('disposedBy', sql.NVarChar, retiring ? toNullable(deadStock.disposedBy) : null)
     .query(`
       UPDATE dbo.assets
-      SET status = @status, is_active = @isActive, updated_at = SYSDATETIMEOFFSET()
+      SET status = @status, is_active = @isActive,
+          dead_date = @deadDate, dead_reason = @deadReason, disposal_note = @disposalNote,
+          recovery_cost = @recoveryCost, disposed_by = @disposedBy,
+          updated_at = SYSDATETIMEOFFSET()
       OUTPUT inserted.id
       WHERE id = @assetId AND lodge_id = @lodgeId
     `);
@@ -1039,6 +1112,7 @@ async function updateWorkOrder(lodgeId, workOrderId, input) {
 module.exports = {
   listCategories,
   createCategory,
+  updateCategoryDepreciation,
   listAssets,
   getAsset,
   getAssetByQrToken,

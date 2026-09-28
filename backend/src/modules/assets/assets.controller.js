@@ -1,5 +1,6 @@
 const {
   categorySchema,
+  categoryDepreciationSchema,
   assetSchema,
   bulkAssetSchema,
   coveragePeriodSchema,
@@ -36,6 +37,19 @@ async function createCategoryHandler(req, res, next) {
   try {
     const category = await assetsService.createCategory(req.user.lodgeId, parse(categorySchema, req.body));
     res.status(201).json({ category });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCategoryDepreciationHandler(req, res, next) {
+  try {
+    const category = await assetsService.updateCategoryDepreciation(
+      req.user.lodgeId,
+      Number(req.params.id),
+      parse(categoryDepreciationSchema, req.body)
+    );
+    res.json({ category });
   } catch (err) {
     next(err);
   }
@@ -152,8 +166,8 @@ async function getAssetBillHandler(req, res, next) {
 
 async function updateAssetStatusHandler(req, res, next) {
   try {
-    const { status } = parse(updateAssetStatusSchema, req.body);
-    const asset = await assetsService.setAssetStatus(req.user.lodgeId, Number(req.params.id), status);
+    const { status, ...deadStock } = parse(updateAssetStatusSchema, req.body);
+    const asset = await assetsService.setAssetStatus(req.user.lodgeId, Number(req.params.id), status, deadStock);
     res.json({ asset });
   } catch (err) {
     next(err);
@@ -216,7 +230,7 @@ async function deleteCoveragePeriodHandler(req, res, next) {
 
 async function listVendorsHandler(req, res, next) {
   try {
-    const vendors = await assetsService.listVendors(req.user.lodgeId, {
+    const vendors = await assetsService.listVendors(req.user.lodgeId, 'asset', {
       includeInactive: req.query.includeInactive === 'true',
     });
     res.json({ vendors });
@@ -227,7 +241,7 @@ async function listVendorsHandler(req, res, next) {
 
 async function createVendorHandler(req, res, next) {
   try {
-    const vendor = await assetsService.createVendor(req.user.lodgeId, parse(vendorSchema, req.body));
+    const vendor = await assetsService.createVendor(req.user.lodgeId, 'asset', parse(vendorSchema, req.body));
     res.status(201).json({ vendor });
   } catch (err) {
     next(err);
@@ -238,6 +252,7 @@ async function updateVendorHandler(req, res, next) {
   try {
     const vendor = await assetsService.updateVendor(
       req.user.lodgeId,
+      'asset',
       Number(req.params.id),
       parse(vendorSchema, req.body)
     );
@@ -301,6 +316,7 @@ async function updateWorkOrderHandler(req, res, next) {
 module.exports = {
   listCategoriesHandler,
   createCategoryHandler,
+  updateCategoryDepreciationHandler,
   listAssetsHandler,
   getAssetHandler,
   getAssetByQrHandler,

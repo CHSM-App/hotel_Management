@@ -49,7 +49,8 @@ async function listRooms(lodgeId) {
         WHERE room_id = r.id AND lodge_id = @lodgeId AND status = 'CHECKED_IN'
       ) b
       WHERE r.lodge_id = @lodgeId
-      ORDER BY TRY_CAST(r.room_number AS INT) ASC, r.room_number ASC
+      ORDER BY CASE WHEN c.tape_order IS NULL THEN 1 ELSE 0 END, c.tape_order ASC, c.id ASC,
+               TRY_CAST(r.room_number AS INT) ASC, r.room_number ASC
     `);
 
   const switchableChargesResult = await pool

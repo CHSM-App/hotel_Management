@@ -10,7 +10,7 @@ import './chartSections.css';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-const emptyCategoryForm = { name: '', basePrice: '' };
+const emptyCategoryForm = { name: '', basePrice: '', tapeOrder: '' };
 const emptyChargeForm = { name: '', chargePerNight: '' };
 const emptySeasonForm = () => ({ name: '', startDate: todayIso(), endDate: todayIso(), adjustmentPercent: '' });
 
@@ -162,7 +162,7 @@ export default function PriceChartPanel() {
   // Categories
   const openEditCategory = (c) => {
     setEditingCategoryId(c.id);
-    setCategoryForm({ name: c.name, basePrice: String(c.basePrice) });
+    setCategoryForm({ name: c.name, basePrice: String(c.basePrice), tapeOrder: c.tapeOrder ? String(c.tapeOrder) : '' });
     setCategoryError('');
     categoryErrors.clear();
   };
@@ -188,7 +188,11 @@ export default function PriceChartPanel() {
     }
     setCategorySubmitting(true);
     try {
-      const body = { name: categoryForm.name.trim(), basePrice: Number(categoryForm.basePrice) };
+      const body = {
+        name: categoryForm.name.trim(),
+        basePrice: Number(categoryForm.basePrice),
+        tapeOrder: categoryForm.tapeOrder ? Number(categoryForm.tapeOrder) : null,
+      };
       if (editingCategoryId) {
         await apiPatch(`/categories/${editingCategoryId}`, body, { token: session?.token });
       } else {
@@ -502,6 +506,18 @@ export default function PriceChartPanel() {
                 aria-label="Base price in rupees (required)"
               />
               {categoryErrors.fieldErr('categoryBasePrice')}
+            </div>
+            <div>
+              <input
+                id="categoryTapeOrder"
+                type="number"
+                min="1"
+                value={categoryForm.tapeOrder}
+                onChange={(e) => setCategoryForm((f) => ({ ...f, tapeOrder: e.target.value }))}
+                placeholder="Tape chart order"
+                aria-label="Tape chart order (optional)"
+                title="Where this category's section appears on the tape chart. Leave blank to add it after the others, in the order categories are created."
+              />
             </div>
             <div className="inline-add-form__actions">
               <button className="btn-accent" type="submit" disabled={categorySubmitting}>

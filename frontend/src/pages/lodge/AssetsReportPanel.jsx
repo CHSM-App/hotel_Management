@@ -21,13 +21,34 @@ function expiringSoon(dateStr) {
 // A full-view report, opened from "View Report" on the Asset Register —
 // same shape as ExpensesReportPanel: pure client-side aggregation over data
 // AssetsPanel already has loaded (assets, work orders), no new backend call.
-export default function AssetsReportPanel({ assets, workOrders, onClose }) {
+export default function AssetsReportPanel({ assets: allAssets, workOrders: allWorkOrders, onClose }) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState('');
   const [actionError, setActionError] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  const assets = useMemo(() => {
+    if (!fromDate && !toDate) return allAssets;
+    return allAssets.filter((a) => {
+      if (fromDate && (!a.purchaseDate || a.purchaseDate < fromDate)) return false;
+      if (toDate && (!a.purchaseDate || a.purchaseDate > toDate)) return false;
+      return true;
+    });
+  }, [allAssets, fromDate, toDate]);
+
+  const workOrders = useMemo(() => {
+    if (!fromDate && !toDate) return allWorkOrders;
+    return allWorkOrders.filter((wo) => {
+      const d = wo.openedAt ? wo.openedAt.slice(0, 10) : '';
+      if (fromDate && d < fromDate) return false;
+      if (toDate && d > toDate) return false;
+      return true;
+    });
+  }, [allWorkOrders, fromDate, toDate]);
 
   const totals = useMemo(() => {
     const purchaseValue = assets.reduce((s, a) => s + Number(a.purchaseCost || 0), 0);
@@ -122,6 +143,11 @@ export default function AssetsReportPanel({ assets, workOrders, onClose }) {
           <p className="expense-report__sub">{totals.assetCount} asset{totals.assetCount === 1 ? '' : 's'} on the register</p>
         </div>
         <div className="expense-report__actions">
+          <div className="expense-report__range">
+            <input aria-label="From date" type="date" value={fromDate} max={toDate || undefined} onChange={(e) => setFromDate(e.target.value)} />
+            <span>–</span>
+            <input aria-label="To date" type="date" value={toDate} min={fromDate || undefined} onChange={(e) => setToDate(e.target.value)} />
+          </div>
           <button type="button" className="btn-secondary" disabled={previewBusy || Boolean(downloadBusy)} onClick={handlePreview}>
             {previewBusy ? 'Building…' : previewUrl ? 'Hide preview' : 'Preview PDF'}
           </button>

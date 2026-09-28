@@ -116,7 +116,7 @@ export const FEATURES = [
     permission: ['orders.manage', 'orders.take'],
     capability: 'servesFood',
     icon: 'coffee',
-    group: 'Front desk',
+    group: 'Operations',
   },
   {
     key: 'events',
@@ -127,7 +127,7 @@ export const FEATURES = [
     // lawn and a restaurant with a party hall are both real.
     capability: 'hasEvents',
     icon: 'party',
-    group: 'Front desk',
+    group: 'Operations',
   },
   {
     key: 'rooms',
@@ -163,7 +163,7 @@ export const FEATURES = [
     // An add-on, same as Events: off until switched on for the property.
     capability: 'hasAssets',
     icon: 'wrench',
-    group: 'Setup',
+    group: 'Finance & Management',
   },
   {
     key: 'expenses',
@@ -172,22 +172,39 @@ export const FEATURES = [
     permission: 'expenses.manage',
     capability: 'hasExpenses',
     icon: 'wallet',
-    group: 'Setup',
+    group: 'Finance & Management',
+  },
+  {
+    key: 'income',
+    title: 'Other Income',
+    description: 'Log income outside room/food/function billing — interest, scrap sale, rent received.',
+    permission: 'income.manage',
+    // Rides on the same add-on toggle as Expenses — a property that logs
+    // costs almost certainly wants to log this kind of income too, and a
+    // second lodge-level switch just for this would be one more thing to
+    // remember to turn on.
+    capability: 'hasExpenses',
+    icon: 'wallet',
+    group: 'Finance & Management',
   },
   {
     key: 'reports',
-    title: 'Report & Analytics',
-    description: 'Booking, occupancy, GST, events and food order reports — whichever this property sells.',
+    title: 'Reports & Analytics',
+    // Names Profit & Loss explicitly — it's a Reports sub-tab (same as GST,
+    // Bookings, Events below), not a feature of its own, so it has no
+    // separate row here; whether a role can see it is decided by the
+    // profitLoss.view permission from Staff & Roles instead.
+    description: 'Booking, occupancy, GST, Profit & Loss, events and food order reports — whichever this property sells.',
     permission: 'reports.view',
     // Any one of these earns the section; ReportsPanel itself only shows the
     // sub-tabs the property's own capabilities back.
     capability: ['hasRooms', 'servesFood', 'hasEvents'],
     icon: 'barChart',
-    group: 'Insights',
+    group: 'Finance & Management',
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Front desk', 'Setup', 'Insights'];
+export const SIDEBAR_GROUP_ORDER = ['Front desk', 'Operations', 'Finance & Management', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

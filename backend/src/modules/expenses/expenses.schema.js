@@ -18,9 +18,17 @@ const categorySchema = z.object({
   name: z.string().trim().min(1, 'Category name is required.').max(80),
 });
 
+// isInterest/isTax mark a category as the source for the P&L report's
+// Interest/Tax rows (see reports.service.js's getProfitLossHistory) — every
+// expense filed under a tagged category rolls into that row. Mutually
+// exclusive by convention: a category is interest, tax, or neither, never
+// both — the service doesn't enforce this since nothing stops an owner from
+// (harmlessly) double-tagging, but the UI only ever offers one at a time.
 const updateCategorySchema = z.object({
   name: z.string().trim().min(1, 'Category name is required.').max(80).optional(),
   isActive: z.boolean().optional(),
+  isInterest: z.boolean().optional(),
+  isTax: z.boolean().optional(),
 });
 
 const vendorSchema = z.object({

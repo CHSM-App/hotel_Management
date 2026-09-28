@@ -1,5 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { netOfDiscount } = require('../billing/billing.service');
+const assetsService = require('../assets/assets.service');
+const { depreciationForAssets, fyStart, fyEnd } = require('../assets/depreciation');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
@@ -1584,6 +1586,378 @@ async function getRoomsAnalytics(lodgeId, fromDate, toDate) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Profit & Loss
+// ---------------------------------------------------------------------------
+//
+// Revenue net of GST (taxable value — GST collected is the government's
+// money, never the hotel's income) minus operating expenses minus
+// depreciation. Depreciation is WDV at Income Tax Act block rates (see
+// assets/depreciation.js), apportioned to whatever slice of each financial
+// year falls inside the report's date range.
+
+// Taxable (net-of-GST) revenue by stream, for exactly the identity
+// billFigures/getGstSummary use elsewhere: taxable = gross − discount − tax.
+// A dedicated query rather than reusing getGstSummary's per-invoice loop —
+// P/L only needs the three stream totals, not every invoice row.
+async function getRevenueByStream(pool, lodgeId, fromDate, toDate) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT i.room_subtotal, i.food_subtotal, i.cgst_amount, i.sgst_amount,
+             i.food_cgst_amount, i.food_sgst_amount, i.discount_amount, i.event_booking_id
+      FROM dbo.invoices i
+      WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED'
+        AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
+    `);
+
+  let roomRevenue = 0;
+  let functionRevenue = 0;
+  let foodRevenue = 0;
+  for (const row of result.recordset) {
+    const figures = billFigures(row);
+    if (row.event_booking_id != null) {
+      functionRevenue = round2(functionRevenue + figures.roomTaxable);
+    } else {
+      roomRevenue = round2(roomRevenue + figures.roomTaxable);
+    }
+    foodRevenue = round2(foodRevenue + figures.foodTaxable);
+  }
+  return {
+    roomRevenue,
+    functionRevenue,
+    foodRevenue,
+    totalRevenue: round2(roomRevenue + functionRevenue + foodRevenue),
+  };
+}
+
+// Money the property keeps when a stay or function is cancelled — the
+// advance retained, net of whatever was refunded. This is real revenue,
+// but it never flows through dbo.invoices (a cancelled booking is never
+// billed), so getRevenueByStream above can't see it; the booking register's
+// own getCollectionsInPeriod reads the bookings half of this same figure
+// for its cash-basis Collections tile, but that's a separate function from
+// the P&L, so it's re-read here rather than assuming that call already ran.
+// Dated by cancelled_at — the day the advance stopped being a refundable
+// deposit and became income — not by when the stay/function was booked.
+async function getCancellationChargesKept(pool, lodgeId, fromDate, toDate) {
+  const bookings = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT ISNULL(SUM(cancellation_charge), 0) AS total
+      FROM dbo.bookings
+      WHERE lodge_id = @lodgeId AND status = 'CANCELLED' AND cancellation_charge > 0
+        AND CAST(cancelled_at AS DATE) BETWEEN @fromDate AND @toDate
+    `);
+  const events = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT ISNULL(SUM(cancellation_charge), 0) AS total
+      FROM dbo.event_bookings
+      WHERE lodge_id = @lodgeId AND status = 'CANCELLED' AND cancellation_charge > 0
+        AND CAST(cancelled_at AS DATE) BETWEEN @fromDate AND @toDate
+    `);
+  const roomsKept = round2(Number(bookings.recordset[0].total));
+  const functionsKept = round2(Number(events.recordset[0].total));
+  return { roomsKept, functionsKept, total: round2(roomsKept + functionsKept) };
+}
+
+// Operating expenses in the period, grouped by category — the P/L's cost
+// side besides depreciation. Asset *purchases* specifically are excluded: a
+// purchase is capital expenditure, and its cost already reaches the P/L
+// through depreciation instead — counting the full purchase price *and*
+// depreciating it would double-charge the same rupee. AMC/warranty coverage
+// and repair costs (also logged against an asset, via the same asset_id) are
+// genuine period expenses and stay in — only the purchase row itself is
+// capital. logAssetExpense (assets.service.js) is the only writer of that
+// title, so the prefix match is exact, not a guess.
+//
+// Categories tagged is_interest/is_tax (see migration 097) are excluded
+// here too — they surface as their own P/L rows (getInterestAndTax below)
+// instead of being buried inside "Expenses", so Operating Profit isn't
+// double-counting loan interest or income tax as an operating cost.
+async function getExpensesByCategory(pool, lodgeId, fromDate, toDate) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT ec.id AS category_id, ec.name AS category_name, SUM(e.amount) AS total
+      FROM dbo.expenses e
+      JOIN dbo.expense_categories ec ON ec.id = e.category_id
+      WHERE e.lodge_id = @lodgeId
+        AND e.expense_date BETWEEN @fromDate AND @toDate
+        AND e.title NOT LIKE 'Asset purchase:%'
+        AND ec.is_interest = 0 AND ec.is_tax = 0
+      GROUP BY ec.id, ec.name
+      ORDER BY total DESC
+    `);
+  const byCategory = result.recordset.map((row) => ({
+    categoryId: row.category_id,
+    categoryName: row.category_name,
+    amount: round2(Number(row.total)),
+  }));
+  return {
+    byCategory,
+    totalExpenses: round2(byCategory.reduce((sum, c) => sum + c.amount, 0)),
+  };
+}
+
+// Interest (loan EMI interest) and Tax (income tax paid) in the period —
+// each the sum of expenses filed under a category an owner tagged
+// is_interest / is_tax. null (not 0) when nothing is tagged yet, so the
+// report can render a dash rather than implying "confirmed zero interest"
+// for a lodge that just hasn't tagged a category.
+async function getInterestAndTax(pool, lodgeId, fromDate, toDate) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT
+        (SELECT COUNT(*) FROM dbo.expense_categories WHERE lodge_id = @lodgeId AND is_interest = 1) AS interest_tagged,
+        (SELECT COUNT(*) FROM dbo.expense_categories WHERE lodge_id = @lodgeId AND is_tax = 1) AS tax_tagged,
+        ISNULL((
+          SELECT SUM(e.amount) FROM dbo.expenses e
+          JOIN dbo.expense_categories ec ON ec.id = e.category_id
+          WHERE e.lodge_id = @lodgeId AND ec.is_interest = 1
+            AND e.expense_date BETWEEN @fromDate AND @toDate
+        ), 0) AS interest_total,
+        ISNULL((
+          SELECT SUM(e.amount) FROM dbo.expenses e
+          JOIN dbo.expense_categories ec ON ec.id = e.category_id
+          WHERE e.lodge_id = @lodgeId AND ec.is_tax = 1
+            AND e.expense_date BETWEEN @fromDate AND @toDate
+        ), 0) AS tax_total
+    `);
+  const row = result.recordset[0];
+  return {
+    interest: row.interest_tagged > 0 ? round2(Number(row.interest_total)) : null,
+    tax: row.tax_tagged > 0 ? round2(Number(row.tax_total)) : null,
+  };
+}
+
+// Other income in the period, grouped by category — money the property took
+// in that isn't room/food/function billing (interest, scrap sale, rent from
+// a shop on the premises, a refund received). Same shape as
+// getExpensesByCategory: amount is what was earned, regardless of how much
+// of it has actually been received yet (payment_status), matching how the
+// booking/GST reports already treat billed vs. collected as separate
+// questions — this is the accrual figure the P/L's revenue side needs.
+async function getOtherIncomeByCategory(pool, lodgeId, fromDate, toDate) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT ic.id AS category_id, ic.name AS category_name, SUM(i.amount) AS total
+      FROM dbo.income_entries i
+      JOIN dbo.income_categories ic ON ic.id = i.category_id
+      WHERE i.lodge_id = @lodgeId
+        AND i.income_date BETWEEN @fromDate AND @toDate
+      GROUP BY ic.id, ic.name
+      ORDER BY total DESC
+    `);
+  const byCategory = result.recordset.map((row) => ({
+    categoryId: row.category_id,
+    categoryName: row.category_name,
+    amount: round2(Number(row.total)),
+  }));
+  return {
+    byCategory,
+    totalOtherIncome: round2(byCategory.reduce((sum, c) => sum + c.amount, 0)),
+  };
+}
+
+// The ten Screener-style P/L figures for one period — Sales through Net
+// Profit — shared by both the single-period report and each column of the
+// multi-year history below, so the two can never compute a figure two
+// different ways.
+async function computePeriodFigures(pool, lodgeId, fromDate, toDate, assets) {
+  const [revenue, otherIncome, expenses, interestAndTax, cancellationCharges] = await Promise.all([
+    getRevenueByStream(pool, lodgeId, fromDate, toDate),
+    getOtherIncomeByCategory(pool, lodgeId, fromDate, toDate),
+    getExpensesByCategory(pool, lodgeId, fromDate, toDate),
+    getInterestAndTax(pool, lodgeId, fromDate, toDate),
+    getCancellationChargesKept(pool, lodgeId, fromDate, toDate),
+  ]);
+
+  const depreciation = depreciationForAssets(assets, fromDate, toDate);
+
+  // Cancellation charges retained are real revenue (the advance stopped
+  // being refundable and became income) but never pass through
+  // dbo.invoices, so they're folded into Sales here rather than left
+  // invisible to the P&L — see getCancellationChargesKept.
+  const sales = round2(revenue.totalRevenue + cancellationCharges.total);
+  const operatingProfit = round2(sales - expenses.totalExpenses);
+  const opmPercent = sales > 0 ? round2((operatingProfit / sales) * 100) : null;
+  const interest = interestAndTax.interest ?? 0;
+  const profitBeforeTax = round2(
+    operatingProfit + otherIncome.totalOtherIncome - interest - depreciation.totalDepreciation
+  );
+  const tax = interestAndTax.tax ?? 0;
+  const taxPercent = interestAndTax.tax != null && profitBeforeTax !== 0
+    ? round2((tax / profitBeforeTax) * 100)
+    : null;
+  const netProfit = round2(profitBeforeTax - tax);
+
+  return {
+    fromDate,
+    toDate,
+    sales,
+    revenue,
+    // Kept alongside `sales` (which already includes it) so a reader can
+    // see how much of Sales is billed invoice revenue vs. retained
+    // cancellation charges, without having to re-derive the split.
+    cancellationCharges,
+    expenses,
+    operatingProfit,
+    opmPercent,
+    otherIncome,
+    totalOtherIncome: otherIncome.totalOtherIncome,
+    // null means "no category tagged yet", not "confirmed zero" — the
+    // frontend renders that as a dash, same reasoning as depreciation's
+    // skipped list flags what it couldn't compute rather than guessing 0.
+    interest: interestAndTax.interest,
+    depreciation: {
+      totalDepreciation: depreciation.totalDepreciation,
+      totalBookValue: depreciation.totalBookValue,
+      byAsset: depreciation.byAsset,
+      skipped: depreciation.skipped,
+    },
+    profitBeforeTax,
+    tax: interestAndTax.tax,
+    taxPercent,
+    netProfit,
+  };
+}
+
+async function getProfitLossReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
+
+  // includeInactive: a retired asset keeps depreciating for the financial
+  // year it died in (see depreciation.js), so it has to stay in the set
+  // even though the everyday Asset Register hides it by default.
+  const assets = await assetsService.listAssets(lodgeId, { includeInactive: true });
+  const figures = await computePeriodFigures(pool, lodgeId, fromDate, toDate, assets);
+
+  const totalIncome = round2(figures.sales + figures.totalOtherIncome);
+
+  return {
+    fromDate,
+    toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
+    revenue: figures.revenue,
+    cancellationCharges: figures.cancellationCharges,
+    otherIncome: figures.otherIncome,
+    totalIncome,
+    expenses: figures.expenses,
+    depreciation: figures.depreciation,
+    netProfit: figures.netProfit,
+  };
+}
+
+// The Screener-style multi-year table: one column per financial year that
+// has any invoice/expense/income on file, oldest to newest, plus a trailing
+// -12-month (TTM) column for "right now" — the same shape the reference
+// report uses. Each column is computePeriodFigures over that FY's own
+// Apr-Mar (or, for TTM, the last 365 days) range, so every number a single
+// -period report would show for that year matches its column here exactly.
+async function getProfitLossHistory(lodgeId, granularity = 'year') {
+  const pool = await getPool();
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
+
+  const earliestResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT MIN(d) AS earliest FROM (
+        SELECT MIN(CAST(created_at AS DATE)) AS d FROM dbo.invoices WHERE lodge_id = @lodgeId AND status = 'ISSUED'
+        UNION ALL SELECT MIN(expense_date) FROM dbo.expenses WHERE lodge_id = @lodgeId
+        UNION ALL SELECT MIN(income_date) FROM dbo.income_entries WHERE lodge_id = @lodgeId
+        UNION ALL SELECT MIN(purchase_date) FROM dbo.assets WHERE lodge_id = @lodgeId
+      ) x
+    `);
+  const earliest = earliestResult.recordset[0]?.earliest;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const assets = await assetsService.listAssets(lodgeId, { includeInactive: true });
+
+  const periods = [];
+  if (earliest) {
+    if (granularity === 'month') {
+      const first = new Date(`${toIsoDate(earliest).slice(0, 7)}-01T00:00:00Z`);
+      const last = new Date(`${todayIso.slice(0, 7)}-01T00:00:00Z`);
+      for (const cursor = first; cursor <= last; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) {
+        const fromDate = cursor.toISOString().slice(0, 10);
+        const monthEnd = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+        periods.push({
+          label: cursor.toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          fromDate,
+          toDate: monthEnd < todayIso ? monthEnd : todayIso,
+        });
+      }
+    } else {
+      let cursorFy = fyStart(toIsoDate(earliest));
+      const lastFy = fyStart(todayIso);
+      while (cursorFy <= lastFy) {
+        const end = fyEnd(cursorFy);
+        periods.push({
+          label: `Mar ${String(Number(cursorFy.slice(0, 4)) + 1)}`,
+          fromDate: cursorFy,
+          toDate: end < todayIso ? end : todayIso,
+        });
+        cursorFy = `${Number(cursorFy.slice(0, 4)) + 1}-04-01`;
+      }
+    }
+  }
+
+  // Trailing 12 months, ending today — the reference report's own "TTM"
+  // column, always present even when the current FY column already covers
+  // part of the same period; they answer different questions (this FY so
+  // far, vs. the last 365 days regardless of FY boundary).
+  const ttmFrom = (() => {
+    const d = new Date(`${todayIso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 364);
+    return d.toISOString().slice(0, 10);
+  })();
+  if (granularity === 'year') periods.push({ label: 'TTM', fromDate: ttmFrom, toDate: todayIso });
+
+  const columns = [];
+  for (const period of periods) {
+    const figures = await computePeriodFigures(pool, lodgeId, period.fromDate, period.toDate, assets);
+    columns.push({ label: period.label, fromDate: period.fromDate, toDate: period.toDate, ...figures });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
+    columns,
+  };
+}
+
 module.exports = {
   getOccupancyReport,
   getGstSummary,
@@ -1592,6 +1966,8 @@ module.exports = {
   getFoodOrdersReport,
   getAnalyticsOverview,
   getRoomsAnalytics,
+  getProfitLossReport,
+  getProfitLossHistory,
   splitAcross,
   billFigures,
   mergeTenders,

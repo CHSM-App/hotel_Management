@@ -41,8 +41,20 @@ const optionalId = (message) =>
     z.coerce.number().int().positive(message).nullable().optional()
   );
 
+// depreciationBlock/depreciationRatePercent are the WDV depreciation rate
+// for every asset filed under this category (see depreciation.js) — both
+// optional, since a category can go a while before anyone assigns it one,
+// and the P/L report simply skips (and flags) assets whose category has none
+// set yet rather than guessing a rate.
 const categorySchema = z.object({
   name: z.string().trim().min(1, 'Category name is required.').max(60),
+  depreciationBlock: z.string().trim().max(40).optional().default(''),
+  depreciationRatePercent: z.coerce.number().min(0).max(100, 'Rate can’t exceed 100%.').optional().nullable(),
+});
+
+const categoryDepreciationSchema = z.object({
+  depreciationBlock: z.string().trim().max(40).optional().default(''),
+  depreciationRatePercent: z.coerce.number().min(0).max(100, 'Rate can’t exceed 100%.').optional().nullable(),
 });
 
 // Every field but name and categoryId is optional — a hotel registering fifty
@@ -77,6 +89,11 @@ const assetSchema = z.object({
   locationNote: z.string().trim().max(200).optional().default(''),
   vendorId: optionalId(),
   warrantyExpiry: z.string().trim().max(10).optional().default(''),
+  // Expected useful life, entered once at registration — never accepted on
+  // update, same reasoning as warrantyExpiry: it's a fact about the asset's
+  // condition when it was bought, not something to revise later.
+  usefulLifeYears: z.coerce.number().int().min(0).max(99, 'Enter a realistic number of years.').optional().nullable(),
+  usefulLifeMonths: z.coerce.number().int().min(0).max(11, 'Months must be 0–11.').optional().nullable(),
 });
 
 // A single purchase — one category, one vendor, one bill, one purchase
@@ -105,6 +122,8 @@ const bulkAssetSchema = z.object({
   referenceNumber: referenceNumberSchema,
   vendorId: optionalId(),
   warrantyExpiry: z.string().trim().max(10).optional().default(''),
+  usefulLifeYears: z.coerce.number().int().min(0).max(99, 'Enter a realistic number of years.').optional().nullable(),
+  usefulLifeMonths: z.coerce.number().int().min(0).max(11, 'Months must be 0–11.').optional().nullable(),
   // 200 caps one request at something a browser and the database both
   // handle comfortably without pagination — a hotel buying more than that
   // in one purchase order is buying it in more than one delivery too.
@@ -127,11 +146,32 @@ const coveragePeriodSchema = z.object({
   coverageNote: z.string().trim().max(200).optional().default(''),
 });
 
-const updateAssetStatusSchema = z.object({
-  status: z.enum(['IN_USE', 'UNDER_REPAIR', 'RETIRED'], {
-    error: 'Choose a status.',
-  }),
-});
+// deadDate/deadReason/disposalNote/recoveryCost/disposedBy are the dead
+// stock register fields — only meaningful (and only sent by the form) when
+// status is RETIRED. Left optional at the field level (so un-retiring
+// doesn't need to strip them first) but deadReason/disposedBy are required
+// by the superRefine below whenever status is actually RETIRED — every
+// dead stock entry needs to say why and who handled it.
+const updateAssetStatusSchema = z
+  .object({
+    status: z.enum(['IN_USE', 'UNDER_REPAIR', 'RETIRED'], {
+      error: 'Choose a status.',
+    }),
+    deadDate: z.string().trim().max(10).optional().default(''),
+    deadReason: z.string().trim().max(200).optional().default(''),
+    disposalNote: z.string().trim().max(300).optional().default(''),
+    recoveryCost: z.coerce.number().min(0, 'Recovery cost can’t be negative.').optional().nullable(),
+    disposedBy: z.string().trim().max(80).optional().default(''),
+  })
+  .superRefine((data, ctx) => {
+    if (data.status !== 'RETIRED') return;
+    if (!data.deadReason) {
+      ctx.addIssue({ code: 'custom', path: ['deadReason'], message: 'Enter why this asset is dead.' });
+    }
+    if (!data.disposedBy) {
+      ctx.addIssue({ code: 'custom', path: ['disposedBy'], message: 'Enter who handled this.' });
+    }
+  });
 
 const vendorSchema = z.object({
   name: z.string().trim().min(1, 'Vendor name is required.').max(120),
@@ -188,6 +228,7 @@ const updateWorkOrderSchema = z.object({
 
 module.exports = {
   categorySchema,
+  categoryDepreciationSchema,
   assetSchema,
   bulkAssetSchema,
   coveragePeriodSchema,

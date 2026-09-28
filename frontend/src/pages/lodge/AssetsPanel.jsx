@@ -38,6 +38,20 @@ function typedMobile(value) {
   return normalised.slice(0, 10);
 }
 
+// Straight-line depreciation for the registration form's live preview only —
+// purchase cost spread evenly over the expected useful life. Deliberately
+// not the P/L report's figure (that's WDV at the category's IT Act rate);
+// this is a quick "roughly what is this costing us a year" an owner can read
+// while still typing, before a category rate is even involved. Returns null
+// until there's a cost and a life to divide it by.
+function straightLineEstimate(purchaseCost, years, months) {
+  const cost = Number(purchaseCost);
+  const totalMonths = (Number(years) || 0) * 12 + (Number(months) || 0);
+  if (!cost || cost <= 0 || totalMonths <= 0) return null;
+  const perMonth = Math.round((cost / totalMonths) * 100) / 100;
+  return { totalMonths, perMonth, perYear: Math.round(perMonth * 12 * 100) / 100 };
+}
+
 // A neutral pill for every status read the same at a glance as "nothing to
 // see here" — the one status that actually needs attention (Under repair)
 // looked no different from Retired or In use. Same colour language as the
@@ -91,6 +105,11 @@ const emptyAssetForm = {
   // Only ever sent at registration — see the note above the field in the
   // form. Editing an existing asset never touches this.
   warrantyExpiry: '',
+  // Expected useful life, also registration-only — same reasoning as
+  // warrantyExpiry. Drives the straight-line depreciation estimate shown
+  // live on the form; never touches the P/L report's own WDV figures.
+  usefulLifeYears: '',
+  usefulLifeMonths: '',
 };
 
 const emptyWorkOrderForm = {
@@ -138,6 +157,16 @@ const emptyCoverageForm = {
   coverageNote: '',
 };
 
+// Dead stock register: filled in when an asset moves to Retired. deadDate
+// defaults to today at open time, not here, since "today" isn't a constant.
+const emptyRetireForm = {
+  deadDate: '',
+  deadReason: '',
+  disposalNote: '',
+  recoveryCost: '',
+  disposedBy: '',
+};
+
 // Bulk register: everything one purchase shares across every unit — the
 // same fields as emptyAssetForm minus what only makes sense per unit
 // (name, room, floor, location).
@@ -159,6 +188,8 @@ const emptyBulkForm = {
   vendorEmail: '',
   vendorSpecialty: '',
   warrantyExpiry: '',
+  usefulLifeYears: '',
+  usefulLifeMonths: '',
 };
 
 // One row of the bulk unit list — id is a local-only key for React and the
@@ -174,6 +205,17 @@ function emptyBulkUnit() {
 const BULK_TEMPLATE_HEADERS = ['Name (optional)', 'Serial number', 'Room number', 'Floor', 'Location description'];
 
 const emptyVendorForm = { name: '', contactPerson: '', phone: '', altPhone: '', email: '', specialty: '', notes: '' };
+
+// Standard Income Tax Act block rates — offered as a picker when assigning
+// a category's depreciation rate, since that's what a hotel's CA actually
+// uses (mirrors IT_ACT_BLOCKS in backend/src/modules/assets/depreciation.js).
+const IT_ACT_BLOCKS = [
+  { block: 'Buildings', ratePercent: 10 },
+  { block: 'Furniture & Fixtures', ratePercent: 10 },
+  { block: 'Plant & Machinery', ratePercent: 15 },
+  { block: 'Computers & Software', ratePercent: 40 },
+  { block: 'Motor Vehicles', ratePercent: 15 },
+];
 
 // Maps a field's key in an errors object to the DOM id its input actually
 // carries, then focuses and scrolls to the first one that has a message —
@@ -605,10 +647,6 @@ export default function AssetsPanel({ onViewReport }) {
   const [categoryFilter, setCategoryFilter] = useState('');
   // '' means "every status" — same convention as categoryFilter.
   const [statusFilter, setStatusFilter] = useState('');
-  // Retiring an asset drops it from the everyday list (see setAssetStatus on
-  // the backend) — this is the escape hatch to find one again, e.g. to
-  // un-retire it or check its old service history.
-  const [showRetired, setShowRetired] = useState(false);
   // 'cards' is the everyday view — one asset at a time is easy to read on a
   // phone. 'table' is the sheet-style view for someone who wants every
   // asset's warranty/AMC/location on screen at once to scan or compare, the
@@ -693,6 +731,13 @@ export default function AssetsPanel({ onViewReport }) {
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
   const [vendorFieldErrors, setVendorFieldErrors] = useState({});
 
+  // Depreciation rate editor — one category at a time, opened from the
+  // Depreciation tab's list.
+  const [editingDepreciationCategoryId, setEditingDepreciationCategoryId] = useState(null);
+  const [depreciationForm, setDepreciationForm] = useState({ depreciationBlock: '', depreciationRatePercent: '' });
+  const [depreciationSubmitting, setDepreciationSubmitting] = useState(false);
+  const [depreciationError, setDepreciationError] = useState('');
+
   const [showCoverageForm, setShowCoverageForm] = useState(false);
   const [coverageForm, setCoverageForm] = useState(emptyCoverageForm);
   const [coverageSubmitting, setCoverageSubmitting] = useState(false);
@@ -705,10 +750,51 @@ export default function AssetsPanel({ onViewReport }) {
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Retiring an asset is when the dead stock register fields get filled in —
+  // a modal rather than inline fields on the status <select> itself, since
+  // every other status change needs nothing more than picking the option.
+  const [showRetireForm, setShowRetireForm] = useState(false);
+  const [retireForm, setRetireForm] = useState(emptyRetireForm);
+  const [retireSubmitting, setRetireSubmitting] = useState(false);
+  const [retireError, setRetireError] = useState('');
+  const [retireFieldErrors, setRetireFieldErrors] = useState({});
+
+  // Always fetches retired assets too — the Dead Stock tab needs them
+  // regardless of the register's own "Show retired" checkbox, and filtering
+  // that in and out of the register view is cheap to do client-side below.
   const loadAssets = () =>
-    apiGet(`/assets${showRetired ? '?includeInactive=true' : ''}`, { token: session?.token })
+    apiGet('/assets?includeInactive=true', { token: session?.token })
       .then((data) => setAssets(writeCache('/assets', data.assets)))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load assets.'));
+
+  const openDepreciationForm = (category) => {
+    setEditingDepreciationCategoryId(category.id);
+    setDepreciationForm({
+      depreciationBlock: category.depreciationBlock || '',
+      depreciationRatePercent: category.depreciationRatePercent ?? '',
+    });
+    setDepreciationError('');
+  };
+
+  const handleDepreciationSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingDepreciationCategoryId) return;
+    setDepreciationSubmitting(true);
+    setDepreciationError('');
+    try {
+      await apiPatch(
+        `/assets/categories/${editingDepreciationCategoryId}/depreciation`,
+        depreciationForm,
+        { token: session?.token }
+      );
+      setEditingDepreciationCategoryId(null);
+      await loadCategories();
+    } catch (err) {
+      setDepreciationError(err instanceof ApiError ? err.message : 'Could not save that rate. Try again.');
+    } finally {
+      setDepreciationSubmitting(false);
+    }
+  };
 
   const loadCategories = () =>
     apiGet('/assets/categories', { token: session?.token })
@@ -739,11 +825,6 @@ export default function AssetsPanel({ onViewReport }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    loadAssets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRetired]);
-
   // Resolved at render rather than in an effect: the token names an asset
   // that may not have loaded yet, and re-deriving here needs no setState.
   const scannedToken = searchParams.get('assetToken');
@@ -772,6 +853,7 @@ export default function AssetsPanel({ onViewReport }) {
     if (!assets) return [];
     const needle = query.trim().toLowerCase();
     return assets.filter((a) => {
+      if (a.status === 'RETIRED') return false;
       if (categoryFilter && String(a.categoryId) !== categoryFilter) return false;
       if (statusFilter && a.status !== statusFilter) return false;
       if (!needle) return true;
@@ -819,6 +901,13 @@ export default function AssetsPanel({ onViewReport }) {
   }, [workOrders, woStatusFilter]);
 
   const openWoCount = (workOrders || []).filter((w) => w.status !== 'CLOSED').length;
+
+  // Dead stock register — every retired asset, independent of the Asset
+  // Register's own "Show retired" toggle and filters.
+  const deadStockAssets = useMemo(
+    () => (assets || []).filter((a) => a.status === 'RETIRED'),
+    [assets]
+  );
 
   // ---------------------------------------------------------------------
   // Asset form
@@ -1023,7 +1112,13 @@ export default function AssetsPanel({ onViewReport }) {
         // Only meaningful at registration — the server ignores it on an
         // edit anyway, but leaving it out here matches what the form
         // actually shows (see the field above).
-        ...(editingAssetId ? {} : { warrantyExpiry: assetForm.warrantyExpiry }),
+        ...(editingAssetId
+          ? {}
+          : {
+              warrantyExpiry: assetForm.warrantyExpiry,
+              usefulLifeYears: assetForm.usefulLifeYears,
+              usefulLifeMonths: assetForm.usefulLifeMonths,
+            }),
       };
       // Multipart, not JSON, so the bill file can ride along in the same
       // request — every other field goes as a plain form field and is
@@ -1270,6 +1365,8 @@ export default function AssetsPanel({ onViewReport }) {
       formData.append('referenceNumber', bulkForm.paymentStatus !== 'PENDING' ? bulkForm.referenceNumber : '');
       formData.append('vendorId', vendorId ?? '');
       formData.append('warrantyExpiry', bulkForm.warrantyExpiry);
+      formData.append('usefulLifeYears', bulkForm.usefulLifeYears ?? '');
+      formData.append('usefulLifeMonths', bulkForm.usefulLifeMonths ?? '');
       formData.append('units', JSON.stringify(units));
       if (bulkBillFile) formData.append('billDocument', bulkBillFile);
 
@@ -1283,7 +1380,29 @@ export default function AssetsPanel({ onViewReport }) {
     }
   };
 
+  // Also reused to fill in/correct a dead stock record on an asset that's
+  // already retired — same modal, pre-filled from what's on file instead of
+  // starting blank.
+  const openRetireForm = (asset) => {
+    setRetireForm({
+      deadDate: asset?.deadDate ? asset.deadDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+      deadReason: asset?.deadReason || '',
+      disposalNote: asset?.disposalNote || '',
+      recoveryCost: asset?.recoveryCost ?? '',
+      disposedBy: asset?.disposedBy || '',
+    });
+    setRetireError('');
+    setRetireFieldErrors({});
+    setShowRetireForm(true);
+  };
+
   const changeAssetStatus = async (asset, status) => {
+    // Retiring is the dead stock moment — collect its register fields in a
+    // modal instead of firing the PATCH straight away.
+    if (status === 'RETIRED') {
+      openRetireForm(null);
+      return;
+    }
     try {
       await apiPatch(`/assets/${asset.id}/status`, { status }, { token: session?.token });
       // selectedAsset is derived from the assets list, so refetching it is
@@ -1291,6 +1410,36 @@ export default function AssetsPanel({ onViewReport }) {
       await loadAssets();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not update that asset.');
+    }
+  };
+
+  const handleRetireSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedAsset) return;
+
+    const errors = {};
+    if (!retireForm.deadReason.trim()) errors.deadReason = 'Enter why this asset is dead.';
+    if (!retireForm.disposedBy.trim()) errors.disposedBy = 'Enter who handled this.';
+    setRetireFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      focusFirstError(errors, { deadReason: 'retireReason', disposedBy: 'retireDisposedBy' });
+      return;
+    }
+
+    setRetireSubmitting(true);
+    setRetireError('');
+    try {
+      await apiPatch(
+        `/assets/${selectedAsset.id}/status`,
+        { status: 'RETIRED', ...retireForm },
+        { token: session?.token }
+      );
+      setShowRetireForm(false);
+      await loadAssets();
+    } catch (err) {
+      setRetireError(err instanceof ApiError ? err.message : 'Could not retire that asset. Try again.');
+    } finally {
+      setRetireSubmitting(false);
     }
   };
 
@@ -1926,7 +2075,7 @@ export default function AssetsPanel({ onViewReport }) {
           activeId={tab}
           onChange={setTab}
           tabs={[
-            { id: 'register', name: 'Asset Register', count: assets.length },
+            { id: 'register', name: 'Asset Register', count: assets.filter((a) => a.status !== 'RETIRED').length },
             {
               id: 'workOrders',
               name: 'Work Orders',
@@ -1935,6 +2084,8 @@ export default function AssetsPanel({ onViewReport }) {
               flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
             },
             { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
+            { id: 'deadStock', name: 'Dead Stock', count: deadStockAssets.length },
+            { id: 'depreciation', name: 'Depreciation', count: (categories || []).length },
           ]}
         />
         <button type="button" className="btn-secondary" onClick={onViewReport}>
@@ -1978,18 +2129,10 @@ export default function AssetsPanel({ onViewReport }) {
                   aria-label="Filter by status"
                 >
                   <option value="">All statuses</option>
-                  {Object.entries(STATUS_LABEL).map(([key, label]) => (
+                  {Object.entries(STATUS_LABEL).filter(([key]) => key !== 'RETIRED').map(([key, label]) => (
                     <option key={key} value={key}>{label}</option>
                   ))}
                 </select>
-                <label className="asset-show-retired">
-                  <input
-                    type="checkbox"
-                    checked={showRetired}
-                    onChange={(e) => setShowRetired(e.target.checked)}
-                  />
-                  Show retired
-                </label>
               </div>
               <div className="asset-toolbar-row__end">
                 <div className="toggle-group asset-view-toggle" role="group" aria-label="Asset list view">
@@ -2279,6 +2422,79 @@ export default function AssetsPanel({ onViewReport }) {
         </div>
       )}
 
+      {tab === 'deadStock' && (
+        <div>
+          {deadStockAssets.length === 0 ? (
+            <p className="inv-panel__hint">
+              Nothing here yet. Retiring an asset from the Asset Register logs it here with when it died,
+              why, how it was disposed of, and anything recovered.
+            </p>
+          ) : (
+            <div className="asset-table-wrap">
+              <table className="asset-table">
+                <thead>
+                  <tr>
+                    <th>Tag</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Dead since</th>
+                    <th>Reason</th>
+                    <th>Disposal</th>
+                    <th>Recovery amount</th>
+                    <th>Handled by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deadStockAssets.map((asset) => (
+                    <tr key={asset.id} onClick={() => openAssetDetail(asset)} style={{ cursor: 'pointer' }}>
+                      <td className="asset-table__mono">{asset.assetTag}</td>
+                      <td className="asset-table__name">{asset.name}</td>
+                      <td>{asset.categoryName}</td>
+                      <td>{formatDate(asset.deadDate) || '—'}</td>
+                      <td className={asset.deadReason ? '' : 'asset-table__muted'}>{asset.deadReason || '—'}</td>
+                      <td className={asset.disposalNote ? '' : 'asset-table__muted'}>{asset.disposalNote || '—'}</td>
+                      <td className={asset.recoveryCost != null ? '' : 'asset-table__muted'}>
+                        {asset.recoveryCost != null ? `₹${asset.recoveryCost}` : '—'}
+                      </td>
+                      <td className={asset.disposedBy ? '' : 'asset-table__muted'}>{asset.disposedBy || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'depreciation' && (
+        <div>
+          <p className="inv-panel__hint">
+            Every category needs a depreciation rate before its assets can appear on the Profit &amp; Loss
+            report — the rate an asset's category has is the WDV rate applied to every unit filed under it.
+          </p>
+          {(categories || []).length === 0 ? (
+            <p className="inv-panel__hint">No categories yet. Register an asset first to create one.</p>
+          ) : (
+            <ul className="inv-list">
+              {categories.map((cat) => (
+                <li key={cat.id} className="inv-item">
+                  <div className="inv-item__body" onClick={() => openDepreciationForm(cat)} style={{ cursor: 'pointer' }}>
+                    <div className="inv-item__name">{cat.name}</div>
+                    <div className="inv-item__meta">
+                      {cat.depreciationRatePercent != null ? (
+                        `${cat.depreciationBlock ? `${cat.depreciationBlock} · ` : ''}${cat.depreciationRatePercent}% WDV`
+                      ) : (
+                        <span className="asset-table__muted">No rate set</span>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Asset detail: fields, QR, service history */}
       {selectedAsset && (
         <div className="glass-backdrop inv-panel__backdrop">
@@ -2358,6 +2574,25 @@ export default function AssetsPanel({ onViewReport }) {
                         </dd>
                       </div>
                     )}
+                    {(selectedAsset.usefulLifeYears || selectedAsset.usefulLifeMonths) && (
+                      <div>
+                        <dt>Expected useful life</dt>
+                        <dd>
+                          {[
+                            selectedAsset.usefulLifeYears ? `${selectedAsset.usefulLifeYears} yr` : null,
+                            selectedAsset.usefulLifeMonths ? `${selectedAsset.usefulLifeMonths} mo` : null,
+                          ].filter(Boolean).join(' ')}
+                          {(() => {
+                            const est = straightLineEstimate(
+                              selectedAsset.purchaseCost,
+                              selectedAsset.usefulLifeYears,
+                              selectedAsset.usefulLifeMonths
+                            );
+                            return est ? ` · ~${formatPrice(est.perYear)}/year` : '';
+                          })()}
+                        </dd>
+                      </div>
+                    )}
                     <div>
                       <dt>Warranty</dt>
                       <dd>{formatDate(selectedAsset.warrantyExpiry)}</dd>
@@ -2394,6 +2629,30 @@ export default function AssetsPanel({ onViewReport }) {
                         )}
                       </dd>
                     </div>
+                    {selectedAsset.status === 'RETIRED' && (
+                      <>
+                        <div>
+                          <dt>Dead since</dt>
+                          <dd>{formatDate(selectedAsset.deadDate) || <span className="asset-detail__muted-fact">Not set</span>}</dd>
+                        </div>
+                        <div>
+                          <dt>Reason</dt>
+                          <dd>{selectedAsset.deadReason || <span className="asset-detail__muted-fact">Not set</span>}</dd>
+                        </div>
+                        <div>
+                          <dt>Disposal</dt>
+                          <dd>{selectedAsset.disposalNote || <span className="asset-detail__muted-fact">Not set</span>}</dd>
+                        </div>
+                        <div>
+                          <dt>Recovery amount</dt>
+                          <dd>{selectedAsset.recoveryCost != null ? `₹${selectedAsset.recoveryCost}` : <span className="asset-detail__muted-fact">Not set</span>}</dd>
+                        </div>
+                        <div>
+                          <dt>Handled by</dt>
+                          <dd>{selectedAsset.disposedBy || <span className="asset-detail__muted-fact">Not set</span>}</dd>
+                        </div>
+                      </>
+                    )}
                   </dl>
                 </div>
 
@@ -2409,15 +2668,24 @@ export default function AssetsPanel({ onViewReport }) {
               </div>
 
               <div className="modal-form__foot-actions asset-detail__actions">
-                <button type="button" className="btn-accent" onClick={() => reportIssue(selectedAsset)}>
-                  Report an issue
-                </button>
-                <button type="button" className="btn-outline" onClick={() => openCoverageForm(null)}>
-                  Add coverage
-                </button>
+                {selectedAsset.status !== 'RETIRED' && (
+                  <>
+                    <button type="button" className="btn-accent" onClick={() => reportIssue(selectedAsset)}>
+                      Report an issue
+                    </button>
+                    <button type="button" className="btn-outline" onClick={() => openCoverageForm(null)}>
+                      Add coverage
+                    </button>
+                  </>
+                )}
                 <button type="button" className="btn-outline" onClick={() => openAssetForm(selectedAsset)}>
                   Edit asset
                 </button>
+                {selectedAsset.status === 'RETIRED' && (
+                  <button type="button" className="btn-accent" onClick={() => openRetireForm(selectedAsset)}>
+                    Edit dead stock details
+                  </button>
+                )}
                 <button type="button" className="btn-danger" onClick={() => deleteAsset(selectedAsset)}>
                   Delete asset
                 </button>
@@ -3002,6 +3270,70 @@ export default function AssetsPanel({ onViewReport }) {
                   </div>
                 )}
 
+                {!editingAssetId && (
+                  <div className="field">
+                    <label htmlFor="assetUsefulLifeYears">Expected to use this asset till</label>
+                    <div className="field-row" style={{ gap: 8 }}>
+                      <input
+                        id="assetUsefulLifeYears"
+                        type="number"
+                        min="0"
+                        max="99"
+                        placeholder="Years"
+                        aria-label="Years"
+                        value={assetForm.usefulLifeYears}
+                        onChange={(e) => setAssetForm((f) => ({ ...f, usefulLifeYears: e.target.value }))}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="11"
+                        placeholder="Months"
+                        aria-label="Months"
+                        value={assetForm.usefulLifeMonths}
+                        onChange={(e) => setAssetForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
+                      />
+                    </div>
+                    <span className="field__hint">
+                      Optional — how long you expect to actually use this unit.
+                    </span>
+                  </div>
+                )}
+
+                {!editingAssetId && (() => {
+                  const est = straightLineEstimate(
+                    assetForm.purchaseCost,
+                    assetForm.usefulLifeYears,
+                    assetForm.usefulLifeMonths
+                  );
+                  return (
+                    <div className="field-row field--span2">
+                      <div className="field">
+                        <label htmlFor="assetDepreciationPerYear">Depreciation cost / year</label>
+                        <input
+                          id="assetDepreciationPerYear"
+                          className="field--computed"
+                          value={est ? formatPrice(est.perYear) : ''}
+                          placeholder="Enter cost & useful life above"
+                          disabled
+                          readOnly
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="assetDepreciationPerMonth">Depreciation cost / month</label>
+                        <input
+                          id="assetDepreciationPerMonth"
+                          className="field--computed"
+                          value={est ? formatPrice(est.perMonth) : ''}
+                          placeholder="Enter cost & useful life above"
+                          disabled
+                          readOnly
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <h4 className="form-section__title">Installation details</h4>
 
                 <div className="field">
@@ -3386,6 +3718,66 @@ export default function AssetsPanel({ onViewReport }) {
                   />
                   <span className="field__hint">Leave blank if there's no maker's warranty on this batch.</span>
                 </div>
+
+                <div className="field field--span2">
+                  <label htmlFor="bulkUsefulLifeYears">Expected to use this batch till</label>
+                  <div className="field-row" style={{ gap: 8 }}>
+                    <input
+                      id="bulkUsefulLifeYears"
+                      type="number"
+                      min="0"
+                      max="99"
+                      placeholder="Years"
+                      aria-label="Years"
+                      value={bulkForm.usefulLifeYears}
+                      onChange={(e) => setBulkForm((f) => ({ ...f, usefulLifeYears: e.target.value }))}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="11"
+                      placeholder="Months"
+                      aria-label="Months"
+                      value={bulkForm.usefulLifeMonths}
+                      onChange={(e) => setBulkForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
+                    />
+                  </div>
+                  <span className="field__hint">Optional — same expected life applied to every unit in this batch.</span>
+                </div>
+
+                {(() => {
+                  const est = straightLineEstimate(
+                    bulkForm.purchaseCost,
+                    bulkForm.usefulLifeYears,
+                    bulkForm.usefulLifeMonths
+                  );
+                  return (
+                    <div className="field-row field--span2">
+                      <div className="field">
+                        <label htmlFor="bulkDepreciationPerYear">Depreciation cost / year (per unit)</label>
+                        <input
+                          id="bulkDepreciationPerYear"
+                          className="field--computed"
+                          value={est ? formatPrice(est.perYear) : ''}
+                          placeholder="Enter cost & useful life above"
+                          disabled
+                          readOnly
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="bulkDepreciationPerMonth">Depreciation cost / month (per unit)</label>
+                        <input
+                          id="bulkDepreciationPerMonth"
+                          className="field--computed"
+                          value={est ? formatPrice(est.perMonth) : ''}
+                          placeholder="Enter cost & useful life above"
+                          disabled
+                          readOnly
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <h4 style={{ marginTop: 14 }}>
                   Units <span className="field__optional">{bulkUnits.length} so far</span>
@@ -3917,6 +4309,98 @@ export default function AssetsPanel({ onViewReport }) {
         </div>
       )}
 
+      {/* Depreciation rate — assigns a category's WDV rate/IT Act block. */}
+      {editingDepreciationCategoryId != null && (
+        <div className="glass-backdrop inv-panel__backdrop">
+          <div
+            className="glass-panel inv-panel__modal modal-form__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="depreciationModalTitle"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleDepreciationSubmit} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="depreciationModalTitle">Depreciation rate</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setEditingDepreciationCategoryId(null)}
+                    disabled={depreciationSubmitting}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="modal-form__body">
+                {depreciationError && (
+                  <div className="form-banner form-banner--error form-banner--flash">{depreciationError}</div>
+                )}
+
+                <div className="field">
+                  <label htmlFor="depreciationBlock">IT Act block</label>
+                  <select
+                    id="depreciationBlock"
+                    value={depreciationForm.depreciationBlock}
+                    onChange={(e) => {
+                      const block = e.target.value;
+                      const preset = IT_ACT_BLOCKS.find((b) => b.block === block);
+                      setDepreciationForm((f) => ({
+                        ...f,
+                        depreciationBlock: block,
+                        depreciationRatePercent: preset ? preset.ratePercent : f.depreciationRatePercent,
+                      }));
+                    }}
+                  >
+                    <option value="">Custom / not set</option>
+                    {IT_ACT_BLOCKS.map((b) => (
+                      <option key={b.block} value={b.block}>
+                        {b.block} ({b.ratePercent}%)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="depreciationRate">WDV rate (%)</label>
+                  <input
+                    id="depreciationRate"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={depreciationForm.depreciationRatePercent}
+                    onChange={(e) =>
+                      setDepreciationForm((f) => ({ ...f, depreciationRatePercent: e.target.value }))
+                    }
+                    placeholder="e.g. 15"
+                  />
+                </div>
+              </div>
+
+              <div className="modal-form__foot">
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setEditingDepreciationCategoryId(null)}
+                    disabled={depreciationSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={depreciationSubmitting}>
+                    {depreciationSubmitting ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Vendor form */}
       {showVendorForm && (
         <div className="glass-backdrop inv-panel__backdrop">
@@ -4230,6 +4714,117 @@ export default function AssetsPanel({ onViewReport }) {
                   </button>
                   <button type="submit" className="btn-accent" disabled={coverageSubmitting}>
                     {coverageSubmitting ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Retire asset — the dead stock register entry for this asset. */}
+      {showRetireForm && (
+        <div className="glass-backdrop inv-panel__backdrop">
+          <div
+            className="glass-panel inv-panel__modal modal-form__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="retireModalTitle"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form className="modal-form" onSubmit={handleRetireSubmit} noValidate>
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="retireModalTitle">Retire asset</h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setShowRetireForm(false)}
+                    disabled={retireSubmitting}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="modal-form__body">
+                {retireError && <div className="form-banner form-banner--error form-banner--flash">{retireError}</div>}
+
+                <div className="field">
+                  <label htmlFor="retireDeadDate">Dead since</label>
+                  <input
+                    id="retireDeadDate"
+                    type="date"
+                    value={retireForm.deadDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setRetireForm((f) => ({ ...f, deadDate: e.target.value }))}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="retireReason">Reason <Req /></label>
+                  <input
+                    id="retireReason"
+                    value={retireForm.deadReason}
+                    onChange={(e) => {
+                      setRetireForm((f) => ({ ...f, deadReason: e.target.value }));
+                      if (retireFieldErrors.deadReason) setRetireFieldErrors((f) => ({ ...f, deadReason: undefined }));
+                    }}
+                    placeholder="Beyond repair, obsolete, damaged, lost…"
+                  />
+                  {retireFieldErrors.deadReason && <span className="field__error">{retireFieldErrors.deadReason}</span>}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="retireDisposalNote">Disposal</label>
+                  <input
+                    id="retireDisposalNote"
+                    value={retireForm.disposalNote}
+                    onChange={(e) => setRetireForm((f) => ({ ...f, disposalNote: e.target.value }))}
+                    placeholder="Scrapped, sold, donated, discarded…"
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="retireRecoveryCost">Recovery amount</label>
+                  <input
+                    id="retireRecoveryCost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={retireForm.recoveryCost}
+                    onChange={(e) => setRetireForm((f) => ({ ...f, recoveryCost: e.target.value }))}
+                    placeholder="Anything recovered from scrap/sale"
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="retireDisposedBy">Handled by <Req /></label>
+                  <input
+                    id="retireDisposedBy"
+                    value={retireForm.disposedBy}
+                    onChange={(e) => {
+                      setRetireForm((f) => ({ ...f, disposedBy: e.target.value }));
+                      if (retireFieldErrors.disposedBy) setRetireFieldErrors((f) => ({ ...f, disposedBy: undefined }));
+                    }}
+                  />
+                  {retireFieldErrors.disposedBy && <span className="field__error">{retireFieldErrors.disposedBy}</span>}
+                </div>
+              </div>
+
+              <div className="modal-form__foot">
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setShowRetireForm(false)}
+                    disabled={retireSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-accent" disabled={retireSubmitting}>
+                    {retireSubmitting ? 'Saving…' : 'Retire asset'}
                   </button>
                 </div>
               </div>

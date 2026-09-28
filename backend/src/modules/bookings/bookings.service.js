@@ -24,8 +24,16 @@ function round2(n) {
 // password, and it doesn't need to be — it's only accepted for the one room it
 // was issued for, and only while that stay is checked in. randomInt is used
 // rather than Math.random so a guest can't predict the next room's PIN.
-function newFoodPin() {
-  return String(crypto.randomInt(1000, 10000));
+// Requiring the first two or last two digits to repeat (4461, 1599) makes it
+// easier for a guest to recall from memory. `taken` is the set of PINs
+// already active elsewhere in the lodge, so two checked-in rooms never end up
+// sharing a code.
+function newFoodPin(taken = new Set()) {
+  let pin;
+  do {
+    pin = String(crypto.randomInt(1000, 10000));
+  } while ((pin[0] !== pin[1] && pin[2] !== pin[3]) || taken.has(pin));
+  return pin;
 }
 
 function toIsoDate(d) {
@@ -752,7 +760,8 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       FROM dbo.rooms r
       JOIN dbo.room_categories c ON c.id = r.category_id
       WHERE r.lodge_id = @lodgeId AND r.is_active = 1
-      ORDER BY r.room_number ASC
+      ORDER BY CASE WHEN c.tape_order IS NULL THEN 1 ELSE 0 END, c.tape_order ASC, c.id ASC,
+               TRY_CAST(r.room_number AS INT) ASC, r.room_number ASC
     `);
 
   const bookingsResult = await pool
@@ -1774,6 +1783,19 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
 
   const takesRoomOrders = !!bookingRow.serves_food && !!bookingRow.food_room_service;
 
+  // Every PIN currently live in this lodge, so the new one can't collide with
+  // a room that's still checked in.
+  const takenPins = takesRoomOrders
+    ? new Set(
+        (
+          await pool
+            .request()
+            .input('lodgeId', sql.BigInt, lodgeId)
+            .query("SELECT food_pin FROM dbo.bookings WHERE lodge_id = @lodgeId AND food_pin IS NOT NULL")
+        ).recordset.map((r) => r.food_pin)
+      )
+    : null;
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
@@ -1790,7 +1812,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
       // Only where a guest could actually use one. A rooms-only property has
       // no kitchen and no QR to scan, so a PIN there is a number reception
       // reads out for nothing — and one more secret sitting in the database.
-      .input('foodPin', sql.NVarChar, takesRoomOrders ? newFoodPin() : null)
+      .input('foodPin', sql.NVarChar, takesRoomOrders ? newFoodPin(takenPins) : null)
       .query(`
         UPDATE dbo.bookings
         SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(),

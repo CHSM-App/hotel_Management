@@ -104,6 +104,29 @@ async function getRoomsAnalyticsHandler(req, res, next) {
   }
 }
 
+async function getProfitLossHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const report = await reportsService.getProfitLossReport(req.user.lodgeId, fromDate, toDate);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getProfitLossHistoryHandler(req, res, next) {
+  try {
+    const granularity = String(req.query.granularity || 'year').toLowerCase();
+    if (!['year', 'month'].includes(granularity)) {
+      throw new ApiError('Choose yearly or monthly periods.', 400);
+    }
+    const report = await reportsService.getProfitLossHistory(req.user.lodgeId, granularity);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getOccupancyHandler,
   getGstSummaryHandler,
@@ -112,4 +135,6 @@ module.exports = {
   getFoodOrdersReportHandler,
   getAnalyticsOverviewHandler,
   getRoomsAnalyticsHandler,
+  getProfitLossHandler,
+  getProfitLossHistoryHandler,
 };

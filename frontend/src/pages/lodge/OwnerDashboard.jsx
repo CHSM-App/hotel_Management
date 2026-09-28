@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiGet, ApiError, API_BASE } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { clearSession, getSession } from '../../lib/auth';
-import { SearchContext } from '../../lib/searchContext';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
@@ -17,7 +16,9 @@ import OrdersPanel from './OrdersPanel';
 import Events from './Events';
 import AssetsPanel from './AssetsPanel';
 import ExpensesPanel from './ExpensesPanel';
+import IncomePanel from './IncomePanel';
 import ProfileMenu from './ProfileMenu';
+import { copyText } from '../../lib/clipboard';
 import '../internal/LodgesDashboard.css';
 import './OwnerDashboard.css';
 
@@ -122,6 +123,12 @@ const ICON_PATHS = {
       <path d="M3 7h13" />
     </>
   ),
+  link: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </>
+  ),
 };
 
 function Icon({ name, size = 18 }) {
@@ -184,6 +191,9 @@ export default function OwnerDashboard() {
   // A settled function's bill, opened as the issued document rather than as
   // a bill still to be written.
   const [viewEventInvoiceId, setViewEventInvoiceId] = useState(null);
+  // Feedback for the topbar "copy public link" button, mirrored from the same
+  // pattern in HotelProfileModal.
+  const [linkCopied, setLinkCopied] = useState('');
 
   // The tape chart's legend following a colour into the register's cut of it.
   //
@@ -307,13 +317,6 @@ export default function OwnerDashboard() {
   // always visible; the hamburger only has an effect below the breakpoint,
   // where the CSS hides a closed rail.
   const [navOpen, setNavOpen] = useState(true);
-  // Stored with the section it was typed on rather than as a bare string. A
-  // term belongs to the list it is narrowing, so moving to another section has
-  // to drop it — and doing that by remembering which section owns the term
-  // costs nothing, where clearing it in an effect meant a second render on
-  // every navigation (and every handler that changes the section remembering
-  // to clear it, including the browser's own back button, which cannot).
-  const [searchState, setSearchState] = useState({ section: null, term: '' });
 
   const handleSignOut = () => {
     clearSession();
@@ -344,18 +347,6 @@ export default function OwnerDashboard() {
     visibleFeatures.find((f) => f.key === activeSection) ||
     visibleFeatures.find((f) => f.key === LANDING_SECTION) ||
     visibleFeatures[0];
-  // Only the sections that actually filter on it get a search box. A field that
-  // sits in the bar all day and does nothing on six screens out of nine teaches
-  // people it is decorative, and then they stop reaching for it on the screens
-  // where it works.
-  const SEARCH_PLACEHOLDERS = {
-    rooms: 'Search rooms, type, status…',
-  };
-  const searchPlaceholder = activeFeature ? SEARCH_PLACEHOLDERS[activeFeature.key] : undefined;
-  // Reads as empty the moment the section changes, without a render spent
-  // clearing it.
-  const search = searchState.section === activeFeature?.key ? searchState.term : '';
-  const setSearch = (term) => setSearchState({ section: activeFeature?.key, term });
 
   // The rail keeps whatever scroll position it was at when a section was
   // opened from a group further down the list. Without this, switching to a
@@ -423,24 +414,28 @@ export default function OwnerDashboard() {
           <Icon name="menu" size={20} />
         </button>
 
-        {searchPlaceholder ? (
-          <div className="dash-topbar__search">
-            <Icon name="search" size={16} />
-            <input
-              type="search"
-              placeholder={searchPlaceholder}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label={searchPlaceholder}
-            />
-          </div>
-        ) : (
-          // Holds the space the field would occupy, so the profile chip doesn't
-          // slide left and right as you move between sections.
-          <div className="dash-topbar__search-gap" />
-        )}
+        {/* No section uses the topbar box anymore (Rooms moved to its own
+            inline search) but the gap stays, so the profile chip doesn't
+            jump left into where a search box used to sit. */}
+        <div className="dash-topbar__search-gap" />
 
         <div className="dash-topbar__actions">
+          {me?.lodge?.slug ? (
+            <button
+              type="button"
+              className="dash-topbar__link-copy"
+              title="Copy this hotel's public booking link"
+              onClick={async () => {
+                const path = me.lodge.hasRooms ? `/lodge/${me.lodge.slug}` : `/order/${me.lodge.slug}`;
+                const copied = await copyText(`${window.location.origin}${path}`);
+                setLinkCopied(copied ? 'copied' : 'failed');
+                setTimeout(() => setLinkCopied(''), 2000);
+              }}
+            >
+              <Icon name="link" size={16} />
+              {linkCopied === 'copied' ? 'Copied!' : linkCopied === 'failed' ? 'Press Ctrl+C' : 'Copy public link'}
+            </button>
+          ) : null}
           {me?.user ? (
             <ProfileMenu
               user={me.user}
@@ -579,9 +574,7 @@ export default function OwnerDashboard() {
               )}
 
               {activeFeature && activeFeature.key === 'rooms' && (
-                <SearchContext.Provider value={search}>
-                  <RoomsAndRates />
-                </SearchContext.Provider>
+                <RoomsAndRates />
               )}
 
               {activeFeature && activeFeature.key === 'bookings' && (
@@ -687,8 +680,12 @@ export default function OwnerDashboard() {
                 <ExpensesPanel onViewReport={() => openReportsTab('expenses')} />
               )}
 
+              {activeFeature && activeFeature.key === 'income' && (
+                <IncomePanel onViewReport={() => openReportsTab('income')} />
+              )}
+
               {activeFeature &&
-                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'assets', 'expenses'].includes(
+                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

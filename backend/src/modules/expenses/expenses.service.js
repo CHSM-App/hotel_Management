@@ -18,7 +18,13 @@ function toNullable(value) {
 // there); this table starts empty for every lodge.
 
 function mapCategory(row) {
-  return { id: row.id, name: row.name, isActive: !!row.is_active };
+  return {
+    id: row.id,
+    name: row.name,
+    isActive: !!row.is_active,
+    isInterest: !!row.is_interest,
+    isTax: !!row.is_tax,
+  };
 }
 
 async function listCategories(lodgeId, { includeInactive = false } = {}) {
@@ -27,7 +33,7 @@ async function listCategories(lodgeId, { includeInactive = false } = {}) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, is_active
+      SELECT id, name, is_active, is_interest, is_tax
       FROM dbo.expense_categories
       WHERE lodge_id = @lodgeId ${includeInactive ? '' : 'AND is_active = 1'}
       ORDER BY name ASC
@@ -57,9 +63,16 @@ async function createCategory(lodgeId, input) {
       VALUES (@lodgeId, @name)
     `);
 
-  return { id: result.recordset[0].id, name: input.name, isActive: true };
+  return { id: result.recordset[0].id, name: input.name, isActive: true, isInterest: false, isTax: false };
 }
 
+// Every expense already filed under this category, past and future, counts
+// toward whichever P&L row (Interest/Tax) the flag being turned on maps
+// to — retroactively, since the flag lives on the category, not the
+// expense. previewCategoryTagImpact (below) is what lets the frontend warn
+// "this reclassifies N expenses totaling ₹X" before this actually runs, so
+// ticking the wrong category by mistake doesn't silently misstate every
+// past P&L report.
 async function updateCategory(lodgeId, categoryId, input) {
   const pool = await getPool();
 
@@ -79,14 +92,24 @@ async function updateCategory(lodgeId, categoryId, input) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('categoryId', sql.BigInt, categoryId)
-    .query('SELECT name, is_active FROM dbo.expense_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
+    .query('SELECT name, is_active, is_interest, is_tax FROM dbo.expense_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
   if (current.recordset.length === 0) {
     throw new ApiError('Category not found.', 404);
   }
   const next = {
     name: input.name !== undefined ? input.name : current.recordset[0].name,
     isActive: input.isActive !== undefined ? input.isActive : !!current.recordset[0].is_active,
+    isInterest: input.isInterest !== undefined ? input.isInterest : !!current.recordset[0].is_interest,
+    isTax: input.isTax !== undefined ? input.isTax : !!current.recordset[0].is_tax,
   };
+  // Never both — a category is one P&L row's source or the other's, never
+  // both at once. Turning one on clears the other rather than rejecting
+  // the request, since the common mistake is ticking the wrong one, not
+  // deliberately wanting both.
+  if (next.isInterest && next.isTax) {
+    if (input.isInterest) next.isTax = false;
+    else next.isInterest = false;
+  }
 
   const result = await pool
     .request()
@@ -94,16 +117,44 @@ async function updateCategory(lodgeId, categoryId, input) {
     .input('categoryId', sql.BigInt, categoryId)
     .input('name', sql.NVarChar, next.name)
     .input('isActive', sql.Bit, next.isActive)
+    .input('isInterest', sql.Bit, next.isInterest)
+    .input('isTax', sql.Bit, next.isTax)
     .query(`
       UPDATE dbo.expense_categories
-      SET name = @name, is_active = @isActive
+      SET name = @name, is_active = @isActive, is_interest = @isInterest, is_tax = @isTax
       OUTPUT inserted.id
       WHERE id = @categoryId AND lodge_id = @lodgeId
     `);
   if (result.recordset.length === 0) {
     throw new ApiError('Category not found.', 404);
   }
-  return { id: categoryId, name: next.name, isActive: next.isActive };
+  return { id: categoryId, ...next };
+}
+
+// The blast radius of turning is_interest/is_tax on for this category —
+// how many expenses already on file would retroactively count toward that
+// P&L row, and their total. The frontend shows this before the checkbox
+// actually saves, so a category ticked by mistake is caught before it
+// misstates every past report, not after.
+async function previewCategoryTagImpact(lodgeId, categoryId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .query(`
+      SELECT COUNT(*) AS cnt, ISNULL(SUM(amount), 0) AS total,
+             MIN(expense_date) AS earliest, MAX(expense_date) AS latest
+      FROM dbo.expenses
+      WHERE lodge_id = @lodgeId AND category_id = @categoryId
+    `);
+  const row = result.recordset[0];
+  return {
+    count: row.cnt,
+    total: Number(row.total),
+    earliestDate: row.earliest,
+    latestDate: row.latest,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -751,6 +802,7 @@ module.exports = {
   listCategories,
   createCategory,
   updateCategory,
+  previewCategoryTagImpact,
   listExpenses,
   getExpense,
   createExpense,

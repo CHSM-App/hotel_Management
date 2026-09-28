@@ -25,6 +25,7 @@ const inventoryRoutes = require('./modules/inventory/inventory.routes');
 const eventsRoutes = require('./modules/events/events.routes');
 const assetsRoutes = require('./modules/assets/assets.routes');
 const expensesRoutes = require('./modules/expenses/expenses.routes');
+const incomeRoutes = require('./modules/income/income.routes');
 const publicRoutes = require('./modules/public/public.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
@@ -267,6 +268,7 @@ const API_ROUTES = [
   ['/events', eventsRoutes],
   ['/assets', assetsRoutes],
   ['/expenses', expensesRoutes],
+  ['/income', incomeRoutes],
   ['/public', publicRoutes],
 ];
 

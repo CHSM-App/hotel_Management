@@ -28,6 +28,7 @@ import RoomsAnalytics from './RoomsAnalytics';
 import FunctionsAnalytics from './FunctionsAnalytics';
 import FoodAnalytics from './FoodAnalytics';
 import ExpensesReportPanel from './ExpensesReportPanel';
+import IncomeReportPanel from './IncomeReportPanel';
 import AssetsReportPanel from './AssetsReportPanel';
 import { BarList } from './AnalyticsCharts';
 import '../internal/LodgesDashboard.css';
@@ -49,10 +50,16 @@ const ALL_TABS = [
   { key: 'events', label: 'Events & functions', capability: 'hasEvents' },
   { key: 'food', label: 'Food orders', capability: 'servesFood' },
   { key: 'gst', label: 'Tax & GST' },
+  // Gated by its own permission, on top of reports.view — P&L surfaces
+  // expense/income category detail that expenses.manage/income.manage
+  // individually gate elsewhere, so seeing it needs more than plain
+  // Reports access.
+  { key: 'profitLoss', label: 'Profit & Loss', permission: 'profitLoss.view' },
   // Gated by permission rather than a lodge capability — every property has
-  // expenses/assets, but not every role is allowed to see them, the same
-  // check OwnerDashboard's own sidebar already makes for these two sections.
+  // expenses/assets/income, but not every role is allowed to see them, the
+  // same check OwnerDashboard's own sidebar already makes for these sections.
   { key: 'expenses', label: 'Expenses', permission: 'expenses.manage' },
+  { key: 'income', label: 'Other Income', permission: 'income.manage' },
   { key: 'assets', label: 'Assets', permission: 'assets.manage' },
 ];
 
@@ -128,6 +135,19 @@ function formatClockTime(value, plannedDateIso) {
 function formatTimestamp(value) {
   return new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+const PL_HISTORY_ROWS = [
+  { key: 'sales', label: 'Sales', kind: 'money' },
+  { key: 'expenses', label: 'Expenses', kind: 'money', value: (c) => c.expenses?.totalExpenses },
+  { key: 'operatingProfit', label: 'Operating Profit', kind: 'money', emphasis: true },
+  { key: 'opmPercent', label: 'OPM %', kind: 'percent' },
+  { key: 'totalOtherIncome', label: 'Other Income', kind: 'money' },
+  { key: 'interest', label: 'Interest', kind: 'money' },
+  { key: 'depreciation', label: 'Depreciation', kind: 'money', value: (c) => c.depreciation?.totalDepreciation },
+  { key: 'profitBeforeTax', label: 'Profit before tax', kind: 'money', emphasis: true },
+  { key: 'taxPercent', label: 'Tax %', kind: 'percent' },
+  { key: 'netProfit', label: 'Net Profit', kind: 'money', emphasis: true },
+];
 
 // Sorting a report table by clicking its header. `accessors` maps a column
 // key to a function reading the value that column sorts by — not what the
@@ -238,6 +258,17 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
   const [eventsError, setEventsError] = useState('');
   const [foodOrders, setFoodOrders] = useState(null);
   const [foodOrdersError, setFoodOrdersError] = useState('');
+  const [profitLoss, setProfitLoss] = useState(null);
+  const [profitLossError, setProfitLossError] = useState('');
+  // The Screener-style multi-year table — full history, not the date-range
+  // picker's period, so it's fetched once per tab visit like Expenses/Assets
+  // below rather than on every fromDate/toDate change.
+  const [plHistory, setPlHistory] = useState(null);
+  const [plHistoryError, setPlHistoryError] = useState('');
+  const [plGranularity, setPlGranularity] = useState('year');
+  // ₹ / Lakh / Crore — a small hotel's figures read better in Lakhs than
+  // the reference report's own Crores, so this is a toggle, not a constant.
+  const [plUnit, setPlUnit] = useState('actual');
 
   // Expenses/Assets reports over the full history, not a date range — same
   // endpoints ExpensesPanel/AssetsPanel themselves use, fetched fresh here
@@ -245,6 +276,8 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
   // panels won't already have them in memory.
   const [expensesReportData, setExpensesReportData] = useState(null);
   const [expensesReportError, setExpensesReportError] = useState('');
+  const [incomeReportData, setIncomeReportData] = useState(null);
+  const [incomeReportError, setIncomeReportError] = useState('');
   const [assetsReportData, setAssetsReportData] = useState(null);
   const [assetsReportError, setAssetsReportError] = useState('');
 
@@ -287,8 +320,16 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab !== 'income' || incomeReportData || incomeReportError) return;
+    apiGet('/income', { token })
+      .then((data) => setIncomeReportData(data.income))
+      .catch((err) => setIncomeReportError(err instanceof ApiError ? err.message : 'Could not load the income report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
     if (activeTab !== 'assets' || assetsReportData || assetsReportError) return;
-    Promise.all([apiGet('/assets', { token }), apiGet('/assets/work-orders', { token })])
+    Promise.all([apiGet('/assets?includeInactive=true', { token }), apiGet('/assets/work-orders', { token })])
       .then(([assetsData, woData]) => setAssetsReportData({ assets: assetsData.assets, workOrders: woData.workOrders }))
       .catch((err) => setAssetsReportError(err instanceof ApiError ? err.message : 'Could not load the asset report.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -445,6 +486,26 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
       .catch((err) => setGstError(err instanceof ApiError ? err.message : 'Could not load the GST summary.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate]);
+
+  useEffect(() => {
+    if (!validRange || activeTab !== 'profitLoss') return;
+    setProfitLoss(null);
+    setProfitLossError('');
+    apiGet(`/reports/profit-loss?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setProfitLoss(data))
+      .catch((err) => setProfitLossError(err instanceof ApiError ? err.message : 'Could not load the P&L report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'profitLoss') return;
+    setPlHistory(null);
+    setPlHistoryError('');
+    apiGet(`/reports/profit-loss-history?granularity=${plGranularity}`, { token })
+      .then((data) => setPlHistory(data))
+      .catch((err) => setPlHistoryError(err instanceof ApiError ? err.message : 'Could not load the P&L history.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, plGranularity]);
 
   useEffect(() => {
     if (!validRange || !lodge?.hasEvents) return;
@@ -621,7 +682,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
 
       {/* Expenses/Assets report the full history, not a date range — the
           picker bar and every date-scoped tab below it don't apply. */}
-      {activeTab !== 'expenses' && activeTab !== 'assets' && (
+      {activeTab !== 'expenses' && activeTab !== 'income' && activeTab !== 'assets' && (
       <div className="dash-card reports-panel__compact-filters">
         <div className="reports-panel__compact-row">
           <div className="reports-panel__compact-field">
@@ -783,6 +844,16 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           <ExpensesReportPanel expenses={expensesReportData} onClose={null} />
         ) : expensesReportError ? (
           <p className="reports-panel__hint">{expensesReportError}</p>
+        ) : (
+          <p className="reports-panel__hint">Loading…</p>
+        )
+      )}
+
+      {activeTab === 'income' && (
+        incomeReportData ? (
+          <IncomeReportPanel income={incomeReportData} onClose={null} />
+        ) : incomeReportError ? (
+          <p className="reports-panel__hint">{incomeReportError}</p>
         ) : (
           <p className="reports-panel__hint">Loading…</p>
         )
@@ -1215,6 +1286,198 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
                     </div>
                   </div>
                 </>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {activeTab === 'profitLoss' && (
+        <>
+          <div className="reports-panel__table-bar">
+            <p className="reports-panel__section-label">Profit &amp; Loss — {plGranularity === 'year' ? 'Yearly' : 'Monthly'}</p>
+            <div className="reports-panel__pl-controls">
+              <div className="reports-panel__pl-switch" role="group" aria-label="P&amp;L period format">
+                <button type="button" className={plGranularity === 'year' ? 'is-active' : ''} onClick={() => setPlGranularity('year')}>Yearly</button>
+                <button type="button" className={plGranularity === 'month' ? 'is-active' : ''} onClick={() => setPlGranularity('month')}>Monthly</button>
+              </div>
+              <label className="reports-panel__pl-unit">
+                <span>Units</span>
+                <select value={plUnit} onChange={(event) => setPlUnit(event.target.value)}>
+                  <option value="actual">₹ actual</option>
+                  <option value="lakh">₹ lakh</option>
+                  <option value="crore">₹ crore</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          {plHistoryError && <div className="dash-card"><div className="dash-state">{plHistoryError}</div></div>}
+          {!plHistoryError && !plHistory && <div className="dash-card"><div className="dash-state">Loading multi-year history…</div></div>}
+          {plHistory && (
+            <div className="dash-card reports-panel__pl-card">
+              <div className="dash-table-scroll">
+                <table className="dash-table dash-table--sheet reports-panel__pl-history">
+                  <thead>
+                    <tr>
+                      <th>Particulars</th>
+                      {plHistory.columns.map((column) => (
+                        <th key={column.label} title={`${formatDateOnly(column.fromDate)} – ${formatDateOnly(column.toDate)}`}>
+                          {column.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {PL_HISTORY_ROWS.map((row) => (
+                      <tr key={row.key} className={row.emphasis ? 'reports-panel__pl-history-emphasis' : ''}>
+                        <th scope="row">{row.label}</th>
+                        {plHistory.columns.map((column) => {
+                          const raw = row.value ? row.value(column) : column[row.key];
+                          if (raw == null) return <td key={column.label}>—</td>;
+                          if (row.kind === 'percent') return <td key={column.label}>{raw.toFixed(2)}%</td>;
+                          const divisor = plUnit === 'lakh' ? 100000 : plUnit === 'crore' ? 10000000 : 1;
+                          const amount = raw / divisor;
+                          return <td key={column.label}>{plUnit === 'actual' ? formatPrice(amount) : `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="analytics-card-meta">{plGranularity === 'year' ? 'Financial years run April to March. The current year ends today; TTM covers the trailing 12 months.' : 'Monthly figures follow calendar months; the current month ends today.'} Hover a column heading for its dates.</div>
+            </div>
+          )}
+          {profitLossError && (
+            <div className="dash-card">
+              <div className="dash-state">{profitLossError}</div>
+            </div>
+          )}
+          {!profitLossError && validRange && !profitLoss && (
+            <div className="dash-card">
+              <div className="dash-state">Loading…</div>
+            </div>
+          )}
+          {!profitLossError && profitLoss && (
+            <>
+              <p className="reports-panel__section-label">Profit &amp; Loss — {reportPeriodLabel(fromDate, toDate)}</p>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat reports-panel__stat--positive">
+                  <span className="reports-panel__stat-label">Revenue</span>
+                  <span className="reports-panel__stat-value">{formatPrice(profitLoss.revenue.totalRevenue)}</span>
+                </div>
+                <div className="reports-panel__stat reports-panel__stat--warning">
+                  <span className="reports-panel__stat-label">Expenses</span>
+                  <span className="reports-panel__stat-value">{formatPrice(profitLoss.expenses.totalExpenses)}</span>
+                </div>
+                <div className="reports-panel__stat reports-panel__stat--warning">
+                  <span className="reports-panel__stat-label">Depreciation</span>
+                  <span className="reports-panel__stat-value">{formatPrice(profitLoss.depreciation.totalDepreciation)}</span>
+                </div>
+                <div className={`reports-panel__stat ${profitLoss.netProfit >= 0 ? 'reports-panel__stat--positive' : 'reports-panel__stat--warning'} reports-panel__stat--accent`}>
+                  <span className="reports-panel__stat-label">{profitLoss.netProfit >= 0 ? 'Net profit' : 'Net loss'}</span>
+                  <span className="reports-panel__stat-value">{formatPrice(Math.abs(profitLoss.netProfit))}</span>
+                </div>
+              </div>
+
+              <div className="analytics-grid-2">
+                <div className="analytics-card">
+                  <div className="analytics-card-head">
+                    <span className="analytics-card-title">Revenue by stream</span>
+                  </div>
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Stream</th>
+                          <th>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>Rooms</td>
+                          <td>{formatPrice(profitLoss.revenue.roomRevenue)}</td>
+                        </tr>
+                        <tr>
+                          <td>Functions</td>
+                          <td>{formatPrice(profitLoss.revenue.functionRevenue)}</td>
+                        </tr>
+                        <tr>
+                          <td>Food</td>
+                          <td>{formatPrice(profitLoss.revenue.foodRevenue)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="analytics-card-meta">Net of GST — the tax collected is filed separately, see Tax &amp; GST.</div>
+                </div>
+
+                <div className="analytics-card">
+                  <div className="analytics-card-head">
+                    <span className="analytics-card-title">Expenses by category</span>
+                  </div>
+                  {profitLoss.expenses.byCategory.length === 0 ? (
+                    <p className="analytics-empty">No expenses logged in this period.</p>
+                  ) : (
+                    <div className="dash-table-scroll">
+                      <table className="dash-table">
+                        <thead>
+                          <tr>
+                            <th>Category</th>
+                            <th>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {profitLoss.expenses.byCategory.map((c) => (
+                            <tr key={c.categoryId}>
+                              <td>{c.categoryName}</td>
+                              <td>{formatPrice(c.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div className="analytics-card-meta">Asset purchase cost is excluded here — it's recovered through depreciation instead.</div>
+                </div>
+              </div>
+
+              <p className="reports-panel__section-label">Depreciation — asset book values</p>
+              {profitLoss.depreciation.skipped.length > 0 && (
+                <div className="dash-card">
+                  <div className="dash-state">
+                    {profitLoss.depreciation.skipped.length} asset{profitLoss.depreciation.skipped.length === 1 ? '' : 's'} not depreciated: {profitLoss.depreciation.skipped.map((s) => `${s.name} (${s.reason})`).join(', ')}
+                  </div>
+                </div>
+              )}
+              {profitLoss.depreciation.byAsset.length === 0 ? (
+                <div className="dash-card">
+                  <div className="dash-state">No assets have a purchase cost, date, and category depreciation rate set.</div>
+                </div>
+              ) : (
+                <div className="dash-card">
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Asset</th>
+                          <th>Category</th>
+                          <th>Depreciation this period</th>
+                          <th>Book value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {profitLoss.depreciation.byAsset.map((a) => (
+                          <tr key={a.id}>
+                            <td>{a.name}</td>
+                            <td>{a.categoryName}</td>
+                            <td>{formatPrice(a.periodDepreciation)}</td>
+                            <td>{formatPrice(a.bookValue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </>
           )}

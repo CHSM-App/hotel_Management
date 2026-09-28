@@ -101,7 +101,7 @@ export default function AnalyticsOverview({ lodge, bookings, occupancy, gst, eve
 
   const revenueMixSlices = [
     { label: 'Rooms', value: roomsBilled, color: 'var(--brand)' },
-    ...(lodge?.hasEvents ? [{ label: 'Functions', value: eventsBilled, color: 'var(--accent)' }] : []),
+    ...(lodge?.hasEvents ? [{ label: 'Event & Functions', value: eventsBilled, color: 'var(--accent)' }] : []),
     ...(lodge?.servesFood ? [{ label: 'Food', value: foodBilled, color: '#2FA0A0' }] : []),
   ];
 

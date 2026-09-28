@@ -63,6 +63,9 @@ CREATE TABLE dbo.room_categories (
     name         NVARCHAR(100) NOT NULL,
     base_price   DECIMAL(10,2) NOT NULL,
     is_active    BIT NOT NULL DEFAULT 1,
+    -- Optional tape chart display order. NULL sorts after ordered categories,
+    -- by id (creation order) — leaving it blank means "add to the end".
+    tape_order   INT NULL,
     created_at   DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     CONSTRAINT uq_categories_lodge_name UNIQUE (lodge_id, name)
 );
@@ -2203,11 +2206,16 @@ END
 -- bunk frames) without a migration.
 IF OBJECT_ID('dbo.asset_categories', 'U') IS NULL
 CREATE TABLE dbo.asset_categories (
-    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
-    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
-    name        NVARCHAR(60) NOT NULL,
-    is_active   BIT NOT NULL DEFAULT 1,
-    created_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    id                          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id                    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name                        NVARCHAR(60) NOT NULL,
+    -- WDV depreciation — set once per category, every asset filed under it
+    -- shares the rate. See migration 093 and depreciation.js.
+    depreciation_block          NVARCHAR(40) NULL,
+    depreciation_rate_percent   DECIMAL(5,2) NULL
+        CONSTRAINT ck_asset_categories_depreciation_rate CHECK (depreciation_rate_percent IS NULL OR (depreciation_rate_percent >= 0 AND depreciation_rate_percent <= 100)),
+    is_active                   BIT NOT NULL DEFAULT 1,
+    created_at                  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     CONSTRAINT uq_asset_categories_lodge_name UNIQUE (lodge_id, name)
 );
 
@@ -2229,7 +2237,12 @@ CREATE TABLE dbo.vendors (
     notes           NVARCHAR(400) NULL,
     is_active       BIT NOT NULL DEFAULT 1,
     created_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
-    CONSTRAINT uq_vendors_lodge_name UNIQUE (lodge_id, name)
+    -- Which tab this vendor belongs to: 'asset', 'expense', or 'income'.
+    -- Added in 098_vendors_kind.sql once the same shared row was found
+    -- leaking across Assets/Expenses/Income — each module now gets its own
+    -- slice of this table instead of one lodge-wide free-for-all list.
+    kind            NVARCHAR(20) NOT NULL DEFAULT 'expense',
+    CONSTRAINT uq_vendors_lodge_kind_name UNIQUE (lodge_id, kind, name)
 );
 
 -- One running asset-tag sequence per lodge. Allocated with an atomic
@@ -2271,6 +2284,14 @@ CREATE TABLE dbo.assets (
     purchase_date      DATE NULL,
     purchase_cost      DECIMAL(12,2) NULL
         CONSTRAINT ck_assets_purchase_cost CHECK (purchase_cost IS NULL OR purchase_cost >= 0),
+    -- Expected useful life, entered once at registration — drives the
+    -- straight-line depreciation estimate shown on the registration form.
+    -- Never used by the P/L report, which depreciates by the category's WDV
+    -- rate instead (see migration 093).
+    useful_life_years  TINYINT NULL
+        CONSTRAINT ck_assets_useful_life_years CHECK (useful_life_years IS NULL OR useful_life_years >= 0),
+    useful_life_months TINYINT NULL
+        CONSTRAINT ck_assets_useful_life_months CHECK (useful_life_months IS NULL OR (useful_life_months >= 0 AND useful_life_months <= 11)),
     room_id            BIGINT NULL REFERENCES dbo.rooms(id),
     floor              NVARCHAR(20) NULL,
     department         NVARCHAR(60) NULL,
@@ -2285,6 +2306,13 @@ CREATE TABLE dbo.assets (
     bill_document      NVARCHAR(255) NULL,
     status             NVARCHAR(20) NOT NULL DEFAULT 'IN_USE'
         CONSTRAINT ck_assets_status CHECK (status IN ('IN_USE', 'UNDER_REPAIR', 'RETIRED')),
+    -- Dead stock register fields — only ever set when status = RETIRED.
+    dead_date          DATE NULL,
+    dead_reason        NVARCHAR(200) NULL,
+    disposal_note      NVARCHAR(300) NULL,
+    recovery_cost      DECIMAL(12,2) NULL
+        CONSTRAINT ck_assets_recovery_cost CHECK (recovery_cost IS NULL OR recovery_cost >= 0),
+    disposed_by        NVARCHAR(80) NULL,
     qr_token           UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
     is_active          BIT NOT NULL DEFAULT 1,
     created_at         DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
@@ -2390,6 +2418,12 @@ CREATE TABLE dbo.expense_categories (
     id          BIGINT IDENTITY(1,1) PRIMARY KEY,
     lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
     name        NVARCHAR(80) NOT NULL,
+    -- The multi-year P&L's Interest/Tax rows — an owner tags a category
+    -- once ("Bank Loan EMI" -> is_interest) and every expense filed under
+    -- it rolls into that row. Mutually exclusive by convention, never both.
+    -- See migration 097.
+    is_interest BIT NOT NULL DEFAULT 0,
+    is_tax      BIT NOT NULL DEFAULT 0,
     is_active   BIT NOT NULL DEFAULT 1,
     created_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     CONSTRAINT uq_expense_categories_lodge_name UNIQUE (lodge_id, name)
@@ -2489,6 +2523,82 @@ CREATE TABLE dbo.expense_payments (
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expense_payments_expense' AND object_id = OBJECT_ID('dbo.expense_payments'))
 CREATE INDEX ix_expense_payments_expense ON dbo.expense_payments(expense_id);
 
+-- Other Income module — full mirror of Expenses above, reversed: money
+-- coming in that isn't room/food/function billing. See migration 095.
+IF OBJECT_ID('dbo.income_categories', 'U') IS NULL
+CREATE TABLE dbo.income_categories (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name        NVARCHAR(80) NOT NULL,
+    is_active   BIT NOT NULL DEFAULT 1,
+    created_at  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_income_categories_lodge_name UNIQUE (lodge_id, name)
+);
+
+IF OBJECT_ID('dbo.income_recurring_templates', 'U') IS NULL
+CREATE TABLE dbo.income_recurring_templates (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    category_id         BIGINT NOT NULL REFERENCES dbo.income_categories(id),
+    payer_id            BIGINT NULL REFERENCES dbo.vendors(id),
+    title               NVARCHAR(120) NOT NULL,
+    frequency           NVARCHAR(20) NOT NULL,
+    next_due_date       DATE NOT NULL,
+    is_active           BIT NOT NULL DEFAULT 1,
+    created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT ck_income_templates_frequency CHECK (frequency IN ('MONTHLY', 'QUARTERLY', 'YEARLY'))
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_income_templates_lodge' AND object_id = OBJECT_ID('dbo.income_recurring_templates'))
+CREATE INDEX ix_income_templates_lodge ON dbo.income_recurring_templates(lodge_id, is_active, next_due_date);
+
+IF OBJECT_ID('dbo.income_entries', 'U') IS NULL
+CREATE TABLE dbo.income_entries (
+    id                      BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id                BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    category_id             BIGINT NOT NULL REFERENCES dbo.income_categories(id),
+    payer_id                BIGINT NULL REFERENCES dbo.vendors(id),
+    recurring_template_id   BIGINT NULL REFERENCES dbo.income_recurring_templates(id),
+    title                   NVARCHAR(120) NOT NULL,
+    description             NVARCHAR(400) NULL,
+    amount                  DECIMAL(12,2) NOT NULL,
+    payment_method          NVARCHAR(20) NOT NULL,
+    payment_status          NVARCHAR(10) NOT NULL
+        CONSTRAINT df_income_entries_payment_status DEFAULT 'PAID'
+        CONSTRAINT ck_income_entries_payment_status CHECK (payment_status IN ('PAID', 'PARTIAL', 'PENDING')),
+    amount_received         DECIMAL(12,2) NULL,
+    income_date             DATE NOT NULL,
+    receipt_document        NVARCHAR(255) NULL,
+    created_by              BIGINT NULL REFERENCES dbo.users(id),
+    created_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    updated_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT ck_income_entries_payment_method CHECK (payment_method IN ('CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER')),
+    CONSTRAINT ck_income_entries_amount CHECK (amount >= 0)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_income_entries_lodge' AND object_id = OBJECT_ID('dbo.income_entries'))
+CREATE INDEX ix_income_entries_lodge ON dbo.income_entries(lodge_id, income_date DESC);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_income_entries_category' AND object_id = OBJECT_ID('dbo.income_entries'))
+CREATE INDEX ix_income_entries_category ON dbo.income_entries(category_id);
+
+IF OBJECT_ID('dbo.income_receipts', 'U') IS NULL
+CREATE TABLE dbo.income_receipts (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    income_id       BIGINT NOT NULL REFERENCES dbo.income_entries(id) ON DELETE CASCADE,
+    amount          DECIMAL(12,2) NOT NULL
+        CONSTRAINT ck_income_receipts_amount CHECK (amount > 0),
+    payment_method  NVARCHAR(20) NOT NULL
+        CONSTRAINT ck_income_receipts_method
+        CHECK (payment_method IN ('CASH', 'UPI', 'CARD', 'CHEQUE', 'BANK_TRANSFER', 'WALLET', 'OTHER')),
+    reference_number NVARCHAR(80) NULL,
+    received_date   DATE NOT NULL,
+    created_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_income_receipts_income' AND object_id = OBJECT_ID('dbo.income_receipts'))
+CREATE INDEX ix_income_receipts_income ON dbo.income_receipts(income_id);
+
 -- expenses.manage on the OWNER built-in role. Only where it is still at its
 -- shipped default (now including assets.manage from migration 071); a
 -- customised built-in keeps its own set. Same pattern as assets.manage above.
@@ -2554,3 +2664,29 @@ IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'KITCHE
 UPDATE dbo.roles
 SET permissions = '["orders.manage","orders.cook"]'
 WHERE lodge_id IS NULL AND role_key = 'KITCHEN';
+
+-- income.manage on the OWNER and ACCOUNTANT built-in roles (migration 096).
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
+           AND permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","orders.take","events.manage","assets.manage","expenses.manage"]')
+UPDATE dbo.roles
+SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","orders.take","events.manage","assets.manage","expenses.manage","income.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'OWNER';
+
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT'
+           AND permissions = '["billing.manage","expenses.manage","events.manage"]')
+UPDATE dbo.roles
+SET permissions = '["billing.manage","expenses.manage","events.manage","income.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT';
+
+-- profitLoss.view on the OWNER and ACCOUNTANT built-in roles (migration 100).
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'OWNER'
+           AND permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","orders.take","events.manage","assets.manage","expenses.manage","income.manage"]')
+UPDATE dbo.roles
+SET permissions = '["rooms.manage","bookings.manage","billing.manage","guests.view","reports.view","staff.manage","food.manage","orders.manage","orders.take","events.manage","assets.manage","expenses.manage","income.manage","profitLoss.view"]'
+WHERE lodge_id IS NULL AND role_key = 'OWNER';
+
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT'
+           AND permissions = '["billing.manage","expenses.manage","events.manage","income.manage"]')
+UPDATE dbo.roles
+SET permissions = '["billing.manage","expenses.manage","events.manage","income.manage","profitLoss.view"]'
+WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT';

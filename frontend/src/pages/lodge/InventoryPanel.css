@@ -733,21 +733,6 @@
   box-sizing: border-box;
 }
 
-.asset-show-retired {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.asset-show-retired input {
-  margin: 0;
-}
-
 .asset-view-toggle {
   flex-shrink: 0;
   margin-bottom: 0;

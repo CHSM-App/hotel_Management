@@ -6,12 +6,33 @@
   margin-bottom: 12px;
 }
 
-/* Sits between the room count and "+ Add room". Pushed against the button by
-   the same margin-left:auto trick the rate uses on the card, so the filter
-   stays next to the button it affects the view above rather than drifting to
-   the middle of the bar. */
-.rooms-panel__type-filter {
+/* The search box, before the type filter. Carries the margin-left:auto that
+   used to sit on the filter — same trick the rate uses on the card — so the
+   pair stays pinned next to "+ Add room" instead of drifting to the middle
+   of the bar. */
+.rooms-panel__search {
   margin-left: auto;
+  min-height: 34px;
+  width: 220px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rooms-panel__search:hover {
+  border-color: var(--brand);
+}
+
+.rooms-panel__search:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Sits between the search box and "+ Add room". */
+.rooms-panel__type-filter {
   min-height: 34px;
   padding: 6px 28px 6px 10px;
   font-size: 13px;
@@ -35,6 +56,12 @@
 @media (max-width: 640px) {
   .rooms-panel__toolbar {
     flex-wrap: wrap;
+  }
+
+  .rooms-panel__search {
+    margin-left: 0;
+    width: 100%;
+    order: -1;
   }
 
   .rooms-panel__type-filter {

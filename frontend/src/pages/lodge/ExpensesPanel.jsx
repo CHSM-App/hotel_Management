@@ -406,6 +406,16 @@ export default function ExpensesPanel({ onViewReport }) {
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
   const [vendorFieldErrors, setVendorFieldErrors] = useState({});
 
+  // Tagging a category is_interest/is_tax for the P&L report — { category,
+  // field ('isInterest' | 'isTax'), impact } while the confirm dialog is
+  // open, showing how many expenses already on file would retroactively
+  // count toward that row before the checkbox actually saves. Turning a
+  // flag off needs no such warning — nothing was ever misclassified by
+  // clearing a flag, so that one saves immediately.
+  const [pendingCategoryTag, setPendingCategoryTag] = useState(null);
+  const [categoryTagSubmitting, setCategoryTagSubmitting] = useState(false);
+  const [categoryTagError, setCategoryTagError] = useState('');
+
   const loadExpenses = () =>
     apiGet('/expenses', { token: session?.token })
       .then((data) => setExpenses(writeCache('/expenses', data.expenses)))
@@ -912,10 +922,55 @@ export default function ExpensesPanel({ onViewReport }) {
     }
   };
 
+  // ---------------------------------------------------------------------
+  // Categories — is_interest/is_tax tagging for the P&L report
+  // ---------------------------------------------------------------------
+
+  // Turning a flag ON asks first (see pendingCategoryTag above); turning it
+  // OFF just saves — clearing a flag can't misclassify anything.
+  const toggleCategoryFlag = async (category, field) => {
+    const turningOn = !category[field];
+    if (!turningOn) {
+      try {
+        await apiPatch(`/expenses/categories/${category.id}`, { [field]: false }, { token: session?.token });
+        await loadCategories();
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Could not update that category.');
+      }
+      return;
+    }
+
+    setCategoryTagError('');
+    setPendingCategoryTag({ category, field, impact: null });
+    try {
+      const data = await apiGet(`/expenses/categories/${category.id}/tag-impact`, { token: session?.token });
+      setPendingCategoryTag({ category, field, impact: data.impact });
+    } catch (err) {
+      setCategoryTagError(err instanceof ApiError ? err.message : 'Could not check this category’s expenses.');
+    }
+  };
+
+  const confirmCategoryTag = async () => {
+    if (!pendingCategoryTag) return;
+    const { category, field } = pendingCategoryTag;
+    setCategoryTagSubmitting(true);
+    setCategoryTagError('');
+    try {
+      await apiPatch(`/expenses/categories/${category.id}`, { [field]: true }, { token: session?.token });
+      setPendingCategoryTag(null);
+      await loadCategories();
+    } catch (err) {
+      setCategoryTagError(err instanceof ApiError ? err.message : 'Could not tag that category.');
+    } finally {
+      setCategoryTagSubmitting(false);
+    }
+  };
+
   const tabs = [
     { id: 'expenses', name: 'Expenses', count: expenses.length },
     { id: 'recurring', name: 'Recurring', count: templates.length },
     { id: 'vendors', name: 'Vendors', count: vendors.length },
+    { id: 'categories', name: 'Categories', count: categories.length },
   ];
 
   return (
@@ -1324,6 +1379,130 @@ export default function ExpensesPanel({ onViewReport }) {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {tab === 'categories' && (
+        <div>
+          <p className="inv-panel__hint">
+            Tag a category as Interest or Income Tax to pull it into the Profit &amp; Loss report's own rows for
+            those, instead of counting it as an ordinary operating expense. Use a dedicated category for each —
+            tagging a category shared with other expenses reclassifies all of them too.
+          </p>
+          {(categories || []).length === 0 ? (
+            <p className="inv-panel__hint">No categories yet. Log an expense first to create one.</p>
+          ) : (
+            <ul className="inv-list">
+              {categories.map((cat) => (
+                <li key={cat.id} className="inv-item">
+                  <div className="inv-item__body">
+                    <div className="inv-item__name">
+                      {cat.name}
+                      {cat.isInterest && <span className="inv-tag inv-tag--low">Interest</span>}
+                      {cat.isTax && <span className="inv-tag inv-tag--low">Income Tax</span>}
+                    </div>
+                    <div className="inv-item__meta">
+                      <label style={{ marginRight: 16 }}>
+                        <input
+                          type="checkbox"
+                          checked={cat.isInterest}
+                          onChange={() => toggleCategoryFlag(cat, 'isInterest')}
+                        />{' '}
+                        Interest (loan EMI)
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={cat.isTax}
+                          onChange={() => toggleCategoryFlag(cat, 'isTax')}
+                        />{' '}
+                        Income Tax
+                      </label>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Confirm tagging a category as Interest/Tax — shows how many
+          existing expenses would retroactively count toward that P&L row,
+          so ticking the wrong category doesn't silently misstate every
+          past report. */}
+      {pendingCategoryTag && (
+        <div className="glass-backdrop inv-panel__backdrop" onClick={() => setPendingCategoryTag(null)}>
+          <div
+            className="glass-panel inv-panel__modal modal-form__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="categoryTagTitle"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-form">
+              <div className="modal-form__head">
+                <div className="modal-form__head-row">
+                  <h3 id="categoryTagTitle">
+                    Tag "{pendingCategoryTag.category.name}" as {pendingCategoryTag.field === 'isInterest' ? 'Interest' : 'Income Tax'}?
+                  </h3>
+                  <button
+                    type="button"
+                    className="modal-form__close"
+                    onClick={() => setPendingCategoryTag(null)}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div className="modal-form__body">
+                {categoryTagError && (
+                  <div className="form-banner form-banner--error form-banner--flash">{categoryTagError}</div>
+                )}
+                {pendingCategoryTag.impact === null ? (
+                  <p className="inv-panel__hint">Checking…</p>
+                ) : pendingCategoryTag.impact.count === 0 ? (
+                  <p className="inv-panel__hint">
+                    No expenses logged under this category yet — safe to tag. Every expense filed here from now on
+                    will count as {pendingCategoryTag.field === 'isInterest' ? 'Interest' : 'Income Tax'} in the P&amp;L report.
+                  </p>
+                ) : (
+                  <p className="inv-panel__hint">
+                    This reclassifies <strong>{pendingCategoryTag.impact.count} expense{pendingCategoryTag.impact.count === 1 ? '' : 's'}</strong> totaling{' '}
+                    <strong>{formatPrice(pendingCategoryTag.impact.total)}</strong>{' '}
+                    ({formatDate(pendingCategoryTag.impact.earliestDate)}
+                    {pendingCategoryTag.impact.earliestDate !== pendingCategoryTag.impact.latestDate
+                      ? ` – ${formatDate(pendingCategoryTag.impact.latestDate)}`
+                      : ''}
+                    ) as {pendingCategoryTag.field === 'isInterest' ? 'Interest' : 'Income Tax'} in every past and future
+                    Profit &amp; Loss report, removing them from Expenses. If this category is shared with unrelated
+                    expenses, cancel and move this one to a dedicated category instead.
+                  </p>
+                )}
+              </div>
+              <div className="modal-form__foot">
+                <div className="modal-form__foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setPendingCategoryTag(null)}
+                    disabled={categoryTagSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-accent"
+                    disabled={categoryTagSubmitting || pendingCategoryTag.impact === null}
+                    onClick={confirmCategoryTag}
+                  >
+                    {categoryTagSubmitting ? 'Saving…' : 'Tag category'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

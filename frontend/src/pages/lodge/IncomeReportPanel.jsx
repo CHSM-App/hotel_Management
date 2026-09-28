@@ -1,19 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatPrice } from './priceFormat';
 import { TrendChart, Donut, BarList, RankList } from './AnalyticsCharts';
-import { downloadExpensesReportExcel, downloadExpensesReportPdf, buildExpensesReportPdf } from './expenseReportFile';
+import { downloadIncomeReportExcel, downloadIncomeReportPdf, buildIncomeReportPdf } from './incomeReportFile';
 import './AnalyticsCharts.css';
 import './ExpensesReportPanel.css';
 
 const CATEGORY_COLORS = ['var(--brand)', 'var(--accent)', '#2FA0A0', '#C77D3A', '#7A5FD1', '#3A8FC7'];
 
-const MONTH_LABEL = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// A full-view report, opened from "View Report" on the Expenses tab —
-// everything it needs (expenses, categories, vendors) is already loaded by
-// ExpensesPanel, so this is pure client-side aggregation over data the page
-// already has rather than a new backend round trip.
-export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) {
+// A full-view report, opened from "View Report" on the Income tab —
+// everything it needs is already loaded by IncomePanel, so this is pure
+// client-side aggregation, same shape as ExpensesReportPanel.jsx.
+export default function IncomeReportPanel({ income: allIncome, onClose }) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState('');
@@ -23,59 +20,56 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
-  const expenses = useMemo(() => {
-    if (!fromDate && !toDate) return allExpenses;
-    return allExpenses.filter((e) => {
-      if (fromDate && e.expenseDate < fromDate) return false;
-      if (toDate && e.expenseDate > toDate) return false;
+  const income = useMemo(() => {
+    if (!fromDate && !toDate) return allIncome;
+    return allIncome.filter((e) => {
+      if (fromDate && e.incomeDate < fromDate) return false;
+      if (toDate && e.incomeDate > toDate) return false;
       return true;
     });
-  }, [allExpenses, fromDate, toDate]);
+  }, [allIncome, fromDate, toDate]);
 
   const totals = useMemo(() => {
-    const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-    const paid = expenses.reduce((s, e) => s + Number(e.amountPaid || 0), 0);
-    return { count: expenses.length, total, paid, outstanding: total - paid };
-  }, [expenses]);
+    const total = income.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const received = income.reduce((s, e) => s + Number(e.amountReceived || 0), 0);
+    return { count: income.length, total, received, outstanding: total - received };
+  }, [income]);
 
   const byCategory = useMemo(() => {
     const map = new Map();
-    for (const e of expenses) {
+    for (const e of income) {
       const key = e.categoryName || 'Uncategorised';
       const entry = map.get(key) || { label: key, value: 0 };
       entry.value += Number(e.amount || 0);
       map.set(key, entry);
     }
     return [...map.values()].sort((a, b) => b.value - a.value);
-  }, [expenses]);
+  }, [income]);
 
-  const byVendor = useMemo(() => {
+  const byPayer = useMemo(() => {
     const map = new Map();
-    for (const e of expenses) {
-      if (!e.vendorName) continue;
-      const entry = map.get(e.vendorName) || { label: e.vendorName, value: 0, count: 0 };
+    for (const e of income) {
+      if (!e.payerName) continue;
+      const entry = map.get(e.payerName) || { label: e.payerName, value: 0, count: 0 };
       entry.value += Number(e.amount || 0);
       entry.count += 1;
-      map.set(e.vendorName, entry);
+      map.set(e.payerName, entry);
     }
     return [...map.values()].sort((a, b) => b.value - a.value).slice(0, 8).map((v) => ({
       ...v,
-      sub: `${v.count} expense${v.count === 1 ? '' : 's'}`,
+      sub: `${v.count} entr${v.count === 1 ? 'y' : 'ies'}`,
     }));
-  }, [expenses]);
+  }, [income]);
 
-  // Spend by month for the current calendar year — the same "12 points, one
-  // per month" shape TrendChart already draws for revenue, so this reads as
-  // the same chart language rather than a new one invented for expenses.
   const monthlyTrend = useMemo(() => {
     const year = new Date().getFullYear();
     const totalsByMonth = Array(12).fill(0);
-    for (const e of expenses) {
-      const d = new Date(e.expenseDate);
+    for (const e of income) {
+      const d = new Date(e.incomeDate);
       if (d.getFullYear() === year) totalsByMonth[d.getMonth()] += Number(e.amount || 0);
     }
     return totalsByMonth.map((total, i) => ({ date: `${year}-${String(i + 1).padStart(2, '0')}-01`, total }));
-  }, [expenses]);
+  }, [income]);
 
   const donutSlices = byCategory.slice(0, 6).map((c, i) => ({ ...c, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }));
 
@@ -87,7 +81,7 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
     setActionError('');
     setPreviewBusy(true);
     try {
-      setPreviewUrl(URL.createObjectURL(await buildExpensesReportPdf(expenses)));
+      setPreviewUrl(URL.createObjectURL(await buildIncomeReportPdf(income)));
     } catch {
       setActionError('Could not build the PDF preview.');
     } finally {
@@ -99,8 +93,8 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
     setActionError('');
     setDownloadBusy(format);
     try {
-      if (format === 'excel') await downloadExpensesReportExcel(expenses);
-      else await downloadExpensesReportPdf(expenses);
+      if (format === 'excel') await downloadIncomeReportExcel(income);
+      else await downloadIncomeReportPdf(income);
     } catch {
       setActionError(`Could not build the ${format.toUpperCase()} file.`);
     } finally {
@@ -112,8 +106,8 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
     <div className="expense-report">
       <div className="expense-report__head">
         <div>
-          <h2 className="expense-report__title">Expense Report</h2>
-          <p className="expense-report__sub">{totals.count} expense{totals.count === 1 ? '' : 's'} on file</p>
+          <h2 className="expense-report__title">Income Report</h2>
+          <p className="expense-report__sub">{totals.count} entr{totals.count === 1 ? 'y' : 'ies'} on file</p>
         </div>
         <div className="expense-report__actions">
           <div className="expense-report__range">
@@ -142,44 +136,44 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
 
       {previewUrl && (
         <div className="analytics-card expense-report__preview-card">
-          <iframe className="expense-report__preview" src={previewUrl} title="Expense report preview" />
+          <iframe className="expense-report__preview" src={previewUrl} title="Income report preview" />
         </div>
       )}
 
       <div className="kpi-row" style={{ marginBottom: 16 }}>
         <div className="kpi-card kpi-card--primary">
-          <span className="kpi-label">Total spend</span>
+          <span className="kpi-label">Total income</span>
           <span className="kpi-value">{formatPrice(totals.total)}</span>
-          <span className="kpi-sub">Across {totals.count} expense{totals.count === 1 ? '' : 's'}</span>
+          <span className="kpi-sub">Across {totals.count} entr{totals.count === 1 ? 'y' : 'ies'}</span>
         </div>
         <div className="kpi-card">
-          <span className="kpi-label">Paid so far</span>
-          <span className="kpi-value">{formatPrice(totals.paid)}</span>
-          <span className="kpi-sub">{totals.total > 0 ? Math.round((totals.paid / totals.total) * 100) : 0}% settled</span>
+          <span className="kpi-label">Received so far</span>
+          <span className="kpi-value">{formatPrice(totals.received)}</span>
+          <span className="kpi-sub">{totals.total > 0 ? Math.round((totals.received / totals.total) * 100) : 0}% settled</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Outstanding</span>
           <span className="kpi-value">{formatPrice(totals.outstanding)}</span>
-          <span className="kpi-sub">Partial + pending bills</span>
+          <span className="kpi-sub">Partial + pending entries</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Top category</span>
           <span className="kpi-value" style={{ fontSize: 18 }}>{byCategory[0]?.label || '—'}</span>
-          <span className="kpi-sub">{byCategory[0] ? formatPrice(byCategory[0].value) : 'No expenses logged yet'}</span>
+          <span className="kpi-sub">{byCategory[0] ? formatPrice(byCategory[0].value) : 'No income logged yet'}</span>
         </div>
       </div>
 
       <div className="analytics-grid-2" style={{ marginBottom: 16 }}>
         <div className="analytics-card">
           <div className="analytics-card-head">
-            <span className="analytics-card-title">Spend by month, {new Date().getFullYear()}</span>
+            <span className="analytics-card-title">Income by month, {new Date().getFullYear()}</span>
           </div>
           <TrendChart points={monthlyTrend} valueKey="total" formatValue={formatPrice} />
         </div>
 
         <div className="analytics-card">
           <div className="analytics-card-head">
-            <span className="analytics-card-title">Where it's going</span>
+            <span className="analytics-card-title">Where it's coming from</span>
           </div>
           {donutSlices.length > 0 ? (
             <div className="expense-report__donut-row">
@@ -195,7 +189,7 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
               </ul>
             </div>
           ) : (
-            <p className="inv-panel__hint">No expenses logged yet.</p>
+            <p className="inv-panel__hint">No income logged yet.</p>
           )}
         </div>
       </div>
@@ -208,18 +202,18 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
           {byCategory.length > 0 ? (
             <BarList rows={byCategory.slice(0, 8)} formatValue={formatPrice} tone="brand" />
           ) : (
-            <p className="inv-panel__hint">No expenses logged yet.</p>
+            <p className="inv-panel__hint">No income logged yet.</p>
           )}
         </div>
 
         <div className="analytics-card">
           <div className="analytics-card-head">
-            <span className="analytics-card-title">Top vendors</span>
+            <span className="analytics-card-title">Top payers</span>
           </div>
-          {byVendor.length > 0 ? (
-            <RankList rows={byVendor} formatValue={formatPrice} />
+          {byPayer.length > 0 ? (
+            <RankList rows={byPayer} formatValue={formatPrice} />
           ) : (
-            <p className="inv-panel__hint">No vendor-billed expenses yet.</p>
+            <p className="inv-panel__hint">No payer-linked income yet.</p>
           )}
         </div>
       </div>

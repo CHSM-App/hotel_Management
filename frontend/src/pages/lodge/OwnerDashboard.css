@@ -710,6 +710,29 @@
   border-color: var(--border);
 }
 
+/* Puts the public booking link one click away from every section, instead of
+   three deep in profile → hotel profile. */
+.dash-topbar__link-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  white-space: nowrap;
+}
+
+.dash-topbar__link-copy:hover {
+  background: var(--primary-bg, var(--surface-muted, #f3f3f3));
+  border-color: var(--primary, var(--border));
+}
+
 /* The rail is 240px to match the brand block above it — already true, and now
    load-bearing, so the two are pinned to the same token. */
 .dash-topbar--light + .dash-body .dash-sidebar {

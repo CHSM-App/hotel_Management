@@ -92,6 +92,17 @@
   color: var(--text-muted);
 }
 
+/* A value the form computed and fills in for you — never typed, never
+   editable. --surface/--field are both plain white, so the disabled rule
+   above alone doesn't read as "off" at a glance; this pins a visibly darker
+   fill on top of it so it's unmistakable without relying on the disabled
+   cursor alone. */
+.field input.field--computed:disabled {
+  background: var(--field-border);
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* The asterisk that marks a field the form won't submit without. A span of its
    own rather than a character baked into the label text: the mark carries the
    danger colour without tinting the label, and the assistive-technology reading

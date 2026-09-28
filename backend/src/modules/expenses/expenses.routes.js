@@ -5,6 +5,7 @@ const {
   listCategoriesHandler,
   createCategoryHandler,
   updateCategoryHandler,
+  previewCategoryTagImpactHandler,
   listVendorsHandler,
   createVendorHandler,
   updateVendorHandler,
@@ -33,6 +34,7 @@ const canAccess = requirePermission('expenses.manage');
 router.get('/categories', authenticate, canAccess, listCategoriesHandler);
 router.post('/categories', authenticate, canAccess, createCategoryHandler);
 router.patch('/categories/:id', authenticate, canAccess, updateCategoryHandler);
+router.get('/categories/:id/tag-impact', authenticate, canAccess, previewCategoryTagImpactHandler);
 
 router.get('/vendors', authenticate, canAccess, listVendorsHandler);
 router.post('/vendors', authenticate, canAccess, createVendorHandler);

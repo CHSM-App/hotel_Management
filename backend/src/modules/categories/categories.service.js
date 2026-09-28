@@ -8,10 +8,10 @@ async function listCategories(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, base_price, is_active, created_at
+      SELECT id, name, base_price, is_active, tape_order, created_at
       FROM dbo.room_categories
       WHERE lodge_id = @lodgeId
-      ORDER BY base_price ASC
+      ORDER BY CASE WHEN tape_order IS NULL THEN 1 ELSE 0 END, tape_order ASC, id ASC
     `);
 
   return result.recordset.map((row) => ({
@@ -19,6 +19,7 @@ async function listCategories(lodgeId) {
     name: row.name,
     basePrice: Number(row.base_price),
     isActive: !!row.is_active,
+    tapeOrder: row.tape_order,
     createdAt: row.created_at,
   }));
 }
@@ -36,15 +37,22 @@ async function createCategory(lodgeId, input) {
     throw new ApiError('A category with that name already exists.', 409, 'categoryName');
   }
 
+  // tapeOrder is optional — when the owner doesn't set one, the category is
+  // appended after whatever is already ordered (MAX + 1), so it behaves as
+  // "add to the end" rather than tying for first place at NULL.
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('name', sql.NVarChar, input.name)
     .input('basePrice', sql.Decimal(10, 2), input.basePrice)
+    .input('tapeOrder', sql.Int, input.tapeOrder ?? null)
     .query(`
-      INSERT INTO dbo.room_categories (lodge_id, name, base_price)
+      INSERT INTO dbo.room_categories (lodge_id, name, base_price, tape_order)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @basePrice)
+      VALUES (
+        @lodgeId, @name, @basePrice,
+        COALESCE(@tapeOrder, (SELECT MAX(tape_order) + 1 FROM dbo.room_categories WHERE lodge_id = @lodgeId))
+      )
     `);
 
   return { id: result.recordset[0].id };
@@ -77,7 +85,10 @@ async function updateCategory(lodgeId, categoryId, input) {
     .input('categoryId', sql.BigInt, categoryId)
     .input('name', sql.NVarChar, input.name)
     .input('basePrice', sql.Decimal(10, 2), input.basePrice)
-    .query('UPDATE dbo.room_categories SET name = @name, base_price = @basePrice WHERE id = @categoryId');
+    .input('tapeOrder', sql.Int, input.tapeOrder ?? null)
+    .query(
+      'UPDATE dbo.room_categories SET name = @name, base_price = @basePrice, tape_order = @tapeOrder WHERE id = @categoryId'
+    );
 
   return { id: categoryId };
 }
