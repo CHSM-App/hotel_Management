@@ -78,9 +78,9 @@ async function listPublicRoomTypes(lodgeId, checkInDate, checkOutDate) {
     roomsRequest.input('checkInDate', sql.Date, checkInDate).input('checkOutDate', sql.Date, checkOutDate);
     availabilityColumn = `,
              CASE WHEN EXISTS (
-               SELECT 1 FROM dbo.bookings b
-               WHERE b.room_id = r.id AND b.status IN ('BOOKED', 'CHECKED_IN')
-                 AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+               SELECT 1 FROM dbo.booking_rooms br
+               WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN')
+                 AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
              ) THEN 0 ELSE 1 END AS is_available`;
   }
 
@@ -489,12 +489,14 @@ async function verifyRoomAccess(slug, roomNumber, pin) {
     .input('lodgeId', sql.BigInt, lodge.id)
     .input('roomNumber', sql.NVarChar, roomLabel)
     .query(`
-      SELECT TOP 1 r.id AS room_id, b.id AS booking_id, b.food_pin, b.guest_name, b.guest_phone
+      -- The PIN is the room's own (booking_rooms.food_pin): a booking of several
+      -- rooms gives each its own, so a guest orders to the room they typed.
+      SELECT TOP 1 r.id AS room_id, b.id AS booking_id, br.food_pin, b.guest_name, b.guest_phone
       FROM dbo.rooms r
-      LEFT JOIN dbo.bookings b
-        ON b.room_id = r.id AND b.lodge_id = @lodgeId AND b.status = 'CHECKED_IN'
+      LEFT JOIN dbo.booking_rooms br ON br.room_id = r.id AND br.status = 'CHECKED_IN'
+      LEFT JOIN dbo.bookings b ON b.id = br.booking_id AND b.lodge_id = @lodgeId
       WHERE r.lodge_id = @lodgeId AND r.room_number = @roomNumber AND r.is_active = 1
-      ORDER BY b.actual_check_in_at DESC
+      ORDER BY br.actual_check_in_at DESC
     `);
   const row = result.recordset[0];
 

@@ -113,12 +113,16 @@ test('the agreed rate is bound on the create insert', () => {
     path.join(__dirname, '..', 'src', 'modules', 'bookings', 'bookings.service.js'),
     'utf8'
   );
-  const insert = src.slice(src.indexOf('INSERT INTO dbo.bookings'));
+  const insert = src.slice(src.indexOf('INSERT INTO dbo.booking_rooms'));
   assert.ok(insert.includes('base_price_override'), 'the insert stopped storing the rate');
+  // The rate is a per-room figure now. Bound once wherever it is written: the
+  // room insert, the room update, and the booking row's roll-up of the first
+  // room's rate — plus the booking insert createBooking still makes.
   assert.equal(
     (src.match(/\.input\('basePriceOverride'/g) || []).length,
-    2,
-    'the rate must be bound exactly twice — once on create, once on update'
+    4,
+    'the rate must be bound once per statement that writes it — the room insert ' +
+      'and update, the booking insert, and the roll-up'
   );
 });
 

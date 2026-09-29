@@ -14,6 +14,7 @@ const advanceReceiptsService = require('../billing/advanceReceipts.service');
 const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
 const lateCheckout = require('./lateCheckout');
+const { apportionDiscount, mergeRoomNights, rollUpStatus } = require('./bookingRooms');
 
 function round2(n) {
   return Math.round(n * 100) / 100;
@@ -157,6 +158,309 @@ async function priceStay(
     discountAmount: discount,
     totalPrice: round2(grossTotal - discount),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Multi-room bookings (dbo.booking_rooms, migration 104)
+//
+// A booking holds one or more rooms, each with its own dates, price, extras and
+// check-in/out. bookings.* is the roll-up of them (see syncBookingFromRooms),
+// with bookings.room_id mirroring the first room so readers that only know one
+// room keep working.
+// ---------------------------------------------------------------------------
+
+// Rooms as they arrive from a create: the `rooms` list, or the older flat
+// roomId/bedIds/extras fields as a list of one. A date a room doesn't carry is
+// the booking's own — which is what "same dates for all rooms" sends.
+function normalizeRoomInputs(input) {
+  const list =
+    input.rooms && input.rooms.length > 0
+      ? input.rooms
+      : [
+          {
+            roomId: input.roomId,
+            bedId: input.bedId,
+            bedIds: input.bedIds,
+            basePriceOverride: input.basePriceOverride,
+            switchableCharges: input.switchableCharges,
+          },
+        ];
+  const seen = new Set();
+  return list.map((r) => {
+    const roomId = Number(r.roomId);
+    if (seen.has(roomId)) {
+      throw new ApiError('A room can only be added to a booking once.', 400);
+    }
+    seen.add(roomId);
+    const checkInDate = r.checkInDate ?? input.checkInDate;
+    const checkOutDate = r.checkOutDate ?? input.checkOutDate;
+    if (!checkInDate || !checkOutDate || checkOutDate <= checkInDate) {
+      throw new ApiError('Check-out date must be after check-in date.', 400);
+    }
+    return {
+      roomId,
+      bedIds: Array.from(
+        new Set((r.bedIds && r.bedIds.length > 0 ? r.bedIds : r.bedId != null ? [r.bedId] : []).map(Number))
+      ),
+      checkInDate,
+      checkOutDate,
+      basePriceOverride: r.basePriceOverride ?? null,
+      switchableCharges: pricingService.normalizeSelections(r.switchableCharges ?? input.switchableCharges ?? []),
+    };
+  });
+}
+
+// Every room must be an active room of this lodge, and its beds must be beds of
+// that room: a dormitory needs at least one, any other room can't have any.
+// Returns room rows keyed by id.
+async function loadAndCheckRooms(pool, lodgeId, rooms) {
+  if (rooms.length === 0) return new Map();
+  const roomIds = rooms.map((r) => r.roomId);
+  if (roomIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new ApiError('Choose a valid room.', 400);
+  }
+  const roomResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    // Validated integers above, so the IN list can be built by interpolation.
+    .query(`
+      SELECT id, room_number, max_occupancy, is_dormitory FROM dbo.rooms
+      WHERE lodge_id = @lodgeId AND is_active = 1 AND id IN (${roomIds.join(',')})
+    `);
+  const byId = new Map(roomResult.recordset.map((r) => [Number(r.id), r]));
+  if (byId.size !== roomIds.length) {
+    throw new ApiError('Choose a valid room.', 400);
+  }
+
+  for (const r of rooms) {
+    const room = byId.get(r.roomId);
+    if (room.is_dormitory && r.bedIds.length === 0) {
+      throw new ApiError('Choose a bed.', 400);
+    }
+    if (r.bedIds.length > 0) {
+      if (!room.is_dormitory) {
+        throw new ApiError('This room isn’t set up as a dormitory.', 400);
+      }
+      const bedResult = await pool
+        .request()
+        .input('roomId', sql.BigInt, r.roomId)
+        .query('SELECT id FROM dbo.dormitory_beds WHERE room_id = @roomId AND is_active = 1');
+      const validIds = new Set(bedResult.recordset.map((b) => Number(b.id)));
+      if (!r.bedIds.every((id) => validIds.has(id))) {
+        throw new ApiError('Choose a valid bed.', 400);
+      }
+    }
+  }
+  return byId;
+}
+
+// Prices every room with the same code the simulator runs, then takes the
+// booking's concession off across them in proportion. Clamped, like priceStay,
+// because it also serves the live quote.
+async function priceBooking(lodgeId, rooms, discountAmount = 0) {
+  const quotes = [];
+  for (const r of rooms) {
+    quotes.push(
+      await priceStay(
+        lodgeId,
+        r.roomId,
+        r.checkInDate,
+        r.checkOutDate,
+        r.switchableCharges,
+        r.basePriceOverride,
+        0,
+        r.bedIds[0] ?? null,
+        r.bedIds
+      )
+    );
+  }
+  const grossTotal = round2(quotes.reduce((sum, q) => sum + q.grossTotal, 0));
+  const requested = Number(discountAmount);
+  const discount = round2(Math.min(Math.max(Number.isFinite(requested) ? requested : 0, 0), grossTotal));
+  const shares = apportionDiscount(
+    quotes.map((q) => q.grossTotal),
+    discount
+  );
+  return {
+    rooms: rooms.map((r, i) => ({
+      ...r,
+      nights: spreadConcession(quotes[i].nights, quotes[i].grossTotal, shares[i]),
+      charges: quotes[i].charges,
+      grossTotal: quotes[i].grossTotal,
+      discountAmount: shares[i],
+      totalPrice: round2(quotes[i].grossTotal - shares[i]),
+    })),
+    grossTotal,
+    discountAmount: discount,
+    totalPrice: round2(grossTotal - discount),
+  };
+}
+
+// The live quote for a booking of several rooms: what each room costs, and the
+// booking's total after the concession.
+async function quoteBooking(lodgeId, { rooms, checkInDate, checkOutDate, discountAmount = 0 }) {
+  const priced = await priceBooking(lodgeId, normalizeRoomInputs({ rooms, checkInDate, checkOutDate }), discountAmount);
+  return {
+    rooms: priced.rooms.map((r) => ({
+      roomId: r.roomId,
+      checkInDate: r.checkInDate,
+      checkOutDate: r.checkOutDate,
+      nights: r.nights,
+      charges: r.charges,
+      grossTotal: r.grossTotal,
+      discountAmount: r.discountAmount,
+      totalPrice: r.totalPrice,
+    })),
+    grossTotal: priced.grossTotal,
+    discountAmount: priced.discountAmount,
+    totalPrice: priced.totalPrice,
+  };
+}
+
+async function writeRoomCharges(transaction, bookingRoomId, selections) {
+  await new sql.Request(transaction)
+    .input('bookingRoomId', sql.BigInt, bookingRoomId)
+    .query('DELETE FROM dbo.booking_room_switchable_charges WHERE booking_room_id = @bookingRoomId');
+  for (const selection of selections) {
+    await new sql.Request(transaction)
+      .input('bookingRoomId', sql.BigInt, bookingRoomId)
+      .input('chargeId', sql.BigInt, selection.id)
+      .input('quantity', sql.Int, selection.quantity)
+      .input('agreedAmount', sql.Decimal(10, 2), selection.agreedAmount ?? null)
+      .query(`
+        INSERT INTO dbo.booking_room_switchable_charges (booking_room_id, charge_id, quantity, agreed_amount)
+        VALUES (@bookingRoomId, @chargeId, @quantity, @agreedAmount)
+      `);
+  }
+}
+
+async function insertBookingRoom(transaction, bookingId, room) {
+  const result = await new sql.Request(transaction)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('roomId', sql.BigInt, room.roomId)
+    .input('checkInDate', sql.Date, room.checkInDate)
+    .input('checkOutDate', sql.Date, room.checkOutDate)
+    .input('basePriceOverride', sql.Decimal(10, 2), room.basePriceOverride ?? null)
+    .input('totalPrice', sql.Decimal(10, 2), room.totalPrice)
+    .input('discountAmount', sql.Decimal(10, 2), room.discountAmount)
+    .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(room.nights))
+    .query(`
+      INSERT INTO dbo.booking_rooms
+        (booking_id, room_id, check_in_date, check_out_date, base_price_override, total_price, discount_amount, nightly_breakdown)
+      OUTPUT inserted.id
+      VALUES (@bookingId, @roomId, @checkInDate, @checkOutDate, @basePriceOverride, @totalPrice, @discountAmount, @nightlyBreakdown)
+    `);
+  const bookingRoomId = result.recordset[0].id;
+  await writeRoomCharges(transaction, bookingRoomId, room.switchableCharges);
+  return bookingRoomId;
+}
+
+// bed_id holds the first bed the booking has, in any of its rooms, and
+// booking_beds the rest — the layout 089 set up, kept as it was. Which room a
+// bed is in is on the bed itself.
+async function writeBookingBeds(transaction, lodgeId, bookingId, bedIds) {
+  await new sql.Request(transaction)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query('DELETE FROM dbo.booking_beds WHERE booking_id = @bookingId');
+  await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('bedId', sql.BigInt, bedIds[0] ?? null)
+    .query('UPDATE dbo.bookings SET bed_id = @bedId WHERE id = @bookingId AND lodge_id = @lodgeId');
+  for (const extraBedId of bedIds.slice(1)) {
+    await new sql.Request(transaction)
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('bedId', sql.BigInt, extraBedId)
+      .query('INSERT INTO dbo.booking_beds (booking_id, bed_id) VALUES (@bookingId, @bedId)');
+  }
+}
+
+// The nights behind a room's price: its frozen snapshot, or an even split for
+// a room that has none (a booking older than the snapshot column).
+function roomNights(row) {
+  if (row.nightly_breakdown) {
+    try {
+      return JSON.parse(row.nightly_breakdown);
+    } catch {
+      // Falls through to the even split.
+    }
+  }
+  const dates = datesInRange(toIsoDate(row.check_in_date), toIsoDate(row.check_out_date));
+  const even = dates.length > 0 ? round2(Number(row.total_price) / dates.length) : 0;
+  return dates.map((date) => ({ date, total: even, lines: [] }));
+}
+
+// Recomputes the booking row from its rooms. Every write to booking_rooms ends
+// here, in the same transaction, so bookings.* can never disagree with them:
+// window = earliest check-in to latest check-out, price and concession = sums,
+// status = rollUpStatus, and room_id = the first room still on the booking.
+async function syncBookingFromRooms(transaction, bookingId) {
+  const rows = (
+    await new sql.Request(transaction)
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT br.id, br.room_id, r.room_number, br.check_in_date, br.check_out_date, br.status,
+               br.actual_check_in_at, br.actual_check_out_at, br.base_price_override, br.total_price,
+               br.discount_amount, br.nightly_breakdown, br.late_checkout_charge, br.late_checkout_minutes,
+               br.food_pin
+        FROM dbo.booking_rooms br
+        JOIN dbo.rooms r ON r.id = br.room_id
+        WHERE br.booking_id = @bookingId AND br.status <> 'CANCELLED'
+        ORDER BY br.id
+      `)
+  ).recordset;
+  if (rows.length === 0) return;
+
+  const status = rollUpStatus(rows.map((r) => r.status));
+  const allOut = status === 'CHECKED_OUT';
+  const arrivals = rows.map((r) => r.actual_check_in_at).filter(Boolean);
+  const departures = rows.map((r) => r.actual_check_out_at).filter(Boolean);
+  const lateMinutes = rows.map((r) => r.late_checkout_minutes).filter((m) => m != null);
+  const inHouse = rows.find((r) => r.status === 'CHECKED_IN');
+
+  await new sql.Request(transaction)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('roomId', sql.BigInt, rows[0].room_id)
+    .input('checkInDate', sql.Date, rows.map((r) => toIsoDate(r.check_in_date)).sort()[0])
+    .input('checkOutDate', sql.Date, rows.map((r) => toIsoDate(r.check_out_date)).sort().reverse()[0])
+    .input('status', sql.NVarChar, status)
+    .input('totalPrice', sql.Decimal(10, 2), round2(rows.reduce((s, r) => s + Number(r.total_price), 0)))
+    .input('discountAmount', sql.Decimal(10, 2), round2(rows.reduce((s, r) => s + Number(r.discount_amount ?? 0), 0)))
+    .input(
+      'nightlyBreakdown',
+      sql.NVarChar(sql.MAX),
+      JSON.stringify(mergeRoomNights(rows.map((r) => ({ roomNumber: r.room_number, nights: roomNights(r) }))))
+    )
+    .input('basePriceOverride', sql.Decimal(10, 2), rows[0].base_price_override ?? null)
+    .input('lateCharge', sql.Decimal(10, 2), round2(rows.reduce((s, r) => s + Number(r.late_checkout_charge ?? 0), 0)))
+    .input('lateMinutes', sql.Int, lateMinutes.length > 0 ? Math.max(...lateMinutes) : null)
+    .input('checkedInAt', sql.DateTimeOffset, arrivals.length > 0 ? new Date(Math.min(...arrivals.map(Number))) : null)
+    .input('checkedOutAt', sql.DateTimeOffset, allOut && departures.length > 0 ? new Date(Math.max(...departures.map(Number))) : null)
+    // The legacy single PIN is the first room still in house. Clearing it once
+    // nobody is in is what closes in-room ordering for the booking's PIN.
+    .input('foodPin', sql.NVarChar, inHouse?.food_pin ?? null)
+    .query(`
+      UPDATE dbo.bookings
+      SET room_id = @roomId, check_in_date = @checkInDate, check_out_date = @checkOutDate, status = @status,
+          total_price = @totalPrice, discount_amount = @discountAmount, nightly_breakdown = @nightlyBreakdown,
+          base_price_override = @basePriceOverride,
+          late_checkout_charge = @lateCharge, late_checkout_minutes = @lateMinutes,
+          actual_check_in_at = @checkedInAt, actual_check_out_at = @checkedOutAt,
+          food_pin = @foodPin
+      WHERE id = @bookingId
+    `);
+
+  // The legacy booking-level extras follow the first room, so the readers that
+  // still look at booking_switchable_charges see that room's.
+  await new sql.Request(transaction)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('bookingRoomId', sql.BigInt, rows[0].id)
+    .query(`
+      DELETE FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId;
+      INSERT INTO dbo.booking_switchable_charges (booking_id, charge_id, quantity, agreed_amount)
+      SELECT @bookingId, charge_id, quantity, agreed_amount
+      FROM dbo.booking_room_switchable_charges WHERE booking_room_id = @bookingRoomId;
+    `);
 }
 
 // An extra can only be charged if the lodge still offers it — a charge that
@@ -304,7 +608,7 @@ async function hasOverlap(
   let excludeClause = '';
   if (excludeBookingId) {
     request.input('excludeBookingId', sql.BigInt, excludeBookingId);
-    excludeClause = 'AND b.id <> @excludeBookingId';
+    excludeClause = 'AND br.booking_id <> @excludeBookingId';
   }
   // No bedIds at all means this call is asking about a whole-room booking
   // (a buyout), which loses to ANY booking already on the room — bed-level
@@ -324,10 +628,14 @@ async function hasOverlap(
   // request input — as far as anything arriving from a request is
   // concerned, this query is a constant.
   const lockHint = lock ? 'WITH (UPDLOCK, HOLDLOCK)' : '';
+  // Read off booking_rooms: each room of a booking has its own dates and its
+  // own status, so a room that has checked out (or a booking's other rooms)
+  // never blocks this one. The range lock lands on ix_booking_rooms_room_dates.
   const result = await request.query(`
-    SELECT TOP 1 b.id FROM dbo.bookings b ${lockHint}
-    WHERE b.room_id = @roomId AND b.status IN ('BOOKED', 'CHECKED_IN')
-      AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+    SELECT TOP 1 br.id FROM dbo.booking_rooms br ${lockHint}
+    JOIN dbo.bookings b ON b.id = br.booking_id
+    WHERE br.room_id = @roomId AND br.status IN ('BOOKED', 'CHECKED_IN')
+      AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
       ${excludeClause}
       AND (${bedClause})
   `);
@@ -372,14 +680,14 @@ async function listRoomConflicts(pool, lodgeId, checkInDate, checkOutDate, exclu
     .input('checkOutDate', sql.Date, checkOutDate)
     .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
-      SELECT b.room_id, b.check_in_date, b.check_out_date
-      FROM dbo.bookings b
-      JOIN dbo.rooms r ON r.id = b.room_id
+      SELECT br.room_id, br.check_in_date, br.check_out_date
+      FROM dbo.booking_rooms br
+      JOIN dbo.rooms r ON r.id = br.room_id
       WHERE r.lodge_id = @lodgeId AND r.is_active = 1
-        AND b.status IN ('BOOKED', 'CHECKED_IN')
-        AND (@excludeBookingId IS NULL OR b.id <> @excludeBookingId)
-        AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
-      ORDER BY b.room_id, b.check_in_date ASC
+        AND br.status IN ('BOOKED', 'CHECKED_IN')
+        AND (@excludeBookingId IS NULL OR br.booking_id <> @excludeBookingId)
+        AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+      ORDER BY br.room_id, br.check_in_date ASC
     `);
 
   // Guest names are deliberately not returned. Naming who holds the room is a
@@ -411,9 +719,9 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
           -- already sold on it: the room only counts as available when
           -- nothing at all is booked for the range.
           NOT EXISTS (
-            SELECT 1 FROM dbo.bookings b
-            WHERE b.room_id = r.id AND b.status IN ('BOOKED', 'CHECKED_IN')
-              AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+            SELECT 1 FROM dbo.booking_rooms br
+            WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN')
+              AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
           )
           OR (
             -- A dormitory sells its beds one at a time, so it stays offered
@@ -424,17 +732,19 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
             -- active bed already has a booking on it.
             r.is_dormitory = 1
             AND NOT EXISTS (
-              SELECT 1 FROM dbo.bookings b
-              WHERE b.room_id = r.id AND b.status IN ('BOOKED', 'CHECKED_IN') AND b.bed_id IS NULL
-                AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+              SELECT 1 FROM dbo.booking_rooms br
+              JOIN dbo.bookings b ON b.id = br.booking_id
+              WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN') AND b.bed_id IS NULL
+                AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
             )
             AND EXISTS (
               SELECT 1 FROM dbo.dormitory_beds db
               WHERE db.room_id = r.id AND db.is_active = 1
                 AND NOT EXISTS (
-                  SELECT 1 FROM dbo.bookings b
-                  WHERE b.status IN ('BOOKED', 'CHECKED_IN')
-                    AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+                  SELECT 1 FROM dbo.booking_rooms br
+                  JOIN dbo.bookings b ON b.id = br.booking_id
+                  WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN')
+                    AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
                     AND (
                       b.bed_id = db.id
                       OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
@@ -514,9 +824,10 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
     .query(`
       SELECT db.id, db.bed_label,
              CASE WHEN EXISTS (
-               SELECT 1 FROM dbo.bookings b
-               WHERE b.room_id = @roomId AND b.status IN ('BOOKED', 'CHECKED_IN')
-                 AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+               SELECT 1 FROM dbo.booking_rooms br
+               JOIN dbo.bookings b ON b.id = br.booking_id
+               WHERE br.room_id = @roomId AND br.status IN ('BOOKED', 'CHECKED_IN')
+                 AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
                  AND (
                    b.bed_id = db.id OR b.bed_id IS NULL
                    OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
@@ -535,7 +846,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
     .query(`
-      SELECT TOP 1 id FROM dbo.bookings
+      SELECT TOP 1 id FROM dbo.booking_rooms
       WHERE room_id = @roomId AND status IN ('BOOKED', 'CHECKED_IN')
         AND check_in_date < @checkOutDate AND check_out_date > @checkInDate
     `);
@@ -609,9 +920,9 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
       WHERE r.lodge_id = @lodgeId AND r.is_active = 1
         AND (
           NOT EXISTS (
-            SELECT 1 FROM dbo.bookings b
-            WHERE b.room_id = r.id AND b.id <> @bookingId AND b.status IN ('BOOKED', 'CHECKED_IN')
-              AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+            SELECT 1 FROM dbo.booking_rooms br
+            WHERE br.room_id = r.id AND br.booking_id <> @bookingId AND br.status IN ('BOOKED', 'CHECKED_IN')
+              AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
           )
           OR (
             -- Same bed-aware carve-out as listAvailableRooms: a dormitory
@@ -621,17 +932,23 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
             -- doesn't see itself as the thing blocking the room.
             r.is_dormitory = 1
             AND NOT EXISTS (
-              SELECT 1 FROM dbo.bookings b
-              WHERE b.room_id = r.id AND b.id <> @bookingId AND b.status IN ('BOOKED', 'CHECKED_IN') AND b.bed_id IS NULL
-                AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+              SELECT 1 FROM dbo.booking_rooms br
+              JOIN dbo.bookings b ON b.id = br.booking_id
+              WHERE br.room_id = r.id AND br.booking_id <> @bookingId AND br.status IN ('BOOKED', 'CHECKED_IN') AND b.bed_id IS NULL
+                AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
             )
             AND EXISTS (
               SELECT 1 FROM dbo.dormitory_beds db
               WHERE db.room_id = r.id AND db.is_active = 1
                 AND NOT EXISTS (
-                  SELECT 1 FROM dbo.bookings b
-                  WHERE b.bed_id = db.id AND b.id <> @bookingId AND b.status IN ('BOOKED', 'CHECKED_IN')
-                    AND b.check_in_date < @checkOutDate AND b.check_out_date > @checkInDate
+                  SELECT 1 FROM dbo.booking_rooms br
+                  JOIN dbo.bookings b ON b.id = br.booking_id
+                  WHERE br.room_id = r.id AND br.booking_id <> @bookingId AND br.status IN ('BOOKED', 'CHECKED_IN')
+                    AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                    AND (
+                      b.bed_id = db.id
+                      OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
+                    )
                 )
             )
           )
@@ -688,6 +1005,11 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
            b.check_in_date, b.check_out_date, b.status, b.total_price,
            b.actual_check_in_at, b.actual_check_out_at,
            r.room_number, c.name AS category_name,
+           -- Every room the booking holds, in the order they were added; the
+           -- register shows this where it used to show the one room number.
+           (SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY br.id)
+            FROM dbo.booking_rooms br JOIN dbo.rooms rr ON rr.id = br.room_id
+            WHERE br.booking_id = b.id AND (br.status <> 'CANCELLED' OR b.status = 'CANCELLED')) AS room_numbers,
            (SELECT STRING_AGG(bv.vehicle_number, ', ') FROM dbo.booking_vehicles bv WHERE bv.booking_id = b.id)
              AS vehicle_numbers,
            -- The rest of the party. The register's search box has to find a
@@ -723,6 +1045,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
     vehicleNumbers: row.vehicle_numbers ? row.vehicle_numbers.split(', ') : [],
     coGuestNames: row.co_guest_names ? row.co_guest_names.split('') : [],
     roomNumber: row.room_number,
+    roomNumbers: row.room_numbers ?? row.room_number,
     categoryName: row.category_name,
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
@@ -770,16 +1093,25 @@ async function getTapeChart(lodgeId, startDate, endDate) {
     .input('startDate', sql.Date, startDate)
     .input('endDate', sql.Date, endDate)
     .query(`
-      SELECT b.id, b.room_id, b.bed_id, db.bed_label, b.guest_name, b.guest_phone, b.id_proof_number,
-             b.check_in_date, b.check_out_date, b.status, b.total_price,
-             -- Every bed beyond bed_id, for a multi-bed booking (empty for
-             -- every other kind). Same CHAR(31)-joined shape as the co-guest
-             -- lists just below, for the same reason.
-             (SELECT STRING_AGG(CAST(bb.bed_id AS NVARCHAR(20)), CHAR(31)) FROM dbo.booking_beds bb
-              WHERE bb.booking_id = b.id) AS extra_bed_ids,
-             (SELECT STRING_AGG(edb.bed_label, CHAR(31)) FROM dbo.booking_beds bb
-              JOIN dbo.dormitory_beds edb ON edb.id = bb.bed_id
-              WHERE bb.booking_id = b.id) AS extra_bed_labels,
+      -- One row per ROOM of a booking, not per booking: each room has its own
+      -- dates and status, and the chart draws a strip per room. The id column
+      -- is still the booking's, so every strip of one booking opens the same record.
+      SELECT b.id, br.room_id, br.id AS booking_room_id, b.guest_name, b.guest_phone, b.id_proof_number,
+             br.check_in_date, br.check_out_date, br.status, br.total_price,
+             (SELECT COUNT(*) FROM dbo.booking_rooms x WHERE x.booking_id = b.id AND x.status <> 'CANCELLED') AS room_count,
+             -- The beds this booking holds in THIS room (bed_id plus the
+             -- booking_beds extras, which can sit in any of its rooms), id
+             -- order. Same CHAR(31)-joined shape as the co-guest lists below.
+             (SELECT STRING_AGG(CAST(v.bed_id AS NVARCHAR(20)), CHAR(31)) WITHIN GROUP (ORDER BY v.bed_id)
+              FROM (SELECT b.bed_id AS bed_id WHERE b.bed_id IS NOT NULL
+                    UNION SELECT bb.bed_id FROM dbo.booking_beds bb WHERE bb.booking_id = b.id) v
+              JOIN dbo.dormitory_beds vdb ON vdb.id = v.bed_id
+              WHERE vdb.room_id = br.room_id) AS bed_ids,
+             (SELECT STRING_AGG(vdb.bed_label, CHAR(31)) WITHIN GROUP (ORDER BY v.bed_id)
+              FROM (SELECT b.bed_id AS bed_id WHERE b.bed_id IS NOT NULL
+                    UNION SELECT bb.bed_id FROM dbo.booking_beds bb WHERE bb.booking_id = b.id) v
+              JOIN dbo.dormitory_beds vdb ON vdb.id = v.bed_id
+              WHERE vdb.room_id = br.room_id) AS bed_labels,
              -- What the chart's search box matches on beyond the primary guest.
              -- Both are aggregated here rather than fetched per booking: the
              -- chart already draws every stay in the window, and a second round
@@ -793,8 +1125,8 @@ async function getTapeChart(lodgeId, startDate, endDate) {
              (SELECT STRING_AGG(g.id_proof_number, CHAR(31)) FROM dbo.booking_guests g
               WHERE g.booking_id = b.id AND g.id_proof_number IS NOT NULL) AS co_guest_id_numbers,
              i.invoice_number
-      FROM dbo.bookings b
-      LEFT JOIN dbo.dormitory_beds db ON db.id = b.bed_id
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
       -- The issued bill, if the stay has been billed. OUTER APPLY rather than a
       -- join so an unbilled stay still draws — most of the chart is unbilled.
       OUTER APPLY (
@@ -802,9 +1134,9 @@ async function getTapeChart(lodgeId, startDate, endDate) {
         WHERE booking_id = b.id AND status = 'ISSUED'
         ORDER BY created_at DESC
       ) i
-      WHERE b.lodge_id = @lodgeId AND b.status IN ('BOOKED', 'CHECKED_IN', 'CHECKED_OUT')
-        AND b.check_in_date < @endDate AND b.check_out_date > @startDate
-      ORDER BY b.check_in_date ASC
+      WHERE b.lodge_id = @lodgeId AND br.status IN ('BOOKED', 'CHECKED_IN', 'CHECKED_OUT')
+        AND br.check_in_date < @endDate AND br.check_out_date > @startDate
+      ORDER BY br.check_in_date ASC, br.id ASC
     `);
 
   // Kept apart from `bookings` rather than merged with a flag: a draft holds
@@ -824,12 +1156,13 @@ async function getTapeChart(lodgeId, startDate, endDate) {
     .input('startDate', sql.Date, startDate)
     .input('endDate', sql.Date, endDate)
     .query(`
-      SELECT b.id, b.room_id, b.guest_name, b.check_in_date, b.check_out_date,
+      SELECT b.id, br.room_id, b.guest_name, br.check_in_date, br.check_out_date,
              b.cancelled_at, b.refund_amount, b.cancellation_charge
-      FROM dbo.bookings b
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
       WHERE b.lodge_id = @lodgeId AND b.status = 'CANCELLED'
-        AND b.check_in_date < @endDate AND b.check_out_date > @startDate
-      ORDER BY b.check_in_date ASC
+        AND br.check_in_date < @endDate AND br.check_out_date > @startDate
+      ORDER BY br.check_in_date ASC, br.id ASC
     `);
 
   return {
@@ -850,20 +1183,18 @@ async function getTapeChart(lodgeId, startDate, endDate) {
     bookings: bookingsResult.recordset.map((b) => ({
       id: b.id,
       roomId: b.room_id,
-      bedId: b.bed_id,
-      bedLabel: b.bed_label,
-      // Every bed this booking holds, id order — [bedId, ...extra_bed_ids]
-      // for a multi-bed booking, just [bedId] otherwise, [] on a whole-room
-      // or non-dormitory booking. The chart uses this to count occupied beds
-      // instead of counting booking rows, which undercounts a multi-bed one.
-      bedIds: [
-        ...(b.bed_id != null ? [b.bed_id] : []),
-        ...(b.extra_bed_ids ? b.extra_bed_ids.split('\u001f').map(Number) : []),
-      ],
-      bedLabels: [
-        ...(b.bed_label != null ? [b.bed_label] : []),
-        ...(b.extra_bed_labels ? b.extra_bed_labels.split('\u001f') : []),
-      ],
+      bookingRoomId: b.booking_room_id,
+      // How many rooms the booking holds, so a strip can say it is one of
+      // several without the chart fetching the booking.
+      roomCount: Number(b.room_count),
+      // Every bed this booking holds in this room, id order — [] on a
+      // whole-room or non-dormitory booking. The chart uses this to count
+      // occupied beds instead of counting booking rows, which undercounts a
+      // multi-bed one.
+      bedId: b.bed_ids ? Number(b.bed_ids.split('\u001f')[0]) : null,
+      bedLabel: b.bed_labels ? b.bed_labels.split('\u001f')[0] : null,
+      bedIds: b.bed_ids ? b.bed_ids.split('\u001f').map(Number) : [],
+      bedLabels: b.bed_labels ? b.bed_labels.split('\u001f') : [],
       guestName: b.guest_name,
       guestPhone: b.guest_phone,
       // The rest of what the stay can be looked up by on the chart. Names, not
@@ -916,10 +1247,19 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     roomId: row.room_id,
     roomNumber: row.room_number,
     categoryName: row.category_name,
+    // Every room the booking holds — roomId/roomNumber/categoryName above are
+    // the first of them, kept for the screens that only know one. Only
+    // getBooking loads them; a booking mapped by a list endpoint has none.
+    rooms: extra.rooms ?? [],
+    roomCount: extra.rooms ? extra.rooms.length : 1,
+    roomNumbers: extra.rooms ? extra.rooms.map((r) => r.roomNumber).join(', ') : row.room_number,
     // How many the room sleeps, so check-in can say something when the party
     // that turned up outgrows it. Advice, not a limit — the desk decides, and
-    // NULL wherever the property never recorded one.
-    roomMaxOccupancy: row.max_occupancy ?? null,
+    // NULL wherever the property never recorded one. Across all the booking's
+    // rooms when it has several.
+    roomMaxOccupancy: extra.rooms
+      ? extra.rooms.reduce((sum, r) => sum + (r.maxOccupancy ?? 0), 0) || null
+      : row.max_occupancy ?? null,
     isDormitory: !!row.is_dormitory,
     // The first (or only) bed this booking holds, on a dormitory room — NULL
     // on every other booking, and on a dormitory room deliberately how a
@@ -1333,17 +1673,20 @@ async function getBooking(lodgeId, bookingId) {
   // fail, so no lockout to look for, and the register shouldn't pay a query
   // for the answer "no".
   const takesRoomOrders = !!row.serves_food && !!row.food_room_service;
+  // Every room label currently locked out in this lodge — a booking of several
+  // rooms has a PIN, and so a lockout, per room, and it is a short list.
   const lockoutResult = takesRoomOrders
     ? await pool
         .request()
         .input('lodgeId', sql.BigInt, lodgeId)
-        .input('roomLabel', sql.NVarChar, row.room_number)
         .query(`
-          SELECT locked_until FROM dbo.food_pin_lockouts
-          WHERE lodge_id = @lodgeId AND room_label = @roomLabel
+          SELECT room_label, locked_until FROM dbo.food_pin_lockouts
+          WHERE lodge_id = @lodgeId
             AND locked_until IS NOT NULL AND locked_until > SYSDATETIMEOFFSET()
         `)
     : { recordset: [] };
+  const lockedUntilOf = (roomNumber) =>
+    lockoutResult.recordset.find((l) => String(l.room_label) === String(roomNumber))?.locked_until ?? null;
 
   const availableSwitchableCharges = await getActiveSwitchableCharges(pool, lodgeId);
 
@@ -1359,6 +1702,81 @@ async function getBooking(lodgeId, bookingId) {
       WHERE bb.booking_id = @bookingId
       ORDER BY bb.id ASC
     `);
+
+  // The rooms of the booking, each with its own dates, status, price, extras
+  // and beds. A cancelled booking keeps showing the rooms it had.
+  const bookingRoomsResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('includeCancelled', sql.Bit, row.status === 'CANCELLED' ? 1 : 0)
+    .query(`
+      SELECT br.id, br.room_id, r.room_number, r.max_occupancy, r.is_dormitory, c.name AS category_name,
+             br.check_in_date, br.check_out_date, br.status, br.actual_check_in_at, br.actual_check_out_at,
+             br.base_price_override, br.total_price, br.discount_amount, br.nightly_breakdown,
+             br.late_checkout_charge, br.late_checkout_minutes, br.food_pin
+      FROM dbo.booking_rooms br
+      JOIN dbo.rooms r ON r.id = br.room_id
+      JOIN dbo.room_categories c ON c.id = r.category_id
+      WHERE br.booking_id = @bookingId AND (br.status <> 'CANCELLED' OR @includeCancelled = 1)
+      ORDER BY br.id ASC
+    `);
+  const roomChargesResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT brsc.booking_room_id, sc.id, sc.name, sc.charge_per_night, brsc.quantity, brsc.agreed_amount
+      FROM dbo.booking_room_switchable_charges brsc
+      JOIN dbo.booking_rooms br ON br.id = brsc.booking_room_id
+      JOIN dbo.switchable_charges sc ON sc.id = brsc.charge_id
+      WHERE br.booking_id = @bookingId
+    `);
+  const allBedsResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT db.id, db.bed_label, db.room_id
+      FROM (SELECT bed_id FROM dbo.bookings WHERE id = @bookingId AND bed_id IS NOT NULL
+            UNION SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId) v
+      JOIN dbo.dormitory_beds db ON db.id = v.bed_id
+      ORDER BY db.id ASC
+    `);
+  const rooms = bookingRoomsResult.recordset.map((br) => {
+    const beds = allBedsResult.recordset.filter((b) => Number(b.room_id) === Number(br.room_id));
+    return {
+      bookingRoomId: br.id,
+      roomId: br.room_id,
+      roomNumber: br.room_number,
+      categoryName: br.category_name,
+      maxOccupancy: br.max_occupancy ?? null,
+      isDormitory: !!br.is_dormitory,
+      bedIds: beds.map((b) => b.id),
+      bedLabels: beds.map((b) => b.bed_label),
+      checkInDate: toIsoDate(br.check_in_date),
+      checkOutDate: toIsoDate(br.check_out_date),
+      status: br.status,
+      actualCheckInAt: br.actual_check_in_at,
+      actualCheckOutAt: br.actual_check_out_at,
+      basePriceOverride: br.base_price_override != null ? Number(br.base_price_override) : null,
+      totalPrice: Number(br.total_price),
+      discountAmount: Number(br.discount_amount ?? 0),
+      grossTotalPrice: round2(Number(br.total_price) + Number(br.discount_amount ?? 0)),
+      roomCharges: billingService.roomChargeLines(br),
+      nights: nightlyLines(br),
+      lateCheckoutCharge: Number(br.late_checkout_charge ?? 0),
+      lateCheckoutMinutes: br.late_checkout_minutes ?? null,
+      foodPin: takesRoomOrders ? br.food_pin ?? null : null,
+      foodOrderingLockedUntil: lockedUntilOf(br.room_number),
+      switchableCharges: roomChargesResult.recordset
+        .filter((c) => Number(c.booking_room_id) === Number(br.id))
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          chargePerNight: Number(c.charge_per_night),
+          agreedAmount: c.agreed_amount == null ? null : Number(c.agreed_amount),
+          quantity: Number(c.quantity ?? 1),
+        })),
+    };
+  });
 
   // How the advance on this stay actually arrived, one entry per method.
   //
@@ -1394,85 +1812,52 @@ async function getBooking(lodgeId, bookingId) {
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
     invoice,
     availableSwitchableCharges,
-    foodOrderingLockedUntil: lockoutResult.recordset[0]?.locked_until ?? null,
+    foodOrderingLockedUntil: lockedUntilOf(row.room_number),
     extraBeds: extraBedsResult.recordset.map((r) => ({ id: r.bed_id, bedLabel: r.bed_label })),
+    rooms,
   });
 }
 
 async function createBooking(lodgeId, userId, input) {
   const pool = await getPool();
 
-  const roomResult = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('roomId', sql.BigInt, input.roomId)
-    .query('SELECT id, is_dormitory FROM dbo.rooms WHERE id = @roomId AND lodge_id = @lodgeId AND is_active = 1');
-  if (roomResult.recordset.length === 0) {
-    throw new ApiError('Choose a valid room.', 400);
-  }
-  const room = roomResult.recordset[0];
+  const rooms = normalizeRoomInputs(input);
+  const roomRows = await loadAndCheckRooms(pool, lodgeId, rooms);
 
-  // bedIds is the multi-bed form; a lone bedId (legacy, still accepted) is
-  // just a one-element list. A dormitory room now always requires at least
-  // one bed — whole-room buyout bookings are no longer offered. (Existing
-  // bed_id-less bookings from before that change still read fine everywhere
-  // else; this only blocks creating new ones.) bedId, the column, always
-  // mirrors the first bed picked; the rest (if any) go in booking_beds.
-  const bedIds = Array.from(
-    new Set((input.bedIds && input.bedIds.length > 0 ? input.bedIds : input.bedId != null ? [input.bedId] : []).map(Number))
+  // Extras are per room. One list of everything asked for is enough to check
+  // the lodge still offers each.
+  await assertChargesAvailable(
+    pool,
+    lodgeId,
+    rooms.flatMap((r) => r.switchableCharges)
   );
-  const bedId = bedIds[0] ?? null;
-  if (room.is_dormitory && bedIds.length === 0) {
-    throw new ApiError('Choose a bed.', 400);
-  }
-  if (bedIds.length > 0) {
-    if (!room.is_dormitory) {
-      throw new ApiError('This room isn’t set up as a dormitory.', 400);
-    }
-    const bedResult = await pool
-      .request()
-      .input('roomId', sql.BigInt, input.roomId)
-      .query('SELECT id FROM dbo.dormitory_beds WHERE room_id = @roomId AND is_active = 1');
-    const validIds = new Set(bedResult.recordset.map((r) => Number(r.id)));
-    if (!bedIds.every((id) => validIds.has(id))) {
-      throw new ApiError('Choose a valid bed.', 400);
-    }
-  }
 
-  const switchableCharges = pricingService.normalizeSelections(input.switchableCharges);
-  await assertChargesAvailable(pool, lodgeId, switchableCharges);
+  // A party can't outgrow the rooms it booked by more than the desk allows, but
+  // the desk decides that; this only refuses the plainly impossible.
+  const takenMessage = (room) =>
+    room.bedIds.length > 0
+      ? 'That bed is already booked for part of that date range.'
+      : `Room ${roomRows.get(room.roomId).room_number} is already booked for part of that date range.`;
 
   // Pre-flight, deliberately unlocked: it rejects the common case before the
   // pricing work below without holding a lock across it. The check that decides
   // the outcome is the one inside the transaction.
-  if (
-    await hasOverlap(() => pool.request(), input.roomId, input.checkInDate, input.checkOutDate, undefined, {
-      bedIds,
-    })
-  ) {
-    throw new ApiError(
-      bedIds.length > 0
-        ? 'That bed is already booked for part of that date range.'
-        : 'This room is already booked for part of that date range.',
-      409
-    );
+  for (const room of rooms) {
+    if (
+      await hasOverlap(() => pool.request(), room.roomId, room.checkInDate, room.checkOutDate, undefined, {
+        bedIds: room.bedIds,
+      })
+    ) {
+      throw new ApiError(takenMessage(room), 409);
+    }
   }
 
   const requestedDiscount = input.discountAmount ?? 0;
 
-  const { nights, totalPrice, discountAmount, grossTotal } = await priceStay(
-    lodgeId,
-    input.roomId,
-    input.checkInDate,
-    input.checkOutDate,
-    switchableCharges,
-    input.basePriceOverride ?? null,
-    requestedDiscount,
-    bedId,
-    bedIds
-  );
+  const priced = await priceBooking(lodgeId, rooms, requestedDiscount);
+  const { totalPrice, discountAmount, grossTotal } = priced;
 
-  // priceStay clamps for the sake of the live quote; a save is a decision, so
+  // priceBooking clamps for the sake of the live quote; a save is a decision, so
   // a concession bigger than the stay is an error rather than a silent haircut
   // reception never sees.
   if (round2(requestedDiscount) > discountAmount) {
@@ -1486,68 +1871,66 @@ async function createBooking(lodgeId, userId, input) {
   const transaction = new sql.Transaction(pool);
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
   try {
-    const conflict = await hasOverlap(
-      () => new sql.Request(transaction),
-      input.roomId,
-      input.checkInDate,
-      input.checkOutDate,
-      undefined,
-      { lock: true, bedIds }
-    );
-    if (conflict) {
-      throw new ApiError(
-        bedIds.length > 0
-          ? 'That bed is already booked for part of that date range.'
-          : 'This room is already booked for part of that date range.',
-        409
+    for (const room of rooms) {
+      const conflict = await hasOverlap(
+        () => new sql.Request(transaction),
+        room.roomId,
+        room.checkInDate,
+        room.checkOutDate,
+        undefined,
+        { lock: true, bedIds: room.bedIds }
       );
+      if (conflict) {
+        throw new ApiError(takenMessage(room), 409);
+      }
     }
 
+    // The booking row is written with the roll-up of its rooms already; the
+    // sync below re-derives it from the rows so the two can't drift.
+    const first = priced.rooms[0];
     const insertResult = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
-      .input('roomId', sql.BigInt, input.roomId)
-      .input('bedId', sql.BigInt, bedId)
+      .input('roomId', sql.BigInt, first.roomId)
       .input('guestName', sql.NVarChar, input.guestName)
       .input('guestPhone', sql.NVarChar, input.guestPhone)
       .input('numGuests', sql.Int, input.numGuests)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
       .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
-      .input('checkInDate', sql.Date, input.checkInDate)
-      .input('checkOutDate', sql.Date, input.checkOutDate)
+      .input('checkInDate', sql.Date, first.checkInDate)
+      .input('checkOutDate', sql.Date, first.checkOutDate)
       .input('totalPrice', sql.Decimal(10, 2), totalPrice)
       .input('discountAmount', sql.Decimal(10, 2), discountAmount)
-      .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(nights))
+      .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(first.nights))
       .input('createdBy', sql.BigInt, userId ?? null)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
       .input('advanceReference', sql.NVarChar, input.advanceReference ?? null)
-      .input('basePriceOverride', sql.Decimal(10, 2), input.basePriceOverride ?? null)
+      .input('basePriceOverride', sql.Decimal(10, 2), first.basePriceOverride ?? null)
       .query(`
         INSERT INTO dbo.bookings
-          (lodge_id, room_id, bed_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_number, id_proof_document,
+          (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_number, id_proof_document,
            check_in_date, check_out_date, total_price, discount_amount, nightly_breakdown, created_by,
            advance_amount, advance_payment_method, advance_reference, base_price_override)
         OUTPUT inserted.id
         VALUES
-          (@lodgeId, @roomId, @bedId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofNumber, @idProofDocument,
+          (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofNumber, @idProofDocument,
            @checkInDate, @checkOutDate, @totalPrice, @discountAmount, @nightlyBreakdown, @createdBy,
            @advanceAmount, @advancePaymentMethod, @advanceReference, @basePriceOverride)
       `);
 
     const bookingId = insertResult.recordset[0].id;
 
-    // bed_id already holds the first bed (or null). The rest of a multi-bed
-    // pick — everything past index 0 — go here; a single-bed or whole-room
-    // booking leaves this table untouched, same as before this table existed.
-    for (const extraBedId of bedIds.slice(1)) {
-      await new sql.Request(transaction)
-        .input('bookingId', sql.BigInt, bookingId)
-        .input('bedId', sql.BigInt, extraBedId)
-        .query('INSERT INTO dbo.booking_beds (booking_id, bed_id) VALUES (@bookingId, @bedId)');
+    for (const room of priced.rooms) {
+      await insertBookingRoom(transaction, bookingId, room);
     }
-
-    await replaceBookingCharges(transaction, bookingId, switchableCharges);
+    await writeBookingBeds(
+      transaction,
+      lodgeId,
+      bookingId,
+      rooms.flatMap((r) => r.bedIds)
+    );
+    await syncBookingFromRooms(transaction, bookingId);
 
     await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicles);
 
@@ -1676,7 +2059,10 @@ async function replaceBookingVehicles(transaction, bookingId, vehicles) {
   }
 }
 
-async function checkIn(lodgeId, bookingId, input, userId = null) {
+// Checks in every room of the booking whose date has come, or just `roomId`
+// when the desk is bringing rooms in one at a time. A room dated for later stays
+// BOOKED, so a party arriving in stages checks in stage by stage.
+async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null } = {}) {
   const pool = await getPool();
 
   const bookingResult = await pool
@@ -1684,37 +2070,53 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.room_id, b.bed_id, b.num_guests, b.id_proof_type, b.check_in_date,
-             b.total_price, b.advance_amount,
+      SELECT b.num_guests, b.id_proof_type, b.total_price, b.advance_amount,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.lodges l ON l.id = b.lodge_id
-      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId AND b.status = 'BOOKED'
+      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId AND b.status IN ('BOOKED', 'CHECKED_IN')
     `);
   const bookingRow = bookingResult.recordset[0];
   if (!bookingRow) {
     throw new ApiError('Booking not found or not ready for check-in.', 409);
   }
 
-  // A dormitory sells one room bed by bed — this booking's own bed(s), if it
-  // has any. Empty means a whole-room booking (bed_id IS NULL), which is
-  // occupied by anyone still in the room, the same as an ordinary room.
+  const waitingResult = await pool
+    .request()
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('roomId', sql.BigInt, roomId)
+    .query(`
+      SELECT br.id, br.room_id, br.check_in_date, r.room_number
+      FROM dbo.booking_rooms br
+      JOIN dbo.rooms r ON r.id = br.room_id
+      WHERE br.booking_id = @bookingId AND br.status = 'BOOKED'
+        AND (@roomId IS NULL OR br.room_id = @roomId)
+      ORDER BY br.id
+    `);
+  if (waitingResult.recordset.length === 0) {
+    throw new ApiError('Booking not found or not ready for check-in.', 409);
+  }
+
+  // A pre-reservation holds the room for a future date — it can't be
+  // checked in early, only from its reserved date onward. A walk-in is
+  // always booked for today, so this never blocks the common case. Each room
+  // has its own date, so only the rooms whose day has come are taken in.
+  const today = todayIsoIST();
+  const arriving = waitingResult.recordset.filter((r) => toIsoDate(r.check_in_date) <= today);
+  if (arriving.length === 0) {
+    throw new ApiError('This booking is for a future date — check-in opens on the reserved date.', 409);
+  }
+
+  // Every bed the booking holds, with the room it is in.
   const ownBedsResult = await pool
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId
-      UNION
-      SELECT bed_id FROM dbo.bookings WHERE id = @bookingId AND bed_id IS NOT NULL
+      SELECT db.id, db.room_id
+      FROM (SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId
+            UNION SELECT bed_id FROM dbo.bookings WHERE id = @bookingId AND bed_id IS NOT NULL) v
+      JOIN dbo.dormitory_beds db ON db.id = v.bed_id
     `);
-  const ownBedIds = ownBedsResult.recordset.map((r) => Number(r.bed_id));
-
-  // A pre-reservation holds the room for a future date — it can't be
-  // checked in early, only from its reserved date onward. A walk-in is
-  // always booked for today, so this never blocks the common case.
-  if (toIsoDate(bookingRow.check_in_date) > todayIsoIST()) {
-    throw new ApiError('This booking is for a future date — check-in opens on the reserved date.', 409);
-  }
 
   // The date ranges not overlapping was already enforced when this booking was
   // made — but that only promises the room by the *reserved* checkout date.
@@ -1727,26 +2129,32 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
   // checked in on a *different* bed doesn't block this one — only someone
   // still in this booking's own bed(s), or a whole-room buyout, does. Same
   // bed-vs-room rule hasOverlap uses for the date clash check.
-  const bedClause =
-    ownBedIds.length > 0
-      ? `b.bed_id IS NULL OR b.bed_id IN (${ownBedIds.join(',')}) OR EXISTS (
-           SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id IN (${ownBedIds.join(',')})
-         )`
-      : '1 = 1';
-  const stillOccupiedResult = await pool
-    .request()
-    .input('roomId', sql.BigInt, bookingRow.room_id)
-    .input('bookingId', sql.BigInt, bookingId)
-    .query(`
-      SELECT TOP 1 b.id FROM dbo.bookings b
-      WHERE b.room_id = @roomId AND b.id <> @bookingId AND b.status = 'CHECKED_IN'
-        AND (${bedClause})
-    `);
-  if (stillOccupiedResult.recordset.length > 0) {
-    throw new ApiError(
-      'This room’s current guest hasn’t checked out yet — check them out before checking in the next booking.',
-      409
-    );
+  for (const room of arriving) {
+    const ownBedIds = ownBedsResult.recordset
+      .filter((b) => Number(b.room_id) === Number(room.room_id))
+      .map((b) => Number(b.id));
+    const bedClause =
+      ownBedIds.length > 0
+        ? `b.bed_id IS NULL OR b.bed_id IN (${ownBedIds.join(',')}) OR EXISTS (
+             SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id IN (${ownBedIds.join(',')})
+           )`
+        : '1 = 1';
+    const stillOccupiedResult = await pool
+      .request()
+      .input('roomId', sql.BigInt, room.room_id)
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT TOP 1 br.id FROM dbo.booking_rooms br
+        JOIN dbo.bookings b ON b.id = br.booking_id
+        WHERE br.room_id = @roomId AND br.booking_id <> @bookingId AND br.status = 'CHECKED_IN'
+          AND (${bedClause})
+      `);
+    if (stillOccupiedResult.recordset.length > 0) {
+      throw new ApiError(
+        `Room ${room.room_number}’s current guest hasn’t checked out yet — check them out before checking in the next booking.`,
+        409
+      );
+    }
   }
 
   // A walk-in booking already has its ID proof on file; a pre-reservation
@@ -1783,7 +2191,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
 
   const takesRoomOrders = !!bookingRow.serves_food && !!bookingRow.food_room_service;
 
-  // Every PIN currently live in this lodge, so the new one can't collide with
+  // Every PIN currently live in this lodge, so the new ones can't collide with
   // a room that's still checked in.
   const takenPins = takesRoomOrders
     ? new Set(
@@ -1791,7 +2199,11 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
           await pool
             .request()
             .input('lodgeId', sql.BigInt, lodgeId)
-            .query("SELECT food_pin FROM dbo.bookings WHERE lodge_id = @lodgeId AND food_pin IS NOT NULL")
+            .query(`
+              SELECT br.food_pin FROM dbo.booking_rooms br
+              JOIN dbo.bookings b ON b.id = br.booking_id
+              WHERE b.lodge_id = @lodgeId AND br.food_pin IS NOT NULL
+            `)
         ).recordset.map((r) => r.food_pin)
       )
     : null;
@@ -1809,15 +2221,9 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
       .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .input('numGuests', sql.Int, newNumGuests)
-      // Only where a guest could actually use one. A rooms-only property has
-      // no kitchen and no QR to scan, so a PIN there is a number reception
-      // reads out for nothing — and one more secret sitting in the database.
-      .input('foodPin', sql.NVarChar, takesRoomOrders ? newFoodPin(takenPins) : null)
       .query(`
         UPDATE dbo.bookings
-        SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(),
-            food_pin = @foodPin,
-            num_guests = @numGuests,
+        SET num_guests = @numGuests,
             advance_amount = CASE
               WHEN @advanceAmount IS NULL THEN advance_amount
               ELSE ISNULL(advance_amount, 0) + @advanceAmount
@@ -1828,11 +2234,32 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
             id_proof_number = COALESCE(@idProofNumber, id_proof_number),
             id_proof_document = COALESCE(@idProofDocument, id_proof_document)
         OUTPUT inserted.id
-        WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'BOOKED'
+        WHERE id = @bookingId AND lodge_id = @lodgeId AND status IN ('BOOKED', 'CHECKED_IN')
       `);
     if (result.recordset.length === 0) {
       throw new ApiError('Booking not found or not ready for check-in.', 409);
     }
+
+    for (const room of arriving) {
+      // A PIN only where a guest could actually use one. A rooms-only property
+      // has no kitchen and no QR to scan, so a PIN there is a number reception
+      // reads out for nothing — and one more secret sitting in the database.
+      const pin = takesRoomOrders ? newFoodPin(takenPins) : null;
+      if (pin) takenPins.add(pin);
+      const roomResult = await new sql.Request(transaction)
+        .input('id', sql.BigInt, room.id)
+        .input('foodPin', sql.NVarChar, pin)
+        .query(`
+          UPDATE dbo.booking_rooms
+          SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(), food_pin = @foodPin
+          OUTPUT inserted.id
+          WHERE id = @id AND status = 'BOOKED'
+        `);
+      if (roomResult.recordset.length === 0) {
+        throw new ApiError('Booking not found or not ready for check-in.', 409);
+      }
+    }
+    await syncBookingFromRooms(transaction, bookingId);
 
     await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicles);
 
@@ -1853,20 +2280,30 @@ async function checkIn(lodgeId, bookingId, input, userId = null) {
 // What reception is shown before they check anyone out: when the stay was due
 // to end, how far past that it is right now, and what the property's own policy
 // says that is worth. The suggestion is advisory — the desk decides.
-async function getLateCheckout(lodgeId, bookingId, at = new Date()) {
+//
+// Per room, because each room has its own dates and its own arrival. Without a
+// roomId it answers for the room the booking is most "live" in: the first one
+// checked in, else the first one.
+async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = null) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
+    .input('roomId', sql.BigInt, roomId)
     .query(`
-      SELECT b.check_in_date, b.check_out_date, b.actual_check_in_at, b.status,
-             b.total_price, b.nightly_breakdown, b.late_checkout_charge,
+      SELECT TOP 1 br.id AS booking_room_id, br.room_id, r.room_number,
+             br.check_in_date, br.check_out_date, br.actual_check_in_at, br.status,
+             br.total_price, br.nightly_breakdown, br.late_checkout_charge,
              l.checkin_mode, l.check_out_time, l.check_in_time, l.late_grace_minutes,
              l.late_half_day_percent, l.late_full_day_after_minutes, l.late_full_day_percent
-      FROM dbo.bookings b
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      JOIN dbo.rooms r ON r.id = br.room_id
       JOIN dbo.lodges l ON l.id = b.lodge_id
-      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId
+      WHERE br.booking_id = @bookingId AND b.lodge_id = @lodgeId AND br.status <> 'CANCELLED'
+        AND (@roomId IS NULL OR br.room_id = @roomId)
+      ORDER BY CASE WHEN br.status = 'CHECKED_IN' THEN 0 ELSE 1 END, br.id
     `);
   const row = result.recordset[0];
   if (!row) {
@@ -1922,6 +2359,9 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date()) {
     checkInTime: toClockTime(row.check_in_time),
     checkOutTime: toClockTime(row.check_out_time),
     bookingId: Number(bookingId),
+    // Which room this answer is for.
+    roomId: row.room_id,
+    roomNumber: row.room_number,
     status: row.status,
     checkinMode: row.checkin_mode,
     deadline: deadline.toISOString(),
@@ -1936,7 +2376,7 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date()) {
     band: suggestion.band,
     percent: suggestion.percent,
     policy,
-    appliedCharge: Number(row.late_checkout_charge),
+    appliedCharge: Number(row.late_checkout_charge ?? 0),
   };
 }
 
@@ -1960,52 +2400,98 @@ function toClockTime(value) {
   return `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}`;
 }
 
-// lateCharge is whatever reception decided, including 0 for "waived" — it is
-// never recomputed from the policy here. The policy only ever produced a
-// suggestion, and overriding it is the entire point of asking.
-async function checkOut(lodgeId, bookingId, { lateCharge = 0 } = {}) {
+// Checks out one room (roomId) or every room still in. lateCharge is whatever
+// reception decided, including 0 for "waived" — it is never recomputed from the
+// policy here. The policy only ever produced a suggestion, and overriding it is
+// the entire point of asking. Checking several rooms out in one go books a
+// single figure against the first of them; the desk that wants one per room
+// checks them out one at a time.
+//
+// The booking becomes CHECKED_OUT — and billable — only when its last room
+// leaves; syncBookingFromRooms derives that.
+async function checkOut(lodgeId, bookingId, { lateCharge = 0, roomId = null } = {}) {
   const pool = await getPool();
 
-  // Read before write so the minutes are recorded against the same moment the
-  // charge was agreed for, rather than a later one.
-  const late = await getLateCheckout(lodgeId, bookingId);
-
-  const result = await pool
+  const inHouseResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
-    .input('lateCharge', sql.Decimal(10, 2), round2(Number(lateCharge) || 0))
-    .input('lateMinutes', sql.Int, late.minutesLate)
+    .input('roomId', sql.BigInt, roomId)
     .query(`
-      UPDATE dbo.bookings
-      SET status = 'CHECKED_OUT', actual_check_out_at = SYSDATETIMEOFFSET(),
-          late_checkout_charge = @lateCharge,
-          late_checkout_minutes = @lateMinutes,
-          -- Clearing the PIN is what closes in-room ordering. The QR on the
-          -- wall stays valid for the *room*; it just stops accepting orders
-          -- until the next guest checks in and gets their own PIN.
-          food_pin = NULL
-      OUTPUT inserted.id
-      WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CHECKED_IN'
+      SELECT br.id, br.room_id
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      WHERE br.booking_id = @bookingId AND b.lodge_id = @lodgeId AND br.status = 'CHECKED_IN'
+        AND (@roomId IS NULL OR br.room_id = @roomId)
+      ORDER BY br.id
     `);
-  if (result.recordset.length === 0) {
+  if (inHouseResult.recordset.length === 0) {
     throw new ApiError('Booking not found or not checked in.', 409);
+  }
+
+  // Read before write so the minutes are recorded against the same moment the
+  // charge was agreed for, rather than a later one — and before the transaction
+  // opens, so these reads on the pool can't wait on rows it has locked.
+  const at = new Date();
+  const lateByRoom = [];
+  for (const room of inHouseResult.recordset) {
+    lateByRoom.push(await getLateCheckout(lodgeId, bookingId, at, room.room_id));
+  }
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    let first = true;
+    for (const [index, room] of inHouseResult.recordset.entries()) {
+      const late = lateByRoom[index];
+      const result = await new sql.Request(transaction)
+        .input('id', sql.BigInt, room.id)
+        .input('lateCharge', sql.Decimal(10, 2), first ? round2(Number(lateCharge) || 0) : 0)
+        .input('lateMinutes', sql.Int, late.minutesLate)
+        .query(`
+          UPDATE dbo.booking_rooms
+          SET status = 'CHECKED_OUT', actual_check_out_at = SYSDATETIMEOFFSET(),
+              late_checkout_charge = @lateCharge,
+              late_checkout_minutes = @lateMinutes,
+              -- Clearing the PIN is what closes in-room ordering. The QR on the
+              -- wall stays valid for the *room*; it just stops accepting orders
+              -- until the next guest checks in and gets their own PIN.
+              food_pin = NULL
+          OUTPUT inserted.id
+          WHERE id = @id AND status = 'CHECKED_IN'
+        `);
+      if (result.recordset.length === 0) {
+        throw new ApiError('Booking not found or not checked in.', 409);
+      }
+      first = false;
+    }
+    await syncBookingFromRooms(transaction, bookingId);
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
   }
   return getBooking(lodgeId, bookingId);
 }
 
-// A booking stays editable for its whole life, not just at creation — a
+/// A booking stays editable for its whole life, not just at creation — a
 // guest might extend their stay, ask to switch rooms, add someone to the
 // party, or the front desk just mistyped a phone number. The only hard
 // stop is an issued invoice: once a bill is cut the stay is frozen,
-// matching billing's own "already invoiced" guard on issueInvoice. Room
-// and check-out date changes are further restricted to BOOKED/CHECKED_IN —
-// once a guest has actually checked out there's no "stay" left to move or
-// extend, only extras can still be corrected. The check-in date is narrower
-// still: only a booking that hasn't been checked in yet can be moved, because
-// once a guest is in the room the day they arrived is a recorded fact rather
-// than a plan. Re-dating a reservation is an ordinary desk correction; re-dating
-// a stay already under way is a cancel-and-rebook.
+// matching billing's own "already invoiced" guard on issueInvoice. A room that
+// has checked out can no longer be moved, re-dated or re-bedded — there is no
+// "stay" left in it — but its extras can still be corrected. The check-in date
+// is narrower still: only a room that hasn't been checked in yet can be moved,
+// because once a guest is in the room the day they arrived is a recorded fact
+// rather than a plan. Re-dating a reservation is an ordinary desk correction;
+// re-dating a stay already under way is a cancel-and-rebook.
+//
+// The rooms are sent as a list (`rooms`) and reconciled against what the booking
+// holds: a room already on the booking is updated (matched by bookingRoomId, else
+// by roomId), a room not on it is added, and a room left out is removed. Fields a
+// room doesn't carry keep their current value. The older flat roomId / bedIds /
+// switchableCharges / dates are still accepted and act on the first room (dates on
+// all of them), so a client that only knows one room keeps working.
 async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const pool = await getPool();
 
@@ -2014,8 +2500,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT room_id, bed_id, check_in_date, check_out_date, status, num_guests, guest_name, guest_phone,
-             base_price_override, discount_amount, advance_amount
+      SELECT status, num_guests, guest_name, guest_phone, discount_amount, advance_amount
       FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId
     `);
   const bookingRow = bookingResult.recordset[0];
@@ -2026,17 +2511,6 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     throw new ApiError('This booking is cancelled and can’t be edited.', 409);
   }
 
-  // The beds this booking holds today: bed_id plus whatever booking_beds
-  // carries beyond it (empty for every single-bed or whole-room booking).
-  const existingExtraBedsResult = await pool
-    .request()
-    .input('bookingId', sql.BigInt, bookingId)
-    .query('SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId');
-  const existingBedIds = [
-    ...(bookingRow.bed_id != null ? [bookingRow.bed_id] : []),
-    ...existingExtraBedsResult.recordset.map((r) => r.bed_id),
-  ];
-
   const invoiceResult = await pool
     .request()
     .input('bookingId', sql.BigInt, bookingId)
@@ -2045,107 +2519,211 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     throw new ApiError('This booking already has an issued bill. Void it before editing.', 409);
   }
 
-  const currentCheckInDate = toIsoDate(bookingRow.check_in_date);
-  const currentCheckOutDate = toIsoDate(bookingRow.check_out_date);
-  const changingStayDetails =
-    input.checkInDate != null || input.checkOutDate != null || input.roomId != null;
-
-  if (changingStayDetails && bookingRow.status === 'CHECKED_OUT') {
-    throw new ApiError('This stay is already checked out — only extras can still be edited.', 409);
-  }
-
-  const newRoomId = input.roomId ?? bookingRow.room_id;
-  const newCheckInDate = input.checkInDate ?? currentCheckInDate;
-  const newCheckOutDate = input.checkOutDate ?? currentCheckOutDate;
-
-  // A guest standing in the room arrived on a particular day, and that day is
-  // now part of the record — the folio, the register and any receipt already
-  // raised all read from it. Sending the same date back is not a change, so a
-  // form that posts every field it shows keeps working on a checked-in stay.
-  if (newCheckInDate !== currentCheckInDate && bookingRow.status !== 'BOOKED') {
-    throw new ApiError(
-      'The guest has already checked in — the check-in date can’t be changed. Cancel and rebook instead.',
-      409
-    );
-  }
-
-  if (newCheckOutDate <= newCheckInDate) {
-    throw new ApiError('Check-out date must be after check-in date.', 400);
-  }
-
-  if (newRoomId !== bookingRow.room_id) {
-    const roomResult = await pool
+  // What the booking holds today: its rooms, the beds in each and each room's extras.
+  const currentRooms = (
+    await pool
       .request()
-      .input('lodgeId', sql.BigInt, lodgeId)
-      .input('roomId', sql.BigInt, newRoomId)
-      .query('SELECT id FROM dbo.rooms WHERE id = @roomId AND lodge_id = @lodgeId AND is_active = 1');
-    if (roomResult.recordset.length === 0) {
-      throw new ApiError('Choose a valid room.', 400);
-    }
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT br.id, br.room_id, r.room_number, br.check_in_date, br.check_out_date, br.status,
+               br.base_price_override
+        FROM dbo.booking_rooms br
+        JOIN dbo.rooms r ON r.id = br.room_id
+        WHERE br.booking_id = @bookingId AND br.status <> 'CANCELLED'
+        ORDER BY br.id
+      `)
+  ).recordset;
+  if (currentRooms.length === 0) {
+    throw new ApiError('Booking not found.', 404);
   }
+  const currentBeds = (
+    await pool
+      .request()
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT db.id, db.room_id
+        FROM (SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId
+              UNION SELECT bed_id FROM dbo.bookings WHERE id = @bookingId AND bed_id IS NOT NULL) v
+        JOIN dbo.dormitory_beds db ON db.id = v.bed_id
+        ORDER BY db.id
+      `)
+  ).recordset;
+  const currentCharges = (
+    await pool
+      .request()
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT x.booking_room_id, x.charge_id, x.quantity, x.agreed_amount
+        FROM dbo.booking_room_switchable_charges x
+        JOIN dbo.booking_rooms br ON br.id = x.booking_room_id
+        WHERE br.booking_id = @bookingId
+      `)
+  ).recordset;
+  for (const room of currentRooms) {
+    room.beds = currentBeds.filter((b) => Number(b.room_id) === Number(room.room_id)).map((b) => Number(b.id));
+    room.charges = currentCharges
+      .filter((c) => Number(c.booking_room_id) === Number(room.id))
+      .map((c) => ({
+        id: Number(c.charge_id),
+        quantity: Number(c.quantity),
+        // Carried forward so an edit that does not touch the extras cannot
+        // silently reprice them to the lodge's current rate.
+        agreedAmount: c.agreed_amount == null ? undefined : Number(c.agreed_amount),
+      }));
+  }
+  const byBookingRoomId = new Map(currentRooms.map((r) => [Number(r.id), r]));
+  const byRoomId = new Map(currentRooms.map((r) => [Number(r.room_id), r]));
 
-  // Absent means "keep the beds this booking already holds" — an edit that
-  // only moves dates must not silently drop back to a whole-room booking.
-  // bedIds (or a lone bedId) explicitly sent is the desk's new pick, blank
-  // meaning "no bed" — a normal room deliberately has no bed to begin with.
-  // A bed only exists at all on a dormitory room, so finding it scoped to
-  // newRoomId is itself the check that the room can carry one — no separate
-  // is_dormitory lookup needed.
   const bedsGiven = input.bedIds !== undefined || input.bedId !== undefined;
-  const newBedIds = bedsGiven
-    ? Array.from(new Set((input.bedIds && input.bedIds.length > 0 ? input.bedIds : input.bedId != null ? [input.bedId] : []).map(Number)))
-    : existingBedIds;
-  const newBedId = newBedIds[0] ?? null;
-  // Buyout is no longer offered: an edit that explicitly clears the bed (or
-  // moves a bed-having booking to a dormitory room) can't newly go bedless.
-  // A booking that was already bedless before this change is left alone —
-  // it isn't required to pick a bed just because something else was edited.
-  if (newBedIds.length === 0 && existingBedIds.length > 0) {
-    throw new ApiError('Choose a bed.', 400);
-  }
-  if (newBedIds.length > 0) {
-    const bedResult = await pool
-      .request()
-      .input('roomId', sql.BigInt, newRoomId)
-      .query('SELECT id FROM dbo.dormitory_beds WHERE room_id = @roomId AND is_active = 1');
-    const validIds = new Set(bedResult.recordset.map((r) => Number(r.id)));
-    if (!newBedIds.every((id) => validIds.has(id))) {
-      throw new ApiError('Choose a valid bed.', 400);
+  const flatBeds = (r) =>
+    Array.from(new Set((r.bedIds && r.bedIds.length > 0 ? r.bedIds : r.bedId != null ? [r.bedId] : []).map(Number)));
+
+  let requested;
+  if (input.rooms && input.rooms.length > 0) {
+    requested = input.rooms;
+  } else {
+    requested = currentRooms.map((r) => ({ bookingRoomId: Number(r.id), roomId: Number(r.room_id) }));
+    const primary = requested[0];
+    if (input.roomId != null) primary.roomId = input.roomId;
+    if (bedsGiven) primary.bedIds = flatBeds(input);
+    if (input.basePriceOverride !== undefined) primary.basePriceOverride = input.basePriceOverride;
+    if (input.switchableCharges != null) primary.switchableCharges = input.switchableCharges;
+    for (const r of requested) {
+      if (input.checkInDate != null) r.checkInDate = input.checkInDate;
+      if (input.checkOutDate != null) r.checkOutDate = input.checkOutDate;
     }
   }
 
-  const bedsChanged =
-    newBedIds.length !== existingBedIds.length ||
-    newBedIds.some((id) => !existingBedIds.includes(id));
+  const defaultCheckIn = input.checkInDate ?? toIsoDate(currentRooms[0].check_in_date);
+  const defaultCheckOut = input.checkOutDate ?? toIsoDate(currentRooms[0].check_out_date);
+
+  const seenRoomIds = new Set();
+  const matched = new Set();
+  const resolved = requested.map((d) => {
+    const match =
+      d.bookingRoomId != null ? byBookingRoomId.get(Number(d.bookingRoomId)) : byRoomId.get(Number(d.roomId));
+    if (d.bookingRoomId != null && !match) {
+      throw new ApiError('One of those rooms isn’t on this booking.', 400);
+    }
+    if (match) {
+      if (matched.has(Number(match.id))) {
+        throw new ApiError('A room can only be added to a booking once.', 400);
+      }
+      matched.add(Number(match.id));
+    }
+    const roomId = Number(d.roomId ?? match?.room_id);
+    if (seenRoomIds.has(roomId)) {
+      throw new ApiError('A room can only be added to a booking once.', 400);
+    }
+    seenRoomIds.add(roomId);
+
+    const checkInDate = d.checkInDate ?? (match ? toIsoDate(match.check_in_date) : defaultCheckIn);
+    const checkOutDate = d.checkOutDate ?? (match ? toIsoDate(match.check_out_date) : defaultCheckOut);
+    if (checkOutDate <= checkInDate) {
+      throw new ApiError('Check-out date must be after check-in date.', 400);
+    }
+
+    const sameRoom = match && Number(match.room_id) === roomId;
+    const bedIds =
+      d.bedIds !== undefined || d.bedId !== undefined ? flatBeds(d) : sameRoom ? match.beds : [];
+    const bedsChanged =
+      !match || !sameRoom || bedIds.length !== match.beds.length || bedIds.some((id) => !match.beds.includes(id));
+    const moved =
+      !match ||
+      !sameRoom ||
+      checkInDate !== toIsoDate(match.check_in_date) ||
+      checkOutDate !== toIsoDate(match.check_out_date) ||
+      bedsChanged;
+
+    if (match && moved && match.status === 'CHECKED_OUT') {
+      throw new ApiError(
+        `Room ${match.room_number} is already checked out — only extras can still be edited.`,
+        409
+      );
+    }
+    // A guest standing in the room arrived on a particular day, and that day is
+    // now part of the record — the folio, the register and any receipt already
+    // raised all read from it. Sending the same date back is not a change, so a
+    // form that posts every field it shows keeps working on a checked-in stay.
+    if (match && checkInDate !== toIsoDate(match.check_in_date) && match.status !== 'BOOKED') {
+      throw new ApiError(
+        'The guest has already checked in — the check-in date can’t be changed. Cancel and rebook instead.',
+        409
+      );
+    }
+
+    return {
+      bookingRoomId: match ? Number(match.id) : null,
+      roomId,
+      checkInDate,
+      checkOutDate,
+      bedIds,
+      moved,
+      // Absent leaves the agreed rate as it is — a save that only moves the
+      // dates must not quietly re-price the stay at rack rate. Blank arrives as
+      // null and puts it back on the category's own price.
+      basePriceOverride:
+        d.basePriceOverride !== undefined
+          ? d.basePriceOverride
+          : match?.base_price_override != null
+            ? Number(match.base_price_override)
+            : null,
+      switchableCharges:
+        d.switchableCharges != null
+          ? pricingService.normalizeSelections(d.switchableCharges)
+          : match
+            ? match.charges
+            : [],
+      extrasGiven: d.switchableCharges != null,
+    };
+  });
+
+  const removed = currentRooms.filter((r) => !matched.has(Number(r.id)));
+  for (const room of removed) {
+    if (room.status !== 'BOOKED') {
+      throw new ApiError(
+        `Room ${room.room_number} has already checked in — check it out rather than removing it.`,
+        409
+      );
+    }
+  }
+  if (resolved.length === 0) {
+    throw new ApiError('A booking needs at least one room.', 400);
+  }
+
+  // Only what is new or moving has to be a valid room with valid beds — a room
+  // left as it was (a dormitory booked before beds were required, say) is not
+  // made to pick one just because something else was edited.
+  const roomRows = await loadAndCheckRooms(
+    pool,
+    lodgeId,
+    resolved.filter((r) => r.moved)
+  );
+  await assertChargesAvailable(
+    pool,
+    lodgeId,
+    resolved.filter((r) => r.extrasGiven).flatMap((r) => r.switchableCharges)
+  );
+
+  const takenMessage = (room) =>
+    room.bedIds.length > 0
+      ? 'That bed is already booked for part of this date range.'
+      : `Room ${roomRows.get(room.roomId).room_number} is already booked for part of this date range.`;
 
   // Whether this edit can free or take a night. An edit that only corrects a
   // phone number moves no dates and needs no availability check at all.
-  const movingStay =
-    newRoomId !== bookingRow.room_id ||
-    newCheckInDate !== currentCheckInDate ||
-    newCheckOutDate !== currentCheckOutDate ||
-    bedsChanged;
-
+  //
   // Pre-flight only — see the matching note in createBooking. The binding check
   // is inside the transaction below, because everything between here and there
   // (guest list, charges, pricing) is several round trips during which another
   // clerk can take the room.
-  if (movingStay) {
-    const conflict = await hasOverlap(
-      () => pool.request(),
-      newRoomId,
-      newCheckInDate,
-      newCheckOutDate,
-      bookingId,
-      { bedIds: newBedIds }
-    );
-    if (conflict) {
-      throw new ApiError(
-        newBedIds.length > 0
-          ? 'That bed is already booked for part of this date range.'
-          : 'That room is already booked for part of this date range.',
-        409
-      );
+  for (const room of resolved.filter((r) => r.moved)) {
+    if (
+      await hasOverlap(() => pool.request(), room.roomId, room.checkInDate, room.checkOutDate, bookingId, {
+        bedIds: room.bedIds,
+      })
+    ) {
+      throw new ApiError(takenMessage(room), 409);
     }
   }
 
@@ -2175,24 +2753,6 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const newGuestName = input.guestName != null ? input.guestName : bookingRow.guest_name;
   const newGuestPhone = input.guestPhone != null ? input.guestPhone : bookingRow.guest_phone;
 
-  let switchableCharges;
-  if (input.switchableCharges == null) {
-    const currentChargesResult = await pool
-      .request()
-      .input('bookingId', sql.BigInt, bookingId)
-      .query('SELECT charge_id, quantity, agreed_amount FROM dbo.booking_switchable_charges WHERE booking_id = @bookingId');
-    switchableCharges = currentChargesResult.recordset.map((r) => ({
-      id: Number(r.charge_id),
-      quantity: Number(r.quantity),
-      // Carried forward so an edit that does not touch the extras cannot
-      // silently reprice them to the lodge's current rate.
-      agreedAmount: r.agreed_amount == null ? undefined : Number(r.agreed_amount),
-    }));
-  } else {
-    switchableCharges = pricingService.normalizeSelections(input.switchableCharges);
-    await assertChargesAvailable(pool, lodgeId, switchableCharges);
-  }
-
   // Omitted means "keep the concession that was agreed" — an edit that only
   // moves the checkout date must not quietly charge the guest full price
   // again. An explicit 0 is how reception takes a concession back.
@@ -2201,25 +2761,8 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       ? Number(bookingRow.discount_amount ?? 0)
       : input.discountAmount;
 
-  // Absent leaves the agreed rate as it is — a save that only moves the dates
-  // must not quietly re-price the stay at rack rate. Blank arrives as null and
-  // puts it back on the category's own price.
-  const storedBaseRate =
-    bookingRow.base_price_override != null ? Number(bookingRow.base_price_override) : null;
-  const newBaseRate =
-    input.basePriceOverride !== undefined ? input.basePriceOverride : storedBaseRate;
-
-  const { nights, totalPrice, discountAmount, grossTotal } = await priceStay(
-    lodgeId,
-    newRoomId,
-    newCheckInDate,
-    newCheckOutDate,
-    switchableCharges,
-    newBaseRate,
-    requestedDiscount,
-    newBedId,
-    newBedIds
-  );
+  const priced = await priceBooking(lodgeId, resolved, requestedDiscount);
+  const { totalPrice, discountAmount, grossTotal } = priced;
 
   if (round2(requestedDiscount) > discountAmount) {
     throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);
@@ -2244,63 +2787,74 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     // The pre-flight above was a courtesy; this is the one that decides, and it
     // closes the window in which two concurrent edits could move two stays into
     // the same room for the same nights.
-    if (movingStay) {
+    for (const room of resolved.filter((r) => r.moved)) {
       const conflict = await hasOverlap(
         () => new sql.Request(transaction),
-        newRoomId,
-        newCheckInDate,
-        newCheckOutDate,
+        room.roomId,
+        room.checkInDate,
+        room.checkOutDate,
         bookingId,
-        { lock: true, bedIds: newBedIds }
+        { lock: true, bedIds: room.bedIds }
       );
       if (conflict) {
-        throw new ApiError(
-          newBedIds.length > 0
-            ? 'That bed is already booked for part of this date range.'
-            : 'That room is already booked for part of this date range.',
-          409
-        );
+        throw new ApiError(takenMessage(room), 409);
       }
     }
 
-    await replaceBookingCharges(transaction, bookingId, switchableCharges);
+    // Rooms taken off the booking go first, so a room swapped for another in
+    // the same edit never trips the one-row-per-room rule.
+    for (const room of removed) {
+      await new sql.Request(transaction)
+        .input('id', sql.BigInt, room.id)
+        .query(`
+          DELETE FROM dbo.booking_room_switchable_charges WHERE booking_room_id = @id;
+          DELETE FROM dbo.booking_rooms WHERE id = @id;
+        `);
+    }
+
+    for (const room of priced.rooms) {
+      if (room.bookingRoomId == null) {
+        await insertBookingRoom(transaction, bookingId, room);
+        continue;
+      }
+      await new sql.Request(transaction)
+        .input('id', sql.BigInt, room.bookingRoomId)
+        .input('roomId', sql.BigInt, room.roomId)
+        .input('checkInDate', sql.Date, room.checkInDate)
+        .input('checkOutDate', sql.Date, room.checkOutDate)
+        .input('basePriceOverride', sql.Decimal(10, 2), room.basePriceOverride ?? null)
+        .input('totalPrice', sql.Decimal(10, 2), room.totalPrice)
+        .input('discountAmount', sql.Decimal(10, 2), room.discountAmount)
+        .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(room.nights))
+        .query(`
+          UPDATE dbo.booking_rooms
+          SET room_id = @roomId, check_in_date = @checkInDate, check_out_date = @checkOutDate,
+              base_price_override = @basePriceOverride, total_price = @totalPrice,
+              discount_amount = @discountAmount, nightly_breakdown = @nightlyBreakdown
+          WHERE id = @id
+        `);
+      await writeRoomCharges(transaction, room.bookingRoomId, room.switchableCharges);
+    }
 
     // Full replace, not a diff — the same "delete then re-insert" shape
-    // replaceBookingCharges already uses, and safe here for the same reason:
+    // writeBookingBeds has always used, and safe here for the same reason:
     // booking_beds has no foreign row (like an uploaded ID proof) that would
     // be orphaned by deleting it.
-    if (bedsChanged) {
-      await new sql.Request(transaction)
-        .input('bookingId', sql.BigInt, bookingId)
-        .query('DELETE FROM dbo.booking_beds WHERE booking_id = @bookingId');
-      for (const extraBedId of newBedIds.slice(1)) {
-        await new sql.Request(transaction)
-          .input('bookingId', sql.BigInt, bookingId)
-          .input('bedId', sql.BigInt, extraBedId)
-          .query('INSERT INTO dbo.booking_beds (booking_id, bed_id) VALUES (@bookingId, @bedId)');
-      }
-    }
+    await writeBookingBeds(
+      transaction,
+      lodgeId,
+      bookingId,
+      resolved.flatMap((r) => r.bedIds)
+    );
 
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)
-      .input('roomId', sql.BigInt, newRoomId)
-      .input('bedId', sql.BigInt, newBedId)
-      .input('checkInDate', sql.Date, newCheckInDate)
-      .input('checkOutDate', sql.Date, newCheckOutDate)
       .input('numGuests', sql.Int, newNumGuests)
       .input('guestName', sql.NVarChar, newGuestName)
       .input('guestPhone', sql.NVarChar, newGuestPhone)
-      .input('totalPrice', sql.Decimal(10, 2), totalPrice)
-      .input('discountAmount', sql.Decimal(10, 2), discountAmount)
-      .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(nights))
       // The advance is set to what was typed, not added to — an edit corrects
       // the record. Sending nothing leaves it alone; sending null clears it,
       // which is how a deposit keyed against the wrong stay is taken back off.
-      // Same absent/blank rule as the advance below, and for the same reason:
-      // '' has to mean "back to the category price", which is different from
-      // not sending the field at all.
-      .input('setBaseRate', sql.Bit, input.basePriceOverride !== undefined ? 1 : 0)
-      .input('basePriceOverride', sql.Decimal(10, 2), input.basePriceOverride ?? null)
       .input('setAdvance', sql.Bit, input.advanceAmount !== undefined ? 1 : 0)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
@@ -2313,13 +2867,8 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .query(`
         UPDATE dbo.bookings
-        SET room_id = @roomId, bed_id = @bedId, check_in_date = @checkInDate, check_out_date = @checkOutDate,
-            num_guests = @numGuests,
+        SET num_guests = @numGuests,
             guest_name = @guestName, guest_phone = @guestPhone,
-            total_price = @totalPrice, discount_amount = @discountAmount,
-            nightly_breakdown = @nightlyBreakdown,
-            base_price_override =
-              CASE WHEN @setBaseRate = 1 THEN @basePriceOverride ELSE base_price_override END,
             advance_amount = CASE WHEN @setAdvance = 1 THEN @advanceAmount ELSE advance_amount END,
             advance_payment_method =
               CASE WHEN @setAdvance = 1 THEN @advancePaymentMethod ELSE advance_payment_method END,
@@ -2330,6 +2879,8 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
             id_proof_document = COALESCE(@idProofDocument, id_proof_document)
         WHERE id = @bookingId
       `);
+
+    await syncBookingFromRooms(transaction, bookingId);
 
     if (input.guests) {
       await replaceBookingGuests(transaction, bookingId, input.guests, existingGuests);
@@ -2413,7 +2964,11 @@ async function cancelBooking(
     .input('refundMethod', sql.NVarChar(20), refund > 0 ? (refundPaymentMethod ?? null) : null)
     .input('charge', sql.Decimal(10, 2), charge)
     .input('chargeMethod', sql.NVarChar(20), charge > 0 ? (cancellationChargePaymentMethod ?? null) : null)
+    // One batch, one transaction: the booking and every room it holds go
+    // together, or a cancelled booking would keep its rooms blocked.
     .query(`
+      SET XACT_ABORT ON;
+      BEGIN TRANSACTION;
       UPDATE dbo.bookings
       SET status = 'CANCELLED',
           cancel_reason = @reason,
@@ -2427,7 +2982,11 @@ async function cancelBooking(
       OUTPUT inserted.id
       WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'BOOKED'
         AND (@refund IS NULL OR @refund <= ISNULL(advance_amount, 0))
-        AND (@charge IS NULL OR (ISNULL(advance_amount, 0) = 0 AND @charge <= total_price))
+        AND (@charge IS NULL OR (ISNULL(advance_amount, 0) = 0 AND @charge <= total_price));
+      UPDATE dbo.booking_rooms SET status = 'CANCELLED'
+      WHERE booking_id = @bookingId AND EXISTS (
+        SELECT 1 FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CANCELLED');
+      COMMIT TRANSACTION;
     `);
   if (result.recordset.length === 0) {
     // The guard refuses several different things; tell the desk which one it
@@ -2462,6 +3021,7 @@ async function cancelBooking(
 module.exports = {
   idProofExists,
   priceStay,
+  quoteBooking,
   listAvailableRooms,
   listAvailableRoomsForBooking,
   listAvailableBeds,

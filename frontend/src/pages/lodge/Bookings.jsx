@@ -42,6 +42,26 @@ import {
   formatDateLong,
   idProofLabel,
 } from './stayFormat';
+import {
+  chargesParam,
+  chargesPayload,
+  selectionOf,
+  toggleSelection,
+  withAgreedAmount,
+  withQuantity,
+} from './chargeSelections';
+import ExtraRoomCard from './ExtraRoomCard';
+import RoomChooser from './RoomChooser';
+import {
+  blankExtraRoom,
+  bookingWindow,
+  combineQuote,
+  pickedExtraRooms,
+  pickedRoomIds,
+  roomDates,
+  roomsPayload,
+  toggleRoomChoice,
+} from './multiRoom';
 import './forms.css';
 import './chartSections.css';
 import './tapeChart.css';
@@ -459,83 +479,6 @@ function vehicleRowError(vehicles) {
   return '';
 }
 
-// An extra is carried as { id, quantity, agreedAmount }: the checkbox owns
-// whether it's on the booking at all, the count owns how many, and agreedAmount
-// is what reception agreed the whole line costs per night. Blank means "charge
-// what the lodge charges times the count" — the common case, and what every
-// extra did before the total was editable.
-//
-// An extra is carried as { id, quantity }: the checkbox owns whether it's on
-// the booking at all, the count beside it owns how many. quantity is held as
-// typed so the field can be cleared mid-edit, and read back through
-// selectionCount, which is what every consumer of it actually wants.
-function selectionCount(value) {
-  const count = Math.floor(Number(value));
-  return Number.isFinite(count) && count >= 1 ? count : 1;
-}
-
-// Blank or nonsense means "no override" rather than free — a cleared box while
-// typing must not silently zero the line. Zero typed on purpose is kept.
-function selectionAgreed(value) {
-  if (value == null || String(value).trim() === '') return undefined;
-  const price = Number(value);
-  return Number.isFinite(price) && price >= 0 ? price : undefined;
-}
-
-// Extras ids reach this screen from two different payloads: available-rooms
-// returns dbo.switchable_charges.id as the driver hands it over, while the
-// price quote passes it through Number(). A BIGINT that arrives as a string on
-// one route and a number on the other makes === false, and then the selection
-// helpers quietly match nothing.
-//
-// That is what broke the editable extras total: the quantity box worked because
-// it is called with the room payload's id — the same value the form stored —
-// while the price box is called with the quote's, and never found its line.
-// Compared numerically here so it cannot matter which payload an id came from.
-function sameCharge(a, b) {
-  return Number(a) === Number(b);
-}
-
-function toggleSelection(selections, chargeId) {
-  return selections.some((c) => sameCharge(c.id, chargeId))
-    ? selections.filter((c) => c.id !== chargeId)
-    : [...selections, { id: chargeId, quantity: '1', agreedAmount: '' }];
-}
-
-function withQuantity(selections, chargeId, quantity) {
-  return selections.map((c) => (sameCharge(c.id, chargeId) ? { ...c, quantity } : c));
-}
-
-function withAgreedAmount(selections, chargeId, agreedAmount) {
-  return selections.map((c) => (sameCharge(c.id, chargeId) ? { ...c, agreedAmount } : c));
-}
-
-function selectionOf(selections, chargeId) {
-  return selections.find((c) => sameCharge(c.id, chargeId));
-}
-
-// "7:3,8" — the id alone when there's just one of it, so the common case reads
-// the same as it always did.
-function chargesParam(selections) {
-  return selections
-    .map((c) => {
-      const count = selectionCount(c.quantity);
-      const price = selectionAgreed(c.agreedAmount);
-      const base = count > 1 ? `${c.id}:${count}` : String(c.id);
-      return price === undefined ? base : `${base}@${price}`;
-    })
-    .join(',');
-}
-
-function chargesPayload(selections) {
-  return selections.map((c) => {
-    const price = selectionAgreed(c.agreedAmount);
-    return price === undefined
-      ? { id: c.id, quantity: selectionCount(c.quantity) }
-      : { id: c.id, quantity: selectionCount(c.quantity), agreedAmount: price };
-  });
-}
-
 // A blank or nonsense concession simply isn't sent, so the quote shows the
 // full price — the same thing the booking will do when it's saved.
 function discountParam(value) {
@@ -558,6 +501,20 @@ const initialBookingForm = {
   checkInDate: todayIso(),
   checkOutDate: addDays(todayIso(), 1),
   roomId: '',
+  // The booking_rooms row of the first room and its status, on an edit — what
+  // lets the save say which room of the booking it means, and the form hold a
+  // room that has already checked out fixed.
+  primaryBookingRoomId: null,
+  primaryStatus: null,
+  // Every further room of a booking that holds several — see multiRoom.js.
+  // sameDates says whether they follow the dates above (the usual case) or each
+  // carries its own check-in and check-out.
+  extraRooms: [],
+  sameDates: true,
+  // The "Book multiple rooms" box at the top of the form. Off is the ordinary
+  // one-room booking and nothing else on screen changes; on, the form asks whether
+  // the rooms share dates and lets more than one be chosen.
+  multiRoom: false,
   // Which bed(s) this stay holds, on a dormitory room — one or more, picked
   // by clicking multiple chips. Empty on every other room.
   bedIds: [],
@@ -1469,6 +1426,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     const seeded = {
       ...form,
       advanceLines: form.advanceLines?.length ? form.advanceLines : [emptyPaymentLine()],
+      // A draft parked before bookings could hold several rooms has neither.
+      extraRooms: form.extraRooms ?? [],
+      sameDates: form.sameDates ?? true,
+      multiRoom: form.multiRoom ?? (form.extraRooms?.length > 0),
     };
     setBookingForm(seeded);
     setBaseTotal(null);
@@ -1624,13 +1585,22 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const isFutureCheckIn = bookingForm.checkInDate > today;
   // Once a guest has checked out there is no stay left to move or extend, so
   // the room and the dates are fixed — matching the backend's own guard.
-  const canEditStay = !editing || editTarget?.status === 'BOOKED' || editTarget?.status === 'CHECKED_IN';
+  // The first room's own status where the booking has several — one room having
+  // left must not lock the rooms still in.
+  const primaryRoomStatus = bookingForm.primaryStatus ?? editTarget?.status;
+  const canEditStay = !editing || primaryRoomStatus === 'BOOKED' || primaryRoomStatus === 'CHECKED_IN';
   // Narrower than the rest of the stay: a reservation that hasn't been checked
   // in yet can still be moved to different dates, which is an ordinary desk
   // correction. Once the guest is in the room the arrival day is a recorded
   // fact — the backend refuses to change it, and this keeps the box from
   // offering something the save would reject.
-  const canEditCheckIn = !editing || editTarget?.status === 'BOOKED';
+  const canEditCheckIn = !editing || primaryRoomStatus === 'BOOKED';
+  // A room that has checked in or out is part of the stay and can only leave by
+  // checking out, so a booking holding one can't be turned back into a one-room form.
+  const multiLocked =
+    editing &&
+    (!canEditStay ||
+      (bookingForm.extraRooms.some((r) => r.status && r.status !== 'BOOKED') && bookingForm.multiRoom));
 
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
@@ -1691,23 +1661,35 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     // means there is nothing to price — quoting the whole room by default
     // would show a total for a sale the desk hasn't actually offered.
     const dormitoryUndecided = selectedRoom?.isDormitory && bookingForm.bedIds.length === 0 && !bookingForm.buyout;
-    if (!showBookingForm || !validRange || !bookingForm.roomId || dormitoryUndecided) {
+    // A further room that is a dormitory with no bed picked yet has nothing to
+    // price, for the same reason the first room doesn't.
+    const extras = pickedExtraRooms(bookingForm);
+    const extraUndecided = extras.some((r) => r.meta?.isDormitory && r.bedIds.length === 0);
+    if (!showBookingForm || !validRange || !bookingForm.roomId || dormitoryUndecided || extraUndecided) {
       setQuote(null);
       return;
     }
     const chargeIds = chargesParam(bookingForm.switchableCharges);
     const discount = discountParam(bookingForm.discountAmount);
     const bedParam = bookingForm.bedIds.length > 0 ? `&bedIds=${bookingForm.bedIds.join(',')}` : '';
+    // With further rooms the quote is asked for every room at once, and comes
+    // back per room; combineQuote folds it into the one shape the form reads.
+    const span = bookingWindow(bookingForm);
+    const quotePath =
+      extras.length > 0
+        ? `/bookings/price-quote?rooms=${encodeURIComponent(JSON.stringify(roomsPayload(bookingForm)))}&checkInDate=${span.checkInDate}&checkOutDate=${span.checkOutDate}${discount}`
+        : `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${rateParam(bookingForm.basePriceOverride)}${discount}${bedParam}`;
     // Typing a discount fires a quote per keystroke, so a slower earlier
     // reply must not land on top of a newer one and show a total for an
     // amount that is no longer in the box.
     let current = true;
-    apiGet(
-      `/bookings/price-quote?roomId=${bookingForm.roomId}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}${rateParam(bookingForm.basePriceOverride)}${discount}${bedParam}`,
-      { token }
-    )
-      .then((data) => {
+    apiGet(quotePath, { token })
+      .then((raw) => {
         if (!current) return;
+        const data =
+          extras.length > 0
+            ? combineQuote(raw, [selectedRoom?.roomNumber, ...extras.map((r) => r.meta?.roomNumber)])
+            : raw;
         setQuote(data);
         // A full payment follows the total it was promised against: the rows
         // are rebuilt the moment the total moves, here rather than in an effect
@@ -1753,6 +1735,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     bookingForm.discountAmount,
     bookingForm.discountPercent,
     bookingForm.discountSource,
+    bookingForm.extraRooms,
+    bookingForm.sameDates,
   ]);
 
   const selectedRoom = availableRooms?.find((r) => String(r.id) === bookingForm.roomId);
@@ -1803,9 +1787,105 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBookingForm, selectedRoom?.id, selectedRoom?.isDormitory, bookingForm.checkInDate, bookingForm.checkOutDate]);
 
+  // Further rooms of a multi-room booking. Each card owns fetching its own
+  // availability; the form only holds what was picked.
+  const extraRoomIds = new Set(pickedExtraRooms(bookingForm).map((r) => String(r.roomId)));
+  const updateExtraRoom = (key, patch) =>
+    setBookingForm((f) => ({
+      ...f,
+      extraRooms: f.extraRooms.map((r) => (r.key === key ? { ...r, ...patch } : r)),
+      // A concession was agreed against the rooms as they stood.
+      ...('roomId' in patch || 'checkInDate' in patch || 'checkOutDate' in patch
+        ? { discountAmount: '', discountPercent: '', discountSource: '' }
+        : {}),
+    }));
+  const addExtraRoom = () =>
+    setBookingForm((f) => ({
+      ...f,
+      extraRooms: [...f.extraRooms, blankExtraRoom({ checkInDate: f.checkInDate, checkOutDate: f.checkOutDate })],
+    }));
+  const removeExtraRoom = (key) =>
+    setBookingForm((f) => ({
+      ...f,
+      extraRooms: f.extraRooms.filter((r) => r.key !== key),
+      discountAmount: '',
+      discountPercent: '',
+      discountSource: '',
+    }));
+  // Either way the further rooms start from the form's own dates: switching to
+  // shared dates must not leave old per-room dates to come back later, and
+  // switching to separate ones should begin every room on the dates already chosen.
+  const setSameDates = (on) =>
+    setBookingForm((f) => ({
+      ...f,
+      sameDates: on,
+      extraRooms: f.extraRooms.map((r) => ({ ...r, checkInDate: f.checkInDate, checkOutDate: f.checkOutDate })),
+    }));
+
+  // The box at the top of the form. Turning it off goes back to one room — the
+  // first — and says so, since the others are taken off the booking.
+  const setMultiRoom = (on) => {
+    const dropped = bookingForm.extraRooms.length;
+    if (!on && dropped > 0) {
+      toast.show(
+        `Kept the first room only — the other ${dropped} room${dropped === 1 ? ' was' : 's were'} taken off this booking.`,
+        'info'
+      );
+    }
+    setBookingForm((f) => ({
+      ...f,
+      multiRoom: on,
+      sameDates: true,
+      extraRooms: on ? f.extraRooms : [],
+      ...(on ? {} : { discountAmount: '', discountPercent: '', discountSource: '' }),
+    }));
+  };
+
+  // One tick in the list of rooms that share the dates.
+  const toggleChosenRoom = (room) => setBookingForm((f) => toggleRoomChoice(f, room));
+
+  // "Tick all" / "Clear" on a group of rooms: each one toggled only if it isn't
+  // already in the state being asked for, so nothing is flipped the wrong way.
+  const toggleManyRooms = (list, on) =>
+    setBookingForm((f) =>
+      list.reduce((acc, room) => {
+        const has = pickedRoomIds(acc).includes(String(room.id));
+        return has === on ? acc : toggleRoomChoice(acc, room);
+      }, f)
+    );
+
+  // With shared dates every room comes from the one list above, so a room that stops
+  // being free when the dates move has to come off the booking — and the desk is told,
+  // rather than finding one missing later.
+  useEffect(() => {
+    if (!showBookingForm || !bookingForm.multiRoom || !bookingForm.sameDates || !availableRooms) return;
+    const free = new Set(availableRooms.map((r) => String(r.id)));
+    const gone = bookingForm.extraRooms.filter((r) => !r.roomId || !free.has(String(r.roomId)));
+    if (gone.length === 0) return;
+    const named = gone.filter((r) => r.roomId).map((r) => r.meta?.roomNumber ?? r.roomId);
+    if (named.length > 0) {
+      toast.show(
+        `Room ${named.join(', ')} ${named.length === 1 ? 'isn’t' : 'aren’t'} free for these dates — taken off the booking.`,
+        'info'
+      );
+    }
+    setBookingForm((f) => ({
+      ...f,
+      extraRooms: f.extraRooms.filter((r) => r.roomId && free.has(String(r.roomId))),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableRooms, bookingForm.multiRoom, bookingForm.sameDates, bookingForm.extraRooms, showBookingForm]);
+
   const selectedBeds = availableBeds?.beds?.filter((b) => bookingForm.bedIds.some((id) => String(id) === String(b.id))) ?? [];
   const numGuests = bookingForm.adults.length + bookingForm.children.length;
-  const overOccupancy = Boolean(selectedRoom?.maxOccupancy && numGuests > selectedRoom.maxOccupancy);
+  // Advice against the rooms' combined capacity — a party of five over two
+  // rooms that sleep three each is fine. A room whose capacity isn't recorded
+  // can't be counted, so no warning rather than a wrong one.
+  const capacityRooms = [selectedRoom, ...pickedExtraRooms(bookingForm).map((r) => r.meta)].filter(Boolean);
+  const totalCapacity = capacityRooms.every((r) => r.maxOccupancy)
+    ? capacityRooms.reduce((sum, r) => sum + r.maxOccupancy, 0)
+    : null;
+  const overOccupancy = Boolean(totalCapacity && numGuests > totalCapacity);
 
   // Whether each numbered section has what it needs. The numbers were already
   // there, but a marker that looks the same full or empty only says where you
@@ -1853,7 +1933,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // exact rather than an apportionment.
   const setRoomTotal = (value) => {
     setBaseTotal(value);
-    const nights = Math.max(1, quote?.nights?.length || 1);
+    const nights = Math.max(1, quote?.rooms?.[0]?.nights?.length || quote?.nights?.length || 1);
     const total = Number(value);
     setBookingForm((f) => ({
       ...f,
@@ -1875,7 +1955,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     // the whole line costs, so three beds at an agreed ₹100 is ₹100, not three
     // times ₹33.33. Dividing by the count is what put ₹1,399.99 on a stay the
     // desk had agreed at ₹1,400.
-    const nights = quote?.nights?.length || 1;
+    const nights = quote?.rooms?.[0]?.nights?.length || quote?.nights?.length || 1;
     const per = Math.max(1, nights);
 
     const total = Number(value);
@@ -1885,6 +1965,32 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         ? ''
         : String(Math.round((total / per) * 100) / 100)
     );
+  };
+
+  // The same for the lines of a further room. What is typed is that line's total
+  // for the room's own nights, and becomes the room's per-night rate or the
+  // extra's agreed amount — held on the room's card, where the save reads it.
+  const [extraLineTotals, setExtraLineTotals] = useState({});
+  const setExtraRoomLine = (charge, value) => {
+    const room = pickedExtraRooms(bookingForm)[charge.roomIndex - 1];
+    if (!room) return;
+    setExtraLineTotals((t) => ({ ...t, [`${room.key}:${charge.isBase ? 'base' : charge.chargeId}`]: value }));
+    const nights = Math.max(1, quote?.rooms?.[charge.roomIndex]?.nights?.length || 1);
+    const total = Number(value);
+    const blank = String(value).trim() === '' || !Number.isFinite(total) || total < 0 || (charge.isBase && total === 0);
+    const perNight = blank ? '' : String(Math.round((total / nights) * 100) / 100);
+    if (charge.isBase) {
+      updateExtraRoom(room.key, { basePriceOverride: perNight });
+    } else {
+      updateExtraRoom(room.key, {
+        switchableCharges: withAgreedAmount(room.switchableCharges, charge.chargeId, perNight),
+      });
+    }
+  };
+  const extraLineValue = (charge) => {
+    const room = pickedExtraRooms(bookingForm)[charge.roomIndex - 1];
+    const typed = room ? extraLineTotals[`${room.key}:${charge.isBase ? 'base' : charge.chargeId}`] : undefined;
+    return typed ?? String(charge.amount);
   };
 
   const setChargeAgreed = (chargeId, agreedAmount) => {
@@ -1958,6 +2064,23 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     if (selectedRoom?.isDormitory && bookingForm.bedIds.length === 0 && !bookingForm.buyout) {
       failOn('bedId', 'Choose a bed.');
       return;
+    }
+    // Further rooms: each has to be a real pick, with a bed if it's a dormitory
+    // and dates that make a stay when it carries its own.
+    for (const room of bookingForm.extraRooms) {
+      if (!room.roomId) {
+        failOn(`extraRoom-${room.key}`, 'Choose a room, or remove the empty one.');
+        return;
+      }
+      if (room.meta?.isDormitory && room.bedIds.length === 0) {
+        failOn(`extraRoom-${room.key}`, `Choose a bed for room ${room.meta.roomNumber}.`);
+        return;
+      }
+      const span = roomDates(bookingForm, room);
+      if (!(span.checkOutDate > span.checkInDate)) {
+        failOn(`extraOut-${room.key}`, 'Check-out date must be after check-in date.');
+        return;
+      }
     }
     if (bookingForm.discountAmount !== '' && !(Number(bookingForm.discountAmount) >= 0)) {
       failOn('discountAmount', 'Enter a discount of 0 or more, or leave it blank for no discount.');
@@ -2121,6 +2244,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         ...bookingForm.children.map((g) => ({ ...g, phone: '', isChild: true })),
       ];
 
+      // More than one room now, or an edit taking a booking that has several back
+      // down to fewer — in which case the list is how the others are removed.
+      const multiRoom = bookingForm.extraRooms.length > 0 || (editing && (editTarget?.rooms?.length ?? 1) > 1);
+
       const formData = new FormData();
       formData.append('guestName', capitalizeName(primary.name.trim()));
       formData.append('guestPhone', primary.phone.trim());
@@ -2174,7 +2301,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         );
         // Omitted once the guest has checked out: there is no stay left to
         // move or extend, and the backend refuses both.
-        if (canEditStay) {
+        if (multiRoom) {
+          // The whole room list, reconciled by the server against what the
+          // booking holds: a room left out is taken off it, a new one added.
+          formData.append('rooms', JSON.stringify(roomsPayload(bookingForm)));
+        } else if (canEditStay) {
           formData.append('roomId', String(Number(bookingForm.roomId)));
           // An empty array means "back to a whole-room booking" — a buyout, on
           // a dormitory room, or simply no bed on a normal one. Same
@@ -2194,14 +2325,23 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         setBookingDetail(booking);
         setSelectedBookingId(editTarget.id);
       } else {
-        formData.append('roomId', String(Number(bookingForm.roomId)));
-        if (bookingForm.bedIds.length > 0) {
-          formData.append('bedIds', JSON.stringify(bookingForm.bedIds.map(Number)));
-        }
-        formData.append('checkInDate', bookingForm.checkInDate);
-        formData.append('checkOutDate', bookingForm.checkOutDate);
-        if (bookingForm.basePriceOverride !== '') {
-          formData.append('basePriceOverride', bookingForm.basePriceOverride);
+        if (multiRoom) {
+          // Each room carries its own beds, extras, rate and dates; the booking's
+          // window is the earliest arrival to the latest departure among them.
+          const span = bookingWindow(bookingForm);
+          formData.append('rooms', JSON.stringify(roomsPayload(bookingForm)));
+          formData.append('checkInDate', span.checkInDate);
+          formData.append('checkOutDate', span.checkOutDate);
+        } else {
+          formData.append('roomId', String(Number(bookingForm.roomId)));
+          if (bookingForm.bedIds.length > 0) {
+            formData.append('bedIds', JSON.stringify(bookingForm.bedIds.map(Number)));
+          }
+          formData.append('checkInDate', bookingForm.checkInDate);
+          formData.append('checkOutDate', bookingForm.checkOutDate);
+          if (bookingForm.basePriceOverride !== '') {
+            formData.append('basePriceOverride', bookingForm.basePriceOverride);
+          }
         }
         if (bookingForm.discountAmount !== '') {
           formData.append('discountAmount', String(Number(bookingForm.discountAmount)));
@@ -2234,7 +2374,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         setJustBooked({
           id: created.id,
           guestName: bookingForm.adults[0]?.name?.trim() || 'Guest',
-          roomNumber: selectedRoom?.roomNumber ?? null,
+          roomNumber:
+            [selectedRoom?.roomNumber, ...pickedExtraRooms(bookingForm).map((r) => r.meta?.roomNumber)]
+              .filter(Boolean)
+              .join(', ') || null,
           advanceAmount: Number(bookingForm.advanceAmount) || 0,
           advanceMethod: bookingForm.advancePaymentMethod || null,
           // So the confirmation can say what the desk just did in its own
@@ -2280,6 +2423,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const [advanceReceipts, setAdvanceReceipts] = useState([]);
   const [detailError, setDetailError] = useState('');
   const [showCheckInForm, setShowCheckInForm] = useState(false);
+  // Which room of a multi-room booking the check-in form or the late-checkout
+  // question is for; null means every room that can go.
+  const [checkInRoomId, setCheckInRoomId] = useState(null);
+  const [checkOutRoomId, setCheckOutRoomId] = useState(null);
+  // The rooms still to be taken through their own check-out after the one on
+  // screen, when "Check out all rooms" was pressed.
+  const [checkOutQueue, setCheckOutQueue] = useState([]);
   // The settlement step a cancellation goes through: null until "Cancel
   // booking" is pressed, then the answers being typed — how much of the
   // advance goes back, and why the stay fell through. What is not refunded is
@@ -2326,7 +2476,17 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
   // A pre-reservation holds the room for a future date — check-in only
   // opens once that date arrives, matching the backend's own guard.
-  const canCheckInNow = Boolean(bookingDetail && bookingDetail.checkInDate <= todayIso());
+  // Rooms of the booking still waiting to arrive, and whether the day for any of
+  // them has come. A booking is "BOOKED" only while none is in, so a stay arriving
+  // in stages has rooms to check in long after that status has gone.
+  const roomsAwaiting = (bookingDetail?.rooms ?? []).filter((r) => r.status === 'BOOKED');
+  const hasRoomAwaiting = roomsAwaiting.length > 0 || bookingDetail?.status === 'BOOKED';
+  const canCheckInNow = Boolean(
+    bookingDetail &&
+      (roomsAwaiting.length > 0
+        ? roomsAwaiting.some((r) => r.checkInDate <= todayIso())
+        : bookingDetail.checkInDate <= todayIso())
+  );
 
   // A guest on file, in the shape the party editor works in. `id` is what
   // makes an edit an edit rather than a delete and re-insert — the row keeps
@@ -2349,29 +2509,56 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // same state, same fields — an edit is a booking whose questions have been
   // answered once already.
   const openEditBooking = () => {
+    // A booking of several rooms reopens with the first in the form's own fields
+    // and the rest as cards. The booking-level dates are the whole stay's window,
+    // so the first room's own are what the date boxes must show.
+    const [first, ...rest] = bookingDetail.rooms?.length ? bookingDetail.rooms : [null];
+    const asSelections = (list) =>
+      list.map((c) => ({
+        id: c.id,
+        quantity: String(c.quantity ?? 1),
+        agreedAmount: c.agreedAmount != null ? String(c.agreedAmount) : '',
+      }));
     const seeded = {
       ...initialBookingForm,
       // A stay that exists was either walked in or reserved and then arrived;
       // either way the distinction is spent. The toggle is hidden in edit mode.
       bookingType: 'RESERVATION',
-      checkInDate: bookingDetail.checkInDate,
-      checkOutDate: bookingDetail.checkOutDate,
-      roomId: String(bookingDetail.roomId),
+      checkInDate: first?.checkInDate ?? bookingDetail.checkInDate,
+      checkOutDate: first?.checkOutDate ?? bookingDetail.checkOutDate,
+      roomId: String(first?.roomId ?? bookingDetail.roomId),
+      primaryBookingRoomId: first?.bookingRoomId ?? null,
+      primaryStatus: first?.status ?? null,
+      extraRooms: rest.map((room) => ({
+        ...blankExtraRoom({ checkInDate: room.checkInDate, checkOutDate: room.checkOutDate }),
+        bookingRoomId: room.bookingRoomId,
+        roomId: String(room.roomId),
+        bedIds: (room.bedIds || []).map(String),
+        switchableCharges: asSelections(room.switchableCharges),
+        basePriceOverride: room.basePriceOverride != null ? String(room.basePriceOverride) : '',
+        status: room.status,
+        meta: {
+          roomNumber: room.roomNumber,
+          maxOccupancy: room.maxOccupancy,
+          isDormitory: room.isDormitory,
+          categoryName: room.categoryName,
+        },
+      })),
+      sameDates: first
+        ? rest.every((r) => r.checkInDate === first.checkInDate && r.checkOutDate === first.checkOutDate)
+        : true,
+      multiRoom: rest.length > 0,
       // A stay with no bed reopens as a whole-room booking — a buyout, on a
       // dormitory room, or simply the normal case everywhere else.
-      bedIds: (bookingDetail.bedIds || []).map(String),
-      buyout: Boolean(bookingDetail.isDormitory && (bookingDetail.bedIds || []).length === 0),
+      bedIds: (first ? first.bedIds : bookingDetail.bedIds || []).map(String),
+      buyout: Boolean(
+        (first ? first.isDormitory : bookingDetail.isDormitory) &&
+          (first ? first.bedIds : bookingDetail.bedIds || []).length === 0
+      ),
       // The agreed price is only prefilled when it differs from the lodge's,
       // so an extra nobody haggled over reopens with an empty box — and stays
       // on the lodge price if that price later changes.
-      switchableCharges: bookingDetail.switchableCharges.map((c) => ({
-        id: c.id,
-        quantity: String(c.quantity ?? 1),
-        // Only set when reception actually agreed a figure, so an extra
-        // nobody haggled over reopens with an empty box and stays on the lodge
-        // price even if that price has changed since.
-        agreedAmount: c.agreedAmount != null ? String(c.agreedAmount) : '',
-      })),
+      switchableCharges: asSelections(first ? first.switchableCharges : bookingDetail.switchableCharges),
       // Blank here means nothing was ever knocked off this stay, and clearing
       // the box is how a concession gets taken back.
       discountAmount: bookingDetail.discountAmount ? String(bookingDetail.discountAmount) : '',
@@ -2396,8 +2583,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       ],
       children: bookingDetail.guests.filter((g) => g.isChild).map(partyRowOf),
       vehicles: bookingDetail.vehicles.map((v) => ({ number: v.number, type: v.type ?? '' })),
-      basePriceOverride:
-        bookingDetail.basePriceOverride != null ? String(bookingDetail.basePriceOverride) : '',
+      basePriceOverride: (() => {
+        const rate = first ? first.basePriceOverride : bookingDetail.basePriceOverride;
+        return rate != null ? String(rate) : '';
+      })(),
       advanceAmount: bookingDetail.advanceAmount != null ? String(bookingDetail.advanceAmount) : '',
       advanceLines: [
         {
@@ -2578,11 +2767,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // A guest who mistypes their PIN five times locks their own room out of
   // ordering for fifteen minutes, then rings the desk about it. Reception
   // clears it from here rather than waiting out the timer.
-  const handleClearFoodLockout = async () => {
+  const handleClearFoodLockout = async (room) => {
     if (!bookingDetail) return;
+    // A room number when a multi-room booking's row asked for its own room;
+    // anything else (a click event) means the booking's first room.
+    const roomNumber = typeof room === 'string' ? room : bookingDetail.roomNumber;
     setClearingLockout(true);
     try {
-      await apiDelete(`/orders/pin-lockouts/${encodeURIComponent(bookingDetail.roomNumber)}`, { token });
+      await apiDelete(`/orders/pin-lockouts/${encodeURIComponent(roomNumber)}`, { token });
       const data = await apiGet(`/bookings/${selectedBookingId}`, { token });
       setBookingDetail(data.booking);
     } catch (err) {
@@ -2675,7 +2867,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         if (g.idProofFile) formData.append(`guestIdProofDocument_${i}`, g.idProofFile);
       });
 
-      await apiPatchForm(`/bookings/${selectedBookingId}/check-in`, formData, { token });
+      await apiPatchForm(
+        checkInRoomId
+          ? `/bookings/${selectedBookingId}/rooms/${checkInRoomId}/check-in`
+          : `/bookings/${selectedBookingId}/check-in`,
+        formData,
+        { token }
+      );
       setSelectedBookingId(null);
       loadTapeChart();
     } catch (err) {
@@ -2688,13 +2886,19 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // Checking out is two steps whenever the guest has run past their deadline:
   // ask the server how late they are and what the policy says that is worth,
   // then let reception decide. A guest who is on time never sees the detour.
-  const openCheckOut = async () => {
+  const openCheckOut = async (roomId = null) => {
     setActionError('');
     setActionSubmitting(true);
+    setCheckOutRoomId(roomId);
     try {
-      const data = await apiGet(`/bookings/${selectedBookingId}/late-checkout`, { token });
+      const data = await apiGet(
+        roomId
+          ? `/bookings/${selectedBookingId}/rooms/${roomId}/late-checkout`
+          : `/bookings/${selectedBookingId}/late-checkout`,
+        { token }
+      );
       if (!data.lateCheckout.isChargeable) {
-        await commitCheckOut(0);
+        await commitCheckOut(0, roomId);
         return;
       }
       setLateCheckout(data.lateCheckout);
@@ -2706,12 +2910,47 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     }
   };
 
-  const commitCheckOut = async (lateCharge) => {
+  // Each room is asked about on its own: it has its own deadline and its own last
+  // night's rate, so one late charge for the lot would be wrong for most of them.
+  const openCheckOutAll = () => {
+    const ids = (bookingDetail?.rooms ?? []).filter((r) => r.status === 'CHECKED_IN').map((r) => r.roomId);
+    if (ids.length <= 1) {
+      openCheckOut(null);
+      return;
+    }
+    setCheckOutQueue(ids.slice(1));
+    openCheckOut(ids[0]);
+  };
+
+  const commitCheckOut = async (lateCharge, roomId = checkOutRoomId) => {
     setActionError('');
     setActionSubmitting(true);
     try {
       const billed = selectedBookingId;
-      await apiPatch(`/bookings/${selectedBookingId}/check-out`, { lateCharge }, { token });
+      const { booking: after } = await apiPatch(
+        roomId
+          ? `/bookings/${selectedBookingId}/rooms/${roomId}/check-out`
+          : `/bookings/${selectedBookingId}/check-out`,
+        { lateCharge },
+        { token }
+      );
+
+      // One room left and others are still in: the stay carries on, so the panel
+      // stays open showing the rooms as they now stand, and no bill is due yet.
+      if (after && after.status !== 'CHECKED_OUT') {
+        setLateCheckout(null);
+        setCheckOutRoomId(null);
+        setBookingDetail(after);
+        loadTapeChart();
+        // On to the next room of a check-out-all.
+        if (checkOutQueue.length > 0) {
+          const [next, ...rest] = checkOutQueue;
+          setCheckOutQueue(rest);
+          await openCheckOut(next);
+        }
+        return;
+      }
+      setCheckOutQueue([]);
 
       // Everything this screen was showing goes, and the bill takes its place.
       //
@@ -3612,6 +3851,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 {nightsOf(hoverTile.booking)} night{nightsOf(hoverTile.booking) === 1 ? '' : 's'}
                 {hoverTile.booking.guestPhone ? ` · ${hoverTile.booking.guestPhone}` : ''}
               </span>
+              {hoverTile.booking.roomCount > 1 && (
+                <span className="tape-tooltip__meta">One of {hoverTile.booking.roomCount} rooms on this booking</span>
+              )}
               {/* Said on a past night because the tile is otherwise inert-
                   looking there: this is the one thing on a month that has
                   happened that still opens. */}
@@ -3932,10 +4174,84 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 )}
                 {draftNote && <div className="form-banner form-banner--info">{draftNote}</div>}
 
+                {/* The first question on the form. Left off, this is the ordinary
+                    one-room booking and nothing below changes. Ticked, the form asks
+                    the one follow-up that decides its shape — whether the rooms
+                    share dates — and then lets more than one room be chosen. */}
+                <div className={`booking-form__multi${bookingForm.multiRoom ? ' booking-form__multi--on' : ''}`}>
+                  {/* The whole row is the switch: an icon, what it does, and the
+                      control at the right. */}
+                  <label
+                    className="booking-form__multi-head"
+                    title={
+                      multiLocked
+                        ? 'Rooms that have already checked in or out stay on this booking.'
+                        : undefined
+                    }
+                  >
+                    <span className="booking-form__multi-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 19V6" />
+                        <path d="M3 14h18v5" />
+                        <path d="M21 14v-2.5A2.5 2.5 0 0 0 18.5 9H11v5" />
+                        <circle cx="7" cy="11" r="1.7" />
+                      </svg>
+                    </span>
+                    <span className="booking-form__multi-text">
+                      <strong>Book multiple rooms</strong>
+                      <small>Put more than one room on this booking — same guest, one bill.</small>
+                    </span>
+                    <input
+                      id="multiRoom"
+                      className="switch-input"
+                      type="checkbox"
+                      role="switch"
+                      checked={bookingForm.multiRoom}
+                      disabled={multiLocked}
+                      onChange={(e) => setMultiRoom(e.target.checked)}
+                    />
+                  </label>
+
+                  {bookingForm.multiRoom && (
+                    <div className="booking-form__dates-choice" role="radiogroup" aria-label="Check-in and check-out">
+                      <span className="booking-form__dates-choice-label">Check-in &amp; check-out</span>
+                      <div className="booking-form__dates-options">
+                        <button
+                          id="datesSame"
+                          type="button"
+                          role="radio"
+                          aria-checked={bookingForm.sameDates}
+                          disabled={!canEditStay}
+                          className={`booking-form__dates-option${bookingForm.sameDates ? ' booking-form__dates-option--on' : ''}`}
+                          onClick={() => setSameDates(true)}
+                        >
+                          <strong>Same for all rooms</strong>
+                          <small>Pick the dates once, then tick the rooms you want.</small>
+                        </button>
+                        <button
+                          id="datesDifferent"
+                          type="button"
+                          role="radio"
+                          aria-checked={!bookingForm.sameDates}
+                          disabled={!canEditStay}
+                          className={`booking-form__dates-option${!bookingForm.sameDates ? ' booking-form__dates-option--on' : ''}`}
+                          onClick={() => setSameDates(false)}
+                        >
+                          <strong>Different for each room</strong>
+                          <small>Set the dates room by room. Start with Room 1, then add more.</small>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="form-section">
                   <div className="form-section__title">
-                    <StepNum n={1} done={stepDone[1]} />Stay &amp; room
+                    <StepNum n={1} done={stepDone[1]} />Stay &amp; room{bookingForm.multiRoom ? 's' : ''}
                   </div>
+                  {bookingForm.multiRoom && !bookingForm.sameDates && (
+                    <div className="booking-form__room-head">Room 1</div>
+                  )}
                   <div className="field-row">
                   <div className="field">
                     <label htmlFor="checkInDate">
@@ -4020,11 +4336,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 )}
                 {/* Room and its rate sit on one line once a room is picked —
                     the rate only ever qualifies the room above it. */}
-                {validRange && !availableRoomsError && (
+                {validRange && !availableRoomsError && !(bookingForm.multiRoom && bookingForm.sameDates) && (
                   <div className={selectedRoom ? 'field-row booking-form__room-row' : undefined}>
                     <div className="field">
                       <label htmlFor="roomId">
-                        Available rooms<Req />
+                        {bookingForm.multiRoom ? 'Room' : 'Available rooms'}<Req />
                       </label>
                       <select
                         id="roomId"
@@ -4055,7 +4371,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                         <option value="">
                           {availableRooms ? 'Choose a room' : 'Loading…'}
                         </option>
-                        {availableRooms?.map((r) => (
+                        {availableRooms
+                          ?.filter((r) => String(r.id) === bookingForm.roomId || !extraRoomIds.has(String(r.id)))
+                          .map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.roomNumber} — {r.categoryName}
                             {r.floor ? ` · Floor ${r.floor}` : ''}
@@ -4074,6 +4392,36 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                         <p className="bookings-panel__hint">No rooms are free for this date range.</p>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {validRange && !availableRoomsError && bookingForm.multiRoom && bookingForm.sameDates && (
+                  <div id="roomId">
+                    <RoomChooser
+                      rooms={availableRooms}
+                      pickedIds={pickedRoomIds(bookingForm)}
+                      lockedIds={[
+                        ...(bookingForm.primaryStatus && bookingForm.primaryStatus !== 'BOOKED'
+                          ? [String(bookingForm.roomId)]
+                          : []),
+                        ...bookingForm.extraRooms
+                          .filter((r) => r.status && r.status !== 'BOOKED')
+                          .map((r) => String(r.roomId)),
+                      ]}
+                      disabled={!canEditStay}
+                      onToggle={toggleChosenRoom}
+                      onToggleMany={toggleManyRooms}
+                    />
+                    {roomTakenNote ? <p className="field__error">{roomTakenNote}</p> : fieldErr('roomId')}
+                  </div>
+                )}
+
+                {/* With several rooms ticked, each one's details sit in a card of
+                    its own, this first room's included, so they read as a set. */}
+                <div className={bookingForm.multiRoom && bookingForm.sameDates && selectedRoom ? 'booking-form__extra-room' : undefined}>
+                {bookingForm.multiRoom && bookingForm.sameDates && selectedRoom && (
+                  <div className="booking-form__extra-room-head">
+                    <strong>Room {selectedRoom.roomNumber}</strong>
                   </div>
                 )}
 
@@ -4236,6 +4584,45 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   )
                 )}
 
+                </div>
+
+                {/* More rooms on the same booking. Each further room is a card
+                    of its own; the switch says whether they all keep the dates
+                    above or each brings its own. */}
+                {validRange && !availableRoomsError && bookingForm.multiRoom && bookingForm.roomId && (
+                  <div className="booking-form__rooms">
+                    {bookingForm.extraRooms.map((room, i) => (
+                      <ExtraRoomCard
+                        key={room.key}
+                        room={room}
+                        index={i}
+                        token={token}
+                        dates={roomDates(bookingForm, room)}
+                        sameDates={bookingForm.sameDates}
+                        editingBookingId={editing ? editTarget.id : null}
+                        takenRoomIds={
+                          new Set([
+                            String(bookingForm.roomId),
+                            ...bookingForm.extraRooms.filter((o) => o.key !== room.key && o.roomId).map((o) => String(o.roomId)),
+                          ])
+                        }
+                        errorFor={(id) => (fieldError?.id === id ? fieldError.message : null)}
+                        onChange={(patch) => updateExtraRoom(room.key, patch)}
+                        onRemove={() => removeExtraRoom(room.key)}
+                      />
+                    ))}
+                    {/* With shared dates rooms are added by ticking them in the
+                        list above; with separate dates each is added here. */}
+                    {!bookingForm.sameDates && canEditStay && (
+                      <div className="booking-form__rooms-bar">
+                        <button type="button" className="bookings-panel__add-btn" onClick={addExtraRoom}>
+                          + Add another room
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* What the stay costs, before anything is knocked off it.
                     The discount is settled at the end of the form, against
                     this figure. */}
@@ -4252,7 +4639,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       <div className="sim-result__line" key={i}>
                         <span>
                           {charge.label}
-                          {quote.nights.length > 1 ? ` (${quote.nights.length} nights)` : ''}
+                          {(charge.nights ?? quote.nights.length) > 1 ? ` (${charge.nights ?? quote.nights.length} nights)` : ''}
                         </span>
                         {/* Editable where the money is read, because reception
                             negotiates a total ("call it 350") far more often
@@ -4263,7 +4650,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                             A season uplift stays fixed — it is a percentage of
                             the rate above it, so it follows on its own. */}
-                        {charge.isBase ? (
+                        {charge.roomIndex && (charge.isBase || charge.chargeId) ? (
+                          <EditableAmount
+                            label={charge.label}
+                            value={extraLineValue(charge)}
+                            onChange={(v) => setExtraRoomLine(charge, v)}
+                          />
+                        ) : charge.isBase ? (
                           <EditableAmount
                             label={charge.label}
                             value={baseTotal ?? String(charge.amount)}
@@ -4307,7 +4700,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   </div>
                   {overOccupancy && (
                     <p className="booking-form__warn">
-                      Room {selectedRoom.roomNumber} sleeps {selectedRoom.maxOccupancy}.
+                      {capacityRooms.length > 1
+                        ? `These ${capacityRooms.length} rooms sleep ${totalCapacity} in all.`
+                        : `Room ${selectedRoom.roomNumber} sleeps ${selectedRoom.maxOccupancy}.`}
                     </p>
                   )}
 
@@ -4448,7 +4843,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                           booking gets taken wrong. */}
                       <span className="booking-form__total-label">
                         {quote.nights.length} night{quote.nights.length === 1 ? '' : 's'}
-                        {selectedRoom ? ` · Room ${selectedRoom.roomNumber}` : ''}
+                        {selectedRoom
+                          ? ` · Room${capacityRooms.length > 1 ? 's' : ''} ${capacityRooms.map((r) => r.roomNumber).join(', ')}`
+                          : ''}
                         {` · ${numGuests} guest${numGuests === 1 ? '' : 's'}`}
                       </span>
                       <span className="booking-form__total-value">{formatPrice(quote.totalPrice)}</span>
@@ -4580,6 +4977,46 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 {!showCheckInForm && (
                   <StayDetails
                     booking={bookingDetail}
+                    renderRoomActions={(room) => (
+                      <>
+                        {room.status === 'BOOKED' && bookingDetail.status !== 'BOOKED' && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={actionSubmitting || room.checkInDate > todayIso()}
+                            title={room.checkInDate > todayIso() ? 'Check-in opens on the reserved date.' : undefined}
+                            onClick={() => {
+                              setActionError('');
+                              setCheckInRoomId(room.roomId);
+                              setShowCheckInForm(true);
+                            }}
+                          >
+                            Check in
+                          </button>
+                        )}
+                        {room.foodOrderingLockedUntil && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={clearingLockout}
+                            onClick={() => handleClearFoodLockout(room.roomNumber)}
+                            title="This room failed the food-ordering PIN too many times"
+                          >
+                            {clearingLockout ? 'Unlocking…' : 'Unlock food ordering'}
+                          </button>
+                        )}
+                        {room.status === 'CHECKED_IN' && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={actionSubmitting}
+                            onClick={() => openCheckOut(room.roomId)}
+                          >
+                            Check out
+                          </button>
+                        )}
+                      </>
+                    )}
                     idProofError={idProofError}
                     onViewIdProof={handleViewIdProof}
                     onViewGuestIdProof={handleViewGuestIdProof}
@@ -4629,7 +5066,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   </p>
                 )}
 
-                {bookingDetail.status === 'BOOKED' && showCheckInForm && (
+                {hasRoomAwaiting && showCheckInForm && (
                   <form onSubmit={handleCheckIn} className="form-section">
                     {needsIdProofAtCheckIn && (
                       <>
@@ -5176,7 +5613,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       </button>
                     )}
 
-                    {bookingDetail.status === 'BOOKED' && (
+                    {hasRoomAwaiting && (
                       <button
                         type="button"
                         className="btn-accent"
@@ -5199,12 +5636,17 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                             return;
                           }
                           setActionError('');
+                          setCheckInRoomId(null);
                           setShowCheckInForm(true);
                         }}
                         disabled={actionSubmitting}
                         title={canCheckInNow ? undefined : 'Check-in opens on the reserved date.'}
                       >
-                        Check in
+                        {roomsAwaiting.length > 1 || (bookingDetail.rooms?.length > 1 && bookingDetail.status !== 'BOOKED')
+                          ? 'Check in remaining rooms'
+                          : bookingDetail.rooms?.length > 1
+                            ? 'Check in all rooms'
+                            : 'Check in'}
                       </button>
                     )}
 
@@ -5212,10 +5654,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       <button
                         type="button"
                         className="btn-accent"
-                        onClick={openCheckOut}
+                        onClick={openCheckOutAll}
                         disabled={actionSubmitting}
                       >
-                        {actionSubmitting ? 'Checking out…' : 'Check out'}
+                        {actionSubmitting
+                          ? 'Checking out…'
+                          : bookingDetail.rooms?.filter((r) => r.status === 'CHECKED_IN').length > 1
+                            ? 'Check out all rooms'
+                            : 'Check out'}
                       </button>
                     )}
 
@@ -5328,7 +5774,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           onAmount={setLateChargeInput}
           submitting={actionSubmitting}
           error={actionError}
-          onCancel={() => setLateCheckout(null)}
+          onCancel={() => {
+            setLateCheckout(null);
+            setCheckOutQueue([]);
+          }}
           onConfirm={commitCheckOut}
         />
       )}

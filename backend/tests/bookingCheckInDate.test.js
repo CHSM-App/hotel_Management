@@ -58,7 +58,7 @@ test('a stay already under way refuses a different check-in date', () => {
   const src = source();
   assert.match(
     src,
-    /if \(newCheckInDate !== currentCheckInDate && bookingRow\.status !== 'BOOKED'\)/,
+    /if \(match && checkInDate !== toIsoDate\(match\.check_in_date\) && match\.status !== 'BOOKED'\)/,
     'updateBooking no longer guards the check-in date by status. Without it a ' +
       'checked-in stay could be re-dated out from under the folio and the register, ' +
       'and a checked-out one re-dated after its bill was drawn up.'
@@ -67,11 +67,11 @@ test('a stay already under way refuses a different check-in date', () => {
 
 test('re-dating counts as moving the stay, so the room is re-checked', () => {
   const src = source();
-  const movingStay = src.match(/const movingStay =[\s\S]*?;\n/);
-  assert.ok(movingStay, 'movingStay is no longer computed in updateBooking');
+  const movingStay = src.match(/const moved =[\s\S]*?;\n/);
+  assert.ok(movingStay, 'moved is no longer computed per room in updateBooking');
   assert.match(
     movingStay[0],
-    /newCheckInDate !== currentCheckInDate/,
+    /checkInDate !== toIsoDate\(match\.check_in_date\)/,
     'moving the arrival no longer counts as moving the stay. It frees and takes ' +
       'nights exactly as moving the departure does, and an edit that skipped the ' +
       'overlap check could put two guests in one room.'
@@ -84,23 +84,24 @@ test('the new check-in date is the one priced, checked and written', () => {
 
   assert.match(
     body,
-    /if \(newCheckOutDate <= newCheckInDate\)/,
+    /if \(checkOutDate <= checkInDate\)/,
     'the one-night minimum is measured against the stored check-in date again, so ' +
       'an edit could move the arrival past the departure'
   );
-  // The pre-flight overlap check, the locked one inside the transaction, and
-  // priceStay. Counted rather than matched one by one: leaving any of the three
-  // on the stored date would price or clear a range the save does not write, and
-  // the count is what notices a fourth caller added without the same treatment.
+  // The pre-flight overlap check and the locked one inside the transaction.
+  // Counted rather than matched one by one: leaving either on the stored date
+  // would clear a range the save does not write, and the count is what notices
+  // a third caller added without the same treatment. Pricing takes the resolved
+  // rooms whole, so the range reaches it inside them rather than as arguments.
   assert.equal(
-    (body.match(/newCheckInDate,\s*newCheckOutDate,/g) || []).length,
-    3,
-    'one of the three places updateBooking passes the stay range on — the two ' +
-      'overlap checks and priceStay — is no longer given the new check-in date'
+    (body.match(/room\.checkInDate,\s*room\.checkOutDate,/g) || []).length,
+    2,
+    'one of the places updateBooking passes a room\'s stay range on — the two ' +
+      'overlap checks — is no longer given the new check-in date'
   );
   assert.match(
     body,
-    /SET room_id = @roomId, bed_id = @bedId, check_in_date = @checkInDate, check_out_date = @checkOutDate/,
+    /SET room_id = @roomId, check_in_date = @checkInDate, check_out_date = @checkOutDate/,
     'the UPDATE no longer writes check_in_date, so a re-dated stay would be priced ' +
       'for its new range and then stored with its old one'
   );

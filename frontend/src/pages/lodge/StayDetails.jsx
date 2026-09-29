@@ -14,6 +14,13 @@ import {
   outstandingBeforeTax,
 } from './stayFormat';
 
+const ROOM_STATUS_LABEL = {
+  BOOKED: 'Reserved',
+  CHECKED_IN: 'Checked in',
+  CHECKED_OUT: 'Checked out',
+  CANCELLED: 'Cancelled',
+};
+
 // Everything known about a stay, read-only, laid out as the five sections the
 // booking was taken through. Shared rather than re-rendered per screen: the
 // tape chart and the billing queue both have to answer "what is this stay",
@@ -34,6 +41,9 @@ export default function StayDetails({
   // one of them a pre-tax estimate — is one too many, so that caller turns
   // this off.
   showOutstanding = true,
+  // Given by the booking screen so each room of a multi-room stay can carry its
+  // own check-in / check-out buttons; billing reads the stay without them.
+  renderRoomActions = null,
 }) {
   // Whether what was taken at booking was the whole stay. Read off the two
   // figures rather than stored: the server allows an advance equal to the
@@ -54,11 +64,43 @@ export default function StayDetails({
             fields out in — so a fact sits exactly where the field
             that captured it does, and Edit is a change of control
             rather than a change of layout. */}
+        {/* A stay of several rooms lists each with its own dates, price and
+            state — they can arrive and leave on different days. */}
+        {booking.rooms?.length > 1 && (
+          <div className="booking-detail__rooms">
+            {booking.rooms.map((room) => (
+              <div className="booking-detail__room" key={room.bookingRoomId}>
+                <div className="booking-detail__room-main">
+                  <strong>Room {room.roomNumber}</strong> · {room.categoryName}
+                  {room.bedLabels?.length > 0 && ` · ${room.bedLabels.join(', ')}`}
+                  <div className="booking-detail__room-meta">
+                    {formatDateLong(room.checkInDate)} – {formatDateLong(room.checkOutDate)}
+                    {' · '}
+                    {formatPrice(room.totalPrice)}
+                    {' · '}
+                    {ROOM_STATUS_LABEL[room.status] ?? room.status}
+                    {room.actualCheckOutAt && ` · left ${formatDateTime(room.actualCheckOutAt)}`}
+                    {room.switchableCharges?.length > 0 &&
+                      ` · ${room.switchableCharges
+                        .map((c) => (c.quantity > 1 ? `${c.name} ×${c.quantity}` : c.name))
+                        .join(', ')}`}
+                    {room.status === 'CHECKED_IN' && room.foodPin && ` · Food PIN ${room.foodPin}`}
+                  </div>
+                </div>
+                {renderRoomActions && (
+                  <div className="booking-detail__room-actions">{renderRoomActions(room)}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="detail-facts">
           <div className="detail-fact">
             <span className="detail-fact__label">Room</span>
             <span className="detail-fact__value">
-              {booking.roomNumber} · {booking.categoryName}
+              {booking.rooms?.length > 1
+                ? `${booking.rooms.length} rooms · ${booking.roomNumbers}`
+                : `${booking.roomNumber} · ${booking.categoryName}`}
             </span>
           </div>
           <div className="detail-fact">
@@ -126,7 +168,7 @@ export default function StayDetails({
           )}
           {/* Full width: the PIN carries an instruction to read out,
               and sometimes an unlock button. */}
-          {booking.status === 'CHECKED_IN' && booking.foodPin && (
+          {booking.status === 'CHECKED_IN' && booking.foodPin && !(booking.rooms?.length > 1) && (
             <div className="detail-fact detail-fact--wide">
               <span className="detail-fact__label">Food PIN</span>
               <div className="bookings-panel__pin">

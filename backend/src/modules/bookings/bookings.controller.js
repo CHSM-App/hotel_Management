@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const {
   DATE_RE,
+  roomsField,
   createBookingSchema,
   checkInSchema,
   updateBookingSchema,
@@ -125,6 +126,22 @@ async function listBookingsHandler(req, res, next) {
 
 async function priceQuoteHandler(req, res, next) {
   try {
+    // Several rooms at once: `rooms` is a JSON list of the same room objects a
+    // booking is saved with. The single-room query below is unchanged.
+    if (req.query.rooms) {
+      const parsedRooms = roomsField().safeParse(parseJsonArrayField(req.query.rooms));
+      if (!parsedRooms.success) {
+        throw new ApiError(parsedRooms.error.issues[0].message, 400);
+      }
+      const { checkInDate, checkOutDate } = parseDateRange(req.query);
+      const result = await bookingsService.quoteBooking(req.user.lodgeId, {
+        rooms: parsedRooms.data,
+        checkInDate,
+        checkOutDate,
+        discountAmount: parseDiscountAmount(req.query.discountAmount),
+      });
+      return res.json(result);
+    }
     const roomId = Number(req.query.roomId);
     if (!roomId) {
       throw new ApiError('Choose a room.', 400);
@@ -243,6 +260,8 @@ async function createBookingHandler(req, res, next) {
     // a lone bedId (a plain field, not JSON) is the older single-bed shape
     // and is left alone for the schema to coerce as before.
     if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
+    // The rooms list rides in the same multipart form, as a JSON array string.
+    if (typeof body.rooms === 'string') body.rooms = parseJsonArrayField(body.rooms);
 
     const parsed = createBookingSchema.safeParse(body);
     if (!parsed.success) {
@@ -365,11 +384,13 @@ async function checkInHandler(req, res, next) {
       throw new ApiError(IDENTIFY_MSG, 400);
     }
 
+    // /:id/rooms/:roomId/check-in brings one room in; /:id/check-in every room
+    // whose date has come.
     const booking = await bookingsService.checkIn(req.user.lodgeId, Number(req.params.id), {
       ...parsed.data,
       idProofDocument: primaryFile ? primaryFile.filename : null,
       guests: attachGuestFiles(parsed.data.guests, files),
-    }, req.user.sub);
+    }, req.user.sub, { roomId: req.params.roomId ? Number(req.params.roomId) : null });
     res.json({ booking });
   } catch (err) {
     cleanupUploads();
@@ -402,6 +423,7 @@ async function updateBookingHandler(req, res, next) {
     // Same JSON-array shape as create — a lone bedId (plain field) is still
     // the single-bed shape and reaches the schema untouched.
     if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
+    if (typeof body.rooms === 'string') body.rooms = parseJsonArrayField(body.rooms);
 
     const parsed = updateBookingSchema.safeParse(body);
     if (!parsed.success) {
@@ -427,7 +449,12 @@ async function updateBookingHandler(req, res, next) {
 // the property's policy suggests that is worth.
 async function getLateCheckoutHandler(req, res, next) {
   try {
-    const lateCheckout = await bookingsService.getLateCheckout(req.user.lodgeId, Number(req.params.id));
+    const lateCheckout = await bookingsService.getLateCheckout(
+      req.user.lodgeId,
+      Number(req.params.id),
+      new Date(),
+      req.params.roomId ? Number(req.params.roomId) : req.query.roomId ? Number(req.query.roomId) : null
+    );
     res.json({ lateCheckout });
   } catch (err) {
     next(err);
@@ -436,7 +463,7 @@ async function getLateCheckoutHandler(req, res, next) {
 
 async function checkOutHandler(req, res, next) {
   try {
-    const parsed = checkOutSchema.safeParse(req.body ?? {});
+    const parsed = checkOutSchema.safeParse({ ...(req.body ?? {}), ...(req.params.roomId ? { roomId: req.params.roomId } : {}) });
     if (!parsed.success) {
       throw new ApiError(parsed.error.issues[0].message, 400);
     }

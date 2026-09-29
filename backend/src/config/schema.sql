@@ -2148,6 +2148,56 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_beds_booking' 
     CREATE INDEX ix_booking_beds_booking ON dbo.booking_beds(booking_id);
 
 -- ---------------------------------------------------------------------------
+-- Multiple rooms in one booking (migration 104)
+-- ---------------------------------------------------------------------------
+-- One row per room of a booking, each with its own dates, price, extras and
+-- check-in/out. bookings.room_id keeps mirroring the first (primary) room, so
+-- readers that only know it keep working; bookings.check_in_date /
+-- check_out_date / total_price / status are the roll-up of these rows.
+IF OBJECT_ID('dbo.booking_rooms', 'U') IS NULL
+CREATE TABLE dbo.booking_rooms (
+    id                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+    booking_id            BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    room_id               BIGINT NOT NULL REFERENCES dbo.rooms(id),
+    check_in_date         DATE NOT NULL,
+    check_out_date        DATE NOT NULL,
+    status                NVARCHAR(20) NOT NULL
+        CONSTRAINT df_booking_rooms_status DEFAULT 'BOOKED'
+        CONSTRAINT ck_booking_rooms_status CHECK (status IN ('BOOKED','CHECKED_IN','CHECKED_OUT','CANCELLED')),
+    actual_check_in_at    DATETIMEOFFSET NULL,
+    actual_check_out_at   DATETIMEOFFSET NULL,
+    base_price_override   DECIMAL(10,2) NULL,
+    total_price           DECIMAL(10,2) NOT NULL CONSTRAINT df_booking_rooms_total DEFAULT 0,
+    nightly_breakdown     NVARCHAR(MAX) NULL
+        CONSTRAINT ck_booking_rooms_breakdown CHECK (nightly_breakdown IS NULL OR ISJSON(nightly_breakdown) = 1),
+    late_checkout_charge  DECIMAL(10,2) NULL,
+    late_checkout_minutes INT NULL,
+    food_pin              NVARCHAR(6) NULL,
+    CONSTRAINT uq_booking_rooms_booking_room UNIQUE (booking_id, room_id),
+    CONSTRAINT ck_booking_rooms_dates CHECK (check_out_date > check_in_date)
+);
+
+-- This room's share of the booking's concession (migration 105); total_price
+-- above is already net of it.
+IF COL_LENGTH('dbo.booking_rooms', 'discount_amount') IS NULL
+    EXEC('ALTER TABLE dbo.booking_rooms ADD discount_amount DECIMAL(10,2) NOT NULL
+          CONSTRAINT df_booking_rooms_discount DEFAULT 0');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_rooms_room_dates' AND object_id = OBJECT_ID('dbo.booking_rooms'))
+    CREATE INDEX ix_booking_rooms_room_dates ON dbo.booking_rooms(room_id, check_in_date, check_out_date);
+
+IF OBJECT_ID('dbo.booking_room_switchable_charges', 'U') IS NULL
+CREATE TABLE dbo.booking_room_switchable_charges (
+    booking_room_id BIGINT NOT NULL REFERENCES dbo.booking_rooms(id),
+    charge_id       BIGINT NOT NULL REFERENCES dbo.switchable_charges(id),
+    quantity        INT NOT NULL CONSTRAINT df_brsc_quantity DEFAULT 1
+        CONSTRAINT ck_brsc_quantity CHECK (quantity >= 1),
+    agreed_amount   DECIMAL(10,2) NULL
+        CONSTRAINT ck_brsc_agreed CHECK (agreed_amount IS NULL OR agreed_amount >= 0),
+    CONSTRAINT pk_booking_room_switchable_charges PRIMARY KEY (booking_room_id, charge_id)
+);
+
+-- ---------------------------------------------------------------------------
 -- Dormitory room price and gender (migration 065)
 -- ---------------------------------------------------------------------------
 -- Price moves from the bed to the room: one rate for the whole dormitory,

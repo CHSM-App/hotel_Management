@@ -217,13 +217,52 @@ function paymentLinesOf(input, total) {
 }
 
 
+// One room of a booking. Its dates are optional: a room that carries none takes
+// the booking's own, which is what "same check-in/check-out for all rooms" sends.
+// Everything else follows the update rules — absent leaves the room's current
+// value alone, a blank rate puts it back on the category's own price — so one
+// shape serves both create and edit. bookingRoomId says which existing room of
+// the booking an edit means, and is what lets a room be swapped for another.
+const bookingRoomSchema = z.object({
+  bookingRoomId: z.coerce.number().int().positive().optional(),
+  roomId: z.coerce.number().int().positive('Choose a valid room.'),
+  bedId: z.coerce.number().int().positive('Choose a valid bed.').optional(),
+  bedIds: z.array(z.coerce.number().int().positive('Choose a valid bed.')).optional(),
+  checkInDate: dateField('Choose a valid check-in date.').optional(),
+  checkOutDate: dateField('Choose a valid check-out date.').optional(),
+  basePriceOverride: z.preprocess(
+    (value) => (value === '' ? null : value),
+    z
+      .union([
+        z.null(),
+        z.coerce
+          .number({ error: 'Enter the room rate as a number.' })
+          .positive('A room rate has to be more than zero.'),
+      ])
+      .optional()
+  ),
+  switchableCharges: z.array(chargeSelectionSchema).optional(),
+}).refine((room) => !room.checkInDate || !room.checkOutDate || room.checkOutDate > room.checkInDate, {
+  message: 'Check-out date must be after check-in date.',
+  path: ['checkOutDate'],
+});
+
+// A hotel books a handful of rooms at a time; the ceiling is a typo guard and a
+// bound on the request, not a policy.
+const roomsField = () => z.array(bookingRoomSchema).min(1, 'Choose a room.').max(30, 'That is too many rooms for one booking.');
+
 // idProofType is optional here — a walk-in guest provides ID proof on the
 // spot (enforced by the controller requiring a matching file upload), but a
 // pre-reservation only needs the primary guest's name and phone to hold the
 // room; their ID proof is captured later at check-in instead.
 const createBookingSchema = z
   .object({
-    roomId: z.coerce.number().int().positive('Choose a room.'),
+    // Either the rooms list (one or more rooms, each with its own dates, beds and
+    // extras) or the older single roomId below — the refine at the end insists on
+    // one of them. The top-level dates are the booking's window, and the dates a
+    // room falls back on.
+    rooms: roomsField().optional(),
+    roomId: z.coerce.number().int().positive('Choose a room.').optional(),
     // The bed(s) this booking holds, on a dormitory room — bedIds for two or
     // more, or the older single bedId when it's exactly one. Omitted (or a
     // normal room) means no bed. Whether they actually belong to roomId and
@@ -266,6 +305,10 @@ const createBookingSchema = z
   .refine((data) => data.checkOutDate > data.checkInDate, {
     message: 'Check-out date must be after check-in date.',
     path: ['checkOutDate'],
+  })
+  .refine((data) => data.rooms?.length > 0 || data.roomId != null, {
+    message: 'Choose a room.',
+    path: ['roomId'],
   })
   .refine((data) => data.guests.length + 1 <= data.numGuests, {
     message: 'Guest details can’t exceed the number of guests.',
@@ -359,6 +402,11 @@ const updateBookingSchema = z
     // not a field.
     checkInDate: dateField('Choose a valid check-in date.').optional(),
     checkOutDate: dateField('Choose a valid check-out date.').optional(),
+    // The whole room list, reconciled against what the booking holds: rooms
+    // named here are updated (or added), rooms left out are taken off. Omitted
+    // leaves the rooms alone, and the flat roomId / bedIds below then act on the
+    // first room, for clients that only know one.
+    rooms: roomsField().optional(),
     roomId: z.coerce.number().int().positive('Choose a valid room.').optional(),
     // Omitted keeps the bed(s) this booking already holds. Explicit null (or
     // []) clears back to no bed; it needs the same three-way handling as
@@ -423,6 +471,8 @@ const bookingDraftSchema = z.object({
 // is also the explicit "waived" answer — the two are indistinguishable here on
 // purpose, because late_checkout_minutes is what tells them apart later.
 const checkOutSchema = z.object({
+  // One room of the booking. Omitted checks out every room still in.
+  roomId: z.coerce.number().int().positive('Choose a valid room.').optional(),
   lateCharge: z.coerce
     .number()
     .min(0, 'A late charge can’t be negative.')
@@ -487,6 +537,7 @@ module.exports = {
   PAYMENT_LINES_MISMATCH,
   ID_PROOF_TYPES,
   VEHICLE_TYPES,
+  roomsField,
   createBookingSchema,
   checkInSchema,
   updateBookingSchema,

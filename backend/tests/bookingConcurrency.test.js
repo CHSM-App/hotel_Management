@@ -31,17 +31,31 @@ test('hasOverlap can take its range lock', () => {
       'callers take compatible shared range locks and then deadlock upgrading them, ' +
       'which reaches the clerk as a 500 rather than "this room is taken".'
   );
-  assert.match(src, /SELECT TOP 1 b\.id FROM dbo\.bookings b \$\{lockHint\}/, 'the hint is no longer applied to the query');
+  // The lock lands on booking_rooms: each room of a booking has its own dates,
+  // so that is where a clash over a room is decided (and where its range index is).
+  assert.match(src, /SELECT TOP 1 br\.id FROM dbo\.booking_rooms br \$\{lockHint\}/, 'the hint is no longer applied to the query');
 });
 
 test('every overlap check made inside a transaction takes the lock', () => {
   const src = source();
 
-  // Each hasOverlap( ... ) call, with its arguments.
-  const calls = [...src.matchAll(/hasOverlap\(([\s\S]*?)\n\s*\);/g)].map((m) => m[1]);
-  // The one-line form, which the pre-flight calls use.
-  const inline = [...src.matchAll(/hasOverlap\((\([^\n]*?\)[^\n]*?)\)[;)]/g)].map((m) => m[1]);
-  const all = [...calls, ...inline];
+  // Each hasOverlap( ... ) call with its arguments, found by balancing the
+  // parentheses rather than by a pattern for what the call happens to end with —
+  // the calls are laid out differently from one another, and a pattern that stops
+  // at the wrong close would swallow the next call's arguments as this one's.
+  const all = [];
+  for (const m of src.matchAll(/\bhasOverlap\(/g)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const from = i;
+    for (; i < src.length && depth > 0; i++) {
+      if (src[i] === '(') depth++;
+      else if (src[i] === ')') depth--;
+    }
+    // The definition (`async function hasOverlap(makeRequest, ...`) is not a call.
+    const args = src.slice(from, i - 1);
+    if (!/^\s*makeRequest\b/.test(args)) all.push(args);
+  }
 
   assert.ok(all.length >= 3, `expected to find the hasOverlap call sites, found ${all.length}`);
 
@@ -91,7 +105,7 @@ test('updateBooking re-checks availability inside its transaction', () => {
 
   // The guard has to come before anything is written, or a rolled-back edit has
   // already taken locks on rows it had no business touching.
-  const firstWriteAt = body.indexOf('replaceBookingCharges(transaction');
+  const firstWriteAt = body.indexOf('DELETE FROM dbo.booking_rooms WHERE id');
   assert.ok(
     firstWriteAt > guardAt,
     'the in-transaction availability check must run before the first write'

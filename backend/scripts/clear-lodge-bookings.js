@@ -85,6 +85,8 @@ async function run() {
       WHERE eb.lodge_id = @lodgeId`);
     await r().query('DELETE FROM dbo.event_bookings WHERE lodge_id = @lodgeId');
 
+    await r().query(`DELETE brsc FROM dbo.booking_room_switchable_charges brsc JOIN dbo.booking_rooms br ON br.id = brsc.booking_room_id JOIN dbo.bookings b ON b.id = br.booking_id WHERE b.lodge_id = @lodgeId`);
+    await r().query(`DELETE br FROM dbo.booking_rooms br JOIN dbo.bookings b ON b.id = br.booking_id WHERE b.lodge_id = @lodgeId`);
     await r().query(`DELETE bb FROM dbo.booking_beds bb JOIN dbo.bookings b ON b.id = bb.booking_id WHERE b.lodge_id = @lodgeId`);
     await r().query(`DELETE bsc FROM dbo.booking_switchable_charges bsc JOIN dbo.bookings b ON b.id = bsc.booking_id WHERE b.lodge_id = @lodgeId`);
     await r().query(`DELETE bv FROM dbo.booking_vehicles bv JOIN dbo.bookings b ON b.id = bv.booking_id WHERE b.lodge_id = @lodgeId`);

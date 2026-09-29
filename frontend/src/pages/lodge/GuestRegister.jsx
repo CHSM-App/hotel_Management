@@ -171,7 +171,7 @@ function formatNightDate(dateStr) {
 // before Z, so a money or date column opens descending and a text one ascending
 // — one less click on the order that was actually being asked for.
 const SORT_COLUMNS = {
-  room: { label: 'Room', get: (b) => b.roomNumber || '' },
+  room: { label: 'Room', get: (b) => b.roomNumbers || b.roomNumber || '' },
   invoice: { label: 'Bill No', get: (b) => b.invoiceNumber || '' },
   guest: { label: 'Guest', get: (b) => b.guestName || '' },
   checkIn: { label: 'Came in', numeric: true, get: (b) => stampValue(b.actualCheckInAt, b.checkInDate) },
@@ -457,7 +457,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
     if (!query) return true;
     return (
       b.guestName.toLowerCase().includes(query) ||
-      b.roomNumber.toLowerCase().includes(query) ||
+      (b.roomNumbers || b.roomNumber).toLowerCase().includes(query) ||
       (b.invoiceNumber || '').toLowerCase().includes(query) ||
       (b.guestPhone || '').includes(query) ||
       // A party is booked under one name but the desk is as likely to be asked
@@ -1239,7 +1239,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
                       }`}
                     >
                       <td>
-                        <div className="guest-register__cell-main">{b.roomNumber}</div>
+                        <div className="guest-register__cell-main">{b.roomNumbers || b.roomNumber}</div>
                         <div className="guest-register__cell-sub">{b.categoryName}</div>
                       </td>
                       <td>
@@ -1543,7 +1543,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
                 <h3 id="guestRecordTitle">{head?.guestName || 'Guest record'}</h3>
                 {head && (
                   <p className="guest-register__record-sub">
-                    Room {head.roomNumber} · {head.categoryName}
+                    Room {head.roomNumbers || head.roomNumber} · {head.categoryName}
                     {detailRow?.invoiceNumber ? ` · Bill ${detailRow.invoiceNumber}` : ''}
                   </p>
                 )}
@@ -1762,7 +1762,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
                       </dd>
                       <dt>Room</dt>
                       <dd>
-                        {detailBooking.roomNumber} · {detailBooking.categoryName}
+                        {detailBooking.roomNumbers || detailBooking.roomNumber} · {detailBooking.categoryName}
                       </dd>
                       {lateBy && (
                         <>

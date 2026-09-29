@@ -83,7 +83,9 @@ async function loadBookingForReceipt(request, lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, r.is_dormitory, c.name AS category_name, ${LODGE_COLUMNS},
+      SELECT b.*, COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name, ${LODGE_COLUMNS},
              -- Every bed this booking holds, comma-joined in bed order — same
              -- aggregate billing.service.js uses for the printed bill.
              (SELECT STRING_AGG(all_db.bed_label, ', ') WITHIN GROUP (ORDER BY all_db.id)
@@ -249,7 +251,9 @@ const RECEIPT_SELECT = `
          COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
          COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
          b.num_guests, b.check_in_date, b.check_out_date,
-         r.room_number, r.is_dormitory, c.name AS category_name,
+         COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name,
          -- Every bed this booking holds, comma-joined in bed order — same
          -- aggregate billing.service.js uses for the printed bill. NULL (and
          -- the LEFT JOINs above making b.id NULL) on an event receipt, where

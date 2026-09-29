@@ -401,10 +401,11 @@ async function getOccupancyReport(lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT room_id, check_in_date, check_out_date
-      FROM dbo.bookings
-      WHERE lodge_id = @lodgeId AND status IN ('CHECKED_IN', 'CHECKED_OUT')
-        AND check_in_date < DATEADD(day, 1, @toDate) AND check_out_date > @fromDate
+      SELECT br.room_id, br.check_in_date, br.check_out_date
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      WHERE b.lodge_id = @lodgeId AND br.status IN ('CHECKED_IN', 'CHECKED_OUT')
+        AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
     `);
 
   const dates = datesInRange(fromDate, toDate);
@@ -607,7 +608,11 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
              b.actual_check_in_at, b.actual_check_out_at,
              b.total_price, b.advance_amount, b.advance_payment_method, b.created_at,
              b.cancel_reason, b.refund_amount, b.cancellation_charge,
-             r.room_number, c.name AS category_name,
+             COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND (brm.status <> 'CANCELLED' OR b.status = 'CANCELLED')),
+                      r.room_number) AS room_number,
+             c.name AS category_name,
              i.invoice_number, i.document_type, i.billing_side, i.created_at AS invoice_created_at,
              i.room_subtotal, i.food_subtotal,
              i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
@@ -1143,15 +1148,16 @@ async function getOccupiedRoomsByDate(pool, lodgeId, fromDate, toDate, categoryI
     .input('toDate', sql.Date, toDate);
   if (categoryId != null) request.input('categoryId', sql.BigInt, categoryId);
 
-  const categoryJoin = categoryId != null ? 'JOIN dbo.rooms r ON r.id = b.room_id' : '';
+  const categoryJoin = categoryId != null ? 'JOIN dbo.rooms r ON r.id = br.room_id' : '';
   const categoryFilter = categoryId != null ? 'AND r.category_id = @categoryId' : '';
 
   const result = await request.query(`
-    SELECT b.room_id, b.check_in_date, b.check_out_date
-    FROM dbo.bookings b
+    SELECT br.room_id, br.check_in_date, br.check_out_date
+    FROM dbo.booking_rooms br
+    JOIN dbo.bookings b ON b.id = br.booking_id
     ${categoryJoin}
-    WHERE b.lodge_id = @lodgeId AND b.status IN ('CHECKED_IN', 'CHECKED_OUT')
-      AND b.check_in_date < DATEADD(day, 1, @toDate) AND b.check_out_date > @fromDate
+    WHERE b.lodge_id = @lodgeId AND br.status IN ('CHECKED_IN', 'CHECKED_OUT')
+      AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
       ${categoryFilter}
   `);
 
@@ -1262,10 +1268,17 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
     .input('toDate', sql.Date, toDate)
     .query(`
       SELECT rc.id AS category_id, rc.name AS category_name,
-             SUM(i.room_subtotal + i.cgst_amount + i.sgst_amount) AS revenue
+             SUM((i.room_subtotal + i.cgst_amount + i.sgst_amount)
+                 * CASE WHEN bt.total > 0 THEN CAST(br.total_price AS DECIMAL(18,6)) / bt.total
+                        ELSE CAST(1 AS DECIMAL(18,6)) / bt.n END) AS revenue
       FROM dbo.invoices i
       JOIN dbo.bookings b ON b.id = i.booking_id
-      JOIN dbo.rooms r ON r.id = b.room_id
+      JOIN dbo.booking_rooms br ON br.booking_id = b.id AND br.status <> 'CANCELLED'
+      CROSS APPLY (
+        SELECT SUM(x.total_price) AS total, COUNT(*) AS n
+        FROM dbo.booking_rooms x WHERE x.booking_id = b.id AND x.status <> 'CANCELLED'
+      ) bt
+      JOIN dbo.rooms r ON r.id = br.room_id
       JOIN dbo.room_categories rc ON rc.id = r.category_id
       WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED' AND i.event_booking_id IS NULL
         AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate

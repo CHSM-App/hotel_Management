@@ -69,9 +69,10 @@ async function resolveRoomBooking(lodgeId, roomId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('roomId', sql.BigInt, roomId)
     .query(`
-      SELECT TOP 1 id FROM dbo.bookings
-      WHERE lodge_id = @lodgeId AND room_id = @roomId AND status = 'CHECKED_IN'
-      ORDER BY actual_check_in_at DESC
+      SELECT TOP 1 b.id FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      WHERE b.lodge_id = @lodgeId AND br.room_id = @roomId AND br.status = 'CHECKED_IN'
+      ORDER BY br.actual_check_in_at DESC
     `);
   return result.recordset[0]?.id ?? null;
 }
@@ -102,10 +103,10 @@ async function roomOccupancyHandler(req, res, next) {
       .query(`
         SELECT TOP 1 r.room_number, b.id AS booking_id, b.guest_name, b.guest_phone
         FROM dbo.rooms r
-        LEFT JOIN dbo.bookings b
-          ON b.room_id = r.id AND b.lodge_id = @lodgeId AND b.status = 'CHECKED_IN'
+        LEFT JOIN dbo.booking_rooms br ON br.room_id = r.id AND br.status = 'CHECKED_IN'
+        LEFT JOIN dbo.bookings b ON b.id = br.booking_id AND b.lodge_id = @lodgeId
         WHERE r.id = @roomId AND r.lodge_id = @lodgeId
-        ORDER BY b.actual_check_in_at DESC
+        ORDER BY br.actual_check_in_at DESC
       `);
 
     const row = result.recordset[0];

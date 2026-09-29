@@ -71,6 +71,8 @@ const DELETE_ORDER = [
   'dbo.raw_materials',
   'dbo.dining_tables',
   'dbo.booking_switchable_charges',
+  'dbo.booking_room_switchable_charges',
+  'dbo.booking_rooms',
   'dbo.booking_vehicles',
   'dbo.booking_guests',
   'dbo.bookings',

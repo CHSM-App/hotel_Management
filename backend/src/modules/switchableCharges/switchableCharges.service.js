@@ -125,7 +125,11 @@ async function deleteSwitchableCharge(lodgeId, chargeId) {
   const bookingChargesResult = await pool
     .request()
     .input('chargeId', sql.BigInt, chargeId)
-    .query('SELECT TOP 1 booking_id FROM dbo.booking_switchable_charges WHERE charge_id = @chargeId');
+    .query(`
+      SELECT TOP 1 booking_id FROM dbo.booking_switchable_charges WHERE charge_id = @chargeId
+      UNION ALL
+      SELECT TOP 1 booking_room_id FROM dbo.booking_room_switchable_charges WHERE charge_id = @chargeId
+    `);
   if (bookingChargesResult.recordset.length > 0) {
     throw new ApiError(
       'This extra has been used on past bookings and can’t be permanently deleted — deactivate it instead.',

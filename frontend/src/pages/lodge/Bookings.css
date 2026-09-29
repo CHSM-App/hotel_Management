@@ -1989,3 +1989,548 @@
   border: 0;
   border-top: 1px solid var(--border);
 }
+
+/* ---- Multi-room bookings ------------------------------------------------ */
+
+/* The "same dates for all rooms" switch and the add-room button sit on one line
+   under the first room. */
+.booking-form__rooms-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 4px;
+}
+
+/* One further room. Set apart from the first room's fields above it so it reads
+   as its own room rather than more of the same one. */
+.booking-form__extra-room {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.booking-form__extra-room-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.booking-form__extra-room-head strong {
+  color: var(--ink);
+}
+
+.booking-form__extra-room-remove {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.booking-form__extra-room-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  text-decoration: none;
+}
+
+/* The rooms of an existing booking on its detail screen, each with its own
+   dates, status and check-in/out button. */
+.booking-detail__rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.booking-detail__room {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.booking-detail__room-main {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.booking-detail__room-main strong {
+  color: var(--ink);
+}
+
+.booking-detail__room-meta {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.booking-detail__room-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- "Book multiple rooms" ------------------------------------------- */
+
+/* The first question of the form: a card with the switch in it, so it reads as a
+   choice about the whole booking rather than one more field. Turning it on
+   tints the card and opens the dates question underneath. */
+.booking-form__multi {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.booking-form__multi--on {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  background: color-mix(in srgb, var(--brand) 4%, #fff);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.booking-form__multi-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.booking-form__multi-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 10%, #fff);
+  color: var(--brand-ink);
+}
+
+.booking-form__multi-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.booking-form__multi-text strong {
+  color: var(--ink);
+  font-size: 14.5px;
+}
+
+.booking-form__multi-text small {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+/* A switch, drawn on a real checkbox so it stays keyboard- and screen-reader-friendly. */
+.switch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: #cbd2dc;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch-input::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s;
+}
+
+.switch-input:checked {
+  background: var(--brand);
+}
+
+.switch-input:checked::after {
+  transform: translateX(18px);
+}
+
+.switch-input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.switch-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* The follow-up: two cards, one for each answer, so nobody has to work out what a
+   ticked or unticked box means. */
+.booking-form__dates-choice {
+  padding: 0 14px 14px;
+}
+
+.booking-form__dates-choice-label {
+  display: block;
+  margin: 0 0 8px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.booking-form__dates-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.booking-form__dates-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+  padding: 10px 12px 10px 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+/* The round marker: hollow when off, filled with a dot when on. */
+.booking-form__dates-option::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #b6bfcc;
+  border-radius: 50%;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.booking-form__dates-option strong {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.booking-form__dates-option small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.booking-form__dates-option:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+
+.booking-form__dates-option--on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, #fff);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.booking-form__dates-option--on::before {
+  border-color: var(--brand);
+  background: radial-gradient(circle, var(--brand) 0 3px, #fff 3.5px);
+}
+
+.booking-form__dates-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 560px) {
+  .booking-form__dates-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* "Room 1", "Room 102" — names the room the fields below belong to. */
+.booking-form__room-head {
+  margin: 12px 0 6px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ---- The rooms to tick --------------------------------------------------- */
+
+.room-chooser__count {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.room-chooser__search {
+  width: 100%;
+  margin: 2px 0 10px;
+}
+
+/* One chip per room type, then a switch to review what has been ticked. */
+.room-chooser__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.room-chooser__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.room-chooser__chip span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.room-chooser__chip em {
+  color: var(--brand-ink);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.room-chooser__chip:hover {
+  border-color: var(--brand);
+}
+
+.room-chooser__chip--on {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.room-chooser__chip--on span {
+  background: rgb(255 255 255 / 0.22);
+  color: #fff;
+}
+
+.room-chooser__chip--on em {
+  color: #fff;
+}
+
+.room-chooser__chip--ghost {
+  border-style: dashed;
+}
+
+/* The tiles scroll inside the form so a long property doesn't push the rest of the
+   booking a mile down; the filters above stay put. */
+.room-chooser__scroll {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0 6px 6px 0;
+  border-top: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.room-chooser__group {
+  padding-top: 4px;
+}
+
+.room-chooser__group + .room-chooser__group {
+  margin-top: 10px;
+}
+
+/* Sticks to the top while its rooms scroll under it, so it is always clear which
+   type the rooms on screen belong to. */
+.room-chooser__group-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0 7px;
+  background: #fff;
+}
+
+.room-chooser__group-head > span:first-child {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.room-chooser__group-head strong {
+  color: var(--ink);
+  font-size: 13.5px;
+  letter-spacing: 0.1px;
+}
+
+.room-chooser__group-head small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.room-chooser__group-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.room-chooser__group-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.room-chooser__group-actions button:hover {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, #fff);
+}
+
+.room-chooser__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 2px 0 4px;
+  list-style: none;
+}
+
+/* .field label is display:block with a margin and outranks a lone class, so these
+   carry it to win. */
+.field label.room-chooser__tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-bottom: 0;
+  min-height: 58px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 400;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+.field label.room-chooser__tile:hover {
+  border-color: var(--brand);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+}
+
+.field label.room-chooser__tile:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.field label.room-chooser__tile--on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, #fff);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.field label.room-chooser__tile--fixed {
+  cursor: default;
+  opacity: 0.8;
+}
+
+/* The checkbox is still there for keyboards and screen readers; it just isn't drawn. */
+.room-chooser__tile input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The tick badge: the visible half of "selected". */
+.room-chooser__check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  transform: scale(0);
+  transition: transform 0.12s;
+}
+
+.room-chooser__tile--on .room-chooser__check {
+  transform: scale(1);
+}
+
+.room-chooser__tile-num {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.room-chooser__tile-sub {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

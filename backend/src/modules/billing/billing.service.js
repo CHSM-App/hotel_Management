@@ -323,7 +323,9 @@ async function loadBookingForBilling(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.*, r.room_number, r.is_dormitory, c.name AS category_name,
+      SELECT b.*, COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name,
              db.bed_label,
              -- Every bed this booking holds, comma-joined in bed order — the
              -- same single bed_label for the common case, a list for a
@@ -492,7 +494,9 @@ async function listBillableBookings(lodgeId) {
     .query(`
       SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
              b.total_price, b.advance_amount, b.actual_check_out_at,
-             r.room_number, c.name AS category_name
+             COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, c.name AS category_name
       FROM dbo.bookings b
       JOIN dbo.rooms r ON r.id = b.room_id
       JOIN dbo.room_categories c ON c.id = r.category_id
@@ -1295,7 +1299,9 @@ async function getInvoice(lodgeId, invoiceId) {
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
-             r.room_number, r.is_dormitory, c.name AS category_name,
+             COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name,
              db.bed_label,
              -- Every bed this booking holds, comma-joined in bed order — same
              -- aggregate as loadBookingForBilling.
@@ -1396,7 +1402,9 @@ async function listInvoices(lodgeId) {
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
              b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
-             r.room_number, r.is_dormitory, c.name AS category_name,
+             COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name,
              db.bed_label,
              -- Every bed this booking holds, comma-joined in bed order — same
              -- aggregate as loadBookingForBilling and getInvoice.
@@ -1831,10 +1839,11 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('roomId', sql.BigInt, Number(roomMatch[1]))
       .query(`
-        SELECT TOP 1 guest_name, guest_phone, num_guests
-        FROM dbo.bookings
-        WHERE lodge_id = @lodgeId AND room_id = @roomId AND status = 'CHECKED_IN'
-        ORDER BY actual_check_in_at DESC
+        SELECT TOP 1 b.guest_name, b.guest_phone, b.num_guests
+        FROM dbo.booking_rooms br
+        JOIN dbo.bookings b ON b.id = br.booking_id
+        WHERE b.lodge_id = @lodgeId AND br.room_id = @roomId AND br.status = 'CHECKED_IN'
+        ORDER BY br.actual_check_in_at DESC
       `);
     guest = guestResult.recordset[0] ?? null;
   } else if (orders[0].guestName || orders[0].guestPhone) {
@@ -2028,7 +2037,9 @@ async function listInHouseGuests(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT b.id, b.guest_name, r.room_number
+      SELECT b.id, b.guest_name, COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
+                       FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+                       WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number
       FROM dbo.bookings b JOIN dbo.rooms r ON r.id = b.room_id
       WHERE b.lodge_id = @lodgeId AND b.status = 'CHECKED_IN'
       ORDER BY r.room_number

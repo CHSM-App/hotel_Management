@@ -62,6 +62,11 @@ DELETE FROM dbo.payment_lines    WHERE lodge_id = @LodgeId;
 DELETE FROM dbo.advance_receipts WHERE lodge_id = @LodgeId;
 DELETE FROM dbo.invoices         WHERE lodge_id = @LodgeId;
 
+DELETE brsc FROM dbo.booking_room_switchable_charges brsc
+    JOIN dbo.booking_rooms br ON br.id = brsc.booking_room_id
+    JOIN dbo.bookings b ON b.id = br.booking_id WHERE b.lodge_id = @LodgeId;
+DELETE br FROM dbo.booking_rooms br
+    JOIN dbo.bookings b ON b.id = br.booking_id WHERE b.lodge_id = @LodgeId;
 DELETE bsc FROM dbo.booking_switchable_charges bsc
     JOIN dbo.bookings b ON b.id = bsc.booking_id WHERE b.lodge_id = @LodgeId;
 DELETE bv FROM dbo.booking_vehicles bv

@@ -322,7 +322,7 @@ export default function Login() {
 
         <p className="auth-panel__foot">Trouble signing in? Contact your property owner or admin.</p>
         <p className="auth-panel__foot">
-          <Link to="/privacy">Privacy policy &amp; account deletion</Link>
+          <Link to="/privacy">Privacy policy</Link>
         </p>
       </div>
     </div>

@@ -45,8 +45,9 @@ async function listRooms(lodgeId) {
       FROM dbo.rooms r
       JOIN dbo.room_categories c ON c.id = r.category_id
       OUTER APPLY (
-        SELECT TOP 1 id FROM dbo.bookings
-        WHERE room_id = r.id AND lodge_id = @lodgeId AND status = 'CHECKED_IN'
+        SELECT TOP 1 br.id FROM dbo.booking_rooms br
+        JOIN dbo.bookings bk ON bk.id = br.booking_id
+        WHERE br.room_id = r.id AND bk.lodge_id = @lodgeId AND br.status = 'CHECKED_IN'
       ) b
       WHERE r.lodge_id = @lodgeId
       ORDER BY CASE WHEN c.tape_order IS NULL THEN 1 ELSE 0 END, c.tape_order ASC, c.id ASC,
@@ -362,7 +363,7 @@ async function deleteRoom(lodgeId, roomId) {
   const bookingsResult = await pool
     .request()
     .input('roomId', sql.BigInt, roomId)
-    .query('SELECT TOP 1 id FROM dbo.bookings WHERE room_id = @roomId');
+    .query('SELECT TOP 1 id FROM dbo.booking_rooms WHERE room_id = @roomId');
   if (bookingsResult.recordset.length > 0) {
     throw new ApiError(
       'This room has bookings on record and can’t be permanently deleted — deactivate it instead.',

@@ -184,7 +184,7 @@ export default function PrivacyPolicy() {
           </section>
 
           <section id="retention">
-            <h2>9. Data retention</h2>
+            <h2>8. Data retention</h2>
             <p>
               We retain staff and guest data for as long as the Property's account is active,
               and afterwards only as needed to meet legal, tax, or regulatory retention
@@ -235,6 +235,7 @@ export default function PrivacyPolicy() {
               stayed with, or email us at {SUPPORT_EMAIL} and we will forward the request to
               the relevant Property.
             </p>
+            <Link to="/delete-account" className="policy-cta">Request account deletion</Link>
           </section>
 
           <section id="permissions">

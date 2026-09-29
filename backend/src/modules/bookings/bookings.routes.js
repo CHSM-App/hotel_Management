@@ -50,12 +50,16 @@ router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);
 router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
 router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
+router.get('/:id/rooms/:roomId/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
 router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
 router.post('/', authenticate, staff, idProofUpload, createBookingHandler);
 router.patch('/:id', authenticate, staff, idProofUpload, updateBookingHandler);
 router.patch('/:id/check-in', authenticate, staff, idProofUpload, checkInHandler);
 router.patch('/:id/check-out', authenticate, staff, checkOutHandler);
+// One room of a multi-room booking; the plain routes above act on all of them.
+router.patch('/:id/rooms/:roomId/check-in', authenticate, staff, idProofUpload, checkInHandler);
+router.patch('/:id/rooms/:roomId/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/cancel', authenticate, staff, cancelBookingHandler);
 
 module.exports = router;
