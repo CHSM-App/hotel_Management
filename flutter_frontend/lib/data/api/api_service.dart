@@ -10,6 +10,7 @@ import '../../domain/models/event_booking.dart';
 import '../../domain/models/expense.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/income.dart';
 import '../../domain/models/inventory.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/json.dart';
@@ -1096,6 +1097,52 @@ class ApiService {
     return GstSummaryReport.fromJson(_map(res.data));
   }
 
+  /// Functions & events over a date range — the same figures the web
+  /// dashboard's Reports > Events & functions tab shows.
+  Future<EventsReport> eventsReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/events',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return EventsReport.fromJson(_map(res.data));
+  }
+
+  /// Food orders over a date range — Reports > Food orders tab.
+  Future<FoodOrdersReport> foodOrdersReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/food-orders',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return FoodOrdersReport.fromJson(_map(res.data));
+  }
+
+  /// One period's Profit & Loss statement — Reports > Profit & Loss tab.
+  Future<ProfitLossReport> profitLoss({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/profit-loss',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return ProfitLossReport.fromJson(_map(res.data));
+  }
+
+  /// The Screener-style multi-year P&L table, by financial year or by month.
+  Future<ProfitLossHistory> profitLossHistory({String granularity = 'year'}) async {
+    final res = await _dio.get(
+      '/reports/profit-loss-history',
+      queryParameters: {'granularity': granularity},
+    );
+    return ProfitLossHistory.fromJson(_map(res.data));
+  }
+
   // ===== EVENTS & FUNCTIONS (events.manage) =====
 
   /// Halls and lawns that can be hired — the Setup tab's Venues card.
@@ -1521,14 +1568,30 @@ class ApiService {
     return ExpenseCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
   }
 
-  Future<void> updateExpenseCategory(int id, {String? name, bool? isActive}) async {
+  Future<void> updateExpenseCategory(
+    int id, {
+    String? name,
+    bool? isActive,
+    bool? isInterest,
+    bool? isTax,
+  }) async {
     await _dio.patch(
       '/expenses/categories/$id',
       data: {
         if (name != null) 'name': name,
         if (isActive != null) 'isActive': isActive,
+        if (isInterest != null) 'isInterest': isInterest,
+        if (isTax != null) 'isTax': isTax,
       },
     );
+  }
+
+  /// How many existing expenses would be reclassified by tagging this
+  /// category as Interest/Income Tax — mirrors the confirm step in
+  /// toggleCategoryFlag in ExpensesPanel.jsx.
+  Future<CategoryTagImpact> expenseCategoryTagImpact(int id) async {
+    final res = await _dio.get('/expenses/categories/$id/tag-impact');
+    return CategoryTagImpact.fromJson(_map(res.data)['impact'] as Map<String, dynamic>);
   }
 
   /// Same dbo.vendors directory [assetVendors] reads, through the Expenses
@@ -1662,6 +1725,45 @@ class ApiService {
   Future<Expense> logRecurringOccurrence(int templateId, FormData form) async {
     final res = await _dio.post('/expenses/recurring/$templateId/log', data: form);
     return Expense.fromJson(_map(res.data)['expense'] as Map<String, dynamic>);
+  }
+
+  // ===== OTHER INCOME (income.manage) =====
+  //
+  // Read-only from this app's side so far — the Reports > Other Income tab
+  // displays what's already logged (mirrors IncomeReportPanel.jsx, opened
+  // with onClose={null}), same as ExpensesReportPanel does for expenses.
+  // There is no income entry/edit screen elsewhere in this app yet.
+
+  /// Every income entry on file — no date range, same "full history" shape
+  /// [expenses] uses for its own report tab.
+  Future<List<IncomeEntry>> income({
+    int? categoryId,
+    int? payerId,
+    String? from,
+    String? to,
+  }) async {
+    final res = await _dio.get(
+      '/income',
+      queryParameters: {
+        if (categoryId != null) 'categoryId': categoryId,
+        if (payerId != null) 'payerId': payerId,
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+      },
+    );
+    return (_map(res.data)['income'] as List? ?? [])
+        .map((e) => IncomeEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<IncomeCategory>> incomeCategories({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/income/categories',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['categories'] as List? ?? [])
+        .map((e) => IncomeCategory.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

@@ -6,13 +6,42 @@ class ExpenseCategory {
   final int id;
   final String name;
   final bool isActive;
+  final bool isInterest;
+  final bool isTax;
 
-  const ExpenseCategory({required this.id, this.name = '', this.isActive = true});
+  const ExpenseCategory({
+    required this.id,
+    this.name = '',
+    this.isActive = true,
+    this.isInterest = false,
+    this.isTax = false,
+  });
 
   factory ExpenseCategory.fromJson(Map<String, dynamic> json) => ExpenseCategory(
     id: asInt(json['id']),
     name: asStringOrNull(json['name']) ?? '',
     isActive: asBool(json['isActive']),
+    isInterest: asBool(json['isInterest']),
+    isTax: asBool(json['isTax']),
+  );
+}
+
+/// How many existing expenses would be reclassified by tagging a category as
+/// Interest/Income Tax — mirrors the `impact` payload from
+/// GET /expenses/categories/:id/tag-impact in ExpensesPanel.jsx.
+class CategoryTagImpact {
+  final int count;
+  final num total;
+  final String? earliestDate;
+  final String? latestDate;
+
+  const CategoryTagImpact({this.count = 0, this.total = 0, this.earliestDate, this.latestDate});
+
+  factory CategoryTagImpact.fromJson(Map<String, dynamic> json) => CategoryTagImpact(
+    count: asInt(json['count']),
+    total: asNum(json['total']),
+    earliestDate: asStringOrNull(json['earliestDate']),
+    latestDate: asStringOrNull(json['latestDate']),
   );
 }
 

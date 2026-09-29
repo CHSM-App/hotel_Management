@@ -6,11 +6,15 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'booking_register_rows.dart';
 import 'report_widgets.dart';
 
-/// The booking register: the same stat grid and table the web dashboard's
-/// Reports > Bookings tab shows, laid out as cards instead of a wide table —
-/// a phone has no room for fifteen columns.
+/// The booking register: the same stat grid and data table the web
+/// dashboard's Reports > Bookings tab shows — a horizontally scrollable
+/// grid rather than the web's fixed-width one, since a phone has no room for
+/// nineteen columns side by side. The column set and cell values are shared
+/// with [BookingReportPdf]'s register (see booking_register_rows.dart), so
+/// the screen and the downloaded PDF never disagree.
 class BookingsReportPanel extends ConsumerWidget {
   const BookingsReportPanel({super.key});
 
@@ -38,6 +42,10 @@ class _Loaded extends StatelessWidget {
 
   const _Loaded({required this.report});
 
+  static const _columnWidths = <double>[
+    76, 68, 120, 52, 78, 62, 78, 62, 40, 76, 74, 78, 70, 70, 60, 78, 76, 76, 90,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final s = report.summary;
@@ -61,163 +69,26 @@ class _Loaded extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppTheme.s16),
+        Text('Register', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppTheme.s8),
         if (report.bookings.isEmpty)
           const NeuNotice(
             icon: Icons.receipt_long_rounded,
             message: 'No bookings arrived in this period.',
           )
         else
-          for (final b in report.bookings)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
-              child: _BookingCard(booking: b),
-            ),
-      ],
-    );
-  }
-}
-
-class _BookingCard extends StatelessWidget {
-  final ReportBooking booking;
-
-  const _BookingCard({required this.booking});
-
-  @override
-  Widget build(BuildContext context) {
-    final b = booking;
-    return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  b.guestName ?? 'Guest',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              StatusBadge(status: b.status, label: kBookingStatusLabel[b.status] ?? b.status),
-            ],
-          ),
-          if (b.guestPhone != null) ...[
-            const SizedBox(height: 2),
-            Text(b.guestPhone!, style: Theme.of(context).textTheme.bodySmall),
-          ],
-          const SizedBox(height: AppTheme.s12),
-          Row(
-            children: [
-              Expanded(
-                child: _Field(
-                  label: 'Room',
-                  value: '${b.roomNumber ?? '—'}${b.categoryName != null ? ' · ${b.categoryName}' : ''}',
-                ),
-              ),
-              Expanded(
-                child: _Field(label: 'Nights', value: '${b.nights}'),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s8),
-          Row(
-            children: [
-              Expanded(
-                child: _Field(
-                  label: 'Check-in',
-                  value: formatIsoDate(b.checkInDate),
-                  sub: b.actualCheckInAt != null ? 'Arrived' : 'Not arrived',
-                ),
-              ),
-              Expanded(
-                child: _Field(
-                  label: 'Check-out',
-                  value: formatIsoDate(b.checkOutDate),
-                  sub: b.actualCheckOutAt != null ? 'Departed' : 'Not checked out',
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: AppTheme.s24, color: AppTheme.border),
-          Row(
-            children: [
-              Expanded(
-                child: _Field(
-                  label: 'Advance',
-                  value: b.advanceAmount > 0 ? formatPrice(b.advanceAmount) : '—',
-                  sub: b.advanceTenders.isNotEmpty
-                      ? tendersLabel(b.advanceTenders, formatPrice)
-                      : null,
-                ),
-              ),
-              Expanded(
-                child: _Field(
-                  label: 'Balance',
-                  value: (b.balanceCollected ?? 0) > 0 ? formatPrice(b.balanceCollected) : '—',
-                  sub: b.balanceTenders.isNotEmpty
-                      ? tendersLabel(b.balanceTenders, formatPrice)
-                      : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s8),
-          Row(
-            children: [
-              Expanded(
-                child: _Field(
-                  label: 'Billed',
-                  value: b.isBilled ? formatPrice(b.billedAmount) : '—',
-                  sub: b.isBilled
-                      ? kDocumentTypeLabel[b.documentType] ?? b.documentType
-                      : 'Not billed · booked ${formatPrice(b.totalPrice)}',
-                ),
-              ),
-              if (b.isBilled)
-                Expanded(
-                  child: _Field(label: 'Bill no.', value: b.invoiceNumber ?? '—'),
+          ReportDataTable(
+            columns: [
+              for (var i = 0; i < kRegisterColumns.length; i++)
+                ReportTableColumn(
+                  kRegisterColumns[i].label,
+                  width: _columnWidths[i],
+                  align: kRegisterColumns[i].rightAlign ? TextAlign.right : TextAlign.left,
                 ),
             ],
+            rows: [for (final b in report.bookings) registerRow(b)],
+            totals: registerTotalsRow(s, s.bills),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Field extends StatelessWidget {
-  final String label;
-  final String value;
-  final String? sub;
-
-  const _Field({required this.label, required this.value, this.sub});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        ),
-        if (sub != null) ...[
-          const SizedBox(height: 1),
-          Text(
-            sub!,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
       ],
     );
   }

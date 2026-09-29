@@ -17,5 +17,5 @@
 /// refuse the connection without the app ever seeing it.
 const String baseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://hotel.vengurlatech.com',
+  defaultValue: 'http://192.168.1.6:8000',
 );

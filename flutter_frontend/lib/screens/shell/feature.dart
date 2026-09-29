@@ -171,14 +171,22 @@ const kFeatures = <Feature>[
   // ),
 
   // ── Insights ─────────────────────────────────────────────────────────────
-  // Feature(
-  //   key: 'reports',
-  //   title: 'Reports',
-  //   tabLabel: 'Reports',
-  //   icon: Icons.bar_chart_rounded,
-  //   permission: 'reports.view',
-  //   capability: 'hasRooms',
-  // ),
+  // Same web module (ReportsPanel.jsx): Overview, Room Bookings, Events &
+  // functions, Food orders, Tax & GST, Profit & Loss, Expenses, Other Income
+  // and Assets, each tab further gated by its own capability/permission
+  // inside the screen (see reports_screen.dart's kReportTabs) the same way
+  // ReportsPanel.jsx's own ALL_TABS.filter() works. No capability gate here:
+  // unlike the single-property-type screens above, Reports has tabs for
+  // every kind of property, so a restaurant-only or rooms-only lodge still
+  // has something to see (GST, Expenses, ...) even without every capability.
+  // Folded into "More" — checked at day's end or month's end, not every shift.
+  Feature(
+    key: 'reports',
+    title: 'Reports',
+    tabLabel: 'Reports',
+    icon: Icons.bar_chart_rounded,
+    permission: 'reports.view',
+  ),
 ];
 
 /// How many sections get their own tab before the rest go behind "More".

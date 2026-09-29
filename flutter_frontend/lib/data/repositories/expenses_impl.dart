@@ -18,8 +18,11 @@ class ExpensesImpl implements ExpensesRepository {
   Future<ExpenseCategory> createCategory(String name) => api.createExpenseCategory(name);
 
   @override
-  Future<void> updateCategory(int id, {String? name, bool? isActive}) =>
-      api.updateExpenseCategory(id, name: name, isActive: isActive);
+  Future<void> updateCategory(int id, {String? name, bool? isActive, bool? isInterest, bool? isTax}) =>
+      api.updateExpenseCategory(id, name: name, isActive: isActive, isInterest: isInterest, isTax: isTax);
+
+  @override
+  Future<CategoryTagImpact> categoryTagImpact(int id) => api.expenseCategoryTagImpact(id);
 
   @override
   Future<List<Vendor>> vendors({bool includeInactive = false}) =>

@@ -82,6 +82,136 @@ class StatGrid extends StatelessWidget {
   }
 }
 
+/// One column of a [ReportDataTable] — a fixed pixel width (rather than a
+/// flex) because the table scrolls horizontally instead of squeezing to fit,
+/// the same trade-off the web's `.dash-table-scroll` makes.
+class ReportTableColumn {
+  final String label;
+  final double width;
+  final TextAlign align;
+
+  const ReportTableColumn(this.label, {this.width = 90, this.align = TextAlign.left});
+}
+
+/// A real data grid for a report register — the phone equivalent of the
+/// web's `.dash-table` inside `.dash-table-scroll`: an uppercase muted
+/// header on a tinted band, light zebra striping, right-aligned money
+/// columns, and horizontal scroll instead of wrapping or stacking, so the
+/// column set matches the PDF register exactly rather than inventing a
+/// second layout for the same data.
+class ReportDataTable extends StatelessWidget {
+  final List<ReportTableColumn> columns;
+  final List<List<String>> rows;
+  final List<String>? totals;
+
+  const ReportDataTable({
+    super.key,
+    required this.columns,
+    required this.rows,
+    this.totals,
+  });
+
+  double get _width => columns.fold(0, (sum, c) => sum + c.width);
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: _width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _row(
+                  context,
+                  columns.map((c) => c.label.toUpperCase()).toList(),
+                  columns.map((c) => c.align).toList(),
+                  header: true,
+                ),
+                for (var i = 0; i < rows.length; i++)
+                  _row(
+                    context,
+                    rows[i],
+                    columns.map((c) => c.align).toList(),
+                    shaded: i.isOdd,
+                  ),
+                if (totals != null)
+                  _row(
+                    context,
+                    totals!,
+                    columns.map((c) => c.align).toList(),
+                    bold: true,
+                    border: true,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    List<String> cells,
+    List<TextAlign> aligns, {
+    bool header = false,
+    bool shaded = false,
+    bool bold = false,
+    bool border = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: header
+            ? AppTheme.bg
+            : shaded
+            ? AppTheme.border.withValues(alpha: 0.4)
+            : AppTheme.card,
+        border: Border(
+          bottom: BorderSide(
+            color: AppTheme.border,
+            width: border ? 1.4 : 0.8,
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          for (var i = 0; i < columns.length; i++)
+            SizedBox(
+              width: columns[i].width,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                child: Text(
+                  i < cells.length ? cells[i] : '',
+                  textAlign: aligns[i],
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: header
+                      ? Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        )
+                      : Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.text,
+                          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+                          fontSize: 12.5,
+                        ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The booking-status pill — green for anything live, grey for cancelled,
 /// matching the web's `badge--on` / `badge--off`.
 class StatusBadge extends StatelessWidget {

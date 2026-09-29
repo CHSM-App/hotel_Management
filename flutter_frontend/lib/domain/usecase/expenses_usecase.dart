@@ -14,8 +14,10 @@ class ExpensesUsecase {
 
   Future<ExpenseCategory> createCategory(String name) => repository.createCategory(name);
 
-  Future<void> updateCategory(int id, {String? name, bool? isActive}) =>
-      repository.updateCategory(id, name: name, isActive: isActive);
+  Future<void> updateCategory(int id, {String? name, bool? isActive, bool? isInterest, bool? isTax}) =>
+      repository.updateCategory(id, name: name, isActive: isActive, isInterest: isInterest, isTax: isTax);
+
+  Future<CategoryTagImpact> categoryTagImpact(int id) => repository.categoryTagImpact(id);
 
   Future<List<Vendor>> vendors({bool includeInactive = false}) =>
       repository.vendors(includeInactive: includeInactive);

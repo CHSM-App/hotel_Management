@@ -52,64 +52,37 @@ class _Loaded extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppTheme.s16),
+        Text('Day by day', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppTheme.s8),
         if (report.totalRooms == 0)
           const NeuNotice(
             icon: Icons.bed_rounded,
             message: 'Add rooms on the Rooms & rates tab to see occupancy.',
           )
         else
-          NeuCard(
-            padding: const EdgeInsets.all(AppTheme.s16),
-            child: Column(
-              children: [
-                for (final day in report.days) ...[
-                  _DayRow(day: day),
-                  if (day != report.days.last)
-                    const Divider(height: AppTheme.s16, color: AppTheme.border),
+          ReportDataTable(
+            columns: const [
+              ReportTableColumn('Date', width: 110),
+              ReportTableColumn('Occupied', width: 90, align: TextAlign.right),
+              ReportTableColumn('Total rooms', width: 100, align: TextAlign.right),
+              ReportTableColumn('Occupancy', width: 90, align: TextAlign.right),
+            ],
+            rows: [
+              for (final day in report.days)
+                [
+                  formatIsoDate(day.date),
+                  '${day.occupiedRooms}',
+                  '${day.totalRooms}',
+                  '${day.occupancyPercent}%',
                 ],
-              ],
-            ),
+            ],
+            totals: [
+              'Total',
+              '${report.occupiedRoomNights}',
+              '${report.totalRoomNights}',
+              '${report.occupancyPercent}%',
+            ],
           ),
-      ],
-    );
-  }
-}
-
-class _DayRow extends StatelessWidget {
-  final OccupancyDay day;
-
-  const _DayRow({required this.day});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: Text(
-            formatIsoDate(day.date),
-            style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            '${day.occupiedRooms} / ${day.totalRooms}',
-            style: Theme.of(context).textTheme.bodyMedium,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        SizedBox(
-          width: 56,
-          child: Text(
-            '${day.occupancyPercent}%',
-            textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppTheme.accent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
       ],
     );
   }

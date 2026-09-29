@@ -18,4 +18,21 @@ abstract class ReportsRepository {
     required String fromDate,
     required String toDate,
   });
+
+  Future<EventsReport> eventsReport({
+    required String fromDate,
+    required String toDate,
+  });
+
+  Future<FoodOrdersReport> foodOrdersReport({
+    required String fromDate,
+    required String toDate,
+  });
+
+  Future<ProfitLossReport> profitLoss({
+    required String fromDate,
+    required String toDate,
+  });
+
+  Future<ProfitLossHistory> profitLossHistory({String granularity = 'year'});
 }

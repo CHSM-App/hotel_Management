@@ -3,16 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../presentation/providers/view_model_provider.dart';
 import '../theme.dart';
+import 'expenses_categories_panel.dart';
 import 'expenses_list_panel.dart';
 import 'expenses_recurring_panel.dart';
 import 'expenses_vendors_panel.dart';
 
 /// Expense tracking — mirrors ExpensesPanel.jsx's shell exactly: Expenses,
-/// Recurring, Vendors — same three tabs, same order. The web's Expenses tab
-/// carries its own KPI row and category breakdown inline (see
-/// expenses_list_panel.dart) rather than a separate Summary tab, and
-/// categories have no "manage" screen of their own — they're named through
-/// the combobox on the expense/recurring forms, same as the web.
+/// Recurring, Vendors, Categories — same four tabs, same order. The web's
+/// Expenses tab carries its own KPI row and category breakdown inline (see
+/// expenses_list_panel.dart) rather than a separate Summary tab. A category
+/// is still only ever named through the combobox on the expense/recurring
+/// forms — the Categories tab here is read-only P&L tagging, same as the web.
 class ExpensesScreen extends ConsumerStatefulWidget {
   const ExpensesScreen({super.key});
 
@@ -41,6 +42,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
           child: switch (_tab) {
             'recurring' => const ExpensesRecurringPanel(),
             'vendors' => const ExpensesVendorsPanel(),
+            'categories' => const ExpensesCategoriesPanel(),
             _ => const ExpensesListPanel(),
           },
         ),
@@ -62,6 +64,7 @@ class _SubTabs extends StatelessWidget {
     'expenses': 'Expenses',
     'recurring': 'Recurring',
     'vendors': 'Vendors',
+    'categories': 'Categories',
   };
 
   static const double _height = 44;

@@ -49,11 +49,19 @@ final roomsViewModelProvider =
       (ref) => RoomsViewModel(ref.watch(roomsUsecaseProvider)),
     );
 
-/// autoDispose: an owner who leaves Reports should not keep four report
-/// queries warm in memory for a section they may not reopen this session.
+/// autoDispose: an owner who leaves Reports should not keep this screen's
+/// reports warm in memory for a section they may not reopen this session.
+/// Depends on the Expenses/Assets/Income usecases too — the Reports >
+/// Expenses/Assets/Other Income tabs reuse those modules' own fetches rather
+/// than duplicating them behind a report-specific endpoint.
 final reportsViewModelProvider =
     StateNotifierProvider.autoDispose<ReportsViewModel, ReportsState>(
-      (ref) => ReportsViewModel(ref.watch(reportsUsecaseProvider)),
+      (ref) => ReportsViewModel(
+        ref.watch(reportsUsecaseProvider),
+        ref.watch(expensesUsecaseProvider),
+        ref.watch(assetsUsecaseProvider),
+        ref.watch(incomeUsecaseProvider),
+      ),
     );
 
 /// Menu & QR codes. Four view models sharing one usecase, split the way the
