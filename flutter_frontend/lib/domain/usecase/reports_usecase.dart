@@ -16,6 +16,11 @@ class ReportsUsecase {
     required String toDate,
   }) => repository.occupancyReport(fromDate: fromDate, toDate: toDate);
 
+  Future<RoomsAnalytics> roomsAnalytics({
+    required String fromDate,
+    required String toDate,
+  }) => repository.roomsAnalytics(fromDate: fromDate, toDate: toDate);
+
   Future<GstSummaryReport> gstSummary({
     required String fromDate,
     required String toDate,
@@ -30,6 +35,12 @@ class ReportsUsecase {
     required String fromDate,
     required String toDate,
   }) => repository.foodOrdersReport(fromDate: fromDate, toDate: toDate);
+
+  Future<AnalyticsOverview> analyticsOverview({
+    required String fromDate,
+    required String toDate,
+    String compareMode = 'previous_period',
+  }) => repository.analyticsOverview(fromDate: fromDate, toDate: toDate, compareMode: compareMode);
 
   Future<ProfitLossReport> profitLoss({
     required String fromDate,

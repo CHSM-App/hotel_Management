@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Only reached by the pre-Android-10 fallback in MainActivity.saveToDownloads,
+         which writes straight into the public Downloads folder. -->
+    <external-path name="downloads" path="Download/" />
+</paths>

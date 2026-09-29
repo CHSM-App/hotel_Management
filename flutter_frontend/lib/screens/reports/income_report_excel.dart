@@ -14,9 +14,9 @@ import 'report_pdf_style.dart';
 /// print, and an "Income" sheet with one row per entry plus a footed totals
 /// row.
 class IncomeReportExcel {
-  static Future<void> download(List<IncomeEntry> income, {String? lodgeName}) async {
+  static Future<String> download(List<IncomeEntry> income, {String? lodgeName}) async {
     final bytes = build(income, lodgeName: lodgeName);
-    await saveBytesToDevice(bytes, IncomeReportPdf.filenameFor('xlsx'));
+    return saveBytesToDevice(bytes, IncomeReportPdf.filenameFor('xlsx'));
   }
 
   static Uint8List build(List<IncomeEntry> income, {String? lodgeName}) {

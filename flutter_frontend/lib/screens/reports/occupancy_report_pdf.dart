@@ -17,9 +17,9 @@ import 'report_pdf_style.dart';
 ///
 /// Portrait A4: three columns is not the register's nineteen.
 class OccupancyReportPdf {
-  static Future<void> download(OccupancyReport report, {String? lodgeName}) async {
+  static Future<String> download(OccupancyReport report, {String? lodgeName}) async {
     final bytes = await build(report, lodgeName: lodgeName);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static Future<void> share(OccupancyReport report, {String? lodgeName}) async {
@@ -92,7 +92,7 @@ class OccupancyReportPdf {
             ('Average occupancy', '${report.occupancyPercent}%'),
             ('Room-nights occupied', '${report.occupiedRoomNights} / ${report.totalRoomNights}'),
             ('Active rooms', '${report.totalRooms}'),
-          ], perRow: 3),
+          ], width: ReportPdfStyle.contentWidthPortrait, perRow: 3),
           pw.SizedBox(height: 16),
           if (report.totalRooms == 0)
             pw.Text('No active rooms on this property.', style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted))

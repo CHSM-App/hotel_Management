@@ -1085,6 +1085,20 @@ class ApiService {
     return OccupancyReport.fromJson(_map(res.data));
   }
 
+  /// RevPAR, average length of stay, cancellation rate, and occupancy by
+  /// room category — the Rooms tab's own figures beyond the booking
+  /// register.
+  Future<RoomsAnalytics> roomsAnalytics({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/rooms-analytics',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return RoomsAnalytics.fromJson(_map(res.data));
+  }
+
   /// The GST filing summary — invoice-wise totals grouped by document type.
   Future<GstSummaryReport> gstSummary({
     required String fromDate,
@@ -1108,6 +1122,22 @@ class ApiService {
       queryParameters: {'fromDate': fromDate, 'toDate': toDate},
     );
     return EventsReport.fromJson(_map(res.data));
+  }
+
+  /// The cross-stream analytics payload behind Reports > Overview's trend
+  /// and mix charts — also where the Events & functions and Food orders tabs
+  /// get their own venue-utilisation and top-selling-items sections, fetched
+  /// once and shared rather than requested a second time per tab.
+  Future<AnalyticsOverview> analyticsOverview({
+    required String fromDate,
+    required String toDate,
+    String compareMode = 'previous_period',
+  }) async {
+    final res = await _dio.get(
+      '/reports/analytics-overview',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate, 'compareMode': compareMode},
+    );
+    return AnalyticsOverview.fromJson(_map(res.data));
   }
 
   /// Food orders over a date range — Reports > Food orders tab.

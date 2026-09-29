@@ -14,9 +14,9 @@ import 'report_pdf_style.dart';
 /// (the same register the PDF's part 3 and the on-screen data grid share —
 /// see booking_register_rows.dart) plus a footed totals row.
 class BookingReportExcel {
-  static Future<void> download(BookingsReport report) async {
+  static Future<String> download(BookingsReport report) async {
     final bytes = build(report);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static String _filename(BookingsReport report) {

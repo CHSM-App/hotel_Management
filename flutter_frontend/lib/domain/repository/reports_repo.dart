@@ -14,6 +14,11 @@ abstract class ReportsRepository {
     required String toDate,
   });
 
+  Future<RoomsAnalytics> roomsAnalytics({
+    required String fromDate,
+    required String toDate,
+  });
+
   Future<GstSummaryReport> gstSummary({
     required String fromDate,
     required String toDate,
@@ -27,6 +32,12 @@ abstract class ReportsRepository {
   Future<FoodOrdersReport> foodOrdersReport({
     required String fromDate,
     required String toDate,
+  });
+
+  Future<AnalyticsOverview> analyticsOverview({
+    required String fromDate,
+    required String toDate,
+    String compareMode = 'previous_period',
   });
 
   Future<ProfitLossReport> profitLoss({

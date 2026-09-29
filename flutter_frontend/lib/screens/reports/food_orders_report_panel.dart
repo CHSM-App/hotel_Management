@@ -15,6 +15,7 @@ class FoodOrdersReportPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(reportsViewModelProvider).foodOrders;
+    final analytics = ref.watch(reportsViewModelProvider).analyticsOverview?.valueOrNull;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
@@ -23,7 +24,7 @@ class FoodOrdersReportPanel extends ConsumerWidget {
         switch (async) {
           null || AsyncLoading() => const ReportLoading(),
           AsyncError(:final error) => ReportError(message: error.toString()),
-          AsyncData(:final value) => _Loaded(report: value),
+          AsyncData(:final value) => _Loaded(report: value, analytics: analytics),
           _ => const SizedBox.shrink(),
         },
       ],
@@ -33,16 +34,25 @@ class FoodOrdersReportPanel extends ConsumerWidget {
 
 class _Loaded extends StatelessWidget {
   final FoodOrdersReport report;
+  final AnalyticsOverview? analytics;
 
-  const _Loaded({required this.report});
+  const _Loaded({required this.report, this.analytics});
 
   @override
   Widget build(BuildContext context) {
     final s = report.summary;
+    final topItemRows = [
+      for (final item in analytics?.topFoodItems ?? const <TopFoodItem>[])
+        (item.itemName, '${item.quantity.round()} order${item.quantity.round() == 1 ? '' : 's'}', formatPrice(item.revenue)),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (topItemRows.isNotEmpty) ...[
+          ReportRankList(title: "What's selling", rows: topItemRows),
+          const SizedBox(height: AppTheme.s16),
+        ],
         StatGrid(
           items: [
             StatItem(label: 'Orders', value: '${s.totalOrders}'),
@@ -56,31 +66,36 @@ class _Loaded extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppTheme.s16),
-        Text('Food orders', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppTheme.s8),
-        if (report.orders.isEmpty)
-          const NeuNotice(
-            icon: Icons.room_service_rounded,
-            message: 'No food orders in this period.',
-          )
-        else
-          ReportDataTable(
-            columns: const [
-              ReportTableColumn('Order', width: 66),
-              ReportTableColumn('Placed', width: 90),
-              ReportTableColumn('Source', width: 90),
-              ReportTableColumn('Guest', width: 110),
-              ReportTableColumn('Items', width: 50, align: TextAlign.right),
-              ReportTableColumn('Status', width: 90),
-              ReportTableColumn('Bill no.', width: 80),
-              ReportTableColumn('Amount', width: 84, align: TextAlign.right),
-            ],
-            rows: [for (final o in report.orders) _orderRow(o)],
-            totals: [
-              'Total', '', '', '', '${s.totalOrders}', '', '',
-              formatPrice(report.orders.fold<num>(0, (sum, o) => sum + o.subtotal)),
-            ],
-          ),
+        CollapsibleRegister(
+          title: 'Food orders',
+          child: report.orders.isEmpty
+              ? const NeuNotice(
+                  icon: Icons.room_service_rounded,
+                  message: 'No food orders in this period.',
+                )
+              : ReportDataTable(
+                  columns: const [
+                    ReportTableColumn('Order', width: 66),
+                    ReportTableColumn('Placed', width: 90),
+                    ReportTableColumn('Source', width: 90),
+                    ReportTableColumn('Guest', width: 110),
+                    ReportTableColumn('Items', width: 50, align: TextAlign.right),
+                    ReportTableColumn('Status', width: 90),
+                    ReportTableColumn('Bill no.', width: 80),
+                    ReportTableColumn('Amount', width: 84, align: TextAlign.right),
+                  ],
+                  rows: [for (final o in report.orders) _orderRow(o)],
+                  totals: [
+                    'Total', '', '', '', '${s.totalOrders}', '', '',
+                    // Cancelled orders are never billed, so the footed total
+                    // excludes them — matches the summary's deliveredValue/
+                    // billedValue, and the PDF/Excel exports' own totals rows.
+                    formatPrice(
+                      report.orders.fold<num>(0, (sum, o) => o.status == 'CANCELLED' ? sum : sum + o.subtotal),
+                    ),
+                  ],
+                ),
+        ),
       ],
     );
   }

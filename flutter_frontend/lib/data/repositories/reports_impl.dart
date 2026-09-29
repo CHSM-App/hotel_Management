@@ -20,6 +20,12 @@ class ReportsImpl implements ReportsRepository {
   }) => api.occupancyReport(fromDate: fromDate, toDate: toDate);
 
   @override
+  Future<RoomsAnalytics> roomsAnalytics({
+    required String fromDate,
+    required String toDate,
+  }) => api.roomsAnalytics(fromDate: fromDate, toDate: toDate);
+
+  @override
   Future<GstSummaryReport> gstSummary({
     required String fromDate,
     required String toDate,
@@ -36,6 +42,13 @@ class ReportsImpl implements ReportsRepository {
     required String fromDate,
     required String toDate,
   }) => api.foodOrdersReport(fromDate: fromDate, toDate: toDate);
+
+  @override
+  Future<AnalyticsOverview> analyticsOverview({
+    required String fromDate,
+    required String toDate,
+    String compareMode = 'previous_period',
+  }) => api.analyticsOverview(fromDate: fromDate, toDate: toDate, compareMode: compareMode);
 
   @override
   Future<ProfitLossReport> profitLoss({

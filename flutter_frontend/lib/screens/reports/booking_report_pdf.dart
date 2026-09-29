@@ -21,9 +21,9 @@ import 'report_pdf_style.dart';
 /// a wrapped row or unreadable type.
 class BookingReportPdf {
 
-  static Future<void> download(BookingsReport report) async {
+  static Future<String> download(BookingsReport report) async {
     final bytes = await build(report);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static Future<void> share(BookingsReport report) async {
@@ -143,7 +143,7 @@ class BookingReportPdf {
             ('Bills issued', '${bills.count}'),
             ('Billed total', ReportPdfStyle.amount(bills.totalAmount)),
             ('Tax on bills (CGST + SGST)', ReportPdfStyle.amount(bills.totalTax)),
-          ], perRow: 6),
+          ], width: ReportPdfStyle.contentWidthLandscape, perRow: 6),
           pw.SizedBox(height: 14),
 
           // ---- Part 1 ------------------------------------------------------
@@ -162,6 +162,7 @@ class BookingReportPdf {
                     ('Final payments received', ReportPdfStyle.amount(summary.balanceCollected)),
                     ('Total received', ReportPdfStyle.amount(summary.totalCollected)),
                   ],
+            width: ReportPdfStyle.contentWidthLandscape,
             perRow: summary.cancellationChargesKept > 0 ? 4 : 3,
           ),
           pw.SizedBox(height: 8),
@@ -188,7 +189,7 @@ class BookingReportPdf {
             for (final entry in kBookingStatusLabel.entries)
               (entry.value, '${summary.statusCount(entry.key)}'),
             ('Room nights', '${summary.roomNights}'),
-          ]),
+          ], width: ReportPdfStyle.contentWidthLandscape),
           pw.SizedBox(height: 10),
           ReportPdfStyle.tiles([
             ('Booked value', ReportPdfStyle.amount(summary.bookedValue)),
@@ -197,7 +198,7 @@ class BookingReportPdf {
             ('Not yet billed', '${summary.unbilledCount} ${summary.unbilledCount == 1 ? 'stay' : 'stays'}'),
             ('Not yet billed - booked value', ReportPdfStyle.amount(summary.unbilledValue)),
             ('Advance held on these stays', ReportPdfStyle.amount(summary.stayAdvance)),
-          ], perRow: 6),
+          ], width: ReportPdfStyle.contentWidthLandscape, perRow: 6),
           pw.SizedBox(height: 8),
           ReportPdfStyle.note(
             'Booked value is what the stays were priced at; billed total is what the issued bills charged (after any '

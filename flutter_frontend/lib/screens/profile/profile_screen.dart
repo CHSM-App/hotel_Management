@@ -835,7 +835,7 @@ class _PublicLinkCardState extends State<_PublicLinkCard> {
   bool _copied = false;
 
   String get _url =>
-      '$baseUrl${widget.lodge.hasRooms ? '/lodge/${widget.lodge.slug}' : '/order/${widget.lodge.slug}'}';
+      '$baseUrl${widget.lodge.hasRooms ? '/hotel/${widget.lodge.slug}' : '/order/${widget.lodge.slug}'}';
 
   Future<void> _copy() async {
     await Clipboard.setData(ClipboardData(text: _url));

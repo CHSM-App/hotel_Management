@@ -90,9 +90,9 @@ String _expenseStatusLabel(String status) =>
 /// Portrait A4, same as the web version — the register is seven columns,
 /// not the booking register's nineteen.
 class ExpenseReportPdf {
-  static Future<void> download(List<Expense> expenses, {String? lodgeName}) async {
+  static Future<String> download(List<Expense> expenses, {String? lodgeName}) async {
     final bytes = await build(expenses, lodgeName: lodgeName);
-    await saveBytesToDevice(bytes, filenameFor('pdf'));
+    return saveBytesToDevice(bytes, filenameFor('pdf'));
   }
 
   static Future<void> share(List<Expense> expenses, {String? lodgeName}) async {
@@ -170,7 +170,7 @@ class ExpenseReportPdf {
             ('Total spend', ReportPdfStyle.amount(totals.total)),
             ('Paid so far', ReportPdfStyle.amount(totals.paid)),
             ('Outstanding', ReportPdfStyle.amount(totals.outstanding)),
-          ], perRow: 4),
+          ], width: ReportPdfStyle.contentWidthPortrait, perRow: 4),
           pw.SizedBox(height: 14),
           ReportPdfStyle.heading('By status'),
           ReportPdfStyle.table(

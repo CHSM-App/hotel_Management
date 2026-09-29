@@ -21,6 +21,7 @@ class BookingsReportPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(reportsViewModelProvider).bookings;
+    final analytics = ref.watch(reportsViewModelProvider).roomsAnalytics?.valueOrNull;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
@@ -29,7 +30,7 @@ class BookingsReportPanel extends ConsumerWidget {
         switch (async) {
           null || AsyncLoading() => const ReportLoading(),
           AsyncError(:final error) => ReportError(message: error.toString()),
-          AsyncData(:final value) => _Loaded(report: value),
+          AsyncData(:final value) => _Loaded(report: value, analytics: analytics),
           _ => const SizedBox.shrink(),
         },
       ],
@@ -39,8 +40,9 @@ class BookingsReportPanel extends ConsumerWidget {
 
 class _Loaded extends StatelessWidget {
   final BookingsReport report;
+  final RoomsAnalytics? analytics;
 
-  const _Loaded({required this.report});
+  const _Loaded({required this.report, this.analytics});
 
   static const _columnWidths = <double>[
     76, 68, 120, 52, 78, 62, 78, 62, 40, 76, 74, 78, 70, 70, 60, 78, 76, 76, 90,
@@ -50,10 +52,20 @@ class _Loaded extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = report.summary;
     final cancelled = s.statusCount('CANCELLED');
+    final categoryRows = [
+      for (final c in analytics?.occupancyByCategory ?? const <CategoryOccupancy>[])
+        (c.categoryName, c.occupancyPercent),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (categoryRows.isNotEmpty) ...[
+          ReportBarList(title: 'Occupancy by room category', rows: categoryRows),
+          const SizedBox(height: AppTheme.s16),
+        ],
+        Text('This period at a glance', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppTheme.s8),
         StatGrid(
           items: [
             StatItem(label: 'Bookings', value: '${s.totalBookings}'),
@@ -61,6 +73,8 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Cancelled', value: '$cancelled'),
             StatItem(label: 'Room nights', value: '${s.roomNights}'),
             StatItem(label: 'Billed', value: formatPrice(s.billedAmount), accent: true),
+            StatItem(label: 'Advance collected', value: formatPrice(s.advanceCollected)),
+            StatItem(label: 'Total collected', value: formatPrice(s.totalCollected)),
             if (s.cancellationChargesKept > 0)
               StatItem(
                 label: 'Cancellation charges',
@@ -69,26 +83,26 @@ class _Loaded extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppTheme.s16),
-        Text('Register', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppTheme.s8),
-        if (report.bookings.isEmpty)
-          const NeuNotice(
-            icon: Icons.receipt_long_rounded,
-            message: 'No bookings arrived in this period.',
-          )
-        else
-          ReportDataTable(
-            columns: [
-              for (var i = 0; i < kRegisterColumns.length; i++)
-                ReportTableColumn(
-                  kRegisterColumns[i].label,
-                  width: _columnWidths[i],
-                  align: kRegisterColumns[i].rightAlign ? TextAlign.right : TextAlign.left,
+        CollapsibleRegister(
+          title: 'Register',
+          child: report.bookings.isEmpty
+              ? const NeuNotice(
+                  icon: Icons.receipt_long_rounded,
+                  message: 'No bookings arrived in this period.',
+                )
+              : ReportDataTable(
+                  columns: [
+                    for (var i = 0; i < kRegisterColumns.length; i++)
+                      ReportTableColumn(
+                        kRegisterColumns[i].label,
+                        width: _columnWidths[i],
+                        align: kRegisterColumns[i].rightAlign ? TextAlign.right : TextAlign.left,
+                      ),
+                  ],
+                  rows: [for (final b in report.bookings) registerRow(b)],
+                  totals: registerTotalsRow(s, s.bills),
                 ),
-            ],
-            rows: [for (final b in report.bookings) registerRow(b)],
-            totals: registerTotalsRow(s, s.bills),
-          ),
+        ),
       ],
     );
   }

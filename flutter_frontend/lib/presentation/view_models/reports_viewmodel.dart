@@ -50,9 +50,11 @@ class ReportsState {
   final String toDate;
   final AsyncValue<BookingsReport>? bookings;
   final AsyncValue<OccupancyReport>? occupancy;
+  final AsyncValue<RoomsAnalytics>? roomsAnalytics;
   final AsyncValue<GstSummaryReport>? gst;
   final AsyncValue<EventsReport>? events;
   final AsyncValue<FoodOrdersReport>? foodOrders;
+  final AsyncValue<AnalyticsOverview>? analyticsOverview;
   final AsyncValue<ProfitLossReport>? profitLoss;
   final String plGranularity;
   final AsyncValue<ProfitLossHistory>? plHistory;
@@ -65,9 +67,11 @@ class ReportsState {
     required this.toDate,
     this.bookings,
     this.occupancy,
+    this.roomsAnalytics,
     this.gst,
     this.events,
     this.foodOrders,
+    this.analyticsOverview,
     this.profitLoss,
     this.plGranularity = 'year',
     this.plHistory,
@@ -83,9 +87,11 @@ class ReportsState {
     String? toDate,
     AsyncValue<BookingsReport>? bookings,
     AsyncValue<OccupancyReport>? occupancy,
+    AsyncValue<RoomsAnalytics>? roomsAnalytics,
     AsyncValue<GstSummaryReport>? gst,
     AsyncValue<EventsReport>? events,
     AsyncValue<FoodOrdersReport>? foodOrders,
+    AsyncValue<AnalyticsOverview>? analyticsOverview,
     AsyncValue<ProfitLossReport>? profitLoss,
     String? plGranularity,
     AsyncValue<ProfitLossHistory>? plHistory,
@@ -97,9 +103,11 @@ class ReportsState {
     toDate: toDate ?? this.toDate,
     bookings: bookings ?? this.bookings,
     occupancy: occupancy ?? this.occupancy,
+    roomsAnalytics: roomsAnalytics ?? this.roomsAnalytics,
     gst: gst ?? this.gst,
     events: events ?? this.events,
     foodOrders: foodOrders ?? this.foodOrders,
+    analyticsOverview: analyticsOverview ?? this.analyticsOverview,
     profitLoss: profitLoss ?? this.profitLoss,
     plGranularity: plGranularity ?? this.plGranularity,
     plHistory: plHistory ?? this.plHistory,
@@ -153,18 +161,22 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
     state = state.copyWith(
       bookings: const AsyncValue.loading(),
       occupancy: const AsyncValue.loading(),
+      roomsAnalytics: const AsyncValue.loading(),
       gst: const AsyncValue.loading(),
       events: const AsyncValue.loading(),
       foodOrders: const AsyncValue.loading(),
+      analyticsOverview: const AsyncValue.loading(),
       profitLoss: const AsyncValue.loading(),
     );
 
     await Future.wait([
       _loadBookings(from, to),
       _loadOccupancy(from, to),
+      _loadRoomsAnalytics(from, to),
       _loadGst(from, to),
       _loadEvents(from, to),
       _loadFoodOrders(from, to),
+      _loadAnalyticsOverview(from, to),
       _loadProfitLoss(from, to),
     ]);
   }
@@ -205,6 +217,19 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
     }
   }
 
+  Future<void> _loadRoomsAnalytics(String from, String to) async {
+    try {
+      final analytics = await usecase.roomsAnalytics(fromDate: from, toDate: to);
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(roomsAnalytics: AsyncValue.data(analytics));
+      }
+    } catch (e, st) {
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(roomsAnalytics: AsyncValue.error(RoomsViewModel.messageFor(e), st));
+      }
+    }
+  }
+
   Future<void> _loadGst(String from, String to) async {
     try {
       final report = await usecase.gstSummary(fromDate: from, toDate: to);
@@ -240,6 +265,19 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
     } catch (e, st) {
       if (state.fromDate == from && state.toDate == to) {
         state = state.copyWith(foodOrders: AsyncValue.error(RoomsViewModel.messageFor(e), st));
+      }
+    }
+  }
+
+  Future<void> _loadAnalyticsOverview(String from, String to) async {
+    try {
+      final analytics = await usecase.analyticsOverview(fromDate: from, toDate: to);
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(analyticsOverview: AsyncValue.data(analytics));
+      }
+    } catch (e, st) {
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(analyticsOverview: AsyncValue.error(RoomsViewModel.messageFor(e), st));
       }
     }
   }

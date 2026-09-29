@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../bookings/receipt_download.dart';
 import '../theme.dart';
 import 'advance_receipt_pdf.dart';
 
@@ -165,7 +166,19 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                             final messenger = ScaffoldMessenger.of(context);
                             final where = await AdvanceReceiptPdf.download(r, lodgeName: lodgeName);
                             if (!mounted) return;
-                            messenger.showSnackBar(SnackBar(content: Text('Saved to $where'), backgroundColor: AppTheme.heading));
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: const Text('PDF saved.'),
+                                backgroundColor: AppTheme.heading,
+                                action: canOpenSavedFile
+                                    ? SnackBarAction(
+                                        label: 'Open',
+                                        textColor: Colors.white,
+                                        onPressed: () => openSavedFile(where, 'receipt.pdf'),
+                                      )
+                                    : null,
+                              ),
+                            );
                           }),
                     icon: const Icon(Icons.download_rounded),
                     color: Colors.white,

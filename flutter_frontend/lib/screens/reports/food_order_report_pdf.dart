@@ -9,11 +9,21 @@ import '../bookings/receipt_download.dart';
 import '../bookings/receipt_share.dart';
 import 'report_pdf_style.dart';
 
-/// The food orders register as a real PDF — same family as [EventReportPdf].
+const _kOrderStatuses = ['PENDING', 'QUEUED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'];
+const _kOrderSources = ['ROOM', 'TABLE', 'COUNTER'];
+
+/// The food orders report, as a real (selectable-text) PDF — the native
+/// equivalent of frontend/src/pages/lodge/foodOrderReportFile.js's
+/// buildFoodOrdersReportPdf(): masthead, explanatory note, six headline
+/// tiles, a by-status table and a by-source table, then a new page with the
+/// register.
+///
+/// Portrait A4, same as the web version — the register is nine columns, none
+/// of them tax figures.
 class FoodOrderReportPdf {
-  static Future<void> download(FoodOrdersReport report) async {
+  static Future<String> download(FoodOrdersReport report) async {
     final bytes = await build(report);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static Future<void> share(FoodOrdersReport report) async {
@@ -29,6 +39,17 @@ class FoodOrderReportPdf {
   static String _filename(FoodOrdersReport report) {
     final period = ReportPdfStyle.periodLabel(report.fromDate, report.toDate).replaceAll(' ', '-');
     return 'Food-orders-report-$period.pdf';
+  }
+
+  // Cancelled orders are never billed, so the register's own totals exclude
+  // them — mirrors report.orders.reduce(... o.status === 'CANCELLED' ? sum ...)
+  // in foodOrderReportFile.js.
+  static num _totalAmount(FoodOrdersReport report) {
+    num sum = 0;
+    for (final o in report.orders) {
+      if (o.status != 'CANCELLED') sum += o.subtotal;
+    }
+    return sum;
   }
 
   static Future<Uint8List> build(FoodOrdersReport report) async {
@@ -79,16 +100,54 @@ class FoodOrderReportPdf {
             subtitle: period,
             generatedAt: generatedAt,
           ),
+          ReportPdfStyle.note(
+            'An order is counted on the calendar day it was placed on. Delivered and cancelled orders are both '
+            'counted; a live order still in the kitchen queue when this report is pulled counts too, under '
+            'whatever status it is currently in. All amounts in rupees.',
+          ),
           ReportPdfStyle.tiles([
-            ('Orders', '${s.totalOrders}'),
+            ('Total orders', '${s.totalOrders}'),
             ('Delivered', '${s.deliveredCount}'),
             ('Cancelled', '${s.cancelledCount}'),
-            ('Billed', ReportPdfStyle.amount(s.billedValue)),
-          ], perRow: 4),
-          pw.SizedBox(height: 16),
-          ReportPdfStyle.heading('Food orders', subtitle: '${report.orders.length} orders'),
+            ('Delivered value', ReportPdfStyle.amount(s.deliveredValue)),
+            ('Billed', '${s.billedCount} . ${ReportPdfStyle.amount(s.billedValue)}'),
+            ('Not yet billed', ReportPdfStyle.amount(s.unbilledDeliveredValue)),
+          ], width: ReportPdfStyle.contentWidthPortrait, perRow: 3),
+          pw.SizedBox(height: 10),
+
+          ReportPdfStyle.subheading('By status'),
+          ReportPdfStyle.table(
+            columns: const [
+              ReportPdfColumn('Status', flex: 3),
+              ReportPdfColumn('Orders', flex: 1, align: pw.TextAlign.right),
+            ],
+            rows: [
+              for (final status in _kOrderStatuses) [kOrderStatusLabel[status] ?? status, '${s.statusCount(status)}'],
+            ],
+            totals: ['Total', '${s.totalOrders}'],
+          ),
+          pw.SizedBox(height: 10),
+
+          ReportPdfStyle.subheading('By source'),
+          ReportPdfStyle.table(
+            columns: const [
+              ReportPdfColumn('Source', flex: 3),
+              ReportPdfColumn('Orders', flex: 1, align: pw.TextAlign.right),
+            ],
+            rows: [
+              for (final source in _kOrderSources) [kOrderSourceLabel[source] ?? source, '${s.bySource[source] ?? 0}'],
+            ],
+            totals: ['Total', '${s.totalOrders}'],
+          ),
+          pw.NewPage(),
+
+          ReportPdfStyle.heading(
+            'Register - ${report.orders.length} ${report.orders.length == 1 ? 'order' : 'orders'} placed $period',
+            subtitle: 'Totals foot the rows above them',
+          ),
           if (report.orders.isEmpty)
-            pw.Text('No food orders in this period.', style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted))
+            pw.Text('No orders placed during this period.',
+                style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted))
           else
             _registerTable(report),
         ],
@@ -99,40 +158,36 @@ class FoodOrderReportPdf {
   }
 
   static pw.Widget _registerTable(FoodOrdersReport report) {
-    num total = 0;
-    for (final o in report.orders) {
-      total += o.subtotal;
-    }
     return ReportPdfStyle.table(
       columns: const [
-        ReportPdfColumn('Order', flex: 0.8),
-        ReportPdfColumn('Placed', flex: 1.2),
-        ReportPdfColumn('Source', flex: 1),
-        ReportPdfColumn('Guest', flex: 1.3),
-        ReportPdfColumn('Items', flex: 0.6, align: pw.TextAlign.right),
-        ReportPdfColumn('Status', flex: 0.9),
-        ReportPdfColumn('Bill no.', flex: 1),
-        ReportPdfColumn('Amount', flex: 1, align: pw.TextAlign.right),
+        ReportPdfColumn('Order', flex: 40),
+        ReportPdfColumn('Placed', flex: 90),
+        ReportPdfColumn('Source', flex: 46),
+        ReportPdfColumn('Room/Tbl', flex: 48),
+        ReportPdfColumn('Guest', flex: 90),
+        ReportPdfColumn('Items', flex: 32, align: pw.TextAlign.right),
+        ReportPdfColumn('Status', flex: 54),
+        ReportPdfColumn('Bill no.', flex: 48),
+        ReportPdfColumn('Amount', flex: 49, align: pw.TextAlign.right),
       ],
+      fontSize: 7,
       rows: [
         for (final o in report.orders)
           [
             '#${o.orderNumber}',
             ReportPdfStyle.dateTime(DateTime.tryParse(o.placedAt) ?? DateTime.now()),
-            '${kOrderSourceLabel[o.source] ?? o.source}${_place(o)}',
-            o.guestName ?? '-',
+            kOrderSourceLabel[o.source] ?? o.source,
+            _place(o),
+            o.guestName ?? '—',
             '${o.itemCount}',
             kOrderStatusLabel[o.status] ?? o.status,
-            o.invoiceNumber ?? '-',
-            ReportPdfStyle.amount(o.subtotal),
+            o.invoiceNumber ?? '—',
+            o.status == 'CANCELLED' ? '—' : ReportPdfStyle.amount(o.subtotal),
           ],
       ],
-      totals: ['Total', '', '', '', '${report.orders.length}', '', '', ReportPdfStyle.amount(total)],
+      totals: ['Total', '', '', '', '', '', '', '', ReportPdfStyle.amount(_totalAmount(report))],
     );
   }
 
-  static String _place(ReportFoodOrderRow o) {
-    final place = o.roomNumber ?? o.tableLabel;
-    return place == null ? '' : ' - $place';
-  }
+  static String _place(ReportFoodOrderRow o) => o.roomNumber ?? o.tableLabel ?? '—';
 }

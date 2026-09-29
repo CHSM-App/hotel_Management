@@ -10,9 +10,9 @@ import 'report_pdf_style.dart';
 /// table [OccupancyReportPdf] and occupancy_report_panel.dart's data grid
 /// show, plus a totals row.
 class OccupancyReportExcel {
-  static Future<void> download(OccupancyReport report, {String? lodgeName}) async {
+  static Future<String> download(OccupancyReport report, {String? lodgeName}) async {
     final bytes = build(report, lodgeName: lodgeName);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static String _filename(OccupancyReport report) {

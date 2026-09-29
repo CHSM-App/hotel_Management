@@ -18,6 +18,13 @@ class ReportPdfStyle {
 
   static const margin = 24.0;
 
+  /// A4 content width (page width minus [margin] on both sides), portrait and
+  /// landscape — what [tiles] needs to size its columns in real points. A4 is
+  /// 595 x 842pt; hardcoded rather than read off `PdfPageFormat.a4` so this
+  /// stays a compile-time constant.
+  static const contentWidthPortrait = 595.0 - margin * 2;
+  static const contentWidthLandscape = 842.0 - margin * 2;
+
   /// jsPDF's built-in Helvetica has no Unicode glyphs and package:pdf's base14
   /// fonts are the same standard 14 — so the few non-Latin-1 characters the
   /// app's own strings carry (₹, en/em-dash, curly quotes) still have to be
@@ -177,15 +184,20 @@ class ReportPdfStyle {
   );
 
   /// Label-above-value tiles — a handful of short facts where a full table
-  /// would be all frame and no content.
-  static pw.Widget tiles(List<(String, String)> entries, {int perRow = 3}) {
+  /// would be all frame and no content. `width` must be the page's real
+  /// content width in points (see [contentWidthPortrait]/[contentWidthLandscape])
+  /// — a tile is sized as a genuine fraction of it, not a bare percentage
+  /// number, which is not a valid point width and clipped every label.
+  static pw.Widget tiles(List<(String, String)> entries, {required double width, int perRow = 3}) {
+    final spacing = 4.0;
+    final tileWidth = (width - spacing * (perRow - 1)) / perRow;
     return pw.Wrap(
-      spacing: 4,
+      spacing: spacing,
       runSpacing: 10,
       children: [
         for (final (label, value) in entries)
           pw.SizedBox(
-            width: (1.0 / perRow) * 100,
+            width: tileWidth,
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [

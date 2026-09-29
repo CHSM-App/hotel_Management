@@ -17,9 +17,9 @@ import 'report_pdf_style.dart';
 /// Portrait A4: the invoice list is a handful of columns, not the booking
 /// register's nineteen.
 class GstReportPdf {
-  static Future<void> download(GstSummaryReport report, {String? lodgeName, String? gstin}) async {
+  static Future<String> download(GstSummaryReport report, {String? lodgeName, String? gstin}) async {
     final bytes = await build(report, lodgeName: lodgeName, gstin: gstin);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static Future<void> share(GstSummaryReport report, {String? lodgeName, String? gstin}) async {
@@ -97,7 +97,7 @@ class GstReportPdf {
             ('CGST', ReportPdfStyle.amount(totals.cgstAmount)),
             ('SGST', ReportPdfStyle.amount(totals.sgstAmount)),
             ('Total revenue', ReportPdfStyle.amount(totals.totalAmount)),
-          ], perRow: 3),
+          ], width: ReportPdfStyle.contentWidthPortrait, perRow: 3),
           pw.SizedBox(height: 16),
           if (report.byDocumentType.isNotEmpty) ...[
             ReportPdfStyle.heading('By document type'),

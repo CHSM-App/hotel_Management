@@ -11,6 +11,7 @@ import '../../widgets/neu.dart';
 import '../../widgets/payment_row.dart';
 import '../theme.dart';
 import 'advance_receipt_pdf.dart';
+import 'receipt_download.dart';
 
 /// Advances against a stay — what has been taken, and taking more.
 ///
@@ -200,8 +201,8 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
     }
   }
 
-  void _say(String message) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message), backgroundColor: AppTheme.heading),
+  void _say(String message, {SnackBarAction? action}) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(message), backgroundColor: AppTheme.heading, action: action),
   );
 
   @override
@@ -409,7 +410,16 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                                             paperId: _paperId,
                                           );
                                           if (!mounted) return;
-                                          _say('Saved to $where');
+                                          _say(
+                                            'PDF saved.',
+                                            action: canOpenSavedFile
+                                                ? SnackBarAction(
+                                                    label: 'Open',
+                                                    textColor: Colors.white,
+                                                    onPressed: () => openSavedFile(where, 'receipt.pdf'),
+                                                  )
+                                                : null,
+                                          );
                                         }),
                                       ),
                                     ),

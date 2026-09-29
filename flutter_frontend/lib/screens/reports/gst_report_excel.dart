@@ -10,9 +10,9 @@ import 'report_pdf_style.dart';
 /// document type, and every issued bill, the same shape [GstReportPdf] and
 /// gst_report_panel.dart's data grids show.
 class GstReportExcel {
-  static Future<void> download(GstSummaryReport report, {String? lodgeName, String? gstin}) async {
+  static Future<String> download(GstSummaryReport report, {String? lodgeName, String? gstin}) async {
     final bytes = build(report, lodgeName: lodgeName, gstin: gstin);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static String _filename(GstSummaryReport report) {

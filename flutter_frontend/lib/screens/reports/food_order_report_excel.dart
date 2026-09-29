@@ -6,11 +6,18 @@ import '../../domain/models/report.dart';
 import '../bookings/receipt_download.dart';
 import 'report_pdf_style.dart';
 
-/// The food orders register as a real .xlsx.
+const _kOrderStatuses = ['PENDING', 'QUEUED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'];
+const _kOrderSources = ['ROOM', 'TABLE', 'COUNTER'];
+
+/// The food orders register as a real .xlsx — the native equivalent of
+/// frontend/src/pages/lodge/foodOrderReportFile.js's
+/// downloadFoodOrdersReportExcel(): a "Summary" sheet with the same sections
+/// [FoodOrderReportPdf] prints, and an "Orders" sheet with one row per order
+/// plus a footed totals row.
 class FoodOrderReportExcel {
-  static Future<void> download(FoodOrdersReport report) async {
+  static Future<String> download(FoodOrdersReport report) async {
     final bytes = build(report);
-    await saveBytesToDevice(bytes, _filename(report));
+    return saveBytesToDevice(bytes, _filename(report));
   }
 
   static String _filename(FoodOrdersReport report) {
@@ -21,7 +28,21 @@ class FoodOrderReportExcel {
   static Uint8List build(FoodOrdersReport report) {
     final excel = xl.Excel.createExcel();
     final defaultSheet = excel.getDefaultSheet();
-    final sheet = excel['Food orders'];
+
+    _summarySheet(excel, report);
+    _ordersSheet(excel, report);
+
+    if (defaultSheet != null && defaultSheet != 'Summary' && defaultSheet != 'Orders') {
+      excel.delete(defaultSheet);
+    }
+
+    final bytes = excel.encode();
+    if (bytes == null) throw StateError('Could not build the workbook.');
+    return Uint8List.fromList(bytes);
+  }
+
+  static void _summarySheet(xl.Excel excel, FoodOrdersReport report) {
+    final sheet = excel['Summary'];
     final period = ReportPdfStyle.periodLabel(report.fromDate, report.toDate);
     final s = report.summary;
 
@@ -41,40 +62,87 @@ class FoodOrderReportExcel {
 
     bold([t(report.lodgeName.isEmpty ? 'Food orders report' : report.lodgeName)]);
     sheet.appendRow([t('Food orders report'), t(period)]);
+    sheet.appendRow([t('Generated'), t(ReportPdfStyle.dateTime(DateTime.tryParse(report.generatedAt ?? '') ?? DateTime.now()))]);
     sheet.appendRow([]);
-    sheet.appendRow([t('Orders'), i(s.totalOrders)]);
-    sheet.appendRow([t('Delivered'), i(s.deliveredCount)]);
-    sheet.appendRow([t('Cancelled'), i(s.cancelledCount)]);
-    sheet.appendRow([t('Billed value'), m(s.billedValue)]);
+    sheet.appendRow([
+      t(
+        'An order is counted on the calendar day it was placed on. Delivered and cancelled orders are both '
+        'counted; a live order still in the kitchen queue when this report is pulled counts too, under '
+        'whatever status it is currently in.',
+      ),
+    ]);
     sheet.appendRow([]);
 
-    bold([
-      t('Order'), t('Placed'), t('Source'), t('Place'), t('Guest'), t('Items'), t('Status'), t('Bill no.'),
-      t('Amount'),
-    ]);
+    bold([t('ORDERS PLACED IN ${period.toUpperCase()}')]);
+    sheet.appendRow([t('Total orders'), i(s.totalOrders)]);
+    for (final status in _kOrderStatuses) {
+      sheet.appendRow([t('  ${kOrderStatusLabel[status] ?? status}'), i(s.statusCount(status))]);
+    }
+    sheet.appendRow([]);
+
+    bold([t('By source'), t('Count')]);
+    for (final source in _kOrderSources) {
+      sheet.appendRow([t(kOrderSourceLabel[source] ?? source), i(s.bySource[source] ?? 0)]);
+    }
+    sheet.appendRow([]);
+
+    bold([t('VALUE')]);
+    sheet.appendRow([t('Delivered - count'), i(s.deliveredCount)]);
+    sheet.appendRow([t('Delivered - value'), m(s.deliveredValue)]);
+    sheet.appendRow([t('Billed - count'), i(s.billedCount)]);
+    sheet.appendRow([t('Billed - value'), m(s.billedValue)]);
+    sheet.appendRow([t('Delivered but not yet billed'), m(s.unbilledDeliveredValue)]);
+    sheet.appendRow([t('Cancelled - count'), i(s.cancelledCount)]);
+  }
+
+  static void _ordersSheet(xl.Excel excel, FoodOrdersReport report) {
+    final sheet = excel['Orders'];
+    const headers = [
+      'Order no.', 'Placed at', 'Source', 'Room/Table', 'Guest', 'Phone', 'Items', 'Status',
+      'Delivered at', 'Cancelled at', 'Bill no.', 'Document', 'Amount',
+    ];
+    sheet.appendRow([for (final h in headers) xl.TextCellValue(h)]);
+    final headerRow = sheet.maxRows - 1;
+    for (var c = 0; c < headers.length; c++) {
+      sheet
+          .cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: headerRow))
+          .cellStyle = xl.CellStyle(bold: true);
+    }
+
     num total = 0;
     for (final o in report.orders) {
-      total += o.subtotal;
+      if (o.status != 'CANCELLED') total += o.subtotal;
       sheet.appendRow([
-        t('#${o.orderNumber}'),
-        t(o.placedAt),
-        t(kOrderSourceLabel[o.source] ?? o.source),
-        t(o.roomNumber ?? o.tableLabel ?? ''),
-        t(o.guestName ?? ''),
-        i(o.itemCount),
-        t(kOrderStatusLabel[o.status] ?? o.status),
-        t(o.invoiceNumber ?? ''),
-        m(o.subtotal),
+        xl.TextCellValue('#${o.orderNumber}'),
+        xl.TextCellValue(ReportPdfStyle.dateTime(DateTime.tryParse(o.placedAt) ?? DateTime.now())),
+        xl.TextCellValue(kOrderSourceLabel[o.source] ?? o.source),
+        xl.TextCellValue(o.roomNumber ?? o.tableLabel ?? '—'),
+        xl.TextCellValue(o.guestName ?? ''),
+        xl.TextCellValue(o.guestPhone ?? ''),
+        xl.IntCellValue(o.itemCount),
+        xl.TextCellValue(kOrderStatusLabel[o.status] ?? o.status),
+        xl.TextCellValue(o.deliveredAt == null ? '' : ReportPdfStyle.dateTime(DateTime.tryParse(o.deliveredAt!) ?? DateTime.now())),
+        xl.TextCellValue(o.cancelledAt == null ? '' : ReportPdfStyle.dateTime(DateTime.tryParse(o.cancelledAt!) ?? DateTime.now())),
+        xl.TextCellValue(o.invoiceNumber ?? ''),
+        xl.TextCellValue(o.documentType ?? ''),
+        xl.DoubleCellValue(o.subtotal.toDouble()),
       ]);
     }
-    bold([
-      t('Total'), t(''), t(''), t(''), t(''), i(report.orders.length), t(''), t(''), m(total),
+
+    // Cancelled orders are listed for the record but never billed, so their
+    // subtotal is excluded from the footed total — mirrors the web's totals
+    // reduce, which also skips o.status === 'CANCELLED'.
+    sheet.appendRow([
+      xl.TextCellValue('Total'), xl.TextCellValue(''), xl.TextCellValue(''), xl.TextCellValue(''),
+      xl.TextCellValue(''), xl.TextCellValue(''), xl.TextCellValue(''), xl.TextCellValue(''),
+      xl.TextCellValue(''), xl.TextCellValue(''), xl.TextCellValue(''), xl.TextCellValue(''),
+      xl.DoubleCellValue(total.toDouble()),
     ]);
-
-    if (defaultSheet != null && defaultSheet != 'Food orders') excel.delete(defaultSheet);
-
-    final bytes = excel.encode();
-    if (bytes == null) throw StateError('Could not build the workbook.');
-    return Uint8List.fromList(bytes);
+    final totalsRow = sheet.maxRows - 1;
+    for (var c = 0; c < headers.length; c++) {
+      sheet
+          .cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: totalsRow))
+          .cellStyle = xl.CellStyle(bold: true);
+    }
   }
 }

@@ -8,7 +8,10 @@ import '../../domain/models/report.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/reports_viewmodel.dart';
 import '../../widgets/neu.dart';
+import '../bookings/receipt_download.dart';
 import '../theme.dart';
+import 'asset_report_excel.dart';
+import 'asset_report_pdf.dart';
 import 'assets_report_tab.dart';
 import 'booking_report_excel.dart';
 import 'booking_report_pdf.dart';
@@ -30,6 +33,7 @@ import 'income_report_pdf.dart';
 import 'income_report_tab.dart';
 import 'overview_report_panel.dart';
 import 'profit_loss_panel.dart';
+import 'report_widgets.dart';
 
 enum _ReportFormat { pdf, excel }
 
@@ -117,14 +121,28 @@ class ReportsScreen extends ConsumerStatefulWidget {
 /// history instead, the same distinction ReportsPanel.jsx draws.
 const _kDateRangedTabs = {'overview', 'bookings', 'events', 'food', 'gst', 'profitLoss'};
 
+/// Tabs that load their full history once and filter it client-side —
+/// still shown with the same From/To range picker above the tab strip as
+/// the server-ranged tabs, just wired to a locally held range instead of
+/// the shared [ReportsState].
+const _kLocalRangedTabs = {'expenses', 'income', 'assets'};
+
 /// Tabs with a matching PDF/Excel builder, same parity as the web's own
-/// preview/export buttons for Bookings/Events/Food/GST/Expenses/Other Income.
-/// Profit & Loss and Assets show their data on screen only for now.
-const _kDownloadableTabs = {'bookings', 'events', 'food', 'gst', 'expenses', 'income'};
+/// preview/export buttons for Bookings/Events/Food/GST/Expenses/Other
+/// Income/Assets. Profit & Loss has no PDF/Excel on the website either, so it
+/// stays data-only.
+const _kDownloadableTabs = {'bookings', 'events', 'food', 'gst', 'expenses', 'income', 'assets'};
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _tab = 'overview';
   _ReportFormat? _downloading;
+
+  /// Expenses/Other Income/Assets' own From/To — held here (not in
+  /// [ReportsState]) since it only filters an already-loaded list rather
+  /// than triggering a refetch, but shown in the same header spot as the
+  /// server-ranged tabs' picker.
+  String _localFromDate = startOfMonthIso();
+  String _localToDate = todayIso();
 
   List<_ReportTab> _visibleTabs(Me me) =>
       _kAllReportTabs.where((t) => t.availableTo(me)).toList();
@@ -136,6 +154,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     'bookings' => state.bookings is AsyncData,
     'expenses' => state.expensesReport is AsyncData,
     'income' => state.incomeReport is AsyncData,
+    'assets' => state.assetsReport is AsyncData,
     _ => false,
   };
 
@@ -144,56 +163,58 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     setState(() => _downloading = format);
     try {
       final lodge = ref.read(authViewModelProvider).me?.lodge;
+      final String path;
       switch (_tab) {
         case 'events':
           final report = (state.events as AsyncData<EventsReport>).value;
-          if (format == _ReportFormat.pdf) {
-            await EventReportPdf.download(report);
-          } else {
-            await EventReportExcel.download(report);
-          }
+          path = format == _ReportFormat.pdf
+              ? await EventReportPdf.download(report)
+              : await EventReportExcel.download(report);
         case 'food':
           final report = (state.foodOrders as AsyncData<FoodOrdersReport>).value;
-          if (format == _ReportFormat.pdf) {
-            await FoodOrderReportPdf.download(report);
-          } else {
-            await FoodOrderReportExcel.download(report);
-          }
+          path = format == _ReportFormat.pdf
+              ? await FoodOrderReportPdf.download(report)
+              : await FoodOrderReportExcel.download(report);
         case 'gst':
           final report = (state.gst as AsyncData<GstSummaryReport>).value;
           final gstin = lodge?.isGstRegistered == true ? lodge?.gstin : null;
-          if (format == _ReportFormat.pdf) {
-            await GstReportPdf.download(report, lodgeName: lodge?.name, gstin: gstin);
-          } else {
-            await GstReportExcel.download(report, lodgeName: lodge?.name, gstin: gstin);
-          }
+          path = format == _ReportFormat.pdf
+              ? await GstReportPdf.download(report, lodgeName: lodge?.name, gstin: gstin)
+              : await GstReportExcel.download(report, lodgeName: lodge?.name, gstin: gstin);
         case 'expenses':
           final expenses = (state.expensesReport as AsyncData<List<Expense>>).value;
-          if (format == _ReportFormat.pdf) {
-            await ExpenseReportPdf.download(expenses, lodgeName: lodge?.name);
-          } else {
-            await ExpenseReportExcel.download(expenses, lodgeName: lodge?.name);
-          }
+          path = format == _ReportFormat.pdf
+              ? await ExpenseReportPdf.download(expenses, lodgeName: lodge?.name)
+              : await ExpenseReportExcel.download(expenses, lodgeName: lodge?.name);
         case 'income':
           final income = (state.incomeReport as AsyncData<List<IncomeEntry>>).value;
-          if (format == _ReportFormat.pdf) {
-            await IncomeReportPdf.download(income, lodgeName: lodge?.name);
-          } else {
-            await IncomeReportExcel.download(income, lodgeName: lodge?.name);
-          }
+          path = format == _ReportFormat.pdf
+              ? await IncomeReportPdf.download(income, lodgeName: lodge?.name)
+              : await IncomeReportExcel.download(income, lodgeName: lodge?.name);
+        case 'assets':
+          final data = (state.assetsReport as AsyncData<AssetsReportData>).value;
+          path = format == _ReportFormat.pdf
+              ? await AssetReportPdf.download(data.assets, data.workOrders, lodgeName: lodge?.name)
+              : await AssetReportExcel.download(data.assets, data.workOrders, lodgeName: lodge?.name);
         default:
           final report = (state.bookings as AsyncData<BookingsReport>).value;
-          if (format == _ReportFormat.pdf) {
-            await BookingReportPdf.download(report);
-          } else {
-            await BookingReportExcel.download(report);
-          }
+          path = format == _ReportFormat.pdf
+              ? await BookingReportPdf.download(report)
+              : await BookingReportExcel.download(report);
       }
       if (!mounted) return;
+      final ext = format == _ReportFormat.pdf ? 'pdf' : 'xlsx';
       messenger.showSnackBar(
         SnackBar(
           content: Text(format == _ReportFormat.pdf ? 'PDF saved.' : 'Excel file saved.'),
           backgroundColor: AppTheme.heading,
+          action: canOpenSavedFile
+              ? SnackBarAction(
+                  label: 'Open',
+                  textColor: Colors.white,
+                  onPressed: () => openSavedFile(path, 'report.$ext'),
+                )
+              : null,
         ),
       );
     } catch (e) {
@@ -227,6 +248,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
 
     final showRange = _kDateRangedTabs.contains(_tab);
+    final showLocalRange = _kLocalRangedTabs.contains(_tab);
     final showDownload = _kDownloadableTabs.contains(_tab);
 
     return Column(
@@ -249,6 +271,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             children: [
               if (showRange) ...[
                 _RangePicker(state: state),
+                const SizedBox(height: AppTheme.s12),
+              ] else if (showLocalRange) ...[
+                ReportDateRangeFilter(
+                  fromDate: _localFromDate,
+                  toDate: _localToDate,
+                  onFromChanged: (v) => setState(() => _localFromDate = v),
+                  onToChanged: (v) => setState(() => _localToDate = v),
+                ),
                 const SizedBox(height: AppTheme.s12),
               ],
               _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
@@ -275,9 +305,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     'food' => const FoodOrdersReportPanel(),
                     'gst' => const GstReportPanel(),
                     'profitLoss' => const ProfitLossPanel(),
-                    'expenses' => const ExpensesReportTab(),
-                    'income' => const IncomeReportTab(),
-                    'assets' => const AssetsReportTab(),
+                    'expenses' => ExpensesReportTab(fromDate: _localFromDate, toDate: _localToDate),
+                    'income' => IncomeReportTab(fromDate: _localFromDate, toDate: _localToDate),
+                    'assets' => AssetsReportTab(fromDate: _localFromDate, toDate: _localToDate),
                     _ => const OverviewReportPanel(),
                   },
           ),
@@ -389,29 +419,24 @@ class _SubTabs extends StatelessWidget {
           for (final tab in tabs) ...[
             GestureDetector(
               onTap: () => onSelect(tab.key),
-              child: tab.key == selected
-                  ? NeuPressed(
-                      radius: AppTheme.rMedium,
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-                      child: Text(
-                        tab.label,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.accent,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    )
-                  : NeuCard(
-                      radius: AppTheme.rMedium,
-                      shadow: AppTheme.subtle,
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-                      child: Text(
-                        tab.label,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
+                decoration: BoxDecoration(
+                  color: tab.key == selected ? AppTheme.accent : AppTheme.card,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                  border: tab.key == selected ? null : Border.all(color: AppTheme.border),
+                  boxShadow: tab.key == selected ? AppTheme.subtle : null,
+                ),
+                child: Text(
+                  tab.label,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: tab.key == selected ? Colors.white : AppTheme.text,
+                    fontWeight: tab.key == selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
             if (tab != tabs.last) const SizedBox(width: AppTheme.s8),
           ],

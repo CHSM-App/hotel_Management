@@ -43,6 +43,10 @@ class _Loaded extends StatelessWidget {
   Widget build(BuildContext context) {
     final totals = report.totals;
     final byDoc = report.byDocumentType.entries.toList();
+    final streamRows = [
+      for (final entry in report.byRevenueStream.entries)
+        if (entry.value.totalTax > 0) (kRevenueStreamLabel[entry.key] ?? entry.key, entry.value.totalTax),
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,6 +60,14 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Total revenue', value: formatPrice(totals.totalAmount), accent: true),
           ],
         ),
+        if (streamRows.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportBarList(
+            title: 'Tax collected by revenue stream',
+            rows: streamRows,
+            formatValue: (v) => '${formatPrice(v)} tax',
+          ),
+        ],
         if (byDoc.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s16),
           Text('By document type', style: Theme.of(context).textTheme.titleMedium),
@@ -91,61 +103,62 @@ class _Loaded extends StatelessWidget {
           ),
         ],
         const SizedBox(height: AppTheme.s16),
-        Text('Bills', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppTheme.s8),
-        if (report.invoices.isEmpty)
-          const NeuNotice(
-            icon: Icons.receipt_rounded,
-            message: 'No bills issued in this date range.',
-          )
-        else
-          ReportDataTable(
-            columns: const [
-              ReportTableColumn('Bill no.', width: 90),
-              ReportTableColumn('Document', width: 90),
-              ReportTableColumn('Guest', width: 130),
-              ReportTableColumn('Date', width: 90),
-              ReportTableColumn('CGST', width: 80, align: TextAlign.right),
-              ReportTableColumn('SGST', width: 80, align: TextAlign.right),
-              ReportTableColumn('Total', width: 90, align: TextAlign.right),
-            ],
-            rows: [
-              for (final inv in report.invoices)
-                [
-                  inv.invoiceNumber ?? '—',
-                  kDocumentTypeLabel[inv.documentType] ?? inv.documentType ?? '—',
-                  inv.guestName ?? '—',
-                  formatIsoDate(inv.createdAt),
-                  formatPrice(inv.cgstAmount),
-                  formatPrice(inv.sgstAmount),
-                  formatPrice(inv.totalAmount),
-                ],
-            ],
-            totals: [
-              'Total', '', '', '',
-              formatPrice(totals.cgstAmount),
-              formatPrice(totals.sgstAmount),
-              formatPrice(totals.totalAmount),
-            ],
-          ),
+        CollapsibleRegister(
+          title: 'Bills',
+          child: report.invoices.isEmpty
+              ? const NeuNotice(
+                  icon: Icons.receipt_rounded,
+                  message: 'No bills issued in this date range.',
+                )
+              : ReportDataTable(
+                  columns: const [
+                    ReportTableColumn('Bill no.', width: 90),
+                    ReportTableColumn('Document', width: 90),
+                    ReportTableColumn('Guest', width: 130),
+                    ReportTableColumn('Date', width: 90),
+                    ReportTableColumn('CGST', width: 80, align: TextAlign.right),
+                    ReportTableColumn('SGST', width: 80, align: TextAlign.right),
+                    ReportTableColumn('Total', width: 90, align: TextAlign.right),
+                  ],
+                  rows: [
+                    for (final inv in report.invoices)
+                      [
+                        inv.invoiceNumber ?? '—',
+                        kDocumentTypeLabel[inv.documentType] ?? inv.documentType ?? '—',
+                        inv.guestName ?? '—',
+                        formatIsoDate(inv.createdAt),
+                        formatPrice(inv.cgstAmount),
+                        formatPrice(inv.sgstAmount),
+                        formatPrice(inv.totalAmount),
+                      ],
+                  ],
+                  totals: [
+                    'Total', '', '', '',
+                    formatPrice(totals.cgstAmount),
+                    formatPrice(totals.sgstAmount),
+                    formatPrice(totals.totalAmount),
+                  ],
+                ),
+        ),
         if (occupancy != null && occupancy!.totalRooms > 0) ...[
           const SizedBox(height: AppTheme.s16),
-          Text('Daily occupancy', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppTheme.s8),
-          ReportDataTable(
-            columns: const [
-              ReportTableColumn('Date', width: 110),
-              ReportTableColumn('Occupied', width: 90, align: TextAlign.right),
-              ReportTableColumn('Occupancy', width: 90, align: TextAlign.right),
-            ],
-            rows: [
-              for (final day in occupancy!.days)
-                [
-                  formatIsoDate(day.date),
-                  '${day.occupiedRooms} / ${day.totalRooms}',
-                  '${day.occupancyPercent}%',
-                ],
-            ],
+          CollapsibleRegister(
+            title: 'Daily occupancy',
+            child: ReportDataTable(
+              columns: const [
+                ReportTableColumn('Date', width: 110),
+                ReportTableColumn('Occupied', width: 90, align: TextAlign.right),
+                ReportTableColumn('Occupancy', width: 90, align: TextAlign.right),
+              ],
+              rows: [
+                for (final day in occupancy!.days)
+                  [
+                    formatIsoDate(day.date),
+                    '${day.occupiedRooms} / ${day.totalRooms}',
+                    '${day.occupancyPercent}%',
+                  ],
+              ],
+            ),
           ),
         ],
       ],

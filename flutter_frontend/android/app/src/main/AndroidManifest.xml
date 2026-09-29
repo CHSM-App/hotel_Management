@@ -44,6 +44,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Grants read access to a downloaded file's URI when the Snackbar's
+             "Open" action hands it to another app — only exercised by the
+             pre-Android-10 fallback in MainActivity.saveToDownloads. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -55,10 +68,16 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- url_launcher opening the map pin in Google Maps / a browser. -->
+        <!-- url_launcher opening the map pin in Google Maps / a browser, and the
+             property's public link (the backend defaults to a plain-http LAN
+             address, so http needs its own entry alongside https). -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW"/>

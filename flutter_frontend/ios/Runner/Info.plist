@@ -51,5 +51,9 @@
 	<string>Used to take a photo of a guest's ID proof or a room photo.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Used to attach a photo of a guest's ID proof or a room photo from your library.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

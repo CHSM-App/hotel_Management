@@ -522,6 +522,247 @@ class OccupancyReport {
   }
 }
 
+/// One room category's occupancy over the period — a row of
+/// [RoomsAnalytics.occupancyByCategory].
+class CategoryOccupancy {
+  final String categoryName;
+  final int occupiedNights;
+  final int availableNights;
+  final num occupancyPercent;
+
+  const CategoryOccupancy({
+    required this.categoryName,
+    this.occupiedNights = 0,
+    this.availableNights = 0,
+    this.occupancyPercent = 0,
+  });
+
+  factory CategoryOccupancy.fromJson(Map<String, dynamic> json) => CategoryOccupancy(
+    categoryName: json['categoryName']?.toString() ?? '',
+    occupiedNights: asInt(json['occupiedNights']),
+    availableNights: asInt(json['availableNights']),
+    occupancyPercent: asNum(json['occupancyPercent']),
+  );
+}
+
+/// One venue's booking count over the period — a row of
+/// [AnalyticsOverview.venueUtilization].
+class VenueUtilization {
+  final String venueName;
+  final int eventCount;
+
+  const VenueUtilization({required this.venueName, this.eventCount = 0});
+
+  factory VenueUtilization.fromJson(Map<String, dynamic> json) => VenueUtilization(
+    venueName: json['venueName']?.toString() ?? '',
+    eventCount: asInt(json['eventCount']),
+  );
+}
+
+/// One menu item's sales over the period — a row of
+/// [AnalyticsOverview.topFoodItems].
+class TopFoodItem {
+  final String itemName;
+  final num quantity;
+  final num revenue;
+
+  const TopFoodItem({required this.itemName, this.quantity = 0, this.revenue = 0});
+
+  factory TopFoodItem.fromJson(Map<String, dynamic> json) => TopFoodItem(
+    itemName: json['itemName']?.toString() ?? '',
+    quantity: asNum(json['quantity']),
+    revenue: asNum(json['revenue']),
+  );
+}
+
+/// One day's billed revenue — a row of [AnalyticsOverview.dailyTrend] and
+/// [AnalyticsPriorPeriod.dailyTrend].
+class DailyRevenuePoint {
+  final String date;
+  final num totalRevenue;
+
+  const DailyRevenuePoint({required this.date, this.totalRevenue = 0});
+
+  factory DailyRevenuePoint.fromJson(Map<String, dynamic> json) => DailyRevenuePoint(
+    date: json['date']?.toString() ?? '',
+    totalRevenue: asNum(json['totalRevenue']),
+  );
+}
+
+/// The comparison window the daily trend is measured against —
+/// [AnalyticsOverview.priorPeriod].
+class AnalyticsPriorPeriod {
+  final String fromDate;
+  final String toDate;
+  final List<DailyRevenuePoint> dailyTrend;
+
+  const AnalyticsPriorPeriod({this.fromDate = '', this.toDate = '', this.dailyTrend = const []});
+
+  factory AnalyticsPriorPeriod.fromJson(Map<String, dynamic> json) => AnalyticsPriorPeriod(
+    fromDate: json['fromDate']?.toString() ?? '',
+    toDate: json['toDate']?.toString() ?? '',
+    dailyTrend:
+        (json['dailyTrend'] as List?)
+            ?.map((e) => DailyRevenuePoint.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
+}
+
+/// One room category's billed revenue — a row of
+/// [AnalyticsOverview.revenueByRoomCategory].
+class RevenueByCategory {
+  final String categoryName;
+  final num revenue;
+
+  const RevenueByCategory({required this.categoryName, this.revenue = 0});
+
+  factory RevenueByCategory.fromJson(Map<String, dynamic> json) => RevenueByCategory(
+    categoryName: json['categoryName']?.toString() ?? '',
+    revenue: asNum(json['revenue']),
+  );
+}
+
+/// One function type's billed revenue — a row of
+/// [AnalyticsOverview.revenueByFunctionType].
+class RevenueByFunctionType {
+  final String eventType;
+  final num revenue;
+
+  const RevenueByFunctionType({required this.eventType, this.revenue = 0});
+
+  factory RevenueByFunctionType.fromJson(Map<String, dynamic> json) => RevenueByFunctionType(
+    eventType: json['eventType']?.toString() ?? '',
+    revenue: asNum(json['revenue']),
+  );
+}
+
+/// One payment method's slice of the period's collections — a row of
+/// [AnalyticsOverview.paymentMix].
+class PaymentMixEntry {
+  final String method;
+  final num amount;
+
+  const PaymentMixEntry({required this.method, this.amount = 0});
+
+  factory PaymentMixEntry.fromJson(Map<String, dynamic> json) => PaymentMixEntry(
+    method: json['method']?.toString() ?? '',
+    amount: asNum(json['amount']),
+  );
+}
+
+/// One guest's spend over the period — a row of
+/// [AnalyticsOverview.topGuests].
+class TopGuest {
+  final String? guestName;
+  final String? guestPhone;
+  final num totalSpend;
+  final int bookingCount;
+
+  const TopGuest({this.guestName, this.guestPhone, this.totalSpend = 0, this.bookingCount = 0});
+
+  factory TopGuest.fromJson(Map<String, dynamic> json) => TopGuest(
+    guestName: asStringOrNull(json['guestName']),
+    guestPhone: asStringOrNull(json['guestPhone']),
+    totalSpend: asNum(json['totalSpend']),
+    bookingCount: asInt(json['bookingCount']),
+  );
+}
+
+/// GET /reports/analytics-overview — the cross-stream payload behind the
+/// Overview tab's revenue/occupancy trend and mix charts, and behind the
+/// Events & functions and Food orders tabs' own venue-utilisation and
+/// top-selling-items sections (fetched once and shared, same as the web's
+/// AnalyticsOverview/FunctionsAnalytics/FoodAnalytics components).
+class AnalyticsOverview {
+  final List<DailyRevenuePoint> dailyTrend;
+  final AnalyticsPriorPeriod priorPeriod;
+  final List<RevenueByCategory> revenueByRoomCategory;
+  final List<RevenueByFunctionType> revenueByFunctionType;
+  final List<PaymentMixEntry> paymentMix;
+  final List<TopGuest> topGuests;
+  final List<VenueUtilization> venueUtilization;
+  final List<TopFoodItem> topFoodItems;
+
+  const AnalyticsOverview({
+    this.dailyTrend = const [],
+    this.priorPeriod = const AnalyticsPriorPeriod(),
+    this.revenueByRoomCategory = const [],
+    this.revenueByFunctionType = const [],
+    this.paymentMix = const [],
+    this.topGuests = const [],
+    this.venueUtilization = const [],
+    this.topFoodItems = const [],
+  });
+
+  factory AnalyticsOverview.fromJson(Map<String, dynamic> json) => AnalyticsOverview(
+    dailyTrend:
+        (json['dailyTrend'] as List?)
+            ?.map((e) => DailyRevenuePoint.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    priorPeriod: AnalyticsPriorPeriod.fromJson(
+      json['priorPeriod'] as Map<String, dynamic>? ?? const {},
+    ),
+    revenueByRoomCategory:
+        (json['revenueByRoomCategory'] as List?)
+            ?.map((e) => RevenueByCategory.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    revenueByFunctionType:
+        (json['revenueByFunctionType'] as List?)
+            ?.map((e) => RevenueByFunctionType.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    paymentMix:
+        (json['paymentMix'] as List?)
+            ?.map((e) => PaymentMixEntry.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    topGuests:
+        (json['topGuests'] as List?)?.map((e) => TopGuest.fromJson(e as Map<String, dynamic>)).toList() ??
+        const [],
+    venueUtilization:
+        (json['venueUtilization'] as List?)
+            ?.map((e) => VenueUtilization.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    topFoodItems:
+        (json['topFoodItems'] as List?)
+            ?.map((e) => TopFoodItem.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
+}
+
+/// GET /reports/rooms-analytics — the Rooms tab's own figures beyond the
+/// booking register: RevPAR, average length of stay, cancellation rate, and
+/// how occupancy splits by room category.
+class RoomsAnalytics {
+  final num revpar;
+  final num alos;
+  final num cancellationRate;
+  final List<CategoryOccupancy> occupancyByCategory;
+
+  const RoomsAnalytics({
+    this.revpar = 0,
+    this.alos = 0,
+    this.cancellationRate = 0,
+    this.occupancyByCategory = const [],
+  });
+
+  factory RoomsAnalytics.fromJson(Map<String, dynamic> json) => RoomsAnalytics(
+    revpar: asNum(json['revpar']),
+    alos: asNum(json['alos']),
+    cancellationRate: asNum(json['cancellationRate']),
+    occupancyByCategory:
+        (json['occupancyByCategory'] as List?)
+            ?.map((e) => CategoryOccupancy.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
+}
+
 /// One document type's footed totals within the GST summary.
 class GstDocumentTotals {
   final int count;
@@ -582,12 +823,29 @@ class GstInvoiceRow {
   );
 }
 
+/// One revenue stream's tax slice — an entry of
+/// [GstSummaryReport.byRevenueStream] (keys: ROOMS, FUNCTIONS, FOOD).
+class GstStreamTax {
+  final num cgstAmount;
+  final num sgstAmount;
+
+  const GstStreamTax({this.cgstAmount = 0, this.sgstAmount = 0});
+
+  num get totalTax => cgstAmount + sgstAmount;
+
+  factory GstStreamTax.fromJson(Map<String, dynamic> json) => GstStreamTax(
+    cgstAmount: asNum(json['cgstAmount']),
+    sgstAmount: asNum(json['sgstAmount']),
+  );
+}
+
 /// GET /reports/gst-summary.
 class GstSummaryReport {
   final String fromDate;
   final String toDate;
   final GstDocumentTotals totals;
   final Map<String, GstDocumentTotals> byDocumentType;
+  final Map<String, GstStreamTax> byRevenueStream;
   final List<GstInvoiceRow> invoices;
 
   const GstSummaryReport({
@@ -595,11 +853,13 @@ class GstSummaryReport {
     required this.toDate,
     required this.totals,
     this.byDocumentType = const {},
+    this.byRevenueStream = const {},
     this.invoices = const [],
   });
 
   factory GstSummaryReport.fromJson(Map<String, dynamic> json) {
     final byDocJson = json['byDocumentType'] as Map<String, dynamic>? ?? {};
+    final byStreamJson = json['byRevenueStream'] as Map<String, dynamic>? ?? {};
     return GstSummaryReport(
       fromDate: json['fromDate']?.toString() ?? '',
       toDate: json['toDate']?.toString() ?? '',
@@ -608,6 +868,9 @@ class GstSummaryReport {
       ),
       byDocumentType: byDocJson.map(
         (k, v) => MapEntry(k, GstDocumentTotals.fromJson(v as Map<String, dynamic>)),
+      ),
+      byRevenueStream: byStreamJson.map(
+        (k, v) => MapEntry(k, GstStreamTax.fromJson(v as Map<String, dynamic>)),
       ),
       invoices:
           (json['invoices'] as List?)
@@ -630,6 +893,12 @@ const kDocumentTypeLabel = <String, String>{
   'TAX_INVOICE': 'Tax invoice',
   'BILL_OF_SUPPLY': 'Bill of supply',
   'CASH_RECEIPT': 'Cash receipt',
+};
+
+const kRevenueStreamLabel = <String, String>{
+  'ROOMS': 'Rooms',
+  'FUNCTIONS': 'Functions',
+  'FOOD': 'Food',
 };
 
 /// "Cash 2,000 + UPI 3,000" — mirrors bookingReportFile.js's tendersLabel.

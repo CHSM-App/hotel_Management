@@ -17,6 +17,7 @@ class EventsReportPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(reportsViewModelProvider).events;
+    final analytics = ref.watch(reportsViewModelProvider).analyticsOverview?.valueOrNull;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
@@ -25,7 +26,7 @@ class EventsReportPanel extends ConsumerWidget {
         switch (async) {
           null || AsyncLoading() => const ReportLoading(),
           AsyncError(:final error) => ReportError(message: error.toString()),
-          AsyncData(:final value) => _Loaded(report: value),
+          AsyncData(:final value) => _Loaded(report: value, analytics: analytics),
           _ => const SizedBox.shrink(),
         },
       ],
@@ -35,16 +36,29 @@ class EventsReportPanel extends ConsumerWidget {
 
 class _Loaded extends StatelessWidget {
   final EventsReport report;
+  final AnalyticsOverview? analytics;
 
-  const _Loaded({required this.report});
+  const _Loaded({required this.report, this.analytics});
 
   @override
   Widget build(BuildContext context) {
     final s = report.summary;
+    final venueRows = [
+      for (final v in analytics?.venueUtilization ?? const <VenueUtilization>[]) (v.venueName, v.eventCount),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (venueRows.isNotEmpty) ...[
+          ReportBarList(
+            title: 'Venue utilisation',
+            rows: venueRows,
+            color: AppTheme.checkout,
+            formatValue: (v) => '${v.round()} booking${v.round() == 1 ? '' : 's'}',
+          ),
+          const SizedBox(height: AppTheme.s16),
+        ],
         StatGrid(
           items: [
             StatItem(label: 'Functions', value: '${s.totalEvents}'),
@@ -56,36 +70,36 @@ class _Loaded extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppTheme.s16),
-        Text('Functions & events', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppTheme.s8),
-        if (report.events.isEmpty)
-          const NeuNotice(
-            icon: Icons.celebration_rounded,
-            message: 'No functions in this period.',
-          )
-        else
-          ReportDataTable(
-            columns: const [
-              ReportTableColumn('Bill no.', width: 78),
-              ReportTableColumn('Function', width: 130),
-              ReportTableColumn('Organiser', width: 130),
-              ReportTableColumn('Venue', width: 100),
-              ReportTableColumn('Date', width: 90),
-              ReportTableColumn('Pax', width: 50, align: TextAlign.right),
-              ReportTableColumn('Status', width: 90),
-              ReportTableColumn('Advance', width: 84, align: TextAlign.right),
-              ReportTableColumn('Total', width: 90, align: TextAlign.right),
-              ReportTableColumn('Balance due', width: 90, align: TextAlign.right),
-            ],
-            rows: [for (final ev in report.events) _eventRow(ev)],
-            totals: [
-              'Total', '', '', '', '', '',
-              '${s.totalEvents}',
-              formatPrice(s.totals.advanceAmount),
-              formatPrice(s.totals.totalAmount),
-              formatPrice(s.totals.balanceDue),
-            ],
-          ),
+        CollapsibleRegister(
+          title: 'Functions & events',
+          child: report.events.isEmpty
+              ? const NeuNotice(
+                  icon: Icons.celebration_rounded,
+                  message: 'No functions in this period.',
+                )
+              : ReportDataTable(
+                  columns: const [
+                    ReportTableColumn('Bill no.', width: 78),
+                    ReportTableColumn('Function', width: 130),
+                    ReportTableColumn('Organiser', width: 130),
+                    ReportTableColumn('Venue', width: 100),
+                    ReportTableColumn('Date', width: 90),
+                    ReportTableColumn('Pax', width: 50, align: TextAlign.right),
+                    ReportTableColumn('Status', width: 90),
+                    ReportTableColumn('Advance', width: 84, align: TextAlign.right),
+                    ReportTableColumn('Total', width: 90, align: TextAlign.right),
+                    ReportTableColumn('Balance due', width: 90, align: TextAlign.right),
+                  ],
+                  rows: [for (final ev in report.events) _eventRow(ev)],
+                  totals: [
+                    'Total', '', '', '', '', '',
+                    '${s.totalEvents}',
+                    formatPrice(s.totals.advanceAmount),
+                    formatPrice(s.totals.totalAmount),
+                    formatPrice(s.totals.balanceDue),
+                  ],
+                ),
+        ),
       ],
     );
   }

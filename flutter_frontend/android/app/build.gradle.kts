@@ -39,6 +39,12 @@ android {
     }
 }
 
+dependencies {
+    // FileProvider, for handing a pre-Android-10 downloaded file's URI to
+    // whatever app the Snackbar's "Open" action launches.
+    implementation("androidx.core:core-ktx:1.13.1")
+}
+
 flutter {
     source = "../.."
 }
