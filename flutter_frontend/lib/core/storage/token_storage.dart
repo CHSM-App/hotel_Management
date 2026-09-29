@@ -7,9 +7,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// server hands back at login (name, lodge id) so it is available app-wide
 /// without a network round trip.
 ///
-/// Note there is no refresh token here, unlike the blueprint this project
-/// follows: the backend issues one JWT good for eight hours and has no refresh
-/// endpoint at all. See TokenInterceptor for what that means on a 401.
+/// There is no separate refresh token here, unlike the blueprint this project
+/// follows: the backend issues one JWT good for eight hours, and POST
+/// /auth/refresh just trades a still-valid one for a fresh one — see
+/// TokenInterceptor for where that's called, and for what an actually expired
+/// token does on a 401.
 class TokenStorage {
   static const _tokenKey = 'ACCESS_TOKEN';
   static const _roleKey = 'ROLE';

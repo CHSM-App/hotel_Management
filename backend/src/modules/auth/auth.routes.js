@@ -1,5 +1,6 @@
 const { Router } = require('express');
-const { loginHandler, adminLoginHandler, forgotPasswordHandler } = require('./auth.controller');
+const { loginHandler, adminLoginHandler, refreshHandler, forgotPasswordHandler } = require('./auth.controller');
+const { authenticate } = require('../../middleware/authenticate');
 const {
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
@@ -13,6 +14,12 @@ const router = Router();
 // the tighter budget — it opens every property, not one. See rateLimit.js.
 router.post('/login', loginAttemptLimiter, loginHandler);
 router.post('/admin-login', adminLoginAttemptLimiter, adminLoginHandler);
+
+// Trades a still-valid token for a fresh one, 8 hours out from now. Behind
+// `authenticate`, so an already-expired token can't use this to get back in —
+// only an active session can extend itself. No separate rate limit: a caller
+// without a valid token never reaches auth.service.refresh at all.
+router.post('/refresh', authenticate, refreshHandler);
 
 // No OTP — resets the password for whoever's phone or email is given. Charged
 // on every attempt, not just failures, and backed by the same durable

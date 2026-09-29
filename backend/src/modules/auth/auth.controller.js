@@ -28,6 +28,15 @@ async function adminLoginHandler(req, res, next) {
   }
 }
 
+async function refreshHandler(req, res, next) {
+  try {
+    const session = await authService.refresh(req.user);
+    res.json(session);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function forgotPasswordHandler(req, res, next) {
   try {
     const parsed = forgotPasswordSchema.safeParse(req.body);
@@ -41,4 +50,4 @@ async function forgotPasswordHandler(req, res, next) {
   }
 }
 
-module.exports = { loginHandler, adminLoginHandler, forgotPasswordHandler };
+module.exports = { loginHandler, adminLoginHandler, refreshHandler, forgotPasswordHandler };

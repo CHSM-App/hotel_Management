@@ -2,7 +2,8 @@ import 'json.dart';
 
 /// What POST /auth/login hands back.
 ///
-/// One token, no refresh — see TokenInterceptor. `mustResetPassword` is set
+/// One token, silently renewed by TokenInterceptor before it expires.
+/// `mustResetPassword` is set
 /// when the account was created with a temporary password and the desk has to
 /// change it before doing anything else.
 class Session {
