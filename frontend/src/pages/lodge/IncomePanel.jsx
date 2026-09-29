@@ -1178,9 +1178,10 @@ export default function IncomePanel({ onViewReport }) {
       {tab === 'interest' && (
         <div>
           <div className="inv-bar">
-            <div className="inv-bar__row">
-              <div>
-                <strong>{formatPrice(interestTotal)}</strong> bank interest earned · counted in P&amp;L under Other Income
+            <div className="inv-bar__row inv-bar__row--stats">
+              <div className="inc-total">
+                <span className="inc-total__label">Bank interest earned</span>
+                <strong className="inc-total__value">{formatPrice(interestTotal)}</strong>
               </div>
               <div className="inv-bar__actions">
                 <button type="button" className="btn-accent" onClick={openInterestVoucher}>
@@ -1190,7 +1191,10 @@ export default function IncomePanel({ onViewReport }) {
             </div>
           </div>
           {interestEntries.length === 0 ? (
-            <p className="inv-empty">No interest vouchers yet. Add one when the bank credits interest.</p>
+            <div className="inc-empty">
+              <div className="inc-empty__title">No interest vouchers yet</div>
+              <div className="inc-empty__text">Add one when the bank credits interest.</div>
+            </div>
           ) : (
             <ul className="inv-list">
               {interestEntries.map((entry) => (

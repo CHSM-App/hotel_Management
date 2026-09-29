@@ -170,6 +170,48 @@
   color: var(--danger);
 }
 
+/* Income panel: headline total + empty state */
+.inc-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border-left: 3px solid var(--brand);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.inc-total__label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inc-total__value {
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+.inc-empty {
+  text-align: center;
+  padding: 36px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.inc-empty__title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.inc-empty__text {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 /* ------------------------------------------------------------------- list */
 
 .inv-panel__hint {

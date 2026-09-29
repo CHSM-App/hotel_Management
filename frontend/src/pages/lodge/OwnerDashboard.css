@@ -151,6 +151,9 @@
   margin-bottom: 8px;
 }
 
+/* The group holding the current page: brand-coloured heading so you can see
+   where you are even when the group is collapsed. */
+
 .dash-sidebar__list {
   list-style: none;
   margin: 0;
@@ -397,7 +400,8 @@
 .dash-sidebar__label {
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #8996AC;
+  color: var(--text);
+  font-size: 12px;
 }
 
 /* Icons in the rail were carrying full muted weight against 14px text at 500,
