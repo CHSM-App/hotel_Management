@@ -9,12 +9,14 @@ class RoomCategory {
   final String name;
   final num basePrice;
   final bool isActive;
+  final int? tapeOrder;
 
   const RoomCategory({
     required this.id,
     required this.name,
     required this.basePrice,
     required this.isActive,
+    this.tapeOrder,
   });
 
   factory RoomCategory.fromJson(Map<String, dynamic> json) => RoomCategory(
@@ -22,5 +24,6 @@ class RoomCategory {
     name: json['name']?.toString() ?? '',
     basePrice: asNum(json['basePrice']),
     isActive: asBool(json['isActive']),
+    tapeOrder: json['tapeOrder'] == null ? null : asInt(json['tapeOrder']),
   );
 }

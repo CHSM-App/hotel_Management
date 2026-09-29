@@ -29,10 +29,10 @@ class RoomsUsecase {
       repository.setBedCount(roomId, count);
 
   Future<List<RoomCategory>> categories() => repository.categories();
-  Future<void> createCategory({required String name, required num basePrice}) =>
-      repository.createCategory(name: name, basePrice: basePrice);
-  Future<void> updateCategory(int id, {required String name, required num basePrice}) =>
-      repository.updateCategory(id, name: name, basePrice: basePrice);
+  Future<void> createCategory({required String name, required num basePrice, int? tapeOrder}) =>
+      repository.createCategory(name: name, basePrice: basePrice, tapeOrder: tapeOrder);
+  Future<void> updateCategory(int id, {required String name, required num basePrice, int? tapeOrder}) =>
+      repository.updateCategory(id, name: name, basePrice: basePrice, tapeOrder: tapeOrder);
   Future<void> setCategoryActive(int id, bool isActive) =>
       repository.setCategoryActive(id, isActive);
   Future<void> deleteCategory(int id) => repository.deleteCategory(id);

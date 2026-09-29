@@ -156,14 +156,14 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
 
   // ── Categories ────────────────────────────────────────────────────────────
 
-  Future<bool> saveCategory({int? id, required String name, required num basePrice}) async {
+  Future<bool> saveCategory({int? id, required String name, required num basePrice, int? tapeOrder}) async {
     if (state.submitting) return false;
     state = state.copyWith(submitting: true, clearError: true);
     try {
       if (id != null) {
-        await usecase.updateCategory(id, name: name, basePrice: basePrice);
+        await usecase.updateCategory(id, name: name, basePrice: basePrice, tapeOrder: tapeOrder);
       } else {
-        await usecase.createCategory(name: name, basePrice: basePrice);
+        await usecase.createCategory(name: name, basePrice: basePrice, tapeOrder: tapeOrder);
       }
       state = state.copyWith(submitting: false);
       await loadAll();

@@ -950,16 +950,17 @@ class ApiService {
         .toList();
   }
 
-  Future<void> createCategory({required String name, required num basePrice}) async {
-    await _dio.post('/categories', data: {'name': name, 'basePrice': basePrice});
+  Future<void> createCategory({required String name, required num basePrice, int? tapeOrder}) async {
+    await _dio.post('/categories', data: {'name': name, 'basePrice': basePrice, 'tapeOrder': tapeOrder});
   }
 
   Future<void> updateCategory(
     int id, {
     required String name,
     required num basePrice,
+    int? tapeOrder,
   }) async {
-    await _dio.patch('/categories/$id', data: {'name': name, 'basePrice': basePrice});
+    await _dio.patch('/categories/$id', data: {'name': name, 'basePrice': basePrice, 'tapeOrder': tapeOrder});
   }
 
   Future<void> setCategoryActive(int id, bool isActive) async {

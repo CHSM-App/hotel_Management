@@ -289,10 +289,12 @@ class BookingState {
       }
     }
 
+    // data.rooms already arrives from the API ordered by each category's
+    // configured tape_order. Keep the first-seen category order here so the
+    // app matches Rooms & Rates and the web booking chart.
     final sections = byCategory.entries
         .map((e) => ChartSection(categoryName: e.key, rooms: e.value))
-        .toList()
-      ..sort((a, b) => a.categoryName.compareTo(b.categoryName));
+        .toList();
     if (dormitoryRooms.isNotEmpty) {
       sections.add(ChartSection(categoryName: 'Dormitory', rooms: dormitoryRooms));
     }
