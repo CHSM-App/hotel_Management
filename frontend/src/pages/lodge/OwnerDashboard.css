@@ -853,6 +853,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  text-align: left; /* buttons centre by default, which centred the wrapped "Finance & Management" */
   width: 100%;
   box-sizing: border-box;
   padding: 8px 12px;
@@ -871,6 +875,7 @@
 
 .dash-sidebar__chevron {
   font-size: 13px;
+  flex-shrink: 0;
   transition: transform 150ms ease;
   transform: rotate(-90deg);
 }
@@ -881,4 +886,126 @@
 
 .dash-sidebar__group {
   margin-bottom: 8px;
+}
+
+/* Group open/close: animate row height 0fr -> 1fr instead of unmounting the
+   list, so the drawer slides rather than snapping. */
+.dash-sidebar__collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 250ms ease, opacity 200ms ease;
+}
+
+.dash-sidebar__collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.dash-sidebar__collapse > .dash-sidebar__list {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-sidebar__collapse {
+    transition: none;
+  }
+}
+
+/* --- Sidebar polish --------------------------------------------------------
+   Hierarchy: quiet section headers, clear items beneath them. Headers were
+   near-black bold and competed with the items; muted small caps recede so the
+   pages are what you scan. */
+.dash-sidebar__label--toggle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  margin-bottom: 0;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.dash-sidebar__label--toggle:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.dash-sidebar__label--toggle:focus-visible,
+.dash-sidebar__item:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.dash-sidebar__chevron {
+  display: inline-flex;
+  opacity: 0.7;
+  transition: transform 250ms ease, opacity 150ms ease;
+}
+
+.dash-sidebar__label--toggle:hover .dash-sidebar__chevron {
+  opacity: 1;
+}
+
+/* Items sit on a faint guide line under their header, so a group reads as one
+   unit and the items read as belonging to it. */
+.dash-sidebar__collapse > .dash-sidebar__list {
+  margin-left: 18px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+
+.dash-sidebar__item {
+  padding: 8px 10px;
+  font-size: 13.5px;
+  border-radius: 8px;
+}
+
+.dash-sidebar__item:hover {
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.dash-sidebar__item[aria-current='page'],
+.dash-sidebar__item[aria-current='page']:hover {
+  background: var(--brand-wash);
+  box-shadow: none;
+}
+
+/* The active bar now sits on the guide line instead of floating inside the row. */
+.dash-sidebar__item[aria-current='page']::before {
+  left: -7px;
+}
+
+.dash-sidebar__group {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+}
+
+.dash-sidebar__scroll {
+  scrollbar-width: thin;
+}
+
+/* Mobile strip: the wrapper must not box the row, and a closed group stays
+   hidden as it was when its list was unmounted. */
+@media (max-width: 800px) {
+  .dash-sidebar__collapse {
+    display: contents;
+    opacity: 1;
+  }
+
+  .dash-sidebar__collapse[data-open='false'] {
+    display: none;
+  }
+
+  .dash-sidebar__collapse > .dash-sidebar__list {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .dash-sidebar__item[aria-current='page']::before {
+    display: none;
+  }
 }

@@ -479,10 +479,22 @@ export default function OwnerDashboard() {
                 >
                   {group}
                   <span className="dash-sidebar__chevron" aria-hidden="true">
-                    ▾
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M3 4.5 6 7.5 9 4.5"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </span>
                 </button>
-                {groupOpen(group) && (
+                <div
+                  className="dash-sidebar__collapse"
+                  data-open={groupOpen(group)}
+                  inert={groupOpen(group) ? undefined : ''}
+                >
                 <ul className="dash-sidebar__list">
                   {features.map((feature) => (
                     <li key={feature.key}>
@@ -518,7 +530,7 @@ export default function OwnerDashboard() {
                     </li>
                   ))}
                 </ul>
-                )}
+                </div>
               </div>
             ))}
 
