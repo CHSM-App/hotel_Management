@@ -49,38 +49,15 @@ test('there is no by-booking food loader left to put food on a stay bill', () =>
   );
 });
 
-// This used to assert that nothing selects food orders by booking_id at all
-// — booking_id-scoping was how food used to reach the main stay bill. That
-// blanket claim stopped being true on purpose: a room is reused by every
-// guest who stays in it, and a food *tab* keyed on room_id alone can't tell
-// a checked-out guest's unpaid order from the next guest's (see
-// foodTabSeparation.test.js, "a room is reused"). tabScope now also scopes a
-// room-booking-<id> tab by booking_id — but only inside tabScope/tabIdentity,
-// for splitting tabs between stays, never inside the stay-bill loaders this
-// file actually guards.
-test('nothing outside tabScope/tabIdentity selects food orders by booking_id', () => {
-  const outsideTabHelpers = service
-    .replace(bodyOf('tabScope'), '')
-    .replace(bodyOf('tabIdentity'), '');
-  assert.ok(
-    !/o\.booking_id = @bookingId/.test(outsideTabHelpers),
-    'a query outside tabScope still scopes food orders to a booking, which is how food reached the main bill'
-  );
-});
-
-// Both the preview and the issue path price a stay with an empty food side, so
-// the document the desk sees and the document that gets written agree.
+// Superseded rule: room service and table food moved onto a stay (addTabToRoomBill)
+// now ride on the room bill, loaded by loadStayFoodOrders. The preview and issue
+// paths must both price the same food so the document the desk sees is the one
+// that gets written.
 for (const fn of ['previewBill', 'issueInvoice']) {
-  test(`${fn} prices the stay with no food orders`, () => {
-    const body = bodyOf(fn);
-    assert.match(body, /const foodOrders = \[\]/, `${fn} should hand the pricing an empty food list`);
+  test(`${fn} prices the stay's food via loadStayFoodOrders`, () => {
+    assert.match(bodyOf(fn), /loadStayFoodOrders\(/, `${fn} should load the stay's food orders`);
   });
 }
-
-test('the stay preview returns an empty food item list rather than omitting it', () => {
-  // The screen reads preview.foodItems; it must be a list, not undefined.
-  assert.match(bodyOf('previewBill'), /const foodItems = \[\]/);
-});
 
 // ---------------------------------------------------------------------------
 // Every unbilled order is billable as its own tab

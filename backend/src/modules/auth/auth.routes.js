@@ -5,6 +5,7 @@ const {
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
   forgotPasswordLimiter,
+  refreshLimiter,
 } = require('../../middleware/rateLimit');
 
 const router = Router();
@@ -17,9 +18,9 @@ router.post('/admin-login', adminLoginAttemptLimiter, adminLoginHandler);
 
 // Trades a still-valid token for a fresh one, 8 hours out from now. Behind
 // `authenticate`, so an already-expired token can't use this to get back in —
-// only an active session can extend itself. No separate rate limit: a caller
-// without a valid token never reaches auth.service.refresh at all.
-router.post('/refresh', authenticate, refreshHandler);
+// only an active session can extend itself. Rate limited too, so a stolen
+// token can't be replayed in a loop.
+router.post('/refresh', refreshLimiter, authenticate, refreshHandler);
 
 // No OTP — resets the password for whoever's phone or email is given. Charged
 // on every attempt, not just failures, and backed by the same durable

@@ -148,8 +148,17 @@ const forgotPasswordLimiter = createRateLimiter({
   message: 'Too many password reset attempts. Please wait a few minutes and try again.',
 });
 
+// Generous: a legitimate client refreshes a few times an hour. This only caps
+// a stolen token being replayed in a loop.
+const refreshLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many token refreshes. Please wait a few minutes and try again.',
+});
+
 module.exports = {
   createRateLimiter,
+  refreshLimiter,
   pinAttemptLimiter,
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
