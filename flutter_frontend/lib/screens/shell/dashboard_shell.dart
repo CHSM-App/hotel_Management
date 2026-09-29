@@ -14,6 +14,7 @@ import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../food/menu_setup_screen.dart';
 import '../food/orders_screen.dart';
+import '../income/income_screen.dart';
 import '../placeholder_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reports/reports_screen.dart';
@@ -87,8 +88,11 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: fullScreen ? AppTheme.bg : AppTheme.accent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
+        // The overflow screens (Rooms & rates, Menu & QR codes) sit on
+        // AppTheme.bg, which is near-white — white icons there would vanish
+        // the way they don't on the purple top bar the other tabs use.
+        statusBarIconBrightness: fullScreen ? Brightness.dark : Brightness.light,
+        statusBarBrightness: fullScreen ? Brightness.light : Brightness.dark,
       ),
       child: Scaffold(
         body: Column(
@@ -178,6 +182,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         screen = const AssetsScreen();
       case 'expenses':
         screen = const ExpensesScreen();
+      case 'income':
+        screen = const IncomeScreen();
       case 'reports':
         // Reports owns its title row itself, merging the back arrow with the
         // PDF/Excel download buttons in one row — the generic _BackToMoreRow
@@ -324,6 +330,7 @@ class _MoreList extends StatelessWidget {
     'food': AppTheme.reserved,
     'assets': AppTheme.edit,
     'expenses': AppTheme.draft,
+    'income': AppTheme.vacant,
     'reports': AppTheme.checkout,
   };
 

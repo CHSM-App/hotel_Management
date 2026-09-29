@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:excel/excel.dart' as xl;
 
-import '../../domain/models/expense.dart' show kPaymentMethodLabel;
 import '../../domain/models/income.dart';
 import '../bookings/receipt_download.dart';
 import 'income_report_pdf.dart';

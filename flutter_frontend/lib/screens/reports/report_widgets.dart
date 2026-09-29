@@ -95,6 +95,7 @@ class ReportTrendChart extends StatelessWidget {
   final String lastLabel;
   final String Function(num value) formatValue;
   final bool showComparison;
+  final String? priorCaption;
 
   const ReportTrendChart({
     super.key,
@@ -106,6 +107,7 @@ class ReportTrendChart extends StatelessWidget {
     required this.lastLabel,
     required this.formatValue,
     this.showComparison = false,
+    this.priorCaption,
   });
 
   @override
@@ -153,6 +155,13 @@ class ReportTrendChart extends StatelessWidget {
             ),
           ),
         ),
+        if (priorCaption != null) ...[
+          const SizedBox(height: AppTheme.s8),
+          Text(
+            priorCaption!,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+          ),
+        ],
       ],
     );
   }
@@ -188,17 +197,44 @@ class _TrendPainter extends CustomPainter {
     required this.lastLabel,
   });
 
+  void _drawDashedLine(Canvas canvas, Offset from, Offset to, Paint paint) {
+    const dashWidth = 3.0;
+    const gapWidth = 3.0;
+    final total = (to - from).distance;
+    if (total <= 0) return;
+    final direction = (to - from) / total;
+    var drawn = 0.0;
+    while (drawn < total) {
+      final segEnd = (drawn + dashWidth).clamp(0, total).toDouble();
+      canvas.drawLine(from + direction * drawn, from + direction * segEnd, paint);
+      drawn += dashWidth + gapWidth;
+    }
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    const padLeft = 4.0;
     const padBottom = 18.0;
     const padTop = 4.0;
-    final plotW = size.width - padLeft;
-    final plotH = size.height - padTop - padBottom;
-    if (plotW <= 0 || plotH <= 0) return;
+    const gridFractions = [0.0, 0.25, 0.5, 0.75, 1.0];
 
     final allValues = [...values, ...?priorValues];
     final maxValue = allValues.fold<num>(1, (a, b) => b > a ? b : a);
+
+    // Left gutter sized to the widest y-axis value label.
+    var padLeft = 4.0;
+    final axisLabelPainters = <TextPainter>[];
+    for (final frac in gridFractions) {
+      final painter = TextPainter(
+        text: TextSpan(text: formatValue((maxValue * frac).round()), style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      axisLabelPainters.add(painter);
+      if (painter.width + 8 > padLeft) padLeft = painter.width + 8;
+    }
+
+    final plotW = size.width - padLeft;
+    final plotH = size.height - padTop - padBottom;
+    if (plotW <= 0 || plotH <= 0) return;
 
     Offset pointAt(int i, int count, num value) {
       final x = padLeft + (count <= 1 ? 0 : (i / (count - 1)) * plotW);
@@ -206,13 +242,21 @@ class _TrendPainter extends CustomPainter {
       return Offset(x, y);
     }
 
-    // Gridlines.
+    // Gridlines: solid top/bottom axis, dashed in between, with a value
+    // label on the left of each.
     final gridPaint = Paint()
       ..color = AppTheme.border
       ..strokeWidth = 1;
-    for (final frac in [0.0, 0.5, 1.0]) {
-      final y = padTop + plotH * frac;
-      canvas.drawLine(Offset(padLeft, y), Offset(size.width, y), gridPaint);
+    for (var i = 0; i < gridFractions.length; i++) {
+      final frac = gridFractions[i];
+      final y = padTop + plotH * (1 - frac);
+      if (frac == 0.0 || frac == 1.0) {
+        canvas.drawLine(Offset(padLeft, y), Offset(size.width, y), gridPaint);
+      } else {
+        _drawDashedLine(canvas, Offset(padLeft, y), Offset(size.width, y), gridPaint);
+      }
+      final labelPainter = axisLabelPainters[i];
+      labelPainter.paint(canvas, Offset(padLeft - 6 - labelPainter.width, y - labelPainter.height / 2));
     }
 
     if (priorValues != null && priorValues!.isNotEmpty) {
@@ -340,13 +384,18 @@ class ReportDeltaBadge extends StatelessWidget {
     final up = delta > 0;
     final color = light ? Colors.white : (up ? AppTheme.vacant : AppTheme.danger);
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(up ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 12, color: color),
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(up ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 12, color: color),
+        ),
         const SizedBox(width: 2),
-        Text(
-          '$rounded% $suffix',
-          style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+        Flexible(
+          child: Text(
+            '$rounded% $suffix',
+            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -377,62 +426,76 @@ class KpiRow extends StatelessWidget {
 
   const KpiRow({super.key, required this.items});
 
+  Widget _buildCard(KpiCardData item) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: item.primary ? AppTheme.accent : AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        boxShadow: AppTheme.subtle,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            item.label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 0.4,
+              fontWeight: FontWeight.w600,
+              color: item.primary ? Colors.white70 : AppTheme.muted,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            item.value,
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              color: item.primary ? Colors.white : AppTheme.heading,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (item.delta != null) ...[const SizedBox(height: 2), item.delta!],
+          const SizedBox(height: 2),
+          Text(
+            item.sub,
+            style: TextStyle(
+              fontSize: 10.5,
+              color: item.primary ? Colors.white70 : AppTheme.muted,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppTheme.s8,
-      runSpacing: AppTheme.s8,
-      children: [
-        for (final item in items)
-          SizedBox(
-            width: (MediaQuery.sizeOf(context).width - AppTheme.s16 * 2 - AppTheme.s8) / 2,
-            child: Container(
-              padding: const EdgeInsets.all(AppTheme.s12),
-              decoration: BoxDecoration(
-                color: item.primary ? AppTheme.accent : AppTheme.card,
-                borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                boxShadow: AppTheme.subtle,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.label.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      letterSpacing: 0.4,
-                      fontWeight: FontWeight.w600,
-                      color: item.primary ? Colors.white70 : AppTheme.muted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.value,
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                      color: item.primary ? Colors.white : AppTheme.heading,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (item.delta != null) ...[const SizedBox(height: 2), item.delta!],
-                  const SizedBox(height: 2),
-                  Text(
-                    item.sub,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: item.primary ? Colors.white70 : AppTheme.muted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2,
-                  ),
-                ],
-              ),
-            ),
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += 2) {
+      final hasSecond = i + 1 < items.length;
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _buildCard(items[i])),
+              if (hasSecond) ...[
+                const SizedBox(width: AppTheme.s8),
+                Expanded(child: _buildCard(items[i + 1])),
+              ],
+            ],
           ),
-      ],
-    );
+        ),
+      );
+      if (i + 2 < items.length) rows.add(const SizedBox(height: AppTheme.s8));
+    }
+    return Column(children: rows);
   }
 }
 

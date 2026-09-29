@@ -1759,32 +1759,9 @@ class ApiService {
 
   // ===== OTHER INCOME (income.manage) =====
   //
-  // Read-only from this app's side so far — the Reports > Other Income tab
-  // displays what's already logged (mirrors IncomeReportPanel.jsx, opened
-  // with onClose={null}), same as ExpensesReportPanel does for expenses.
-  // There is no income entry/edit screen elsewhere in this app yet.
-
-  /// Every income entry on file — no date range, same "full history" shape
-  /// [expenses] uses for its own report tab.
-  Future<List<IncomeEntry>> income({
-    int? categoryId,
-    int? payerId,
-    String? from,
-    String? to,
-  }) async {
-    final res = await _dio.get(
-      '/income',
-      queryParameters: {
-        if (categoryId != null) 'categoryId': categoryId,
-        if (payerId != null) 'payerId': payerId,
-        if (from != null) 'from': from,
-        if (to != null) 'to': to,
-      },
-    );
-    return (_map(res.data)['income'] as List? ?? [])
-        .map((e) => IncomeEntry.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
+  // Full CRUD, mirroring the EXPENSES section above exactly — payer is the
+  // same shared dbo.vendors directory [expenseVendors] reads, through the
+  // Income module's own route with type 'income'.
 
   Future<List<IncomeCategory>> incomeCategories({bool includeInactive = false}) async {
     final res = await _dio.get(
@@ -1794,6 +1771,156 @@ class ApiService {
     return (_map(res.data)['categories'] as List? ?? [])
         .map((e) => IncomeCategory.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Answers with the created row — resolveCategoryId (the create-on-first-use
+  /// flow the income/recurring forms both run, mirroring resolveCategoryId in
+  /// IncomePanel.jsx) needs the new id straight back, not a reload.
+  Future<IncomeCategory> createIncomeCategory(String name) async {
+    final res = await _dio.post('/income/categories', data: {'name': name});
+    return IncomeCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
+  }
+
+  Future<void> updateIncomeCategory(int id, {String? name, bool? isActive}) async {
+    await _dio.patch(
+      '/income/categories/$id',
+      data: {
+        if (name != null) 'name': name,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+  }
+
+  /// Same dbo.vendors directory [expenseVendors] reads, through the Income
+  /// module's own route.
+  Future<List<Vendor>> incomePayers({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/income/payers',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['payers'] as List? ?? [])
+        .map((e) => Vendor.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Answers with the created row — same reason [createIncomeCategory] does:
+  /// resolvePayerId needs the new id straight back.
+  Future<Vendor> createIncomePayer(Map<String, dynamic> body) async {
+    final res = await _dio.post('/income/payers', data: body);
+    return Vendor.fromJson(_map(res.data)['payer'] as Map<String, dynamic>);
+  }
+
+  Future<void> updateIncomePayer(int id, Map<String, dynamic> body) async {
+    await _dio.patch('/income/payers/$id', data: body);
+  }
+
+  Future<List<IncomeEntry>> income({
+    int? categoryId,
+    int? payerId,
+    int? recurringTemplateId,
+    String? from,
+    String? to,
+  }) async {
+    final res = await _dio.get(
+      '/income',
+      queryParameters: {
+        if (categoryId != null) 'categoryId': categoryId,
+        if (payerId != null) 'payerId': payerId,
+        if (recurringTemplateId != null) 'recurringTemplateId': recurringTemplateId,
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+      },
+    );
+    return (_map(res.data)['income'] as List? ?? [])
+        .map((e) => IncomeEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<IncomeEntry> incomeEntry(int id) async {
+    final res = await _dio.get('/income/$id');
+    return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
+  }
+
+  /// Log a receipt of other income. Multipart for the receipt photo, same as
+  /// [createExpense].
+  Future<IncomeEntry> createIncomeEntry(FormData form) async {
+    final res = await _dio.post('/income', data: form);
+    return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
+  }
+
+  Future<IncomeEntry> updateIncomeEntry(int id, FormData form) async {
+    final res = await _dio.patch('/income/$id', data: form);
+    return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteIncomeEntry(int id) async {
+    await _dio.delete('/income/$id');
+  }
+
+  /// Receipts logged against one income entry — mirrors listPayments in
+  /// expenses.service.js. An entry can be settled in more than one receipt,
+  /// so this is a running list, not a single field on the entry.
+  Future<List<IncomeReceipt>> incomeReceipts(int incomeId) async {
+    final res = await _dio.get('/income/$incomeId/receipts');
+    return (_map(res.data)['receipts'] as List? ?? [])
+        .map((e) => IncomeReceipt.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Logs a new receipt against the income entry; answers with the entry's
+  /// own updated amountReceived/paymentStatus, same as [addExpensePayment].
+  Future<IncomeEntry> addIncomeReceipt(int incomeId, Map<String, dynamic> body) async {
+    final res = await _dio.post('/income/$incomeId/receipts', data: body);
+    return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
+  }
+
+  Future<IncomeEntry> deleteIncomeReceipt(int incomeId, int receiptId) async {
+    final res = await _dio.delete('/income/$incomeId/receipts/$receiptId');
+    return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
+  }
+
+  /// The receipt/proof document, behind the same authenticated-bytes door
+  /// [expenseBill] uses.
+  Future<Response<List<int>>> incomeReceiptFile(int id) => _dio.get<List<int>>(
+    '/income/$id/receipt',
+    options: Options(responseType: ResponseType.bytes),
+  );
+
+  Future<IncomeSummary> incomeSummary({int? year}) async {
+    final res = await _dio.get(
+      '/income/summary',
+      queryParameters: {if (year != null) 'year': year},
+    );
+    return IncomeSummary.fromJson(_map(res.data)['summary'] as Map<String, dynamic>);
+  }
+
+  Future<List<IncomeRecurringTemplate>> incomeRecurringTemplates({bool includeInactive = false}) async {
+    final res = await _dio.get(
+      '/income/recurring',
+      queryParameters: {'includeInactive': includeInactive},
+    );
+    return (_map(res.data)['templates'] as List? ?? [])
+        .map((e) => IncomeRecurringTemplate.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<IncomeRecurringTemplate> createIncomeRecurringTemplate(Map<String, dynamic> body) async {
+    final res = await _dio.post('/income/recurring', data: body);
+    return IncomeRecurringTemplate.fromJson(_map(res.data)['template'] as Map<String, dynamic>);
+  }
+
+  Future<IncomeRecurringTemplate> updateIncomeRecurringTemplate(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/income/recurring/$id', data: body);
+    return IncomeRecurringTemplate.fromJson(_map(res.data)['template'] as Map<String, dynamic>);
+  }
+
+  /// "Log this month" — one occurrence of a recurring template, entered by
+  /// hand with its own amount/payer/payment (same shape as [createIncomeEntry]),
+  /// linked back via recurringTemplateId. Advances the template's
+  /// nextDueDate server-side.
+  Future<IncomeEntry> logIncomeRecurringOccurrence(int templateId, FormData form) async {
+    final res = await _dio.post('/income/recurring/$templateId/log', data: form);
+    return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

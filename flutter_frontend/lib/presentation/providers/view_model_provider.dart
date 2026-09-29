@@ -7,6 +7,7 @@ import '../view_models/billing_viewmodel.dart';
 import '../view_models/events_viewmodel.dart';
 import '../view_models/expenses_viewmodel.dart';
 import '../view_models/food_settings_viewmodel.dart';
+import '../view_models/income_viewmodel.dart';
 import '../view_models/inventory_viewmodel.dart';
 import '../view_models/menu_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
@@ -108,4 +109,10 @@ final assetsViewModelProvider =
 final expensesViewModelProvider =
     StateNotifierProvider.autoDispose<ExpensesViewModel, ExpensesState>(
       (ref) => ExpensesViewModel(ref.watch(expensesUsecaseProvider)),
+    );
+
+/// Other income tracking. Same treatment as Expenses.
+final incomeViewModelProvider =
+    StateNotifierProvider.autoDispose<IncomeViewModel, IncomeState>(
+      (ref) => IncomeViewModel(ref.watch(incomeUsecaseProvider)),
     );

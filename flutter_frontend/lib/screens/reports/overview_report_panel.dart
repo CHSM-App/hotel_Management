@@ -213,6 +213,10 @@ class OverviewReportPanel extends ConsumerWidget {
             firstLabel: dates.isNotEmpty ? formatShortDate(dates.first.date) : '',
             midLabel: dates.isNotEmpty ? formatShortDate(dates[(dates.length - 1) ~/ 2].date) : '',
             lastLabel: dates.isNotEmpty ? formatShortDate(dates.last.date) : '',
+            priorCaption: priorValues.isNotEmpty
+                ? 'Prior period: ${analytics.priorPeriod.fromDate} to ${analytics.priorPeriod.toDate}, '
+                    '${formatPrice(priorTotal)} billed.'
+                : null,
           ),
         ],
         if (totalRevenue > 0) ...[

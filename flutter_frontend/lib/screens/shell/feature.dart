@@ -162,6 +162,20 @@ const kFeatures = <Feature>[
     permission: 'expenses.manage',
     capability: 'hasExpenses',
   ),
+  // Same web module (IncomePanel.jsx): log, recurring schedules and payers
+  // for income outside room/food/function billing (interest, scrap sale,
+  // rent received). Gated on the same hasExpenses flag as Expenses on the
+  // web (frontend/src/lib/propertyProfile.js) — a property that logs
+  // expenses almost certainly wants to log this kind of income too, and
+  // there is no separate add-on toggle for it.
+  Feature(
+    key: 'income',
+    title: 'Other Income',
+    tabLabel: 'Income',
+    icon: Icons.savings_rounded,
+    permission: 'income.manage',
+    capability: 'hasExpenses',
+  ),
   // Feature(
   //   key: 'staff',
   //   title: 'Staff & roles',

@@ -4,7 +4,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-import '../../domain/models/expense.dart' show kPaymentMethodLabel;
 import '../../domain/models/income.dart';
 import '../bookings/receipt_download.dart';
 import '../bookings/receipt_share.dart';

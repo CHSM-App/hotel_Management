@@ -1,0 +1,278 @@
+import 'package:flutter/material.dart';
+
+import '../../domain/models/asset.dart' show Vendor;
+import '../theme.dart';
+
+/// A text field that suggests as you type and lets you pick or keep typing a
+/// new value — mirrors CategoryField in IncomePanel.jsx / CategoryComboField
+/// in expense_combo_fields.dart (a styled stand-in for a native
+/// `<datalist>`). A category only exists once it has been typed or picked
+/// here and used to save an income entry or recurring template; there is no
+/// separate "manage categories" screen, so this is the only place one gets
+/// named.
+class IncomeCategoryComboField extends StatefulWidget {
+  final TextEditingController controller;
+  final List<String> options;
+  final String label;
+  final bool required;
+  final String? errorText;
+
+  const IncomeCategoryComboField({
+    super.key,
+    required this.controller,
+    required this.options,
+    this.label = 'Category',
+    this.required = true,
+    this.errorText,
+  });
+
+  @override
+  State<IncomeCategoryComboField> createState() => _IncomeCategoryComboFieldState();
+}
+
+class _IncomeCategoryComboFieldState extends State<IncomeCategoryComboField> {
+  // Owned here, not created inline in build() — a fresh FocusNode on every
+  // rebuild would break RawAutocomplete's own focus tracking mid-interaction.
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final options = widget.options;
+    final label = widget.label;
+    final required = widget.required;
+    final errorText = widget.errorText;
+    return RawAutocomplete<String>(
+      textEditingController: controller,
+      focusNode: _focusNode,
+      optionsBuilder: (value) {
+        final needle = value.text.trim().toLowerCase();
+        if (needle.isEmpty) return options;
+        return options.where((o) => o.toLowerCase().contains(needle));
+      },
+      fieldViewBuilder: (context, fieldController, focusNode, onSubmit) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (label.isNotEmpty) ...[
+              Text.rich(
+                TextSpan(
+                  text: label,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  children: required
+                      ? const [TextSpan(text: ' *', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700))]
+                      : null,
+                ),
+              ),
+              const SizedBox(height: AppTheme.s8),
+            ],
+            _ComboWell(
+              controller: fieldController,
+              focusNode: focusNode,
+              hint: 'Interest, Scrap sale, Rent received…',
+              hasError: errorText != null,
+            ),
+            if (errorText != null) ...[
+              const SizedBox(height: AppTheme.s4),
+              Text(errorText, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            ],
+          ],
+        );
+      },
+      optionsViewBuilder: (context, onSelected, values) => _OptionsCard(
+        values: values.toList(),
+        onSelected: onSelected,
+        labelOf: (s) => s,
+      ),
+    );
+  }
+}
+
+/// Same shape as [IncomeCategoryComboField], but matches across name/phone/
+/// email and hands back the whole [Vendor] on pick — mirrors PayerField in
+/// IncomePanel.jsx / VendorComboField in expense_combo_fields.dart. Payers
+/// and vendors share the dbo.vendors directory as one generic contacts list.
+class PayerComboField extends StatefulWidget {
+  final TextEditingController controller;
+  final List<Vendor> payers;
+  final String label;
+
+  /// Fired with the whole [Vendor] when one is picked from the suggestion
+  /// list — mirrors PayerField's onPick in IncomePanel.jsx, which is what
+  /// auto-fills the payer's contact person / phone / email / specialty
+  /// fields alongside the name. Typing a name by hand (no pick) does not
+  /// call this.
+  final ValueChanged<Vendor>? onPick;
+
+  const PayerComboField({
+    super.key,
+    required this.controller,
+    required this.payers,
+    this.label = 'Payer',
+    this.onPick,
+  });
+
+  @override
+  State<PayerComboField> createState() => _PayerComboFieldState();
+}
+
+class _PayerComboFieldState extends State<PayerComboField> {
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final payers = widget.payers;
+    final label = widget.label;
+    return RawAutocomplete<Vendor>(
+      textEditingController: controller,
+      focusNode: _focusNode,
+      displayStringForOption: (v) => v.name,
+      // Fires only on an actual pick (tap/Enter on a suggestion) — RawAutocomplete
+      // sets the field's text to displayStringForOption(v) itself, so this is
+      // purely the hook for auto-filling the payer's other fields alongside it.
+      onSelected: (v) => widget.onPick?.call(v),
+      optionsBuilder: (value) {
+        final needle = value.text.trim().toLowerCase();
+        if (needle.isEmpty) return payers;
+        return payers.where((v) =>
+            v.name.toLowerCase().contains(needle) ||
+            v.phone.toLowerCase().contains(needle) ||
+            v.email.toLowerCase().contains(needle));
+      },
+      fieldViewBuilder: (context, fieldController, focusNode, onSubmit) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: AppTheme.s8),
+            _ComboWell(controller: fieldController, focusNode: focusNode, hint: 'Payer name or phone…'),
+          ],
+        );
+      },
+      optionsViewBuilder: (context, onSelected, values) => _OptionsCard(
+        values: values.toList(),
+        onSelected: onSelected,
+        labelOf: (v) => v.name,
+        metaOf: (v) => [v.phone, v.specialty].where((s) => s.isNotEmpty).join(' · '),
+      ),
+    );
+  }
+}
+
+class _ComboWell extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String hint;
+  final bool hasError;
+
+  const _ComboWell({required this.controller, required this.focusNode, required this.hint, this.hasError = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: focusNode,
+      builder: (context, _) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
+        decoration: BoxDecoration(
+          color: AppTheme.bg,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(
+            color: hasError ? AppTheme.danger : (focusNode.hasFocus ? AppTheme.accent : AppTheme.border),
+            width: focusNode.hasFocus || hasError ? 1.6 : 1,
+          ),
+        ),
+        child: TextField(
+          controller: controller,
+          focusNode: focusNode,
+          style: const TextStyle(color: AppTheme.heading, fontSize: 15),
+          cursorColor: AppTheme.accent,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: AppTheme.muted),
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OptionsCard<T extends Object> extends StatelessWidget {
+  final List<T> values;
+  final AutocompleteOnSelected<T> onSelected;
+  final String Function(T) labelOf;
+  final String Function(T)? metaOf;
+
+  const _OptionsCard({required this.values, required this.onSelected, required this.labelOf, this.metaOf});
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        color: AppTheme.card,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 220, minWidth: 260),
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            shrinkWrap: true,
+            itemCount: values.length,
+            itemBuilder: (context, i) {
+              final v = values[i];
+              final meta = metaOf?.call(v) ?? '';
+              return InkWell(
+                onTap: () => onSelected(v),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          labelOf(v),
+                          style: const TextStyle(color: AppTheme.heading, fontSize: 13.5),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                        ),
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(width: AppTheme.s8),
+                        Flexible(
+                          child: Text(
+                            meta,
+                            style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
