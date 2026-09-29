@@ -24,6 +24,20 @@ async function findUserByIdentifier(identifier) {
   return result.recordset[0];
 }
 
+async function findUserById(id) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('id', sql.BigInt, id)
+    .query(`
+      SELECT id, lodge_id, name, role, is_active, must_reset_password
+      FROM dbo.users
+      WHERE id = @id
+    `);
+
+  return result.recordset[0];
+}
+
 function issueToken(user) {
   const token = jwt.sign(
     { sub: user.id, role: user.role, lodgeId: user.lodge_id ?? null },
@@ -130,4 +144,18 @@ function adminLogin(credentials) {
   return loginWithRoles(credentials, (role) => role === 'SUPERADMIN', 'ADMIN');
 }
 
-module.exports = { login, adminLogin, resetPasswordByIdentifier };
+// Silently renews a still-valid token before it expires, so an open shift
+// isn't logged out mid-use — called by /auth/refresh, which sits behind
+// `authenticate` and so only ever runs with a token that hasn't expired yet.
+// Re-reads the account rather than trusting the JWT's claims: a user
+// deactivated mid-shift must not get another 8 hours out of a token issued
+// before that happened.
+async function refresh(userClaims) {
+  const user = await findUserById(userClaims.sub);
+  if (!user || !user.is_active) {
+    throw new ApiError('Session expired. Sign in again.', 401);
+  }
+  return issueToken(user);
+}
+
+module.exports = { login, adminLogin, resetPasswordByIdentifier, refresh };

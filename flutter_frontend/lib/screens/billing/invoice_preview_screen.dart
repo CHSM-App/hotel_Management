@@ -6,6 +6,7 @@ import '../../core/network/api_error_message.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../bookings/receipt_download.dart';
 import '../theme.dart';
 import 'bill_pdf.dart';
 
@@ -170,7 +171,17 @@ class InvoicePreviewScreen extends ConsumerWidget {
       final where = await BillPdf.download(invoice, lodgeName: lodgeName);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved to $where'), backgroundColor: AppTheme.heading),
+        SnackBar(
+          content: const Text('PDF saved.'),
+          backgroundColor: AppTheme.heading,
+          action: canOpenSavedFile
+              ? SnackBarAction(
+                  label: 'Open',
+                  textColor: Colors.white,
+                  onPressed: () => openSavedFile(where, 'bill.pdf'),
+                )
+              : null,
+        ),
       );
     } catch (e) {
       if (!context.mounted) return;

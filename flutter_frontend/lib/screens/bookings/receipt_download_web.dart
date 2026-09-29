@@ -28,3 +28,9 @@ Future<String> saveBytesToDevice(Uint8List bytes, String filename) async {
   web.URL.revokeObjectURL(url);
   return 'your browser\'s downloads';
 }
+
+/// The browser already shows its own downloads bar with an "Open" action of
+/// its own, so there is nothing for a Snackbar to add here.
+bool get canOpenSavedFile => false;
+
+Future<void> openSavedFile(String path, String filename) async {}

@@ -8,6 +8,7 @@ import '../../data/repositories/billing_impl.dart';
 import '../../data/repositories/events_impl.dart';
 import '../../data/repositories/expenses_impl.dart';
 import '../../data/repositories/food_setup_impl.dart';
+import '../../data/repositories/income_impl.dart';
 import '../../data/repositories/orders_impl.dart';
 import '../../data/repositories/reports_impl.dart';
 import '../../data/repositories/rooms_impl.dart';
@@ -18,6 +19,7 @@ import '../../domain/repository/billing_repo.dart';
 import '../../domain/repository/events_repo.dart';
 import '../../domain/repository/expenses_repo.dart';
 import '../../domain/repository/food_setup_repo.dart';
+import '../../domain/repository/income_repo.dart';
 import '../../domain/repository/orders_repo.dart';
 import '../../domain/repository/reports_repo.dart';
 import '../../domain/repository/rooms_repo.dart';
@@ -68,4 +70,8 @@ final assetsRepositoryProvider = Provider<AssetsRepository>(
 
 final expensesRepositoryProvider = Provider<ExpensesRepository>(
   (ref) => ExpensesImpl(ref.watch(apiServiceProvider)),
+);
+
+final incomeRepositoryProvider = Provider<IncomeRepository>(
+  (ref) => IncomeImpl(ref.watch(apiServiceProvider)),
 );

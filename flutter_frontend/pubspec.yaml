@@ -31,6 +31,10 @@ dependencies:
   # fraction of the size.
   pdf: ^3.11.1
   printing: ^5.13.4
+  # A real .xlsx a report's "Download Excel" button hands over — pure Dart,
+  # no platform channel, so it works the same on every build target this app
+  # ships (unlike the web's write-excel-file, which is a browser-only package).
+  excel: ^4.0.6
   # Where a downloaded receipt actually lands — printing's own Printing class
   # only knows how to hand a file to the print dialog or the share sheet,
   # neither of which is a download in its own right.

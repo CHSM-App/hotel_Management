@@ -193,6 +193,33 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     }
   }
 
+  /// Checks the impact of tagging a category as Interest/Income Tax before
+  /// the caller asks the desk to confirm — mirrors the GET before
+  /// setPendingCategoryTag in ExpensesPanel.jsx's toggleCategoryFlag. Null on
+  /// failure; the caller shows [error] to the desk.
+  Future<CategoryTagImpact?> categoryTagImpact(int categoryId) async {
+    try {
+      return await usecase.categoryTagImpact(categoryId);
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return null;
+    }
+  }
+
+  /// Sets isInterest/isTax on a category — turning a flag off needs no
+  /// confirmation (mirrors toggleCategoryFlag in ExpensesPanel.jsx); turning
+  /// one on is the caller's job to confirm first, via [categoryTagImpact].
+  Future<bool> setCategoryFlag(int categoryId, {bool? isInterest, bool? isTax}) async {
+    try {
+      await usecase.updateCategory(categoryId, isInterest: isInterest, isTax: isTax);
+      await loadCatalogue();
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return false;
+    }
+  }
+
   Future<bool> saveVendor(Map<String, dynamic> body, {int? id}) async {
     state = state.copyWith(submitting: true, clearError: true);
     try {

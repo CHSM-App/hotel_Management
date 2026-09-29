@@ -162,6 +162,20 @@ const kFeatures = <Feature>[
     permission: 'expenses.manage',
     capability: 'hasExpenses',
   ),
+  // Same web module (IncomePanel.jsx): log, recurring schedules and payers
+  // for income outside room/food/function billing (interest, scrap sale,
+  // rent received). Gated on the same hasExpenses flag as Expenses on the
+  // web (frontend/src/lib/propertyProfile.js) — a property that logs
+  // expenses almost certainly wants to log this kind of income too, and
+  // there is no separate add-on toggle for it.
+  Feature(
+    key: 'income',
+    title: 'Other Income',
+    tabLabel: 'Income',
+    icon: Icons.savings_rounded,
+    permission: 'income.manage',
+    capability: 'hasExpenses',
+  ),
   // Feature(
   //   key: 'staff',
   //   title: 'Staff & roles',
@@ -171,14 +185,22 @@ const kFeatures = <Feature>[
   // ),
 
   // ── Insights ─────────────────────────────────────────────────────────────
-  // Feature(
-  //   key: 'reports',
-  //   title: 'Reports',
-  //   tabLabel: 'Reports',
-  //   icon: Icons.bar_chart_rounded,
-  //   permission: 'reports.view',
-  //   capability: 'hasRooms',
-  // ),
+  // Same web module (ReportsPanel.jsx): Overview, Room Bookings, Events &
+  // functions, Food orders, Tax & GST, Profit & Loss, Expenses, Other Income
+  // and Assets, each tab further gated by its own capability/permission
+  // inside the screen (see reports_screen.dart's kReportTabs) the same way
+  // ReportsPanel.jsx's own ALL_TABS.filter() works. No capability gate here:
+  // unlike the single-property-type screens above, Reports has tabs for
+  // every kind of property, so a restaurant-only or rooms-only lodge still
+  // has something to see (GST, Expenses, ...) even without every capability.
+  // Folded into "More" — checked at day's end or month's end, not every shift.
+  Feature(
+    key: 'reports',
+    title: 'Reports',
+    tabLabel: 'Reports',
+    icon: Icons.bar_chart_rounded,
+    permission: 'reports.view',
+  ),
 ];
 
 /// How many sections get their own tab before the rest go behind "More".

@@ -6,6 +6,7 @@ import '../../core/network/api_error_message.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../bookings/receipt_download.dart';
 import '../theme.dart';
 import 'bill_pdf.dart';
 
@@ -132,8 +133,15 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                             if (!mounted) return;
                             messenger.showSnackBar(
                               SnackBar(
-                                content: Text('Saved to $where'),
+                                content: const Text('PDF saved.'),
                                 backgroundColor: AppTheme.heading,
+                                action: canOpenSavedFile
+                                    ? SnackBarAction(
+                                        label: 'Open',
+                                        textColor: Colors.white,
+                                        onPressed: () => openSavedFile(where, 'bill.pdf'),
+                                      )
+                                    : null,
                               ),
                             );
                           }),

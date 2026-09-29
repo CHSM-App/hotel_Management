@@ -16,6 +16,7 @@ class GstReportPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(reportsViewModelProvider).gst;
+    final occupancy = ref.watch(reportsViewModelProvider).occupancy?.valueOrNull;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
@@ -24,7 +25,7 @@ class GstReportPanel extends ConsumerWidget {
         switch (async) {
           null || AsyncLoading() => const ReportLoading(),
           AsyncError(:final error) => ReportError(message: error.toString()),
-          AsyncData(:final value) => _Loaded(report: value),
+          AsyncData(:final value) => _Loaded(report: value, occupancy: occupancy),
           _ => const SizedBox.shrink(),
         },
       ],
@@ -34,13 +35,18 @@ class GstReportPanel extends ConsumerWidget {
 
 class _Loaded extends StatelessWidget {
   final GstSummaryReport report;
+  final OccupancyReport? occupancy;
 
-  const _Loaded({required this.report});
+  const _Loaded({required this.report, this.occupancy});
 
   @override
   Widget build(BuildContext context) {
     final totals = report.totals;
     final byDoc = report.byDocumentType.entries.toList();
+    final streamRows = [
+      for (final entry in report.byRevenueStream.entries)
+        if (entry.value.totalTax > 0) (kRevenueStreamLabel[entry.key] ?? entry.key, entry.value.totalTax),
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,155 +60,108 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Total revenue', value: formatPrice(totals.totalAmount), accent: true),
           ],
         ),
+        if (streamRows.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportBarList(
+            title: 'Tax collected by revenue stream',
+            rows: streamRows,
+            formatValue: (v) => '${formatPrice(v)} tax',
+          ),
+        ],
         if (byDoc.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s16),
           Text('By document type', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppTheme.s8),
-          NeuCard(
-            padding: const EdgeInsets.all(AppTheme.s16),
-            child: Column(
-              children: [
-                for (final entry in byDoc) ...[
-                  _DocTypeRow(type: entry.key, totals: entry.value),
-                  if (entry.key != byDoc.last.key)
-                    const Divider(height: AppTheme.s16, color: AppTheme.border),
+          ReportDataTable(
+            columns: const [
+              ReportTableColumn('Document', width: 130),
+              ReportTableColumn('Bills', width: 60, align: TextAlign.right),
+              ReportTableColumn('Room charges', width: 100, align: TextAlign.right),
+              ReportTableColumn('CGST', width: 90, align: TextAlign.right),
+              ReportTableColumn('SGST', width: 90, align: TextAlign.right),
+              ReportTableColumn('Total', width: 100, align: TextAlign.right),
+            ],
+            rows: [
+              for (final entry in byDoc)
+                [
+                  kDocumentTypeLabel[entry.key] ?? entry.key,
+                  '${entry.value.count}',
+                  formatPrice(entry.value.roomSubtotal),
+                  formatPrice(entry.value.cgstAmount),
+                  formatPrice(entry.value.sgstAmount),
+                  formatPrice(entry.value.totalAmount),
                 ],
+            ],
+            totals: [
+              'Total',
+              '${totals.count}',
+              formatPrice(totals.roomSubtotal),
+              formatPrice(totals.cgstAmount),
+              formatPrice(totals.sgstAmount),
+              formatPrice(totals.totalAmount),
+            ],
+          ),
+        ],
+        const SizedBox(height: AppTheme.s16),
+        CollapsibleRegister(
+          title: 'Bills',
+          child: report.invoices.isEmpty
+              ? const NeuNotice(
+                  icon: Icons.receipt_rounded,
+                  message: 'No bills issued in this date range.',
+                )
+              : ReportDataTable(
+                  columns: const [
+                    ReportTableColumn('Bill no.', width: 90),
+                    ReportTableColumn('Document', width: 90),
+                    ReportTableColumn('Guest', width: 130),
+                    ReportTableColumn('Date', width: 90),
+                    ReportTableColumn('CGST', width: 80, align: TextAlign.right),
+                    ReportTableColumn('SGST', width: 80, align: TextAlign.right),
+                    ReportTableColumn('Total', width: 90, align: TextAlign.right),
+                  ],
+                  rows: [
+                    for (final inv in report.invoices)
+                      [
+                        inv.invoiceNumber ?? '—',
+                        kDocumentTypeLabel[inv.documentType] ?? inv.documentType ?? '—',
+                        inv.guestName ?? '—',
+                        formatIsoDate(inv.createdAt),
+                        formatPrice(inv.cgstAmount),
+                        formatPrice(inv.sgstAmount),
+                        formatPrice(inv.totalAmount),
+                      ],
+                  ],
+                  totals: [
+                    'Total', '', '', '',
+                    formatPrice(totals.cgstAmount),
+                    formatPrice(totals.sgstAmount),
+                    formatPrice(totals.totalAmount),
+                  ],
+                ),
+        ),
+        if (occupancy != null && occupancy!.totalRooms > 0) ...[
+          const SizedBox(height: AppTheme.s16),
+          CollapsibleRegister(
+            title: 'Daily occupancy',
+            child: ReportDataTable(
+              columns: const [
+                ReportTableColumn('Date', width: 110),
+                ReportTableColumn('Occupied', width: 90, align: TextAlign.right),
+                ReportTableColumn('Occupancy', width: 90, align: TextAlign.right),
+              ],
+              rows: [
+                for (final day in occupancy!.days)
+                  [
+                    formatIsoDate(day.date),
+                    '${day.occupiedRooms} / ${day.totalRooms}',
+                    '${day.occupancyPercent}%',
+                  ],
               ],
             ),
           ),
         ],
-        const SizedBox(height: AppTheme.s16),
-        Text('Bills', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppTheme.s8),
-        if (report.invoices.isEmpty)
-          const NeuNotice(
-            icon: Icons.receipt_rounded,
-            message: 'No bills issued in this date range.',
-          )
-        else
-          for (final inv in report.invoices)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
-              child: _InvoiceCard(invoice: inv),
-            ),
       ],
-    );
-  }
-}
-
-class _DocTypeRow extends StatelessWidget {
-  final String type;
-  final GstDocumentTotals totals;
-
-  const _DocTypeRow({required this.type, required this.totals});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: Text(
-            kDocumentTypeLabel[type] ?? type,
-            style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w500),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            '${totals.count}',
-            style: Theme.of(context).textTheme.bodyMedium,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(
-            formatPrice(totals.totalAmount),
-            textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.accent),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _InvoiceCard extends StatelessWidget {
-  final GstInvoiceRow invoice;
-
-  const _InvoiceCard({required this.invoice});
-
-  @override
-  Widget build(BuildContext context) {
-    final inv = invoice;
-    return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  inv.invoiceNumber ?? '—',
-                  style: Theme.of(context).textTheme.titleSmall,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Text(
-                formatPrice(inv.totalAmount),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.accent),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            inv.guestName ?? '—',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.text),
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: AppTheme.s8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  kDocumentTypeLabel[inv.documentType] ?? inv.documentType ?? '—',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Text(
-                formatIsoDate(inv.createdAt),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  'CGST ${formatPrice(inv.cgstAmount)}',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: AppTheme.s12),
-              Flexible(
-                child: Text(
-                  'SGST ${formatPrice(inv.sgstAmount)}',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }

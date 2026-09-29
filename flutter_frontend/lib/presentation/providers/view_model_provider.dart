@@ -7,6 +7,7 @@ import '../view_models/billing_viewmodel.dart';
 import '../view_models/events_viewmodel.dart';
 import '../view_models/expenses_viewmodel.dart';
 import '../view_models/food_settings_viewmodel.dart';
+import '../view_models/income_viewmodel.dart';
 import '../view_models/inventory_viewmodel.dart';
 import '../view_models/menu_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
@@ -49,11 +50,19 @@ final roomsViewModelProvider =
       (ref) => RoomsViewModel(ref.watch(roomsUsecaseProvider)),
     );
 
-/// autoDispose: an owner who leaves Reports should not keep four report
-/// queries warm in memory for a section they may not reopen this session.
+/// autoDispose: an owner who leaves Reports should not keep this screen's
+/// reports warm in memory for a section they may not reopen this session.
+/// Depends on the Expenses/Assets/Income usecases too — the Reports >
+/// Expenses/Assets/Other Income tabs reuse those modules' own fetches rather
+/// than duplicating them behind a report-specific endpoint.
 final reportsViewModelProvider =
     StateNotifierProvider.autoDispose<ReportsViewModel, ReportsState>(
-      (ref) => ReportsViewModel(ref.watch(reportsUsecaseProvider)),
+      (ref) => ReportsViewModel(
+        ref.watch(reportsUsecaseProvider),
+        ref.watch(expensesUsecaseProvider),
+        ref.watch(assetsUsecaseProvider),
+        ref.watch(incomeUsecaseProvider),
+      ),
     );
 
 /// Menu & QR codes. Four view models sharing one usecase, split the way the
@@ -100,4 +109,10 @@ final assetsViewModelProvider =
 final expensesViewModelProvider =
     StateNotifierProvider.autoDispose<ExpensesViewModel, ExpensesState>(
       (ref) => ExpensesViewModel(ref.watch(expensesUsecaseProvider)),
+    );
+
+/// Other income tracking. Same treatment as Expenses.
+final incomeViewModelProvider =
+    StateNotifierProvider.autoDispose<IncomeViewModel, IncomeState>(
+      (ref) => IncomeViewModel(ref.watch(incomeUsecaseProvider)),
     );

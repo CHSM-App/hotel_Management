@@ -10,9 +10,9 @@ import 'interceptor.dart';
 ///
 /// Nothing in this setup is asynchronous, so the blueprint's `FutureProvider` +
 /// `.value!` at every call site bought nothing but a force-unwrap that could
-/// throw (§15.1). There is also no bare second Dio here: that split existed
-/// only to keep a token refresh from recursing through its own interceptor, and
-/// this backend has no refresh to make.
+/// throw (§15.1). The bare second Dio the blueprint used to avoid a token
+/// refresh recursing through its own interceptor still exists — it just lives
+/// inside TokenInterceptor itself now, since nothing outside it needs one.
 final dioProvider = Provider<Dio>((ref) {
   final dio = Dio(
     BaseOptions(

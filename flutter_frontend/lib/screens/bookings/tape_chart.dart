@@ -100,13 +100,16 @@ class _TapeChartState extends ConsumerState<TapeChart>
 
   void _jumpTo(String category) {
     if (!_vScroll.hasClients) return;
-    final targetBox = _sectionKeys[category]?.currentContext?.findRenderObject();
+    final targetBox = _sectionKeys[category]?.currentContext
+        ?.findRenderObject();
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (targetBox is! RenderBox || !targetBox.attached) return;
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
     // The section's current distance from the top of the scroll view as
     // actually painted right now.
-    final sectionTop = targetBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
+    final sectionTop = targetBox
+        .localToGlobal(Offset.zero, ancestor: viewportBox)
+        .dy;
     // What the pinned header sliver actually reserves in the scroll layout —
     // not whatever its `OverflowBox`'d content happens to measure, which can
     // paint a few pixels taller or shorter and would otherwise leave the
@@ -345,89 +348,101 @@ class _TapeChartState extends ConsumerState<TapeChart>
     // overscroll never fires at all on a chart wide enough to fill the
     // screen with room to spare, and looks like scrolling has simply
     // stopped instead of continuing to open more nights.
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        final metrics = notification.metrics;
-        if (metrics.axis != Axis.horizontal || metrics.maxScrollExtent <= 0) {
+    // Pulling down on the room list re-fetches the chart — the same way a
+    // pull-to-refresh works everywhere else in the app, so a desk that
+    // suspects a booking has changed elsewhere (another device, the web
+    // front desk) has a way to force a reload instead of waiting on the
+    // usual triggers (opening a stay, taking a booking) to happen to refetch.
+    return RefreshIndicator(
+      onRefresh: () => ref.read(bookingViewModelProvider.notifier).loadChart(),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          final metrics = notification.metrics;
+          if (metrics.axis != Axis.horizontal || metrics.maxScrollExtent <= 0) {
+            return false;
+          }
+          if (metrics.extentAfter < _growWithinPx) {
+            _handleNearEdge(metrics, true);
+          } else if (metrics.extentBefore < _growWithinPx) {
+            _handleNearEdge(metrics, false);
+          }
           return false;
-        }
-        if (metrics.extentAfter < _growWithinPx) {
-          _handleNearEdge(metrics, true);
-        } else if (metrics.extentBefore < _growWithinPx) {
-          _handleNearEdge(metrics, false);
-        }
-        return false;
-      },
-      child: CustomScrollView(
-        key: _scrollViewKey,
-        controller: _vScroll,
-        slivers: [
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _DateHeaderDelegate(
-              sections: sections.length > 1 ? sections : null,
-              onTapChip: _jumpTo,
-              onTapToday: _scrollToToday,
-              dates: dates,
-              today: todayDate,
-              tile: tile,
-              roomCol: roomCol,
-              hSync: _hSync,
-            ),
-          ),
-          SliverPadding(
-            // Clears the floating New booking button — padding on the whole
-            // chart would shrink the header and legend too and still leave
-            // the last card's own scroll area squeezed against the button;
-            // this instead gives only the trailing space the extra room.
-            padding: const EdgeInsets.only(top: AppTheme.s12, bottom: 96),
-            // A plain Column in one SliverToBoxAdapter rather than a
-            // SliverList: a SliverList's children are built lazily as they
-            // scroll near the viewport, even with a fixed
-            // SliverChildListDelegate, so a category several bands below the
-            // fold has no mounted RenderObject — and no findRenderObject()
-            // for its GlobalKey — until the desk has already scrolled most
-            // of the way to it by hand. That left [_jumpTo] silently doing
-            // nothing for exactly the chip taps it exists for: the ones
-            // reaching past what's currently on screen. There are only ever
-            // a handful of categories, so building them all up front costs
-            // nothing worth lazily deferring.
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  for (final section in sections) ...[
-                    Container(
-                      key: _keyFor(section.categoryName),
-                      decoration: BoxDecoration(
-                        color: AppTheme.card,
-                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                        border: Border.all(color: AppTheme.border),
-                        boxShadow: AppTheme.extruded,
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: _CategoryBand(
-                        section: section,
-                        dates: dates,
-                        today: todayDate,
-                        tile: tile,
-                        roomCol: roomCol,
-                        rowHeight: rowHeight,
-                        hSync: _hSync,
-                        onTapStay: (b, room) => _openBookingDetail(context, b),
-                        onTapVacant: (roomId, day) =>
-                            _takeBooking(context, roomId: roomId, checkIn: day),
-                        onTapDraft: (d) => _openDraft(context, d.id),
-                        hitIds: hitIds,
-                        activeHitId: activeHitId,
-                      ),
-                    ),
-                    const SizedBox(height: AppTheme.s12),
-                  ],
-                ],
+        },
+        child: CustomScrollView(
+          key: _scrollViewKey,
+          controller: _vScroll,
+          slivers: [
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _DateHeaderDelegate(
+                sections: sections.length > 1 ? sections : null,
+                onTapChip: _jumpTo,
+                onTapToday: _scrollToToday,
+                dates: dates,
+                today: todayDate,
+                tile: tile,
+                roomCol: roomCol,
+                hSync: _hSync,
               ),
             ),
-          ),
-        ],
+            SliverPadding(
+              // Clears the floating New booking button — padding on the whole
+              // chart would shrink the header and legend too and still leave
+              // the last card's own scroll area squeezed against the button;
+              // this instead gives only the trailing space the extra room.
+              padding: const EdgeInsets.only(top: AppTheme.s12, bottom: 96),
+              // A plain Column in one SliverToBoxAdapter rather than a
+              // SliverList: a SliverList's children are built lazily as they
+              // scroll near the viewport, even with a fixed
+              // SliverChildListDelegate, so a category several bands below the
+              // fold has no mounted RenderObject — and no findRenderObject()
+              // for its GlobalKey — until the desk has already scrolled most
+              // of the way to it by hand. That left [_jumpTo] silently doing
+              // nothing for exactly the chip taps it exists for: the ones
+              // reaching past what's currently on screen. There are only ever
+              // a handful of categories, so building them all up front costs
+              // nothing worth lazily deferring.
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    for (final section in sections) ...[
+                      Container(
+                        key: _keyFor(section.categoryName),
+                        decoration: BoxDecoration(
+                          color: AppTheme.card,
+                          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                          border: Border.all(color: AppTheme.border),
+                          boxShadow: AppTheme.extruded,
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: _CategoryBand(
+                          section: section,
+                          dates: dates,
+                          today: todayDate,
+                          tile: tile,
+                          roomCol: roomCol,
+                          rowHeight: rowHeight,
+                          hSync: _hSync,
+                          onTapStay: (b, room) =>
+                              _openBookingDetail(context, b),
+                          onTapVacant: (roomId, day) => _takeBooking(
+                            context,
+                            roomId: roomId,
+                            checkIn: day,
+                          ),
+                          onTapDraft: (d) => _openDraft(context, d.id),
+                          hitIds: hitIds,
+                          activeHitId: activeHitId,
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -455,10 +470,8 @@ class _TapeChartState extends ConsumerState<TapeChart>
   }) async {
     final booked = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => TakeBookingScreen(
-          presetRoomId: roomId,
-          presetCheckIn: checkIn,
-        ),
+        builder: (_) =>
+            TakeBookingScreen(presetRoomId: roomId, presetCheckIn: checkIn),
       ),
     );
     if (booked == true) {
@@ -768,10 +781,7 @@ class _CategoryChip extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 '$count',
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
               ),
               const SizedBox(width: 6),
               Text(
@@ -975,7 +985,11 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     // A pinned sliver's height is fixed the moment it's laid out — it can't
     // grow later the way a normal box can. The chip pills and the date
     // header's own tiles are all sized off fixed pixel heights assuming a
@@ -1081,8 +1095,18 @@ class _DateHeader extends StatefulWidget {
 
   static const _weekdayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   static const _months = [
-    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
-    'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+    'JANUARY',
+    'FEBRUARY',
+    'MARCH',
+    'APRIL',
+    'MAY',
+    'JUNE',
+    'JULY',
+    'AUGUST',
+    'SEPTEMBER',
+    'OCTOBER',
+    'NOVEMBER',
+    'DECEMBER',
   ];
 
   @override
@@ -1182,96 +1206,101 @@ class _DateHeaderState extends State<_DateHeader> {
                   final visibleCount = tile <= 0
                       ? 0
                       : (constraints.maxWidth / tile).ceil();
-                  final todayVisible = todayIndex != -1 &&
+                  final todayVisible =
+                      todayIndex != -1 &&
                       todayIndex >= visibleIndex &&
                       todayIndex < visibleIndex + visibleCount;
                   return Stack(
-                children: [
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    controller: _tracker,
-                    physics: const NeverScrollableScrollPhysics(),
-                    child: Row(
-                      children: [
-                        for (final span in monthSpans)
-                          Container(
-                            width: tile * span.$2,
-                            height: 26,
-                            decoration: const BoxDecoration(
-                              color: AppTheme.bg,
-                              border: Border(
-                                bottom: BorderSide(color: AppTheme.border),
+                    children: [
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        controller: _tracker,
+                        physics: const NeverScrollableScrollPhysics(),
+                        child: Row(
+                          children: [
+                            for (final span in monthSpans)
+                              Container(
+                                width: tile * span.$2,
+                                height: 26,
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.bg,
+                                  border: Border(
+                                    bottom: BorderSide(color: AppTheme.border),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  // The sticky label itself never scrolls — it sits pinned at
-                  // the left edge of this strip and simply changes text as
-                  // [_onScroll] fires, the same way a spreadsheet's own frozen
-                  // corner reads off whatever is scrolled beneath it rather
-                  // than moving with the data.
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: Container(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        stickyLabel,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4,
+                          ],
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ),
-                  // A quick way back once today has actually scrolled out of
-                  // view — sits pinned at the right for the same reason the
-                  // month label is pinned at the left, so it stays reachable
-                  // no matter how far the grid itself has scrolled.
-                  if (!todayVisible)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      child: Container(
-                        color: AppTheme.bg,
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Center(
-                          child: GestureDetector(
-                            onTap: widget.onTapToday,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.accent.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: AppTheme.accent.withValues(alpha: 0.4),
-                                ),
-                              ),
-                              child: const Text(
-                                'Today',
-                                style: TextStyle(
-                                  color: AppTheme.accent,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+                      // The sticky label itself never scrolls — it sits pinned at
+                      // the left edge of this strip and simply changes text as
+                      // [_onScroll] fires, the same way a spreadsheet's own frozen
+                      // corner reads off whatever is scrolled beneath it rather
+                      // than moving with the data.
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            stickyLabel,
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
-                    ),
-                ],
+                      // A quick way back once today has actually scrolled out of
+                      // view — sits pinned at the right for the same reason the
+                      // month label is pinned at the left, so it stays reachable
+                      // no matter how far the grid itself has scrolled.
+                      if (!todayVisible)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            color: AppTheme.bg,
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Center(
+                              child: GestureDetector(
+                                onTap: widget.onTapToday,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accent.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: AppTheme.accent.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Today',
+                                    style: TextStyle(
+                                      color: AppTheme.accent,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),
@@ -1437,10 +1466,7 @@ class _CategoryBand extends StatelessWidget {
               ),
               const SizedBox(width: AppTheme.s8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(999),
@@ -1632,19 +1658,37 @@ class _RoomRow extends StatelessWidget {
                           // rather than a row of separately rounded, gapped
                           // boxes.
                           isRunStart:
-                              room.stayOn(d.subtract(const Duration(days: 1)))
+                              room
+                                  .stayOn(d.subtract(const Duration(days: 1)))
                                   ?.id !=
                               room.stayOn(d)?.id,
                           isRunEnd:
-                              room.stayOn(d.add(const Duration(days: 1)))
-                                  ?.id !=
+                              room.stayOn(d.add(const Duration(days: 1)))?.id !=
                               room.stayOn(d)?.id,
+                          // Same continuity check as a real stay's run, but
+                          // against the draft parked on the night — without
+                          // this a multi-night draft drew as a row of
+                          // separately rounded, gapped boxes instead of the
+                          // one unbroken bar a run of the same draft's own
+                          // nights should read as.
+                          isDraftRunStart:
+                              room
+                                  .draftOn(d.subtract(const Duration(days: 1)))
+                                  ?.id !=
+                              room.draftOn(d)?.id,
+                          isDraftRunEnd:
+                              room
+                                  .draftOn(d.add(const Duration(days: 1)))
+                                  ?.id !=
+                              room.draftOn(d)?.id,
                           isToday: _isSameDay(d, today),
                           isPast: d.isBefore(today),
-                          isWeekend: d.weekday == DateTime.saturday ||
+                          isWeekend:
+                              d.weekday == DateTime.saturday ||
                               d.weekday == DateTime.sunday,
                           isHit: hitIds.contains(room.stayOn(d)?.id),
-                          isActiveHit: activeHitId != null &&
+                          isActiveHit:
+                              activeHitId != null &&
                               room.stayOn(d)?.id == activeHitId,
                           size: tile,
                           height: rowHeight,
@@ -1679,6 +1723,8 @@ class _Tile extends StatelessWidget {
   final TapeChartDraft? draft;
   final bool isRunStart;
   final bool isRunEnd;
+  final bool isDraftRunStart;
+  final bool isDraftRunEnd;
   final bool isToday;
   final bool isPast;
   final bool isWeekend;
@@ -1696,6 +1742,8 @@ class _Tile extends StatelessWidget {
     required this.draft,
     required this.isRunStart,
     required this.isRunEnd,
+    required this.isDraftRunStart,
+    required this.isDraftRunEnd,
     required this.isToday,
     required this.isPast,
     required this.isWeekend,
@@ -1750,11 +1798,16 @@ class _Tile extends StatelessWidget {
     // way the web tape chart draws an empty grid. A stay's own nights are
     // never rounded or gapped except at the two ends of the run itself, so
     // they read as one continuous bar the whole length of the booking
-    // rather than a row of separately boxed nights. A partial dormitory
-    // night stands alone the same way a vacant one does — several bookings
-    // can share it, so there is no one run to draw as a continuous bar.
-    final roundLeft = s == null || isRunStart || isPartial;
-    final roundRight = s == null || isRunEnd || isPartial;
+    // rather than a row of separately boxed nights — a run of nights parked
+    // under the same draft reads the same way. A partial dormitory night
+    // stands alone the same way a vacant one does — several bookings can
+    // share it, so there is no one run to draw as a continuous bar.
+    final roundLeft =
+        isPartial ||
+        (s != null ? isRunStart : (d != null ? isDraftRunStart : true));
+    final roundRight =
+        isPartial ||
+        (s != null ? isRunEnd : (d != null ? isDraftRunEnd : true));
     // A vacant night in the past still opens a booking, exactly as the web
     // tape chart's own click does — a stay taken on paper over the weekend
     // has to be enterable against the nights it actually happened on. Past
@@ -1807,10 +1860,10 @@ class _Tile extends StatelessWidget {
             // A search hit rings violet — a colour nothing else on the chart
             // uses, the same way the web tape chart marks it — brighter and
             // thicker on the one hit the stepper is actually on. Today's own
-            // ring is skipped once a stay already fills the night: the fill
-            // colour already says the room is taken, and a ring drawn on
-            // just one night of a run would cut a notch into an otherwise
-            // unbroken bar.
+            // ring is skipped once a stay or a draft already fills the
+            // night: the fill colour already says the room is taken (or
+            // parked), and a ring drawn on just one night of a run would cut
+            // a notch into an otherwise unbroken bar.
             border: isActiveHit
                 ? Border.all(color: const Color(0xFF7C3AED), width: 2.2)
                 : isHit
@@ -1818,7 +1871,7 @@ class _Tile extends StatelessWidget {
                     color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
                     width: 1.6,
                   )
-                : (isToday && s == null && !isPartial)
+                : (isToday && s == null && d == null && !isPartial)
                 ? Border.all(color: AppTheme.accent, width: 1.4)
                 : null,
           ),

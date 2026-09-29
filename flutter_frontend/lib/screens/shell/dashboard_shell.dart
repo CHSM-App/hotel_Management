@@ -14,9 +14,10 @@ import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../food/menu_setup_screen.dart';
 import '../food/orders_screen.dart';
+import '../income/income_screen.dart';
 import '../placeholder_screen.dart';
 import '../profile/profile_screen.dart';
-// import '../reports/reports_screen.dart';
+import '../reports/reports_screen.dart';
 import '../rooms/rooms_rates_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
@@ -87,8 +88,11 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: fullScreen ? AppTheme.bg : AppTheme.accent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
+        // The overflow screens (Rooms & rates, Menu & QR codes) sit on
+        // AppTheme.bg, which is near-white — white icons there would vanish
+        // the way they don't on the purple top bar the other tabs use.
+        statusBarIconBrightness: fullScreen ? Brightness.dark : Brightness.light,
+        statusBarBrightness: fullScreen ? Brightness.light : Brightness.dark,
       ),
       child: Scaffold(
         body: Column(
@@ -149,6 +153,15 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       orElse: () => features.first,
     );
 
+    // Rooms & rates and Menu & QR codes only ever arrive from the More list,
+    // never from their own bottom-bar tab, so nothing else lets the desk get
+    // back to that list once inside one — a back row does the one thing a
+    // pushed page's AppBar would have, without turning this into a real
+    // Navigator.push (which would fight the tab bar's own section switching).
+    final (_, overflowFeatures) = _splitTabs(features);
+    final cameFromMore = overflowFeatures.any((f) => f.key == active.key);
+    final backToMore = cameFromMore ? () => setState(() => _section = _kMoreKey) : null;
+
     Widget screen;
     switch (active.key) {
       case 'bookings':
@@ -169,28 +182,24 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         screen = const AssetsScreen();
       case 'expenses':
         screen = const ExpensesScreen();
-      // case 'reports':
-      //   screen = const ReportsScreen();
+      case 'income':
+        screen = const IncomeScreen();
+      case 'reports':
+        // Reports owns its title row itself, merging the back arrow with the
+        // PDF/Excel download buttons in one row — the generic _BackToMoreRow
+        // below knows nothing about those, and stacking it above would have
+        // printed "Reports" twice.
+        screen = ReportsScreen(onBack: backToMore);
       default:
         // Every other section is deliberately still a stub — see the file.
         screen = PlaceholderScreen(feature: active);
     }
 
-    // Rooms & rates and Menu & QR codes only ever arrive from the More list,
-    // never from their own bottom-bar tab, so nothing else lets the desk get
-    // back to that list once inside one — a back row does the one thing a
-    // pushed page's AppBar would have, without turning this into a real
-    // Navigator.push (which would fight the tab bar's own section switching).
-    final (_, overflowFeatures) = _splitTabs(features);
-    final cameFromMore = overflowFeatures.any((f) => f.key == active.key);
-    if (!cameFromMore) return screen;
+    if (!cameFromMore || active.key == 'reports') return screen;
 
     return Column(
       children: [
-        _BackToMoreRow(
-          title: active.title,
-          onBack: () => setState(() => _section = _kMoreKey),
-        ),
+        _BackToMoreRow(title: active.title, onBack: backToMore!),
         Expanded(child: screen),
       ],
     );
@@ -321,6 +330,8 @@ class _MoreList extends StatelessWidget {
     'food': AppTheme.reserved,
     'assets': AppTheme.edit,
     'expenses': AppTheme.draft,
+    'income': AppTheme.vacant,
+    'reports': AppTheme.checkout,
   };
 
   Color _tintFor(Feature f) => _tints[f.key] ?? AppTheme.accent;

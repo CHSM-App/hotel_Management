@@ -7,6 +7,7 @@ import '../../domain/usecase/billing_usecase.dart';
 import '../../domain/usecase/events_usecase.dart';
 import '../../domain/usecase/expenses_usecase.dart';
 import '../../domain/usecase/food_setup_usecase.dart';
+import '../../domain/usecase/income_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
 import '../../domain/usecase/reports_usecase.dart';
 import '../../domain/usecase/rooms_usecase.dart';
@@ -51,4 +52,8 @@ final assetsUsecaseProvider = Provider<AssetsUsecase>(
 
 final expensesUsecaseProvider = Provider<ExpensesUsecase>(
   (ref) => ExpensesUsecase(ref.watch(expensesRepositoryProvider)),
+);
+
+final incomeUsecaseProvider = Provider<IncomeUsecase>(
+  (ref) => IncomeUsecase(ref.watch(incomeRepositoryProvider)),
 );

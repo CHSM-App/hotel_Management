@@ -16,6 +16,7 @@ import '../theme.dart';
 import 'advance_receipt_screen.dart';
 import 'booking_actions.dart';
 import 'id_proof_viewer_screen.dart';
+import 'receipt_download.dart';
 import 'take_booking_screen.dart';
 
 /// One stay, in full.
@@ -1252,8 +1253,15 @@ class _BillSectionState extends State<_BillSection> {
                   if (!mounted) return;
                   messenger.showSnackBar(
                     SnackBar(
-                      content: Text('Saved to $where'),
+                      content: const Text('PDF saved.'),
                       backgroundColor: AppTheme.heading,
+                      action: canOpenSavedFile
+                          ? SnackBarAction(
+                              label: 'Open',
+                              textColor: Colors.white,
+                              onPressed: () => openSavedFile(where, 'bill.pdf'),
+                            )
+                          : null,
                     ),
                   );
                 }),

@@ -100,6 +100,13 @@ class TokenNotifier extends StateNotifier<TokenState> {
     await TokenStorage.clear();
     state = state.copyWith(clearSession: true);
   }
+
+  /// Swap in a token /auth/refresh just renewed, leaving the rest of the
+  /// session (role, name, lodge) untouched.
+  Future<void> updateToken(String token) async {
+    await TokenStorage.saveSession(token, state.role ?? '');
+    state = state.copyWith(token: token);
+  }
 }
 
 final tokenProvider = StateNotifierProvider<TokenNotifier, TokenState>(

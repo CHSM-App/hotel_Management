@@ -10,7 +10,9 @@ abstract class ExpensesRepository {
 
   Future<ExpenseCategory> createCategory(String name);
 
-  Future<void> updateCategory(int id, {String? name, bool? isActive});
+  Future<void> updateCategory(int id, {String? name, bool? isActive, bool? isInterest, bool? isTax});
+
+  Future<CategoryTagImpact> categoryTagImpact(int id);
 
   Future<List<Vendor>> vendors({bool includeInactive = false});
 

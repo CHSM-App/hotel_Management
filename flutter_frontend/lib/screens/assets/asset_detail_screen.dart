@@ -443,7 +443,19 @@ class _QrCard extends StatelessWidget {
               final messenger = ScaffoldMessenger.of(context);
               try {
                 final where = await _download();
-                messenger.showSnackBar(SnackBar(content: Text('Saved to $where'), backgroundColor: AppTheme.heading));
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: const Text('PDF saved.'),
+                    backgroundColor: AppTheme.heading,
+                    action: canOpenSavedFile
+                        ? SnackBarAction(
+                            label: 'Open',
+                            textColor: Colors.white,
+                            onPressed: () => openSavedFile(where, 'qr.pdf'),
+                          )
+                        : null,
+                  ),
+                );
               } catch (_) {
                 messenger.showSnackBar(const SnackBar(content: Text('Could not save the QR code.')));
               }
