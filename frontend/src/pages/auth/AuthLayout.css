@@ -166,6 +166,11 @@
   text-shadow: 0 1px 3px rgba(4, 10, 18, 0.6);
 }
 
+.auth-panel__foot a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .auth-brand {
   background: var(--brand);
   color: #eef4f2;

@@ -12,6 +12,8 @@ const {
   listOpenFoodTabsHandler,
   previewFoodBillHandler,
   issueFoodInvoiceHandler,
+  listInHouseGuestsHandler,
+  addTabToRoomBillHandler,
   previewBillHandler,
   issueInvoiceHandler,
   listInvoicesHandler,
@@ -53,6 +55,8 @@ router.get('/events/:eventId/advance-receipts', authenticate, staff, listEventAd
 // food is served to someone with no stay to charge it to, each billed on its
 // own document.
 router.get('/food-tabs', authenticate, staff, listOpenFoodTabsHandler);
+router.get('/food-tabs/in-house-guests', authenticate, staff, listInHouseGuestsHandler);
+router.post('/food-tabs/:tab/add-to-room', authenticate, staff, addTabToRoomBillHandler);
 router.get('/food-tabs/:tab/preview', authenticate, staff, previewFoodBillHandler);
 router.post('/food-tabs/:tab/invoice', authenticate, staff, issueFoodInvoiceHandler);
 // Advance receipts. Taken at the desk when the booking is made, so these sit

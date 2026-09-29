@@ -1347,6 +1347,10 @@ IF COL_LENGTH('dbo.food_order_items', 'menu_item_portion_id') IS NULL
 IF COL_LENGTH('dbo.food_order_items', 'ready_at') IS NULL
     EXEC('ALTER TABLE dbo.food_order_items ADD ready_at DATETIMEOFFSET NULL');
 
+-- Per-dish hand-over by the captain (see migration 102).
+IF COL_LENGTH('dbo.food_order_items', 'delivered_at') IS NULL
+    EXEC('ALTER TABLE dbo.food_order_items ADD delivered_at DATETIMEOFFSET NULL');
+
 -- ---------------------------------------------------------------------------
 -- Retiring the first cut of portions
 -- ---------------------------------------------------------------------------
@@ -2214,6 +2218,9 @@ CREATE TABLE dbo.asset_categories (
     depreciation_block          NVARCHAR(40) NULL,
     depreciation_rate_percent   DECIMAL(5,2) NULL
         CONSTRAINT ck_asset_categories_depreciation_rate CHECK (depreciation_rate_percent IS NULL OR (depreciation_rate_percent >= 0 AND depreciation_rate_percent <= 100)),
+    -- 'WDV' declining balance (default) or 'SLM' straight-line — migration 103.
+    depreciation_method         NVARCHAR(3) NOT NULL CONSTRAINT df_asset_categories_depreciation_method DEFAULT 'WDV'
+        CONSTRAINT ck_asset_categories_depreciation_method CHECK (depreciation_method IN ('WDV', 'SLM')),
     is_active                   BIT NOT NULL DEFAULT 1,
     created_at                  DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     CONSTRAINT uq_asset_categories_lodge_name UNIQUE (lodge_id, name)
@@ -2629,21 +2636,8 @@ IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'CA
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'CAPTAIN', 'Captain', 'Takes orders from tables and rooms.', 1, '["orders.take"]');
 
--- Three more built-ins (migration 084), each one existing permission (or two)
--- under a job title, so an owner doesn't recreate it by hand. Events Manager
--- is hidden at a property with no function diary by roleAvailableFor;
--- Assets Manager and Accountant have no capability gate — every property
--- tracks equipment and its own costs.
-IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'EVENTS_MANAGER')
-INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
-    (NULL, 'EVENTS_MANAGER', 'Events Manager', 'Runs the function diary — enquiries, quotes and event bills.', 1,
-     '["events.manage"]');
-
-IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ASSETS_MANAGER')
-INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
-    (NULL, 'ASSETS_MANAGER', 'Assets Manager', 'Equipment, warranty/AMC and maintenance work orders.', 1,
-     '["assets.manage"]');
-
+-- Accountant (migration 084): billing + expenses under a job title. Events
+-- Manager and Assets Manager were dropped again (migration 101).
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'ACCOUNTANT', 'Accountant', 'Billing, payments and property expenses.', 1,

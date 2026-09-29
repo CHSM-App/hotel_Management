@@ -348,15 +348,14 @@ export default function OwnerDashboard() {
     visibleFeatures.find((f) => f.key === LANDING_SECTION) ||
     visibleFeatures[0];
 
-  // The rail keeps whatever scroll position it was at when a section was
-  // opened from a group further down the list. Without this, switching to a
-  // short screen after scrolling the rail to reach a group near the bottom
-  // left the rail scrolled away from the current section instead of showing
-  // it selected at the top.
+  // The rail keeps its own scroll position when a section is picked.
   const sidebarScrollRef = useRef(null);
-  useEffect(() => {
-    sidebarScrollRef.current?.scrollTo(0, 0);
-  }, [activeFeature?.key]);
+
+  // Each group is a dropdown. Until you click one, only the group holding the
+  // open section is expanded; a click then overrides that for the group.
+  const [groupToggle, setGroupToggle] = useState({});
+  const groupOpen = (group) => groupToggle[group] ?? group === activeFeature?.group;
+  const toggleGroup = (group) => setGroupToggle((t) => ({ ...t, [group]: !groupOpen(group) }));
 
   const sidebarGroups = SIDEBAR_GROUP_ORDER.map((group) => ({
     group,
@@ -472,7 +471,18 @@ export default function OwnerDashboard() {
           <div className="dash-sidebar__scroll" ref={sidebarScrollRef}>
             {sidebarGroups.map(({ group, features }) => (
               <div className="dash-sidebar__group" key={group}>
-                <div className="dash-sidebar__label">{group}</div>
+                <button
+                  type="button"
+                  className="dash-sidebar__label dash-sidebar__label--toggle"
+                  aria-expanded={groupOpen(group)}
+                  onClick={() => toggleGroup(group)}
+                >
+                  {group}
+                  <span className="dash-sidebar__chevron" aria-hidden="true">
+                    ▾
+                  </span>
+                </button>
+                {groupOpen(group) && (
                 <ul className="dash-sidebar__list">
                   {features.map((feature) => (
                     <li key={feature.key}>
@@ -508,6 +518,7 @@ export default function OwnerDashboard() {
                     </li>
                   ))}
                 </ul>
+                )}
               </div>
             ))}
 
@@ -593,8 +604,37 @@ export default function OwnerDashboard() {
                 <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} />
               )}
 
+              {activeFeature && activeFeature.key === 'restaurantBilling' && (
+                <Billing lodge={me.lodge} stream="restaurant" />
+              )}
+
+              {activeFeature && activeFeature.key === 'eventBilling' && (
+                <Billing lodge={me.lodge} stream="event" />
+              )}
+
               {activeFeature && activeFeature.key === 'events' && (
                 <Events
+                  only="diary"
+                  lodge={me.lodge}
+                  refreshKey={eventsRefresh}
+                  onBillEvent={(eventId) => setBillNowEventId(eventId ?? null)}
+                  onViewInvoice={(invoiceId) => setViewEventInvoiceId(invoiceId ?? null)}
+                />
+              )}
+
+              {activeFeature && activeFeature.key === 'eventRegister' && (
+                <Events
+                  only="list"
+                  lodge={me.lodge}
+                  refreshKey={eventsRefresh}
+                  onBillEvent={(eventId) => setBillNowEventId(eventId ?? null)}
+                  onViewInvoice={(invoiceId) => setViewEventInvoiceId(invoiceId ?? null)}
+                />
+              )}
+
+              {activeFeature && activeFeature.key === 'eventSetup' && (
+                <Events
+                  only="setup"
                   lodge={me.lodge}
                   refreshKey={eventsRefresh}
                   onBillEvent={(eventId) => setBillNowEventId(eventId ?? null)}
@@ -652,7 +692,7 @@ export default function OwnerDashboard() {
                   stays that were billed, but the bills themselves are another
                   screen's job, and that is the screen the tile is asking for. */}
               {activeFeature && activeFeature.key === 'guests' && (
-                <GuestRegister onOpenDraft={openDraftInChart} onOpenSection={showSection} />
+                <GuestRegister onOpenDraft={openDraftInChart} onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)} onOpenSection={showSection} />
               )}
 
               {activeFeature && activeFeature.key === 'reports' && (
@@ -685,7 +725,7 @@ export default function OwnerDashboard() {
               )}
 
               {activeFeature &&
-                !['rooms', 'bookings', 'billing', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'bookings', 'billing', 'restaurantBilling', 'eventBilling', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

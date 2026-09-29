@@ -56,8 +56,9 @@ const TABLE_SORT_ACCESSORS = {
 
 // Offered as suggestions, not a fixed list — same idea as
 // SUGGESTED_CATEGORIES in ExpensesPanel.jsx.
+const INTEREST_CATEGORY = 'Interest Earned';
 const SUGGESTED_CATEGORIES = [
-  'Interest Earned',
+  INTEREST_CATEGORY,
   'Scrap Sale',
   'Rent Received',
   'Commission Received',
@@ -868,8 +869,24 @@ export default function IncomePanel({ onViewReport }) {
     }
   };
 
+  // Bank-interest vouchers are ordinary income entries under one category, so
+  // the P&L's Other Income picks them up with no report change.
+  const interestEntries = income.filter((e) => (e.categoryName || '').toLowerCase() === INTEREST_CATEGORY.toLowerCase());
+  const interestTotal = interestEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const openInterestVoucher = async () => {
+    await openIncomeForm(null);
+    setIncomeForm({
+      ...emptyIncomeForm,
+      categoryName: INTEREST_CATEGORY,
+      title: 'Bank interest',
+      paymentMethod: 'BANK_TRANSFER',
+    });
+  };
+
   const tabs = [
     { id: 'income', name: 'Income', count: income.length },
+    { id: 'interest', name: 'Interest', count: interestEntries.length },
     { id: 'recurring', name: 'Recurring', count: templates.length },
     { id: 'payers', name: 'Payers', count: payers.length },
   ];
@@ -1147,6 +1164,46 @@ export default function IncomePanel({ onViewReport }) {
                         Receipt
                       </button>
                     )}
+                    <button type="button" className="inv-danger" onClick={() => deleteIncomeEntry(entry)}>
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === 'interest' && (
+        <div>
+          <div className="inv-bar">
+            <div className="inv-bar__row">
+              <div>
+                <strong>{formatPrice(interestTotal)}</strong> bank interest earned · counted in P&amp;L under Other Income
+              </div>
+              <div className="inv-bar__actions">
+                <button type="button" className="btn-accent" onClick={openInterestVoucher}>
+                  + Add interest voucher
+                </button>
+              </div>
+            </div>
+          </div>
+          {interestEntries.length === 0 ? (
+            <p className="inv-empty">No interest vouchers yet. Add one when the bank credits interest.</p>
+          ) : (
+            <ul className="inv-list">
+              {interestEntries.map((entry) => (
+                <li key={entry.id} className="inv-item">
+                  <div className="inv-item__body" onClick={() => openIncomeForm(entry, 'view')} style={{ cursor: 'pointer' }}>
+                    <div className="inv-item__name">{entry.title}</div>
+                    <div className="inv-item__meta">
+                      {formatDate(entry.incomeDate)} · {formatPrice(entry.amount)}
+                      {entry.payerName && ` · ${entry.payerName}`}
+                      {entry.description && ` · ${entry.description}`}
+                    </div>
+                  </div>
+                  <div className="inv-item__actions">
                     <button type="button" className="inv-danger" onClick={() => deleteIncomeEntry(entry)}>
                       Delete
                     </button>

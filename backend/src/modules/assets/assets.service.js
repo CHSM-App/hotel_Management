@@ -23,6 +23,7 @@ function mapCategory(row) {
     name: row.name,
     depreciationBlock: row.depreciation_block,
     depreciationRatePercent: row.depreciation_rate_percent == null ? null : Number(row.depreciation_rate_percent),
+    depreciationMethod: row.depreciation_method || 'WDV',
     isActive: !!row.is_active,
   };
 }
@@ -33,7 +34,7 @@ async function listCategories(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, depreciation_block, depreciation_rate_percent, is_active
+      SELECT id, name, depreciation_block, depreciation_rate_percent, depreciation_method, is_active
       FROM dbo.asset_categories
       WHERE lodge_id = @lodgeId AND is_active = 1
       ORDER BY name ASC
@@ -59,10 +60,11 @@ async function createCategory(lodgeId, input) {
     .input('name', sql.NVarChar, input.name)
     .input('depreciationBlock', sql.NVarChar, toNullable(input.depreciationBlock))
     .input('depreciationRatePercent', sql.Decimal(5, 2), input.depreciationRatePercent ?? null)
+    .input('depreciationMethod', sql.NVarChar(3), input.depreciationMethod || 'WDV')
     .query(`
-      INSERT INTO dbo.asset_categories (lodge_id, name, depreciation_block, depreciation_rate_percent)
+      INSERT INTO dbo.asset_categories (lodge_id, name, depreciation_block, depreciation_rate_percent, depreciation_method)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @depreciationBlock, @depreciationRatePercent)
+      VALUES (@lodgeId, @name, @depreciationBlock, @depreciationRatePercent, @depreciationMethod)
     `);
 
   return {
@@ -70,6 +72,7 @@ async function createCategory(lodgeId, input) {
     name: input.name,
     depreciationBlock: toNullable(input.depreciationBlock),
     depreciationRatePercent: input.depreciationRatePercent ?? null,
+    depreciationMethod: input.depreciationMethod || 'WDV',
     isActive: true,
   };
 }
@@ -86,10 +89,13 @@ async function updateCategoryDepreciation(lodgeId, categoryId, input) {
     .input('categoryId', sql.BigInt, categoryId)
     .input('depreciationBlock', sql.NVarChar, toNullable(input.depreciationBlock))
     .input('depreciationRatePercent', sql.Decimal(5, 2), input.depreciationRatePercent ?? null)
+    .input('depreciationMethod', sql.NVarChar(3), input.depreciationMethod || 'WDV')
     .query(`
       UPDATE dbo.asset_categories
-      SET depreciation_block = @depreciationBlock, depreciation_rate_percent = @depreciationRatePercent
-      OUTPUT inserted.id, inserted.name, inserted.depreciation_block, inserted.depreciation_rate_percent, inserted.is_active
+      SET depreciation_block = @depreciationBlock, depreciation_rate_percent = @depreciationRatePercent,
+          depreciation_method = @depreciationMethod
+      OUTPUT inserted.id, inserted.name, inserted.depreciation_block, inserted.depreciation_rate_percent,
+             inserted.depreciation_method, inserted.is_active
       WHERE id = @categoryId AND lodge_id = @lodgeId
     `);
   if (result.recordset.length === 0) {
@@ -109,6 +115,7 @@ function mapAsset(row) {
     categoryId: row.category_id,
     categoryName: row.category_name,
     depreciationRatePercent: row.depreciation_rate_percent == null ? null : Number(row.depreciation_rate_percent),
+    depreciationMethod: row.depreciation_method || 'WDV',
     assetTag: row.asset_tag,
     brand: row.brand,
     model: row.model,
@@ -150,6 +157,7 @@ function mapAsset(row) {
 
 const ASSET_SELECT = `
   SELECT a.id, a.lodge_id, a.name, a.category_id, c.name AS category_name, c.depreciation_rate_percent,
+         c.depreciation_method,
          a.asset_tag, a.brand, a.model,
          a.serial_number, a.purchase_date, a.purchase_cost, a.useful_life_years, a.useful_life_months,
          a.room_id, r.room_number, a.floor,

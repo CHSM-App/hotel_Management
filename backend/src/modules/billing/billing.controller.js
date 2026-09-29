@@ -160,6 +160,26 @@ async function listOpenFoodTabsHandler(req, res, next) {
   }
 }
 
+async function listInHouseGuestsHandler(req, res, next) {
+  try {
+    res.json({ guests: await billingService.listInHouseGuests(req.user.lodgeId) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function addTabToRoomBillHandler(req, res, next) {
+  try {
+    const bookingId = Number(req.body?.bookingId);
+    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
+      throw new ApiError('Pick the guest to charge.', 400);
+    }
+    res.json(await billingService.addTabToRoomBill(req.user.lodgeId, req.params.tab, bookingId));
+  } catch (err) {
+    next(err);
+  }
+}
+
 // The tab segment is "counter", "table-<id>" or "room-<id>" — one payer's
 // running total, whichever of the three it is. Passed through as written and
 // validated in the service, which is the thing that turns it into SQL: parsing
@@ -404,6 +424,8 @@ module.exports = {
   issueEventAdvanceReceiptHandler,
   listEventAdvanceReceiptsHandler,
   listOpenFoodTabsHandler,
+  listInHouseGuestsHandler,
+  addTabToRoomBillHandler,
   previewFoodBillHandler,
   issueFoodInvoiceHandler,
   previewBillHandler,

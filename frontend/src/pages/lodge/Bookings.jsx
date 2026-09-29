@@ -666,7 +666,10 @@ function hasFormContent(form) {
   );
 }
 
-export default function Bookings({ onBillStay, onShowRegister }) {
+// `modalOnly` mounts just the modals — the guest register uses it to open a
+// stay's detail (`openBookingId`) without leaving its own page, and hears
+// `onModalClose` once every modal is dismissed.
+export default function Bookings({ onBillStay, onShowRegister, modalOnly = false, openBookingId = null, onModalClose }) {
   const session = getSession();
   const token = session?.token;
   const toast = useToast();
@@ -2436,6 +2439,21 @@ export default function Bookings({ onBillStay, onShowRegister }) {
     setJustBooked(null);
   };
 
+  useEffect(() => {
+    if (!openBookingId) return;
+    openDetail(openBookingId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Only reports "closed" after something has actually been open — the first
+  // commit, before the detail has been requested, is not a close.
+  const modalWasOpen = useRef(false);
+  const anyModalOpen = Boolean(selectedBookingId || showBookingForm || justBooked || lateCheckout || editTarget);
+  useEffect(() => {
+    if (anyModalOpen) modalWasOpen.current = true;
+    else if (modalOnly && modalWasOpen.current) onModalClose?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyModalOpen]);
+
   // Who is actually standing at the desk: the primary guest, whoever was named
   // when the room was booked, and whoever is being added now. A reservation for
   // two turning up as three is an ordinary evening, so check-in counts the
@@ -3167,6 +3185,8 @@ export default function Bookings({ onBillStay, onShowRegister }) {
 
   return (
     <div className="bookings-panel">
+      {!modalOnly && (
+      <>
       {/* One sticky strip carrying everything above the chart.
 
           It was three stacked rows — a toolbar, a search bar, a legend — each
@@ -3684,6 +3704,9 @@ export default function Bookings({ onBillStay, onShowRegister }) {
           free ones or drop straight into a booking already on one of the
           taken ones. Closes on an outside click, same as the other panels
           here that float over the chart. */}
+      </>
+      )}
+
       {dormPicker && (
         <div className="tape-dormpicker-backdrop" onClick={() => setDormPicker(null)}>
           <div

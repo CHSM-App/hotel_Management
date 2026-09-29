@@ -7,6 +7,7 @@ import LodgesDashboard from './pages/internal/LodgesDashboard';
 import LodgeRegistration from './pages/internal/LodgeRegistration';
 import LodgeDetail from './pages/internal/LodgeDetail';
 import LodgePublicPage from './pages/public/LodgePublicPage';
+import PrivacyPolicy from './pages/public/PrivacyPolicy';
 import OrderPage from './pages/public/OrderPage';
 import AssetQrPage from './pages/lodge/AssetQrPage';
 import NotFound from './pages/NotFound';
@@ -26,6 +27,10 @@ function App() {
 
           {/* Public, unauthenticated — a lodge's customer-facing room/rate page. */}
           <Route path="/hotel/:slug" element={<LodgePublicPage />} />
+
+          {/* Public, unauthenticated — privacy policy and account-deletion
+              instructions, linked from the login footer. */}
+          <Route path="/privacy" element={<PrivacyPolicy />} />
 
           {/* Public, unauthenticated — what the food QR codes point at. One link
               per property for room service (the guest gives their room number and

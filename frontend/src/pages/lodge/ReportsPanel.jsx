@@ -139,7 +139,6 @@ const PL_HISTORY_ROWS = [
   { key: 'sales', label: 'Sales', kind: 'money' },
   { key: 'expenses', label: 'Expenses', kind: 'money', value: (c) => c.expenses?.totalExpenses },
   { key: 'operatingProfit', label: 'Operating Profit', kind: 'money', emphasis: true },
-  { key: 'opmPercent', label: 'OPM %', kind: 'percent' },
   { key: 'totalOtherIncome', label: 'Other Income', kind: 'money' },
   { key: 'interest', label: 'Interest', kind: 'money' },
   { key: 'depreciation', label: 'Depreciation', kind: 'money', value: (c) => c.depreciation?.totalDepreciation },

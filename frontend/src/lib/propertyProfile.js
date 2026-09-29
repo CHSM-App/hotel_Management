@@ -82,23 +82,32 @@ export const FOOD_SERVICE_STYLES = [
 export const FEATURES = [
   {
     key: 'bookings',
-    title: 'Bookings & tape chart',
+    title: 'Room Chart',
     description: 'The room chart, check-in and check-out.',
     permission: 'bookings.manage',
     capability: 'hasRooms',
     icon: 'calendar',
-    group: 'Front desk',
+    group: 'Rooms',
   },
   {
     key: 'billing',
-    title: 'Billing & Invoices',
-    description: 'Tax invoices, bills of supply, cash receipts and payments.',
+    title: 'Room billing',
+    description: 'Stay bills, advance receipts and payments.',
     permission: 'billing.manage',
-    // No capability gate: every property type sells something. A lodge bills
-    // stays, a restaurant bills closed tables, and a lodge with meals bills
-    // both on one document. The screen itself adapts — see Billing.jsx.
+    // Stays only. Table and takeaway bills live in Restaurant billing and
+    // function bills in Event billing; room-service food rides on the stay bill.
+    capability: 'hasRooms',
     icon: 'receipt',
-    group: 'Front desk',
+    group: 'Rooms',
+  },
+  {
+    key: 'restaurantBilling',
+    title: 'Restaurant billing',
+    description: "Table and takeaway bills — and adding a staying guest's food to their room bill.",
+    permission: 'billing.manage',
+    capability: 'servesFood',
+    icon: 'receipt',
+    group: 'Restaurant',
   },
   {
     key: 'guests',
@@ -107,7 +116,7 @@ export const FEATURES = [
     permission: 'guests.view',
     capability: 'hasRooms',
     icon: 'users',
-    group: 'Front desk',
+    group: 'Rooms',
   },
   {
     key: 'food',
@@ -116,18 +125,45 @@ export const FEATURES = [
     permission: ['orders.manage', 'orders.take'],
     capability: 'servesFood',
     icon: 'coffee',
-    group: 'Operations',
+    group: 'Restaurant',
   },
   {
     key: 'events',
-    title: 'Events & functions',
-    description: 'The function diary — enquiries, holds, quotes, advances and bills for halls and lawns.',
+    title: 'Event Chart',
+    description: 'The function diary — enquiries, holds, quotes and advances for halls and lawns.',
     permission: 'events.manage',
     // Its own bit rather than a property type: a rooms-only lodge with a
     // lawn and a restaurant with a party hall are both real.
     capability: 'hasEvents',
     icon: 'party',
-    group: 'Operations',
+    group: 'Events',
+  },
+  {
+    key: 'eventBilling',
+    title: 'Event billing',
+    description: 'Function bills and advance receipts.',
+    permission: 'billing.manage',
+    capability: 'hasEvents',
+    icon: 'receipt',
+    group: 'Events',
+  },
+  {
+    key: 'eventRegister',
+    title: 'Event register',
+    description: 'Every function as a list, filtered by status.',
+    permission: 'events.manage',
+    capability: 'hasEvents',
+    icon: 'users',
+    group: 'Events',
+  },
+  {
+    key: 'eventSetup',
+    title: 'Event setup',
+    description: 'Venues and add-ons.',
+    permission: 'events.manage',
+    capability: 'hasEvents',
+    icon: 'wrench',
+    group: 'Events',
   },
   {
     key: 'rooms',
@@ -136,7 +172,7 @@ export const FEATURES = [
     permission: 'rooms.manage',
     capability: 'hasRooms',
     icon: 'bed',
-    group: 'Setup',
+    group: 'Rooms',
   },
   {
     key: 'menu',
@@ -145,7 +181,7 @@ export const FEATURES = [
     permission: 'food.manage',
     capability: 'servesFood',
     icon: 'coffee',
-    group: 'Setup',
+    group: 'Restaurant',
   },
   {
     key: 'staff',
@@ -204,7 +240,7 @@ export const FEATURES = [
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Front desk', 'Operations', 'Finance & Management', 'Setup'];
+export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Finance & Management', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

@@ -10,8 +10,10 @@ import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
 import IconButton from '../../components/IconButton';
 import { EyeIcon } from '../../components/ActionIcons';
+import Bookings from './Bookings';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
+import './InventoryPanel.css';
 import './GuestRegister.css';
 
 // The record's own wording, kept for the open guest record's header badge. The
@@ -234,7 +236,7 @@ function formatLateBy(minutes) {
 // onOpenSection moves the dashboard to another section, for the tiles whose
 // subject is another screen's. Optional — the register works without it, and
 // every tile that has one falls back to filtering in place.
-export default function GuestRegister({ onOpenDraft, onOpenSection }) {
+export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }) {
   const session = getSession();
   const token = session?.token;
 
@@ -654,12 +656,13 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
   // reach the other.
   const [detailTab, setDetailTab] = useState('stay');
 
+  const [fullBookingId, setFullBookingId] = useState(null);
+
   const openDetail = (bookingId) => {
-    setDetailBookingId(bookingId);
-    setDetailBooking(null);
-    setDetailError('');
-    setIdProofError('');
-    setDetailTab('stay');
+    // The one full detail modal lives in Bookings (same details and actions
+    // as the tape chart); it is mounted here modal-only so the register stays
+    // where it is.
+    setFullBookingId(bookingId);
   };
 
   const closeDetail = () => {
@@ -1206,41 +1209,10 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
                         sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'
                       }
                     >
-                      <button
-                        type="button"
-                        className={`guest-register__sort${
-                          sortKey === key ? ' guest-register__sort--on' : ''
-                        }`}
-                        onClick={() => toggleSort(key)}
-                        title={
-                          sortKey === key
-                            ? `Sorted by ${col.label} — click to ${
-                                sortDir === (col.numeric ? 'desc' : 'asc') ? 'reverse' : 'clear'
-                              }`
-                            : `Sort by ${col.label}`
-                        }
-                      >
+                      <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort(key)}>
                         {col.label}
-                        {/* Both arrows always, the active one filled: a single
-                            arrow that appears on sort makes the heading jump
-                            wider the moment it is clicked, and a column of
-                            headings that move as you use them is hard to aim
-                            at twice. */}
-                        <span className="guest-register__sort-arrows" aria-hidden="true">
-                          <span
-                            className={`guest-register__sort-arrow${
-                              sortKey === key && sortDir === 'asc' ? ' guest-register__sort-arrow--on' : ''
-                            }`}
-                          >
-                            ▲
-                          </span>
-                          <span
-                            className={`guest-register__sort-arrow${
-                              sortKey === key && sortDir === 'desc' ? ' guest-register__sort-arrow--on' : ''
-                            }`}
-                          >
-                            ▼
-                          </span>
+                        <span className="asset-table__sort-icon" aria-hidden="true">
+                          {sortKey === key ? (sortDir === 'desc' ? '▼' : '▲') : '⇅'}
                         </span>
                       </button>
                     </th>
@@ -1445,6 +1417,18 @@ export default function GuestRegister({ onOpenDraft, onOpenSection }) {
             </table>
           </div>
         </div>
+      )}
+
+      {fullBookingId && (
+        <Bookings
+          modalOnly
+          openBookingId={fullBookingId}
+          onBillStay={onBillStay}
+          onModalClose={() => {
+            setFullBookingId(null);
+            load();
+          }}
+        />
       )}
 
       {detailBookingId && (

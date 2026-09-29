@@ -30,7 +30,7 @@ const NEXT_STATUSES = {
   PENDING: ['QUEUED', 'CANCELLED'],
   QUEUED: ['PREPARING', 'CANCELLED'],
   PREPARING: ['READY', 'CANCELLED'],
-  READY: ['DELIVERED', 'CANCELLED'],
+  READY: ['DELIVERED'],
   DELIVERED: [],
   CANCELLED: [],
 };
@@ -234,58 +234,47 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
   }
 }
 
-// Rewrites an order's lines to exactly what was sent, the way a guest changing
-// their mind before the kitchen starts expects "edit my order" to behave.
-//
-// Deleting the old lines is only safe because nothing has eaten stock yet:
-// ingredients come off the shelf when a dish is ticked off (which needs
-// PREPARING) or when the whole order is called READY. `allowedStatuses` is what
-// keeps that true — it is enforced in the UPDATE's WHERE rather than after a
-// read, so an order the kitchen accepts mid-edit fails the write instead of
-// having the food changed underneath a cook who has already started.
-async function replaceOrderItems(lodgeId, orderId, items, { note, guestName, allowedStatuses } = {}) {
-  if (items.length === 0) {
-    throw new ApiError('Add at least one item to the order.', 400);
-  }
-
+// A captain changing an order until it is billed. Dishes the kitchen has
+// already ticked off are food that exists (and whose ingredients are already
+// deducted), so they are kept as they are; everything not yet cooked is
+// replaced with exactly what was sent. Adding a dish to an order that was
+// already READY or DELIVERED sends it back to PREPARING so the kitchen sees it.
+// `createdBy` limits a captain to orders they rang in.
+async function replaceOrderItems(lodgeId, orderId, items, { note, createdBy = null } = {}) {
   const pool = await getPool();
-  const lines = await resolveOrderLines(pool, lodgeId, items);
-  const subtotal = round2(lines.reduce((sum, l) => sum + l.lineTotal, 0));
-
-  const statusFilter = allowedStatuses?.length
-    ? ` AND status IN (${allowedStatuses.map((_, i) => `@s${i}`).join(', ')})`
-    : '';
+  const lines = items.length ? await resolveOrderLines(pool, lodgeId, items) : [];
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
-    const orderRequest = new sql.Request(transaction)
+    const found = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('orderId', sql.BigInt, orderId)
-      .input('subtotal', sql.Decimal(10, 2), subtotal)
-      .input('note', sql.NVarChar, note ?? null)
-      .input('guestName', sql.NVarChar, guestName || null);
-    (allowedStatuses || []).forEach((status, i) => orderRequest.input(`s${i}`, sql.NVarChar, status));
+      .query(`
+        SELECT status, invoice_id, created_by FROM dbo.food_orders WITH (UPDLOCK)
+        WHERE id = @orderId AND lodge_id = @lodgeId
+      `);
+    const order = found.recordset[0];
+    if (!order || (createdBy && String(order.created_by) !== String(createdBy))) {
+      throw new ApiError('Order not found.', 404);
+    }
+    if (order.invoice_id != null) {
+      throw new ApiError('This order has already been billed and can’t be changed.', 409);
+    }
+    if (order.status === 'CANCELLED') {
+      throw new ApiError('This order was cancelled and can’t be changed.', 409);
+    }
 
-    const updated = await orderRequest.query(`
-      UPDATE dbo.food_orders
-      SET subtotal = @subtotal,
-          -- An edit carries the whole order, note included, so a note cleared
-          -- on the guest's screen is cleared here. COALESCE only covers a
-          -- caller that omits the field entirely, which then means "leave it".
-          note = COALESCE(@note, note),
-          guest_name = COALESCE(@guestName, guest_name)
-      OUTPUT inserted.id
-      WHERE id = @orderId AND lodge_id = @lodgeId${statusFilter}
-    `);
-
-    if (updated.recordset.length === 0) {
-      throw new ApiError('The kitchen has already moved this order on. Refresh to see where it is.', 409);
+    const cooked = await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .query('SELECT COUNT(*) AS n FROM dbo.food_order_items WHERE order_id = @orderId AND ready_at IS NOT NULL');
+    if (lines.length === 0 && cooked.recordset[0].n === 0) {
+      throw new ApiError('Add at least one item to the order.', 400);
     }
 
     await new sql.Request(transaction)
       .input('orderId', sql.BigInt, orderId)
-      .query('DELETE FROM dbo.food_order_items WHERE order_id = @orderId');
+      .query('DELETE FROM dbo.food_order_items WHERE order_id = @orderId AND ready_at IS NULL');
 
     for (const line of lines) {
       await new sql.Request(transaction)
@@ -307,13 +296,25 @@ async function replaceOrderItems(lodgeId, orderId, items, { note, guestName, all
         `);
     }
 
+    const reopen = lines.length > 0 && ['READY', 'DELIVERED'].includes(order.status);
+    await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .input('note', sql.NVarChar, note ?? null)
+      .query(`
+        UPDATE dbo.food_orders
+        SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM dbo.food_order_items WHERE order_id = @orderId),
+            note = COALESCE(@note, note)
+            ${reopen ? ", status = 'PREPARING', ready_at = NULL, delivered_at = NULL" : ''}
+        WHERE id = @orderId
+      `);
+
     await transaction.commit();
   } catch (err) {
     await transaction.rollback();
     throw err;
   }
 
-  return { subtotal };
+  return getOrder(lodgeId, orderId);
 }
 
 // The line's id travels with it because the kitchen screen ticks lines off
@@ -321,11 +322,14 @@ async function replaceOrderItems(lodgeId, orderId, items, { note, guestName, all
 function mapOrderItem(row) {
   return {
     id: row.id,
+    menuItemId: row.menu_item_id,
+    portionId: row.menu_item_portion_id ?? null,
     name: row.item_name,
     unitPrice: Number(row.unit_price),
     quantity: row.quantity,
     lineTotal: Number(row.line_total),
     readyAt: row.ready_at ?? null,
+    deliveredAt: row.delivered_at ?? null,
   };
 }
 
@@ -349,12 +353,15 @@ function mapOrder(row, items) {
     deliveredAt: row.delivered_at,
     cancelledAt: row.cancelled_at,
     cancelReason: row.cancel_reason,
+    // Once an invoice carries the order its lines are money — no more edits.
+    billed: row.invoice_id != null,
+    invoiceId: row.invoice_id ?? null,
     nextStatuses: NEXT_STATUSES[row.status] || [],
     items,
   };
 }
 
-async function listOrders(lodgeId, { status, date, live, createdBy } = {}) {
+async function listOrders(lodgeId, { status, date, from, to, live, createdBy } = {}) {
   const pool = await getPool();
 
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
@@ -366,8 +373,14 @@ async function listOrders(lodgeId, { status, date, live, createdBy } = {}) {
   if (live) {
     filters.push("o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY')");
   } else {
-    request.input('orderDate', sql.Date, date || todayIsoIST());
-    filters.push('o.order_date = @orderDate');
+    // A period (from..to, inclusive) or a single day; today when neither is given.
+    if (from && to) {
+      request.input('fromDate', sql.Date, from).input('toDate', sql.Date, to);
+      filters.push('o.order_date BETWEEN @fromDate AND @toDate');
+    } else {
+      request.input('orderDate', sql.Date, date || todayIsoIST());
+      filters.push('o.order_date = @orderDate');
+    }
     if (status) {
       request.input('status', sql.NVarChar, status);
       filters.push('o.status = @status');
@@ -385,13 +398,14 @@ async function listOrders(lodgeId, { status, date, live, createdBy } = {}) {
   const ordersResult = await request.query(`
     SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id, o.guest_name, o.guest_phone,
            o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
-           o.cancelled_at, o.cancel_reason,
+           o.cancelled_at, o.cancel_reason, o.invoice_id,
            r.room_number, t.label AS table_label
     FROM dbo.food_orders o
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     WHERE ${filters.join(' AND ')}
-    ORDER BY o.placed_at ASC
+    -- The kitchen queue works oldest-first; the history reads newest-first.
+    ORDER BY o.placed_at ${live ? 'ASC' : 'DESC'}
   `);
 
   if (ordersResult.recordset.length === 0) {
@@ -406,7 +420,7 @@ async function listOrders(lodgeId, { status, date, live, createdBy } = {}) {
   const orderIdParams = orderIds.map((_, index) => `@o${index}`).join(', ');
 
   const itemsResult = await itemsRequest.query(`
-    SELECT id, order_id, item_name, unit_price, quantity, line_total, ready_at
+    SELECT id, order_id, menu_item_id, menu_item_portion_id, item_name, unit_price, quantity, line_total, ready_at, delivered_at
     FROM dbo.food_order_items
     WHERE order_id IN (${orderIdParams})
     ORDER BY id ASC
@@ -432,7 +446,7 @@ async function getOrder(lodgeId, orderId) {
     .query(`
       SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id, o.guest_name, o.guest_phone,
              o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
-             o.cancelled_at, o.cancel_reason,
+             o.cancelled_at, o.cancel_reason, o.invoice_id,
              r.room_number, t.label AS table_label
       FROM dbo.food_orders o
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
@@ -449,7 +463,7 @@ async function getOrder(lodgeId, orderId) {
     .request()
     .input('orderId', sql.BigInt, orderId)
     .query(`
-      SELECT id, item_name, unit_price, quantity, line_total, ready_at
+      SELECT id, menu_item_id, menu_item_portion_id, item_name, unit_price, quantity, line_total, ready_at, delivered_at
       FROM dbo.food_order_items WHERE order_id = @orderId ORDER BY id ASC
     `);
 
@@ -536,6 +550,119 @@ async function setItemReady(lodgeId, orderId, itemId, ready, { userId = null } =
   return getOrder(lodgeId, orderId);
 }
 
+// The captain carrying one dish out. Only a dish the kitchen has ticked ready
+// can go, and once the last dish of a READY order is handed over the order
+// itself becomes DELIVERED — the same state "deliver everything" reaches.
+async function setItemDelivered(lodgeId, orderId, itemId, { createdBy = null } = {}) {
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const orderResult = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('orderId', sql.BigInt, orderId)
+      .query('SELECT status, created_by FROM dbo.food_orders WITH (UPDLOCK) WHERE id = @orderId AND lodge_id = @lodgeId');
+    const order = orderResult.recordset[0];
+    if (!order || (createdBy && String(order.created_by) !== String(createdBy))) {
+      throw new ApiError('Order not found.', 404);
+    }
+    if (!['PREPARING', 'READY'].includes(order.status)) {
+      throw new ApiError(`This order is already ${order.status.toLowerCase()} — its dishes can’t be delivered now.`, 409);
+    }
+
+    const item = (
+      await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .input('itemId', sql.BigInt, itemId)
+        .query('SELECT ready_at, delivered_at FROM dbo.food_order_items WHERE id = @itemId AND order_id = @orderId')
+    ).recordset[0];
+    if (!item) throw new ApiError('That item is not on this order.', 404);
+    if (!item.ready_at) throw new ApiError('The kitchen has not marked this dish ready yet.', 409);
+
+    if (!item.delivered_at) {
+      await new sql.Request(transaction)
+        .input('itemId', sql.BigInt, itemId)
+        .query('UPDATE dbo.food_order_items SET delivered_at = SYSDATETIMEOFFSET() WHERE id = @itemId');
+    }
+
+    if (order.status === 'READY') {
+      await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .query(`
+          UPDATE dbo.food_orders
+          SET status = 'DELIVERED', delivered_at = SYSDATETIMEOFFSET()
+          WHERE id = @orderId AND status = 'READY'
+            AND NOT EXISTS (SELECT 1 FROM dbo.food_order_items WHERE order_id = @orderId AND delivered_at IS NULL)
+        `);
+    }
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+
+  return getOrder(lodgeId, orderId);
+}
+
+// Partial cancel: drops the chosen dishes off a live, unbilled order. Only
+// dishes the kitchen has not finished can go. If that leaves nothing on the
+// ticket the order itself is cancelled.
+async function cancelOrderItems(lodgeId, orderId, itemIds, { cancelReason, createdBy = null } = {}) {
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const found = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('orderId', sql.BigInt, orderId)
+      .query('SELECT status, invoice_id, created_by FROM dbo.food_orders WITH (UPDLOCK) WHERE id = @orderId AND lodge_id = @lodgeId');
+    const order = found.recordset[0];
+    if (!order || (createdBy && String(order.created_by) !== String(createdBy))) {
+      throw new ApiError('Order not found.', 404);
+    }
+    if (order.invoice_id != null) {
+      throw new ApiError('This order has already been billed and can’t be changed.', 409);
+    }
+    if (!['PENDING', 'QUEUED', 'PREPARING'].includes(order.status)) {
+      throw new ApiError(`This order is already ${order.status.toLowerCase()} — its dishes can’t be cancelled.`, 409);
+    }
+
+    const items = (
+      await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .query('SELECT id, ready_at FROM dbo.food_order_items WHERE order_id = @orderId')
+    ).recordset;
+    const byId = new Map(items.map((i) => [String(i.id), i]));
+    for (const id of itemIds) {
+      const item = byId.get(String(id));
+      if (!item) throw new ApiError('That item is not on this order.', 404);
+      if (item.ready_at) throw new ApiError('A dish that is already ready can’t be cancelled.', 409);
+    }
+
+    const del = new sql.Request(transaction).input('orderId', sql.BigInt, orderId);
+    itemIds.forEach((id, i) => del.input(`i${i}`, sql.BigInt, id));
+    await del.query(`DELETE FROM dbo.food_order_items WHERE order_id = @orderId AND id IN (${itemIds.map((_, i) => `@i${i}`).join(', ')})`);
+
+    const empty = items.length === itemIds.length;
+    await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .input('reason', sql.NVarChar, cancelReason || null)
+      .query(`
+        UPDATE dbo.food_orders
+        SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM dbo.food_order_items WHERE order_id = @orderId)
+            ${empty ? ', status = \'CANCELLED\', cancelled_at = SYSDATETIMEOFFSET(), cancel_reason = @reason' : ''}
+        WHERE id = @orderId
+      `);
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+  return getOrder(lodgeId, orderId);
+}
+
 // Every move through the queue lands here. The transition table is enforced
 // server-side rather than trusted from the button that was clicked: two people
 // on two screens will tap the same order, and the second tap has to fail
@@ -546,16 +673,17 @@ async function setItemReady(lodgeId, orderId, itemId, ready, { userId = null } =
 // from their phone may do so while their order is still waiting; the kitchen
 // may cancel a dish it has already started. Both are "→ CANCELLED", and only
 // this tells them apart.
-async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId = null, fromStatuses = null } = {}) {
+async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId = null, fromStatuses = null, createdBy = null } = {}) {
   const pool = await getPool();
 
   const currentResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('orderId', sql.BigInt, orderId)
-    .query('SELECT status FROM dbo.food_orders WHERE id = @orderId AND lodge_id = @lodgeId');
+    .query('SELECT status, created_by FROM dbo.food_orders WHERE id = @orderId AND lodge_id = @lodgeId');
   const current = currentResult.recordset[0];
-  if (!current) {
+  // `createdBy` confines a captain to orders they rang in.
+  if (!current || (createdBy && String(current.created_by) !== String(createdBy))) {
     throw new ApiError('Order not found.', 404);
   }
 
@@ -572,6 +700,18 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId
       `This order is already ${current.status.toLowerCase()} — it can’t be moved to ${nextStatus.toLowerCase()}.`,
       409
     );
+  }
+
+  // Food that has already come out of the kitchen can't be un-cooked, so the
+  // order can only be cancelled dish by dish (see cancelOrderItems).
+  if (nextStatus === 'CANCELLED') {
+    const cooked = await pool
+      .request()
+      .input('orderId', sql.BigInt, orderId)
+      .query('SELECT COUNT(*) AS n FROM dbo.food_order_items WHERE order_id = @orderId AND ready_at IS NOT NULL');
+    if (cooked.recordset[0].n > 0) {
+      throw new ApiError('Some dishes are already ready, so the whole order can’t be cancelled. Cancel the other dishes instead.', 409);
+    }
   }
 
   const timestampColumn = STATUS_TIMESTAMP_COLUMN[nextStatus];
@@ -606,6 +746,13 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId
     // ingredients here. Lines already ticked off are excluded by the same
     // `ready_at IS NULL` filter that settles them, which is what stops a dish
     // being deducted once on its tick and again on the order.
+    // Delivering the whole order hands over every dish not already handed over.
+    if (nextStatus === 'DELIVERED') {
+      await new sql.Request(transaction)
+        .input('orderId', sql.BigInt, orderId)
+        .query('UPDATE dbo.food_order_items SET delivered_at = SYSDATETIMEOFFSET() WHERE order_id = @orderId AND delivered_at IS NULL');
+    }
+
     if (nextStatus === 'READY') {
       const settled = await new sql.Request(transaction)
         .input('orderId', sql.BigInt, orderId)
@@ -651,4 +798,6 @@ module.exports = {
   getOrder,
   updateStatus,
   setItemReady,
+  setItemDelivered,
+  cancelOrderItems,
 };

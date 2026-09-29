@@ -149,6 +149,13 @@ function asDocument(receipt) {
   };
 }
 
+// Which department a bill or receipt belongs to.
+function streamOf(doc) {
+  if (doc.kind === 'FOOD') return 'restaurant';
+  if (doc.kind === 'EVENT' || (doc.kind === 'ADVANCE' && doc.eventBookingId != null)) return 'event';
+  return 'room';
+}
+
 function tagClass(key) {
   return key.toLowerCase().replace(/_/g, '-');
 }
@@ -470,7 +477,7 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
 // viewInvoiceId opens an already-issued bill's document straight away — a
 // settled function's "View bill" — rather than asking for a new preview the
 // server would rightly refuse.
-export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, viewInvoiceId = null, modalOnly = false, onClose }) {
+export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, viewInvoiceId = null, modalOnly = false, stream = 'room', onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -478,13 +485,17 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // a restaurant bills closed tables, and a lodge with meals does both — the
   // food a room-service guest ate rides on their stay bill rather than
   // appearing as a separate tab.
-  const billsStays = lodge?.hasRooms !== false;
-  const billsTables = Boolean(lodge?.servesFood);
+  // `stream` is which department's billing this is — 'room', 'restaurant' or
+  // 'event' — each its own sidebar section with its own bills list. Room-service
+  // food rides on the stay bill, and a room guest's table food can be moved onto
+  // it (see "Add to room bill" below).
+  const restaurant = stream === 'restaurant';
+  const billsStays = stream === 'room' && lodge?.hasRooms !== false;
+  const billsTables = restaurant && Boolean(lodge?.servesFood);
+  const canAddToRoom = restaurant && lodge?.hasRooms !== false;
 
   const tabs = [
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
-    // The key stays 'tables' so existing ?tab= links keep landing here; only
-    // the wording widens, because rooms and takeaways sit in this list too.
     ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
     { key: 'bills', label: 'Bills' },
     // Last, and deliberately not first: numbering is set once at setup and
@@ -495,7 +506,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // The landing tab depends on what this login can bill, so it is worked out
   // first and handed to the hook as the fallback — a URL with no tab lands
   // exactly where it did before.
-  const defaultTab = billsStays ? 'ready' : billsTables ? 'tables' : 'bills';
+  const defaultTab = billsTables ? 'tables' : billsStays ? 'ready' : 'bills';
   const [tab, setTab] = useUrlState('tab', defaultTab);
   // A ?tab= this screen doesn't own falls back to the landing tab rather than
   // matching nothing and rendering an empty page under an unselected strip.
@@ -543,6 +554,25 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       .catch((err) => setFoodTabsError(err instanceof ApiError ? err.message : 'Could not load open tables.'));
   };
 
+  // "Add to room bill" on a table/takeaway row: which row is picking a guest,
+  // the in-house guests to pick from, and who is picked.
+  const [roomPick, setRoomPick] = useState(null);
+  const openRoomPick = (tabKey) => {
+    setRoomPick({ tab: tabKey, guests: null, bookingId: '', error: '' });
+    apiGet('/billing/food-tabs/in-house-guests', { token })
+      .then((data) => setRoomPick((p) => p && { ...p, guests: data.guests }))
+      .catch(() => setRoomPick((p) => p && { ...p, guests: [], error: 'Could not load guests.' }));
+  };
+  const addTabToRoom = async () => {
+    try {
+      await apiPost(`/billing/food-tabs/${roomPick.tab}/add-to-room`, { bookingId: Number(roomPick.bookingId) }, { token });
+      setRoomPick(null);
+      loadFoodTabs();
+    } catch (err) {
+      setRoomPick((p) => ({ ...p, error: err instanceof ApiError ? err.message : 'Could not add to the room bill.' }));
+    }
+  };
+
   const loadInvoices = () => {
     apiGet('/billing/invoices', { token })
       .then((data) => {
@@ -556,6 +586,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // property that has never issued one still wants its bills. The list simply
   // shows what loaded.
   const loadReceipts = () => {
+    if (restaurant) return;
     apiGet('/billing/advance-receipts', { token })
       .then((data) => setReceipts(writeCache('/billing/advance-receipts', data.receipts)))
       .catch(() => {});
@@ -624,7 +655,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // bills.
   const documents =
     invoices || receipts
-      ? [...(invoices ?? []), ...(receipts ?? []).map(asDocument)].sort((a, b) =>
+      ? [
+          ...[...(invoices ?? []), ...(restaurant ? [] : (receipts ?? []).map(asDocument))].filter(
+            (d) => streamOf(d) === stream
+          ),
+        ].sort((a, b) =>
           String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))
         )
       : null;
@@ -1275,9 +1310,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           <div className="chart-section__header">
             <h3>Food to bill</h3>
             <span className="chart-section__hint">
-              Delivered food nobody has paid for. A table and a room keep one running tab; each
-              takeaway is listed on its own, since the next one is a different customer. Every
-              row bills on its own document, sweeping in only what it names.
+              Delivered food nobody has paid for. A table keeps one running tab; each takeaway is
+              listed on its own, since the next one is a different customer. Every row bills on
+              its own document, sweeping in only what it names.
+              {canAddToRoom && ' A staying guest can have a table or takeaway added to their room bill instead.'}
             </span>
           </div>
 
@@ -1306,6 +1342,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </span>
                   <span className="billing-panel__queue-actions">
                     <span className="chart-row__value">{formatPrice(t.subtotal)}</span>
+                    {canAddToRoom && /^(table|counter)-/.test(t.tab) && (
+                      <button type="button" className="btn-secondary" onClick={() => openRoomPick(t.tab)}>
+                        Add to room bill
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn-accent"
@@ -1314,6 +1355,39 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       Bill
                     </button>
                   </span>
+                  {roomPick?.tab === t.tab && (
+                    <div className="room-pick">
+                      <div className="room-pick__label">Add {t.tableLabel} to a guest’s room bill</div>
+                      <div className="room-pick__controls">
+                        {!roomPick.guests ? (
+                          <span className="room-pick__note">Loading guests…</span>
+                        ) : roomPick.guests.length === 0 ? (
+                          <span className="room-pick__note">Nobody is checked in.</span>
+                        ) : (
+                          <select
+                            className="room-pick__select"
+                            aria-label="Guest"
+                            value={roomPick.bookingId}
+                            onChange={(e) => setRoomPick({ ...roomPick, bookingId: e.target.value })}
+                          >
+                            <option value="">Choose guest…</option>
+                            {roomPick.guests.map((g) => (
+                              <option key={g.bookingId} value={g.bookingId}>
+                                Room {g.roomNumber} · {g.guestName}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button type="button" className="btn-secondary" onClick={() => setRoomPick(null)}>
+                          Cancel
+                        </button>
+                        <button type="button" className="btn-accent" disabled={!roomPick.bookingId} onClick={addTabToRoom}>
+                          Add to room bill
+                        </button>
+                      </div>
+                      {roomPick.error && <div className="form-banner form-banner--error">{roomPick.error}</div>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -2266,8 +2340,22 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   {DOCUMENT_LABEL[detailInvoice.documentType]}
                 </span>
                 {detailInvoice.status === 'VOID' && <span className="bill-tag bill-tag--void">Void</span>}
+                <button type="button" className="bill-close" onClick={closeDetail} aria-label="Close">
+                  ×
+                </button>
               </span>
             </div>
+
+            {/* A voided bill has no action strip, so it gets its own way out. */}
+            {detailInvoice.status !== 'ISSUED' && (
+              <div className="bill-actions">
+                <div className="bill-actions__buttons">
+                  <button type="button" className="btn-secondary" onClick={closeDetail}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* The bill at full size, and the ref the PDF capture measures to
                 size its offscreen copy. It has to stay unscaled: offsetWidth

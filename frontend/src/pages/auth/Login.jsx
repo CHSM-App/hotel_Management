@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
 import { isLodgeUser, setSession } from '../../lib/auth';
 import Req from '../../components/RequiredMark';
@@ -321,6 +321,9 @@ export default function Login() {
         )}
 
         <p className="auth-panel__foot">Trouble signing in? Contact your property owner or admin.</p>
+        <p className="auth-panel__foot">
+          <Link to="/privacy">Privacy policy &amp; account deletion</Link>
+        </p>
       </div>
     </div>
   );

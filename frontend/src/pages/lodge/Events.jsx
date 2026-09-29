@@ -29,6 +29,8 @@ import './forms.css';
 import './chartSections.css';
 import './tapeChart.css';
 import '../internal/LodgesDashboard.css';
+import './GuestRegister.css';
+import './InventoryPanel.css';
 import './Events.css';
 
 const TABS = [
@@ -421,12 +423,65 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
 
 /* ---------------------------------------------------------------- list */
 
+const todayKey = () => toDateKey(new Date());
+const monthStartKey = () => {
+  const d = new Date();
+  return toDateKey(new Date(d.getFullYear(), d.getMonth(), 1));
+};
+
 function defaultRange() {
   const from = new Date();
   from.setMonth(from.getMonth() - 1);
   const to = new Date();
   to.setMonth(to.getMonth() + 6);
   return { from: toDateKey(from), to: toDateKey(to) };
+}
+
+// The ranges a desk actually asks for — same shortcuts as the booking register,
+// plus the one events need: what is coming up.
+const EVENT_PRESETS = [
+  { key: 'today', label: 'Today', range: () => ({ from: todayKey(), to: addDays(todayKey(), 1) }) },
+  { key: 'week', label: 'Last 7 days', range: () => ({ from: addDays(todayKey(), -6), to: addDays(todayKey(), 1) }) },
+  { key: 'month', label: 'This month', range: () => ({ from: monthStartKey(), to: addDays(todayKey(), 1) }) },
+  {
+    key: 'prev',
+    label: 'Last month',
+    range: () => {
+      const d = new Date();
+      return {
+        from: toDateKey(new Date(d.getFullYear(), d.getMonth() - 1, 1)),
+        to: toDateKey(new Date(d.getFullYear(), d.getMonth(), 1)),
+      };
+    },
+  },
+  { key: 'next', label: 'Next 30 days', range: () => ({ from: todayKey(), to: addDays(todayKey(), 30) }) },
+];
+
+// Dots reuse the booking register's swatches: amber is held, red is sold,
+// slate is finished, blue is an open enquiry.
+const EVENT_STATUS_SWATCH = {
+  ENQUIRY: 'checked-in',
+  TENTATIVE: 'draft',
+  CONFIRMED: 'booked',
+  SETTLED: 'checked-out',
+  CANCELLED: 'cancelled',
+  EXPIRED: 'cancelled',
+};
+
+function EventStatTile({ label, value, note, active, hint, onClick, className = '' }) {
+  return (
+    <button
+      type="button"
+      className={`guest-register__stat guest-register__stat--action${active ? ' guest-register__stat--on' : ''} ${className}`}
+      onClick={onClick}
+      aria-pressed={active}
+      title={hint}
+    >
+      <span className="guest-register__stat-label">{label}</span>
+      <strong className="guest-register__stat-value">{value}</strong>
+      {note && <span className="guest-register__stat-note">{note}</span>}
+    </button>
+  );
 }
 
 function EventList({ venues, onOpen, refreshKey }) {
@@ -442,10 +497,16 @@ function EventList({ venues, onOpen, refreshKey }) {
   const [search, setSearch] = useState('');
   const [events, setEvents] = useState(null);
   const [error, setError] = useState('');
+  const [sort, setSort] = useState({ key: null, dir: 'asc' });
+  const toggleSort = (key) =>
+    setSort((cur) => {
+      if (cur.key !== key) return { key, dir: 'asc' };
+      if (cur.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
 
   useEffect(() => {
     const q = new URLSearchParams({ fromDate: range.from, toDate: range.to, includeClosed: 'true' });
-    if (status) q.set('status', status);
     if (venueId) q.set('venueId', venueId);
     apiGet(`/events?${q}`, { token })
       .then((data) => {
@@ -453,62 +514,193 @@ function EventList({ venues, onOpen, refreshKey }) {
         setError('');
       })
       .catch((err) => setError(err.message));
-  }, [range, status, venueId, token, refreshKey]);
+  }, [range, venueId, token, refreshKey]);
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const list = (events || []).filter(
       (e) =>
-        !needle ||
+        (!status || e.status === status) &&
+        (!needle ||
         e.title?.toLowerCase().includes(needle) ||
         e.organiserName?.toLowerCase().includes(needle) ||
-        e.organiserPhone?.includes(needle)
+        e.organiserPhone?.includes(needle))
     );
-    return list.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
-  }, [events, search]);
+    // Unsorted keeps the diary order: soonest function first.
+    const value = {
+      when: (e) => new Date(e.startAt).getTime(),
+      title: (e) => e.title || '',
+      venue: (e) => e.venueName || '',
+      organiser: (e) => e.organiserName || '',
+      pax: (e) => Number(e.finalPax ?? e.expectedPax ?? 0),
+      total: (e) => Number(e.totalAmount || 0),
+      advance: (e) => Number(e.advanceAmount || 0),
+      balance: (e) => Number(e.balanceDue || 0),
+      status: (e) => EVENT_STATUS_LABEL[e.status] || e.status || '',
+    }[sort.key || 'when'];
+    const dir = sort.key && sort.dir === 'desc' ? -1 : 1;
+    return list.sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir;
+    });
+  }, [events, search, status, sort]);
+
+  const counts = useMemo(() => {
+    const c = {};
+    for (const e of events || []) c[e.status] = (c[e.status] || 0) + 1;
+    return c;
+  }, [events]);
+  const live = (events || []).filter((e) => !['CANCELLED', 'EXPIRED'].includes(e.status));
+  const stats = {
+    functions: live.length,
+    guests: live.reduce((n, e) => n + Number(e.finalPax ?? e.expectedPax ?? 0), 0),
+    confirmed: counts.CONFIRMED || 0,
+    settled: (events || []).filter((e) => e.status === 'SETTLED'),
+    due: (events || []).filter((e) => e.status === 'CONFIRMED' && Number(e.balanceDue) > 0),
+  };
+  const billedAmount = stats.settled.reduce((n, e) => n + Number(e.totalAmount || 0), 0);
+  const dueAmount = stats.due.reduce((n, e) => n + Number(e.balanceDue || 0), 0);
+  const activePreset = EVENT_PRESETS.find((pr) => {
+    const r = pr.range();
+    return r.from === range.from && r.to === range.to;
+  });
+  const filtersActive = Boolean(status || venueId || search);
+  const clearFilters = () => {
+    setStatus('');
+    setVenueId('');
+    setSearch('');
+  };
 
   return (
     <div className="events">
-      <div className="events__toolbar">
-        <input placeholder="Search title, organiser, phone" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-          <option value="">All statuses</option>
-          {Object.entries(EVENT_STATUS_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select value={venueId} onChange={(e) => setVenueId(e.target.value)} aria-label="Venue">
-          <option value="">All venues</option>
-          {venues.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          value={range.from}
-          max={range.to ? addDays(range.to, -1) : undefined}
-          onChange={(e) =>
-            setRange((r) => {
-              const from = e.target.value;
-              // 'to' has to stay strictly after 'from', so a 'from' pushed onto or
-              // past it drags it along rather than leaving an empty range behind.
-              return { from, to: from && r.to && r.to <= from ? addDays(from, 1) : r.to };
-            })
-          }
-          aria-label="From"
-        />
-        <input
-          type="date"
-          value={range.to}
-          min={range.from ? addDays(range.from, 1) : undefined}
-          onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-          aria-label="To"
-        />
+      <div className="dash-card guest-register__toolbar">
+        <div className="guest-register__toolbar-top">
+          <div className="guest-register__range">
+            <div className="field guest-register__range-field">
+              <label htmlFor="evFrom">From</label>
+              <input
+                id="evFrom"
+                type="date"
+                value={range.from}
+                max={range.to ? addDays(range.to, -1) : undefined}
+                onChange={(e) =>
+                  setRange((r) => {
+                    const from = e.target.value;
+                    // 'to' has to stay strictly after 'from', so a 'from' pushed onto or
+                    // past it drags it along rather than leaving an empty range behind.
+                    return { from, to: from && r.to && r.to <= from ? addDays(from, 1) : r.to };
+                  })
+                }
+              />
+            </div>
+            <span className="guest-register__range-dash" aria-hidden="true">
+              –
+            </span>
+            <div className="field guest-register__range-field">
+              <label htmlFor="evTo">To</label>
+              <input
+                id="evTo"
+                type="date"
+                value={range.to}
+                min={range.from ? addDays(range.from, 1) : undefined}
+                onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="field guest-register__search">
+            <label htmlFor="evSearch">Find a function</label>
+            <div className="guest-register__search-box">
+              <svg className="guest-register__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                id="evSearch"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Type a title, organiser name or phone"
+              />
+              {search && (
+                <button type="button" className="guest-register__search-clear" onClick={() => setSearch('')} aria-label="Clear search">
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="evVenue">Venue</label>
+            <select id="evVenue" value={venueId} onChange={(e) => setVenueId(e.target.value)}>
+              <option value="">All venues</option>
+              {venues.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="guest-register__toolbar-bottom">
+          <div className="guest-register__presets">
+            {EVENT_PRESETS.map((pr) => (
+              <button
+                key={pr.key}
+                type="button"
+                className="guest-register__preset"
+                aria-pressed={activePreset?.key === pr.key}
+                onClick={() => setRange(pr.range())}
+              >
+                {pr.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="guest-register__status-filters" role="group" aria-label="Filter by status">
+            {[['', 'All', null], ...Object.entries(EVENT_STATUS_LABEL).map(([k, v]) => [k, v, EVENT_STATUS_SWATCH[k]])].map(
+              ([key, label, swatch]) => {
+                const count = key ? counts[key] || 0 : (events || []).length;
+                return (
+                  <button
+                    key={key || 'ALL'}
+                    type="button"
+                    className={`guest-register__status-chip${events && swatch && !count ? ' guest-register__status-chip--empty' : ''}`}
+                    aria-pressed={status === key}
+                    onClick={() => setStatus(key)}
+                  >
+                    {swatch && <i aria-hidden="true" className={`guest-register__status-swatch guest-register__status-swatch--${swatch}`} />}
+                    {label}
+                    {events && <span className="guest-register__status-count">{count}</span>}
+                  </button>
+                );
+              }
+            )}
+          </div>
+
+          <button
+            type="button"
+            className={`guest-register__clear-filters${filtersActive ? '' : ' guest-register__clear-filters--idle'}`}
+            onClick={clearFilters}
+            disabled={!filtersActive}
+            aria-hidden={!filtersActive}
+          >
+            Clear filters
+          </button>
+        </div>
       </div>
+
+      {events && (
+        <div className="guest-register__stats">
+          <EventStatTile label="Functions" value={stats.functions} note={counts.CANCELLED ? `${counts.CANCELLED} cancelled` : null} active={!status} hint="Show every function" onClick={() => setStatus('')} />
+          <EventStatTile label="Confirmed" value={stats.confirmed} note="booked and paid for in part" active={status === 'CONFIRMED'} hint="Show only confirmed functions" onClick={() => setStatus('CONFIRMED')} />
+          <EventStatTile className="guest-register__stat--money" label="Billed" value={formatPrice(billedAmount)} note={`${stats.settled.length} ${stats.settled.length === 1 ? 'function' : 'functions'} settled`} active={status === 'SETTLED'} hint="Show only settled functions" onClick={() => setStatus('SETTLED')} />
+          {dueAmount > 0 && (
+            <EventStatTile className="guest-register__stat--pending" label="Pending" value={formatPrice(dueAmount)} note={`${stats.due.length} ${stats.due.length === 1 ? 'function' : 'functions'} not billed yet`} active={status === 'CONFIRMED'} hint="Show confirmed functions with a balance still due" onClick={() => setStatus('CONFIRMED')} />
+          )}
+        </div>
+      )}
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
@@ -522,15 +714,78 @@ function EventList({ venues, onOpen, refreshKey }) {
             <table className="dash-table">
               <thead>
                 <tr>
-                  <th>When</th>
-                  <th>Function</th>
-                  <th>Venue</th>
-                  <th>Organiser</th>
-                  <th>Pax</th>
-                  <th className="events-list__num">Total</th>
-                  <th className="events-list__num">Advance</th>
-                  <th className="events-list__num">Balance</th>
-                  <th>Status</th>
+                  <th aria-sort={sort.key === 'when' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('when')}>
+                      When
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'when' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === 'title' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('title')}>
+                      Function
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'title' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === 'venue' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('venue')}>
+                      Venue
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'venue' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === 'organiser' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('organiser')}>
+                      Organiser
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'organiser' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === 'pax' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('pax')}>
+                      Pax
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'pax' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="events-list__num" aria-sort={sort.key === 'total' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('total')}>
+                      Total
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'total' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="events-list__num" aria-sort={sort.key === 'advance' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('advance')}>
+                      Advance
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'advance' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="events-list__num" aria-sort={sort.key === 'balance' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('balance')}>
+                      Balance
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'balance' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === 'status' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="asset-table__sort-btn" onClick={() => toggleSort('status')}>
+                      Status
+                      <span className="asset-table__sort-icon" aria-hidden="true">
+                        {sort.key === 'status' ? (sort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                      </span>
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -944,9 +1199,12 @@ function Setup({ venues, addons, reloadCatalogue }) {
 // refreshKey is the dashboard's: it changes when something outside this
 // screen — the bill modal — has moved a function on, and the diary and the
 // list re-read on it exactly as they do on their own bump.
-export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: externalRefresh = 0 }) {
+// `only` pins the screen to one of its tabs ('diary' | 'list' | 'setup') and
+// drops the tab strip — each is its own sidebar section under Events.
+export default function Events({ lodge, onBillEvent, onViewInvoice, only = null, refreshKey: externalRefresh = 0 }) {
   const token = getSession()?.token;
-  const [tab, setTab] = useUrlState('tab', 'diary');
+  const [urlTab, setTab] = useUrlState('tab', 'diary');
+  const tab = only ?? urlTab;
   const [venues, setVenues] = useState([]);
   const [addons, setAddons] = useState([]);
   const [showClosed, setShowClosed] = useState(false);
@@ -984,7 +1242,8 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: 
     setSearchParams(
       (prev) => {
         const updated = new URLSearchParams(prev);
-        updated.set('tab', 'list');
+        if (only) updated.set('section', 'eventRegister');
+        else updated.set('tab', 'list');
         if (status) updated.set('status', status);
         else updated.delete('status');
         return updated;
@@ -1012,6 +1271,7 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: 
 
   return (
     <div>
+      {!only && (
       <div className="subtabs">
         {TABS.map((t) => (
           <button
@@ -1025,6 +1285,7 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, refreshKey: 
           </button>
         ))}
       </div>
+      )}
 
       {tab === 'diary' && (
         <Diary

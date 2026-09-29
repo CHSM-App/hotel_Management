@@ -45,7 +45,7 @@ export function describeFoodService(lodge) {
 const SECTIONS = [
   {
     key: 'bookings',
-    title: 'Bookings & tape chart',
+    title: 'Room Chart',
     permission: 'bookings.manage',
     when: (f) => f.hasRooms,
     summary:

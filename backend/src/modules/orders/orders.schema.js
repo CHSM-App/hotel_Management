@@ -58,7 +58,22 @@ const updateItemReadySchema = z.object({
   ready: z.boolean({ error: 'Say whether the item is ready.' }),
 });
 
+// Captain editing a live order. Items may be empty when the kitchen has already
+// cooked everything and only the note is changing.
+const editOrderSchema = z.object({
+  items: orderItemsSchema.min(0),
+  note: z.string().trim().max(300).optional(),
+});
+
+// Cancelling some dishes off a live order.
+const cancelItemsSchema = z.object({
+  itemIds: z.array(z.coerce.number().int().positive()).min(1, 'Pick at least one dish to cancel.').max(50),
+  cancelReason: z.string().trim().max(200).optional().default(''),
+});
+
 module.exports = {
+  cancelItemsSchema,
+  editOrderSchema,
   ORDER_STATUSES,
   orderItemsSchema,
   counterOrderSchema,

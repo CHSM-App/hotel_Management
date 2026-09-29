@@ -1403,3 +1403,88 @@
   opacity: 0.45;
   box-shadow: var(--shadow-pressed);
 }
+
+.billing-panel__queue-row {
+  flex-wrap: wrap;
+}
+
+.billing-panel__queue-row > .billing-panel__queue-actions:last-child:not(:nth-child(2)) {
+  flex: 1 0 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Guest picker under a food tab: a full-width strip inside the row, label on
+   top, then the select stretching to fill and the two buttons at the right. */
+.billing-panel__queue-row {
+  flex-wrap: wrap;
+}
+
+.room-pick {
+  flex: 1 0 100%;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.room-pick__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.room-pick__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-pick__select {
+  flex: 1 1 220px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.room-pick__select:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.room-pick__note {
+  flex: 1 1 220px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* Close icon in the bill modal's header, beside the tags. */
+.bill-close {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  margin-left: 6px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bill-close:hover {
+  color: var(--danger);
+  box-shadow: var(--shadow-raised-hover);
+}

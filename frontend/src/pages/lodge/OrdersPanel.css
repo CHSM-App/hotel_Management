@@ -568,10 +568,19 @@ label.order-card__item:has(.order-card__tick:disabled) {
 
 /* A single column, not the queue's grid: this is read down like a ledger,
    and the eye needs the times and totals to line up from row to row. */
+/* Several columns instead of one long stack: on a wide screen this fits three
+   or four times as many orders before any scrolling. Rows in a line stretch to
+   the tallest, and min-width: 0 lets long guest names wrap rather than push a
+   column wider. */
 .history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.history-list > * {
+  min-width: 0;
 }
 
 .history-row {
@@ -678,6 +687,16 @@ label.order-card__item:has(.order-card__tick:disabled) {
 .history-row__items li {
   display: flex;
   gap: 6px;
+}
+
+.history-row__ready {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #0f6d37;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
 .history-row__qty {
@@ -1072,4 +1091,927 @@ label.order-card__item:has(.order-card__tick:disabled) {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-success);
+}
+
+/* Cancel-order dialog: a warning header, dishes as tappable rows, and a footer
+   that keeps the safe choice on the left and the destructive ones on the right. */
+.cancel-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.cancel-modal__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cancel-modal__head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.cancel-modal__head h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.cancel-modal__sub {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.cancel-modal__icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.cancel-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cancel-modal__hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.cancel-modal__notice {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cancel-modal__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cancel-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.cancel-item input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--danger);
+}
+
+.cancel-item--picked {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.cancel-item--locked {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cancel-item__qty {
+  font-weight: 700;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.cancel-item__name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cancel-item__price {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cancel-item__tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #0f6d37;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cancel-modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--paper);
+}
+
+.cancel-modal__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cancel-modal__btn {
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1.5px solid var(--danger);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cancel-modal__btn:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+
+.cancel-modal__btn--danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.cancel-modal__btn--danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(0.92);
+}
+
+.cancel-modal__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 520px) {
+  .cancel-modal__foot,
+  .cancel-modal__choices {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+
+.history-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.history-row__actions .order-btn {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 18px;
+}
+
+/* A dish that has reached the guest reads as settled, not as a call to act. */
+.history-row__ready--done {
+  background: var(--surface);
+  color: #0f6d37;
+  border: 1px solid #0f6d37;
+}
+
+/* Spreadsheet-style view of the day's orders: one dense line per order, sticky
+   header, scrolls sideways on a narrow screen rather than squashing columns. */
+.history-table-wrap {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+}
+
+.history-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.history-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.history-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.history-table tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.history-table tbody tr:hover {
+  background: rgba(91, 66, 218, 0.06);
+}
+
+.history-table__strong {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.history-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.history-table__items {
+  min-width: 220px;
+}
+
+.history-table__item {
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.history-table__item--ready {
+  color: #0f6d37;
+  font-weight: 600;
+}
+
+.history-table__note {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.history-table__status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.history-table__status--delivered {
+  color: #0f6d37;
+  border-color: #b5dec5;
+}
+
+.history-table__status--cancelled {
+  color: var(--danger);
+  border-color: #e6c3c0;
+}
+
+.history-table__actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.history-table__btn {
+  margin-left: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-table__btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.history-table__btn--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.history-table__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Management strip: tiles that double as filters, and a search that narrows the
+   list beneath them. */
+.order-history__search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 380px;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  box-shadow: var(--shadow-well);
+}
+
+.history-chip__count {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.order-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+  font: inherit;
+}
+
+button.order-stat {
+  cursor: pointer;
+}
+
+button.order-stat:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.order-stat--on {
+  border-color: var(--brand);
+  border-left-color: var(--brand);
+}
+
+.order-stat--live {
+  border-left-color: #d98a00;
+}
+
+.order-stat--ok {
+  border-left-color: #0f6d37;
+}
+
+.order-stat--bad {
+  border-left-color: var(--danger);
+}
+
+.order-stat--sales {
+  border-left-color: var(--brand);
+}
+
+.order-stat__value {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-stat__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.history-table-title {
+  margin: 22px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ---- Spreadsheet view, redesigned: a titled card with a total, a quiet header
+   band, ruled cells and status pills you can read down a column. ---- */
+.history-sheet {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.history-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-sheet__title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.history-sheet__sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.history-sheet__total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-sheet__total small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.history-sheet .history-table-wrap {
+  border: none;
+  border-radius: 0;
+  max-height: 65vh;
+}
+
+.history-sheet .history-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+}
+
+.history-sheet .history-table th {
+  padding: 10px 14px;
+  background: #f1eefc;
+  color: var(--brand);
+  border-bottom: 2px solid #ddd6f7;
+}
+
+.history-sheet .history-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid rgba(0, 0, 0, 0.04);
+  vertical-align: middle;
+}
+
+.history-sheet .history-table td:last-child {
+  border-right: none;
+}
+
+.history-table__row--cancelled td {
+  color: var(--text-muted);
+}
+
+.history-table__row--cancelled .history-table__num {
+  text-decoration: line-through;
+}
+
+.history-table__where {
+  display: inline-block;
+  padding: 1px 9px;
+  border-radius: 6px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.history-table__item {
+  padding: 1px 8px;
+  margin: 2px 6px 2px 0;
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.history-table__item--ready {
+  background: #e3f4ea;
+}
+
+.history-table__status {
+  padding: 2px 10px;
+  font-size: 11.5px;
+}
+
+.history-table__status--preparing,
+.history-table__status--queued,
+.history-table__status--pending {
+  color: #9a5f00;
+  border-color: #efd39a;
+  background: #fff6e0;
+}
+
+.history-table__status--ready {
+  color: var(--brand);
+  border-color: #cfc6f5;
+  background: #f1eefc;
+}
+
+.history-table__status--delivered {
+  background: #e3f4ea;
+}
+
+.history-table__status--cancelled {
+  background: #fbeceb;
+}
+
+.order-history__period {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.order-history__range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.order-history__range input {
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.history-table__status--billed {
+  color: #1f4fa3;
+  border-color: #b9cdee;
+  background: #e8f0fc;
+}
+
+/* Tidy toolbar: view + period grouped on the left, search on the right. */
+.order-history__bar {
+  align-items: center;
+}
+
+.order-history__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px 24px;
+  flex-wrap: wrap;
+}
+
+.order-history__search {
+  margin-left: auto;
+}
+
+.order-stat--billed {
+  border-left-color: #1f4fa3;
+}
+
+/* Sheet: keep short cells on one line so rows stay level. */
+.history-sheet .history-table td:nth-child(2),
+.history-sheet .history-table td:nth-child(7) {
+  white-space: nowrap;
+}
+
+.history-sheet .history-table td:nth-child(4) {
+  min-width: 320px;
+  line-height: 1.6;
+}
+
+.history-sheet .history-table__item {
+  font-size: 12.5px;
+  padding: 0 7px;
+  margin: 2px 4px 2px 0;
+}
+
+
+.history-sheet .history-table__btn {
+  margin-left: 0;
+}
+
+.history-chip--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  padding: 0;
+}
+
+/* Each control group says what it does: the period decides which orders are
+   loaded, the rest only narrow what is already on screen. */
+.ohf {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ohf--search {
+  margin-left: auto;
+  flex: 1 1 240px;
+  max-width: 380px;
+}
+
+.ohf--search .order-history__search {
+  max-width: none;
+  margin-left: 0;
+}
+
+.ohf__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ohf__label--tiles {
+  margin: 4px 0 6px;
+}
+
+.order-history__bar {
+  align-items: flex-end;
+  gap: 14px 28px;
+}
+
+.history-table__actions-inner {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* The search sits in a column: without this its flex-grow stretched it tall. */
+.ohf--search .order-history__search {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+}
+
+.order-history__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 28px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.order-history__controls {
+  display: contents;
+}
+
+@media (max-width: 720px) {
+  .ohf--search {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+/* No coloured stripe down the left edge of the status tiles or order rows. */
+.order-stat,
+.order-stat--live,
+.order-stat--ok,
+.order-stat--bad,
+.order-stat--billed,
+.order-stat--sales,
+.order-stat--on,
+.history-row,
+.history-row--delivered,
+.history-row--cancelled {
+  border-left: 1px solid var(--border);
+}
+
+.order-stat--on {
+  border-color: var(--brand);
+}
+
+/* ---- Card view, tidied: equal-height cards, one dish per line with its badge
+   at the right, and the buttons pinned to the bottom. ---- */
+.history-list {
+  align-items: stretch;
+}
+
+.history-row {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+}
+
+.history-row__head {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.history-row__total {
+  margin-left: auto;
+}
+
+.history-row__times {
+  margin-top: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-row__items {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  margin: 0;
+}
+
+.history-row__items li {
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.history-row__items li:last-child {
+  border-bottom: none;
+}
+
+.history-row__items li > :nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-row__qty {
+  min-width: 26px;
+}
+
+.history-row__actions {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.history-row__actions .order-btn {
+  min-height: 34px;
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+/* ---- Compact pass: dishes flow in two columns, tighter rows, cards only as
+   tall as their contents. ---- */
+.history-list {
+  align-items: start;
+}
+
+.history-row {
+  padding: 10px 14px;
+}
+
+.history-row__times {
+  padding-bottom: 6px;
+  font-size: 12px;
+}
+
+.history-row__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0 14px;
+  padding-top: 4px;
+}
+
+.history-row__items li {
+  padding: 3px 0;
+  border-bottom: none;
+  font-size: 13px;
+}
+
+.history-row__ready {
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+.history-row__actions {
+  padding-top: 8px;
+}
+
+/* ---- Cards pack themselves: as many columns as fit the width, each card
+   dropped into the shortest column (masonry), so nothing leaves a gap. ---- */
+.history-list {
+  display: block;
+  column-width: 340px;
+  column-gap: 12px;
+}
+
+.history-list > .history-row {
+  break-inside: avoid;
+  margin-bottom: 12px;
+}
+
+/* ---- Queue and captain cards pack themselves the same way as the history
+   cards: as many columns as fit, each card in the shortest column. ---- */
+.orders-grid {
+  display: block;
+  column-width: 280px;
+  column-gap: 14px;
+}
+
+.orders-grid > .order-card {
+  break-inside: avoid;
+  margin-bottom: 14px;
+}
+
+/* ---- Space use: a real grid again (dense, so short cards fill the holes), and
+   a long ticket takes two columns with its dishes split across them. ---- */
+.orders-grid {
+  display: grid;
+  column-width: auto;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-auto-flow: dense;
+  align-items: start;
+  gap: 14px;
+}
+
+.orders-grid > .order-card {
+  margin-bottom: 0;
+}
+
+.order-card--wide {
+  grid-column: span 2;
+}
+
+.order-card--wide .order-card__items {
+  column-count: 2;
+  column-gap: 20px;
+}
+
+.order-card--wide .order-card__items li {
+  break-inside: avoid;
+}
+
+@media (max-width: 680px) {
+  .order-card--wide {
+    grid-column: span 1;
+  }
+
+  .order-card--wide .order-card__items {
+    column-count: 1;
+  }
 }

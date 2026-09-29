@@ -38,18 +38,21 @@ function typedMobile(value) {
   return normalised.slice(0, 10);
 }
 
-// Straight-line depreciation for the registration form's live preview only —
-// purchase cost spread evenly over the expected useful life. Deliberately
-// not the P/L report's figure (that's WDV at the category's IT Act rate);
-// this is a quick "roughly what is this costing us a year" an owner can read
-// while still typing, before a category rate is even involved. Returns null
-// until there's a cost and a life to divide it by.
-function straightLineEstimate(purchaseCost, years, months) {
+// First-financial-year depreciation for the registration form's live
+// preview — the same WDV figure the Profit & Loss report will charge
+// (mirrors yearlyScheduleForAsset in backend/src/modules/assets/depreciation.js:
+// category's rate x cost, halved when the asset is held under 180 days of its
+// purchase FY, FY = 1 Apr–31 Mar). Returns null until there's a cost and a
+// category rate to work from.
+function firstYearDepreciation(purchaseCost, ratePercent, purchaseDate) {
   const cost = Number(purchaseCost);
-  const totalMonths = (Number(years) || 0) * 12 + (Number(months) || 0);
-  if (!cost || cost <= 0 || totalMonths <= 0) return null;
-  const perMonth = Math.round((cost / totalMonths) * 100) / 100;
-  return { totalMonths, perMonth, perYear: Math.round(perMonth * 12 * 100) / 100 };
+  if (!cost || cost <= 0 || ratePercent == null || ratePercent === '') return null;
+  const bought = purchaseDate ? new Date(purchaseDate + 'T00:00:00Z') : new Date();
+  const fyEndYear = bought.getUTCMonth() >= 3 ? bought.getUTCFullYear() + 1 : bought.getUTCFullYear();
+  const heldDays = Math.round((Date.UTC(fyEndYear, 2, 31) - bought.setUTCHours(0, 0, 0, 0)) / 86400000) + 1;
+  const effectiveRate = (Number(ratePercent) / 100) * (heldDays < 180 ? 0.5 : 1);
+  const depreciation = Math.round(cost * effectiveRate * 100) / 100;
+  return { depreciation, closingWdv: Math.round((cost - depreciation) * 100) / 100, halfRate: heldDays < 180 };
 }
 
 // A neutral pill for every status read the same at a glance as "nothing to
@@ -734,7 +737,7 @@ export default function AssetsPanel({ onViewReport }) {
   // Depreciation rate editor — one category at a time, opened from the
   // Depreciation tab's list.
   const [editingDepreciationCategoryId, setEditingDepreciationCategoryId] = useState(null);
-  const [depreciationForm, setDepreciationForm] = useState({ depreciationBlock: '', depreciationRatePercent: '' });
+  const [depreciationForm, setDepreciationForm] = useState({ depreciationBlock: '', depreciationRatePercent: '', depreciationMethod: 'WDV' });
   const [depreciationSubmitting, setDepreciationSubmitting] = useState(false);
   const [depreciationError, setDepreciationError] = useState('');
 
@@ -772,6 +775,7 @@ export default function AssetsPanel({ onViewReport }) {
     setDepreciationForm({
       depreciationBlock: category.depreciationBlock || '',
       depreciationRatePercent: category.depreciationRatePercent ?? '',
+      depreciationMethod: category.depreciationMethod || 'WDV',
     });
     setDepreciationError('');
   };
@@ -2470,7 +2474,7 @@ export default function AssetsPanel({ onViewReport }) {
         <div>
           <p className="inv-panel__hint">
             Every category needs a depreciation rate before its assets can appear on the Profit &amp; Loss
-            report — the rate an asset's category has is the WDV rate applied to every unit filed under it.
+            report — the method and rate on an asset's category apply to every unit filed under it.
           </p>
           {(categories || []).length === 0 ? (
             <p className="inv-panel__hint">No categories yet. Register an asset first to create one.</p>
@@ -2482,7 +2486,7 @@ export default function AssetsPanel({ onViewReport }) {
                     <div className="inv-item__name">{cat.name}</div>
                     <div className="inv-item__meta">
                       {cat.depreciationRatePercent != null ? (
-                        `${cat.depreciationBlock ? `${cat.depreciationBlock} · ` : ''}${cat.depreciationRatePercent}% WDV`
+                        `${cat.depreciationBlock ? `${cat.depreciationBlock} · ` : ''}${cat.depreciationRatePercent}% ${cat.depreciationMethod === 'SLM' ? 'straight-line' : 'WDV'}`
                       ) : (
                         <span className="asset-table__muted">No rate set</span>
                       )}
@@ -2582,14 +2586,6 @@ export default function AssetsPanel({ onViewReport }) {
                             selectedAsset.usefulLifeYears ? `${selectedAsset.usefulLifeYears} yr` : null,
                             selectedAsset.usefulLifeMonths ? `${selectedAsset.usefulLifeMonths} mo` : null,
                           ].filter(Boolean).join(' ')}
-                          {(() => {
-                            const est = straightLineEstimate(
-                              selectedAsset.purchaseCost,
-                              selectedAsset.usefulLifeYears,
-                              selectedAsset.usefulLifeMonths
-                            );
-                            return est ? ` · ~${formatPrice(est.perYear)}/year` : '';
-                          })()}
                         </dd>
                       </div>
                     )}
@@ -3301,36 +3297,42 @@ export default function AssetsPanel({ onViewReport }) {
                 )}
 
                 {!editingAssetId && (() => {
-                  const est = straightLineEstimate(
-                    assetForm.purchaseCost,
-                    assetForm.usefulLifeYears,
-                    assetForm.usefulLifeMonths
+                  const cat = (categories || []).find(
+                    (c) => c.name.toLowerCase() === (assetForm.categoryName || '').trim().toLowerCase()
                   );
+                  const est = firstYearDepreciation(assetForm.purchaseCost, cat?.depreciationRatePercent, assetForm.purchaseDate);
                   return (
-                    <div className="field-row field--span2">
-                      <div className="field">
-                        <label htmlFor="assetDepreciationPerYear">Depreciation cost / year</label>
-                        <input
-                          id="assetDepreciationPerYear"
-                          className="field--computed"
-                          value={est ? formatPrice(est.perYear) : ''}
-                          placeholder="Enter cost & useful life above"
-                          disabled
-                          readOnly
-                        />
+                    <>
+                      <div className="field-row field--span2">
+                        <div className="field">
+                          <label htmlFor="assetDepreciationFirstYear">First-year depreciation</label>
+                          <input
+                            id="assetDepreciationFirstYear"
+                            className="field--computed"
+                            value={est ? formatPrice(est.depreciation) : ''}
+                            placeholder="Enter cost, date & category"
+                            disabled
+                            readOnly
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="assetBookValueFirstYear">Book value after first year</label>
+                          <input
+                            id="assetBookValueFirstYear"
+                            className="field--computed"
+                            value={est ? formatPrice(est.closingWdv) : ''}
+                            placeholder="Enter cost, date & category"
+                            disabled
+                            readOnly
+                          />
+                        </div>
                       </div>
-                      <div className="field">
-                        <label htmlFor="assetDepreciationPerMonth">Depreciation cost / month</label>
-                        <input
-                          id="assetDepreciationPerMonth"
-                          className="field--computed"
-                          value={est ? formatPrice(est.perMonth) : ''}
-                          placeholder="Enter cost & useful life above"
-                          disabled
-                          readOnly
-                        />
-                      </div>
-                    </div>
+                      <span className="field__hint field--span2">
+                        {cat?.depreciationRatePercent != null
+                          ? `${cat.depreciationMethod === 'SLM' ? 'Straight-line' : 'Reducing-balance (WDV)'} at ${cat.depreciationRatePercent}% — the same method the Profit & Loss report uses${est?.halfRate ? "; half rate in the purchase year because it is held under 180 days" : ""}.`
+                          : 'Set this category\u2019s depreciation rate in the Depreciation tab — until then this asset is left out of the Profit & Loss.'}
+                      </span>
+                    </>
                   );
                 })()}
 
@@ -3746,36 +3748,42 @@ export default function AssetsPanel({ onViewReport }) {
                 </div>
 
                 {(() => {
-                  const est = straightLineEstimate(
-                    bulkForm.purchaseCost,
-                    bulkForm.usefulLifeYears,
-                    bulkForm.usefulLifeMonths
+                  const cat = (categories || []).find(
+                    (c) => c.name.toLowerCase() === (bulkForm.categoryName || '').trim().toLowerCase()
                   );
+                  const est = firstYearDepreciation(bulkForm.purchaseCost, cat?.depreciationRatePercent, bulkForm.purchaseDate);
                   return (
-                    <div className="field-row field--span2">
-                      <div className="field">
-                        <label htmlFor="bulkDepreciationPerYear">Depreciation cost / year (per unit)</label>
-                        <input
-                          id="bulkDepreciationPerYear"
-                          className="field--computed"
-                          value={est ? formatPrice(est.perYear) : ''}
-                          placeholder="Enter cost & useful life above"
-                          disabled
-                          readOnly
-                        />
+                    <>
+                      <div className="field-row field--span2">
+                        <div className="field">
+                          <label htmlFor="bulkDepreciationFirstYear">First-year depreciation (per unit)</label>
+                          <input
+                            id="bulkDepreciationFirstYear"
+                            className="field--computed"
+                            value={est ? formatPrice(est.depreciation) : ''}
+                            placeholder="Enter cost, date & category"
+                            disabled
+                            readOnly
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="bulkBookValueFirstYear">Book value after first year (per unit)</label>
+                          <input
+                            id="bulkBookValueFirstYear"
+                            className="field--computed"
+                            value={est ? formatPrice(est.closingWdv) : ''}
+                            placeholder="Enter cost, date & category"
+                            disabled
+                            readOnly
+                          />
+                        </div>
                       </div>
-                      <div className="field">
-                        <label htmlFor="bulkDepreciationPerMonth">Depreciation cost / month (per unit)</label>
-                        <input
-                          id="bulkDepreciationPerMonth"
-                          className="field--computed"
-                          value={est ? formatPrice(est.perMonth) : ''}
-                          placeholder="Enter cost & useful life above"
-                          disabled
-                          readOnly
-                        />
-                      </div>
-                    </div>
+                      <span className="field__hint field--span2">
+                        {cat?.depreciationRatePercent != null
+                          ? `${cat.depreciationMethod === 'SLM' ? 'Straight-line' : 'Reducing-balance (WDV)'} at ${cat.depreciationRatePercent}% — the same method the Profit & Loss report uses${est?.halfRate ? "; half rate in the purchase year because it is held under 180 days" : ""}.`
+                          : 'Set this category\u2019s depreciation rate in the Depreciation tab — until then this asset is left out of the Profit & Loss.'}
+                      </span>
+                    </>
                   );
                 })()}
 
@@ -4365,7 +4373,19 @@ export default function AssetsPanel({ onViewReport }) {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="depreciationRate">WDV rate (%)</label>
+                  <label htmlFor="depreciationMethod">Method</label>
+                  <select
+                    id="depreciationMethod"
+                    value={depreciationForm.depreciationMethod}
+                    onChange={(e) => setDepreciationForm((f) => ({ ...f, depreciationMethod: e.target.value }))}
+                  >
+                    <option value="WDV">Reducing balance (WDV) — rate on remaining value</option>
+                    <option value="SLM">Straight-line — same amount every year</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="depreciationRate">{depreciationForm.depreciationMethod === 'SLM' ? 'Straight-line rate (% of cost per year)' : 'WDV rate (%)'}</label>
                   <input
                     id="depreciationRate"
                     type="number"

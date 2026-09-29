@@ -50,11 +50,13 @@ const categorySchema = z.object({
   name: z.string().trim().min(1, 'Category name is required.').max(60),
   depreciationBlock: z.string().trim().max(40).optional().default(''),
   depreciationRatePercent: z.coerce.number().min(0).max(100, 'Rate can’t exceed 100%.').optional().nullable(),
+  depreciationMethod: z.enum(['WDV', 'SLM']).optional().default('WDV'),
 });
 
 const categoryDepreciationSchema = z.object({
   depreciationBlock: z.string().trim().max(40).optional().default(''),
   depreciationRatePercent: z.coerce.number().min(0).max(100, 'Rate can’t exceed 100%.').optional().nullable(),
+  depreciationMethod: z.enum(['WDV', 'SLM']).optional().default('WDV'),
 });
 
 // Every field but name and categoryId is optional — a hotel registering fifty

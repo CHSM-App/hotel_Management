@@ -640,14 +640,10 @@ async function previewBill(
 
   const active = await findActiveInvoice(pool.request(), bookingId);
 
-  // Food never rides on the stay bill. Room service is settled on its own food
-  // bill against the room, whether or not anybody is checked into it — so the
-  // guest's main bill is accommodation only, and the food they ordered to the
-  // room is a separate document. Kept as empty lists rather than removed so
-  // every consumer of this preview — the pricing, the document, the screen —
-  // keeps its shape and simply prices a bill whose food side is nil.
-  const foodOrders = [];
-  const foodItems = [];
+  // Room service and any table food the desk moved onto this stay
+  // (addTabToRoomBill) ride on the room bill.
+  const foodOrders = await loadStayFoodOrders(pool.request(), lodgeId, bookingId);
+  const foodItems = await loadFoodItemsForOrders(pool.request(), foodOrders.map((o) => o.id));
 
   const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
 
@@ -751,6 +747,27 @@ const FOOD_ITEM_COLUMNS = `
   fi.item_name, fi.unit_price,
   SUM(fi.quantity) AS quantity, SUM(fi.line_total) AS line_total
 `;
+
+// Delivered, unbilled food charged to a stay: room service, plus table food the
+// desk moved onto the room bill. Shaped like loadUnbilledTabOrders' rows.
+async function loadStayFoodOrders(request, lodgeId, bookingId) {
+  const result = await request
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT id, order_number, subtotal, placed_at
+      FROM dbo.food_orders
+      WHERE lodge_id = @lodgeId AND booking_id = @bookingId
+        AND status = 'DELIVERED' AND invoice_id IS NULL
+      ORDER BY placed_at ASC
+    `);
+  return result.recordset.map((row) => ({
+    id: row.id,
+    orderNumber: row.order_number,
+    subtotal: Number(row.subtotal),
+    placedAt: row.placed_at,
+  }));
+}
 
 // Items for orders about to be billed, before any invoice exists.
 async function loadFoodItemsForOrders(request, orderIds) {
@@ -863,9 +880,9 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       throw new ApiError('This booking already has an issued bill. Void it before reissuing.', 409);
     }
 
-    // No food on a stay bill — it is billed separately against the room, so
-    // there is nothing to re-read here and nothing to stamp with this invoice.
-    const foodOrders = [];
+    // Read inside the transaction so the orders stamped below are exactly the
+    // ones priced.
+    const foodOrders = await loadStayFoodOrders(new sql.Request(transaction), lodgeId, bookingId);
 
     // Priced by the same code the preview ran, so the document written here is
     // the one the desk agreed to on screen.
@@ -1529,16 +1546,23 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
 // Every table (and the counter) currently holding delivered, unbilled food.
 // This is the restaurant's equivalent of the checked-out-and-unbilled queue:
 // what's waiting to be paid for.
+// Food charged to a stay rides on that stay's bill, so it is not restaurant
+// billing — unless the stay's bill was already issued, when the food would
+// otherwise be stranded with nowhere to be collected.
+const NOT_ON_STAY_BILL = `(o.booking_id IS NULL OR EXISTS (
+  SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = o.booking_id AND bi.status = 'ISSUED'))`;
+
 async function listOpenFoodTabs(lodgeId) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT o.source, o.table_id, o.room_id, o.booking_id, t.label AS table_label, r.room_number,
+      SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
              -- A counter order pays for itself, so it groups alone: the id is
              -- part of its key, and null for the two tabs that do accumulate.
              CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
+             CASE WHEN o.source = 'ROOM' THEN o.booking_id END AS booking_id,
              MAX(o.order_number) AS order_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
              MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at,
@@ -1564,15 +1588,12 @@ async function listOpenFoodTabs(lodgeId) {
         WHERE o.source = 'ROOM' AND b.id = o.booking_id
       ) rb
       WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-        -- Every delivered, unbilled order is an open tab, including room
-        -- service ordered against a live stay. Food is never folded into the
-        -- stay bill, so a checked-in guest's room order has no other document
-        -- to ride on: this queue is where it gets billed, and leaving it out
-        -- would strand the charge with no way to collect it.
-        -- booking_id is in the GROUP BY so two stays in the same room — one
-        -- already checked out with an unpaid order, one just checked in and
+        AND ${NOT_ON_STAY_BILL}
+        -- booking_id is grouped for room orders so two stays in the same room —
+        -- one already billed with an unpaid order, one just checked in and
         -- ordering now — group into two rows, not one shared tab.
-      GROUP BY o.source, o.table_id, o.room_id, o.booking_id, t.label, r.room_number,
+      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
+               CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
                CASE WHEN o.source = 'COUNTER' THEN o.id END,
                rb.guest_name, rb.guest_phone
       -- Newest activity first: a fresh order on a table that already has an
@@ -1707,6 +1728,7 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
     WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
+      AND ${NOT_ON_STAY_BILL}
       ${scope}
     ORDER BY o.placed_at ASC
   `);
@@ -1999,7 +2021,53 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
   }
 }
 
+// Guests staying right now, for "add to room bill" on a table tab.
+async function listInHouseGuests(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT b.id, b.guest_name, r.room_number
+      FROM dbo.bookings b JOIN dbo.rooms r ON r.id = b.room_id
+      WHERE b.lodge_id = @lodgeId AND b.status = 'CHECKED_IN'
+      ORDER BY r.room_number
+    `);
+  return result.recordset.map((r) => ({ bookingId: r.id, guestName: r.guest_name, roomNumber: r.room_number }));
+}
+
+// A room guest who ate at a table: charge that tab's delivered food to their
+// stay. Only table and takeaway tabs — room tabs are already on a stay.
+async function addTabToRoomBill(lodgeId, tab, bookingId) {
+  if (!/^(table|counter)-\d+$/.test(String(tab))) {
+    throw new ApiError('Only a table or takeaway tab can be added to a room bill.', 400);
+  }
+  const pool = await getPool();
+  const booking = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query("SELECT id FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CHECKED_IN'");
+  if (booking.recordset.length === 0) {
+    throw new ApiError('That guest is not checked in.', 409);
+  }
+  const request = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('bookingId', sql.BigInt, bookingId);
+  const scope = tabScope(request, tab);
+  const result = await request.query(`
+    UPDATE o SET o.booking_id = @bookingId
+    FROM dbo.food_orders o
+    WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
+      AND o.booking_id IS NULL ${scope}
+  `);
+  if (result.rowsAffected[0] === 0) {
+    throw new ApiError('Nothing to add — no delivered orders are waiting on this tab.', 409);
+  }
+  return { added: result.rowsAffected[0] };
+}
+
 module.exports = {
+  listInHouseGuests,
+  addTabToRoomBill,
   readPaymentLines,
   // Pure, and exported for the same reason tabIdentity is: a test can hand it
   // a row shape without a database and check what the screens actually render.

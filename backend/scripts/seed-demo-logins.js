@@ -19,8 +19,6 @@ const DEMO_USERS = [
   { role: 'RECEPTION', name: 'Demo Reception', email: 'reception@demo.hotel', phone: '9999900003', password: 'FrontDesk@2026' },
   { role: 'KITCHEN', name: 'Demo Kitchen', email: 'kitchen@demo.hotel', phone: '9999900004', password: 'KitchenOps@2026' },
   { role: 'CAPTAIN', name: 'Demo Captain', email: 'captain@demo.hotel', phone: '9999900005', password: 'FloorCaptain@2026' },
-  { role: 'EVENTS_MANAGER', name: 'Demo Events Manager', email: 'events@demo.hotel', phone: '9999900006', password: 'EventsDesk@2026' },
-  { role: 'ASSETS_MANAGER', name: 'Demo Assets Manager', email: 'assets@demo.hotel', phone: '9999900007', password: 'AssetTrack@2026' },
   { role: 'ACCOUNTANT', name: 'Demo Accountant', email: 'accountant@demo.hotel', phone: '9999900008', password: 'LedgerBooks@2026' },
 ];
 

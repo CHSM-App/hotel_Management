@@ -7,6 +7,9 @@ const {
   createCounterOrderHandler,
   updateStatusHandler,
   updateItemReadyHandler,
+  editOrderHandler,
+  cancelItemsHandler,
+  updateItemDeliveredHandler,
   clearPinLockoutHandler,
   roomOccupancyHandler,
 } = require('./orders.controller');
@@ -41,7 +44,12 @@ router.get(
 router.get('/', authenticate, requirePermission('orders.manage', 'orders.take'), listOrdersHandler);
 router.get('/:id', authenticate, requirePermission('orders.manage'), getOrderHandler);
 router.post('/', authenticate, requirePermission('orders.manage', 'orders.take'), createCounterOrderHandler);
-router.patch('/:id/status', authenticate, requirePermission('orders.manage'), updateStatusHandler);
+// orders.take is here for the captain, who delivers the order; the handler
+// decides which moves each permission may make.
+router.patch('/:id/status', authenticate, requirePermission('orders.manage', 'orders.take'), updateStatusHandler);
+router.patch('/:id/items', authenticate, requirePermission('orders.take'), editOrderHandler);
+router.post('/:id/items/cancel', authenticate, requirePermission('orders.take'), cancelItemsHandler);
+router.patch('/:id/items/:itemId/delivered', authenticate, requirePermission('orders.take'), updateItemDeliveredHandler);
 router.patch(
   '/:id/items/:itemId/ready',
   authenticate,
