@@ -172,6 +172,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         screen = const OrdersScreen();
       case 'billing':
         screen = const BillingScreen();
+      case 'restaurantBilling':
+        screen = const BillingScreen(restaurantOnly: true);
       case 'rooms':
         screen = const RoomsRatesScreen();
       case 'menu':
@@ -315,11 +317,21 @@ class _ResponsiveBody extends StatelessWidget {
 /// tiles — so the list reads as one calm surface instead of repeating the
 /// same shadow five times. On a tablet/desktop width there's room to spare,
 /// so it switches to a two-column grid of its own small cards instead.
-class _MoreList extends StatelessWidget {
+class _MoreList extends StatefulWidget {
   final List<Feature> features;
   final ValueChanged<String> onSelect;
 
   const _MoreList({required this.features, required this.onSelect});
+
+  @override
+  State<_MoreList> createState() => _MoreListState();
+}
+
+class _MoreListState extends State<_MoreList> {
+  /// Which grouped headers ("Restaurant", …) are currently expanded — starts
+  /// empty, so every group opens collapsed the same way a fresh visit to the
+  /// web sidebar's own grouped sections would.
+  final Set<String> _expanded = {};
 
   /// A distinct tint per feature so the list has some colour to it rather
   /// than five identical accent-purple icons in a row — purely decorative,
@@ -328,17 +340,38 @@ class _MoreList extends StatelessWidget {
     'rooms': AppTheme.accent,
     'menu': AppTheme.checkout,
     'food': AppTheme.reserved,
+    'restaurantBilling': AppTheme.edit,
     'assets': AppTheme.edit,
     'expenses': AppTheme.draft,
     'income': AppTheme.vacant,
     'reports': AppTheme.checkout,
   };
 
+  /// The tint for a group's own header row, keyed by group name rather than
+  /// a feature key — "Restaurant" gets Food orders' own colour since that's
+  /// the row the desk opens this group for most.
+  static const _groupTints = {
+    'Rooms': AppTheme.accent,
+    'Restaurant': AppTheme.reserved,
+    'Finance & Management': AppTheme.edit,
+  };
+
+  static const _groupIcons = {
+    'Rooms': Icons.bed_rounded,
+    'Restaurant': Icons.restaurant_menu_rounded,
+    'Finance & Management': Icons.account_balance_rounded,
+  };
+
   Color _tintFor(Feature f) => _tints[f.key] ?? AppTheme.accent;
 
   @override
   Widget build(BuildContext context) {
+    final features = widget.features;
+
     if (AppTheme.isExpanded(context)) {
+      // A tablet/desktop width already shows every tile at once, so a
+      // group here would only be one more tap for no space saved — each
+      // feature gets its own tile exactly as it did before grouping existed.
       return GridView.builder(
         padding: const EdgeInsets.all(AppTheme.s16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -353,10 +386,138 @@ class _MoreList extends StatelessWidget {
             horizontal: AppTheme.s16,
             vertical: AppTheme.s12,
           ),
-          onTap: () => onSelect(features[i].key),
+          onTap: () => widget.onSelect(features[i].key),
           child: _MoreRowContent(feature: features[i], tint: _tintFor(features[i])),
         ),
       );
+    }
+
+    // Each block is either one plain row, or a group header plus — only
+    // while expanded — the rows it clusters. Blocks are separated by a
+    // divider; a group's own header and its rows are not, so the group
+    // reads as one clustered surface rather than rows that merely happen to
+    // sit next to each other.
+    final blocks = <List<Widget>>[];
+    final seenGroups = <String>{};
+    for (final f in features) {
+      if (f.group == null) {
+        blocks.add([
+          InkWell(
+            onTap: () => widget.onSelect(f.key),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s16,
+                vertical: AppTheme.s12,
+              ),
+              child: _MoreRowContent(feature: f, tint: _tintFor(f)),
+            ),
+          ),
+        ]);
+        continue;
+      }
+      if (!seenGroups.add(f.group!)) continue;
+      final group = f.group!;
+      final expanded = _expanded.contains(group);
+      final members = features.where((x) => x.group == group).toList();
+      blocks.add([
+        InkWell(
+          onTap: () => setState(() {
+            if (expanded) {
+              _expanded.remove(group);
+            } else {
+              _expanded.add(group);
+            }
+          }),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s16,
+              vertical: AppTheme.s12,
+            ),
+            child: _GroupHeaderRow(
+              title: group,
+              icon: _groupIcons[group] ?? Icons.folder_rounded,
+              tint: _groupTints[group] ?? AppTheme.accent,
+              expanded: expanded,
+            ),
+          ),
+        ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s16,
+              0,
+              AppTheme.s16,
+              AppTheme.s12,
+            ),
+            child: Column(
+              // Indented under the header's own icon chip so the two rows
+              // read as its children rather than a second unrelated list.
+              // Each one is its own solid-tinted pill rather than a bare
+              // row sharing one outline — that's what makes "here is what
+              // Restaurant contains" read as two distinct destinations
+              // instead of one box with two lines in it.
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (int m = 0; m < members.length; m++) ...[
+                  if (m > 0) const SizedBox(height: AppTheme.s8),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 36 + AppTheme.s12),
+                    child: Material(
+                      color: _tintFor(members[m]).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        onTap: () => widget.onSelect(members[m].key),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s12,
+                            vertical: AppTheme.s8 + 2,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 30,
+                                height: 30,
+                                alignment: Alignment.center,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  members[m].icon,
+                                  color: _tintFor(members[m]),
+                                  size: 15,
+                                ),
+                              ),
+                              const SizedBox(width: AppTheme.s8),
+                              Expanded(
+                                child: Text(
+                                  members[m].title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppTheme.heading,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13.5,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: _tintFor(members[m]),
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ]);
     }
 
     return ListView(
@@ -380,29 +541,74 @@ class _MoreList extends StatelessWidget {
           padding: EdgeInsets.zero,
           child: Column(
             children: [
-              for (int i = 0; i < features.length; i++) ...[
-                if (i > 0)
+              for (int b = 0; b < blocks.length; b++) ...[
+                if (b > 0)
                   const Divider(
                     height: 1,
                     thickness: 1,
                     color: AppTheme.border,
                     indent: AppTheme.s16 + 36 + AppTheme.s12,
                   ),
-                InkWell(
-                  onTap: () => onSelect(features[i].key),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s16,
-                      vertical: AppTheme.s12,
-                    ),
-                    child: _MoreRowContent(
-                      feature: features[i],
-                      tint: _tintFor(features[i]),
-                    ),
-                  ),
-                ),
+                ...blocks[b],
               ],
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A group's own header row — same shape as [_MoreRowContent] but with a
+/// chevron that flips up/down to say whether its rows are showing, instead
+/// of the right-pointing one that promises a whole new page.
+class _GroupHeaderRow extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color tint;
+  final bool expanded;
+
+  const _GroupHeaderRow({
+    required this.title,
+    required this.icon,
+    required this.tint,
+    required this.expanded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          ),
+          child: Icon(icon, color: tint, size: 19),
+        ),
+        const SizedBox(width: AppTheme.s12),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontWeight: FontWeight.w500,
+              fontSize: 15,
+            ),
+          ),
+        ),
+        AnimatedRotation(
+          duration: const Duration(milliseconds: 150),
+          turns: expanded ? 0.5 : 0,
+          child: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: AppTheme.muted,
+            size: 22,
           ),
         ),
       ],

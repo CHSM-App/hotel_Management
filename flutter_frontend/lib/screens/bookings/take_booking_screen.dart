@@ -7,7 +7,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/extra_room.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/multi_room_logic.dart';
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
@@ -18,6 +20,7 @@ import '../../widgets/photo_source_sheet.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'advance_receipt_screen.dart';
+import 'booking_actions.dart';
 
 /// Lets the desk take an ID proof photo with the camera or pull one from the
 /// gallery — the same either-or the web form gets from its file input's own
@@ -85,6 +88,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   final _idProofKey = GlobalKey();
   final _advanceKey = GlobalKey();
   final _bedKey = GlobalKey();
+  final _extraRoomsKey = GlobalKey();
 
   final _name = TextEditingController();
   final _phone = TextEditingController();
@@ -211,6 +215,27 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     final room = state.room;
     if (room == null || !room.isDormitory) return null;
     return (state.bedIds.isEmpty && !state.buyout) ? 'Choose a bed.' : null;
+  }
+
+  /// A picked extra room missing a required detail — a bed if it's a
+  /// dormitory, or its own dates in the different-dates path. A slot nobody
+  /// put a room in yet is not an error; [MultiRoomLogic.pickedExtraRooms]
+  /// simply drops it from what gets saved.
+  String? get _extraRoomsError {
+    if (!_submitAttempted) return null;
+    final state = ref.read(bookingViewModelProvider);
+    if (!state.multiRoomMode) return null;
+    for (final r in state.extraRooms) {
+      if (r.room == null) continue;
+      if (r.room!.isDormitory && r.bedIds.isEmpty && !r.buyout) {
+        return 'Choose a bed for every extra room.';
+      }
+      if (state.multiRoomDifferentDates &&
+          (r.checkIn == null || r.checkOut == null)) {
+        return 'Choose the dates for every extra room.';
+      }
+    }
+    return null;
   }
 
   // Mirrors the web form's own client-side checks on the advance rows,
@@ -437,6 +462,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     }
     if (_bedError != null) {
       _scrollToError(_bedKey);
+      return;
+    }
+    if (_extraRoomsError != null) {
+      _scrollToError(_extraRoomsKey);
       return;
     }
     if (_nameError != null) {
@@ -767,9 +796,37 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
                   if (state.datesChosen) ...[
                     const SizedBox(height: AppTheme.s16),
-                    _RequiredLabel('Available rooms'),
+                    _MultiRoomToggle(state: state),
+                    const SizedBox(height: AppTheme.s12),
+                    Row(
+                      children: [
+                        _RequiredLabel(
+                          state.multiRoomMode && !state.multiRoomDifferentDates
+                              ? 'Choose rooms'
+                              : 'Available rooms',
+                        ),
+                        if (state.multiRoomMode && !state.multiRoomDifferentDates) ...[
+                          const Spacer(),
+                          Text(
+                            MultiRoomLogic.pickedRoomIds(state).isEmpty
+                                ? 'none selected yet'
+                                : '${MultiRoomLogic.pickedRoomIds(state).length} selected',
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: AppTheme.s8),
-                    KeyedSubtree(key: _roomKey, child: _RoomPicker(state: state)),
+                    KeyedSubtree(
+                      key: _roomKey,
+                      child: (state.multiRoomMode && !state.multiRoomDifferentDates)
+                          ? _RoomChooser(state: state)
+                          : _RoomPicker(state: state),
+                    ),
                     if (_roomError != null) ...[
                       const SizedBox(height: AppTheme.s4),
                       Text(
@@ -811,6 +868,47 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ),
                       const SizedBox(height: AppTheme.s8),
                       _ExtrasCard(state: state),
+                    ],
+
+                    if (state.multiRoomMode) ...[
+                      const SizedBox(height: AppTheme.s16),
+                      KeyedSubtree(
+                        key: _extraRoomsKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (var i = 0; i < state.extraRooms.length; i++)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppTheme.s12,
+                                ),
+                                child: _ExtraRoomCard(
+                                  index: i,
+                                  draft: state.extraRooms[i],
+                                  showDatePickers: state.multiRoomDifferentDates,
+                                ),
+                              ),
+                            if (state.multiRoomDifferentDates)
+                              NeuButton(
+                                expand: true,
+                                onPressed: () => ref
+                                    .read(bookingViewModelProvider.notifier)
+                                    .addExtraRoom(),
+                                child: const Text('+ Add another room'),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (_extraRoomsError != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(
+                          _extraRoomsError!,
+                          style: const TextStyle(
+                            color: AppTheme.danger,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
 
                     const SizedBox(height: AppTheme.s16),
@@ -1859,6 +1957,922 @@ class _RoomPicker extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ── Multi-room bookings ─────────────────────────────────────────────────────
+
+/// "Book multiple rooms", and — once it's on — the choice between one set of
+/// dates for every room or each room carrying its own. Mirrors the web
+/// form's own card at the top of the room section: an accent-tinted panel
+/// with a switch, and — once it's on — two labelled options rather than a
+/// bare pair of pills, so the difference between them reads on its own
+/// without a caption elsewhere on the page.
+class _MultiRoomToggle extends ConsumerWidget {
+  final BookingState state;
+
+  const _MultiRoomToggle({required this.state});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final on = state.multiRoomMode;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.05),
+        border: Border.all(
+          color: AppTheme.accent.withValues(alpha: on ? 0.35 : 0.14),
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => vm.toggleMultiRoomMode(!on),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.meeting_room_rounded,
+                    size: 15,
+                    color: AppTheme.accent,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Book multiple rooms',
+                        style: TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'Put more than one room on this booking — same '
+                        'guest, one bill.',
+                        style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: on,
+                  activeThumbColor: AppTheme.accent,
+                  onChanged: (v) => vm.toggleMultiRoomMode(v),
+                ),
+              ],
+            ),
+          ),
+          if (on) ...[
+            const SizedBox(height: AppTheme.s8),
+            const Text(
+              'CHECK-IN & CHECK-OUT',
+              style: TextStyle(
+                color: AppTheme.muted,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const SizedBox(height: AppTheme.s8),
+            _DatesModeOption(
+              title: 'Same for all rooms',
+              subtitle: 'Pick the dates once, then tick the rooms you want.',
+              selected: !state.multiRoomDifferentDates,
+              onTap: () => vm.setMultiRoomDifferentDates(false),
+            ),
+            const SizedBox(height: AppTheme.s8),
+            _DatesModeOption(
+              title: 'Different for each room',
+              subtitle: 'Set the dates room by room. Start with Room 1, '
+                  'then add more.',
+              selected: state.multiRoomDifferentDates,
+              onTap: () => vm.setMultiRoomDifferentDates(true),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DatesModeOption extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DatesModeOption({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppTheme.s8 + 2),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.accent.withValues(alpha: 0.08) : AppTheme.card,
+          border: Border.all(
+            color: selected ? AppTheme.accent : AppTheme.border,
+            width: selected ? 1.4 : 1,
+          ),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 15,
+                  color: selected ? AppTheme.accent : AppTheme.muted,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A searchable, category-filtered, tick-any-number-of grid of the rooms
+/// free for the shared dates — the "same dates for all rooms" path's room
+/// picker, mirroring the web form's own RoomChooser: a search box (once
+/// there are enough rooms for one to earn its place), category chips with a
+/// free-count on each, and — grouped under a heading with a price range and
+/// a "Tick all"/"Clear" shortcut — the tiles themselves. The first room
+/// ticked becomes room 1 (the form's existing single-room fields); every
+/// further tick is an extra room.
+class _RoomChooser extends ConsumerStatefulWidget {
+  final BookingState state;
+
+  const _RoomChooser({required this.state});
+
+  @override
+  ConsumerState<_RoomChooser> createState() => _RoomChooserState();
+}
+
+class _RoomChooserState extends ConsumerState<_RoomChooser> {
+  final _search = TextEditingController();
+  String _category = 'All';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
+    final rooms = state.rooms;
+    if (rooms == null) return const SizedBox.shrink();
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final picked = MultiRoomLogic.pickedRoomIds(state);
+
+    return rooms.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(AppTheme.s24),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => NeuNotice(
+        icon: Icons.cloud_off_rounded,
+        message: BookingViewModel.messageFor(e),
+        action: NeuButton(
+          onPressed: () => vm.loadRooms(),
+          child: const Text('Try again'),
+        ),
+      ),
+      data: (list) {
+        if (list.isEmpty) {
+          return const NeuNotice(
+            icon: Icons.bedroom_parent_outlined,
+            message:
+                'Nothing is free across those nights.\nTry a different range.',
+          );
+        }
+
+        final query = _search.text.trim().toLowerCase();
+        final matches = query.isEmpty
+            ? list
+            : list
+                  .where(
+                    (r) =>
+                        r.roomNumber.toLowerCase().contains(query) ||
+                        r.categoryName.toLowerCase().contains(query) ||
+                        (r.floor ?? '').toLowerCase().contains(query),
+                  )
+                  .toList();
+
+        // Grouped by category, a dormitory room's own category regardless —
+        // the whole booking is a handful of private rooms or a handful of
+        // dorm beds, rarely both, so a second "Dormitory" bucket would only
+        // fragment one real choice into two.
+        final groups = <String, List<Room>>{};
+        for (final r in matches) {
+          groups.putIfAbsent(r.categoryName, () => []).add(r);
+        }
+        final categories = groups.keys.toList();
+        final visible = _category == 'All'
+            ? categories
+            : categories.where((c) => c == _category).toList();
+
+        Future<void> toggleAll(List<Room> group, bool on) async {
+          for (final r in group) {
+            final isPicked = picked.contains(r.id);
+            if (on != isPicked) await vm.toggleRoomChoice(r);
+          }
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (list.length > 8) ...[
+              _RoomSearchBox(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: AppTheme.s8),
+            ],
+            Wrap(
+              spacing: AppTheme.s8,
+              runSpacing: AppTheme.s8,
+              children: [
+                _CategoryFilterChip(
+                  label: 'All',
+                  count: matches.length,
+                  selected: _category == 'All',
+                  onTap: () => setState(() => _category = 'All'),
+                ),
+                for (final c in categories)
+                  _CategoryFilterChip(
+                    label: c,
+                    count: groups[c]!.length,
+                    selected: _category == c,
+                    onTap: () => setState(() => _category = c),
+                  ),
+              ],
+            ),
+            for (final c in visible) ...[
+              const SizedBox(height: AppTheme.s12),
+              _RoomGroup(
+                title: c,
+                rooms: groups[c]!,
+                picked: picked,
+                onToggle: (room) => vm.toggleRoomChoice(room),
+                onToggleAll: toggleAll,
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RoomSearchBox extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _RoomSearchBox({required this.controller, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, size: 17, color: AppTheme.muted),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Search by room number, type or floor',
+                hintStyle: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryFilterChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryFilterChip({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF434FC1)])
+              : null,
+          color: selected ? null : AppTheme.card,
+          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          '$label $count',
+          style: TextStyle(
+            color: selected ? Colors.white : AppTheme.text,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One category's rooms — a compact heading (price range, free count, and a
+/// "Tick all"/"Clear" shortcut) over the tiles themselves.
+class _RoomGroup extends StatelessWidget {
+  final String title;
+  final List<Room> rooms;
+  final Set<int> picked;
+  final ValueChanged<Room> onToggle;
+  final void Function(List<Room> rooms, bool on) onToggleAll;
+
+  const _RoomGroup({
+    required this.title,
+    required this.rooms,
+    required this.picked,
+    required this.onToggle,
+    required this.onToggleAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tickedCount = rooms.where((r) => picked.contains(r.id)).length;
+    final allTicked = tickedCount == rooms.length;
+    final prices = rooms
+        .map((r) => r.isDormitory ? (r.dormitoryPrice ?? r.categoryBasePrice) : r.categoryBasePrice)
+        .toSet();
+    final low = prices.reduce((a, b) => a < b ? a : b);
+    final high = prices.reduce((a, b) => a > b ? a : b);
+    final priceLabel = low == high
+        ? '${formatPrice(low)}/night'
+        : '${formatPrice(low)}–${formatPrice(high)}/night';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: title,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: '  ·  $priceLabel  ·  ${rooms.length} free',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => onToggleAll(rooms, !allTicked),
+              child: Text(
+                allTicked ? 'Clear' : 'Tick all ${rooms.length}',
+                style: const TextStyle(
+                  color: AppTheme.accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s8),
+        Wrap(
+          spacing: AppTheme.s8,
+          runSpacing: AppTheme.s8,
+          children: [
+            for (final room in rooms)
+              _RoomChoiceTile(
+                room: room,
+                selected: picked.contains(room.id),
+                onTap: () => onToggle(room),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomChoiceTile extends StatelessWidget {
+  final Room room;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RoomChoiceTile({
+    required this.room,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: 76,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF434FC1)])
+              : null,
+          color: selected ? null : AppTheme.card,
+          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              room.roomNumber,
+              style: TextStyle(
+                color: selected ? Colors.white : AppTheme.heading,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            if (room.floor != null && room.floor!.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Floor ${room.floor}',
+                style: TextStyle(
+                  color: selected ? Colors.white70 : AppTheme.muted,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One further room on a multi-room booking — modelled on [_GuestCard]'s
+/// repeatable-card shell. In the different-dates path it carries its own
+/// date pickers and its own room dropdown (scoped to rooms free over those
+/// dates); in the same-dates path the room was already chosen via
+/// [_RoomChooser], so only the room's own beds/extras/rate show.
+class _ExtraRoomCard extends ConsumerWidget {
+  final int index;
+  final ExtraRoomDraft draft;
+  final bool showDatePickers;
+
+  const _ExtraRoomCard({
+    required this.index,
+    required this.draft,
+    required this.showDatePickers,
+  });
+
+  Future<void> _pickDate(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool isCheckIn,
+  }) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = isCheckIn
+        ? (draft.checkIn ?? today)
+        : (draft.checkOut ?? (draft.checkIn ?? today).add(const Duration(days: 1)));
+
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: isCheckIn
+          ? today.subtract(const Duration(days: 365))
+          : (draft.checkIn ?? today).add(const Duration(days: 1)),
+      lastDate: today.add(const Duration(days: 365)),
+      initialDate: initial,
+      helpText: isCheckIn ? 'Check-in' : 'Check-out',
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppTheme.accent,
+            onPrimary: Colors.white,
+            surface: AppTheme.bg,
+            onSurface: AppTheme.heading,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null || !context.mounted) return;
+
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    if (isCheckIn) {
+      final checkOut = (draft.checkOut != null && draft.checkOut!.isAfter(picked))
+          ? draft.checkOut!
+          : picked.add(const Duration(days: 1));
+      await vm.setExtraRoomDates(index, picked, checkOut);
+    } else {
+      final checkIn = draft.checkIn ?? today;
+      final checkOut = picked.isAfter(checkIn) ? picked : checkIn.add(const Duration(days: 1));
+      await vm.setExtraRoomDates(index, checkIn, checkOut);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final room = draft.room;
+    // Only a room still at BOOKED may leave the party — one already checked
+    // in or out is locked into the booking, the same rule the web form
+    // enforces on its own extra-room cards.
+    final removable = draft.status == 'BOOKED';
+
+    return NeuCard(
+      shadow: AppTheme.subtle,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  room != null ? 'Room ${room.roomNumber}' : 'Room ${index + 2}',
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              if (draft.status != 'BOOKED')
+                Padding(
+                  padding: const EdgeInsets.only(right: AppTheme.s8),
+                  child: _Chip(BookingActions.statusLabel(draft.status)),
+                ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: removable ? AppTheme.danger : AppTheme.muted,
+                onPressed: removable ? () => vm.removeExtraRoom(index) : null,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+
+          if (showDatePickers) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _DateBox(
+                    label: 'Check-in',
+                    value: draft.checkIn,
+                    onTap: () => _pickDate(context, ref, isCheckIn: true),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  child: _DateBox(
+                    label: 'Check-out',
+                    value: draft.checkOut,
+                    onTap: () => _pickDate(context, ref, isCheckIn: false),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.s12),
+            if (draft.checkIn == null || draft.checkOut == null)
+              const Text(
+                'Choose dates to see available rooms.',
+                style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              )
+            else
+              _ExtraRoomPicker(index: index, draft: draft),
+            const SizedBox(height: AppTheme.s8),
+          ],
+
+          if (room != null) ...[
+            _RoomChips(room: room),
+            if (room.isDormitory) ...[
+              const SizedBox(height: AppTheme.s12),
+              _ExtraRoomBedPicker(index: index, draft: draft),
+            ],
+            if (!room.isDormitory && room.switchableCharges.isNotEmpty) ...[
+              const SizedBox(height: AppTheme.s12),
+              const Text(
+                'EXTRAS',
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              _ExtraRoomExtras(index: index, draft: draft, room: room),
+            ],
+            if (!room.isDormitory) ...[
+              const SizedBox(height: AppTheme.s12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Agreed rate/night (optional)',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  _AmountBox(
+                    value: draft.roomTotal,
+                    shown: room.categoryBasePrice,
+                    onChanged: (v) => vm.setExtraRoomTotal(index, v),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The different-dates path's own room dropdown for one extra room card,
+/// scoped to [ExtraRoomDraft.availableRooms] rather than the form's shared
+/// [BookingState.rooms] — the same shape as [_RoomPicker], fetching against
+/// this card's own dates instead.
+class _ExtraRoomPicker extends ConsumerWidget {
+  final int index;
+  final ExtraRoomDraft draft;
+
+  const _ExtraRoomPicker({required this.index, required this.draft});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rooms = draft.availableRooms;
+    if (rooms == null) return const SizedBox.shrink();
+    final vm = ref.read(bookingViewModelProvider.notifier);
+
+    return rooms.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(AppTheme.s12),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => NeuNotice(
+        icon: Icons.cloud_off_rounded,
+        message: BookingViewModel.messageFor(e),
+        action: NeuButton(
+          onPressed: () => vm.loadExtraRoomAvailableRooms(index),
+          child: const Text('Try again'),
+        ),
+      ),
+      data: (list) {
+        if (list.isEmpty) {
+          return const NeuNotice(
+            icon: Icons.bedroom_parent_outlined,
+            message: 'Nothing else is free across those nights.',
+          );
+        }
+        return NeuPressed(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: draft.room?.id,
+              isExpanded: true,
+              dropdownColor: AppTheme.card,
+              hint: const Text(
+                'Choose a room',
+                style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+              ),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AppTheme.muted,
+              ),
+              items: [
+                for (final room in list)
+                  DropdownMenuItem<int>(
+                    value: room.id,
+                    child: Text(
+                      'Room ${room.roomNumber} · ${room.categoryName} · '
+                      '${formatPrice(room.categoryBasePrice)}/night',
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+              ],
+              onChanged: (id) {
+                if (id == null) return;
+                final room = list.firstWhere((r) => r.id == id);
+                vm.selectExtraRoomRoom(index, room);
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One extra room's own bed picker, for a dormitory room — the same shape as
+/// [_BedPicker], reading [ExtraRoomDraft.availableBeds] instead of the
+/// form's shared [BookingState.availableBeds].
+class _ExtraRoomBedPicker extends ConsumerWidget {
+  final int index;
+  final ExtraRoomDraft draft;
+
+  const _ExtraRoomBedPicker({required this.index, required this.draft});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final beds = draft.availableBeds;
+    if (beds == null) return const SizedBox.shrink();
+    final vm = ref.read(bookingViewModelProvider.notifier);
+
+    return beds.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => NeuNotice(
+        icon: Icons.cloud_off_rounded,
+        message: BookingViewModel.messageFor(e),
+      ),
+      data: (data) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _RequiredLabel(draft.bedIds.length > 1 ? 'Beds' : 'Bed'),
+          const SizedBox(height: AppTheme.s4),
+          Text(
+            '${formatPrice(data.pricePerNight)}/bed/night — pick as many as the party needs.',
+            style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Wrap(
+            spacing: AppTheme.s8,
+            runSpacing: AppTheme.s8,
+            children: [
+              for (final bed in data.beds)
+                _BedChoiceChip(
+                  label: bed.bedLabel,
+                  sublabel: bed.isTaken ? 'Taken' : 'Free',
+                  selected: draft.bedIds.contains(bed.id),
+                  enabled: !bed.isTaken,
+                  onTap: () => vm.toggleExtraRoomBed(index, bed.id),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One extra room's own extras list — the same shape as [_ExtrasCard],
+/// reading and writing this card's own [ExtraRoomDraft.extras] instead of
+/// the form's shared room-1 extras.
+class _ExtraRoomExtras extends ConsumerWidget {
+  final int index;
+  final ExtraRoomDraft draft;
+  final Room room;
+
+  const _ExtraRoomExtras({
+    required this.index,
+    required this.draft,
+    required this.room,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final vm = ref.read(bookingViewModelProvider.notifier);
+    final charges = room.switchableCharges;
+
+    return NeuCard(
+      child: Column(
+        children: [
+          for (final charge in charges) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        charge.name,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        '${formatPrice(charge.chargePerNight)}/night',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (charge.isCounter && draft.extras.containsKey(charge.id))
+                  _Stepper(
+                    value: draft.extras[charge.id]!.quantity,
+                    onChanged: (v) =>
+                        vm.setExtraRoomExtraQuantity(index, charge.id, v),
+                  ),
+                Checkbox(
+                  value: draft.extras.containsKey(charge.id),
+                  activeColor: AppTheme.accent,
+                  onChanged: (on) =>
+                      vm.toggleExtraRoomExtra(index, charge.id, on ?? false),
+                ),
+              ],
+            ),
+            if (charge != charges.last) const Divider(height: AppTheme.s24),
+          ],
+        ],
+      ),
     );
   }
 }

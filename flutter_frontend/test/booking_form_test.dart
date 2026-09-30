@@ -1,5 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hotel_manager/domain/models/charge_selections.dart';
 import 'package:hotel_manager/domain/models/draft.dart';
+import 'package:hotel_manager/domain/models/extra_room.dart';
+import 'package:hotel_manager/domain/models/multi_room_logic.dart';
+import 'package:hotel_manager/domain/models/quote.dart';
+import 'package:hotel_manager/domain/models/room.dart';
 import 'package:hotel_manager/domain/repository/booking_repo.dart';
 import 'package:hotel_manager/domain/usecase/booking_usecase.dart';
 import 'package:hotel_manager/presentation/view_models/booking_viewmodel.dart';
@@ -243,6 +248,216 @@ void main() {
     test('no dates yet is not a future check-in', () {
       expect(BookingState().isFutureCheckIn, isFalse);
     });
+  });
+
+  // ── Multi-room bookings ───────────────────────────────────────────────────
+  Room room(int id, {String number = '', bool dormitory = false}) => Room(
+    id: id,
+    roomNumber: number.isEmpty ? '$id' : number,
+    categoryName: 'Deluxe',
+    categoryBasePrice: 1000,
+    isDormitory: dormitory,
+  );
+
+  group('bookingWindow', () {
+    test('takes the earliest checkIn and latest checkOut across rooms', () {
+      final state = BookingState(
+        checkIn: DateTime(2026, 1, 5),
+        checkOut: DateTime(2026, 1, 6),
+        room: room(1),
+        multiRoomMode: true,
+        multiRoomDifferentDates: true,
+        extraRooms: [
+          ExtraRoomDraft(
+            room: room(2),
+            checkIn: DateTime(2026, 1, 3),
+            checkOut: DateTime(2026, 1, 8),
+          ),
+        ],
+      );
+      final window = MultiRoomLogic.bookingWindow(state);
+      expect(window, (DateTime(2026, 1, 3), DateTime(2026, 1, 8)));
+    });
+
+    test('falls back to room 1 dates when no extra room has its own', () {
+      final state = BookingState(
+        checkIn: DateTime(2026, 1, 5),
+        checkOut: DateTime(2026, 1, 6),
+        room: room(1),
+        multiRoomMode: true,
+        extraRooms: [ExtraRoomDraft(room: room(2))],
+      );
+      expect(
+        MultiRoomLogic.bookingWindow(state),
+        (DateTime(2026, 1, 5), DateTime(2026, 1, 6)),
+      );
+    });
+  });
+
+  group('toggleRoomChoice', () {
+    test('first tick fills room 1', () {
+      final next = MultiRoomLogic.toggleRoomChoice(BookingState(), room(1));
+      expect(next.room?.id, 1);
+      expect(next.extraRooms, isEmpty);
+    });
+
+    test('second tick becomes an extra room', () {
+      var state = MultiRoomLogic.toggleRoomChoice(BookingState(), room(1));
+      state = MultiRoomLogic.toggleRoomChoice(state, room(2));
+      expect(state.room?.id, 1);
+      expect(state.extraRooms.map((r) => r.room?.id), [2]);
+    });
+
+    test('un-ticking room 1 promotes the first extra into its slot', () {
+      var state = MultiRoomLogic.toggleRoomChoice(BookingState(), room(1));
+      state = MultiRoomLogic.toggleRoomChoice(state, room(2));
+      state = MultiRoomLogic.toggleRoomChoice(state, room(1));
+      expect(state.room?.id, 2);
+      expect(state.extraRooms, isEmpty);
+    });
+
+    test('un-ticking an extra room removes just that slot', () {
+      var state = MultiRoomLogic.toggleRoomChoice(BookingState(), room(1));
+      state = MultiRoomLogic.toggleRoomChoice(state, room(2));
+      state = MultiRoomLogic.toggleRoomChoice(state, room(3));
+      state = MultiRoomLogic.toggleRoomChoice(state, room(2));
+      expect(state.room?.id, 1);
+      expect(state.extraRooms.map((r) => r.room?.id), [3]);
+    });
+  });
+
+  group('roomsPayload', () {
+    test('includes bookingRoomId only when editing an existing room', () {
+      final state = BookingState(
+        checkIn: DateTime(2026, 1, 5),
+        checkOut: DateTime(2026, 1, 6),
+        room: room(1),
+        multiRoomMode: true,
+        extraRooms: [
+          ExtraRoomDraft(bookingRoomId: 55, room: room(2)),
+        ],
+      );
+      final payload = MultiRoomLogic.roomsPayload(state);
+      expect(payload[0].containsKey('bookingRoomId'), isFalse);
+      expect(payload[1]['bookingRoomId'], 55);
+    });
+
+    test(
+      'omits bedIds/checkInDate/checkOutDate for a non-dormitory room in same-dates mode',
+      () {
+        final state = BookingState(
+          checkIn: DateTime(2026, 1, 5),
+          checkOut: DateTime(2026, 1, 6),
+          room: room(1),
+          multiRoomMode: true,
+          extraRooms: [ExtraRoomDraft(room: room(2))],
+        );
+        final entry = MultiRoomLogic.roomsPayload(state)[1];
+        expect(entry.containsKey('bedIds'), isFalse);
+        expect(entry.containsKey('checkInDate'), isFalse);
+        expect(entry.containsKey('checkOutDate'), isFalse);
+      },
+    );
+
+    test('includes each room\'s own switchableCharges array', () {
+      final state = BookingState(
+        checkIn: DateTime(2026, 1, 5),
+        checkOut: DateTime(2026, 1, 6),
+        room: room(1),
+        multiRoomMode: true,
+        extraRooms: [
+          ExtraRoomDraft(
+            room: room(2),
+            extras: {7: ExtraDraft(quantity: 2)},
+          ),
+        ],
+      );
+      final entry = MultiRoomLogic.roomsPayload(state)[1];
+      expect(entry['switchableCharges'], [
+        {'id': 7, 'quantity': 2},
+      ]);
+    });
+  });
+
+  group('combineQuote', () {
+    test(
+      'flattens per-room charge lines with "Room {n} · {label}" prefix on extras',
+      () {
+        final response = MultiRoomQuote(
+          rooms: [
+            RoomQuote(
+              roomId: 1,
+              checkInDate: '2026-01-05',
+              checkOutDate: '2026-01-06',
+              charges: [QuoteLine(label: 'Room rate', amount: 1000, isBase: true)],
+            ),
+            RoomQuote(
+              roomId: 2,
+              checkInDate: '2026-01-05',
+              checkOutDate: '2026-01-06',
+              charges: [QuoteLine(label: 'Room rate', amount: 1200, isBase: true)],
+            ),
+          ],
+          grossTotal: 2200,
+          totalPrice: 2200,
+        );
+        final quote = MultiRoomLogic.combineQuote(response, ['101', '102']);
+        expect(quote.charges[0].label, 'Room rate');
+        expect(quote.charges[1].label, 'Room 102 · Room rate');
+      },
+    );
+
+    test(
+      'sums grossTotal/discountAmount/totalPrice from the top-level response, not by re-summing rooms',
+      () {
+        final response = MultiRoomQuote(
+          rooms: [
+            RoomQuote(
+              roomId: 1,
+              checkInDate: '2026-01-05',
+              checkOutDate: '2026-01-06',
+              grossTotal: 1000,
+              totalPrice: 900,
+            ),
+          ],
+          grossTotal: 5000,
+          discountAmount: 300,
+          totalPrice: 4700,
+        );
+        final quote = MultiRoomLogic.combineQuote(response, ['101']);
+        expect(quote.grossTotal, 5000);
+        expect(quote.discountAmount, 300);
+        expect(quote.totalPrice, 4700);
+      },
+    );
+  });
+
+  group('ChargeSelections', () {
+    test('sameCharge compares ids as numbers regardless of source type', () {
+      expect(ChargeSelections.sameCharge(7, 7), isTrue);
+      expect(ChargeSelections.sameCharge(7, 8), isFalse);
+    });
+
+    test('chargesParam serializes id:qty@price, omitting @price when nothing agreed', () {
+      final extras = {
+        7: ExtraDraft(quantity: 3),
+        8: ExtraDraft(quantity: 1, agreedTotal: '250'),
+      };
+      final param = ChargeSelections.chargesParam(extras, 1);
+      expect(param, '7:3,8:1@250.0');
+    });
+
+    test(
+      'chargesPayload matches the shape BookingViewModel already built for single-room bookings',
+      () {
+        // Characterization test guarding the chargeIdsParam()/_extrasJson()
+        // refactor onto this shared module — same wire format as before.
+        final extras = {7: ExtraDraft(quantity: 2, agreedTotal: '500')};
+        expect(ChargeSelections.chargesPayload(extras, 2), [
+          {'id': 7, 'quantity': 2, 'agreedAmount': 250},
+        ]);
+      },
+    );
   });
 }
 

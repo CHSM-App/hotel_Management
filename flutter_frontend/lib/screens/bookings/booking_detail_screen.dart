@@ -368,7 +368,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           onPressed: _busy
               ? null
               : () => _run((a) => a.checkOut(widget.bookingId, booking: booking)),
-          child: const Text('Check out'),
+          // A multi-room stay checks out every room still due in one call —
+          // the server fans it out when no specific room is named — so the
+          // one button already covers "check out all rooms".
+          child: Text(booking.isMultiRoom ? 'Check out all rooms' : 'Check out'),
         ),
     ];
 
@@ -443,8 +446,10 @@ class _TopBar extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Room ${booking.roomNumber ?? '—'}'
-                  '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}',
+                  booking.isMultiRoom
+                      ? '${booking.roomCount} rooms · ${booking.roomNumbers ?? booking.roomNumber ?? '—'}'
+                      : 'Room ${booking.roomNumber ?? '—'}'
+                            '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}',
                   style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -507,13 +512,19 @@ class _StayRoomSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (booking.isMultiRoom) ...[
+            _MultiRoomBreakdown(rooms: booking.rooms),
+            const SizedBox(height: AppTheme.s8),
+          ],
           _FactBox(
             facts: [
           _Fact(
             label: 'Room',
-            value: 'Room ${booking.roomNumber ?? '—'}'
-                '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}'
-                '${booking.bedLabel != null ? ' · ${booking.bedLabel}' : ''}',
+            value: booking.isMultiRoom
+                ? '${booking.roomCount} rooms · ${booking.roomNumbers ?? booking.roomNumber ?? '—'}'
+                : 'Room ${booking.roomNumber ?? '—'}'
+                      '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}'
+                      '${booking.bedLabel != null ? ' · ${booking.bedLabel}' : ''}',
           ),
           _Fact(
             label: 'Dates',
@@ -574,6 +585,104 @@ class _StayRoomSection extends StatelessWidget {
     final hours = minutes ~/ 60;
     final mins = minutes % 60;
     return mins == 0 ? '$hours hours' : '${hours}h ${mins}m';
+  }
+}
+
+/// The itemized rooms of a multi-room stay — one card per [BookingRoom],
+/// shown above the usual fact grid (which switches to a "N rooms · ..."
+/// summary line once this is showing). Read-only: check-in/check-out stays a
+/// whole-booking action for now (see [_actions]'s "Check out all rooms").
+class _MultiRoomBreakdown extends StatelessWidget {
+  final List<BookingRoom> rooms;
+
+  const _MultiRoomBreakdown({required this.rooms});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final room in rooms) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.s12),
+            margin: const EdgeInsets.only(bottom: AppTheme.s8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Room ${room.roomNumber}'
+                        '${room.categoryName != null ? ' · ${room.categoryName}' : ''}',
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: BookingActions.statusColor(
+                          room.status,
+                        ).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        BookingActions.statusLabel(room.status),
+                        style: TextStyle(
+                          color: BookingActions.statusColor(room.status),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${formatIsoDate(room.checkInDate)} – ${formatIsoDate(room.checkOutDate)}'
+                  '${room.bedLabels.isNotEmpty ? ' · ${room.bedLabels.join(', ')}' : ''}'
+                  '${room.totalPrice != null ? ' · ${formatPrice(room.totalPrice!)}' : ''}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (room.switchableCharges.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      room.switchableCharges
+                          .map(
+                            (c) => c.quantity > 1
+                                ? '${c.name} ×${c.quantity.toStringAsFixed(0)}'
+                                : c.name,
+                          )
+                          .join(' · '),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                if (room.foodPin != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Food PIN ${room.foodPin}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 

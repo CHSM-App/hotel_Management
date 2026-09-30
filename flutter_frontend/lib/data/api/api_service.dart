@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -148,6 +149,27 @@ class ApiService {
       },
     );
     return Quote.fromJson(_map(res.data));
+  }
+
+  /// The multi-room variant of [priceQuote] — one call pricing every room on
+  /// the booking at once, [rooms] JSON-encoded the way the server's `rooms[]`
+  /// schema expects (see MultiRoomLogic.roomsPayload).
+  Future<MultiRoomQuote> multiRoomPriceQuote({
+    required List<Map<String, dynamic>> rooms,
+    required String checkInDate,
+    required String checkOutDate,
+    num? discountAmount,
+  }) async {
+    final res = await _dio.get(
+      '/bookings/price-quote',
+      queryParameters: {
+        'rooms': jsonEncode(rooms),
+        'checkInDate': checkInDate,
+        'checkOutDate': checkOutDate,
+        if (discountAmount != null) 'discountAmount': discountAmount,
+      },
+    );
+    return MultiRoomQuote.fromJson(_map(res.data));
   }
 
   /// The bed picker's own fetch, for a dormitory room and a chosen stay —

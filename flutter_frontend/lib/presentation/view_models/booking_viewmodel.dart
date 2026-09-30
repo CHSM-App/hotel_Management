@@ -7,9 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/charge_selections.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/extra_room.dart';
 import '../../domain/models/guest_match.dart';
 import '../../domain/models/late_checkout.dart';
+import '../../domain/models/multi_room_logic.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/tape_chart.dart';
@@ -100,6 +103,31 @@ class BookingState {
   /// actually taken this row is thrown away: it was only ever a stand-in.
   final int? draftId;
 
+  // ── Multi-room bookings ──────────────────────────────────────────────────
+  /// "Book multiple rooms" — off means the ordinary single-room flow above is
+  /// the whole booking, exactly as it always has been.
+  final bool multiRoomMode;
+
+  /// Only meaningful while [multiRoomMode] is on: false ("Same dates for all
+  /// rooms", the default) means every extra room follows [checkIn]/[checkOut]
+  /// above; true lets each carry its own.
+  final bool multiRoomDifferentDates;
+
+  /// Every room after the first — room 1 itself is still [room]/[bedIds]/
+  /// [extras]/[roomTotal] above, the same "first room fills the existing
+  /// fields" convention the web form uses.
+  final List<ExtraRoomDraft> extraRooms;
+
+  /// The last multi-room price quote, kept alongside the flattened [quote]
+  /// (which is what the existing quote card actually renders) so a save can
+  /// still read each room's own totalPrice/discountAmount split.
+  final MultiRoomQuote? multiQuote;
+
+  /// Editing an existing multi-room booking: room 1's own booking_rooms row
+  /// id, so saving updates it in place rather than the server reading it as
+  /// a brand new room being added to the party.
+  final int? primaryBookingRoomId;
+
   BookingState({
     this.isLoading = false,
     this.error,
@@ -124,6 +152,11 @@ class BookingState {
     this.submitting = false,
     this.bookingTypeOverride,
     this.draftId,
+    this.multiRoomMode = false,
+    this.multiRoomDifferentDates = false,
+    this.extraRooms = const [],
+    this.multiQuote,
+    this.primaryBookingRoomId,
   }) : chartFrom = chartFrom ?? _startOfMonth(_today()),
        chartTo = chartTo ?? _startOfNextMonth(_today());
 
@@ -169,6 +202,13 @@ class BookingState {
     bool clearBookingTypeOverride = false,
     int? draftId,
     bool clearDraftId = false,
+    bool? multiRoomMode,
+    bool? multiRoomDifferentDates,
+    List<ExtraRoomDraft>? extraRooms,
+    MultiRoomQuote? multiQuote,
+    bool clearMultiQuote = false,
+    int? primaryBookingRoomId,
+    bool clearPrimaryBookingRoomId = false,
   }) => BookingState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
@@ -199,6 +239,14 @@ class BookingState {
         ? null
         : (bookingTypeOverride ?? this.bookingTypeOverride),
     draftId: clearDraftId ? null : (draftId ?? this.draftId),
+    multiRoomMode: multiRoomMode ?? this.multiRoomMode,
+    multiRoomDifferentDates:
+        multiRoomDifferentDates ?? this.multiRoomDifferentDates,
+    extraRooms: extraRooms ?? this.extraRooms,
+    multiQuote: clearMultiQuote ? null : (multiQuote ?? this.multiQuote),
+    primaryBookingRoomId: clearPrimaryBookingRoomId
+        ? null
+        : (primaryBookingRoomId ?? this.primaryBookingRoomId),
   );
 
   int get nights => (checkIn != null && checkOut != null)
@@ -236,6 +284,21 @@ class BookingState {
   }
 
   bool get isWalkIn => bookingType == 'WALK_IN';
+
+  /// Whether this booking actually holds more than one room — [multiRoomMode]
+  /// alone just means the picker is showing; a room has to have been picked
+  /// in it too.
+  bool get isMultiRoom =>
+      multiRoomMode && extraRooms.any((r) => r.isPicked);
+
+  /// Every room on the booking — room 1 (if picked) plus every picked extra.
+  List<Room> get pickedRooms => [
+    if (room != null) room!,
+    for (final r in extraRooms)
+      if (r.room != null) r.room!,
+  ];
+
+  int get totalRoomCount => pickedRooms.isEmpty ? 1 : pickedRooms.length;
 
   /// The chart's nights, [chartFrom, chartTo) — a stay is drawn on a night if
   /// it covers that night at all, so the last date is exclusive the way a
@@ -838,6 +901,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         ),
     };
 
+    final isMulti = booking.isMultiRoom;
+    final primaryRoom = isMulti ? booking.rooms.first : null;
+
     state = state.copyWith(
       editBookingId: booking.id,
       checkIn: checkIn,
@@ -852,6 +918,44 @@ class BookingViewModel extends StateNotifier<BookingState> {
           ? ''
           : '${booking.discountAmount}',
       clearError: true,
+      multiRoomMode: isMulti,
+      primaryBookingRoomId: primaryRoom?.bookingRoomId,
+      clearPrimaryBookingRoomId: !isMulti,
+      // "Different dates per room" if any further room's own dates differ
+      // from room 1's.
+      multiRoomDifferentDates: isMulti &&
+          booking.rooms
+              .skip(1)
+              .any(
+                (r) =>
+                    r.checkInDate != booking.checkInDate ||
+                    r.checkOutDate != booking.checkOutDate,
+              ),
+      extraRooms: isMulti
+          ? [
+              for (final r in booking.rooms.skip(1))
+                ExtraRoomDraft(
+                  bookingRoomId: r.bookingRoomId,
+                  bedIds: r.bedIds,
+                  buyout: r.isDormitory && r.bedIds.isEmpty,
+                  checkIn: DateTime.tryParse(r.checkInDate ?? ''),
+                  checkOut: DateTime.tryParse(r.checkOutDate ?? ''),
+                  roomTotal: r.basePriceOverride == null
+                      ? ''
+                      : '${r.basePriceOverride}',
+                  status: r.status,
+                  extras: {
+                    for (final c in r.switchableCharges)
+                      c.id: ExtraDraft(
+                        quantity: c.quantity.round(),
+                        agreedTotal: c.agreedAmount == null
+                            ? ''
+                            : '${c.agreedAmount}',
+                      ),
+                  },
+                ),
+            ]
+          : const [],
     );
     await loadRooms();
     if (!state.isLoading) {
@@ -868,6 +972,23 @@ class BookingViewModel extends StateNotifier<BookingState> {
             buyout: booking.bedIds.isEmpty,
           );
         }
+      }
+      // selectRoom() clears extraRooms' quotes but not the list itself — the
+      // extra rooms seeded above survive it. Match each extra room's Room
+      // object from the freshly loaded list, and fetch its own beds/rooms
+      // list where the different-dates path needs one.
+      if (isMulti) {
+        for (var i = 0; i < state.extraRooms.length; i++) {
+          final r = booking.rooms[i + 1];
+          final roomMatch = rooms
+              ?.where((room) => room.id == r.roomId)
+              .firstOrNull;
+          _updateExtraRoom(i, (draft) => draft.copyWith(room: roomMatch));
+          if (state.multiRoomDifferentDates) {
+            await loadExtraRoomAvailableRooms(i);
+          }
+        }
+        await refreshQuote();
       }
     }
   }
@@ -1079,6 +1200,245 @@ class BookingViewModel extends StateNotifier<BookingState> {
     await refreshQuote();
   }
 
+  // ── Multi-room bookings ──────────────────────────────────────────────────
+
+  /// "Book multiple rooms" switch. Turning it off drops every extra room —
+  /// room 1 alone stays the whole booking, same as the plain single-room flow
+  /// always was.
+  Future<void> toggleMultiRoomMode(bool on) async {
+    state = state.copyWith(
+      multiRoomMode: on,
+      extraRooms: on ? state.extraRooms : const [],
+      discount: '',
+      clearQuote: true,
+    );
+    await refreshQuote();
+  }
+
+  /// "Same dates for all rooms" vs "different dates per room". Switching to
+  /// "same dates" drops whatever dates each extra room had set on its own.
+  Future<void> setMultiRoomDifferentDates(bool different) async {
+    state = state.copyWith(
+      multiRoomDifferentDates: different,
+      extraRooms: different
+          ? state.extraRooms
+          : [for (final r in state.extraRooms) r.copyWith(clearDates: true)],
+      discount: '',
+      clearQuote: true,
+    );
+    await refreshQuote();
+  }
+
+  /// Drives the room chooser's ticks — the first room ticked fills room 1,
+  /// every further tick becomes an extra room, and un-ticking removes it
+  /// wherever it is.
+  Future<void> toggleRoomChoice(Room room) async {
+    state = MultiRoomLogic.toggleRoomChoice(state, room);
+    final selectedAsRoom1 = state.room?.id == room.id;
+    if (selectedAsRoom1 && room.isDormitory) await loadAvailableBeds();
+    await refreshQuote();
+  }
+
+  /// The different-dates path's "+ Add another room".
+  Future<void> addExtraRoom() async {
+    state = state.copyWith(
+      extraRooms: [
+        ...state.extraRooms,
+        MultiRoomLogic.blankExtraRoom(
+          checkIn: state.multiRoomDifferentDates ? null : state.checkIn,
+          checkOut: state.multiRoomDifferentDates ? null : state.checkOut,
+        ),
+      ],
+    );
+  }
+
+  /// Remove one extra room. Only a room still at BOOKED may be removed — the
+  /// screen is expected to have already checked this before calling.
+  Future<void> removeExtraRoom(int index) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    final next = List<ExtraRoomDraft>.from(state.extraRooms)..removeAt(index);
+    state = state.copyWith(extraRooms: next, discount: '', clearQuote: true);
+    await refreshQuote();
+  }
+
+  /// This extra room card's own available-rooms fetch, for the different-
+  /// dates path where each card asks against its own dates.
+  Future<void> loadExtraRoomAvailableRooms(int index) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    final draft = state.extraRooms[index];
+    final dates = MultiRoomLogic.roomDates(state, draft);
+    if (dates == null) return;
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(availableRooms: const AsyncValue.loading()),
+    );
+    try {
+      final editId = state.editBookingId;
+      final taken = MultiRoomLogic.pickedRoomIds(
+        state,
+      ).where((id) => id != draft.room?.id).toSet();
+      final rooms = editId == null
+          ? await usecase.availableRooms(iso(dates.$1), iso(dates.$2))
+          : await usecase.availableRoomsForBooking(
+              editId,
+              checkOutDate: iso(dates.$2),
+              checkInDate: iso(dates.$1),
+            );
+      final free = rooms.where((r) => !taken.contains(r.id)).toList();
+      _updateExtraRoom(
+        index,
+        (r) => r.copyWith(availableRooms: AsyncValue.data(free)),
+      );
+    } catch (e, st) {
+      _updateExtraRoom(
+        index,
+        (r) => r.copyWith(availableRooms: AsyncValue.error(e, st)),
+      );
+    }
+  }
+
+  Future<void> setExtraRoomDates(
+    int index,
+    DateTime checkIn,
+    DateTime checkOut,
+  ) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(
+        checkIn: checkIn,
+        checkOut: checkOut,
+        clearRoom: true,
+      ),
+    );
+    await loadExtraRoomAvailableRooms(index);
+    state = state.copyWith(discount: '', clearQuote: true);
+    await refreshQuote();
+  }
+
+  Future<void> selectExtraRoomRoom(int index, Room room) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(
+        room: room,
+        clearBedIds: true,
+        clearAvailableBeds: true,
+        extras: const {},
+        roomTotal: '',
+      ),
+    );
+    if (room.isDormitory) await _loadExtraRoomBeds(index);
+    state = state.copyWith(discount: '', clearQuote: true);
+    await refreshQuote();
+  }
+
+  Future<void> _loadExtraRoomBeds(int index) async {
+    final draft = state.extraRooms[index];
+    final room = draft.room;
+    final dates = MultiRoomLogic.roomDates(state, draft);
+    if (room == null || !room.isDormitory || dates == null) return;
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(availableBeds: const AsyncValue.loading()),
+    );
+    try {
+      final beds = await usecase.availableBeds(
+        roomId: room.id,
+        checkInDate: iso(dates.$1),
+        checkOutDate: iso(dates.$2),
+      );
+      final freeIds = beds.beds
+          .where((b) => !b.isTaken)
+          .map((b) => b.id)
+          .toSet();
+      _updateExtraRoom(
+        index,
+        (r) => r.copyWith(
+          bedIds: r.bedIds.where(freeIds.contains).toList(),
+          availableBeds: AsyncValue.data(beds),
+        ),
+      );
+    } catch (e, st) {
+      _updateExtraRoom(
+        index,
+        (r) => r.copyWith(availableBeds: AsyncValue.error(e, st)),
+      );
+    }
+  }
+
+  Future<void> toggleExtraRoomBed(int index, int bedId) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    final draft = state.extraRooms[index];
+    final next = draft.bedIds.contains(bedId)
+        ? draft.bedIds.where((id) => id != bedId).toList()
+        : [...draft.bedIds, bedId];
+    _updateExtraRoom(
+      index,
+      (r) => next.isEmpty
+          ? r.copyWith(clearBedIds: true, buyout: false)
+          : r.copyWith(bedIds: next, buyout: false),
+    );
+    await refreshQuote();
+  }
+
+  Future<void> toggleExtraRoomExtra(int index, int chargeId, bool on) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(
+        extras: ChargeSelections.toggleSelection(r.extras, chargeId, on),
+      ),
+    );
+    await refreshQuote();
+  }
+
+  Future<void> setExtraRoomExtraQuantity(
+    int index,
+    int chargeId,
+    int quantity,
+  ) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    if (quantity <= 0) return toggleExtraRoomExtra(index, chargeId, false);
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(
+        extras: ChargeSelections.withQuantity(r.extras, chargeId, quantity),
+      ),
+    );
+    await refreshQuote();
+  }
+
+  Future<void> setExtraRoomExtraTotal(
+    int index,
+    int chargeId,
+    String total,
+  ) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(
+        extras: ChargeSelections.withAgreedAmount(r.extras, chargeId, total),
+      ),
+    );
+    await refreshQuote();
+  }
+
+  Future<void> setExtraRoomTotal(int index, String total) async {
+    if (index < 0 || index >= state.extraRooms.length) return;
+    _updateExtraRoom(index, (r) => r.copyWith(roomTotal: total));
+    await refreshQuote();
+  }
+
+  void _updateExtraRoom(
+    int index,
+    ExtraRoomDraft Function(ExtraRoomDraft) update,
+  ) {
+    final next = List<ExtraRoomDraft>.from(state.extraRooms);
+    next[index] = update(next[index]);
+    state = state.copyWith(extraRooms: next);
+  }
+
   /// The concession as a number, or null when nothing was typed.
   ///
   /// Whole, not per night: a concession is against the total the nights and
@@ -1098,6 +1458,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
     final room = state.room;
     if (room == null || !state.datesChosen) return;
 
+    if (state.isMultiRoom) return _refreshMultiRoomQuote();
+
     state = state.copyWith(quoting: true, clearError: true);
     try {
       final quote = await usecase.priceQuote(
@@ -1115,19 +1477,44 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
+  /// [refreshQuote]'s multi-room branch — one call pricing every picked room
+  /// at once, flattened back into [BookingState.quote] so the existing quote
+  /// card needs no changes at all to render it.
+  Future<void> _refreshMultiRoomQuote() async {
+    final window = MultiRoomLogic.bookingWindow(state);
+    if (window == null) return;
+    state = state.copyWith(quoting: true, clearError: true);
+    try {
+      final rooms = MultiRoomLogic.roomsPayload(state);
+      final response = await usecase.multiRoomPriceQuote(
+        rooms: rooms,
+        checkInDate: iso(window.$1),
+        checkOutDate: iso(window.$2),
+        discountAmount: wholeAmount(state.discount),
+      );
+      final roomNumbers = MultiRoomLogic.pickedExtraRooms(
+        state,
+      ).map((r) => r.room!.roomNumber).toList();
+      final flattened = MultiRoomLogic.combineQuote(response, [
+        state.room?.roomNumber ?? '',
+        ...roomNumbers,
+      ]);
+      state = state.copyWith(
+        quoting: false,
+        quote: flattened,
+        multiQuote: response,
+      );
+    } catch (e) {
+      state = state.copyWith(quoting: false, error: messageFor(e));
+    }
+  }
+
   /// The extras, in the wire format the pricing engine parses:
   /// `id:quantity@agreedRate`, comma separated. The rate is omitted entirely
   /// when nothing was agreed, which the server reads as "charge whatever the
   /// lodge charges" — sending an empty value would be a different thing.
-  String? chargeIdsParam() {
-    if (state.extras.isEmpty) return null;
-    final parts = state.extras.entries.map((e) {
-      final agreed = perNight(e.value.agreedTotal, state.nights);
-      final spec = '${e.key}:${e.value.quantity}';
-      return agreed == null ? spec : '$spec@$agreed';
-    });
-    return parts.join(',');
-  }
+  String? chargeIdsParam() =>
+      ChargeSelections.chargesParam(state.extras, state.nights);
 
   /// Take the booking.
   ///
@@ -1155,22 +1542,31 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final advance = sumPayments(paid);
       final rate = perNight(state.roomTotal, state.nights);
       final discount = wholeAmount(state.discount);
+      final multiRoom = state.isMultiRoom;
+      final window = multiRoom ? MultiRoomLogic.bookingWindow(state) : null;
+      final tripCheckIn = window?.$1 ?? state.checkIn!;
+      final tripCheckOut = window?.$2 ?? state.checkOut!;
 
       final formMap = <String, dynamic>{
-        'roomId': '${room.id}',
-        'checkInDate': iso(state.checkIn!),
-        'checkOutDate': iso(state.checkOut!),
+        if (multiRoom)
+          'rooms': _jsonList(MultiRoomLogic.roomsPayload(state))
+        else ...{
+          'roomId': '${room.id}',
+          // A dormitory always sends this — an empty list means buyout — the
+          // same as the web form; meaningless (and simply omitted) on an
+          // ordinary room. A list of plain numbers, so no escaping is needed.
+          if (room.isDormitory) 'bedIds': '[${state.bedIds.join(',')}]',
+          if (rate != null) 'basePriceOverride': '$rate',
+          'switchableCharges': _extrasJson(),
+        },
+        'checkInDate': iso(tripCheckIn),
+        'checkOutDate': iso(tripCheckOut),
         'numGuests': '$numGuests',
         'guestName': guestName.trim(),
         'guestPhone': guestPhone.trim(),
         // Not a fixed value: a stay starting today is a walk-in and is checked
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,
-        // A dormitory always sends this — an empty list means buyout — the
-        // same as the web form; meaningless (and simply omitted) on an
-        // ordinary room. A list of plain numbers, so no escaping is needed.
-        if (room.isDormitory) 'bedIds': '[${state.bedIds.join(',')}]',
-        if (rate != null) 'basePriceOverride': '$rate',
         // Sent whole. The quote the desk agreed to was priced with this off
         // it, so leaving it out here would book the stay at a total nobody
         // was shown.
@@ -1184,7 +1580,6 @@ class BookingViewModel extends StateNotifier<BookingState> {
         'vehicles': _jsonList(
           vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
         ),
-        'switchableCharges': _extrasJson(),
         if (advance > 0) ...{
           'advanceAmount': '$advance',
           // The first tender. The booking row keeps one method whatever the
@@ -1276,11 +1671,26 @@ class BookingViewModel extends StateNotifier<BookingState> {
     try {
       final rate = perNight(state.roomTotal, state.nights);
       final discount = wholeAmount(state.discount);
+      final multiRoom = state.isMultiRoom;
+      final window = multiRoom ? MultiRoomLogic.bookingWindow(state) : null;
+      final tripCheckIn = window?.$1 ?? state.checkIn!;
+      final tripCheckOut = window?.$2 ?? state.checkOut!;
 
       final formMap = <String, dynamic>{
-        'roomId': '${room.id}',
-        'checkInDate': iso(state.checkIn!),
-        'checkOutDate': iso(state.checkOut!),
+        if (multiRoom)
+          'rooms': _jsonList(MultiRoomLogic.roomsPayload(state))
+        else ...{
+          'roomId': '${room.id}',
+          if (rate != null) 'basePriceOverride': '$rate',
+          // Always sent for a dormitory room — state.bedIds was preloaded
+          // with whatever this stay already held (see selectRoom's caller in
+          // startEdit), so it reflects either that or whatever the picker
+          // was since changed to, same as the web form's edit path.
+          if (room.isDormitory) 'bedIds': '[${state.bedIds.join(',')}]',
+          'switchableCharges': _extrasJson(),
+        },
+        'checkInDate': iso(tripCheckIn),
+        'checkOutDate': iso(tripCheckOut),
         'numGuests': '$numGuests',
         'guestName': guestName.trim(),
         'guestPhone': guestPhone.trim(),
@@ -1288,12 +1698,6 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // agreed gets taken back, and that has to reach the server as an
         // explicit 0 rather than being read as "leave it alone".
         'discountAmount': '${discount ?? 0}',
-        if (rate != null) 'basePriceOverride': '$rate',
-        // Always sent for a dormitory room — state.bedIds was preloaded with
-        // whatever this stay already held (see selectRoom's caller in
-        // openForEdit), so it reflects either that or whatever the picker
-        // was since changed to, same as the web form's edit path.
-        if (room.isDormitory) 'bedIds': '[${state.bedIds.join(',')}]',
         if (idProofType != null) 'idProofType': idProofType,
         if (idProofNumber != null && idProofNumber.trim().isNotEmpty)
           'idProofNumber': idProofNumber.trim(),
@@ -1301,7 +1705,6 @@ class BookingViewModel extends StateNotifier<BookingState> {
         'vehicles': _jsonList(
           vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
         ),
-        'switchableCharges': _extrasJson(),
         ..._idProofParts(idProofFile, guests),
       };
 
@@ -1349,36 +1752,34 @@ class BookingViewModel extends StateNotifier<BookingState> {
   }
 
   /// Hand-rolled rather than dart:convert, so a string never lands unescaped.
-  String _jsonList(Iterable<Map<String, dynamic>> rows) {
-    String value(dynamic v) {
-      if (v == null) return 'null';
-      if (v is num) return '$v';
-      if (v is bool) return '$v';
-      final escaped = v
-          .toString()
-          .replaceAll('\\', r'\\')
-          .replaceAll('"', r'\"')
-          .replaceAll('\n', r'\n');
-      return '"$escaped"';
+  /// Handles nested lists/maps (a room's own `switchableCharges` array,
+  /// inside the `rooms` array itself) as well as the flat rows every other
+  /// caller passes.
+  String _jsonValue(dynamic v) {
+    if (v == null) return 'null';
+    if (v is num) return '$v';
+    if (v is bool) return '$v';
+    if (v is Map) {
+      final entries = v.entries
+          .map((e) => '"${e.key}":${_jsonValue(e.value)}')
+          .join(',');
+      return '{$entries}';
     }
-
-    final objects = rows.map(
-      (row) =>
-          '{${row.entries.map((e) => '"${e.key}":${value(e.value)}').join(',')}}',
-    );
-    return '[${objects.join(',')}]';
+    if (v is Iterable) {
+      return '[${v.map(_jsonValue).join(',')}]';
+    }
+    final escaped = v
+        .toString()
+        .replaceAll('\\', r'\\')
+        .replaceAll('"', r'\"')
+        .replaceAll('\n', r'\n');
+    return '"$escaped"';
   }
 
-  String _extrasJson() => _jsonList(
-    state.extras.entries.map((e) {
-      final agreed = perNight(e.value.agreedTotal, state.nights);
-      return {
-        'id': e.key,
-        'quantity': e.value.quantity,
-        if (agreed != null) 'agreedAmount': agreed,
-      };
-    }),
-  );
+  String _jsonList(Iterable<Map<String, dynamic>> rows) => _jsonValue(rows);
+
+  String _extrasJson() =>
+      _jsonList(ChargeSelections.chargesPayload(state.extras, state.nights));
 
   /// Clear the flow, for starting another booking. The chart is kept — it
   /// belongs to the screen behind this one.

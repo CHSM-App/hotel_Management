@@ -108,6 +108,22 @@ class Booking {
   /// checked out) narrow what is left.
   final bool hasIssuedInvoice;
 
+  /// Every room this stay holds, for a multi-room booking — empty on an
+  /// ordinary single-room stay and on any endpoint that doesn't load it (the
+  /// list/register endpoints leave this empty; only the detail fetch
+  /// populates it). [roomId]/[roomNumber]/[checkInDate]/[checkOutDate]/
+  /// [totalPrice]/[status] above stay a roll-up mirror of the first room here
+  /// so every screen that only ever knew one room keeps working unmodified.
+  final List<BookingRoom> rooms;
+
+  /// How many rooms this stay holds — from the server's own roll-up where
+  /// given, else derived from [rooms], else a single room.
+  final int? roomCount;
+
+  /// Every room number on this stay, comma-joined — falls back to
+  /// [roomNumber] on a legacy single-room stay.
+  final String? roomNumbers;
+
   const Booking({
     required this.id,
     this.roomId,
@@ -154,6 +170,9 @@ class Booking {
     this.roomCharges = const [],
     this.invoice,
     this.hasIssuedInvoice = false,
+    this.rooms = const [],
+    this.roomCount,
+    this.roomNumbers,
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
@@ -225,7 +244,16 @@ class Booking {
         ? null
         : Invoice.fromJson(json['invoice'] as Map<String, dynamic>),
     hasIssuedInvoice: asBool(json['hasIssuedInvoice']),
+    rooms: (json['rooms'] as List?)
+            ?.map((e) => BookingRoom.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    roomCount: asIntOrNull(json['roomCount']),
+    roomNumbers: asStringOrNull(json['roomNumbers']),
   );
+
+  /// Whether this stay holds more than one room.
+  bool get isMultiRoom => rooms.length > 1;
 
   /// What is still to collect, before the bill is cut — the room charge and
   /// whatever was agreed for leaving late, less the advance. Deliberately
@@ -389,4 +417,97 @@ class RoomChargeLine {
         amount: asNum(json['amount']),
         nights: asInt(json['nights']),
       );
+}
+
+/// One room of a multi-room stay — only present on [Booking.rooms], which
+/// only the detail endpoint populates.
+class BookingRoom {
+  final int bookingRoomId;
+  final int roomId;
+  final String roomNumber;
+  final String? categoryName;
+  final int? maxOccupancy;
+  final bool isDormitory;
+  final List<int> bedIds;
+  final List<String> bedLabels;
+  final String? checkInDate;
+  final String? checkOutDate;
+
+  /// BOOKED, CHECKED_IN, CHECKED_OUT or CANCELLED.
+  final String status;
+  final String? actualCheckInAt;
+  final String? actualCheckOutAt;
+  final num? basePriceOverride;
+  final num? totalPrice;
+  final num? discountAmount;
+  final num? grossTotalPrice;
+  final List<RoomChargeLine> roomCharges;
+  final int? nights;
+  final num lateCheckoutCharge;
+  final int? lateCheckoutMinutes;
+  final String? foodPin;
+  final String? foodOrderingLockedUntil;
+  final List<SwitchableCharge> switchableCharges;
+
+  const BookingRoom({
+    required this.bookingRoomId,
+    required this.roomId,
+    required this.roomNumber,
+    this.categoryName,
+    this.maxOccupancy,
+    this.isDormitory = false,
+    this.bedIds = const [],
+    this.bedLabels = const [],
+    this.checkInDate,
+    this.checkOutDate,
+    this.status = 'BOOKED',
+    this.actualCheckInAt,
+    this.actualCheckOutAt,
+    this.basePriceOverride,
+    this.totalPrice,
+    this.discountAmount,
+    this.grossTotalPrice,
+    this.roomCharges = const [],
+    this.nights,
+    this.lateCheckoutCharge = 0,
+    this.lateCheckoutMinutes,
+    this.foodPin,
+    this.foodOrderingLockedUntil,
+    this.switchableCharges = const [],
+  });
+
+  factory BookingRoom.fromJson(Map<String, dynamic> json) => BookingRoom(
+    bookingRoomId: asInt(json['bookingRoomId']),
+    roomId: asInt(json['roomId']),
+    roomNumber: json['roomNumber']?.toString() ?? '',
+    categoryName: asStringOrNull(json['categoryName']),
+    maxOccupancy: asIntOrNull(json['maxOccupancy']),
+    isDormitory: asBool(json['isDormitory']),
+    bedIds: (json['bedIds'] as List?)?.map(asInt).toList() ?? const [],
+    bedLabels:
+        (json['bedLabels'] as List?)?.map((v) => v.toString()).toList() ??
+        const [],
+    checkInDate: asStringOrNull(json['checkInDate']),
+    checkOutDate: asStringOrNull(json['checkOutDate']),
+    status: asStringOrNull(json['status']) ?? 'BOOKED',
+    actualCheckInAt: asStringOrNull(json['actualCheckInAt']),
+    actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
+    basePriceOverride: asNumOrNull(json['basePriceOverride']),
+    totalPrice: asNumOrNull(json['totalPrice']),
+    discountAmount: asNumOrNull(json['discountAmount']),
+    grossTotalPrice: asNumOrNull(json['grossTotalPrice']),
+    roomCharges: (json['roomCharges'] as List?)
+            ?.map((e) => RoomChargeLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    nights: asIntOrNull(json['nights']),
+    lateCheckoutCharge: asNum(json['lateCheckoutCharge']),
+    lateCheckoutMinutes: asIntOrNull(json['lateCheckoutMinutes']),
+    foodPin: asStringOrNull(json['foodPin']),
+    foodOrderingLockedUntil: asStringOrNull(json['foodOrderingLockedUntil']),
+    switchableCharges: (json['switchableCharges'] as List?)
+            ?.map((e) => SwitchableCharge.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
 }

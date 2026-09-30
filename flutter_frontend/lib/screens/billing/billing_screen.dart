@@ -20,14 +20,21 @@ enum _BillingTab { toBill, food, issued }
 /// but the flow is the same one: pick a stay, check what it says, record what
 /// the guest handed over, issue.
 class BillingScreen extends ConsumerStatefulWidget {
-  const BillingScreen({super.key});
+  /// True for the "Restaurant billing" entry under the Restaurant group —
+  /// mirrors the web's `<Billing stream="restaurant" />` (OwnerDashboard.jsx):
+  /// only table/takeaway tabs and their own bills, the room queue left out
+  /// entirely rather than shown and empty.
+  final bool restaurantOnly;
+
+  const BillingScreen({super.key, this.restaurantOnly = false});
 
   @override
   ConsumerState<BillingScreen> createState() => _BillingScreenState();
 }
 
 class _BillingScreenState extends ConsumerState<BillingScreen> {
-  _BillingTab _tab = _BillingTab.toBill;
+  late _BillingTab _tab =
+      widget.restaurantOnly ? _BillingTab.food : _BillingTab.toBill;
 
   @override
   void initState() {
@@ -40,11 +47,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(billingViewModelProvider);
-    // A lodge bills stays, a restaurant bills open tables, and one with meals
-    // does both — same split the web billing screen makes between its own
-    // "Ready to bill" and "Food to bill" tabs.
-    final servesFood = ref.watch(authViewModelProvider).me?.lodge.servesFood ?? false;
-    final tab = servesFood || _tab != _BillingTab.food ? _tab : _BillingTab.toBill;
+    // "Food to bill" now lives only on Restaurant billing — the same split
+    // the web makes between its plain Billing (stream="room", no tables tab
+    // at all) and its stream="restaurant" page, which is the only one that
+    // ever renders one.
+    final tab = widget.restaurantOnly
+        ? (_tab == _BillingTab.issued ? _BillingTab.issued : _BillingTab.food)
+        : (_tab == _BillingTab.food ? _BillingTab.toBill : _tab);
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -60,7 +69,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         children: [
           _Toggle(
             tab: tab,
-            showFood: servesFood,
+            showRoom: !widget.restaurantOnly,
+            showFood: widget.restaurantOnly,
             toBillCount: state.queue.valueOrNull?.length,
             foodCount: state.foodQueue.valueOrNull?.length,
             onChanged: (v) => setState(() => _tab = v),
@@ -69,7 +79,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           if (tab == _BillingTab.food)
             ..._food(state)
           else if (tab == _BillingTab.issued)
-            ..._issued(state)
+            ..._issued(state, restaurantOnly: widget.restaurantOnly)
           else
             ..._queue(state),
         ],
@@ -195,7 +205,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   // ── Issued ────────────────────────────────────────────────────────────────
 
-  List<Widget> _issued(BillingState state) => state.invoices.when(
+  List<Widget> _issued(BillingState state, {required bool restaurantOnly}) =>
+      state.invoices.when(
     loading: () => const [
       SizedBox(height: 120),
       Center(child: CircularProgressIndicator()),
@@ -207,7 +218,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         action: NeuButton(onPressed: _load, child: const Text('Try again')),
       ),
     ],
-    data: (rows) {
+    data: (allRows) {
+      // Same split as the web's own streamOf(): a FOOD-kind bill is a
+      // restaurant document, everything else (room stays, advances) belongs
+      // to room billing — kept out of this list entirely rather than shown
+      // and looking out of place among table bills.
+      final rows = restaurantOnly
+          ? allRows.where((inv) => inv.kind == 'FOOD').toList()
+          : allRows;
       if (rows.isEmpty) {
         return const [
           SizedBox(height: 80),
@@ -379,6 +397,10 @@ class _RowCard extends StatelessWidget {
 
 class _Toggle extends StatelessWidget {
   final _BillingTab tab;
+
+  /// False on "Restaurant billing" — the room queue never shows there, the
+  /// same way the web's own stream="restaurant" page never renders it.
+  final bool showRoom;
   final bool showFood;
   final int? toBillCount;
   final int? foodCount;
@@ -386,6 +408,7 @@ class _Toggle extends StatelessWidget {
 
   const _Toggle({
     required this.tab,
+    this.showRoom = true,
     required this.showFood,
     required this.toBillCount,
     required this.foodCount,
@@ -397,12 +420,13 @@ class _Toggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final segments = [
-      (
-        tab: _BillingTab.toBill,
-        label: toBillCount == null
-            ? 'Ready to bill'
-            : 'Ready to bill ($toBillCount)',
-      ),
+      if (showRoom)
+        (
+          tab: _BillingTab.toBill,
+          label: toBillCount == null
+              ? 'Ready to bill'
+              : 'Ready to bill ($toBillCount)',
+        ),
       if (showFood)
         (
           tab: _BillingTab.food,

@@ -99,3 +99,74 @@ class QuoteNight {
     total: asNum(json['total']),
   );
 }
+
+/// GET /bookings/price-quote's multi-room shape — one [RoomQuote] per room
+/// being booked, plus the totals across all of them (the concession is
+/// apportioned server-side, one room's worth per [RoomQuote.discountAmount]).
+class MultiRoomQuote {
+  final List<RoomQuote> rooms;
+  final num grossTotal;
+  final num discountAmount;
+  final num totalPrice;
+
+  const MultiRoomQuote({
+    this.rooms = const [],
+    this.grossTotal = 0,
+    this.discountAmount = 0,
+    this.totalPrice = 0,
+  });
+
+  factory MultiRoomQuote.fromJson(Map<String, dynamic> json) =>
+      MultiRoomQuote(
+        rooms:
+            (json['rooms'] as List?)
+                ?.map((e) => RoomQuote.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        grossTotal: asNum(json['grossTotal']),
+        discountAmount: asNum(json['discountAmount']),
+        totalPrice: asNum(json['totalPrice']),
+      );
+}
+
+/// One room's slice of a [MultiRoomQuote].
+class RoomQuote {
+  final int roomId;
+  final String checkInDate;
+  final String checkOutDate;
+  final List<QuoteNight> nights;
+  final List<QuoteLine> charges;
+  final num grossTotal;
+  final num discountAmount;
+  final num totalPrice;
+
+  const RoomQuote({
+    required this.roomId,
+    required this.checkInDate,
+    required this.checkOutDate,
+    this.nights = const [],
+    this.charges = const [],
+    this.grossTotal = 0,
+    this.discountAmount = 0,
+    this.totalPrice = 0,
+  });
+
+  factory RoomQuote.fromJson(Map<String, dynamic> json) => RoomQuote(
+    roomId: asInt(json['roomId']),
+    checkInDate: json['checkInDate']?.toString() ?? '',
+    checkOutDate: json['checkOutDate']?.toString() ?? '',
+    nights:
+        (json['nights'] as List?)
+            ?.map((e) => QuoteNight.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    charges:
+        (json['charges'] as List?)
+            ?.map((e) => QuoteLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    grossTotal: asNum(json['grossTotal']),
+    discountAmount: asNum(json['discountAmount']),
+    totalPrice: asNum(json['totalPrice']),
+  );
+}

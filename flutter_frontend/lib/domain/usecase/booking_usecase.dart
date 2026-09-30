@@ -43,6 +43,19 @@ class BookingUsecase {
     bedIds: bedIds,
   );
 
+  /// The multi-room variant — one call for every room on the booking.
+  Future<MultiRoomQuote> multiRoomPriceQuote({
+    required List<Map<String, dynamic>> rooms,
+    required String checkInDate,
+    required String checkOutDate,
+    num? discountAmount,
+  }) => repository.multiRoomPriceQuote(
+    rooms: rooms,
+    checkInDate: checkInDate,
+    checkOutDate: checkOutDate,
+    discountAmount: discountAmount,
+  );
+
   /// The bed picker's own fetch, for a dormitory room and a chosen stay.
   Future<AvailableBeds> availableBeds({
     required int roomId,

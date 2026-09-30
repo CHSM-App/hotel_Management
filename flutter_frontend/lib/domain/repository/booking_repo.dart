@@ -28,6 +28,16 @@ abstract class BookingRepository {
     List<int>? bedIds,
   });
 
+  /// The multi-room variant — one call for every room on the booking, each
+  /// possibly with its own dates, discount apportioned across them
+  /// server-side.
+  Future<MultiRoomQuote> multiRoomPriceQuote({
+    required List<Map<String, dynamic>> rooms,
+    required String checkInDate,
+    required String checkOutDate,
+    num? discountAmount,
+  });
+
   /// The bed picker's own fetch for a dormitory room and a chosen stay.
   Future<AvailableBeds> availableBeds({
     required int roomId,

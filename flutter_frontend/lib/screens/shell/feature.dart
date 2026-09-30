@@ -29,6 +29,11 @@ class Feature {
   /// The lodge flag this section needs, or null for the universal ones.
   final String? capability;
 
+  /// Clusters this section under a collapsible header in the "More" list —
+  /// mirrors the web sidebar's own grouping (propertyProfile.js's `group`,
+  /// SIDEBAR_GROUP_ORDER). Null for a section that lists on its own.
+  final String? group;
+
   const Feature({
     required this.key,
     required this.title,
@@ -37,6 +42,7 @@ class Feature {
     required this.permission,
     this.altPermissions = const [],
     this.capability,
+    this.group,
   });
 
   bool availableTo(Me me) {
@@ -112,7 +118,8 @@ const kFeatures = <Feature>[
   // ── Setup ────────────────────────────────────────────────────────────────
   // Rooms and Menu & QR codes are both setup screens touched far less often
   // than the four above once a property's rooms and menu exist, so both fold
-  // into "More" — Rooms listed first, Menu & QR codes under it.
+  // into "More" — each under its own collapsible header (Rooms, Restaurant)
+  // rather than as flat rows.
   Feature(
     key: 'rooms',
     title: 'Rooms & rates',
@@ -120,7 +127,13 @@ const kFeatures = <Feature>[
     icon: Icons.bed_rounded,
     permission: 'rooms.manage',
     capability: 'hasRooms',
+    group: 'Rooms',
   ),
+  // Same web sidebar group (propertyProfile.js's 'Restaurant'): Menu & QR
+  // codes and Food orders sit together under one collapsible "Restaurant"
+  // header in the More list — tapping the header expands it in place to
+  // show both rows, rather than the desk having to open one to reach the
+  // other.
   Feature(
     key: 'menu',
     title: 'Menu & QR codes',
@@ -128,9 +141,8 @@ const kFeatures = <Feature>[
     icon: Icons.restaurant_menu_rounded,
     permission: 'food.manage',
     capability: 'servesFood',
+    group: 'Restaurant',
   ),
-  // Folded into "More" beside Rooms and Menu, taking Events' old spot — food
-  // orders are checked less often here than an events booking is taken.
   Feature(
     key: 'food',
     title: 'Food orders',
@@ -139,17 +151,36 @@ const kFeatures = <Feature>[
     permission: 'orders.manage',
     altPermissions: ['orders.take'],
     capability: 'servesFood',
+    group: 'Restaurant',
   ),
+  // Same web sidebar row (propertyProfile.js's 'restaurantBilling'): table
+  // and takeaway bills, and adding a staying guest's food to their room
+  // bill — kept apart from Billing & GST's own room queue the same way the
+  // web keeps <Billing stream="restaurant" /> apart from the plain one.
+  Feature(
+    key: 'restaurantBilling',
+    title: 'Restaurant billing',
+    tabLabel: 'Restaurant billing',
+    icon: Icons.point_of_sale_rounded,
+    permission: 'billing.manage',
+    capability: 'servesFood',
+    group: 'Restaurant',
+  ),
+  // Same web sidebar group (propertyProfile.js's 'Finance & Management'):
+  // Asset inventory, Expenses, Other Income and Reports sit together under
+  // one collapsible header rather than as four flat rows.
+  //
   // Same web module (AssetsPanel.jsx): register, work orders and warranty/AMC
   // coverage for the property's physical assets. An add-on, same as Events:
   // off until switched on for the property (frontend/src/lib/propertyProfile.js).
   Feature(
     key: 'assets',
-    title: 'Asset inventory',
+    title: 'Asset Inventory',
     tabLabel: 'Assets',
     icon: Icons.inventory_2_rounded,
     permission: 'assets.manage',
     capability: 'hasAssets',
+    group: 'Finance & Management',
   ),
   // Same web module (ExpensesPanel.jsx): log spends, recurring schedules and
   // the monthly/by-category summary. An add-on, same as Assets: off until
@@ -161,6 +192,7 @@ const kFeatures = <Feature>[
     icon: Icons.receipt_long_rounded,
     permission: 'expenses.manage',
     capability: 'hasExpenses',
+    group: 'Finance & Management',
   ),
   // Same web module (IncomePanel.jsx): log, recurring schedules and payers
   // for income outside room/food/function billing (interest, scrap sale,
@@ -175,6 +207,7 @@ const kFeatures = <Feature>[
     icon: Icons.savings_rounded,
     permission: 'income.manage',
     capability: 'hasExpenses',
+    group: 'Finance & Management',
   ),
   // Feature(
   //   key: 'staff',
@@ -196,10 +229,11 @@ const kFeatures = <Feature>[
   // Folded into "More" — checked at day's end or month's end, not every shift.
   Feature(
     key: 'reports',
-    title: 'Reports',
+    title: 'Reports & Analytics',
     tabLabel: 'Reports',
     icon: Icons.bar_chart_rounded,
     permission: 'reports.view',
+    group: 'Finance & Management',
   ),
 ];
 

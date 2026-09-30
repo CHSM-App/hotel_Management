@@ -57,6 +57,19 @@ class BookingImpl implements BookingRepository {
   );
 
   @override
+  Future<MultiRoomQuote> multiRoomPriceQuote({
+    required List<Map<String, dynamic>> rooms,
+    required String checkInDate,
+    required String checkOutDate,
+    num? discountAmount,
+  }) => api.multiRoomPriceQuote(
+    rooms: rooms,
+    checkInDate: checkInDate,
+    checkOutDate: checkOutDate,
+    discountAmount: discountAmount,
+  );
+
+  @override
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
