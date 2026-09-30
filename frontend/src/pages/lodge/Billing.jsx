@@ -13,6 +13,7 @@ import Req from '../../components/RequiredMark';
 import { buildMailLink, openComposer } from '../../lib/shareLinks';
 import { useToast } from '../../components/Toast';
 import PaymentLines from './PaymentLines';
+import PageLoader from '../../components/PageLoader';
 import {
   needsPaymentReference,
   paymentLinesError,
@@ -477,7 +478,7 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
 // viewInvoiceId opens an already-issued bill's document straight away — a
 // settled function's "View bill" — rather than asking for a new preview the
 // server would rightly refuse.
-export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', onClose }) {
+export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', hideTabs = false, forceTab = null, onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -512,7 +513,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // matching nothing and rendering an empty page under an unselected strip.
   // Checked against `tabs`, not a fixed list: a property that bills no stays
   // has no "ready" tab, so a link to one has to land somewhere real too.
-  const activeTab = tabs.some((t) => t.key === tab) ? tab : defaultTab;
+  const activeTab = forceTab && tabs.some((t) => t.key === forceTab) ? forceTab : tabs.some((t) => t.key === tab) ? tab : defaultTab;
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   const [queueError, setQueueError] = useState('');
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
@@ -1296,6 +1297,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           run of siblings, not one element. */}
       {!modalOnly && (
         <>
+      {!hideTabs && (
       <div className="billing-panel__subtabs">
         {tabs.map((t) => (
           <button
@@ -1315,6 +1317,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           </button>
         ))}
       </div>
+      )}
 
       {activeTab === 'numbering' && <BillNumberingPanel />}
 
@@ -1331,7 +1334,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           </div>
 
           {foodTabsError && <div className="form-banner form-banner--error">{foodTabsError}</div>}
-          {!foodTabsError && !foodTabs && <div className="dash-state">Loading…</div>}
+          {!foodTabsError && !foodTabs && <PageLoader inline label="Loading" />}
           {!foodTabsError && foodTabs && foodTabs.length === 0 && (
             <div className="dash-state">Nothing waiting — everything served has been billed.</div>
           )}
@@ -1417,7 +1420,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           </div>
 
           {queueError && <div className="form-banner form-banner--error">{queueError}</div>}
-          {!queueError && !queue && <div className="dash-state">Loading…</div>}
+          {!queueError && !queue && <PageLoader inline label="Loading" />}
           {!queueError && queue && queue.length === 0 && (
             <div className="dash-state">Nothing waiting — every checked-out stay has a bill.</div>
           )}
@@ -1454,7 +1457,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           </div>
 
           {invoicesError && <div className="form-banner form-banner--error">{invoicesError}</div>}
-          {!invoicesError && !documents && <div className="dash-state">Loading…</div>}
+          {!invoicesError && !documents && <PageLoader inline label="Loading" />}
           {!invoicesError && documents && documents.length === 0 && (
             <div className="dash-state">No bills issued yet.</div>
           )}
@@ -1694,7 +1697,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             <h3>Issue bill</h3>
 
             {previewError && <div className="form-banner form-banner--error">{previewError}</div>}
-            {!previewError && !preview && <div className="dash-state">Loading…</div>}
+            {!previewError && !preview && <PageLoader inline label="Loading" />}
 
             {!previewError && preview && (
               <form onSubmit={handleIssue} noValidate>
@@ -1921,7 +1924,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       {detailStayError && (
                         <div className="form-banner form-banner--error">{detailStayError}</div>
                       )}
-                      {!detailStayError && !detailStay && <div className="dash-state">Loading…</div>}
+                      {!detailStayError && !detailStay && <PageLoader inline label="Loading" />}
                       {!detailStayError && detailStay && (
                         <StayDetails booking={detailStay} showOutstanding={false} />
                       )}

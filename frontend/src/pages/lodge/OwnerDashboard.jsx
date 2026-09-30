@@ -10,14 +10,18 @@ import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
 import ReportsPanel from './ReportsPanel';
+import { REPORT_SECTIONS, reportSectionOf } from '../../lib/reportSections';
 import StaffAndRoles from './StaffAndRoles';
 import FoodSetup from './FoodSetup';
-import OrdersPanel from './OrdersPanel';
+import FoodSection from './FoodSection';
 import Events from './Events';
 import AssetsPanel from './AssetsPanel';
 import ExpensesPanel from './ExpensesPanel';
 import IncomePanel from './IncomePanel';
 import ProfileMenu from './ProfileMenu';
+import LoginSplash from '../../components/LoginSplash';
+import PageLoader from '../../components/PageLoader';
+import { setBrandLogo } from '../../lib/brand';
 import { copyText } from '../../lib/clipboard';
 import '../internal/LodgesDashboard.css';
 import './OwnerDashboard.css';
@@ -169,6 +173,27 @@ export default function OwnerDashboard() {
   const navigate = useNavigate();
   const session = getSession();
   const [me, setMe] = useState(null);
+  // The opening splash plays once, right after signing in (Login sets the flag).
+  const [splash, setSplash] = useState(() => {
+    try {
+      return sessionStorage.getItem('hm_splash') === '1';
+    } catch {
+      return false;
+    }
+  });
+  // Hands the property's logo to the loaders (and remembers it for next time).
+  const logoUrl = me?.lodge?.logoUrl;
+  useEffect(() => {
+    if (me?.lodge) setBrandLogo(logoUrl ? `${API_BASE}${logoUrl}` : null);
+  }, [me?.lodge, logoUrl]);
+  const endSplash = () => {
+    setSplash(false);
+    try {
+      sessionStorage.removeItem('hm_splash');
+    } catch {
+      /* ignore */
+    }
+  };
   const [error, setError] = useState('');
   // Left null until the user picks a section — /me hasn't answered yet on the
   // first render, so which section is even reachable isn't known here. The
@@ -176,7 +201,16 @@ export default function OwnerDashboard() {
   // Read-only here: every move that sets the section also has to clear the
   // register's status cut, so both are written together through setSearchParams
   // below rather than through this setter.
-  const [activeSection] = useUrlState('section');
+  const [rawSection] = useUrlState('section');
+  const [rawTab] = useUrlState('tab');
+  // The old Restaurant billing link now lands on the Billing tab of the merged section.
+  // Old links to the single Reports section land on the matching report.
+  const activeSection =
+    rawSection === 'restaurantBilling' ? 'food' : rawSection === 'reports'
+        ? `report-${reportSectionOf(rawTab || 'overview')}`
+        : /^report-/.test(rawSection || '') && !REPORT_SECTIONS[rawSection.slice(7)]
+          ? `report-${reportSectionOf(rawSection.slice(7))}`
+          : rawSection;
   // Set when a checkout hands a stay to billing, which reads it as it mounts to
   // open that bill straight away. Cleared on any sidebar move, so coming back to
   // billing later lands on the plain queue rather than reopening an old bill.
@@ -248,7 +282,7 @@ export default function OwnerDashboard() {
     setSearchParams(
       (prev) => {
         const updated = new URLSearchParams(prev);
-        updated.set('section', 'reports');
+        updated.set('section', `report-${reportSectionOf(tabKey)}`);
         updated.set('tab', tabKey);
         updated.delete('status');
         return updated;
@@ -281,6 +315,7 @@ export default function OwnerDashboard() {
         const updated = new URLSearchParams(prev);
         updated.set('section', key);
         updated.delete('tab');
+        updated.delete('view');
         updated.delete('status');
         updated.delete('billed');
         updated.delete('sort');
@@ -338,7 +373,7 @@ export default function OwnerDashboard() {
   // orders.take), and holding either is enough to see it.
   const hasPermission = (item) => {
     const keys = Array.isArray(item.permission) ? item.permission : [item.permission];
-    return keys.some((key) => permissions.includes(key));
+    return keys.some((key) => permissions.includes(key)) && (item.requiresAll || []).every((key) => permissions.includes(key));
   };
   const visibleFeatures = FEATURES.filter((f) => hasPermission(f) && hasCapability(f));
   // Resolved rather than stored, so the landing section is whatever the loaded
@@ -364,6 +399,7 @@ export default function OwnerDashboard() {
 
   return (
     <div className="dash-shell">
+      {splash && <LoginSplash lodge={me?.lodge} onDone={endSplash} />}
       {confirmSignOut && (
         <ConfirmDialog
           title="Sign out?"
@@ -516,6 +552,7 @@ export default function OwnerDashboard() {
                               const updated = new URLSearchParams(prev);
                               updated.set('section', feature.key);
                               updated.delete('tab');
+                              updated.delete('view');
                               updated.delete('status');
                               return updated;
                             },
@@ -581,11 +618,7 @@ export default function OwnerDashboard() {
             </div>
           )}
 
-          {!error && !me && (
-            <div className="dash-card">
-              <div className="dash-state">Loading your lodge…</div>
-            </div>
-          )}
+          {!error && !me && <PageLoader label="Loading your lodge" />}
 
           {!error && me && (
             <>
@@ -614,10 +647,6 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'billing' && (
                 <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} />
-              )}
-
-              {activeFeature && activeFeature.key === 'restaurantBilling' && (
-                <Billing lodge={me.lodge} stream="restaurant" />
               )}
 
               {activeFeature && activeFeature.key === 'eventBilling' && (
@@ -707,14 +736,23 @@ export default function OwnerDashboard() {
                 <GuestRegister onOpenDraft={openDraftInChart} onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)} onOpenSection={showSection} />
               )}
 
-              {activeFeature && activeFeature.key === 'reports' && (
-                <ReportsPanel lodge={me?.lodge} permissions={permissions} />
+              {activeFeature && activeFeature.key.startsWith('report-') && (
+                <ReportsPanel
+                  key={activeFeature.key}
+                  lodge={me?.lodge}
+                  permissions={permissions}
+                  only={activeFeature.key.slice('report-'.length)}
+                />
               )}
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 
               {activeFeature && activeFeature.key === 'food' && (
-                <OrdersPanel lodge={me.lodge} permissions={permissions} />
+                <FoodSection
+                  lodge={me.lodge}
+                  permissions={permissions}
+                  initialView={rawSection === 'restaurantBilling' ? 'billing' : null}
+                />
               )}
 
               {activeFeature && activeFeature.key === 'menu' && (
@@ -737,7 +775,8 @@ export default function OwnerDashboard() {
               )}
 
               {activeFeature &&
-                !['rooms', 'bookings', 'billing', 'restaurantBilling', 'eventBilling', 'guests', 'reports', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !activeFeature.key.startsWith('report-') &&
+                !['rooms', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

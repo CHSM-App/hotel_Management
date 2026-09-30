@@ -11,6 +11,7 @@ import './forms.css';
 import './chartSections.css';
 import './RoomsAndRates.css';
 import './StaffAndRoles.css';
+import PageLoader from '../../components/PageLoader';
 
 const TABS = [
   { key: 'staff', label: 'Staff' },
@@ -430,7 +431,7 @@ export default function StaffAndRoles() {
       )}
       {loading && (
         <div className="dash-card">
-          <div className="dash-state">Loading…</div>
+          <PageLoader inline label="Loading" />
         </div>
       )}
 

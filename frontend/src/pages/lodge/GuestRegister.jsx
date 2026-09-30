@@ -15,6 +15,7 @@ import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './InventoryPanel.css';
 import './GuestRegister.css';
+import PageLoader from '../../components/PageLoader';
 
 // The record's own wording, kept for the open guest record's header badge. The
 // list's Status column reads from STAY_STATUS_CHIP_LABEL instead, to match the
@@ -1046,7 +1047,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
               </div>
             ))}
           </div>
-          <p className="guest-register__loading-note">Loading the register…</p>
+          <PageLoader inline label="Loading the register" />
         </div>
       )}
 
@@ -1602,7 +1603,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
             <div className="guest-register__record-body">
               {detailError && <div className="form-banner form-banner--error">{detailError}</div>}
 
-              {!detailError && !detailBooking && <div className="dash-state">Loading…</div>}
+              {!detailError && !detailBooking && <PageLoader inline label="Loading" />}
 
               {/* The issued document itself, rendered by the same component the
                   bills screen and the printout use — the register must not

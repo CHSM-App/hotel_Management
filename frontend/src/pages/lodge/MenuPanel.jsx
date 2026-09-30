@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import PageLoader from '../../components/PageLoader';
 import {
   apiGet,
   apiPost,
@@ -817,7 +818,7 @@ export default function MenuPanel() {
 
       {!error && !sections && (
         <div className="dash-card">
-          <div className="dash-state">Loading the menu…</div>
+          <PageLoader inline label="Loading the menu" />
         </div>
       )}
 

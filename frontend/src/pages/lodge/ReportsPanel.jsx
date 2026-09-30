@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
+import { REPORT_SECTIONS } from '../../lib/reportSections';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
+import PageLoader from '../../components/PageLoader';
 import {
   BOOKING_STATUS_LABEL,
   DOCUMENT_TYPE_LABEL,
@@ -47,8 +49,8 @@ const STREAM_LABEL = { ROOMS: 'Rooms', FUNCTIONS: 'Functions', FOOD: 'Food' };
 const ALL_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'bookings', label: 'Room Bookings', capability: 'hasRooms' },
-  { key: 'events', label: 'Events & functions', capability: 'hasEvents' },
-  { key: 'food', label: 'Food orders', capability: 'servesFood' },
+  { key: 'events', label: 'Events & Functions', capability: 'hasEvents' },
+  { key: 'food', label: 'Restaurant', capability: 'servesFood' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
   // figures expenses.manage individually gates elsewhere, so profitLoss.view
@@ -59,7 +61,7 @@ const ALL_TABS = [
   // can have switched off entirely, not just a permission a role can lack.
   { key: 'expenses', label: 'Expenses', permission: 'expenses.manage', capability: 'hasExpenses' },
   { key: 'income', label: 'Other Income', permission: 'income.manage', capability: 'hasExpenses' },
-  { key: 'assets', label: 'Assets', permission: 'assets.manage', capability: 'hasAssets' },
+  { key: 'assets', label: 'Assets', capability: 'hasAssets' },
 ];
 
 const EVENT_TYPE_LABEL = {
@@ -213,7 +215,8 @@ function SortTh({ label, sortKey, sort, onSort, className }) {
   );
 }
 
-export default function ReportsPanel({ lodge, permissions = [] }) {
+// `only` names one of those sections; without it the panel keeps all its tabs.
+export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const session = getSession();
   const token = session?.token;
 
@@ -223,11 +226,13 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
   // Expenses/Assets are gated by permission instead, for the same reason.
   const TABS = ALL_TABS.filter(
     (t) =>
+      (!only || (REPORT_SECTIONS[only] || []).includes(t.key)) &&
       (!t.capability || Boolean(lodge?.[t.capability])) &&
       (!t.permission || permissions.includes(t.permission)) &&
       (!t.requiresAll || t.requiresAll.every((p) => permissions.includes(p)))
   );
-  const [tab, setTab] = useUrlState('tab', 'overview');
+  const [urlTab, setTab] = useUrlState('tab', 'overview');
+  const tab = only && REPORT_SECTIONS[only]?.length === 1 ? REPORT_SECTIONS[only][0] : urlTab;
   // A ?tab= this screen doesn't own falls back to the first available tab
   // rather than matching nothing and rendering an empty page under an
   // unselected strip.
@@ -667,6 +672,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
 
   return (
     <div className="reports-panel">
+      {TABS.length > 1 && (
       <div className="reports-panel__subtabs">
         {TABS.map((t) => (
           <button
@@ -680,6 +686,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           </button>
         ))}
       </div>
+      )}
 
       {/* Expenses/Assets report the full history, not a date range — the
           picker bar and every date-scoped tab below it don't apply. */}
@@ -846,7 +853,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
         ) : expensesReportError ? (
           <p className="reports-panel__hint">{expensesReportError}</p>
         ) : (
-          <p className="reports-panel__hint">Loading…</p>
+          <PageLoader inline label="Loading" />
         )
       )}
 
@@ -856,7 +863,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
         ) : incomeReportError ? (
           <p className="reports-panel__hint">{incomeReportError}</p>
         ) : (
-          <p className="reports-panel__hint">Loading…</p>
+          <PageLoader inline label="Loading" />
         )
       )}
 
@@ -866,7 +873,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
         ) : assetsReportError ? (
           <p className="reports-panel__hint">{assetsReportError}</p>
         ) : (
-          <p className="reports-panel__hint">Loading…</p>
+          <PageLoader inline label="Loading" />
         )
       )}
 
@@ -879,7 +886,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           )}
           {!bookingsError && validRange && !bookings && (
             <div className="dash-card">
-              <div className="dash-state">Loading…</div>
+              <PageLoader inline label="Loading" />
             </div>
           )}
           {!bookingsError && bookings && (
@@ -1114,7 +1121,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
               (lodge?.hasEvents && !events && !eventsError) ||
               (lodge?.servesFood && !foodOrders && !foodOrdersError)) && (
             <div className="dash-card">
-              <div className="dash-state">Loading…</div>
+              <PageLoader inline label="Loading" />
             </div>
           )}
           {!bookingsError && !occupancyError && !gstError && bookings && occupancy && gst && (
@@ -1145,7 +1152,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           )}
           {!gstError && !occupancyError && validRange && (!gst || !occupancy) && (
             <div className="dash-card">
-              <div className="dash-state">Loading…</div>
+              <PageLoader inline label="Loading" />
             </div>
           )}
           {!gstError && !occupancyError && gst && occupancy && (
@@ -1313,7 +1320,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
             </div>
           </div>
           {plHistoryError && <div className="dash-card"><div className="dash-state">{plHistoryError}</div></div>}
-          {!plHistoryError && !plHistory && <div className="dash-card"><div className="dash-state">Loading multi-year history…</div></div>}
+          {!plHistoryError && !plHistory && <div className="dash-card"><PageLoader inline label="Loading multi-year history" /></div>}
           {plHistory && (
             <div className="dash-card reports-panel__pl-card">
               <div className="dash-table-scroll">
@@ -1355,7 +1362,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           )}
           {!profitLossError && validRange && !profitLoss && (
             <div className="dash-card">
-              <div className="dash-state">Loading…</div>
+              <PageLoader inline label="Loading" />
             </div>
           )}
           {!profitLossError && profitLoss && (
@@ -1494,7 +1501,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           )}
           {!eventsError && validRange && !events && (
             <div className="dash-card">
-              <div className="dash-state">Loading…</div>
+              <PageLoader inline label="Loading" />
             </div>
           )}
           {!eventsError && events && (
@@ -1620,7 +1627,7 @@ export default function ReportsPanel({ lodge, permissions = [] }) {
           )}
           {!foodOrdersError && validRange && !foodOrders && (
             <div className="dash-card">
-              <div className="dash-state">Loading…</div>
+              <PageLoader inline label="Loading" />
             </div>
           )}
           {!foodOrdersError && foodOrders && (

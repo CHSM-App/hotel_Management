@@ -5,6 +5,7 @@ import { clearGuestSession, getGuestSession, setGuestSession } from '../../lib/g
 import { formatPrice } from '../lodge/priceFormat';
 import Req from '../../components/RequiredMark';
 import './OrderPage.css';
+import PageLoader from '../../components/PageLoader';
 
 const STATUS_MESSAGE = {
   PENDING: 'Sent — waiting for the kitchen to accept it.',
@@ -916,7 +917,7 @@ export default function OrderPage({ mode }) {
   if (!context) {
     return (
       <div className="order-page">
-        <div className="order-page__state">Loading the menu…</div>
+        <PageLoader inline label="Loading the menu" />
       </div>
     );
   }

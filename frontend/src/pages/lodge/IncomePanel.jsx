@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import PageLoader from '../../components/PageLoader';
 import {
   apiGet,
   apiPost,
@@ -1969,7 +1970,7 @@ export default function IncomePanel({ onViewReport }) {
 
             <div className="inv-modal__body">
               {templateHistoryLoading ? (
-                <p className="inv-panel__hint">Loading…</p>
+                <PageLoader inline label="Loading" />
               ) : templateHistory.income.length === 0 ? (
                 <p className="inv-panel__hint">
                   Nothing generated yet — the first one lands here once "Next due date" arrives.

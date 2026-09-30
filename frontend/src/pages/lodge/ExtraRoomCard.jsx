@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { formatPrice } from './priceFormat';
 import { selectionOf, toggleSelection, withQuantity } from './chargeSelections';
+import PageLoader from '../../components/PageLoader';
 
 const addDays = (iso, days) => {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -245,7 +246,7 @@ export default function ExtraRoomCard({
         <div className="field">
           <label>Bed{room.bedIds.length > 1 ? 's' : ''}</label>
           {bedsError && <div className="form-banner form-banner--error">{bedsError}</div>}
-          {!beds && !bedsError && <p className="bookings-panel__hint">Loading beds…</p>}
+          {!beds && !bedsError && <PageLoader inline label="Loading beds" />}
           {beds && (
             <div className="booking-form__bed-grid">
               {beds.beds.map((bed) => {

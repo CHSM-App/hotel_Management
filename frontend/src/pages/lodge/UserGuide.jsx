@@ -4,6 +4,7 @@ import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { guideForLodge, describeProperty, describeFoodService } from '../../lib/userGuide';
 import './UserGuide.css';
+import PageLoader from '../../components/PageLoader';
 
 // The guide as a page of its own, at /guide.
 //
@@ -67,7 +68,7 @@ export default function UserGuide() {
             </p>
           )}
           {error && <div className="form-banner form-banner--error">{error}</div>}
-          {!me && !error && <p className="guide-page__loading">Loading your guide…</p>}
+          {!me && !error && <PageLoader inline label="Loading your guide" />}
         </div>
 
         {me && (

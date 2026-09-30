@@ -2160,3 +2160,325 @@ label.order-card__item { padding: 3px 6px; }
   text-transform: none;
   color: #0f6d37;
 }
+
+/* ---- Toolbar under the shared tab strip: one tidy right-aligned group of
+   compact actions instead of two big buttons stranded on the left. ---- */
+.orders-panel__toolbar {
+  margin-top: 4px;
+  margin-bottom: 14px;
+}
+
+.orders-panel__tools {
+  margin-left: auto;
+  gap: 8px;
+}
+
+.orders-panel__tools .btn-secondary,
+.orders-panel__tools .btn-accent {
+  min-height: 38px;
+  padding: 7px 16px;
+  font-size: 13.5px;
+  border-radius: 10px;
+}
+
+.orders-panel__sound,
+.orders-panel__sound-on {
+  font-weight: 600;
+}
+
+/* Actions hosted in the shared tab strip: pinned to its right end, and the
+   now-empty toolbar under it takes no space. */
+.subtabs__tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 6px 12px;
+  flex-shrink: 0;
+}
+
+.orders-panel__toolbar--hosted {
+  display: none;
+}
+
+/* ---- Queue spreadsheet: same card as the History sheet, tuned for scanning
+   live tickets — bold order numbers, a primary action per row, and a waiting
+   time that turns red once a ticket has sat too long. ---- */
+.history-sheet--queue {
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
+.history-sheet--queue .history-table-wrap {
+  max-height: none;
+}
+
+.history-sheet--queue .history-table {
+  min-width: 720px;
+}
+
+.history-sheet--queue .history-table th:nth-child(1) {
+  width: 64px;
+}
+
+.history-sheet--queue .history-table__strong {
+  font-size: 15px;
+}
+
+.history-table__btn--primary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.history-table__btn--primary:hover:not(:disabled) {
+  background: var(--brand-ink, var(--brand));
+  color: #fff;
+  border-color: var(--brand-ink, var(--brand));
+}
+
+.history-table__late {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.history-table__status--queued {
+  color: #9a5f00;
+  border-color: #efd39a;
+  background: #fff6e0;
+}
+
+.history-table__status--preparing {
+  color: #1f4fa3;
+  border-color: #b9cdee;
+  background: #e8f0fc;
+}
+
+.history-table__status--pending {
+  color: var(--danger);
+  border-color: #e6c3c0;
+  background: #fbeceb;
+}
+
+.history-sheet .history-table td.history-table__actions {
+  width: 1%;
+}
+
+/* ---- Queue dishes: an even grid of tappable chips. The tick box is a proper
+   size, every chip is the same height, and a dish that is done goes green and
+   struck through so what is left to cook stands out. ---- */
+.history-sheet--queue .history-table__items {
+  min-width: 300px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
+}
+
+.history-sheet--queue .history-table__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13.5px;
+  line-height: 1.25;
+}
+
+.history-sheet--queue .history-table__item input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: #0f6d37;
+  cursor: pointer;
+}
+
+.history-sheet--queue .history-table__item--ready {
+  border-color: #b5dec5;
+  background: #e3f4ea;
+  color: #0f6d37;
+}
+
+.history-sheet--queue .history-table__item--ready {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.history-sheet--queue .history-table__note {
+  grid-column: 1 / -1;
+}
+
+/* Times and who-took-it keep to one tidy line each. */
+.history-sheet--queue .history-table td:nth-child(5) {
+  white-space: nowrap;
+}
+
+.history-sheet--queue .order-card__handler {
+  display: block;
+  margin-top: 3px;
+}
+
+/* ---- Compact pass for the queue sheet: smaller chips packed three or four
+   across, slimmer rows, tick boxes sized to the text. ---- */
+.history-sheet--queue .history-table td {
+  padding: 6px 10px;
+}
+
+.history-sheet--queue .history-table th {
+  padding: 8px 10px;
+}
+
+.history-sheet--queue .history-table__items {
+  min-width: 260px;
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  gap: 4px;
+}
+
+.history-sheet--queue .history-table__item {
+  min-height: 26px;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.history-sheet--queue .history-table__item input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+}
+
+.history-sheet--queue .history-table__item--ready {
+  text-decoration-thickness: 1px;
+}
+
+.history-sheet--queue .history-table__status {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.history-sheet--queue .history-table__btn {
+  padding: 3px 12px;
+  font-size: 12px;
+}
+
+.history-sheet--queue .history-table__where {
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+/* ---- Summary + expand: one progress line per order, sections as sub-rows. ---- */
+.history-sheet--queue .history-table__items {
+  display: block;
+  min-width: 240px;
+}
+
+.sumline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sumline__toggle {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sumline__toggle svg {
+  transition: transform 150ms ease;
+}
+
+.sumline__toggle[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.sumline__frags {
+  font-size: 12.5px;
+}
+
+.sumline__frags i {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.sumline__all {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sumline__all--done {
+  color: #0f6d37;
+}
+
+.queue-sub td {
+  background: var(--paper);
+  padding-top: 3px !important;
+  padding-bottom: 5px !important;
+  border-bottom: 1px solid var(--border);
+}
+
+.queue-sub__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.queue-sub__tag {
+  min-width: 96px;
+  margin-right: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.queue-sub__tag b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-sub .history-table__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 8px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
+.queue-sub .history-table__item input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #0f6d37;
+}
+
+.queue-sub .history-table__item--ready {
+  border-color: #b5dec5;
+  background: #e3f4ea;
+  color: #0f6d37;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}

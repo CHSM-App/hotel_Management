@@ -1,6 +1,7 @@
 import { formatPrice } from './priceFormat';
 import { RankList } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
+import PageLoader from '../../components/PageLoader';
 
 // Sits above the existing food orders register: when orders actually land
 // through the day, what's selling, and how much delivered food is still
@@ -18,7 +19,7 @@ export default function FoodAnalytics({ analytics, loading, error, foodOrders })
   if (loading || !analytics || !foodOrders) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading…</div>
+        <PageLoader inline label="Loading" />
       </div>
     );
   }

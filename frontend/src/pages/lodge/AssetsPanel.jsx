@@ -8,6 +8,7 @@ import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
+import PageLoader from '../../components/PageLoader';
 import {
   PAYMENT_METHOD_LABEL as PAYMENT_LABEL,
   PAYMENT_METHOD_TAG_CLASS as PAYMENT_TAG_CLASS,
@@ -2066,7 +2067,7 @@ export default function AssetsPanel({ onViewReport }) {
   }
 
   if (!assets || !categories) {
-    return <p className="inv-panel__hint">Loading assets…</p>;
+    return <PageLoader inline label="Loading assets" />;
   }
 
   return (
@@ -2689,7 +2690,7 @@ export default function AssetsPanel({ onViewReport }) {
 
               <h4>Coverage details</h4>
               {visibleCoveragePeriods === null ? (
-                <p className="inv-panel__hint">Loading…</p>
+                <PageLoader inline label="Loading" />
               ) : visibleCoveragePeriods.length === 0 ? (
                 <p className="inv-panel__hint">
                   No warranty or AMC on record yet. "Add coverage" logs the maker's warranty at purchase,
@@ -2767,7 +2768,7 @@ export default function AssetsPanel({ onViewReport }) {
 
               <h4>Service history</h4>
               {visibleAssetHistory === null ? (
-                <p className="inv-panel__hint">Loading…</p>
+                <PageLoader inline label="Loading" />
               ) : visibleAssetHistory.length === 0 ? (
                 <p className="inv-panel__hint">No work orders yet.</p>
               ) : (
@@ -2794,7 +2795,7 @@ export default function AssetsPanel({ onViewReport }) {
                   </p>
 
                   {visiblePurchasePayments === null ? (
-                    <p className="inv-panel__hint">Loading…</p>
+                    <PageLoader inline label="Loading" />
                   ) : (
                     visiblePurchasePayments.length > 0 && (
                       <ul className="inv-list" style={{ marginBottom: 10 }}>

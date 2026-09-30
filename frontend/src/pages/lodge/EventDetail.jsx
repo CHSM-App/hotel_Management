@@ -6,6 +6,7 @@ import { formatPrice } from './priceFormat';
 import { PAYMENT_METHOD_LABEL } from './paymentSplit';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import EventForm from './EventForm';
+import PageLoader from '../../components/PageLoader';
 import {
   EVENT_STATUS_LABEL,
   EVENT_TYPE_LABEL,
@@ -483,7 +484,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
     return (
       <div className="glass-backdrop events-modal__backdrop">
         <div className="glass-panel events-modal">
-          <div className="dash-state">Loading…</div>
+          <PageLoader inline label="Loading" />
         </div>
       </div>
     );

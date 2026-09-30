@@ -359,6 +359,7 @@ function mapOrder(row, items) {
     // Once an invoice carries the order its lines are money — no more edits.
     billed: row.invoice_id != null,
     invoiceId: row.invoice_id ?? null,
+    invoiceNumber: row.inv_number ?? null,
     readyToBill: row.ready_to_bill_at != null,
     // A guest's own QR order has nobody behind it until someone accepts it;
     // staff-entered orders carry their author from the start.
@@ -379,7 +380,7 @@ function mapOrder(row, items) {
   };
 }
 
-async function listOrders(lodgeId, { status, date, from, to, live, createdBy } = {}) {
+async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill = false, createdBy } = {}) {
   const pool = await getPool();
 
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
@@ -389,7 +390,14 @@ async function listOrders(lodgeId, { status, date, from, to, live, createdBy } =
   // order placed at 11:45pm and delivered at 12:05am must not vanish off the
   // screen mid-service when the IST date rolls over.
   if (live) {
-    filters.push("o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY')");
+    // For someone who bills, an order stays in the queue after delivery until
+    // it has been billed. A room order on a stay rides the stay bill, so it is
+    // not held here.
+    filters.push(
+      awaitingBill
+        ? "(o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') OR (o.status = 'DELIVERED' AND o.invoice_id IS NULL AND NOT (o.source = 'ROOM' AND o.booking_id IS NOT NULL)))"
+        : "o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY')"
+    );
   } else {
     // A period (from..to, inclusive) or a single day; today when neither is given.
     if (from && to) {
@@ -419,6 +427,7 @@ async function listOrders(lodgeId, { status, date, from, to, live, createdBy } =
            o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.created_by, uh.name AS handler_name,
            o.table_id, o.room_id,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
+           (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
            (SELECT COALESCE(SUM(amount), 0) FROM dbo.payment_lines WHERE invoice_id = o.invoice_id) AS inv_paid,
            (SELECT TOP 1 method FROM dbo.payment_lines WHERE invoice_id = o.invoice_id ORDER BY amount DESC) AS inv_method,
            r.room_number, t.label AS table_label
@@ -474,6 +483,7 @@ async function getOrder(lodgeId, orderId) {
              o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.created_by, uh.name AS handler_name,
            o.table_id, o.room_id,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
+           (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
            (SELECT COALESCE(SUM(amount), 0) FROM dbo.payment_lines WHERE invoice_id = o.invoice_id) AS inv_paid,
            (SELECT TOP 1 method FROM dbo.payment_lines WHERE invoice_id = o.invoice_id ORDER BY amount DESC) AS inv_method,
              r.room_number, t.label AS table_label

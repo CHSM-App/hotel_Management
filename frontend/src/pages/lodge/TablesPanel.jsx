@@ -9,6 +9,7 @@ import './forms.css';
 import './MenuPanel.css';
 import './RoomsPanel.css';
 import './TablesPanel.css';
+import PageLoader from '../../components/PageLoader';
 
 const emptyForm = { mode: 'single', label: '', prefix: 'T', rangeStart: '', rangeEnd: '', seats: '' };
 
@@ -236,7 +237,7 @@ export default function TablesPanel() {
 
       {!error && !tables && (
         <div className="dash-card">
-          <div className="dash-state">Loading tables…</div>
+          <PageLoader inline label="Loading tables" />
         </div>
       )}
 

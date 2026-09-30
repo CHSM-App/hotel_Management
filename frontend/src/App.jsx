@@ -16,12 +16,14 @@ import RequireStaff from './components/RequireStaff';
 import RequireLodgeAuth from './components/RequireLodgeAuth';
 import RedirectIfAuthed from './components/RedirectIfAuthed';
 import { ToastProvider } from './components/Toast';
+import GlobalLoader from './components/GlobalLoader';
 
 function App() {
   // ToastProvider sits outside the router, so a toast raised by an action that
   // navigates away survives the navigation and is still read where it lands.
   return (
     <ToastProvider>
+      <GlobalLoader />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />

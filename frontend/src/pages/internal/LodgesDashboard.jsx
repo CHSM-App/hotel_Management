@@ -8,6 +8,7 @@ import '../../components/IconButton.css';
 import { propertyTypeOf } from '../../lib/propertyProfile';
 import { downloadLodgesExcel } from '../lodge/lodgesExportFile';
 import './LodgesDashboard.css';
+import PageLoader from '../../components/PageLoader';
 
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour',
@@ -249,7 +250,7 @@ export default function LodgesDashboard() {
         <div className="dash-card">
           {error && <div className="dash-state">{error}</div>}
 
-          {!error && lodges === null && <div className="dash-state">Loading lodges…</div>}
+          {!error && lodges === null && <PageLoader inline label="Loading lodges" />}
 
           {!error && lodges?.length === 0 && (
             <div className="dash-state">No lodges yet. Add the first one to get started.</div>
