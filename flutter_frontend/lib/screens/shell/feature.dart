@@ -12,11 +12,6 @@ import '../../domain/models/me.dart';
 class Feature {
   final String key;
   final String title;
-
-  /// Short enough for a bottom bar, where the sidebar's full title will not
-  /// fit — "Bookings", not "Bookings & tape chart".
-  final String tabLabel;
-
   final IconData icon;
 
   /// The permission that unlocks this section, or the first of several when
@@ -29,7 +24,7 @@ class Feature {
   /// The lodge flag this section needs, or null for the universal ones.
   final String? capability;
 
-  /// Clusters this section under a collapsible header in the "More" list —
+  /// Clusters this section under a collapsible header in the sidebar —
   /// mirrors the web sidebar's own grouping (propertyProfile.js's `group`,
   /// SIDEBAR_GROUP_ORDER). Null for a section that lists on its own.
   final String? group;
@@ -37,7 +32,6 @@ class Feature {
   const Feature({
     required this.key,
     required this.title,
-    required this.tabLabel,
     required this.icon,
     required this.permission,
     this.altPermissions = const [],
@@ -67,63 +61,90 @@ class Feature {
 }
 
 const kFeatures = <Feature>[
-  // ── Front desk ───────────────────────────────────────────────────────────
+  // ── Rooms ────────────────────────────────────────────────────────────────
+  // Same web sidebar group (propertyProfile.js's 'Rooms'): Room Chart, Room
+  // billing, Booking Details and Rooms & rates sit together under one
+  // collapsible header, same four rows and titles the web has.
   Feature(
     key: 'bookings',
-    // Not "& tape chart": the chart is the one thing this app deliberately
-    // does not carry. Thirty columns of nights across five categories is a
-    // wall-screen artefact — on a phone it is a grid nobody can read or tap.
-    // The same job is done here by choosing dates and being shown what is
-    // free, which is what the desk actually asks the chart.
-    title: 'Bookings',
-    tabLabel: 'Bookings',
+    // Same title the web sidebar's own 'bookings' row carries
+    // (propertyProfile.js) — not "& tape chart": the chart is the one thing
+    // this app deliberately does not carry. Thirty columns of nights across
+    // five categories is a wall-screen artefact — on a phone it is a grid
+    // nobody can read or tap. The same job is done here by choosing dates
+    // and being shown what is free, which is what the desk actually asks
+    // the chart.
+    title: 'Room Chart',
     icon: Icons.calendar_month_rounded,
     permission: 'bookings.manage',
     capability: 'hasRooms',
-  ),
-  // The web's own Guest register — every stay's booking details in one
-  // searchable, filterable list, with the same summary tiles that page opens
-  // on. Placed right beside Bookings, which only ever shows the phone's own
-  // take-a-booking flow and one stay at a time.
-  Feature(
-    key: 'register',
-    title: 'Booking Details',
-    tabLabel: 'Register',
-    icon: Icons.fact_check_outlined,
-    permission: 'bookings.manage',
-    capability: 'hasRooms',
+    group: 'Rooms',
   ),
   Feature(
     key: 'billing',
-    title: 'Billing & GST',
-    tabLabel: 'Billing',
+    title: 'Room billing',
     icon: Icons.receipt_long_rounded,
     permission: 'billing.manage',
+    group: 'Rooms',
   ),
-  // Guest register ('guests', permission 'guests.view') is deliberately not
-  // listed: it has no phone screen, and Rooms & rates now does (see
-  // dashboard_shell.dart), so that tab took its primary-bar slot instead.
-  //
-  // Same web module (Events.jsx): diary, list and venue/add-on setup for
-  // halls and functions. Given Food's old primary-bar slot — a banquet
-  // enquiry is taken often enough at this desk to warrant its own tab.
+  // The web's own Guest register ('guests') — every stay's booking details
+  // in one searchable, filterable list, with the same summary tiles that
+  // page opens on.
+  Feature(
+    key: 'register',
+    title: 'Booking Details',
+    icon: Icons.fact_check_outlined,
+    permission: 'bookings.manage',
+    capability: 'hasRooms',
+    group: 'Rooms',
+  ),
+  // Same web sidebar group (propertyProfile.js's 'Events'): Event Chart,
+  // Event billing, Event register and Event setup sit together under one
+  // collapsible header, same four rows and titles the web has — Chart,
+  // register and setup are the same EventsScreen underneath (Events.jsx's
+  // own Diary/List/Setup switch), just landed on a different tab; billing
+  // is its own screen (event_billing_screen.dart), the same way Restaurant
+  // billing sits apart from the room queue.
   Feature(
     key: 'events',
-    title: 'Events & functions',
-    tabLabel: 'Events',
+    title: 'Event Chart',
     icon: Icons.celebration_rounded,
     permission: 'events.manage',
     capability: 'hasEvents',
+    group: 'Events',
+  ),
+  Feature(
+    key: 'eventBilling',
+    title: 'Event billing',
+    icon: Icons.receipt_long_rounded,
+    permission: 'billing.manage',
+    capability: 'hasEvents',
+    group: 'Events',
+  ),
+  Feature(
+    key: 'eventRegister',
+    title: 'Event register',
+    icon: Icons.people_alt_rounded,
+    permission: 'events.manage',
+    capability: 'hasEvents',
+    group: 'Events',
+  ),
+  Feature(
+    key: 'eventSetup',
+    title: 'Event setup',
+    icon: Icons.build_rounded,
+    permission: 'events.manage',
+    capability: 'hasEvents',
+    group: 'Events',
   ),
   // ── Setup ────────────────────────────────────────────────────────────────
   // Rooms and Menu & QR codes are both setup screens touched far less often
-  // than the four above once a property's rooms and menu exist, so both fold
-  // into "More" — each under its own collapsible header (Rooms, Restaurant)
+  // than the four above once a property's rooms and menu exist, so both sit
+  // under their own collapsible header (Rooms, Restaurant) in the sidebar
   // rather than as flat rows.
   Feature(
     key: 'rooms',
     title: 'Rooms & rates',
-    tabLabel: 'Rooms',
     icon: Icons.bed_rounded,
     permission: 'rooms.manage',
     capability: 'hasRooms',
@@ -131,13 +152,11 @@ const kFeatures = <Feature>[
   ),
   // Same web sidebar group (propertyProfile.js's 'Restaurant'): Menu & QR
   // codes and Food orders sit together under one collapsible "Restaurant"
-  // header in the More list — tapping the header expands it in place to
-  // show both rows, rather than the desk having to open one to reach the
-  // other.
+  // header — tapping it expands in place to show both rows, rather than the
+  // desk having to open one to reach the other.
   Feature(
     key: 'menu',
     title: 'Menu & QR codes',
-    tabLabel: 'Menu',
     icon: Icons.restaurant_menu_rounded,
     permission: 'food.manage',
     capability: 'servesFood',
@@ -146,7 +165,6 @@ const kFeatures = <Feature>[
   Feature(
     key: 'food',
     title: 'Food orders',
-    tabLabel: 'Food',
     icon: Icons.room_service_rounded,
     permission: 'orders.manage',
     altPermissions: ['orders.take'],
@@ -160,7 +178,6 @@ const kFeatures = <Feature>[
   Feature(
     key: 'restaurantBilling',
     title: 'Restaurant billing',
-    tabLabel: 'Restaurant billing',
     icon: Icons.point_of_sale_rounded,
     permission: 'billing.manage',
     capability: 'servesFood',
@@ -176,7 +193,6 @@ const kFeatures = <Feature>[
   Feature(
     key: 'assets',
     title: 'Asset Inventory',
-    tabLabel: 'Assets',
     icon: Icons.inventory_2_rounded,
     permission: 'assets.manage',
     capability: 'hasAssets',
@@ -188,7 +204,6 @@ const kFeatures = <Feature>[
   Feature(
     key: 'expenses',
     title: 'Expenses',
-    tabLabel: 'Expenses',
     icon: Icons.receipt_long_rounded,
     permission: 'expenses.manage',
     capability: 'hasExpenses',
@@ -203,19 +218,22 @@ const kFeatures = <Feature>[
   Feature(
     key: 'income',
     title: 'Other Income',
-    tabLabel: 'Income',
     icon: Icons.savings_rounded,
     permission: 'income.manage',
     capability: 'hasExpenses',
     group: 'Finance & Management',
   ),
-  // Feature(
-  //   key: 'staff',
-  //   title: 'Staff & roles',
-  //   tabLabel: 'Staff',
-  //   icon: Icons.badge_rounded,
-  //   permission: 'staff.manage',
-  // ),
+  // Same web sidebar group (propertyProfile.js's 'Setup', SIDEBAR_GROUP_ORDER):
+  // staff logins and what each role can reach — its own screen
+  // (staff_roles_screen.dart), same two tabs (Staff, Roles & access) the web
+  // carries.
+  Feature(
+    key: 'staff',
+    title: 'Staff & roles',
+    icon: Icons.badge_rounded,
+    permission: 'staff.manage',
+    group: 'Setup',
+  ),
 
   // ── Insights ─────────────────────────────────────────────────────────────
   // Same web module (ReportsPanel.jsx): Overview, Room Bookings, Events &
@@ -226,21 +244,13 @@ const kFeatures = <Feature>[
   // unlike the single-property-type screens above, Reports has tabs for
   // every kind of property, so a restaurant-only or rooms-only lodge still
   // has something to see (GST, Expenses, ...) even without every capability.
-  // Folded into "More" — checked at day's end or month's end, not every shift.
+  // Checked at day's end or month's end, not every shift, so it sits with
+  // the rest of Finance & Management rather than on its own.
   Feature(
     key: 'reports',
     title: 'Reports & Analytics',
-    tabLabel: 'Reports',
     icon: Icons.bar_chart_rounded,
     permission: 'reports.view',
     group: 'Finance & Management',
   ),
 ];
-
-/// How many sections get their own tab before the rest go behind "More".
-///
-/// Four plus More: Bookings, Register, Billing and Events are what the desk
-/// opens every shift; Rooms & rates, Menu & QR codes and Food orders are
-/// checked far less often, so all three fold into "More" rather than
-/// crowding the bar.
-const int kPrimaryTabs = 4;

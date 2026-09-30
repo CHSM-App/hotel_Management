@@ -12,8 +12,7 @@ import 'rooms_panel.dart';
 /// the same two halves — the rooms themselves, and the rate chart that prices
 /// them (categories, booking extras, seasons).
 ///
-/// One screen with an internal switch rather than two bottom-bar tabs: the
-/// bar only has room for so many destinations (see kPrimaryTabs), and rates
+/// One screen with an internal switch rather than two sidebar sections: rates
 /// are something the owner sets up occasionally, not a place reception lives
 /// day to day — it belongs behind the section that owns it, not beside it.
 class RoomsRatesScreen extends ConsumerStatefulWidget {

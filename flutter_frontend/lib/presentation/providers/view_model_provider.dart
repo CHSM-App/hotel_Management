@@ -13,6 +13,7 @@ import '../view_models/menu_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
 import '../view_models/reports_viewmodel.dart';
 import '../view_models/rooms_viewmodel.dart';
+import '../view_models/staff_viewmodel.dart';
 import '../view_models/tables_viewmodel.dart';
 import 'usecase_provider.dart';
 
@@ -115,4 +116,12 @@ final expensesViewModelProvider =
 final incomeViewModelProvider =
     StateNotifierProvider.autoDispose<IncomeViewModel, IncomeState>(
       (ref) => IncomeViewModel(ref.watch(incomeUsecaseProvider)),
+    );
+
+/// Staff & roles. Behind Setup like the web's own group — autoDispose so a
+/// login that never opens it never keeps the staff list and role catalog
+/// warm for the life of the app.
+final staffViewModelProvider =
+    StateNotifierProvider.autoDispose<StaffViewModel, StaffState>(
+      (ref) => StaffViewModel(ref.watch(staffUsecaseProvider)),
     );

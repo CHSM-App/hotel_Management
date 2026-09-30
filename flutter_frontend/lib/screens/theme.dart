@@ -28,6 +28,18 @@ class AppTheme {
   // ── Accent ────────────────────────────────────────────────────────────────
   static const Color accent = Color(0xFF5A67D8);
 
+  /// The sidebar's own brand tokens — lifted straight from the web
+  /// dashboard's OwnerDashboard.css / index.css (--brand, --brand-ink,
+  /// --brand-wash, --brand-wash-edge) so the rail reads as the same surface
+  /// on both clients rather than a phone-flavoured guess at it.
+  static const Color sidebarBrand = Color(0xFF5B3FD9);
+  static const Color sidebarBrandInk = Color(0xFF4527B8);
+  static const Color sidebarBrandWash = Color(0xFFEFEBFD);
+  static const Color sidebarBrandWashEdge = Color(0xFFDCD4FA);
+  static const Color sidebarText = Color(0xFF48566A);
+  static const Color sidebarTextMuted = Color(0xFF78859A);
+  static const Color sidebarBorder = Color(0xFFE3E8F0);
+
   /// The booking-detail action row's own "edit" and "checkout" fills — kept
   /// apart from [accent] and [danger] so all three action buttons read as
   /// distinct at a glance.

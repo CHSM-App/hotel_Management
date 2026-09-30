@@ -264,45 +264,74 @@ void main() {
     // The property is named.
     expect(find.text('Anand Executive Home Stay'), findsOneWidget);
 
-    // Four tabs plus More. Food and Menu are absent: this property sells no
-    // food, and a permission alone must not open them.
-    expect(find.text('Bookings'), findsWidgets);
-    expect(find.text('Billing'), findsOneWidget);
-    expect(find.text('Guests'), findsOneWidget);
-    expect(find.text('Rooms'), findsOneWidget);
-    expect(find.text('More'), findsOneWidget);
-    expect(find.text('Food'), findsNothing);
-    expect(find.text('Menu'), findsNothing);
+    // The sidebar's own ungrouped sections, and the group headers for the
+    // ones this owner can reach but that start collapsed. Food and Menu are
+    // absent: this property sells no food, and a permission alone must not
+    // open them.
+    expect(find.text('Room Chart'), findsWidgets);
+    expect(find.text('Room billing'), findsOneWidget);
+    expect(find.text('Booking Details'), findsOneWidget);
+    expect(find.text('ROOMS'), findsOneWidget);
+    expect(find.text('FINANCE & MANAGEMENT'), findsOneWidget);
+    expect(find.text('Food orders'), findsNothing);
+    expect(find.text('Menu & QR codes'), findsNothing);
 
     // And the body is the chart, not an empty page — the room this stay is
     // on is drawn, and the way in to a new one is offered.
     expect(find.text('202'), findsOneWidget);
-    expect(find.text('New booking'), findsOneWidget);
+    expect(find.byIcon(Icons.add_rounded), findsOneWidget);
   });
 
-  testWidgets('a lodge with no rooms yet still draws the bar and the way in', (
+  testWidgets('a lodge with no rooms yet still draws the sidebar and the way in', (
     tester,
   ) async {
     await tester.pumpWidget(_app(_owner(), const []));
     await tester.pumpAndSettle();
 
     expect(find.text('No active rooms yet.'), findsOneWidget);
-    expect(find.text('New booking'), findsOneWidget);
-    expect(find.text('More'), findsOneWidget);
+    expect(find.byIcon(Icons.add_rounded), findsOneWidget);
+    expect(find.text('Room billing'), findsOneWidget);
   });
 
-  testWidgets('a section with no screen yet says so rather than going blank', (
+  testWidgets('the group holding the landing section starts open, others do not', (
     tester,
   ) async {
     await tester.pumpWidget(_app(_owner(), const []));
     await tester.pumpAndSettle();
 
-    // Rooms, not Billing — billing has a real screen now, so tapping it
-    // would open the queue rather than the stub this is about.
-    await tester.tap(find.text('Rooms'));
+    // Room Chart lands the desk inside the Rooms group, so Rooms starts
+    // expanded — its sibling rows are reachable without a tap.
+    expect(find.text('Rooms & rates'), findsOneWidget);
+
+    // Finance & Management holds nothing the landing section is in, so it
+    // starts collapsed, the same way the web sidebar's own dropdown groups
+    // default to closed until you open them.
+    expect(find.text('Reports & Analytics'), findsNothing);
+    await tester.tap(find.text('FINANCE & MANAGEMENT'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('not on the phone yet'), findsOneWidget);
+    expect(find.text('Reports & Analytics'), findsOneWidget);
+
+    // Tapping the header again folds it back away.
+    await tester.tap(find.text('FINANCE & MANAGEMENT'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reports & Analytics'), findsNothing);
+  });
+
+  testWidgets('picking another section in the same open group switches the body', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_owner(), const []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No active rooms yet.'), findsOneWidget);
+
+    await tester.tap(find.text('Booking Details'));
+    await tester.pumpAndSettle();
+
+    // The tape chart is gone — the sidebar moved the body to the register.
+    expect(find.text('No active rooms yet.'), findsNothing);
   });
 
   // ── Advancing a reservation ───────────────────────────────────────────────

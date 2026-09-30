@@ -23,6 +23,7 @@ import '../../domain/models/report.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
+import '../../domain/models/staff.dart';
 import '../../domain/models/switchable_charge_listing.dart';
 import '../../domain/models/tape_chart.dart';
 
@@ -1943,6 +1944,76 @@ class ApiService {
   Future<IncomeEntry> logIncomeRecurringOccurrence(int templateId, FormData form) async {
     final res = await _dio.post('/income/recurring/$templateId/log', data: form);
     return IncomeEntry.fromJson(_map(res.data)['income'] as Map<String, dynamic>);
+  }
+
+  // ===== STAFF & ROLES (staff.manage) =====
+
+  Future<List<StaffMember>> staff() async {
+    final res = await _dio.get('/staff');
+    return (_map(res.data)['staff'] as List? ?? [])
+        .map((e) => StaffMember.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Answers with the new login's id — the caller reloads the list itself
+  /// rather than trusting a partial echo back.
+  Future<int> createStaff(Map<String, dynamic> body) async {
+    final res = await _dio.post('/staff', data: body);
+    return asInt(_map(res.data)['id']);
+  }
+
+  Future<StaffMember?> updateStaff(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/staff/$id', data: body);
+    final staff = _map(res.data)['staff'];
+    return staff is Map<String, dynamic> ? StaffMember.fromJson(staff) : null;
+  }
+
+  Future<void> resetStaffPassword(int id, String tempPassword) async {
+    await _dio.patch(
+      '/staff/$id/password',
+      data: {'tempPassword': tempPassword},
+    );
+  }
+
+  /// The effective role list for this lodge plus the permission catalog it
+  /// was built against, in one call — see roles.controller.js's own reason.
+  Future<RolesCatalog> roles() async {
+    final res = await _dio.get('/roles');
+    final map = _map(res.data);
+    return RolesCatalog(
+      roles: (map['roles'] as List? ?? [])
+          .map((e) => LodgeRole.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      permissions: (map['permissions'] as List? ?? [])
+          .map((e) => PermissionInfo.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  /// Answers with the new role's key, slugged server-side from its name.
+  Future<String> createRole(Map<String, dynamic> body) async {
+    final res = await _dio.post('/roles', data: body);
+    return _map(res.data)['roleKey']?.toString() ?? '';
+  }
+
+  Future<LodgeRole> updateRole(
+    String roleKey,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.patch('/roles/$roleKey', data: body);
+    return LodgeRole.fromJson(_map(res.data)['role'] as Map<String, dynamic>);
+  }
+
+  /// Drops a built-in role's lodge-specific override, back to the shipped
+  /// default. Refused for anything that isn't a built-in — see
+  /// resetRole on the server.
+  Future<LodgeRole> resetRole(String roleKey) async {
+    final res = await _dio.patch('/roles/$roleKey/reset');
+    return LodgeRole.fromJson(_map(res.data)['role'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteRole(String roleKey) async {
+    await _dio.delete('/roles/$roleKey');
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

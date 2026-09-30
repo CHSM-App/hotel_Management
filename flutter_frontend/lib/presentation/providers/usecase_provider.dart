@@ -11,6 +11,7 @@ import '../../domain/usecase/income_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
 import '../../domain/usecase/reports_usecase.dart';
 import '../../domain/usecase/rooms_usecase.dart';
+import '../../domain/usecase/staff_usecase.dart';
 import 'repository_provider.dart';
 
 /// repository → usecase.
@@ -56,4 +57,8 @@ final expensesUsecaseProvider = Provider<ExpensesUsecase>(
 
 final incomeUsecaseProvider = Provider<IncomeUsecase>(
   (ref) => IncomeUsecase(ref.watch(incomeRepositoryProvider)),
+);
+
+final staffUsecaseProvider = Provider<StaffUsecase>(
+  (ref) => StaffUsecase(ref.watch(staffRepositoryProvider)),
 );

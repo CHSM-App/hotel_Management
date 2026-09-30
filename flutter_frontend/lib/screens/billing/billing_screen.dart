@@ -115,7 +115,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         for (final tab in rows)
           Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
-            child: _RowCard(
+            child: BillingRowCard(
               onTap: () async {
                 await ref.read(billingViewModelProvider.notifier).openFood(tab);
                 if (!mounted) return;
@@ -177,7 +177,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             // widget is rebuilt by the list around it, and checking the
             // wrong one is checking whether a context that has already been
             // replaced is still good.
-            child: _RowCard(
+            child: BillingRowCard(
               onTap: () async {
                 await ref.read(billingViewModelProvider.notifier).open(stay);
                 if (!mounted) return;
@@ -239,7 +239,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         for (final invoice in rows)
           Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
-            child: _InvoiceCard(invoice: invoice),
+            child: BillingInvoiceCard(invoice: invoice),
           ),
       ];
     },
@@ -248,13 +248,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
 // ── A queue row ──────────────────────────────────────────────────────────────
 
-/// The shared shape behind every "to bill" / "food to bill" row: a colour
-/// spine down the left edge (the same device the register page's booking
-/// cards use to make status legible before the eye lands on any text), a
-/// two-line title block, and a trailing figure — with a real ink ripple on
-/// tap rather than [NeuCard]'s bare [GestureDetector], since a list a
-/// cashier taps through all shift is worth the tactile feedback.
-class _RowCard extends StatelessWidget {
+/// The shared shape behind every "to bill" row — room, food, and (from
+/// event_billing_screen.dart) function: a colour spine down the left edge
+/// (the same device the register page's booking cards use to make status
+/// legible before the eye lands on any text), a two-line title block, and a
+/// trailing figure — with a real ink ripple on tap rather than [NeuCard]'s
+/// bare [GestureDetector], since a list a cashier taps through all shift is
+/// worth the tactile feedback.
+class BillingRowCard extends StatelessWidget {
   final IconData? icon;
   final String? roomLabel;
   final String title;
@@ -263,7 +264,8 @@ class _RowCard extends StatelessWidget {
   final String? amountLabel;
   final VoidCallback onTap;
 
-  const _RowCard({
+  const BillingRowCard({
+    super.key,
     this.icon,
     this.roomLabel,
     required this.title,
@@ -503,10 +505,10 @@ class _Toggle extends StatelessWidget {
 
 // ── An issued bill ──────────────────────────────────────────────────────────
 
-class _InvoiceCard extends ConsumerWidget {
+class BillingInvoiceCard extends ConsumerWidget {
   final Invoice invoice;
 
-  const _InvoiceCard({required this.invoice});
+  const BillingInvoiceCard({super.key, required this.invoice});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

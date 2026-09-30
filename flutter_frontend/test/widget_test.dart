@@ -54,25 +54,13 @@ void main() {
     });
 
     test('a section with no capability gate needs only the permission', () {
-      final staff = kFeatures.firstWhere((f) => f.key == 'staff');
+      final billing = kFeatures.firstWhere((f) => f.key == 'billing');
       expect(
-        staff.availableTo(
-          me(permissions: ['staff.manage'], hasRooms: false, servesFood: false),
+        billing.availableTo(
+          me(permissions: ['billing.manage'], hasRooms: false, servesFood: false),
         ),
         isTrue,
-        reason: 'staff and roles exist whatever the property sells',
-      );
-    });
-
-    test('the bar never shows more than the primary tabs plus More', () {
-      final everything = me(
-        permissions: kFeatures.map((f) => f.permission).toList(),
-      );
-      final visible = kFeatures.where((f) => f.availableTo(everything));
-      expect(
-        visible.length,
-        greaterThan(kPrimaryTabs),
-        reason: 'if it ever fits, the More sheet is dead weight',
+        reason: 'billing exists whatever the property sells',
       );
     });
   });
