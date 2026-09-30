@@ -1347,6 +1347,14 @@ IF COL_LENGTH('dbo.food_order_items', 'menu_item_portion_id') IS NULL
 IF COL_LENGTH('dbo.food_order_items', 'ready_at') IS NULL
     EXEC('ALTER TABLE dbo.food_order_items ADD ready_at DATETIMEOFFSET NULL');
 
+-- Who accepted a guest QR order into the queue (see migration 103).
+IF COL_LENGTH('dbo.food_orders', 'accepted_by') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD accepted_by BIGINT NULL REFERENCES dbo.users(id)');
+
+-- Food charged to the guest's room bill (see migration 106).
+IF COL_LENGTH('dbo.food_orders', 'on_room_bill') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD on_room_bill BIT NOT NULL CONSTRAINT df_food_orders_on_room_bill DEFAULT 0');
+
 -- Per-dish hand-over by the captain (see migration 102).
 IF COL_LENGTH('dbo.food_order_items', 'delivered_at') IS NULL
     EXEC('ALTER TABLE dbo.food_order_items ADD delivered_at DATETIMEOFFSET NULL');
@@ -2734,3 +2742,29 @@ IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUN
 UPDATE dbo.roles
 SET permissions = '["billing.manage","expenses.manage","events.manage","income.manage","profitLoss.view"]'
 WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT';
+-- Role descriptions brought in line with how orders now flow. Only rows still
+-- carrying the original wording are touched, so a description an owner has
+-- edited is left alone. Permissions are not changed.
+UPDATE dbo.roles SET description = 'Front desk — bookings, check-in/out, billing, the guest register and food orders.'
+WHERE lodge_id IS NULL AND role_key = 'RECEPTION'
+  AND description = 'Front desk — bookings, check-in/out, billing and the guest register.';
+
+UPDATE dbo.roles SET description = 'Kitchen — sees the live queue, starts cooking and marks orders ready. Cannot take, cancel or deliver orders.'
+WHERE lodge_id IS NULL AND role_key = 'KITCHEN' AND description = 'Food orders only.';
+
+UPDATE dbo.roles SET description = 'Floor — takes orders, accepts guest QR orders, edits, cancels, returns and delivers dishes until billed.'
+WHERE lodge_id IS NULL AND role_key = 'CAPTAIN' AND description = 'Takes orders from tables and rooms.';
+
+UPDATE dbo.roles SET description = 'Billing, payments, expenses, income and profit & loss.'
+WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT' AND description = 'Billing, payments and property expenses.';
+
+-- Kitchen gets Menu & QR codes (migration 107).
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'KITCHEN'
+           AND permissions = '["orders.manage","orders.cook"]')
+UPDATE dbo.roles
+SET permissions = '["orders.manage","orders.cook","food.manage"]'
+WHERE lodge_id IS NULL AND role_key = 'KITCHEN';
+
+-- Captain's "ready to bill" mark (migration 108).
+IF COL_LENGTH('dbo.food_orders', 'ready_to_bill_at') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD ready_to_bill_at DATETIMEOFFSET NULL');

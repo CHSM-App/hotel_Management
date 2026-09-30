@@ -11,6 +11,9 @@ const {
 const issueInvoiceSchema = z
   .object({
     billingSide: z.enum(['GST', 'NON_GST']).optional(),
+    // Food bills only: bill a tab even though some of its orders are still
+    // in the kitchen (they stay unbilled and join the next bill).
+    billAnyway: z.boolean().optional(),
     // Required, not optional. The property doesn't extend credit — a bill is
     // written when the guest settles, so a document issued with no payment
     // recorded against it would be a receivable this system has nowhere to

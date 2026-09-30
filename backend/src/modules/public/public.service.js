@@ -594,9 +594,23 @@ async function listGuestOrders(slug, roomNumber, pin) {
       ORDER BY o.placed_at DESC
     `);
 
+  // What the stay has run up in food and not yet been billed for — the guest's
+  // own running total, so the bill at checkout holds no surprises.
+  const totalResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodge.id)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT COALESCE(SUM(subtotal), 0) AS total, COUNT(*) AS n
+      FROM dbo.food_orders
+      WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND source = 'ROOM'
+        AND status <> 'CANCELLED' AND invoice_id IS NULL
+    `);
+  const tab = { total: Number(totalResult.recordset[0].total), orderCount: totalResult.recordset[0].n };
+
   const rows = ordersResult.recordset;
   if (rows.length === 0) {
-    return { roomNumber: access.roomLabel, guestName: access.guestName || '', orders: [] };
+    return { roomNumber: access.roomLabel, guestName: access.guestName || '', tab, orders: [] };
   }
 
   const itemsRequest = pool.request();
@@ -629,6 +643,7 @@ async function listGuestOrders(slug, roomNumber, pin) {
   return {
     roomNumber: access.roomLabel,
     guestName: access.guestName || '',
+    tab,
     orders: rows.map((row) => ({
       // The order's own opaque token is its handle everywhere on the guest
       // side. Order numbers restart daily and are called across the kitchen,

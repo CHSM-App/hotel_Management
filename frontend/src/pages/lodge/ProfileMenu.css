@@ -332,3 +332,44 @@
   background: var(--danger-bg);
   box-shadow: none;
 }
+
+/* Name and role live in the topbar trigger now, not inside the dropdown. */
+.profile-menu__trigger-role-badge {
+  padding: 0 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+/* Neater trigger: avatar, a tight name-over-role stack, and a chevron that
+   sits right beside them instead of floating off at the edge. */
+.profile-menu__trigger {
+  gap: 10px;
+  padding: 4px 10px 4px 4px;
+  max-width: none;
+}
+.profile-menu__trigger-avatar {
+  width: 36px;
+  height: 36px;
+  box-shadow: 0 1px 4px rgba(22, 33, 46, 0.18);
+}
+.profile-menu__trigger-text {
+  gap: 2px;
+  line-height: 1;
+}
+.profile-menu__trigger-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+}
+.profile-menu__trigger-role-badge {
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.profile-menu__trigger-chevron {
+  margin-left: 2px;
+}

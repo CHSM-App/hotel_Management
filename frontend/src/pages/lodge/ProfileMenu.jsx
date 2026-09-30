@@ -158,11 +158,9 @@ export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
         aria-label="Account menu"
       >
         <span className="profile-menu__trigger-avatar" aria-hidden="true">{initial}</span>
-        {/* Just "Profile" — who is actually signed in, and every hotel fact
-            that used to sit beside it, are a click away inside the menu
-            instead of parked in the topbar all day. */}
         <span className="profile-menu__trigger-text">
-          <span className="profile-menu__trigger-name">Profile</span>
+          <span className="profile-menu__trigger-name">{user.name}</span>
+          <span className="badge badge--on profile-menu__trigger-role-badge">{roleLabel(user.role)}</span>
         </span>
         <svg
           className="profile-menu__trigger-chevron"
@@ -184,14 +182,6 @@ export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
 
       {open && (
         <div className="profile-menu__dropdown">
-          <div className="profile-menu__identity">
-            <div className="profile-menu__avatar">{initial}</div>
-            <div>
-              <div className="profile-menu__name">{user.name}</div>
-              <span className="badge badge--on">{roleLabel(user.role)}</span>
-            </div>
-          </div>
-
           {(user.email || user.phone) && (
             <div className="profile-menu__contact">
               {user.phone && <div>{user.phone}</div>}

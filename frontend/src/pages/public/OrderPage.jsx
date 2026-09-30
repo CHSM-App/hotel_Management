@@ -232,6 +232,8 @@ export default function OrderPage({ mode }) {
   const signInErrorRef = useRef(null);
 
   const [orders, setOrders] = useState([]);
+  // What this stay has run up in food so far — added to the room bill at checkout.
+  const [stayTab, setStayTab] = useState(null);
   const [ordersError, setOrdersError] = useState('');
   const [showPast, setShowPast] = useState(false);
   const [busyOrder, setBusyOrder] = useState('');
@@ -416,6 +418,7 @@ export default function OrderPage({ mode }) {
     })
       .then((data) => {
         setOrders(data.orders || []);
+        setStayTab(data.tab || null);
         setOrdersError('');
       })
       .catch((err) => {
@@ -1036,6 +1039,14 @@ export default function OrderPage({ mode }) {
       {hasOrdersView && view === 'orders' && (
         <section className="guest-orders order-view-in" key="view-orders">
           {ordersError && <div className="guest-orders__error">{ordersError}</div>}
+
+          {stayTab && stayTab.orderCount > 0 && (
+            <div className="guest-orders__tab">
+              <span>Your food so far · {stayTab.orderCount} order{stayTab.orderCount === 1 ? '' : 's'}</span>
+              <strong>{formatPrice(stayTab.total)}</strong>
+              <small>Billed by the restaurant, or added to your room bill by the desk.</small>
+            </div>
+          )}
 
           {orders.length === 0 && !ordersError && (
             <div className="guest-orders__none">

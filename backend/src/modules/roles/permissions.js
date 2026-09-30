@@ -45,7 +45,7 @@ const PERMISSIONS = [
   {
     key: 'orders.manage',
     label: 'Kitchen queue',
-    description: 'View the live order queue, accept new orders and cancel one.',
+    description: 'View the live order queue and accept guest QR orders.',
     capability: 'servesFood',
   },
   {

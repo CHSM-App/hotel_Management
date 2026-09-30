@@ -494,6 +494,9 @@ async function listBillableBookings(lodgeId) {
     .query(`
       SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
              b.total_price, b.advance_amount, b.actual_check_out_at,
+             (SELECT COALESCE(SUM(fo.subtotal), 0) FROM dbo.food_orders fo
+              WHERE fo.booking_id = b.id AND fo.on_room_bill = 1
+                AND fo.status = 'DELIVERED' AND fo.invoice_id IS NULL) AS food_total,
              COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
                        WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, c.name AS category_name
@@ -517,6 +520,7 @@ async function listBillableBookings(lodgeId) {
     checkInDate: row.check_in_date.toISOString().slice(0, 10),
     checkOutDate: row.check_out_date.toISOString().slice(0, 10),
     totalPrice: Number(row.total_price),
+    foodTotal: Number(row.food_total),
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : null,
     actualCheckOutAt: row.actual_check_out_at,
   }));
@@ -752,8 +756,8 @@ const FOOD_ITEM_COLUMNS = `
   SUM(fi.quantity) AS quantity, SUM(fi.line_total) AS line_total
 `;
 
-// Delivered, unbilled food charged to a stay: room service, plus table food the
-// desk moved onto the room bill. Shaped like loadUnbilledTabOrders' rows.
+// Delivered, unbilled food the desk added to a stay's room bill (room service or
+// table food alike). Shaped like loadUnbilledTabOrders' rows.
 async function loadStayFoodOrders(request, lodgeId, bookingId) {
   const result = await request
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -761,7 +765,7 @@ async function loadStayFoodOrders(request, lodgeId, bookingId) {
     .query(`
       SELECT id, order_number, subtotal, placed_at
       FROM dbo.food_orders
-      WHERE lodge_id = @lodgeId AND booking_id = @bookingId
+      WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND on_room_bill = 1
         AND status = 'DELIVERED' AND invoice_id IS NULL
       ORDER BY placed_at ASC
     `);
@@ -1557,8 +1561,20 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
 // Food charged to a stay rides on that stay's bill, so it is not restaurant
 // billing — unless the stay's bill was already issued, when the food would
 // otherwise be stranded with nowhere to be collected.
-const NOT_ON_STAY_BILL = `(o.booking_id IS NULL OR EXISTS (
+const NOT_ON_STAY_BILL = `(o.on_room_bill = 0 OR EXISTS (
   SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = o.booking_id AND bi.status = 'ISSUED'))`;
+
+// Orders on a tab that are still in the kitchen or on their way (not yet
+// delivered). Billing a tab while these exist leaves food off the bill.
+async function countLiveOrdersOnTab(request, lodgeId, tab) {
+  request.input('lodgeId', sql.BigInt, lodgeId);
+  const scope = tabScope(request, tab);
+  const result = await request.query(`
+    SELECT COUNT(*) AS n FROM dbo.food_orders o
+    WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL ${scope}
+  `);
+  return result.recordset[0].n;
+}
 
 async function listOpenFoodTabs(lodgeId) {
   const pool = await getPool();
@@ -1596,6 +1612,7 @@ async function listOpenFoodTabs(lodgeId) {
         WHERE o.source = 'ROOM' AND b.id = o.booking_id
       ) rb
       WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
+        AND o.ready_to_bill_at IS NOT NULL
         AND ${NOT_ON_STAY_BILL}
         -- booking_id is grouped for room orders so two stays in the same room —
         -- one already billed with an unpaid order, one just checked in and
@@ -1611,8 +1628,28 @@ async function listOpenFoodTabs(lodgeId) {
       ORDER BY MAX(o.placed_at) DESC
     `);
 
+  // How many orders on each tab are still being cooked or carried out.
+  const liveResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
+             CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
+             CASE WHEN o.source = 'ROOM' THEN o.booking_id END AS booking_id,
+             MAX(o.order_number) AS order_number, COUNT(*) AS live_count
+      FROM dbo.food_orders o
+      LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.rooms r ON r.id = o.room_id
+      WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL
+      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
+               CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
+               CASE WHEN o.source = 'COUNTER' THEN o.id END
+    `);
+  const liveByTab = new Map(liveResult.recordset.map((row) => [tabIdentity(row).tab, row.live_count]));
+
   return result.recordset.map((row) => ({
     ...tabIdentity(row),
+    liveOrderCount: liveByTab.get(tabIdentity(row).tab) ?? 0,
     guestName: row.guest_name ?? null,
     guestPhone: row.guest_phone ?? null,
     orderCount: row.order_count,
@@ -1736,6 +1773,7 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
     WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
+      AND o.ready_to_bill_at IS NOT NULL
       AND ${NOT_ON_STAY_BILL}
       ${scope}
     ORDER BY o.placed_at ASC
@@ -1869,9 +1907,11 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
   }
 
   const bill = await buildFoodBill(pool, lodge, orders, applied, foodRate);
+  const liveOrderCount = await countLiveOrdersOnTab(pool.request(), lodgeId, tab);
 
   return {
     tab,
+    liveOrderCount,
     tableLabel: orders[0].tableLabel,
     // Every order on a tab carries the same customer fields (see
     // loadUnbilledTabOrders — null for a table or room tab, the counter
@@ -1926,6 +1966,15 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
     const orders = await loadUnbilledTabOrders(new sql.Request(transaction), lodgeId, tab);
     if (orders.length === 0) {
       throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
+    }
+
+    // Food still in the kitchen would be left off this bill.
+    const stillLive = await countLiveOrdersOnTab(new sql.Request(transaction), lodgeId, tab);
+    if (stillLive > 0 && !input.billAnyway) {
+      throw new ApiError(
+        `${stillLive} order${stillLive === 1 ? ' is' : 's are'} still in progress on this tab. Wait until ${stillLive === 1 ? 'it is' : 'they are'} delivered, or choose to bill anyway.`,
+        409
+      );
     }
 
     // Which of the three the tab is, so the document can name it. Read off
@@ -2048,27 +2097,35 @@ async function listInHouseGuests(lodgeId) {
 }
 
 // A room guest who ate at a table: charge that tab's delivered food to their
-// stay. Only table and takeaway tabs — room tabs are already on a stay.
+// stay, or a room-QR tab (already tied to its stay) moved off the restaurant
+// bill onto that stay's bill.
 async function addTabToRoomBill(lodgeId, tab, bookingId) {
-  if (!/^(table|counter)-\d+$/.test(String(tab))) {
-    throw new ApiError('Only a table or takeaway tab can be added to a room bill.', 400);
+  const roomStay = /^room-booking-(\d+)$/.exec(String(tab));
+  if (!roomStay && !/^(table|counter)-\d+$/.test(String(tab))) {
+    throw new ApiError('Only a table, takeaway or room-order tab can be added to a room bill.', 400);
   }
+  // A room tab can only go on its own stay's bill.
+  if (roomStay) bookingId = Number(roomStay[1]);
   const pool = await getPool();
   const booking = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
-    .query("SELECT id FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CHECKED_IN'");
+    .query(`SELECT id FROM dbo.bookings
+            WHERE id = @bookingId AND lodge_id = @lodgeId
+              AND (status = 'CHECKED_IN' OR (status = 'CHECKED_OUT' AND NOT EXISTS (
+                SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = @bookingId AND bi.status = 'ISSUED')))`);
   if (booking.recordset.length === 0) {
     throw new ApiError('That guest is not checked in.', 409);
   }
-  const request = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('bookingId', sql.BigInt, bookingId);
+  // Named stayId: the room-booking tab scope declares @bookingId itself.
+  const request = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('stayId', sql.BigInt, bookingId);
   const scope = tabScope(request, tab);
   const result = await request.query(`
-    UPDATE o SET o.booking_id = @bookingId
+    UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1
     FROM dbo.food_orders o
     WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-      AND o.booking_id IS NULL ${scope}
+      AND o.ready_to_bill_at IS NOT NULL AND o.on_room_bill = 0 ${scope}
   `);
   if (result.rowsAffected[0] === 0) {
     throw new ApiError('Nothing to add — no delivered orders are waiting on this tab.', 409);

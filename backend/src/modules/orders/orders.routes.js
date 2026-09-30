@@ -9,6 +9,9 @@ const {
   updateItemReadyHandler,
   editOrderHandler,
   cancelItemsHandler,
+  returnItemsHandler,
+  readyToBillHandler,
+  listTabsHandler,
   updateItemDeliveredHandler,
   clearPinLockoutHandler,
   roomOccupancyHandler,
@@ -28,6 +31,7 @@ router.delete(
 
 // /queue is declared before /:id so "queue" isn't swallowed as an order id.
 // Kitchen work only — the captain taking an order never needs the queue.
+router.get('/tabs', authenticate, requirePermission('orders.manage', 'orders.take'), listTabsHandler);
 router.get('/queue', authenticate, requirePermission('orders.manage'), listQueueHandler);
 
 // Looking up who's in a room is how a captain places a room order, so it
@@ -43,11 +47,14 @@ router.get(
 // in the door.
 router.get('/', authenticate, requirePermission('orders.manage', 'orders.take'), listOrdersHandler);
 router.get('/:id', authenticate, requirePermission('orders.manage'), getOrderHandler);
-router.post('/', authenticate, requirePermission('orders.manage', 'orders.take'), createCounterOrderHandler);
+// Placing an order is the floor's job (orders.take); the kitchen only cooks.
+router.post('/', authenticate, requirePermission('orders.take'), createCounterOrderHandler);
 // orders.take is here for the captain, who delivers the order; the handler
 // decides which moves each permission may make.
 router.patch('/:id/status', authenticate, requirePermission('orders.manage', 'orders.take'), updateStatusHandler);
 router.patch('/:id/items', authenticate, requirePermission('orders.take'), editOrderHandler);
+router.post('/:id/ready-to-bill', authenticate, requirePermission('orders.take'), readyToBillHandler);
+router.post('/:id/items/return', authenticate, requirePermission('orders.take'), returnItemsHandler);
 router.post('/:id/items/cancel', authenticate, requirePermission('orders.take'), cancelItemsHandler);
 router.patch('/:id/items/:itemId/delivered', authenticate, requirePermission('orders.take'), updateItemDeliveredHandler);
 router.patch(

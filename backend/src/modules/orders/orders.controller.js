@@ -13,10 +13,8 @@ function parse(schema, body) {
 
 async function listOrdersHandler(req, res, next) {
   try {
-    // A captain without the kitchen's orders.manage only ever sees the
-    // orders they themselves rang in — everyone else's trade isn't theirs
-    // to browse. Whoever holds orders.manage still sees the whole day.
-    const captainOnly = !req.permissions.includes('orders.manage');
+    // Everyone who can see orders sees all of them — table and room QR orders
+    // have no captain behind them, and any captain may need to serve them.
     // A period is from..to inclusive; capped at a year so one request can't
     // pull the whole history.
     const iso = /^\d{4}-\d{2}-\d{2}$/;
@@ -32,7 +30,7 @@ async function listOrdersHandler(req, res, next) {
       date: req.query.date,
       from,
       to,
-      createdBy: captainOnly ? req.user.sub : null,
+      
     });
     res.json({ orders });
   } catch (err) {
@@ -192,12 +190,12 @@ async function createCounterOrderHandler(req, res, next) {
 }
 
 // Who may make which move: accepting or cancelling is front-of-house
-// (orders.manage), starting and finishing cooking is the kitchen (orders.cook),
+// (orders.manage or the captain's orders.take), starting and finishing cooking is the kitchen (orders.cook),
 // and cancelling or handing the food over is the captain's (orders.take) — the
 // kitchen can do neither. Checked against the requested status because PATCH
 // /status is the one endpoint all three jobs share.
 const STATUS_PERMISSION = {
-  QUEUED: 'orders.manage',
+  QUEUED: ['orders.manage', 'orders.take'],
   CANCELLED: 'orders.take',
   PREPARING: 'orders.cook',
   READY: 'orders.cook',
@@ -207,7 +205,13 @@ const STATUS_PERMISSION = {
 async function updateStatusHandler(req, res, next) {
   try {
     const input = parse(updateStatusSchema, req.body);
-    if (!req.permissions.includes(STATUS_PERMISSION[input.status])) {
+    const needed = [].concat(STATUS_PERMISSION[input.status]);
+    if (!needed.some((p) => req.permissions.includes(p))) {
+      throw new ApiError('Not allowed.', 403);
+    }
+    // The kitchen (orders.cook without orders.take) cooks what front-of-house
+    // has accepted; it doesn't accept guest QR orders itself.
+    if (input.status === 'QUEUED' && req.permissions.includes('orders.cook') && !req.permissions.includes('orders.take')) {
       throw new ApiError('Not allowed.', 403);
     }
     // The owner views orders but doesn't hand food over.
@@ -217,7 +221,7 @@ async function updateStatusHandler(req, res, next) {
     const order = await ordersService.updateStatus(req.user.lodgeId, Number(req.params.id), input.status, {
       cancelReason: input.cancelReason,
       userId: req.user.sub,
-      createdBy: req.permissions.includes('orders.manage') ? null : req.user.sub,
+      
     });
     res.json({ order });
   } catch (err) {
@@ -232,7 +236,7 @@ async function editOrderHandler(req, res, next) {
     const input = parse(editOrderSchema, req.body);
     const order = await ordersService.replaceOrderItems(req.user.lodgeId, Number(req.params.id), input.items, {
       note: input.note,
-      createdBy: req.permissions.includes('orders.manage') ? null : req.user.sub,
+      
     });
     res.json({ order });
   } catch (err) {
@@ -263,13 +267,44 @@ async function updateItemReadyHandler(req, res, next) {
   }
 }
 
+// Correcting food that already came out (a returned dish). Same rules as
+// editing: unbilled, the captain's to do.
+async function returnItemsHandler(req, res, next) {
+  try {
+    const input = parse(cancelItemsSchema, req.body);
+    const order = await ordersService.cancelOrderItems(req.user.lodgeId, Number(req.params.id), input.itemIds, {
+      cancelReason: input.cancelReason,
+      returning: true,
+    });
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function readyToBillHandler(req, res, next) {
+  try {
+    res.json({ order: await ordersService.markReadyToBill(req.user.lodgeId, Number(req.params.id)) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listTabsHandler(req, res, next) {
+  try {
+    res.json({ tabs: await ordersService.listRunningTabs(req.user.lodgeId) });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Partial cancel — see cancelOrderItems. Same captain-owns-it rule as editing.
 async function cancelItemsHandler(req, res, next) {
   try {
     const input = parse(cancelItemsSchema, req.body);
     const order = await ordersService.cancelOrderItems(req.user.lodgeId, Number(req.params.id), input.itemIds, {
       cancelReason: input.cancelReason,
-      createdBy: req.permissions.includes('orders.manage') ? null : req.user.sub,
+      
     });
     res.json({ order });
   } catch (err) {
@@ -288,7 +323,7 @@ async function updateItemDeliveredHandler(req, res, next) {
       req.user.lodgeId,
       Number(req.params.id),
       Number(req.params.itemId),
-      { createdBy: req.permissions.includes('orders.manage') ? null : req.user.sub }
+      {}
     );
     res.json({ order });
   } catch (err) {
@@ -319,6 +354,9 @@ module.exports = {
   updateItemReadyHandler,
   editOrderHandler,
   cancelItemsHandler,
+  returnItemsHandler,
+  readyToBillHandler,
+  listTabsHandler,
   updateItemDeliveredHandler,
   clearPinLockoutHandler,
 };

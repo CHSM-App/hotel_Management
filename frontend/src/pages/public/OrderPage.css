@@ -1907,3 +1907,25 @@
   border-color: transparent !important;
   text-decoration: underline;
 }
+
+.guest-orders__tab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f1eefc;
+  color: #2b1f6b;
+}
+
+.guest-orders__tab strong {
+  font-size: 18px;
+}
+
+.guest-orders__tab small {
+  flex-basis: 100%;
+  opacity: 0.75;
+}

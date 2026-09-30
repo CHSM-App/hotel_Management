@@ -304,7 +304,7 @@ async function replaceOrderItems(lodgeId, orderId, items, { note, createdBy = nu
         UPDATE dbo.food_orders
         SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM dbo.food_order_items WHERE order_id = @orderId),
             note = COALESCE(@note, note)
-            ${reopen ? ", status = 'PREPARING', ready_at = NULL, delivered_at = NULL" : ''}
+            ${reopen ? ", status = 'PREPARING', ready_at = NULL, delivered_at = NULL, ready_to_bill_at = NULL" : ''}
         WHERE id = @orderId
       `);
 
@@ -330,6 +330,9 @@ function mapOrderItem(row) {
     lineTotal: Number(row.line_total),
     readyAt: row.ready_at ?? null,
     deliveredAt: row.delivered_at ?? null,
+    // Menu section the dish belongs to, so a ticket can be read by course.
+    category: row.category_name ?? null,
+    categorySort: row.category_sort ?? 0,
   };
 }
 
@@ -356,6 +359,21 @@ function mapOrder(row, items) {
     // Once an invoice carries the order its lines are money — no more edits.
     billed: row.invoice_id != null,
     invoiceId: row.invoice_id ?? null,
+    readyToBill: row.ready_to_bill_at != null,
+    // A guest's own QR order has nobody behind it until someone accepts it;
+    // staff-entered orders carry their author from the start.
+    tableId: row.table_id ?? null,
+    roomId: row.room_id ?? null,
+    // Paid or part-paid once a bill carries it; null while it is unbilled.
+    payment:
+      row.invoice_id == null
+        ? null
+        : {
+            status: Number(row.inv_paid) >= Number(row.inv_total) ? 'PAID' : Number(row.inv_paid) > 0 ? 'PART' : 'UNPAID',
+            method: row.inv_method || null,
+          },
+    guestOrder: row.created_by == null,
+    handledBy: row.handler_name || null,
     nextStatuses: NEXT_STATUSES[row.status] || [],
     items,
   };
@@ -398,11 +416,16 @@ async function listOrders(lodgeId, { status, date, from, to, live, createdBy } =
   const ordersResult = await request.query(`
     SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id, o.guest_name, o.guest_phone,
            o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
-           o.cancelled_at, o.cancel_reason, o.invoice_id,
+           o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.created_by, uh.name AS handler_name,
+           o.table_id, o.room_id,
+           (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
+           (SELECT COALESCE(SUM(amount), 0) FROM dbo.payment_lines WHERE invoice_id = o.invoice_id) AS inv_paid,
+           (SELECT TOP 1 method FROM dbo.payment_lines WHERE invoice_id = o.invoice_id ORDER BY amount DESC) AS inv_method,
            r.room_number, t.label AS table_label
     FROM dbo.food_orders o
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+    LEFT JOIN dbo.users uh ON uh.id = COALESCE(o.accepted_by, o.created_by)
     WHERE ${filters.join(' AND ')}
     -- The kitchen queue works oldest-first; the history reads newest-first.
     ORDER BY o.placed_at ${live ? 'ASC' : 'DESC'}
@@ -420,8 +443,10 @@ async function listOrders(lodgeId, { status, date, from, to, live, createdBy } =
   const orderIdParams = orderIds.map((_, index) => `@o${index}`).join(', ');
 
   const itemsResult = await itemsRequest.query(`
-    SELECT id, order_id, menu_item_id, menu_item_portion_id, item_name, unit_price, quantity, line_total, ready_at, delivered_at
-    FROM dbo.food_order_items
+    SELECT fi.id, fi.order_id, fi.menu_item_id, fi.menu_item_portion_id, fi.item_name, fi.unit_price, fi.quantity, fi.line_total, fi.ready_at, fi.delivered_at,
+           (SELECT c.name FROM dbo.menu_items mi JOIN dbo.menu_categories c ON c.id = mi.category_id WHERE mi.id = fi.menu_item_id) AS category_name,
+           (SELECT c.sort_order FROM dbo.menu_items mi JOIN dbo.menu_categories c ON c.id = mi.category_id WHERE mi.id = fi.menu_item_id) AS category_sort
+    FROM dbo.food_order_items fi
     WHERE order_id IN (${orderIdParams})
     ORDER BY id ASC
   `);
@@ -446,11 +471,16 @@ async function getOrder(lodgeId, orderId) {
     .query(`
       SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id, o.guest_name, o.guest_phone,
              o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
-             o.cancelled_at, o.cancel_reason, o.invoice_id,
+             o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.created_by, uh.name AS handler_name,
+           o.table_id, o.room_id,
+           (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
+           (SELECT COALESCE(SUM(amount), 0) FROM dbo.payment_lines WHERE invoice_id = o.invoice_id) AS inv_paid,
+           (SELECT TOP 1 method FROM dbo.payment_lines WHERE invoice_id = o.invoice_id ORDER BY amount DESC) AS inv_method,
              r.room_number, t.label AS table_label
       FROM dbo.food_orders o
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.users uh ON uh.id = COALESCE(o.accepted_by, o.created_by)
       WHERE o.id = @orderId AND o.lodge_id = @lodgeId
     `);
 
@@ -463,8 +493,10 @@ async function getOrder(lodgeId, orderId) {
     .request()
     .input('orderId', sql.BigInt, orderId)
     .query(`
-      SELECT id, menu_item_id, menu_item_portion_id, item_name, unit_price, quantity, line_total, ready_at, delivered_at
-      FROM dbo.food_order_items WHERE order_id = @orderId ORDER BY id ASC
+      SELECT fi.id, fi.menu_item_id, fi.menu_item_portion_id, fi.item_name, fi.unit_price, fi.quantity, fi.line_total, fi.ready_at, fi.delivered_at,
+             (SELECT c.name FROM dbo.menu_items mi JOIN dbo.menu_categories c ON c.id = mi.category_id WHERE mi.id = fi.menu_item_id) AS category_name,
+           (SELECT c.sort_order FROM dbo.menu_items mi JOIN dbo.menu_categories c ON c.id = mi.category_id WHERE mi.id = fi.menu_item_id) AS category_sort
+      FROM dbo.food_order_items fi WHERE fi.order_id = @orderId ORDER BY fi.id ASC
     `);
 
   return mapOrder(row, itemsResult.recordset.map(mapOrderItem));
@@ -608,7 +640,7 @@ async function setItemDelivered(lodgeId, orderId, itemId, { createdBy = null } =
 // Partial cancel: drops the chosen dishes off a live, unbilled order. Only
 // dishes the kitchen has not finished can go. If that leaves nothing on the
 // ticket the order itself is cancelled.
-async function cancelOrderItems(lodgeId, orderId, itemIds, { cancelReason, createdBy = null } = {}) {
+async function cancelOrderItems(lodgeId, orderId, itemIds, { cancelReason, createdBy = null, returning = false } = {}) {
   const pool = await getPool();
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -624,7 +656,10 @@ async function cancelOrderItems(lodgeId, orderId, itemIds, { cancelReason, creat
     if (order.invoice_id != null) {
       throw new ApiError('This order has already been billed and can’t be changed.', 409);
     }
-    if (!['PENDING', 'QUEUED', 'PREPARING'].includes(order.status)) {
+    // A returned dish is a correction to food already out (READY or DELIVERED);
+    // an ordinary cancel is only for what has not been cooked.
+    const allowed = returning ? ['PREPARING', 'READY', 'DELIVERED'] : ['PENDING', 'QUEUED', 'PREPARING'];
+    if (!allowed.includes(order.status)) {
       throw new ApiError(`This order is already ${order.status.toLowerCase()} — its dishes can’t be cancelled.`, 409);
     }
 
@@ -637,7 +672,8 @@ async function cancelOrderItems(lodgeId, orderId, itemIds, { cancelReason, creat
     for (const id of itemIds) {
       const item = byId.get(String(id));
       if (!item) throw new ApiError('That item is not on this order.', 404);
-      if (item.ready_at) throw new ApiError('A dish that is already ready can’t be cancelled.', 409);
+      if (item.ready_at && !returning) throw new ApiError('A dish that is already ready can’t be cancelled.', 409);
+      if (!item.ready_at && returning) throw new ApiError('Only a dish that has come out can be returned.', 409);
     }
 
     const del = new sql.Request(transaction).input('orderId', sql.BigInt, orderId);
@@ -661,6 +697,66 @@ async function cancelOrderItems(lodgeId, orderId, itemIds, { cancelReason, creat
     throw err;
   }
   return getOrder(lodgeId, orderId);
+}
+
+// The captain says a fully delivered order is done and the guest is ready to
+// pay: it leaves their queue and shows up in Billing's "Food to bill".
+async function markReadyToBill(lodgeId, orderId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('orderId', sql.BigInt, orderId)
+    .query(`
+      UPDATE dbo.food_orders SET ready_to_bill_at = COALESCE(ready_to_bill_at, SYSDATETIMEOFFSET())
+      WHERE id = @orderId AND lodge_id = @lodgeId AND status = 'DELIVERED' AND invoice_id IS NULL
+    `);
+  if (result.rowsAffected[0] === 0) {
+    throw new ApiError('Only a fully delivered, unbilled order can be marked ready to bill.', 409);
+  }
+  return getOrder(lodgeId, orderId);
+}
+
+// Running tabs: what each table and room has ordered and not yet been billed
+// for, so a captain can see "T6 · 3 orders · ₹1,240 · 1 still cooking" at a
+// glance. Counter orders are one-off and left out. A room with a guest checked
+// in rides on the stay bill, so it is shown but not marked billable here.
+async function listRunningTabs(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT o.source, o.table_id, o.room_id,
+             CASE WHEN o.source = 'ROOM' THEN o.booking_id END AS booking_id,
+             MAX(t.label) AS table_label, MAX(r.room_number) AS room_number,
+             COUNT(*) AS order_count, SUM(o.subtotal) AS total,
+             SUM(CASE WHEN o.status IN ('PENDING') THEN 1 ELSE 0 END) AS pending_count,
+             SUM(CASE WHEN o.status IN ('QUEUED', 'PREPARING', 'READY') THEN 1 ELSE 0 END) AS live_count,
+             MAX(o.placed_at) AS last_at
+      FROM dbo.food_orders o
+      LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.rooms r ON r.id = o.room_id
+      WHERE o.lodge_id = @lodgeId AND o.invoice_id IS NULL AND o.status <> 'CANCELLED'
+        AND o.source IN ('TABLE', 'ROOM')
+      GROUP BY o.source, o.table_id, o.room_id, CASE WHEN o.source = 'ROOM' THEN o.booking_id END
+      ORDER BY MAX(o.placed_at) DESC
+    `);
+  return result.recordset.map((row) => {
+    const isTable = row.source === 'TABLE';
+    return {
+      tab: isTable ? `table-${row.table_id}` : row.booking_id != null ? `room-booking-${row.booking_id}` : `room-${row.room_id}`,
+      label: isTable ? row.table_label : `Room ${row.room_number}`,
+      source: row.source,
+      // Table food is billed as its own tab; a stay's room food rides on the stay bill.
+      billable: isTable,
+      orderCount: row.order_count,
+      total: Number(row.total),
+      pendingCount: row.pending_count,
+      liveCount: row.live_count,
+      lastAt: row.last_at,
+    };
+  });
 }
 
 // Every move through the queue lands here. The transition table is enforced
@@ -715,7 +811,9 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId
   }
 
   const timestampColumn = STATUS_TIMESTAMP_COLUMN[nextStatus];
-  const timestampSet = timestampColumn ? `, ${timestampColumn} = SYSDATETIMEOFFSET()` : '';
+  let timestampSet = timestampColumn ? `, ${timestampColumn} = SYSDATETIMEOFFSET()` : '';
+  // Accepting a pending order makes the accepter its owner.
+  if (nextStatus === 'QUEUED' && current.status === 'PENDING') timestampSet += ', accepted_by = @acceptedBy';
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -725,6 +823,7 @@ async function updateStatus(lodgeId, orderId, nextStatus, { cancelReason, userId
       .input('orderId', sql.BigInt, orderId)
       .input('nextStatus', sql.NVarChar, nextStatus)
       .input('currentStatus', sql.NVarChar, current.status)
+      .input('acceptedBy', sql.BigInt, userId)
       .input('cancelReason', sql.NVarChar, nextStatus === 'CANCELLED' ? cancelReason || null : null)
       .query(`
         UPDATE dbo.food_orders
@@ -800,4 +899,6 @@ module.exports = {
   setItemReady,
   setItemDelivered,
   cancelOrderItems,
+  listRunningTabs,
+  markReadyToBill,
 };
