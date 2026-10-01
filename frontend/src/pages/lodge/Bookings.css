@@ -2761,3 +2761,30 @@
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
+
+.room-food__bill-tag {
+  padding: 1px 9px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.room-food__bill-tag--on {
+  border-style: solid;
+  border-color: #b5dec5;
+  background: #e3f4ea;
+  color: #0f6d37;
+}
+
+.room-food__add {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.room-food__error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--danger);
+}

@@ -49,9 +49,11 @@ export default function StayDetails({
   // figures rather than stored: the server allows an advance equal to the
   // stay, and once it is, "advance" is the wrong word for it everywhere the
   // desk reads this — there is nothing left to collect.
-  // Food on this stay that no bill carries yet. It lands on the stay bill at
-  // checkout, so it belongs in what is still to collect.
-  const foodOrdersOpen = (booking.foodOrders || []).filter((o) => !o.billed);
+  // Food the desk has added to this stay's room bill and no bill carries yet.
+  // Food that is merely ordered stays out of what is still to collect until it
+  // is added, from Food ordered below.
+  const foodOrdersOpen = (booking.foodOrders || []).filter((o) => !o.billed && o.onRoomBill);
+  const foodNotAdded = (booking.foodOrders || []).filter((o) => !o.billed && !o.onRoomBill);
   const foodOpenTotal = Math.round(foodOrdersOpen.reduce((sum, o) => sum + o.subtotal, 0) * 100) / 100;
   const paidInFull =
     booking.advanceAmount != null &&
@@ -471,6 +473,11 @@ export default function StayDetails({
             </div>
           )}
         </div>
+        {foodNotAdded.length > 0 && !booking.invoice && (
+          <p className="bookings-panel__hint">
+            {foodNotAdded.length} food order{foodNotAdded.length === 1 ? ' is' : 's are'} not on the room bill yet ({formatPrice(foodNotAdded.reduce((n, o) => n + o.subtotal, 0))}). Add {foodNotAdded.length === 1 ? 'it' : 'them'} from Food ordered below to include {foodNotAdded.length === 1 ? 'it' : 'them'} here.
+          </p>
+        )}
         {showOutstanding && !booking.invoice && (
           <p className="bookings-panel__hint">
             Before GST — tax is worked out on the bill, night by night, when it is issued.
