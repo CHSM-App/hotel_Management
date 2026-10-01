@@ -5,6 +5,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import './forms.css';
 import './chartSections.css';
+import PageLoader from '../../components/PageLoader';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
@@ -164,7 +165,7 @@ export default function PriceSimulatorPanel() {
   if (!rooms || !charges) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading rooms…</div>
+        <PageLoader inline label="Loading rooms" />
       </div>
     );
   }

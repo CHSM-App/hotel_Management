@@ -2768,3 +2768,10 @@ WHERE lodge_id IS NULL AND role_key = 'KITCHEN';
 -- Captain's "ready to bill" mark (migration 108).
 IF COL_LENGTH('dbo.food_orders', 'ready_to_bill_at') IS NULL
     EXEC('ALTER TABLE dbo.food_orders ADD ready_to_bill_at DATETIMEOFFSET NULL');
+
+-- reports.view on the ACCOUNTANT built-in role (migration 105).
+IF EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT'
+           AND permissions = '["billing.manage","expenses.manage","events.manage","income.manage","profitLoss.view"]')
+UPDATE dbo.roles
+SET permissions = '["billing.manage","expenses.manage","events.manage","income.manage","profitLoss.view","reports.view"]'
+WHERE lodge_id IS NULL AND role_key = 'ACCOUNTANT';

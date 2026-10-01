@@ -42,7 +42,11 @@ async function listOrdersHandler(req, res, next) {
 // never has to reason about dates — it asks for "what's still cooking".
 async function listQueueHandler(req, res, next) {
   try {
-    const orders = await ordersService.listOrders(req.user.lodgeId, { live: true });
+    const orders = await ordersService.listOrders(req.user.lodgeId, {
+      live: true,
+      // Owner / reception (who can bill) keep delivered orders in the queue until billed.
+      awaitingBill: req.permissions.includes('billing.manage'),
+    });
     res.json({ orders });
   } catch (err) {
     next(err);

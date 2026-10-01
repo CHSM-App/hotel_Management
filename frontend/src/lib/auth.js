@@ -17,6 +17,12 @@ export function setSession({ token, role, name }) {
 
 export function clearSession() {
   localStorage.removeItem(STORAGE_KEY);
+  // The property's logo belonged to the account that just left too.
+  try {
+    localStorage.removeItem('hm_logo');
+  } catch {
+    /* ignore */
+  }
   // Whatever the dashboard had cached belonged to the account that just left.
   clearCache();
 }

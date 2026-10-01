@@ -27,3 +27,14 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+
+// The app has drawn its first frame: fade the boot loader (see index.html) out
+// and take it off the page. Two frames, so it goes only after the paint.
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    const boot = document.getElementById('boot-loader');
+    if (!boot) return;
+    boot.classList.add('is-done');
+    setTimeout(() => boot.remove(), 400);
+  })
+);

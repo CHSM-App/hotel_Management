@@ -8,6 +8,7 @@ import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
 import './forms.css';
 import './InventoryPanel.css';
+import PageLoader from '../../components/PageLoader';
 
 // OTHER rather than a guess. A material filed under the wrong heading is worse
 // than one visibly waiting to be filed — the second sorts to the bottom where
@@ -309,7 +310,7 @@ export default function InventoryPanel() {
   }
 
   if (!materials) {
-    return <p className="inv-panel__hint">Loading the store cupboard…</p>;
+    return <PageLoader inline label="Loading the store cupboard" />;
   }
 
   // Where the adjustment dialog's footer figure comes from: what the shelf
@@ -827,7 +828,7 @@ export default function InventoryPanel() {
 
             <div className="inv-modal__body">
               {movements === null ? (
-                <p className="inv-panel__hint">Loading…</p>
+                <PageLoader inline label="Loading" />
               ) : movements.length === 0 ? (
                 <p className="inv-panel__hint">Nothing has moved yet.</p>
               ) : (

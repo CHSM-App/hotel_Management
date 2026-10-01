@@ -7,6 +7,7 @@ import IconButton from '../../components/IconButton';
 import { EditIcon, TrashIcon } from '../../components/ActionIcons';
 import './forms.css';
 import './chartSections.css';
+import PageLoader from '../../components/PageLoader';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -432,7 +433,7 @@ export default function PriceChartPanel() {
   if (loading) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading the price chart…</div>
+        <PageLoader inline label="Loading the price chart" />
       </div>
     );
   }

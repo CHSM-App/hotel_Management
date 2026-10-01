@@ -1,6 +1,7 @@
 import { formatPrice } from './priceFormat';
 import { BarList } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
+import PageLoader from '../../components/PageLoader';
 
 const EVENT_STATUS_LABEL = {
   ENQUIRY: 'Enquiry',
@@ -53,7 +54,7 @@ export default function FunctionsAnalytics({ analytics, loading, error }) {
   if (loading || !analytics) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading…</div>
+        <PageLoader inline label="Loading" />
       </div>
     );
   }

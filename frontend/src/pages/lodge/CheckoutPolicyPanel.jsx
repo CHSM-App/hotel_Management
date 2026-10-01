@@ -5,6 +5,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import './forms.css';
 import './RoomsAndRates.css';
 import './CheckoutPolicyPanel.css';
+import PageLoader from '../../components/PageLoader';
 
 const MODE_LABEL = {
   HOUR_24: '24-hour stays',
@@ -134,7 +135,7 @@ export default function CheckoutPolicyPanel() {
   if (!policy) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading the checkout policy…</div>
+        <PageLoader inline label="Loading the checkout policy" />
       </div>
     );
   }

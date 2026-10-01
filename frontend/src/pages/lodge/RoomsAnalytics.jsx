@@ -4,6 +4,7 @@ import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import { TrendChart, BarList } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
+import PageLoader from '../../components/PageLoader';
 
 const LOS_LABEL = { '1': '1 night', '2': '2 nights', '3': '3 nights', '4+': '4+ nights' };
 
@@ -39,7 +40,7 @@ export default function RoomsAnalytics({ fromDate, toDate, validRange, bookings 
   if (!data || !bookings) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading…</div>
+        <PageLoader inline label="Loading" />
       </div>
     );
   }

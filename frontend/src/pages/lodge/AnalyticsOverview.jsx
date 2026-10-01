@@ -1,6 +1,7 @@
 import { formatPrice } from './priceFormat';
 import { TrendChart, Donut, BarList } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
+import PageLoader from '../../components/PageLoader';
 
 const EVENT_TYPE_LABEL = {
   BIRTHDAY: 'Birthday',
@@ -60,7 +61,7 @@ export default function AnalyticsOverview({ lodge, bookings, occupancy, gst, eve
   if (!ready) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading…</div>
+        <PageLoader inline label="Loading" />
       </div>
     );
   }

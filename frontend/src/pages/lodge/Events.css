@@ -1181,3 +1181,111 @@
     padding: 5px 2px;
   }
 }
+
+/* ---- Event register as a compact sheet: sticky header, banded rows, one line
+   per cell where it can, a two-line When, and a totals footer. ---- */
+.events-sheet {
+  max-height: 72vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile, 10px);
+  background: var(--surface);
+}
+
+.events-sheet__table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.events-sheet__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 12px;
+  background: #f1eefc;
+  color: var(--brand);
+  border-bottom: 2px solid #ddd6f7;
+  white-space: nowrap;
+}
+
+.events-sheet__table tbody td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid rgba(0, 0, 0, 0.04);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.events-sheet__table tbody td:last-child {
+  border-right: none;
+}
+
+.events-sheet__table tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.events-sheet__table tbody tr:hover {
+  background: rgba(91, 66, 218, 0.06);
+}
+
+.events-sheet__when {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.events-sheet__when strong {
+  font-weight: 700;
+}
+
+.events-sheet__when span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.events-sheet__table .dash-lodge-name {
+  display: block;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.events-sheet__table .events-list__sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.events-sheet__venue {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.events-sheet__table .events-list__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.events-sheet__zero {
+  color: var(--text-muted);
+}
+
+.events-sheet__due {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.events-sheet__table tfoot td {
+  position: sticky;
+  bottom: 0;
+  padding: 8px 12px;
+  background: #f1eefc;
+  border-top: 2px solid #ddd6f7;
+  font-weight: 800;
+  white-space: nowrap;
+}

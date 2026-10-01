@@ -8,6 +8,7 @@ import LodgeEditModal from './LodgeEditModal';
 import { featuresForCapabilities, propertyTypeOf, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import './LodgesDashboard.css';
 import './LodgeDetail.css';
+import PageLoader from '../../components/PageLoader';
 
 const CHECKIN_LABEL = {
   HOUR_24: '24-hour cycle, counted from check-in',
@@ -209,7 +210,7 @@ export default function LodgeDetail() {
         </Link>
 
         {error && <div className="dash-card dash-state">{error}</div>}
-        {!error && !data && <div className="dash-card dash-state">Loading…</div>}
+        {!error && !data && <div className="dash-card"><PageLoader inline label="Loading" /></div>}
 
         {!error && data && (
           <>

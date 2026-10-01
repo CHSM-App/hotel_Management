@@ -134,6 +134,12 @@ export default function Login() {
     try {
       const data = await apiPost('/auth/login', form);
       setSession({ token: data.token, role: data.role, name: data.name });
+      // Asks the dashboard to play its opening splash once.
+      try {
+        sessionStorage.setItem('hm_splash', '1');
+      } catch {
+        /* storage blocked: no splash, nothing else lost */
+      }
       // replace, not push: signing in is a transition, not a place. Leaving
       // /login on the stack means Back from the dashboard lands on a login
       // form the user has already satisfied.

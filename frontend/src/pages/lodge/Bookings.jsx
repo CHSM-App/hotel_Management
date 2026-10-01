@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import PageLoader from '../../components/PageLoader';
 import {
   apiGet,
   apiPost,
@@ -4479,7 +4480,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       <div className="form-banner form-banner--error">{availableBedsError}</div>
                     )}
                     {!availableBeds && !availableBedsError && (
-                      <p className="bookings-panel__hint">Loading beds…</p>
+                      <PageLoader inline label="Loading beds" />
                     )}
                     {availableBeds && (
                       <>
@@ -4943,7 +4944,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           <div className="glass-panel bookings-panel__modal" onClick={(e) => e.stopPropagation()}>
             {detailError && <div className="form-banner form-banner--error">{detailError}</div>}
 
-            {!detailError && !bookingDetail && <div className="dash-state">Loading…</div>}
+            {!detailError && !bookingDetail && <PageLoader inline label="Loading" />}
 
             {!detailError && bookingDetail && (
               <>

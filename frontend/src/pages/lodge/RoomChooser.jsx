@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { formatPrice } from './priceFormat';
+import PageLoader from '../../components/PageLoader';
 
 // The free rooms for the chosen dates, to tick — what a desk uses to book several
 // rooms for the same nights in one go. Built for a property with a hundred rooms as
@@ -76,7 +77,7 @@ export default function RoomChooser({ rooms, pickedIds, lockedIds, onToggle, onT
       </label>
       <p className="bookings-panel__hint">Tick every room you want on this booking.</p>
 
-      {!rooms && <p className="bookings-panel__hint">Loading rooms…</p>}
+      {!rooms && <PageLoader inline label="Loading rooms" />}
       {rooms && total === 0 && <p className="bookings-panel__hint">No rooms are free for these dates.</p>}
 
       {rooms && total > 0 && (

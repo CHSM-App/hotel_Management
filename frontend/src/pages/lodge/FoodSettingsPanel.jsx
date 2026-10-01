@@ -4,6 +4,7 @@ import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import './forms.css';
 import './MenuPanel.css';
+import PageLoader from '../../components/PageLoader';
 
 export default function FoodSettingsPanel({ onSaved }) {
   const session = getSession();
@@ -61,7 +62,7 @@ export default function FoodSettingsPanel({ onSaved }) {
   if (!settings) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading settings…</div>
+        <PageLoader inline label="Loading settings" />
       </div>
     );
   }

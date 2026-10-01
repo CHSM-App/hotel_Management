@@ -6,6 +6,7 @@ import { useUrlState } from '../../lib/urlState';
 import { formatPrice } from './priceFormat';
 import EventForm from './EventForm';
 import EventDetail from './EventDetail';
+import PageLoader from '../../components/PageLoader';
 import {
   EVENT_STATUS_COLOR,
   EVENT_STATUS_LABEL,
@@ -423,6 +424,21 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
 
 /* ---------------------------------------------------------------- list */
 
+// "Mon 31 Aug" over "6:00 – 11:00 pm": two short lines instead of one that wraps to four.
+function compactWhen(startAt, endAt) {
+  if (!startAt) return { day: '', time: '' };
+  const start = new Date(startAt);
+  const end = endAt ? new Date(endAt) : null;
+  const day = start.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const clock = (d) => d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(' ', '\u00a0');
+  if (!end) return { day, time: clock(start) };
+  if (toDateKey(start) === toDateKey(end)) return { day, time: `${clock(start)} – ${clock(end)}` };
+  return {
+    day,
+    time: `${clock(start)} – ${end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} ${clock(end)}`,
+  };
+}
+
 const todayKey = () => toDateKey(new Date());
 const monthStartKey = () => {
   const d = new Date();
@@ -706,12 +722,12 @@ function EventList({ venues, onOpen, refreshKey }) {
 
       <div className="dash-card">
         {events === null ? (
-          <div className="dash-state">Loading…</div>
+          <PageLoader inline label="Loading" />
         ) : shown.length === 0 ? (
           <div className="dash-state">No functions match.</div>
         ) : (
-          <div className="dash-table-scroll">
-            <table className="dash-table">
+          <div className="dash-table-scroll events-sheet">
+            <table className="dash-table events-sheet__table">
               <thead>
                 <tr>
                   <th aria-sort={sort.key === 'when' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
@@ -791,26 +807,45 @@ function EventList({ venues, onOpen, refreshKey }) {
               <tbody>
                 {shown.map((ev) => (
                   <tr key={ev.id} className="events-list__row" onClick={() => onOpen(ev.id)}>
-                    <td>{formatEventWhen(ev.startAt, ev.endAt)}</td>
+                    <td className="events-sheet__when">
+                      <strong>{compactWhen(ev.startAt, ev.endAt).day}</strong>
+                      <span>{compactWhen(ev.startAt, ev.endAt).time}</span>
+                    </td>
                     <td>
                       <span className="dash-lodge-name">{ev.title}</span>
                       <span className="events-list__sub">{EVENT_TYPE_LABEL[ev.eventType] || ev.eventType}</span>
                     </td>
-                    <td>{ev.venueName}</td>
+                    <td className="events-sheet__venue">{ev.venueName}</td>
                     <td>
                       {ev.organiserName}
                       <span className="events-list__sub">{ev.organiserPhone}</span>
                     </td>
-                    <td>{ev.finalPax ?? ev.expectedPax}</td>
+                    <td className="events-list__num">{ev.finalPax ?? ev.expectedPax}</td>
                     <td className="events-list__num">{formatPrice(ev.totalAmount)}</td>
-                    <td className="events-list__num">{formatPrice(ev.advanceAmount || 0)}</td>
-                    <td className="events-list__num">{formatPrice(ev.balanceDue)}</td>
+                    <td className={`events-list__num${ev.advanceAmount ? '' : ' events-sheet__zero'}`}>{formatPrice(ev.advanceAmount || 0)}</td>
+                    <td
+                      className={`events-list__num${
+                        Number(ev.balanceDue) > 0 && !['SETTLED', 'CANCELLED', 'EXPIRED'].includes(ev.status) ? ' events-sheet__due' : ''
+                      }`}
+                    >
+                      {formatPrice(ev.balanceDue)}
+                    </td>
                     <td>
                       <span className={statusBadgeClass(ev.status)}>{EVENT_STATUS_LABEL[ev.status] || ev.status}</span>
                     </td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={4}>{shown.length} function{shown.length === 1 ? '' : 's'}</td>
+                  <td className="events-list__num">{shown.reduce((n, e) => n + Number(e.finalPax ?? e.expectedPax ?? 0), 0)}</td>
+                  <td className="events-list__num">{formatPrice(shown.reduce((n, e) => n + Number(e.totalAmount || 0), 0))}</td>
+                  <td className="events-list__num">{formatPrice(shown.reduce((n, e) => n + Number(e.advanceAmount || 0), 0))}</td>
+                  <td className="events-list__num">{formatPrice(shown.reduce((n, e) => n + Number(e.balanceDue || 0), 0))}</td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

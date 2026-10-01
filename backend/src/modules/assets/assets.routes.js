@@ -41,7 +41,10 @@ router.get('/vendors', authenticate, canAccess, listVendorsHandler);
 router.post('/vendors', authenticate, canAccess, createVendorHandler);
 router.patch('/vendors/:id', authenticate, canAccess, updateVendorHandler);
 
-router.get('/work-orders', authenticate, canAccess, listWorkOrdersHandler);
+// The Assets report reads these two lists, so a role that can open Reports (an
+// Accountant) may read them without being able to manage assets.
+const canRead = requirePermission('assets.manage', 'reports.view');
+router.get('/work-orders', authenticate, canRead, listWorkOrdersHandler);
 router.post('/work-orders', authenticate, canAccess, createWorkOrderHandler);
 // Ahead of PATCH '/work-orders/:id' for the same reason '/bulk' is ahead of
 // '/:id' on assets below — a distinct path, not a param value, so it can
@@ -53,7 +56,7 @@ router.patch('/work-orders/:id', authenticate, canAccess, updateWorkOrderHandler
 // never read as a numeric id.
 router.get('/qr/:token', authenticate, canAccess, getAssetByQrHandler);
 
-router.get('/', authenticate, canAccess, listAssetsHandler);
+router.get('/', authenticate, canRead, listAssetsHandler);
 router.post('/', authenticate, canAccess, assetBillUpload, createAssetHandler);
 // Ahead of POST '/' for the same reason /qr/:token is ahead of /:id — a
 // distinct path, not a query flag, so a bulk request can never be read as a

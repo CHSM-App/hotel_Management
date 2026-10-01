@@ -101,17 +101,8 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
-    key: 'restaurantBilling',
-    title: 'Restaurant billing',
-    description: "Table and takeaway bills — and adding a staying guest's food to their room bill.",
-    permission: 'billing.manage',
-    capability: 'servesFood',
-    icon: 'receipt',
-    group: 'Restaurant',
-  },
-  {
     key: 'guests',
-    title: 'Booking Details',
+    title: 'Guest register',
     description: 'Occupants, ID records and vehicle numbers.',
     permission: 'guests.view',
     capability: 'hasRooms',
@@ -120,9 +111,9 @@ export const FEATURES = [
   },
   {
     key: 'food',
-    title: 'Food orders',
-    description: 'The live kitchen queue, and taking an order at the counter.',
-    permission: ['orders.manage', 'orders.take'],
+    title: 'Food orders & Billing',
+    description: 'The live kitchen queue, taking orders, and table and takeaway bills.',
+    permission: ['orders.manage', 'orders.take', 'billing.manage'],
     capability: 'servesFood',
     icon: 'coffee',
     group: 'Restaurant',
@@ -224,23 +215,43 @@ export const FEATURES = [
     group: 'Finance & Management',
   },
   {
-    key: 'reports',
-    title: 'Reports & Analytics',
-    // Names Profit & Loss explicitly — it's a Reports sub-tab (same as GST,
-    // Bookings, Events below), not a feature of its own, so it has no
-    // separate row here; whether a role can see it is decided by the
-    // profitLoss.view permission from Staff & Roles instead.
-    description: 'Booking, occupancy, GST, Profit & Loss, events and food order reports — whichever this property sells.',
+    key: 'report-overview',
+    title: 'Overview',
+    description: 'The headline numbers and trends for the property.',
     permission: 'reports.view',
-    // Any one of these earns the section; ReportsPanel itself only shows the
-    // sub-tabs the property's own capabilities back.
+    icon: 'barChart',
+    group: 'Reports & Analytics',
+  },
+  {
+    key: 'report-sales',
+    title: 'Sales reports',
+    description: 'Room bookings, restaurant orders and events — whichever this property sells.',
+    permission: 'reports.view',
+    // Any one earns the section; the tabs inside show only what the property has.
     capability: ['hasRooms', 'servesFood', 'hasEvents'],
     icon: 'barChart',
-    group: 'Finance & Management',
+    group: 'Reports & Analytics',
+  },
+  {
+    key: 'report-finance',
+    title: 'Finance reports',
+    description: 'Tax & GST, Profit & Loss, expenses and other income.',
+    permission: 'reports.view',
+    icon: 'wallet',
+    group: 'Reports & Analytics',
+  },
+  {
+    key: 'report-assets',
+    title: 'Assets report',
+    description: 'Equipment owned, its value and upkeep.',
+    permission: 'reports.view',
+    capability: 'hasAssets',
+    icon: 'wrench',
+    group: 'Reports & Analytics',
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Finance & Management', 'Setup'];
+export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Finance & Management', 'Reports & Analytics', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

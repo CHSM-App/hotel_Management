@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPut, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
+import PageLoader from '../../components/PageLoader';
 import {
   UNIT_LABEL,
   formatQty,
@@ -262,7 +263,7 @@ export default function RecipesPanel() {
   }
 
   if (!dishes) {
-    return <p className="inv-panel__hint">Loading your dishes…</p>;
+    return <PageLoader inline label="Loading your dishes" />;
   }
 
   if (materials && materials.length === 0) {

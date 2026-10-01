@@ -10,6 +10,7 @@ import Req from '../../components/RequiredMark';
 import StepNum from '../../components/StepNum';
 import './forms.css';
 import './RoomsPanel.css';
+import PageLoader from '../../components/PageLoader';
 
 const BED_SIZES = ['SINGLE', 'DOUBLE', 'QUEEN', 'KING'];
 const BATHROOM_TYPES = ['ATTACHED', 'COMMON'];
@@ -769,7 +770,7 @@ export default function RoomsPanel() {
 
       {loading && (
         <div className="dash-card">
-          <div className="dash-state">Loading rooms…</div>
+          <PageLoader inline label="Loading rooms" />
         </div>
       )}
 

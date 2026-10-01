@@ -3,6 +3,7 @@ import { apiGet, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import './forms.css';
 import './BillNumberingPanel.css';
+import PageLoader from '../../components/PageLoader';
 
 // The two documents a guest is handed, and the serial each one continues from.
 //
@@ -154,7 +155,7 @@ export default function BillNumberingPanel() {
   if (!data) {
     return (
       <div className="dash-card">
-        <div className="dash-state">Loading the numbering settings…</div>
+        <PageLoader inline label="Loading the numbering settings" />
       </div>
     );
   }

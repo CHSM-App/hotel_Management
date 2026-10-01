@@ -28,8 +28,9 @@ const PERMISSIONS = [
   },
   {
     key: 'reports.view',
-    label: 'Reports',
-    description: 'Occupancy and the GST filing summary.',
+    label: 'Reports & Analytics',
+    description:
+      'Opens the Reports & Analytics section: room, restaurant, event, tax, profit & loss, expense, income and asset reports (each still shown only if the property has it). On by default for Owner and Accountant.',
   },
   {
     key: 'staff.manage',
