@@ -131,13 +131,17 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               title: tab.guestName != null
                   ? '${tab.tableLabel} · ${tab.guestName}'
                   : tab.tableLabel ?? 'Counter',
-              subtitle: tab.isTakeaway
-                  ? [
-                      if (tab.customerPhone != null) tab.customerPhone!,
-                      'Placed ${formatTimeOfDay(tab.openedAt)}',
-                    ].join(' · ')
-                  : '${tab.orderCount} order${tab.orderCount == 1 ? '' : 's'} '
-                        '· since ${formatTimeOfDay(tab.openedAt)}',
+              subtitle:
+                  (tab.isTakeaway
+                      ? [
+                          if (tab.customerPhone != null) tab.customerPhone!,
+                          'Placed ${formatTimeOfDay(tab.openedAt)}',
+                        ].join(' · ')
+                      : '${tab.orderCount} order${tab.orderCount == 1 ? '' : 's'} '
+                            '· since ${formatTimeOfDay(tab.openedAt)}') +
+                  (tab.liveOrderCount > 0
+                      ? ' · ${tab.liveOrderCount} still in progress'
+                      : ''),
               amount: tab.subtotal,
             ),
           ),

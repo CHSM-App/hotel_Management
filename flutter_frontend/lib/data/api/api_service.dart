@@ -305,6 +305,27 @@ class ApiService {
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
+  /// One room of a multi-room stay, on its own — it has its own deadline and
+  /// its own last night's rate, so each is asked about separately.
+  Future<LateCheckout> roomLateCheckout(int id, int roomId) async {
+    final res = await _dio.get('/bookings/$id/rooms/$roomId/late-checkout');
+    return LateCheckout.fromJson(
+      _map(res.data)['lateCheckout'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<Booking> checkOutRoom(
+    int id,
+    int roomId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.patch(
+      '/bookings/$id/rooms/$roomId/check-out',
+      data: body,
+    );
+    return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
   /// The primary guest's uploaded ID proof — an image or a PDF, whichever
   /// they handed over at check-in. Raw bytes plus the content type the
   /// server sent, so the viewer can tell a photo from a scanned PDF.
@@ -548,12 +569,21 @@ class ApiService {
     return _orders(res.data);
   }
 
-  /// One IST day of orders, optionally narrowed to a status.
-  Future<List<FoodOrder>> orders({String? date, String? status}) async {
+  /// One IST day of orders, or (via [from]/[to]) a wider period — a captain's
+  /// "My orders" looks back a month rather than just today. Optionally
+  /// narrowed to a status.
+  Future<List<FoodOrder>> orders({
+    String? date,
+    String? from,
+    String? to,
+    String? status,
+  }) async {
     final res = await _dio.get(
       '/orders',
       queryParameters: {
         if (date != null) 'date': date,
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
         if (status != null) 'status': status,
       },
     );
@@ -578,6 +608,20 @@ class ApiService {
     return FoodOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
   }
 
+  /// Replace an unbilled order's items wholesale — the captain correcting
+  /// what was rung in, same as the web's "Edit order".
+  Future<FoodOrder> editOrder(
+    int id,
+    List<Map<String, dynamic>> items,
+    String note,
+  ) async {
+    final res = await _dio.patch(
+      '/orders/$id/items',
+      data: {'items': items, if (note.isNotEmpty) 'note': note},
+    );
+    return FoodOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
+  }
+
   /// Tick one dish off a ticket, or take the tick back.
   ///
   /// Answers with the whole order so the screen redraws from what the server
@@ -587,6 +631,21 @@ class ApiService {
       '/orders/$id/items/$itemId/ready',
       data: {'ready': ready},
     );
+    return FoodOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
+  }
+
+  /// The captain carrying one ready dish out to the guest. Once every dish
+  /// on a READY order is delivered this way, the server flips the whole
+  /// order to DELIVERED on its own.
+  Future<FoodOrder> setItemDelivered(int id, int itemId) async {
+    final res = await _dio.patch('/orders/$id/items/$itemId/delivered');
+    return FoodOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
+  }
+
+  /// The captain marking a fully delivered order done and the guest ready
+  /// to pay — it then shows up in Billing's "Food to bill".
+  Future<FoodOrder> markReadyToBill(int id) async {
+    final res = await _dio.post('/orders/$id/ready-to-bill');
     return FoodOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
   }
 

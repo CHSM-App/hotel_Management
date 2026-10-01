@@ -738,6 +738,40 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
+  /// Ask how late one room of a multi-room stay is, on its own.
+  Future<LateCheckout?> askRoomLateCheckout(int bookingId, int roomId) async {
+    state = state.copyWith(clearError: true);
+    try {
+      return await usecase.roomLateCheckout(bookingId, roomId);
+    } catch (e) {
+      state = state.copyWith(error: messageFor(e));
+      return null;
+    }
+  }
+
+  /// Check one room out on its own, while the rest of the stay carries on.
+  Future<Booking?> checkOutRoom(
+    int bookingId,
+    int roomId, {
+    num lateCharge = 0,
+  }) async {
+    if (state.submitting) return null;
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final booking = await usecase.checkOutRoom(
+        bookingId,
+        roomId,
+        lateCharge: lateCharge,
+      );
+      state = state.copyWith(submitting: false);
+      await loadChart();
+      return booking;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: messageFor(e));
+      return null;
+    }
+  }
+
   // ── Advancing a reservation ──────────────────────────────────────────────
 
   /// Check a reservation in at the door.

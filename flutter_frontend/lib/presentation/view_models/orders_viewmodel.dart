@@ -22,11 +22,29 @@ class OrdersState {
   /// One day's orders, for looking back.
   final AsyncValue<List<FoodOrder>> history;
 
-  /// The day the history is showing.
-  final DateTime historyDate;
+  /// Which period History is showing — 'today', 'month' (the 1st through
+  /// today) or 'custom' ([historyCustomFrom]..[historyCustomTo]) — same
+  /// three OrdersPanel.jsx's own period control offers.
+  final String historyPeriod;
+
+  final DateTime historyCustomFrom;
+  final DateTime historyCustomTo;
 
   /// A status the history is narrowed to, or null for all of them.
   final String? historyStatus;
+
+  /// Narrows History by order number, who it's for, a guest's name or
+  /// phone, its note, or a dish on it — client-side over whatever the
+  /// current period already fetched, same as OrdersPanel.jsx's own search
+  /// box.
+  final String historySearch;
+
+  /// A captain (`orders.take` without `orders.manage`) has no queue tab —
+  /// this list is their queue instead: everything still open (not billed,
+  /// not ready to bill, not cancelled) over the last month, rather than a
+  /// single picked day, the same way OrdersPanel.jsx's compact History
+  /// looks back a month for a captain.
+  final bool myOrdersMode;
 
   /// True only while a tap is in flight. The poll deliberately does not set
   /// this — a spinner appearing every ten seconds on a wall tablet is worse
@@ -43,8 +61,12 @@ class OrdersState {
     this.tab = OrdersTab.queue,
     this.queue = const AsyncValue.loading(),
     this.history = const AsyncValue.loading(),
-    required this.historyDate,
+    this.historyPeriod = 'today',
+    required this.historyCustomFrom,
+    required this.historyCustomTo,
     this.historyStatus,
+    this.historySearch = '',
+    this.myOrdersMode = false,
     this.working = false,
     this.error,
     required this.now,
@@ -54,9 +76,13 @@ class OrdersState {
     OrdersTab? tab,
     AsyncValue<List<FoodOrder>>? queue,
     AsyncValue<List<FoodOrder>>? history,
-    DateTime? historyDate,
+    String? historyPeriod,
+    DateTime? historyCustomFrom,
+    DateTime? historyCustomTo,
     String? historyStatus,
     bool clearHistoryStatus = false,
+    String? historySearch,
+    bool? myOrdersMode,
     bool? working,
     String? error,
     bool clearError = false,
@@ -65,10 +91,14 @@ class OrdersState {
     tab: tab ?? this.tab,
     queue: queue ?? this.queue,
     history: history ?? this.history,
-    historyDate: historyDate ?? this.historyDate,
+    historyPeriod: historyPeriod ?? this.historyPeriod,
+    historyCustomFrom: historyCustomFrom ?? this.historyCustomFrom,
+    historyCustomTo: historyCustomTo ?? this.historyCustomTo,
+    historySearch: historySearch ?? this.historySearch,
     historyStatus: clearHistoryStatus
         ? null
         : (historyStatus ?? this.historyStatus),
+    myOrdersMode: myOrdersMode ?? this.myOrdersMode,
     working: working ?? this.working,
     error: clearError ? null : (error ?? this.error),
     now: now ?? this.now,
@@ -77,9 +107,19 @@ class OrdersState {
   List<FoodOrder> get liveOrders => queue.valueOrNull ?? const [];
 
   /// Tickets nobody has accepted yet. These came from a guest's own phone
-  /// rather than from staff, so they are the ones the kitchen has not seen.
-  int get needsAccepting =>
-      liveOrders.where((o) => o.status == 'PENDING').length;
+  /// rather than from staff, so they are the ones the kitchen (or, in
+  /// [myOrdersMode], the captain) has not seen. Read off [history] in
+  /// myOrdersMode — [queue] is never populated for a login with no
+  /// `orders.manage` — and only while the "Kitchen queue" tab's active scope
+  /// is what [history] currently holds, the same as [needsAccepting]'s own
+  /// reasoning for the real queue.
+  int get needsAccepting => myOrdersMode
+      ? (tab == OrdersTab.queue
+            ? (history.valueOrNull ?? const [])
+                  .where((o) => o.status == 'PENDING')
+                  .length
+            : 0)
+      : liveOrders.where((o) => o.status == 'PENDING').length;
 }
 
 /// The kitchen queue, and the day behind it.
@@ -102,8 +142,20 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
 
   static const pollInterval = Duration(seconds: 10);
 
+  /// The last `canWorkQueue` [configureForRole] actually acted on, so it can
+  /// tell a real change (this login's permissions were still loading, or
+  /// this same provider instance was reused for a different login) from a
+  /// rebuild that says the same thing again. Null before the first call.
+  bool? _configuredCanWorkQueue;
+
   OrdersViewModel(this.usecase)
-    : super(OrdersState(historyDate: _today(), now: DateTime.now())) {
+    : super(
+        OrdersState(
+          historyCustomFrom: _today(),
+          historyCustomTo: _today(),
+          now: DateTime.now(),
+        ),
+      ) {
     loadQueue();
     _poll = Timer.periodic(pollInterval, (_) => loadQueue(silent: true));
     // Separate from the poll: the elapsed labels move on their own minute and
@@ -111,6 +163,40 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) state = state.copyWith(now: DateTime.now());
     });
+  }
+
+  /// Called on every build with whether this login currently holds
+  /// `orders.manage` — cheap to call repeatedly, since it only acts when
+  /// [canWorkQueue] actually differs from what it last configured for. That
+  /// matters because a one-shot decision taken before `me` had finished
+  /// loading (or left over from a previous login this same screen instance
+  /// briefly showed) would otherwise stick forever, even once the real
+  /// permissions came in.
+  ///
+  /// A captain (`orders.take` only) has no kitchen queue — GET /orders/queue
+  /// answers 403 for them — but OrdersPanel.jsx still gives them the same two
+  /// tabs everyone else gets, just backed differently: the first tab (still
+  /// labelled "Kitchen queue" on the web, kept the same here) is [myOrdersMode]
+  /// — everything of theirs still open, looked back a month rather than one
+  /// picked day, since a single day is empty on any day they have not
+  /// personally placed an order yet; the second, "History", is what has been
+  /// settled (billed, sent to billing, or cancelled). A login that does hold
+  /// orders.manage (kitchen, reception, owner) is switched back onto the
+  /// real Kitchen queue + full-day History pair the same way.
+  void configureForRole({required bool canWorkQueue}) {
+    if (_configuredCanWorkQueue == canWorkQueue) return;
+    _configuredCanWorkQueue = canWorkQueue;
+
+    _poll?.cancel();
+    if (canWorkQueue) {
+      state = state.copyWith(myOrdersMode: false);
+      _poll = Timer.periodic(pollInterval, (_) => loadQueue(silent: true));
+      loadQueue();
+    } else {
+      state = state.copyWith(myOrdersMode: true);
+      _poll = Timer.periodic(pollInterval, (_) => loadHistory(silent: true));
+      loadHistory();
+    }
   }
 
   static DateTime _today() {
@@ -129,7 +215,12 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
 
   void setTab(OrdersTab tab) {
     state = state.copyWith(tab: tab, clearError: true);
-    if (tab == OrdersTab.history) loadHistory();
+    // In myOrdersMode both tabs are backed by [history] — "Kitchen queue"
+    // for what's still open, "History" for what's settled — so switching
+    // between them always needs a fresh fetch under the new scope, not just
+    // when landing on History the way the real Kitchen-queue/History pair
+    // does.
+    if (state.myOrdersMode || tab == OrdersTab.history) loadHistory();
   }
 
   /// Refresh the queue.
@@ -168,17 +259,36 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     }
   }
 
-  Future<void> loadHistory() async {
-    state = state.copyWith(history: const AsyncValue.loading());
+  /// [silent] is the poll's own call in [myOrdersMode] — same reasoning as
+  /// [loadQueue]'s: a captain's "My orders" is live the same way the queue
+  /// is, and a spinner every ten seconds is worse than a stale list for the
+  /// second it takes to catch up.
+  Future<void> loadHistory({bool silent = false}) async {
+    if (!silent) state = state.copyWith(history: const AsyncValue.loading());
     try {
-      final orders = await usecase.orders(
-        date: iso(state.historyDate),
-        status: state.historyStatus,
-      );
+      final range = _historyRange();
+      final orders = state.myOrdersMode
+          ? await usecase.orders(from: iso(_monthStart()), to: iso(_today()))
+          : await usecase.orders(
+              from: iso(range.$1),
+              to: iso(range.$2),
+              status: state.historyStatus,
+            );
       if (!mounted) return;
-      state = state.copyWith(history: AsyncValue.data(orders));
+      // OrdersPanel.jsx's compact History applies a scope on top of the
+      // period: 'active' (still open — not billed, not sent to billing, not
+      // called off) on the "Kitchen queue" tab, 'done' (settled — billed,
+      // sent to billing, or cancelled) on "History". Only meaningful in
+      // myOrdersMode — the real History tab shows everything for the day.
+      final visible = !state.myOrdersMode
+          ? orders
+          : state.tab == OrdersTab.queue
+          ? orders.where((o) => !o.billed && !o.readyToBill && o.status != 'CANCELLED').toList()
+          : orders.where((o) => o.billed || o.readyToBill || o.status == 'CANCELLED').toList();
+      state = state.copyWith(history: AsyncValue.data(visible), clearError: true);
     } catch (e, st) {
       if (!mounted) return;
+      if (silent && state.history.valueOrNull != null) return;
       state = state.copyWith(
         history: AsyncValue.error(e, st),
         error: BookingViewModel.messageFor(e),
@@ -186,8 +296,35 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     }
   }
 
-  Future<void> setHistoryDate(DateTime day) async {
-    state = state.copyWith(historyDate: day);
+  static DateTime _monthStart() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, 1);
+  }
+
+  /// The (from, to) pair the picked [OrdersState.historyPeriod] resolves
+  /// to — same three the web's period control offers.
+  (DateTime, DateTime) _historyRange() {
+    switch (state.historyPeriod) {
+      case 'month':
+        return (_monthStart(), _today());
+      case 'custom':
+        return (state.historyCustomFrom, state.historyCustomTo);
+      default:
+        return (_today(), _today());
+    }
+  }
+
+  Future<void> setHistoryPeriod(String period) async {
+    state = state.copyWith(historyPeriod: period);
+    await loadHistory();
+  }
+
+  Future<void> setHistoryCustomRange(DateTime from, DateTime to) async {
+    state = state.copyWith(
+      historyPeriod: 'custom',
+      historyCustomFrom: from,
+      historyCustomTo: to,
+    );
     await loadHistory();
   }
 
@@ -198,11 +335,19 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     await loadHistory();
   }
 
+  /// Client-side only — narrows the already-fetched period's list, so
+  /// typing doesn't reload the day, same as the web's own search box.
+  void setHistorySearch(String query) =>
+      state = state.copyWith(historySearch: query);
+
   /// Move an order on.
   ///
   /// The queue is reloaded from the server rather than patched in place: a
   /// delivered order leaves the queue entirely, and working that out here
-  /// would be re-deriving a rule the server has already applied.
+  /// would be re-deriving a rule the server has already applied. Skipped in
+  /// [OrdersState.myOrdersMode] — a captain has no `orders.manage`, so
+  /// GET /orders/queue is a 403 the action itself did not cause, and no
+  /// screen of theirs reads [OrdersState.queue] anyway.
   Future<bool> advance(int id, String status, {String? cancelReason}) async {
     if (state.working) return false;
     state = state.copyWith(working: true, clearError: true);
@@ -210,8 +355,10 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
       await usecase.setStatus(id, status, cancelReason: cancelReason);
       if (!mounted) return true;
       state = state.copyWith(working: false);
-      await loadQueue();
-      if (state.tab == OrdersTab.history) await loadHistory();
+      if (!state.myOrdersMode) await loadQueue();
+      if (state.myOrdersMode || state.tab == OrdersTab.history) {
+        await loadHistory();
+      }
       return true;
     } catch (e) {
       if (!mounted) return false;
@@ -232,6 +379,52 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
       if (!mounted) return true;
       state = state.copyWith(working: false);
       await loadQueue();
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      state = state.copyWith(
+        working: false,
+        error: BookingViewModel.messageFor(e),
+      );
+      return false;
+    }
+  }
+
+  /// Carry one ready dish out to the guest. Once every dish on the order is
+  /// delivered this way the server flips the whole order to DELIVERED — the
+  /// list this action was called from (the kitchen queue, or a captain's
+  /// history/"My orders") is reloaded either way, the same reasoning
+  /// [advance] carries: re-deriving which list an order now belongs on is
+  /// the server's rule, not this screen's to guess.
+  Future<bool> deliverItem(int orderId, int itemId) async {
+    if (state.working) return false;
+    state = state.copyWith(working: true, clearError: true);
+    try {
+      await usecase.setItemDelivered(orderId, itemId);
+      if (!mounted) return true;
+      state = state.copyWith(working: false);
+      if (!state.myOrdersMode) await loadQueue();
+      await loadHistory();
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      state = state.copyWith(
+        working: false,
+        error: BookingViewModel.messageFor(e),
+      );
+      return false;
+    }
+  }
+
+  /// Send a fully delivered order to Billing's "Food to bill" queue.
+  Future<bool> markReadyToBill(int id) async {
+    if (state.working) return false;
+    state = state.copyWith(working: true, clearError: true);
+    try {
+      await usecase.markReadyToBill(id);
+      if (!mounted) return true;
+      state = state.copyWith(working: false);
+      await loadHistory();
       return true;
     } catch (e) {
       if (!mounted) return false;
@@ -266,6 +459,37 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
       if (!mounted) return order;
       state = state.copyWith(working: false);
       await loadQueue();
+      return order;
+    } catch (e) {
+      if (!mounted) return null;
+      state = state.copyWith(
+        working: false,
+        error: BookingViewModel.messageFor(e),
+      );
+      return null;
+    }
+  }
+
+  /// Replace an unbilled order's items wholesale — the captain correcting
+  /// what was rung in. Reloads whichever list the edited order actually
+  /// belongs on, the same reasoning [advance] carries: a changed order can
+  /// leave the kitchen's queue (all its items already cooked) or its
+  /// unbilled total can move enough to matter to a screen showing it.
+  Future<FoodOrder?> editOrder(
+    int id,
+    List<OrderLineDraft> lines,
+    String note,
+  ) async {
+    if (state.working || lines.isEmpty) return null;
+    state = state.copyWith(working: true, clearError: true);
+    try {
+      final order = await usecase.editOrder(id, lines, note);
+      if (!mounted) return order;
+      state = state.copyWith(working: false);
+      if (!state.myOrdersMode) await loadQueue();
+      if (state.myOrdersMode || state.tab == OrdersTab.history) {
+        await loadHistory();
+      }
       return order;
     } catch (e) {
       if (!mounted) return null;

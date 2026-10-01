@@ -181,6 +181,66 @@ class BookingActions {
     return false;
   }
 
+  /// Checking one room of a multi-room stay out on its own — the same two
+  /// steps as [checkOut], scoped to a single room: each keeps its own
+  /// deadline and its own last night's rate.
+  ///
+  /// While other rooms are still checked in, the stay carries on: this
+  /// returns true so the caller reloads the same detail screen showing the
+  /// rooms as they now stand. Once this was the last room, it behaves like
+  /// [checkOut] — off to Billing, same as the whole-stay move.
+  Future<bool> checkOutRoom(
+    int bookingId,
+    int roomId, {
+    required Booking booking,
+  }) async {
+    final vm = ref.read(bookingViewModelProvider.notifier);
+
+    final late = await vm.askRoomLateCheckout(bookingId, roomId);
+    if (!context.mounted) return false;
+    if (late == null) {
+      _say(ref.read(bookingViewModelProvider).error ?? 'Could not check out this room.');
+      return false;
+    }
+
+    num charge = 0;
+    if (late.isChargeable) {
+      final decided = await _askLateCharge(late);
+      if (decided == null || !context.mounted) return false;
+      charge = decided;
+    }
+
+    final done = await vm.checkOutRoom(bookingId, roomId, lateCharge: charge);
+    if (!context.mounted) return false;
+    if (done == null) {
+      _say(ref.read(bookingViewModelProvider).error ?? 'Could not check out this room.');
+      return false;
+    }
+
+    if (done.status != 'CHECKED_OUT') {
+      return true;
+    }
+
+    final navigator = Navigator.of(context);
+    await ref.read(billingViewModelProvider.notifier).open(
+      BillableStay(
+        id: bookingId,
+        guestName: done.guestName ?? booking.guestName,
+        guestPhone: done.guestPhone ?? booking.guestPhone,
+        roomNumber: done.roomNumber ?? booking.roomNumber,
+        categoryName: booking.categoryName,
+        checkInDate: done.checkInDate ?? booking.checkInDate,
+        checkOutDate: done.checkOutDate ?? booking.checkOutDate,
+        totalPrice: done.totalPrice ?? booking.totalPrice,
+        advanceAmount: done.advanceAmount ?? booking.advanceAmount,
+        actualCheckOutAt: done.actualCheckOutAt,
+      ),
+    );
+    navigator.pop();
+    navigator.push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
+    return false;
+  }
+
   Future<num?> _askLateCharge(LateCheckout late) {
     final controller = TextEditingController(text: '${late.suggestedCharge}');
     return showDialog<num>(

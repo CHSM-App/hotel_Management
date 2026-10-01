@@ -67,6 +67,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   Future<bool> _cancel(BookingActions actions) => actions.cancel(widget.bookingId);
 
+  Future<void> _checkOutRoom(int roomId) {
+    final booking = _booking;
+    if (booking == null) return Future.value();
+    return _run(
+      (a) => a.checkOutRoom(widget.bookingId, roomId, booking: booking),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -210,6 +218,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               booking: booking,
                               clearingLockout: _clearingLockout,
                               onClearLockout: _clearFoodLockout,
+                              busy: _busy,
+                              onCheckOutRoom: _checkOutRoom,
                             ),
                             const SizedBox(height: AppTheme.s12),
                             _GuestSection(
@@ -494,11 +504,15 @@ class _StayRoomSection extends StatelessWidget {
   final Booking booking;
   final bool clearingLockout;
   final VoidCallback onClearLockout;
+  final bool busy;
+  final ValueChanged<int> onCheckOutRoom;
 
   const _StayRoomSection({
     required this.booking,
     required this.clearingLockout,
     required this.onClearLockout,
+    required this.busy,
+    required this.onCheckOutRoom,
   });
 
   @override
@@ -513,7 +527,11 @@ class _StayRoomSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (booking.isMultiRoom) ...[
-            _MultiRoomBreakdown(rooms: booking.rooms),
+            _MultiRoomBreakdown(
+              rooms: booking.rooms,
+              busy: busy,
+              onCheckOut: onCheckOutRoom,
+            ),
             const SizedBox(height: AppTheme.s8),
           ],
           _FactBox(
@@ -590,12 +608,19 @@ class _StayRoomSection extends StatelessWidget {
 
 /// The itemized rooms of a multi-room stay — one card per [BookingRoom],
 /// shown above the usual fact grid (which switches to a "N rooms · ..."
-/// summary line once this is showing). Read-only: check-in/check-out stays a
-/// whole-booking action for now (see [_actions]'s "Check out all rooms").
+/// summary line once this is showing). A room still checked in carries its
+/// own "Check out" button, the same per-room move the web's stay panel
+/// offers, alongside [_actions]'s whole-stay "Check out all rooms".
 class _MultiRoomBreakdown extends StatelessWidget {
   final List<BookingRoom> rooms;
+  final bool busy;
+  final ValueChanged<int> onCheckOut;
 
-  const _MultiRoomBreakdown({required this.rooms});
+  const _MultiRoomBreakdown({
+    required this.rooms,
+    required this.busy,
+    required this.onCheckOut,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -647,6 +672,20 @@ class _MultiRoomBreakdown extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (room.status == 'CHECKED_IN') ...[
+                      const SizedBox(width: AppTheme.s8),
+                      NeuButton(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.s12,
+                          vertical: 6,
+                        ),
+                        onPressed: busy ? null : () => onCheckOut(room.roomId),
+                        child: const Text(
+                          'Check out',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 4),

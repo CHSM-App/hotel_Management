@@ -87,6 +87,22 @@ const kFeatures = <Feature>[
     permission: 'billing.manage',
     group: 'Rooms',
   ),
+  // Same web sidebar row (propertyProfile.js's 'restaurantBilling'): table
+  // and takeaway bills, and adding a staying guest's food to their room
+  // bill — kept apart from Billing & GST's own room queue the same way the
+  // web keeps <Billing stream="restaurant" /> apart from the plain one.
+  // Declared here, right after Room billing, to match propertyProfile.js's
+  // own FEATURES order — the fallback landing section (the first available
+  // feature, for a login with no section picked yet) has to agree with the
+  // web on which one that is.
+  Feature(
+    key: 'restaurantBilling',
+    title: 'Restaurant billing',
+    icon: Icons.point_of_sale_rounded,
+    permission: 'billing.manage',
+    capability: 'servesFood',
+    group: 'Restaurant',
+  ),
   // The web's own Guest register ('guests') — every stay's booking details
   // in one searchable, filterable list, with the same summary tiles that
   // page opens on.
@@ -97,6 +113,22 @@ const kFeatures = <Feature>[
     permission: 'bookings.manage',
     capability: 'hasRooms',
     group: 'Rooms',
+  ),
+  // Same web sidebar group (propertyProfile.js's 'Restaurant'): Menu & QR
+  // codes and Food orders sit together under one collapsible "Restaurant"
+  // header — tapping it expands in place to show both rows, rather than the
+  // desk having to open one to reach the other. Declared here, right after
+  // Booking Details, to match propertyProfile.js's own FEATURES order — a
+  // KITCHEN login (orders.manage + food.manage, no bookings.manage) has to
+  // land on this one and not on Menu & QR codes, same as the web.
+  Feature(
+    key: 'food',
+    title: 'Food orders',
+    icon: Icons.room_service_rounded,
+    permission: 'orders.manage',
+    altPermissions: ['orders.take'],
+    capability: 'servesFood',
+    group: 'Restaurant',
   ),
   // Same web sidebar group (propertyProfile.js's 'Events'): Event Chart,
   // Event billing, Event register and Event setup sit together under one
@@ -162,26 +194,17 @@ const kFeatures = <Feature>[
     capability: 'servesFood',
     group: 'Restaurant',
   ),
+  // Same web sidebar group (propertyProfile.js's 'Setup', SIDEBAR_GROUP_ORDER):
+  // staff logins and what each role can reach — its own screen
+  // (staff_roles_screen.dart), same two tabs (Staff, Roles & access) the web
+  // carries. Declared here, right after Menu & QR codes, to match
+  // propertyProfile.js's own FEATURES order.
   Feature(
-    key: 'food',
-    title: 'Food orders',
-    icon: Icons.room_service_rounded,
-    permission: 'orders.manage',
-    altPermissions: ['orders.take'],
-    capability: 'servesFood',
-    group: 'Restaurant',
-  ),
-  // Same web sidebar row (propertyProfile.js's 'restaurantBilling'): table
-  // and takeaway bills, and adding a staying guest's food to their room
-  // bill — kept apart from Billing & GST's own room queue the same way the
-  // web keeps <Billing stream="restaurant" /> apart from the plain one.
-  Feature(
-    key: 'restaurantBilling',
-    title: 'Restaurant billing',
-    icon: Icons.point_of_sale_rounded,
-    permission: 'billing.manage',
-    capability: 'servesFood',
-    group: 'Restaurant',
+    key: 'staff',
+    title: 'Staff & roles',
+    icon: Icons.badge_rounded,
+    permission: 'staff.manage',
+    group: 'Setup',
   ),
   // Same web sidebar group (propertyProfile.js's 'Finance & Management'):
   // Asset inventory, Expenses, Other Income and Reports sit together under
@@ -223,18 +246,6 @@ const kFeatures = <Feature>[
     capability: 'hasExpenses',
     group: 'Finance & Management',
   ),
-  // Same web sidebar group (propertyProfile.js's 'Setup', SIDEBAR_GROUP_ORDER):
-  // staff logins and what each role can reach — its own screen
-  // (staff_roles_screen.dart), same two tabs (Staff, Roles & access) the web
-  // carries.
-  Feature(
-    key: 'staff',
-    title: 'Staff & roles',
-    icon: Icons.badge_rounded,
-    permission: 'staff.manage',
-    group: 'Setup',
-  ),
-
   // ── Insights ─────────────────────────────────────────────────────────────
   // Same web module (ReportsPanel.jsx): Overview, Room Bookings, Events &
   // functions, Food orders, Tax & GST, Profit & Loss, Expenses, Other Income
