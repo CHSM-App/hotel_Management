@@ -336,6 +336,24 @@ class FoodTab {
   bool get isTakeaway => tab.startsWith('counter');
 }
 
+/// A guest checked in right now — one row of GET
+/// /billing/food-tabs/in-house-guests, offered as the destination when a
+/// table or takeaway order is added to a room bill (AddToRoomDialog on the
+/// web).
+class InHouseGuest {
+  final int bookingId;
+  final String? guestName;
+  final String? roomNumber;
+
+  const InHouseGuest({required this.bookingId, this.guestName, this.roomNumber});
+
+  factory InHouseGuest.fromJson(Map<String, dynamic> json) => InHouseGuest(
+    bookingId: asInt(json['bookingId']),
+    guestName: asStringOrNull(json['guestName']),
+    roomNumber: asStringOrNull(json['roomNumber']),
+  );
+}
+
 /// What a food bill will say, before it is issued — GET
 /// /billing/food-tabs/{tab}/preview. No advance, no nights, no room: a table
 /// bill is the food side on its own.
@@ -801,9 +819,15 @@ class Invoice {
   bool get isVoid => status == 'VOID';
 
   /// A function's bill — a venue hired for an event, not a room or a table.
-  /// Checked off [kind] where the server sent one; [eventBookingId] is the
-  /// fallback for a cached object from before [kind] existed.
-  bool get isEventBill => kind == 'EVENT' || (kind == null && eventBookingId != null);
+  /// Mirrors the web's own `streamOf()` (Billing.jsx): an EVENT bill itself,
+  /// or an ADVANCE receipt taken against a function's booking — both read as
+  /// the same "event" stream there, not "room". [kind] is checked where the
+  /// server sent one; the null-kind branch is the fallback for a cached
+  /// object from before [kind] existed.
+  bool get isEventBill =>
+      kind == 'EVENT' ||
+      (kind == 'ADVANCE' && eventBookingId != null) ||
+      (kind == null && eventBookingId != null);
 
   /// A bill is a food bill when no stay and no function backs it — a table, a
   /// room with nobody checked in, or a takeaway. `roomNumber` only ever comes
@@ -1053,6 +1077,53 @@ class AdvanceReceipt {
               reference: paymentReference,
             ),
         ];
+}
+
+/// One row the Bills list shows — an issued invoice or an advance receipt.
+/// Mirrors the web's own `asDocument()` (Billing.jsx), which restates a
+/// receipt onto the invoice shape so the list, its search and its columns
+/// speak one document shape rather than two — done here as a thin wrapper
+/// instead, so each side keeps its own real id and still opens its own
+/// screen ([InvoicePreviewScreen] vs [AdvanceReceiptScreen]).
+class BillDocument {
+  final Invoice? invoice;
+  final AdvanceReceipt? receipt;
+
+  const BillDocument.ofInvoice(Invoice this.invoice) : receipt = null;
+  const BillDocument.ofReceipt(AdvanceReceipt this.receipt) : invoice = null;
+
+  bool get isReceipt => receipt != null;
+
+  /// 'STAY', 'EVENT' or 'FOOD' off an invoice; 'ADVANCE' for a receipt — the
+  /// same tag billSource()/streamOf() on the web key off.
+  String? get kind => isReceipt ? 'ADVANCE' : invoice!.kind;
+
+  String? get invoiceNumber =>
+      isReceipt ? receipt!.receiptNumber : invoice!.invoiceNumber;
+  String? get documentType =>
+      isReceipt ? receipt!.documentType : invoice!.documentType;
+  String? get guestName => isReceipt ? receipt!.guestName : invoice!.guestName;
+  String? get roomNumber => isReceipt ? receipt!.roomNumber : invoice!.roomNumber;
+  String? get tableLabel => isReceipt ? null : invoice!.tableLabel;
+  String? get venueName => isReceipt ? receipt!.venueName : invoice!.venueName;
+  bool get isDormitory => isReceipt ? receipt!.isDormitory : invoice!.isDormitory;
+  num get foodSubtotal => isReceipt ? 0 : invoice!.foodSubtotal;
+  String? get createdAt => isReceipt ? receipt!.createdAt : invoice!.createdAt;
+  bool get isVoid => isReceipt ? receipt!.isVoid : invoice!.isVoid;
+
+  /// What the list column means on every row: money actually taken — the
+  /// advance itself for a receipt, the bill's own total otherwise.
+  num get totalAmount => isReceipt ? receipt!.amountReceived : invoice!.totalAmount;
+
+  /// What the stay/function still owes after this document — only ever
+  /// non-zero for a receipt; an issued invoice is itself the document that
+  /// settles the balance, so it never carries one of its own.
+  num get dueAfter => isReceipt ? receipt!.balanceDue : 0;
+
+  /// Same split [BillingScreen] and [EventBillingScreen] key their own
+  /// stream off of — an EVENT invoice, or a receipt taken against a
+  /// function's booking.
+  bool get isEventBill => isReceipt ? receipt!.isEventReceipt : invoice!.isEventBill;
 }
 
 /// One document series' numbering — GET/PATCH /billing/series, the same

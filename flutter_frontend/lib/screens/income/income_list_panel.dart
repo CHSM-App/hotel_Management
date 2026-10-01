@@ -24,10 +24,11 @@ class IncomeListPanel extends ConsumerStatefulWidget {
 class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
   final _search = TextEditingController();
 
-  // 'cards' is the everyday view — one entry at a time is easy to read on a
-  // phone. 'table' is the sheet-style view for scanning every entry's
-  // amount/category/status at once, mirroring the asset register's toggle.
-  String _view = 'cards';
+  // 'table' is the landing view — the sheet-style view for scanning every
+  // entry's amount/category/status at once, mirroring the asset register's
+  // toggle. 'cards' is one entry at a time, easier to read on a phone, a
+  // toggle away.
+  String _view = 'table';
 
   String? _fromDate;
   String? _toDate;

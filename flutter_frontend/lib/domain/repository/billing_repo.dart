@@ -21,6 +21,14 @@ abstract class BillingRepository {
 
   Future<Invoice> issueFoodInvoice(String tab, Map<String, dynamic> body);
 
+  /// Everyone checked in right now — the destination list for adding a
+  /// table/takeaway tab to a room bill.
+  Future<List<InHouseGuest>> inHouseGuests();
+
+  /// Moves a table or takeaway tab's delivered, unbilled food onto a stay's
+  /// bill.
+  Future<void> addFoodTabToRoom(String tab, int bookingId);
+
   Future<List<Invoice>> invoices();
 
   Future<Invoice> voidInvoice(int id, String reason);
@@ -33,6 +41,9 @@ abstract class BillingRepository {
   });
 
   Future<List<AdvanceReceipt>> advanceReceipts(int bookingId);
+
+  /// Every advance receipt on file for the lodge, for the Bills list.
+  Future<List<AdvanceReceipt>> allAdvanceReceipts();
 
   Future<AdvanceReceipt> issueAdvanceReceipt(
     int bookingId,

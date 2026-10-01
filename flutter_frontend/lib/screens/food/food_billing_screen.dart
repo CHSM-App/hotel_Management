@@ -148,8 +148,8 @@ class _TabStrip extends StatelessWidget {
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOut,
               style: TextStyle(
-                color: s.selected ? AppTheme.accent : AppTheme.muted,
-                fontWeight: s.selected ? FontWeight.w600 : FontWeight.w500,
+                color: s.selected ? AppTheme.accent : AppTheme.text,
+                fontWeight: s.selected ? FontWeight.w700 : FontWeight.w600,
                 fontSize: 13,
               ),
               child: Text(s.label, overflow: TextOverflow.ellipsis),

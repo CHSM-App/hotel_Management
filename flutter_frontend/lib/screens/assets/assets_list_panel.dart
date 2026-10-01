@@ -23,10 +23,11 @@ class AssetsListPanel extends ConsumerStatefulWidget {
 class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
   final _search = TextEditingController();
 
-  // 'cards' is the everyday view — one asset at a time is easy to read on a
-  // phone. 'table' is the sheet-style view for scanning every asset's
-  // warranty/AMC/location at once, mirroring assetView in AssetsPanel.jsx.
-  String _view = 'cards';
+  // 'table' is the landing view — the sheet-style view for scanning every
+  // asset's warranty/AMC/location at once, mirroring assetView in
+  // AssetsPanel.jsx. 'cards' is one asset at a time, easier to read on a
+  // phone, a toggle away.
+  String _view = 'table';
 
   @override
   void initState() {

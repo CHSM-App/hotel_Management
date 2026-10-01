@@ -73,11 +73,15 @@ class AppTheme {
   static const double bpMedium = 600;
   static const double bpExpanded = 840;
 
+  // Shortest side rather than width: a phone rotated to landscape gets a
+  // wider width than its own breakpoint, but it is still a phone — the
+  // rail/drawer split (and everything else keyed off isCompact) should
+  // track device size, not which way it's currently held.
   static bool isCompact(BuildContext context) =>
-      MediaQuery.sizeOf(context).width < bpMedium;
+      MediaQuery.sizeOf(context).shortestSide < bpMedium;
 
   static bool isExpanded(BuildContext context) =>
-      MediaQuery.sizeOf(context).width >= bpExpanded;
+      MediaQuery.sizeOf(context).shortestSide >= bpExpanded;
 
   /// A phone-width column for anything meant to be read top to bottom (a
   /// form, a detail page) — centered rather than stretched once the surface

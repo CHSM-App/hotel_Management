@@ -261,6 +261,17 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                             ),
                             const SizedBox(height: AppTheme.s12),
                             _ChargesSection(booking: booking),
+                            if (booking.foodOrders.isNotEmpty) ...[
+                              const SizedBox(height: AppTheme.s12),
+                              _FoodOrdersSection(
+                                orders: booking.foodOrders,
+                                canAdd:
+                                    booking.invoice == null &&
+                                    booking.status != 'CANCELLED',
+                                onAdded: _load,
+                                bookingId: widget.bookingId,
+                              ),
+                            ],
                             if (booking.invoice != null) ...[
                               const SizedBox(height: AppTheme.s12),
                               _BillSection(invoice: booking.invoice!),
@@ -380,8 +391,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               : () => _run((a) => a.checkOut(widget.bookingId, booking: booking)),
           // A multi-room stay checks out every room still due in one call —
           // the server fans it out when no specific room is named — so the
-          // one button already covers "check out all rooms".
-          child: Text(booking.isMultiRoom ? 'Check out all rooms' : 'Check out'),
+          // one button already covers "check out all rooms". Named for how
+          // many rooms are actually still checked in, not the stay's total
+          // room count — once only one remains (the rest already checked
+          // out room by room), this reads as a plain "Check out", same as
+          // Bookings.jsx's own button label.
+          child: Text(
+            booking.rooms.where((r) => r.status == 'CHECKED_IN').length > 1
+                ? 'Check out all rooms'
+                : 'Check out',
+          ),
         ),
     ];
 
@@ -1175,9 +1194,10 @@ class _ChargesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final foodOpen = booking.foodOrdersOpen;
     return _Section(
       number: 5,
-      title: 'Charges & discount',
+      title: 'Price breakdown',
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(AppTheme.s16),
@@ -1207,6 +1227,27 @@ class _ChargesSection extends StatelessWidget {
                 label: 'Agreed for leaving late',
                 value: formatPrice(booking.lateCheckoutCharge),
               ),
+            // Everything this stay has ordered that is not on a bill yet:
+            // room service, and table food moved onto the room. Orders still
+            // being cooked count too, and say so, because they will be on
+            // the bill — same as StayDetails.jsx's own foodOrdersOpen block.
+            if (foodOpen.isNotEmpty) ...[
+              const Divider(height: AppTheme.s16),
+              for (final o in foodOpen)
+                _MoneyLine(
+                  label: 'Order #${o.orderNumber}',
+                  note: o.origin == 'ROOM_SERVICE'
+                      ? 'room service'
+                      : 'from ${o.placedFrom ?? 'restaurant'}'
+                            '${o.status != 'DELIVERED' ? ' · in progress' : ''}',
+                  value: formatPrice(o.subtotal),
+                ),
+              _MoneyLine(
+                label: 'Food ordered',
+                value: formatPrice(booking.foodOpenTotal),
+                strong: true,
+              ),
+            ],
             if (booking.advanceAmount != null)
               _MoneyLine(
                 label: booking.paidInFull
@@ -1215,14 +1256,301 @@ class _ChargesSection extends StatelessWidget {
                 note: booking.advanceDescription,
                 value: '− ${formatPrice(booking.advanceAmount)}',
               ),
-            const Divider(height: AppTheme.s16),
-            _MoneyLine(
-              label: 'Still to collect',
-              value: formatPrice(booking.outstandingBeforeTax),
-              strong: true,
-            ),
+            // Only while the stay is still unbilled. Once a bill exists it
+            // is the answer to "what is owed", and a pre-tax guess sitting
+            // beside it would be a second, wrong one.
+            if (booking.invoice == null) ...[
+              const Divider(height: AppTheme.s16),
+              _MoneyLine(
+                label: 'Still to collect',
+                note: foodOpen.isNotEmpty
+                    ? 'Room'
+                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
+                          ' + food − advance'
+                    : 'Room'
+                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
+                          ' − advance',
+                value: formatPrice(
+                  booking.outstandingBeforeTax + booking.foodOpenTotal,
+                ),
+                strong: true,
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Food ordered ──────────────────────────────────────────────────────────
+
+/// Every ticket this stay has run up — room service, and table food the desk
+/// moved onto the room — billed or not, each with its own dishes. Mirrors
+/// Bookings.jsx's own RoomFoodSection on the web guest register, which is
+/// where this list was visible and the app's own stay screen was not
+/// showing it.
+class _FoodOrdersSection extends ConsumerStatefulWidget {
+  final List<BookingFoodOrder> orders;
+  final int bookingId;
+
+  /// Whether the desk may still add food to this stay's bill — false once
+  /// the stay is billed or cancelled, same gate Bookings.jsx's own
+  /// RoomFoodSection applies.
+  final bool canAdd;
+
+  /// Reloads the booking once an add succeeds, so the screen reflects which
+  /// orders are now on the bill.
+  final Future<void> Function() onAdded;
+
+  const _FoodOrdersSection({
+    required this.orders,
+    required this.bookingId,
+    required this.canAdd,
+    required this.onAdded,
+  });
+
+  @override
+  ConsumerState<_FoodOrdersSection> createState() => _FoodOrdersSectionState();
+}
+
+class _FoodOrdersSectionState extends ConsumerState<_FoodOrdersSection> {
+  static const _statusLabel = {
+    'PENDING': 'Waiting',
+    'QUEUED': 'Queued',
+    'PREPARING': 'Preparing',
+    'READY': 'Ready',
+    'DELIVERED': 'Delivered',
+  };
+
+  bool _adding = false;
+  String? _error;
+
+  /// Delivered orders the desk hasn't yet put on the bill — the only ones
+  /// "Add to room bill" moves, same filter the web's own `addable` applies.
+  List<BookingFoodOrder> get _addable => widget.orders
+      .where((o) => !o.onRoomBill && !o.billed && o.status == 'DELIVERED')
+      .toList();
+
+  Future<void> _addToRoomBill() async {
+    setState(() {
+      _adding = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(billingUsecaseProvider)
+          .addFoodTabToRoom('room-booking-${widget.bookingId}', widget.bookingId);
+      if (!mounted) return;
+      await widget.onAdded();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not add the food to the room bill.');
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orders = widget.orders;
+    final total = orders.fold<num>(0, (sum, o) => sum + o.subtotal);
+    final onBill = orders
+        .where((o) => o.onRoomBill && !o.billed)
+        .fold<num>(0, (sum, o) => sum + o.subtotal);
+    final addable = _addable;
+
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.extruded,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.restaurant_rounded,
+                color: AppTheme.accent,
+                size: 18,
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Food ordered',
+                      style: TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      '${orders.length} order${orders.length == 1 ? '' : 's'} · '
+                      'on the room bill only once added',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          for (final o in orders) ...[
+            _FoodOrderTicket(order: o, statusLabel: _statusLabel),
+            const SizedBox(height: AppTheme.s8),
+          ],
+          const Divider(height: AppTheme.s16),
+          _MoneyLine(label: 'Food total', value: formatPrice(total), strong: true),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '${formatPrice(onBill)} of this is on the room bill'
+              '${onBill == total ? '' : ' · ${formatPrice(total - onBill)} is not'}.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+              ),
+            ),
+          if (widget.canAdd && addable.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.s8),
+            NeuButton(
+              primary: true,
+              expand: true,
+              onPressed: _adding ? null : _addToRoomBill,
+              child: Text(
+                _adding
+                    ? 'Adding…'
+                    : 'Add ${addable.length} delivered order${addable.length == 1 ? '' : 's'} to the room bill',
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FoodOrderTicket extends StatelessWidget {
+  final BookingFoodOrder order;
+  final Map<String, String> statusLabel;
+
+  const _FoodOrderTicket({required this.order, required this.statusLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppTheme.s8,
+            runSpacing: 4,
+            children: [
+              Text(
+                '#${order.orderNumber}',
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                order.origin == 'ROOM_SERVICE'
+                    ? 'Room service'
+                    : 'From ${order.placedFrom ?? 'restaurant'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                formatDateTime(order.placedAt),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (order.billed ? AppTheme.text : AppTheme.accent)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  order.billed
+                      ? 'Billed'
+                      : statusLabel[order.status] ?? order.status,
+                  style: TextStyle(
+                    color: order.billed ? AppTheme.text : AppTheme.accent,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (!order.billed)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (order.onRoomBill ? AppTheme.vacant : AppTheme.muted)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    order.onRoomBill ? 'On room bill' : 'Not on room bill',
+                    style: TextStyle(
+                      color: order.onRoomBill ? AppTheme.vacant : AppTheme.muted,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              Text(
+                formatPrice(order.subtotal),
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          if (order.items.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.s8),
+            for (final item in order.items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(
+                  children: [
+                    Text(
+                      '${item.quantity}×  ',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    Text(
+                      formatPrice(item.lineTotal),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
       ),
     );
   }
