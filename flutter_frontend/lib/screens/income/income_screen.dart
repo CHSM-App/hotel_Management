@@ -3,12 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../presentation/providers/view_model_provider.dart';
 import '../theme.dart';
+import 'income_interest_panel.dart';
 import 'income_list_panel.dart';
 import 'income_payers_panel.dart';
 import 'income_recurring_panel.dart';
 
 /// Other income tracking — mirrors IncomePanel.jsx's shell, minus its
-/// Categories tab: Income, Recurring, Payers. A category is only ever named
+/// Categories tab: Income, Interest, Recurring, Payers. A category is only ever named
 /// through the combobox on the income/recurring forms, the same way the web
 /// panel itself lets a category get named — there is no separate "manage
 /// categories" screen here, on this app or the web.
@@ -38,6 +39,7 @@ class _IncomeScreenState extends ConsumerState<IncomeScreen> {
         ),
         Expanded(
           child: switch (_tab) {
+            'interest' => const IncomeInterestPanel(),
             'recurring' => const IncomeRecurringPanel(),
             'payers' => const IncomePayersPanel(),
             _ => const IncomeListPanel(),
@@ -59,6 +61,7 @@ class _SubTabs extends StatelessWidget {
 
   static const _tabs = {
     'income': 'Income',
+    'interest': 'Interest',
     'recurring': 'Recurring',
     'payers': 'Payers',
   };

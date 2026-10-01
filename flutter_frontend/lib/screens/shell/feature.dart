@@ -24,6 +24,13 @@ class Feature {
   /// The lodge flag this section needs, or null for the universal ones.
   final String? capability;
 
+  /// Alternative to [capability] for a section any one of several lodge
+  /// flags unlocks (mirrors propertyProfile.js's `capability: [...]` on
+  /// 'report-sales' — a property that sells rooms, food or events earns the
+  /// row, not just one that has all three). Empty means "use [capability]
+  /// instead".
+  final List<String> anyCapabilities;
+
   /// Clusters this section under a collapsible header in the sidebar —
   /// mirrors the web sidebar's own grouping (propertyProfile.js's `group`,
   /// SIDEBAR_GROUP_ORDER). Null for a section that lists on its own.
@@ -36,34 +43,33 @@ class Feature {
     required this.permission,
     this.altPermissions = const [],
     this.capability,
+    this.anyCapabilities = const [],
     this.group,
   });
 
   bool availableTo(Me me) {
     if (!me.user.canAny([permission, ...altPermissions])) return false;
-    switch (capability) {
-      case null:
-        return true;
-      case 'hasRooms':
-        return me.lodge.hasRooms;
-      case 'servesFood':
-        return me.lodge.servesFood;
-      case 'hasEvents':
-        return me.lodge.hasEvents;
-      case 'hasAssets':
-        return me.lodge.hasAssets;
-      case 'hasExpenses':
-        return me.lodge.hasExpenses;
-      default:
-        return true;
+    if (anyCapabilities.isNotEmpty) {
+      return anyCapabilities.any((c) => _hasCapability(me, c));
     }
+    if (capability == null) return true;
+    return _hasCapability(me, capability!);
   }
+
+  static bool _hasCapability(Me me, String capability) => switch (capability) {
+    'hasRooms' => me.lodge.hasRooms,
+    'servesFood' => me.lodge.servesFood,
+    'hasEvents' => me.lodge.hasEvents,
+    'hasAssets' => me.lodge.hasAssets,
+    'hasExpenses' => me.lodge.hasExpenses,
+    _ => true,
+  };
 }
 
 const kFeatures = <Feature>[
   // ── Rooms ────────────────────────────────────────────────────────────────
   // Same web sidebar group (propertyProfile.js's 'Rooms'): Room Chart, Room
-  // billing, Booking Details and Rooms & rates sit together under one
+  // billing, Guest Register and Rooms & rates sit together under one
   // collapsible header, same four rows and titles the web has.
   Feature(
     key: 'bookings',
@@ -87,46 +93,38 @@ const kFeatures = <Feature>[
     permission: 'billing.manage',
     group: 'Rooms',
   ),
-  // Same web sidebar row (propertyProfile.js's 'restaurantBilling'): table
-  // and takeaway bills, and adding a staying guest's food to their room
-  // bill — kept apart from Billing & GST's own room queue the same way the
-  // web keeps <Billing stream="restaurant" /> apart from the plain one.
-  // Declared here, right after Room billing, to match propertyProfile.js's
-  // own FEATURES order — the fallback landing section (the first available
-  // feature, for a login with no section picked yet) has to agree with the
-  // web on which one that is.
-  Feature(
-    key: 'restaurantBilling',
-    title: 'Restaurant billing',
-    icon: Icons.point_of_sale_rounded,
-    permission: 'billing.manage',
-    capability: 'servesFood',
-    group: 'Restaurant',
-  ),
   // The web's own Guest register ('guests') — every stay's booking details
   // in one searchable, filterable list, with the same summary tiles that
   // page opens on.
   Feature(
     key: 'register',
-    title: 'Booking Details',
+    title: 'Guest Register',
     icon: Icons.fact_check_outlined,
     permission: 'bookings.manage',
     capability: 'hasRooms',
     group: 'Rooms',
   ),
   // Same web sidebar group (propertyProfile.js's 'Restaurant'): Menu & QR
-  // codes and Food orders sit together under one collapsible "Restaurant"
-  // header — tapping it expands in place to show both rows, rather than the
-  // desk having to open one to reach the other. Declared here, right after
-  // Booking Details, to match propertyProfile.js's own FEATURES order — a
-  // KITCHEN login (orders.manage + food.manage, no bookings.manage) has to
-  // land on this one and not on Menu & QR codes, same as the web.
+  // codes and Food orders & Billing sit together under one collapsible
+  // "Restaurant" header — tapping it expands in place to show both rows,
+  // rather than the desk having to open one to reach the other. Declared
+  // here, right after Guest Register, to match propertyProfile.js's own
+  // FEATURES order — a KITCHEN login (orders.manage + food.manage, no
+  // bookings.manage) has to land on this one and not on Menu & QR codes,
+  // same as the web.
+  //
+  // One row for what used to be two ('food' and 'restaurantBilling'):
+  // propertyProfile.js merged the kitchen queue and restaurant billing under
+  // a single "Food orders & Billing" entry (FoodSection.jsx), so a login
+  // with any one of orders.manage / orders.take / billing.manage reaches
+  // this row — food_billing_screen.dart decides which half(ves) it actually
+  // sees underneath.
   Feature(
     key: 'food',
-    title: 'Food orders',
+    title: 'Food orders & Billing',
     icon: Icons.room_service_rounded,
     permission: 'orders.manage',
-    altPermissions: ['orders.take'],
+    altPermissions: ['orders.take', 'billing.manage'],
     capability: 'servesFood',
     group: 'Restaurant',
   ),
@@ -246,22 +244,47 @@ const kFeatures = <Feature>[
     capability: 'hasExpenses',
     group: 'Finance & Management',
   ),
-  // ── Insights ─────────────────────────────────────────────────────────────
-  // Same web module (ReportsPanel.jsx): Overview, Room Bookings, Events &
-  // functions, Food orders, Tax & GST, Profit & Loss, Expenses, Other Income
-  // and Assets, each tab further gated by its own capability/permission
-  // inside the screen (see reports_screen.dart's kReportTabs) the same way
-  // ReportsPanel.jsx's own ALL_TABS.filter() works. No capability gate here:
-  // unlike the single-property-type screens above, Reports has tabs for
-  // every kind of property, so a restaurant-only or rooms-only lodge still
-  // has something to see (GST, Expenses, ...) even without every capability.
-  // Checked at day's end or month's end, not every shift, so it sits with
-  // the rest of Finance & Management rather than on its own.
+  // ── Reports & Analytics ──────────────────────────────────────────────────
+  // Same web sidebar group (propertyProfile.js's 'Reports & Analytics'): four
+  // rows — Overview, Sales reports, Finance reports, Assets report — each
+  // opening reports_screen.dart scoped to one of REPORT_SECTIONS'
+  // (reportSections.js) tab clusters, rather than one row dumping all nine
+  // tabs on the desk at once the way this app used to.
   Feature(
-    key: 'reports',
-    title: 'Reports & Analytics',
+    key: 'report-overview',
+    title: 'Overview',
     icon: Icons.bar_chart_rounded,
     permission: 'reports.view',
-    group: 'Finance & Management',
+    group: 'Reports & Analytics',
+  ),
+  // Room bookings, restaurant orders and events — whichever the property
+  // sells. Any one capability earns the row; the tabs inside show only what
+  // the property actually has (same as propertyProfile.js's
+  // capability: ['hasRooms', 'servesFood', 'hasEvents']).
+  Feature(
+    key: 'report-sales',
+    title: 'Sales reports',
+    icon: Icons.bar_chart_rounded,
+    permission: 'reports.view',
+    anyCapabilities: ['hasRooms', 'servesFood', 'hasEvents'],
+    group: 'Reports & Analytics',
+  ),
+  // Tax & GST, Profit & Loss, Expenses and Other Income — no capability gate
+  // here, same as the web: GST applies to every property regardless of
+  // which add-ons are switched on.
+  Feature(
+    key: 'report-finance',
+    title: 'Finance reports',
+    icon: Icons.account_balance_wallet_rounded,
+    permission: 'reports.view',
+    group: 'Reports & Analytics',
+  ),
+  Feature(
+    key: 'report-assets',
+    title: 'Assets report',
+    icon: Icons.build_rounded,
+    permission: 'reports.view',
+    capability: 'hasAssets',
+    group: 'Reports & Analytics',
   ),
 ];

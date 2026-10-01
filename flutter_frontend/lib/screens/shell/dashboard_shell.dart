@@ -13,8 +13,8 @@ import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
 import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
+import '../food/food_billing_screen.dart';
 import '../food/menu_setup_screen.dart';
-import '../food/orders_screen.dart';
 import '../income/income_screen.dart';
 import '../placeholder_screen.dart';
 import '../profile/profile_screen.dart';
@@ -273,11 +273,9 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       case 'register':
         return const RegisterScreen();
       case 'food':
-        return const OrdersScreen();
+        return const FoodBillingScreen();
       case 'billing':
         return const BillingScreen();
-      case 'restaurantBilling':
-        return const BillingScreen(restaurantOnly: true);
       case 'eventBilling':
         return const EventBillingScreen();
       case 'rooms':
@@ -301,8 +299,14 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const ExpensesScreen();
       case 'income':
         return const IncomeScreen();
-      case 'reports':
-        return const ReportsScreen();
+      case 'report-overview':
+        return const ReportsScreen(key: ValueKey('report-overview'), only: 'overview');
+      case 'report-sales':
+        return const ReportsScreen(key: ValueKey('report-sales'), only: 'sales');
+      case 'report-finance':
+        return const ReportsScreen(key: ValueKey('report-finance'), only: 'finance');
+      case 'report-assets':
+        return const ReportsScreen(key: ValueKey('report-assets'), only: 'assets');
       case 'staff':
         return const StaffRolesScreen();
       default:

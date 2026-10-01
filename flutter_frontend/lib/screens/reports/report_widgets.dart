@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../domain/models/report.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 
@@ -1277,6 +1278,249 @@ class ReportDataTable extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A 24-bar histogram of order counts by hour of day, the peak hour
+/// highlighted — the phone equivalent of the web's FoodAnalytics.jsx bar
+/// chart, used for "Orders by hour of day".
+class ReportHourlyBars extends StatelessWidget {
+  final String title;
+  final List<OrdersByHour> hours;
+
+  const ReportHourlyBars({super.key, required this.title, required this.hours});
+
+  @override
+  Widget build(BuildContext context) {
+    if (hours.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'This period',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s8),
+        NeuCard(
+          radius: AppTheme.rMedium,
+          shadow: AppTheme.subtle,
+          padding: const EdgeInsets.fromLTRB(AppTheme.s4, AppTheme.s16, AppTheme.s12, AppTheme.s8),
+          child: SizedBox(
+            height: 150,
+            child: LayoutBuilder(
+              builder: (context, constraints) => CustomPaint(
+                size: Size(constraints.maxWidth, constraints.maxHeight),
+                painter: _HourlyBarsPainter(
+                  hours: hours,
+                  labelStyle:
+                      Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted) ??
+                      const TextStyle(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HourlyBarsPainter extends CustomPainter {
+  final List<OrdersByHour> hours;
+  final TextStyle labelStyle;
+
+  const _HourlyBarsPainter({required this.hours, required this.labelStyle});
+
+  static String _hourLabel(int hour) {
+    if (hour == 0) return '12a';
+    if (hour < 12) return '${hour}a';
+    if (hour == 12) return '12p';
+    return '${hour - 12}p';
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const padBottom = 18.0;
+    const padTop = 4.0;
+    const barGap = 3.0;
+
+    final plotH = size.height - padTop - padBottom;
+    if (plotH <= 0 || size.width <= 0) return;
+
+    final maxCount = hours.fold<int>(1, (a, h) => h.orderCount > a ? h.orderCount : a);
+    final barW = (size.width / hours.length) - barGap;
+
+    canvas.drawLine(
+      Offset(0, size.height - padBottom),
+      Offset(size.width, size.height - padBottom),
+      Paint()
+        ..color = AppTheme.border
+        ..strokeWidth = 1,
+    );
+
+    for (var i = 0; i < hours.length; i++) {
+      final h = hours[i];
+      final barH = (h.orderCount / maxCount) * plotH;
+      final x = i * (barW + barGap);
+      final y = size.height - padBottom - barH;
+      final rect = RRect.fromRectAndCorners(
+        Rect.fromLTWH(x, y, barW.clamp(1, double.infinity), barH),
+        topLeft: const Radius.circular(2),
+        topRight: const Radius.circular(2),
+      );
+      canvas.drawRRect(
+        rect,
+        Paint()..color = h.orderCount == maxCount && maxCount > 0 ? AppTheme.draft : AppTheme.accent,
+      );
+    }
+
+    for (final hour in const [0, 4, 8, 12, 16, 20]) {
+      if (hour >= hours.length) continue;
+      final x = hour * (barW + barGap) + barW / 2;
+      final painter = TextPainter(
+        text: TextSpan(text: _hourLabel(hour), style: labelStyle),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(canvas, Offset(x - painter.width / 2, size.height - padBottom + 4));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HourlyBarsPainter oldDelegate) => oldDelegate.hours != hours;
+}
+
+/// A small percent ring plus the billed/unbilled figures beside it — the
+/// phone equivalent of the web's FoodAnalytics.jsx `.ring-stat`, used for
+/// "Billed vs. unbilled".
+class ReportBilledRing extends StatelessWidget {
+  final String title;
+  final num billedValue;
+  final num deliveredValue;
+  final String Function(num value) formatValue;
+
+  const ReportBilledRing({
+    super.key,
+    required this.title,
+    required this.billedValue,
+    required this.deliveredValue,
+    required this.formatValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (deliveredValue <= 0 && billedValue <= 0) return const SizedBox.shrink();
+    final unbilled = deliveredValue - billedValue > 0 ? deliveredValue - billedValue : 0;
+    final pct = deliveredValue > 0 ? ((billedValue / deliveredValue) * 100).round() : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppTheme.s8),
+        NeuCard(
+          radius: AppTheme.rMedium,
+          shadow: AppTheme.subtle,
+          padding: const EdgeInsets.all(AppTheme.s16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 72,
+                height: 72,
+                child: CustomPaint(
+                  painter: _RingPainter(percent: pct),
+                  child: Center(
+                    child: Text(
+                      '$pct%',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      formatValue(billedValue),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'billed of ${formatValue(deliveredValue)}',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (unbilled > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${formatValue(unbilled)} unbilled',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelSmall?.copyWith(color: AppTheme.checkout, fontWeight: FontWeight.w700),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RingPainter extends CustomPainter {
+  final int percent;
+
+  const _RingPainter({required this.percent});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = size.shortestSide * 0.14;
+    final rect = Rect.fromLTWH(
+      strokeWidth / 2,
+      strokeWidth / 2,
+      size.width - strokeWidth,
+      size.height - strokeWidth,
+    );
+    canvas.drawArc(
+      rect,
+      0,
+      2 * 3.14159265,
+      false,
+      Paint()
+        ..color = AppTheme.border
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    );
+    final sweep = (percent.clamp(0, 100) / 100) * 2 * 3.14159265;
+    if (sweep > 0) {
+      canvas.drawArc(
+        rect,
+        -3.14159265 / 2,
+        sweep,
+        false,
+        Paint()
+          ..color = AppTheme.accent
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = strokeWidth,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingPainter oldDelegate) => oldDelegate.percent != percent;
 }
 
 /// The booking-status pill — green for anything live, grey for cancelled,

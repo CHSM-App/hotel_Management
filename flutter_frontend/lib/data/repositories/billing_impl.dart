@@ -86,4 +86,11 @@ class BillingImpl implements BillingRepository {
   @override
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>
       api.issueEventInvoice(eventId, body);
+
+  @override
+  Future<Map<String, BillSeries>> billingSeries() => api.billingSeries();
+
+  @override
+  Future<BillSeries> updateBillingSeries(String series, int nextNumber) =>
+      api.updateBillingSeries(series, nextNumber);
 }

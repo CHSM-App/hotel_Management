@@ -19,6 +19,7 @@ import '../rooms/room_form_pieces.dart' show OptionDropdown, SectionLabel;
 import '../theme.dart';
 import 'asset_form_sheet.dart';
 import 'asset_icons.dart';
+import 'retire_asset_sheet.dart';
 import 'work_orders_panel.dart';
 
 // Full option set for the payment-status dropdown — same reasoning as its
@@ -268,6 +269,11 @@ class _HeaderCard extends ConsumerWidget {
             initialValue: asset.status,
             onSelected: (v) async {
               if (v == asset.status) return;
+              if (v == 'RETIRED') {
+                final ok = await showRetireAssetSheet(context, asset: asset);
+                if (ok) onChanged();
+                return;
+              }
               final ok = await ref.read(assetsViewModelProvider.notifier).setStatus(asset.id, v);
               if (ok) onChanged();
             },
@@ -357,6 +363,13 @@ class _FactsCard extends ConsumerWidget {
               )
             : const Text('Not uploaded', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
       ),
+      if (asset.status == 'RETIRED') ...[
+        _fact(Icons.event_busy_outlined, 'Dead since', asset.deadDate != null ? formatIsoDate(asset.deadDate!) : 'Not set'),
+        _fact(Icons.info_outline_rounded, 'Reason', (asset.deadReason ?? '').isEmpty ? 'Not set' : asset.deadReason!),
+        _fact(Icons.delete_sweep_outlined, 'Disposal', (asset.disposalNote ?? '').isEmpty ? 'Not set' : asset.disposalNote!),
+        _fact(Icons.currency_rupee_rounded, 'Recovery amount', asset.recoveryCost != null ? formatPrice(asset.recoveryCost) : 'Not set'),
+        _fact(Icons.badge_outlined, 'Handled by', (asset.disposedBy ?? '').isEmpty ? 'Not set' : asset.disposedBy!),
+      ],
     ];
 
     return NeuCard(
@@ -492,36 +505,41 @@ class _ActionsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final retired = asset.status == 'RETIRED';
     return Column(
       children: [
-        NeuButton(
-          primary: true,
-          expand: true,
-          padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
-          onPressed: () => showReportIssueDialog(context, assetId: asset.id),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.report_problem_rounded, size: 17, color: Colors.white),
-              SizedBox(width: AppTheme.s8),
-              Text('Report an issue'),
-            ],
+        if (!retired) ...[
+          NeuButton(
+            primary: true,
+            expand: true,
+            padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
+            onPressed: () => showReportIssueDialog(context, assetId: asset.id),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.report_problem_rounded, size: 17, color: Colors.white),
+                SizedBox(width: AppTheme.s8),
+                Text('Report an issue'),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s8),
+        ],
         Row(
           children: [
-            Expanded(
-              child: _SecondaryAction(
-                icon: Icons.shield_outlined,
-                label: 'Add coverage',
-                onTap: () async {
-                  final saved = await showCoverageForm(context, assetId: asset.id);
-                  if (saved == true) onChanged();
-                },
+            if (!retired) ...[
+              Expanded(
+                child: _SecondaryAction(
+                  icon: Icons.shield_outlined,
+                  label: 'Add coverage',
+                  onTap: () async {
+                    final saved = await showCoverageForm(context, assetId: asset.id);
+                    if (saved == true) onChanged();
+                  },
+                ),
               ),
-            ),
-            const SizedBox(width: AppTheme.s8),
+              const SizedBox(width: AppTheme.s8),
+            ],
             Expanded(
               child: _SecondaryAction(
                 icon: Icons.edit_outlined,
@@ -543,6 +561,18 @@ class _ActionsRow extends ConsumerWidget {
             ),
           ],
         ),
+        if (retired) ...[
+          const SizedBox(height: AppTheme.s8),
+          NeuButton(
+            primary: true,
+            expand: true,
+            onPressed: () async {
+              final ok = await showRetireAssetSheet(context, asset: asset);
+              if (ok) onChanged();
+            },
+            child: const Text('Edit dead stock details'),
+          ),
+        ],
       ],
     );
   }

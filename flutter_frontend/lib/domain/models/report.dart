@@ -559,6 +559,20 @@ class VenueUtilization {
   );
 }
 
+/// One hour's order count over the period — a row of
+/// [AnalyticsOverview.ordersByHour].
+class OrdersByHour {
+  final int hour;
+  final int orderCount;
+
+  const OrdersByHour({required this.hour, this.orderCount = 0});
+
+  factory OrdersByHour.fromJson(Map<String, dynamic> json) => OrdersByHour(
+    hour: asInt(json['hour']),
+    orderCount: asInt(json['orderCount']),
+  );
+}
+
 /// One menu item's sales over the period — a row of
 /// [AnalyticsOverview.topFoodItems].
 class TopFoodItem {
@@ -682,6 +696,7 @@ class AnalyticsOverview {
   final List<PaymentMixEntry> paymentMix;
   final List<TopGuest> topGuests;
   final List<VenueUtilization> venueUtilization;
+  final List<OrdersByHour> ordersByHour;
   final List<TopFoodItem> topFoodItems;
 
   const AnalyticsOverview({
@@ -692,6 +707,7 @@ class AnalyticsOverview {
     this.paymentMix = const [],
     this.topGuests = const [],
     this.venueUtilization = const [],
+    this.ordersByHour = const [],
     this.topFoodItems = const [],
   });
 
@@ -725,6 +741,11 @@ class AnalyticsOverview {
     venueUtilization:
         (json['venueUtilization'] as List?)
             ?.map((e) => VenueUtilization.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    ordersByHour:
+        (json['ordersByHour'] as List?)
+            ?.map((e) => OrdersByHour.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
     topFoodItems:

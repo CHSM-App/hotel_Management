@@ -16,6 +16,10 @@ class AssetsImpl implements AssetsRepository {
   Future<AssetCategory> createCategory(String name) => api.createAssetCategory(name);
 
   @override
+  Future<AssetCategory> updateCategoryDepreciation(int id, Map<String, dynamic> body) =>
+      api.updateAssetCategoryDepreciation(id, body);
+
+  @override
   Future<List<Vendor>> vendors({bool includeInactive = false}) =>
       api.assetVendors(includeInactive: includeInactive);
 
@@ -45,7 +49,8 @@ class AssetsImpl implements AssetsRepository {
   Future<Asset> updateAsset(int id, FormData form) => api.updateAsset(id, form);
 
   @override
-  Future<Asset> setAssetStatus(int id, String status) => api.setAssetStatus(id, status);
+  Future<Asset> setAssetStatus(int id, String status, {Map<String, dynamic>? deadStock}) =>
+      api.setAssetStatus(id, status, deadStock: deadStock);
 
   @override
   Future<void> deleteAsset(int id) => api.deleteAsset(id);

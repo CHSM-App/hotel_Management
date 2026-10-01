@@ -49,6 +49,17 @@ class _Loaded extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (analytics != null) ...[
+          ReportHourlyBars(title: 'Orders by hour of day', hours: analytics!.ordersByHour),
+          const SizedBox(height: AppTheme.s16),
+          ReportBilledRing(
+            title: 'Billed vs. unbilled',
+            billedValue: s.billedValue,
+            deliveredValue: s.deliveredValue,
+            formatValue: formatPrice,
+          ),
+          const SizedBox(height: AppTheme.s16),
+        ],
         if (topItemRows.isNotEmpty) ...[
           ReportRankList(title: "What's selling", rows: topItemRows),
           const SizedBox(height: AppTheme.s16),

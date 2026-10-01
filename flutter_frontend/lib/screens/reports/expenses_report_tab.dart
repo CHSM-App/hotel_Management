@@ -8,19 +8,30 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'report_widgets.dart';
 
+/// Category donut slice colors, in assignment order — mirrors
+/// ExpensesReportPanel.jsx's CATEGORY_COLORS (brand, accent, then four more
+/// fixed hues), reusing AppTheme's own tokens where one already fits.
+const _kCategoryColors = <Color>[
+  AppTheme.accent,
+  AppTheme.draft,
+  Color(0xFF2FA0A0),
+  AppTheme.checkout,
+  Color(0xFF7A5FD1),
+  Color(0xFF3A8FC7),
+];
+
 /// Reports > Expenses — mirrors ExpensesReportPanel.jsx's read-only view over
 /// the full expense history, filtered to [fromDate]/[toDate] — held by
 /// [ReportsScreen] and shown in the same header spot as the server-ranged
 /// tabs' picker, just filtering the already-loaded list instead of
 /// triggering a refetch.
 ///
-/// Scoped down from the web version: no month-by-month trend chart or
-/// category donut — the app already has a full Expenses feature
-/// elsewhere (screens/expenses/) with its own detail screens; this tab is the
-/// report-shaped summary the web's Reports page adds on top, not a second
-/// place to manage expenses. PDF/Excel export is ExpenseReportPdf/
-/// ExpenseReportExcel (expense_report_pdf.dart/expense_report_excel.dart),
-/// wired up in reports_screen.dart.
+/// The app already has a full Expenses feature elsewhere (screens/expenses/)
+/// with its own detail screens; this tab is the report-shaped summary the
+/// web's Reports page adds on top, not a second place to manage expenses.
+/// PDF/Excel export is ExpenseReportPdf/ExpenseReportExcel
+/// (expense_report_pdf.dart/expense_report_excel.dart), wired up in
+/// reports_screen.dart.
 class ExpensesReportTab extends ConsumerWidget {
   final String fromDate;
   final String toDate;
@@ -76,6 +87,27 @@ class _Loaded extends StatelessWidget {
     }
     final vendorEntries = byVendor.entries.toList()..sort((a, b) => b.value.$1.compareTo(a.value.$1));
 
+    // Spend by month for the current calendar year — the same "12 points,
+    // one per month" shape ReportTrendChart already draws for revenue, so
+    // this reads as the same chart language rather than a new one invented
+    // for expenses. Mirrors ExpensesReportPanel.jsx's monthlyTrend.
+    final year = DateTime.now().year;
+    final monthlyTotals = List<num>.filled(12, 0);
+    for (final e in expenses) {
+      final d = DateTime.tryParse(e.expenseDate);
+      if (d != null && d.year == year) monthlyTotals[d.month - 1] += e.amount;
+    }
+    final monthDates = [for (var m = 1; m <= 12; m++) '$year-${m.toString().padLeft(2, '0')}-01'];
+
+    final donutSlices = [
+      for (var i = 0; i < categoryEntries.length && i < 6; i++)
+        DonutSlice(
+          label: categoryEntries[i].key,
+          value: categoryEntries[i].value,
+          color: _kCategoryColors[i % _kCategoryColors.length],
+        ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -87,6 +119,27 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Top category', value: topCategory?.key ?? '—'),
           ],
         ),
+        if (expenses.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportTrendChart(
+            title: 'Spend by month, $year',
+            values: monthlyTotals,
+            firstLabel: formatShortDate(monthDates.first),
+            midLabel: formatShortDate(monthDates[5]),
+            lastLabel: formatShortDate(monthDates.last),
+            formatValue: formatPrice,
+          ),
+        ],
+        if (donutSlices.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportDonut(
+            title: "Where it's going",
+            slices: donutSlices,
+            centerLabel: formatPrice(total),
+            centerSub: 'Total',
+            formatValue: formatPrice,
+          ),
+        ],
         if (categoryEntries.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s16),
           ReportBarList(

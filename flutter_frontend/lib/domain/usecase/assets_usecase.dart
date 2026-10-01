@@ -12,6 +12,9 @@ class AssetsUsecase {
 
   Future<AssetCategory> createCategory(String name) => repository.createCategory(name);
 
+  Future<AssetCategory> updateCategoryDepreciation(int id, Map<String, dynamic> body) =>
+      repository.updateCategoryDepreciation(id, body);
+
   Future<List<Vendor>> vendors({bool includeInactive = false}) =>
       repository.vendors(includeInactive: includeInactive);
 
@@ -33,7 +36,8 @@ class AssetsUsecase {
 
   Future<Asset> updateAsset(int id, FormData form) => repository.updateAsset(id, form);
 
-  Future<Asset> setAssetStatus(int id, String status) => repository.setAssetStatus(id, status);
+  Future<Asset> setAssetStatus(int id, String status, {Map<String, dynamic>? deadStock}) =>
+      repository.setAssetStatus(id, status, deadStock: deadStock);
 
   Future<void> deleteAsset(int id) => repository.deleteAsset(id);
 
