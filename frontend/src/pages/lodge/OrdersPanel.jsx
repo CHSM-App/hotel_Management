@@ -138,6 +138,19 @@ function billedLabel(order) {
   return 'Billed';
 }
 
+// Who the food is for: the name (and number) typed at the counter, or the guest
+// staying in the room. A table order has neither until someone adds one.
+function Customer({ order }) {
+  if (!order.guestName && !order.guestPhone) return null;
+  return (
+    <span className="order-customer">
+      {order.guestName}
+      {order.guestName && order.guestPhone ? ' · ' : ''}
+      {order.guestPhone}
+    </span>
+  );
+}
+
 function HandledBy({ order }) {
   if (!order.handledBy) return null;
   return <span className="order-card__handler">{order.guestOrder ? 'Accepted' : 'Taken'} by {order.handledBy}</span>;
@@ -216,12 +229,18 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   const canWorkQueue = permissions.includes('orders.manage');
   const canCook = permissions.includes('orders.cook');
   const canTakeOrders = permissions.includes('orders.take');
+  // Item prices are for the people who take and bill orders; a cook-only login
+  // (kitchen) sees dishes without money.
+  const showPrices = canTakeOrders || permissions.includes('billing.manage');
   // Kitchen only cooks; accepting guest QR orders is front-of-house.
   const canAccept = canWorkQueue && !(canCook && !canTakeOrders);
   // Owner / reception bill straight from a delivered order in the queue.
   const canBillHere = canWorkQueue && canTakeOrders && permissions.includes('billing.manage');
   const [billTab, setBillTab] = useState(null);
+  const [roomOrder, setRoomOrder] = useState(null);
+  // A table or takeaway can also go on a staying guest's room bill (rooms only).
   const canIssue = (o) => canBillHere && o.status === 'DELIVERED' && (o.source !== 'ROOM' || !o.bookingId);
+  const canRoom = (o) => canIssue(o) && lodge?.hasRooms !== false && o.source !== 'ROOM';
   const issueBill = async (o) => {
     setBusyId(o.id);
     try {
@@ -417,12 +436,13 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
     return (
-      <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
+      <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 10 ? ' order-card--full' : order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
         {/* Number and status on one line, everything else about the ticket on
             the next — the two things called across a kitchen are what the
             order is and what is happening to it. */}
         <div className="order-card__head">
           <span className="order-card__number">#{order.orderNumber}</span>
+          <Customer order={order} />
           <span className="order-card__badge">{STATUS_LABEL[order.status]}</span>
         </div>
 
@@ -447,7 +467,12 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
               <>
                 <span className="order-card__qty">{item.quantity}×</span>
                 <span className="order-card__item-name">{item.name}</span>
-                {isReady && (
+                {showPrices && (
+                  <span className="order-card__item-price">
+                    {formatPrice(item.lineTotal)}
+                  </span>
+                )}
+                {isReady && order.status !== 'DELIVERED' && (
                   <span className="order-card__item-badge">{item.deliveredAt ? 'Delivered' : 'Ready'}</span>
                 )}
               </>
@@ -496,6 +521,11 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
               Issue bill
             </button>
           )}
+          {canRoom(order) && (
+            <button type="button" className="order-btn order-btn--cancel" disabled={busyId === order.id} onClick={() => setRoomOrder(order)}>
+              Add to room bill
+            </button>
+          )}
           {visibleStatuses.map((status) => (
             <button
               key={status}
@@ -518,18 +548,64 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   // Orders opened in the spreadsheet. Until you click one, a cook's Preparing
   // tickets start open (they have dishes to tick); everything else starts closed.
   const [openRows, setOpenRows] = useState({});
-  const renderQueueTable = (list) => (
+  // Click a header to sort, again to reverse, a third time for arrival order.
+  const [qSort, setQSort] = useState({ key: null, dir: 1 });
+  const Q_SORT_VALUE = {
+    number: (o) => o.orderNumber,
+    where: (o) => targetLabel(o).toLowerCase(),
+    customer: (o) => (o.guestName || o.guestPhone || '').toLowerCase(),
+    status: (o) => STATUS_LABEL[o.status].toLowerCase(),
+    takenBy: (o) => (o.handledBy || '').toLowerCase(),
+    waiting: (o) => new Date(o.placedAt).getTime(),
+    total: (o) => o.subtotal,
+  };
+  const toggleQSort = (key) =>
+    setQSort((prev) => (prev.key !== key ? { key, dir: 1 } : prev.dir === 1 ? { key, dir: -1 } : { key: null, dir: 1 }));
+  const renderQueueTable = (unsorted) => {
+    const list = qSort.key
+      ? [...unsorted].sort((a, b) => {
+          const x = Q_SORT_VALUE[qSort.key](a);
+          const y = Q_SORT_VALUE[qSort.key](b);
+          return (x < y ? -1 : x > y ? 1 : 0) * qSort.dir;
+        })
+      : unsorted;
+    return (
     <section className="history-sheet history-sheet--queue">
     <div className="history-table-wrap">
       <table className="history-table">
         <thead>
           <tr>
-            <th>#</th>
-            <th>Where</th>
-            <th>Dishes</th>
-            <th>Status</th>
-            <th>Waiting</th>
-            <th className="history-table__num">Total</th>
+            {[
+              ['number', '#'],
+              ['where', 'Where'],
+              ['takenBy', 'Taken by'],
+              ['customer', 'Customer'],
+              [null, 'Dishes'],
+              ['status', 'Status', 'history-table__fit'],
+              // Waiting = time since placed, so longest wait is the descending-by-time end.
+              ['waiting', 'Waiting'],
+              ['total', 'Total', 'history-table__num'],
+            ].map(([key, label, cls]) => (
+              <th
+                key={label}
+                className={cls}
+                aria-sort={key && qSort.key === key ? (qSort.dir === 1 ? 'ascending' : 'descending') : undefined}
+              >
+                {key ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleQSort(key)}
+                    style={{ all: 'inherit', cursor: 'pointer', padding: 0 }}
+                    title={`Sort by ${label}`}
+                  >
+                    {label}
+                    {qSort.key === key ? (qSort.dir === 1 ? ' ▲' : ' ▼') : ''}
+                  </button>
+                ) : (
+                  label
+                )}
+              </th>
+            ))}
             <th aria-label="Actions" />
           </tr>
         </thead>
@@ -552,7 +628,17 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                 <td className="history-table__strong">#{order.orderNumber}</td>
                 <td>
                   <span className="history-table__where">{targetLabel(order)}</span> <SourceTag order={order} />
-                  <HandledBy order={order} />
+                </td>
+                <td>{order.handledBy || <span className="history-table__none">—</span>}</td>
+<td className="history-table__customer">
+                  {order.guestName || order.guestPhone ? (
+                    <>
+                      <strong>{order.guestName || '—'}</strong>
+                      {order.guestPhone && <span>{order.guestPhone}</span>}
+                    </>
+                  ) : (
+                    <span className="history-table__none">—</span>
+                  )}
                 </td>
                 <td className="history-table__items">
                   {(() => {
@@ -588,7 +674,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                   })()}
                   {order.note && <span className="history-table__note">“{order.note}”</span>}
                 </td>
-                <td>
+                <td className="history-table__fit">
                   <span className={`history-table__status history-table__status--${order.status.toLowerCase()}`}>
                     {STATUS_LABEL[order.status]}
                   </span>
@@ -602,6 +688,11 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                     {canIssue(order) && (
                       <button type="button" className="history-table__btn history-table__btn--primary" disabled={busyId === order.id} onClick={() => issueBill(order)}>
                         Issue bill
+                      </button>
+                    )}
+                    {canRoom(order) && (
+                      <button type="button" className="history-table__btn" disabled={busyId === order.id} onClick={() => setRoomOrder(order)}>
+                        Add to room bill
                       </button>
                     )}
                     {visibleStatuses.map((status) => (
@@ -623,7 +714,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                 ? sectionsOf(order.items).map((g) => (
                     <tr key={`${order.id}-${g.name}`} className="queue-sub">
                       <td />
-                      <td colSpan={6}>
+                      <td colSpan={8}>
                         <div className="queue-sub__row">
                           <span className="queue-sub__tag">
                             {g.name} <b>{g.items.filter((i) => i.readyAt).length}/{g.items.length}</b>
@@ -643,6 +734,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                                 />
                               )}
                               {item.quantity}× {item.name}
+                              {showPrices && <span className="queue-sub__price">{formatPrice(item.lineTotal)}</span>}
                             </label>
                           ))}
                         </div>
@@ -656,7 +748,8 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
       </table>
     </div>
     </section>
-  );
+    );
+  };
 
   return (
     <div className="orders-panel">
@@ -690,7 +783,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
 
         {(toolsHost ? (node) => createPortal(node, toolsHost) : (node) => node)(
         <div className="orders-panel__tools">
-          {((view === 'ACTIVE' && !canWorkQueue) || (view === 'QUEUE' && canWorkQueue)) && (
+          {(view === 'ACTIVE' || view === 'QUEUE' || view === 'HISTORY') && (
             <ViewToggle view={listView} onChange={setListView} />
           )}
           {(canWorkQueue || canTakeOrders) && (!soundOn ? (
@@ -735,7 +828,6 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
         <OrderHistory
           key={view}
           view={listView}
-          setView={setListView}
           // A captain's queue is what is still open (in the kitchen, or served
           // but not yet billed); their history is what is settled.
           scope={canWorkQueue ? 'all' : view === 'ACTIVE' ? 'active' : 'done'}
@@ -812,6 +904,18 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
         />
       )}
 
+      {roomOrder && (
+        <AddToRoomDialog
+          order={roomOrder}
+          onClose={() => setRoomOrder(null)}
+          onDone={() => {
+            setRoomOrder(null);
+            load();
+            setHistoryRefresh((n) => n + 1);
+          }}
+        />
+      )}
+
       {cancelOrder && (
         <CancelOrderDialog
           order={cancelOrder}
@@ -850,8 +954,9 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
             // failure when you can't see the kitchen queue to check.
             setPlacedNotice(`Order #${order.orderNumber} sent to the kitchen.`);
             setHistoryRefresh((n) => n + 1);
-            // Anyone with the queue stays on it; a captain has only My orders.
-            if (!canWorkQueue) setView('HISTORY');
+            // Anyone with the queue stays on it; a captain lands on their live
+            // tab (the "Kitchen queue" strip item), not History.
+            if (!canWorkQueue) setView('ACTIVE');
           }}
         />
       )}
@@ -1064,6 +1169,87 @@ function CancelOrderDialog({ order, onClose, onDone }) {
   );
 }
 
+// A guest staying in the property asks for a table or takeaway to go on their
+// room bill instead of being paid for here. Picks the checked-in guest, marks the
+// order ready to bill if it is not yet, and moves it onto that stay's bill.
+function AddToRoomDialog({ order, onClose, onDone }) {
+  const session = getSession();
+  const [guests, setGuests] = useState(null);
+  const [bookingId, setBookingId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    apiGet('/billing/food-tabs/in-house-guests', { token: session?.token })
+      .then((data) => setGuests(data.guests))
+      .catch(() => {
+        setGuests([]);
+        setError('Could not load the guests who are staying.');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const tab = order.source === 'TABLE' ? `table-${order.tableId}` : `counter-${order.id}`;
+  const label = order.source === 'TABLE' ? order.tableLabel : `Takeaway #${order.orderNumber}`;
+
+  const confirmAdd = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      if (!order.readyToBill) await apiPost(`/orders/${order.id}/ready-to-bill`, {}, { token: session?.token });
+      await apiPost(`/billing/food-tabs/${tab}/add-to-room`, { bookingId: Number(bookingId) }, { token: session?.token });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not add this to the room bill.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="glass-backdrop counter-backdrop" onClick={() => !busy && onClose()}>
+      <div className="glass-panel cancel-modal" role="dialog" aria-modal="true" aria-labelledby="addRoomTitle" onClick={(e) => e.stopPropagation()}>
+        <div className="cancel-modal__head">
+          <div>
+            <h3 id="addRoomTitle">Add to room bill</h3>
+            <p className="cancel-modal__sub">
+              {label} · {formatPrice(order.subtotal)}
+            </p>
+          </div>
+          <button type="button" className="menu-modal__close" onClick={onClose} disabled={busy} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div className="cancel-modal__body">
+          {error && <div className="cancel-modal__notice" role="alert">{error}</div>}
+          {!guests && <p className="cancel-modal__hint">Loading guests…</p>}
+          {guests && guests.length === 0 && <p className="cancel-modal__hint">Nobody is checked in right now.</p>}
+          {guests && guests.length > 0 && (
+            <div className="field">
+              <label htmlFor="addRoomGuest">Guest</label>
+              <select id="addRoomGuest" value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
+                <option value="">Choose a guest…</option>
+                {guests.map((g) => (
+                  <option key={g.bookingId} value={g.bookingId}>
+                    Room {g.roomNumber} · {g.guestName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="cancel-modal__foot">
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="btn-accent" onClick={confirmAdd} disabled={busy || !bookingId}>
+            {busy ? 'Adding…' : 'Add to room bill'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // What happened to the day's food, once it is no longer the kitchen's problem.
 // Deliberately a different shape from the queue cards: those are a job to work
 // through at arm's length, this is a record to read — so it is a dense list
@@ -1077,7 +1263,7 @@ const LIVE_STATUSES = ['PENDING', 'QUEUED', 'PREPARING', 'READY'];
 // The owner watches the floor but doesn't hand food over — that is the captain's.
 const canHandOver = () => getSession()?.role !== 'OWNER';
 
-function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill = false, mine = false, refreshKey = 0, canDeliver = false, onEdit = null, onNewGuestOrders = null, onGuestPending = null }) {
+function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, mine = false, refreshKey = 0, canDeliver = false, onEdit = null, onNewGuestOrders = null, onGuestPending = null }) {
   const session = getSession();
   // Today, this month (1st to today) or a custom from–to.
   const today = todayIsoLocal();
@@ -1110,8 +1296,11 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
   const cancel = (order, mode) => setCancelling(mode === 'return' ? { ...order, __return: true } : order);
   // The issued bill an order was settled on, opened over this screen.
   const [viewInvoiceId, setViewInvoiceId] = useState(null);
+  // Prices on each dish are for the people who take and bill orders, not the cook.
+  const showPrices = canDeliver || canViewBill;
   const viewBill = canViewBill ? (order) => setViewInvoiceId(order.invoiceId) : null;
   const [billTab, setBillTab] = useState(null);
+  const [roomOrder, setRoomOrder] = useState(null);
   // A captain closes a fully delivered order: it leaves their queue, lands in
   // History, and appears in Billing's "Food to bill".
   const markReadyToBill = canDeliver
@@ -1151,7 +1340,7 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
               setTick((t) => t + 1);
             }
           },
-          { issues: true }
+          { issues: true, addToRoom: lodge?.hasRooms !== false ? (o) => setRoomOrder(o) : null }
         )
       : null;
   const readyToBill = issueBill || markReadyToBill;
@@ -1236,7 +1425,15 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
   }, [to]);
 
   const inScope = (o) =>
-    scope === 'active' ? !o.billed && !o.readyToBill && o.status !== 'CANCELLED' : scope === 'done' ? o.billed || o.readyToBill || o.status === 'CANCELLED' : true;
+    scope === 'active'
+      ? !o.billed && !o.readyToBill && o.status !== 'CANCELLED'
+      : scope === 'done'
+      ? o.billed || o.readyToBill || o.status === 'CANCELLED'
+      : // Today's History is the settled record: what has been billed (or cancelled).
+        // Today's open orders stay in the Kitchen queue until they are billed.
+        period === 'today'
+      ? o.billed || o.status === 'CANCELLED'
+      : true;
   const orders = validRange ? loaded.orders.filter(inScope) : [];
   // Counts for the tiles and chips come from the whole day; the search only
   // narrows the list underneath them.
@@ -1262,6 +1459,7 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
     number: (o) => o.orderNumber,
     placed: (o) => new Date(o.placedAt).getTime(),
     where: (o) => targetLabel(o).toLowerCase(),
+    customer: (o) => (o.guestName || o.guestPhone || '').toLowerCase(),
     status: (o) => (o.billed ? billedLabel(o) : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]).toLowerCase(),
     total: (o) => o.subtotal,
     took: (o) => {
@@ -1322,19 +1520,23 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
         />
       )}
 
+      {roomOrder && (
+        <AddToRoomDialog
+          order={roomOrder}
+          onClose={() => setRoomOrder(null)}
+          onDone={() => {
+            setRoomOrder(null);
+            setTick((t) => t + 1);
+          }}
+        />
+      )}
+
       {viewInvoiceId != null && (
         <Billing lodge={lodge} viewInvoiceId={viewInvoiceId} modalOnly onClose={() => setViewInvoiceId(null)} />
       )}
 
       {!compact && <div className="order-history__bar">
         <div className="order-history__controls">
-        {!compact && (
-        <div className="ohf">
-        <span className="ohf__label">Show as</span>
-        <ViewToggle view={view} onChange={setView} />
-        </div>
-        )}
-
         {!compact && (
         <div className="ohf">
         <span className="ohf__label">Orders from</span>
@@ -1438,11 +1640,11 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
             <>
               {view === 'cards' && (mine ? (
               <div className="orders-grid">
-                {shown.map((o) => renderCaptainCard(o, { canDeliver, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, busy: busyId === o.id }))}
+                {shown.map((o) => renderCaptainCard(o, { canDeliver, showPrices, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, busy: busyId === o.id }))}
               </div>
             ) : (
               <div className="history-list">
-                {shown.map((o) => renderHistoryRow(o, { canDeliver, onEdit, deliver, cancel, accept, viewBill, readyToBill, busy: busyId === o.id }))}
+                {shown.map((o) => renderHistoryRow(o, { canDeliver, showPrices, onEdit, deliver, cancel, accept, viewBill, readyToBill, busy: busyId === o.id }))}
               </div>
             ))}
               {view === 'sheet' && (
@@ -1455,6 +1657,7 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
                         ['number', '#'],
                         ['placed', 'Placed'],
                         ['where', 'Where'],
+                        ['customer', 'Customer'],
                         [null, 'Dishes'],
                         ['status', 'Status'],
                         ['total', 'Total', 'history-table__num'],
@@ -1498,10 +1701,21 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
                           <td className="history-table__strong">#{o.orderNumber}</td>
                           <td>{multiDay ? dateTimeLabel(o.placedAt) : timeLabel(o.placedAt)}</td>
                           <td><span className="history-table__where">{targetLabel(o)}</span> <SourceTag order={o} />{o.handledBy && <span className="history-table__note">{o.handledBy}</span>}</td>
+                          <td className="history-table__customer">
+                            {o.guestName || o.guestPhone ? (
+                              <>
+                                <strong>{o.guestName || '—'}</strong>
+                                {o.guestPhone && <span>{o.guestPhone}</span>}
+                              </>
+                            ) : (
+                              <span className="history-table__none">—</span>
+                            )}
+                          </td>
                           <td className="history-table__items">
                             {o.items.map((i) => (
                               <span key={i.id} className={i.readyAt ? 'history-table__item history-table__item--ready' : 'history-table__item'}>
                                 {i.quantity}× {i.name}
+                                {showPrices && <span className="history-table__price">{formatPrice(i.lineTotal)}</span>}
                               </span>
                             ))}
                             {o.note && <span className="history-table__note">“{o.note}”</span>}
@@ -1542,6 +1756,11 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
                                 {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
                               </button>
                             )}
+                            {readyToBill && readyToBill.addToRoom && !o.billed && o.status === 'DELIVERED' && o.source !== 'ROOM' && (
+                              <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill.addToRoom(o)}>
+                                Add to room bill
+                              </button>
+                            )}
                             {cancellable && (
                               <button type="button" className="history-table__btn history-table__btn--danger" disabled={rowBusy} onClick={() => cancel(o)}>
                                 Cancel
@@ -1568,7 +1787,7 @@ function OrderHistory({ scope = 'all', view, setView, lodge = null, canViewBill 
 
 // The kitchen's order card, read-only: the captain sees which dishes are ready
 // to serve, and can deliver or edit — the kitchen's tick boxes are not here.
-function renderCaptainCard(order, { canDeliver, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, busy }) {
+function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, busy }) {
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const readyCount = order.items.filter((i) => i.readyAt).length;
   const settledAt = order.deliveredAt || order.cancelledAt;
@@ -1580,9 +1799,10 @@ function renderCaptainCard(order, { canDeliver, onEdit, deliver, deliverItem, ca
   const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED' && (!readyToBill.issues || order.source !== 'ROOM' || !order.bookingId);
 
   return (
-    <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
+    <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 10 ? ' order-card--full' : order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
       <div className="order-card__head">
         <span className="order-card__number">#{order.orderNumber}</span>
+          <Customer order={order} />
         <span className="order-card__badge">{order.billed ? billedLabel(order) : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
       </div>
 
@@ -1609,6 +1829,7 @@ function renderCaptainCard(order, { canDeliver, onEdit, deliver, deliverItem, ca
               <div className={`order-card__item${isReady ? ' order-card__item--ready' : ''}`}>
                 <span className="order-card__qty">{item.quantity}×</span>
                 <span className="order-card__item-name">{item.name}</span>
+                {showPrices && <span className="order-card__item-price">{formatPrice(item.lineTotal)}</span>}
                 {item.deliveredAt ? (
                   <span className="order-card__item-badge">Delivered</span>
                 ) : isReady ? (
@@ -1671,6 +1892,11 @@ function renderCaptainCard(order, { canDeliver, onEdit, deliver, deliverItem, ca
               {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
             </button>
           )}
+          {canBillNow && readyToBill.addToRoom && order.source !== 'ROOM' && (
+            <button type="button" className="order-btn order-btn--cancel" disabled={busy} onClick={() => readyToBill.addToRoom(order)}>
+              Add to room bill
+            </button>
+          )}
           {canCancel && (
             <button type="button" className="order-btn order-btn--cancel" disabled={busy} onClick={() => cancel(order)}>
               {ACTION_LABEL.CANCELLED}
@@ -1682,7 +1908,7 @@ function renderCaptainCard(order, { canDeliver, onEdit, deliver, deliverItem, ca
   );
 }
 
-function renderHistoryRow(order, { canDeliver, onEdit, deliver, cancel, accept, viewBill, readyToBill, busy }) {
+function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, cancel, accept, viewBill, readyToBill, busy }) {
   const canCancel = canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
@@ -1697,6 +1923,7 @@ function renderHistoryRow(order, { canDeliver, onEdit, deliver, cancel, accept, 
         <span className="history-row__number">#{order.orderNumber}</span>
         <span className="history-row__target">{targetLabel(order)}</span>
         <SourceTag order={order} />
+        <Customer order={order} />
         <span className="history-row__badge">{order.billed ? billedLabel(order) : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
         {order.status === 'PREPARING' && order.items.some((i) => i.readyAt) && (
           <span className="history-row__ready">
@@ -1719,6 +1946,7 @@ function renderHistoryRow(order, { canDeliver, onEdit, deliver, cancel, accept, 
           <li key={item.id}>
             <span className="history-row__qty">{item.quantity}×</span>
             <span>{item.name}</span>
+            {showPrices && <span className="order-card__item-price">{formatPrice(item.lineTotal)}</span>}
             {item.readyAt && (
               <span
                 className={`history-row__ready${item.deliveredAt || order.status === 'DELIVERED' ? ' history-row__ready--done' : ''}`}
@@ -1765,6 +1993,11 @@ function renderHistoryRow(order, { canDeliver, onEdit, deliver, cancel, accept, 
           {canBillNow && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => readyToBill(order)}>
               {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
+            </button>
+          )}
+          {canBillNow && readyToBill.addToRoom && order.source !== 'ROOM' && (
+            <button type="button" className="order-btn order-btn--cancel" disabled={busy} onClick={() => readyToBill.addToRoom(order)}>
+              Add to room bill
             </button>
           )}
           {canCancel && (
@@ -1815,7 +2048,9 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
   const cookedLines = editOrder?.items.filter((i) => i.readyAt) ?? [];
   const [sections, setSections] = useState(null);
   const [tables, setTables] = useState(() => readCache('/tables:active') ?? []);
-  const [rooms, setRooms] = useState(() => readCache('/rooms:occupied') ?? []);
+  // Not seeded from cache: who is checked in changes by the hour, and a room
+  // that checked out must never be offered.
+  const [rooms, setRooms] = useState([]);
   const [cart, setCart] = useState(() =>
     Object.fromEntries(
       (editOrder?.items ?? [])
@@ -1823,7 +2058,9 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
         .map((i) => [i.portionId ? `${i.menuItemId}:${i.portionId}` : String(i.menuItemId), i.quantity])
     )
   );
-  const [target, setTarget] = useState({ kind: 'COUNTER', id: '' });
+  const [target, setTarget] = useState({ kind: 'COUNTER', id: '', bookingId: '' });
+  // Everyone checked in, per room, so each guest is a choice of their own.
+  const [roomGuests, setRoomGuests] = useState([]);
   const [note, setNote] = useState(editOrder?.note ?? '');
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
@@ -1863,11 +2100,13 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
       apiGet('/menu', { token: session?.token }),
       lodge?.foodTableService ? apiGet('/tables', { token: session?.token }) : Promise.resolve({ tables: [] }),
       lodge?.foodRoomService ? apiGet('/rooms', { token: session?.token }) : Promise.resolve({ rooms: [] }),
+      lodge?.foodRoomService ? apiGet('/orders/room-guests', { token: session?.token }) : Promise.resolve({ guests: [] }),
     ])
-      .then(([menuData, tablesData, roomsData]) => {
+      .then(([menuData, tablesData, roomsData, guestsData]) => {
+        setRoomGuests(guestsData.guests);
         setSections(menuData.sections);
         setTables(writeCache('/tables:active', tablesData.tables.filter((t) => t.isActive)));
-        setRooms(writeCache('/rooms:occupied', roomsData.rooms.filter((r) => r.isActive && r.isOccupied)));
+        setRooms(roomsData.rooms.filter((r) => r.isActive && r.isOccupied));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load the menu.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1897,7 +2136,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
     let cancelled = false;
     const roomId = target.id;
 
-    apiGet(`/orders/room-occupancy/${roomId}`, { token: session?.token })
+    apiGet(`/orders/room-occupancy/${roomId}${target.bookingId ? `?bookingId=${target.bookingId}` : ''}`, { token: session?.token })
       .then((data) => {
         if (cancelled) return;
         setOccupancy(data.occupancy);
@@ -1916,7 +2155,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target.kind, target.id]);
+  }, [target.kind, target.id, target.bookingId]);
 
   // A half plate and a full plate of the same dish are two lines, so the key is
   // the pair — the same shape the guest's own page uses.
@@ -2043,6 +2282,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
         '/orders',
         {
           roomId: target.kind === 'ROOM' ? target.id : null,
+          bookingId: target.kind === 'ROOM' && target.bookingId ? target.bookingId : null,
           tableId: target.kind === 'TABLE' ? target.id : null,
           // Typed at the counter and then switched to a room, these would
           // otherwise ride along on an order whose payer is the booking.
@@ -2113,10 +2353,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
               <label htmlFor="orderTarget">Where&apos;s it going?</label>
               <select
                 id="orderTarget"
-                value={`${target.kind}:${target.id}`}
+                value={`${target.kind}:${target.id}${target.bookingId ? `:${target.bookingId}` : ''}`}
                 onChange={(e) => {
-                  const [kind, id] = e.target.value.split(':');
-                  setTarget({ kind, id });
+                  const [kind, id, bookingId = ''] = e.target.value.split(':');
+                  setTarget({ kind, id, bookingId });
                   // Reset here, where the choice is made, so the previous
                   // room's guest never lingers beside a new selection.
                   setOccupancy(null);
@@ -2124,11 +2364,19 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                 }}
               >
                 <option value="COUNTER:">Counter / takeaway</option>
-                {rooms.map((r) => (
-                  <option key={`room-${r.id}`} value={`ROOM:${r.id}`}>
-                    Room {r.roomNumber}
-                  </option>
-                ))}
+                {rooms.flatMap((r) => {
+                  // One entry per guest in the room, named, so a guest holding two
+                  // rooms is listed twice (once per room) and a dormitory lists
+                  // each of its guests — the food is charged to that stay.
+                  const guests = roomGuests.filter((g) => String(g.roomId) === String(r.id));
+                  return guests.length > 0
+                    ? guests.map((g) => (
+                        <option key={`room-${r.id}-${g.bookingId}`} value={`ROOM:${r.id}:${g.bookingId}`}>
+                          Room {r.roomNumber} · {g.guestName || 'Guest'}
+                        </option>
+                      ))
+                    : [];
+                })}
                 {tables.map((t) => (
                   <option key={`table-${t.id}`} value={`TABLE:${t.id}`}>
                     {t.label}

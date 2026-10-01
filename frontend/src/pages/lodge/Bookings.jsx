@@ -5026,6 +5026,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   />
                 )}
 
+                {!showCheckInForm && bookingDetail.foodOrders?.length > 0 && (
+                  <RoomFoodSection orders={bookingDetail.foodOrders} />
+                )}
+
                 {idProofPreviewUrl && (
                   <div className="glass-backdrop bookings-panel__backdrop" onClick={closeIdProofPreview}>
                     <div
@@ -6567,5 +6571,77 @@ function LateCheckoutDialog({ lateCheckout, amount, onAmount, submitting, error,
         </div>
       </div>
     </div>
+  );
+}
+
+// Everything this stay has ordered from the kitchen, kept apart from the room
+// charges: room service from the room, and table or takeaway food the desk added
+// to this bill. Read-only; it is the same food that lands on the stay bill.
+const FOOD_STATUS_LABEL = {
+  PENDING: 'Waiting',
+  QUEUED: 'Queued',
+  PREPARING: 'Preparing',
+  READY: 'Ready',
+  DELIVERED: 'Delivered',
+};
+
+function RoomFoodSection({ orders }) {
+  const total = orders.reduce((sum, o) => sum + o.subtotal, 0);
+  const pending = orders.filter((o) => !o.billed).reduce((sum, o) => sum + o.subtotal, 0);
+  return (
+    <section className="room-food">
+      <div className="room-food__title">
+        <span className="room-food__icon" aria-hidden="true">
+          <svg viewBox="0 0 48 48" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="24" cy="26" r="11" />
+            <circle cx="24" cy="26" r="6" />
+            <path d="M6 10v10a3 3 0 0 0 3 3v15M9 10v9M12 10v10a3 3 0 0 1-3 3M42 10c-3 2-4 7-4 12h4v16" />
+          </svg>
+        </span>
+        <div>
+          <h4>Food ordered</h4>
+          <p>
+            {orders.length} order{orders.length === 1 ? '' : 's'} · added to the room bill at checkout
+          </p>
+        </div>
+      </div>
+
+      <ul className="room-food__list">
+        {orders.map((o) => (
+          <li className="room-food__order" key={o.id}>
+            <div className="room-food__head">
+              <span className="room-food__num">#{o.orderNumber}</span>
+              <span className={`room-food__origin${o.origin === 'ROOM_SERVICE' ? '' : ' room-food__origin--added'}`}>
+                {o.origin === 'ROOM_SERVICE' ? 'Room service' : `From ${o.placedFrom || 'restaurant'}`}
+              </span>
+              <span className="room-food__time">
+                {new Date(o.placedAt).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+              </span>
+              <span className={`room-food__status room-food__status--${o.billed ? 'billed' : String(o.status).toLowerCase()}`}>
+                {o.billed ? 'Billed' : FOOD_STATUS_LABEL[o.status] || o.status}
+              </span>
+              <span className="room-food__amount">{formatPrice(o.subtotal)}</span>
+            </div>
+            <ul className="room-food__items">
+              {o.items.map((i, n) => (
+                <li key={n}>
+                  <span className="room-food__qty">{i.quantity}×</span>
+                  <span className="room-food__name">{i.name}</span>
+                  <span className="room-food__line">{formatPrice(i.lineTotal)}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+
+      <div className="room-food__total">
+        <span>Food total</span>
+        <strong>{formatPrice(total)}</strong>
+      </div>
+      {pending !== total && (
+        <p className="room-food__note">{formatPrice(pending)} of this is not on a bill yet.</p>
+      )}
+    </section>
   );
 }

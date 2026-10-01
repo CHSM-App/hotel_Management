@@ -1488,3 +1488,177 @@
   color: var(--danger);
   box-shadow: var(--shadow-raised-hover);
 }
+
+/* Bills lists as a spreadsheet: reuses the orders sheet look, with a toggle in the
+   section header and rows that open the bill. */
+.chart-section__header {
+  align-items: center;
+}
+
+.billing-view-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.billing-view-toggle__btn {
+  width: 36px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.billing-view-toggle__btn--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.billing-sheet {
+  margin-top: 10px;
+}
+
+.billing-sheet .history-table {
+  min-width: 760px;
+}
+
+.billing-sheet__row {
+  cursor: pointer;
+}
+
+.billing-sheet__row--void td {
+  color: var(--text-muted);
+}
+
+.billing-sheet__row--void .history-table__num {
+  text-decoration: line-through;
+}
+
+.billing-sheet__ok {
+  color: #0f6d37;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.billing-sheet__due {
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* The orders sheet pins its 5th column wide for dishes; this table has none. */
+.billing-sheet .history-table td:nth-child(5),
+.billing-sheet .history-table td:nth-child(4) {
+  min-width: 0;
+  line-height: inherit;
+}
+
+.billing-sheet__ready td,
+.billing-sheet__ready th {
+  white-space: nowrap;
+}
+
+.billing-sheet__stay {
+  line-height: 1.3;
+}
+
+.billing-sheet__stay small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.billing-sheet__due-cell {
+  font-weight: 800;
+  color: var(--brand);
+  background: var(--accent-soft, #eeeafc);
+}
+
+.billing-sheet__note {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+/* Ready-to-bill sheet, packed to fit a laptop width: no inherited 860px floor,
+   tighter cell padding, headings and names allowed to wrap. The amount cells
+   stay on one line. */
+.history-sheet .history-table.billing-sheet__ready {
+  min-width: 0;
+}
+
+.history-sheet .history-table.billing-sheet__ready th,
+.history-sheet .history-table.billing-sheet__ready td {
+  padding: 8px 6px;
+}
+
+.billing-sheet__ready th {
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.billing-sheet__ready td:nth-child(-n + 3) {
+  white-space: normal;
+}
+
+.billing-sheet__ready td.history-table__actions {
+  width: 1%;
+}
+
+/* The orders sheet pins its 5th column to 320px for dishes; here that is Food. */
+.history-sheet .history-table.billing-sheet__ready td:nth-child(5) {
+  min-width: 0;
+  line-height: inherit;
+}
+
+.billing-sheet__ready th {
+  letter-spacing: 0.01em;
+  font-size: 10.5px;
+}
+
+.billing-sheet__ready td.history-table__strong {
+  min-width: 0;
+}
+
+.billing-sheet__ready .history-table__btn {
+  margin-left: 0;
+}
+
+/* Alignment: number headings sit over their right-aligned figures, and every
+   column but Guest shrinks to its content so the spare width goes to the name
+   instead of being sprinkled between the amounts. */
+.history-sheet .history-table.billing-sheet__ready th.history-table__num {
+  text-align: right;
+}
+
+.history-sheet .history-table.billing-sheet__ready th:not(:first-child),
+.history-sheet .history-table.billing-sheet__ready td:not(:first-child) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.history-sheet .history-table.billing-sheet__ready th,
+.history-sheet .history-table.billing-sheet__ready td {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+@media (min-width: 1300px) {
+  .history-sheet .history-table.billing-sheet__ready th,
+  .history-sheet .history-table.billing-sheet__ready td {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+.history-sheet .history-table.billing-sheet__ready tfoot td {
+  font-weight: 700;
+  background: var(--paper);
+}

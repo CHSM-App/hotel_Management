@@ -351,7 +351,8 @@ export default function OwnerDashboard() {
   // Topbar state. The rail is open by default because on a desk monitor it is
   // always visible; the hamburger only has an effect below the breakpoint,
   // where the CSS hides a closed rail.
-  const [navOpen, setNavOpen] = useState(true);
+  const isPhone = () => window.matchMedia('(max-width: 800px)').matches;
+  const [navOpen, setNavOpen] = useState(() => !isPhone());
 
   const handleSignOut = () => {
     clearSession();
@@ -496,6 +497,7 @@ export default function OwnerDashboard() {
       </div>
 
       <div className="dash-body">
+        {navOpen && <div className="dash-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
         <nav
           className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}`}
           aria-label="Dashboard sections"
@@ -539,6 +541,7 @@ export default function OwnerDashboard() {
                         className="dash-sidebar__item"
                         aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
                         onClick={() => {
+                          if (isPhone()) setNavOpen(false);
                           setBillNowBookingId(null);
     setBillNowEventId(null);
                           // Cleared for the same reason billNowBookingId is: the

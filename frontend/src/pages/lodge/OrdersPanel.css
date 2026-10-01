@@ -1729,11 +1729,11 @@ button.order-stat:hover {
 
 /* Sheet: keep short cells on one line so rows stay level. */
 .history-sheet .history-table td:nth-child(2),
-.history-sheet .history-table td:nth-child(7) {
+.history-sheet .history-table td:nth-child(8) {
   white-space: nowrap;
 }
 
-.history-sheet .history-table td:nth-child(4) {
+.history-sheet .history-table td:nth-child(5) {
   min-width: 320px;
   line-height: 1.6;
 }
@@ -2313,7 +2313,7 @@ label.order-card__item { padding: 3px 6px; }
 }
 
 /* Times and who-took-it keep to one tidy line each. */
-.history-sheet--queue .history-table td:nth-child(5) {
+.history-sheet--queue .history-table td:nth-child(6) {
   white-space: nowrap;
 }
 
@@ -2481,4 +2481,189 @@ label.order-card__item { padding: 3px 6px; }
   color: #0f6d37;
   text-decoration: line-through;
   text-decoration-thickness: 1px;
+}
+
+/* A <td> must stay a table cell: display:block made the Dishes cell shrink to its
+   content while its neighbours stretched to the row. */
+.history-sheet--queue td.history-table__items {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.history-sheet--queue .history-table td {
+  vertical-align: middle;
+}
+
+/* Price next to each dish: the line total, with qty × unit price under it when
+   more than one was ordered. */
+.order-card__item-price {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.order-card__item-price small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.order-card__item-price + .order-card__item-badge {
+  margin-left: 10px;
+}
+
+.queue-sub__price {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smaller, lighter price beside each dish. */
+.order-card__item-price {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Customer name and number, on its own line wherever an order is listed. */
+.order-customer {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.order-card__meta .order-customer,
+.history-row__head .order-customer {
+  display: inline;
+  margin: 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+/* Customer beside the order number in a card's header. */
+.order-card__head {
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.order-card__head .order-customer {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.order-card__head .order-card__badge {
+  margin-left: auto;
+}
+
+/* ---- Big orders use the width: dishes flow into several columns inside the
+   card instead of one long list, and a very large order spans the full row. ---- */
+.order-card--full {
+  grid-column: 1 / -1;
+}
+
+.order-card__sublist,
+.order-card--wide .order-card__items,
+.order-card--full .order-card__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  column-gap: 20px;
+  column-count: auto;
+}
+
+.order-card--wide .order-card__items > li,
+.order-card--full .order-card__items > li {
+  break-inside: auto;
+}
+
+/* Sections sit side by side too (Snacks, Starters, …), each keeping its own header. */
+.order-card--wide .order-card__items,
+.order-card--full .order-card__items {
+  align-items: start;
+}
+
+.order-card--wide .order-card__section,
+.order-card--full .order-card__section {
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .order-card--full {
+    grid-column: span 1;
+  }
+}
+
+/* Sections stack; the DISHES inside each one use the columns. A 15-dish section
+   becomes a grid of dishes across the card instead of one tall list. */
+.order-card--wide .order-card__items,
+.order-card--full .order-card__items {
+  display: block;
+  column-count: auto;
+}
+
+.order-card__sublist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  column-gap: 22px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.order-card__sublist > li {
+  min-width: 0;
+}
+
+/* Customer column: name over phone number. */
+.history-table__customer {
+  white-space: nowrap;
+}
+
+.history-table__customer strong {
+  display: block;
+  font-weight: 600;
+}
+
+.history-table__customer span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-table__customer .history-table__none {
+  color: var(--text-muted);
+}
+
+/* Price on a dish chip in the spreadsheet. */
+.history-table__price {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row__items .order-card__item-price {
+  margin-left: auto;
+}
+
+/* Status holds one short pill; 1% + nowrap shrinks the column to the widest one. */
+.history-sheet .history-table .history-table__fit {
+  width: 1%;
+  white-space: nowrap;
 }

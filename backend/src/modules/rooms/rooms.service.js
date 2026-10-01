@@ -48,6 +48,7 @@ async function listRooms(lodgeId) {
         SELECT TOP 1 br.id FROM dbo.booking_rooms br
         JOIN dbo.bookings bk ON bk.id = br.booking_id
         WHERE br.room_id = r.id AND bk.lodge_id = @lodgeId AND br.status = 'CHECKED_IN'
+          AND bk.status = 'CHECKED_IN'
       ) b
       WHERE r.lodge_id = @lodgeId
       ORDER BY CASE WHEN c.tape_order IS NULL THEN 1 ELSE 0 END, c.tape_order ASC, c.id ASC,

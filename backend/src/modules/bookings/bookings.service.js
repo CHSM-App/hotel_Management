@@ -1384,6 +1384,8 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     // guest register is where a stay is answered for after the fact, and
     // "₹4,720" on its own answers nothing.
     invoice: extra.invoice ?? null,
+    // Food this stay has ordered (room service, plus table food added to the room bill).
+    foodOrders: extra.foodOrders ?? [],
     availableSwitchableCharges: extra.availableSwitchableCharges || [],
   };
 }
@@ -1778,6 +1780,49 @@ async function getBooking(lodgeId, bookingId) {
     };
   });
 
+  // Food this stay has ordered: room service, and table or takeaway food the desk
+  // moved onto the room bill. Shown in the booking details so the desk can see
+  // what is about to land on the bill. Cancelled orders are left out.
+  const foodOrdersResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT o.id, o.order_number, o.source, o.status, o.subtotal, o.placed_at, o.on_room_bill, o.invoice_id,
+             t.label AS table_label
+      FROM dbo.food_orders o
+      LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.status <> 'CANCELLED'
+      ORDER BY o.placed_at ASC
+    `);
+  const foodItemsResult = foodOrdersResult.recordset.length
+    ? await (() => {
+        const req = pool.request();
+        foodOrdersResult.recordset.forEach((o, i) => req.input(`fo${i}`, sql.BigInt, o.id));
+        return req.query(`
+          SELECT order_id, item_name, quantity, line_total
+          FROM dbo.food_order_items
+          WHERE order_id IN (${foodOrdersResult.recordset.map((_, i) => `@fo${i}`).join(', ')})
+          ORDER BY id ASC
+        `);
+      })()
+    : { recordset: [] };
+  const foodOrders = foodOrdersResult.recordset.map((o) => ({
+    id: o.id,
+    orderNumber: o.order_number,
+    // Room service ordered from the room, or food from a table / takeaway that
+    // the desk added to this stay's bill.
+    origin: o.source === 'ROOM' ? 'ROOM_SERVICE' : 'ADDED',
+    placedFrom: o.source === 'TABLE' ? o.table_label : o.source === 'COUNTER' ? 'Takeaway' : null,
+    status: o.status,
+    subtotal: Number(o.subtotal),
+    placedAt: o.placed_at,
+    billed: o.invoice_id != null,
+    items: foodItemsResult.recordset
+      .filter((i) => String(i.order_id) === String(o.id))
+      .map((i) => ({ name: i.item_name, quantity: i.quantity, lineTotal: Number(i.line_total) })),
+  }));
+
   // How the advance on this stay actually arrived, one entry per method.
   //
   // Grouped, so an advance taken across two receipts by the same method reads
@@ -1811,6 +1856,7 @@ async function getBooking(lodgeId, bookingId) {
     takesRoomOrders,
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
     invoice,
+    foodOrders,
     availableSwitchableCharges,
     foodOrderingLockedUntil: lockedUntilOf(row.room_number),
     extraBeds: extraBedsResult.recordset.map((r) => ({ id: r.bed_id, bedLabel: r.bed_label })),

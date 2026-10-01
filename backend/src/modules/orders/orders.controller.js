@@ -64,16 +64,18 @@ async function getOrderHandler(req, res, next) {
 
 // A counter order attached to a room is charged to whoever is in it, so the
 // room's live booking is resolved here rather than trusted from the client.
-async function resolveRoomBooking(lodgeId, roomId) {
+async function resolveRoomBooking(lodgeId, roomId, bookingId = null) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('roomId', sql.BigInt, roomId)
+    .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT TOP 1 b.id FROM dbo.booking_rooms br
       JOIN dbo.bookings b ON b.id = br.booking_id
       WHERE b.lodge_id = @lodgeId AND br.room_id = @roomId AND br.status = 'CHECKED_IN'
+        AND (@bookingId IS NULL OR b.id = @bookingId)
       ORDER BY br.actual_check_in_at DESC
     `);
   return result.recordset[0]?.id ?? null;
@@ -102,10 +104,13 @@ async function roomOccupancyHandler(req, res, next) {
       .request()
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('roomId', sql.BigInt, roomId)
+      // A dormitory holds several guests at once; the form says which one.
+      .input('bookingId', sql.BigInt, Number(req.query.bookingId) || null)
       .query(`
         SELECT TOP 1 r.room_number, b.id AS booking_id, b.guest_name, b.guest_phone
         FROM dbo.rooms r
         LEFT JOIN dbo.booking_rooms br ON br.room_id = r.id AND br.status = 'CHECKED_IN'
+          AND (@bookingId IS NULL OR br.booking_id = @bookingId)
         LEFT JOIN dbo.bookings b ON b.id = br.booking_id AND b.lodge_id = @lodgeId
         WHERE r.id = @roomId AND r.lodge_id = @lodgeId
         ORDER BY br.actual_check_in_at DESC
@@ -131,6 +136,34 @@ async function roomOccupancyHandler(req, res, next) {
   }
 }
 
+// Everyone checked in right now, one row per room and booking, so the order
+// form can list each guest with their room — a guest holding two rooms appears
+// twice, and a dormitory shows each of its guests.
+async function roomGuestsHandler(req, res, next) {
+  try {
+    const result = await (await getPool())
+      .request()
+      .input('lodgeId', sql.BigInt, req.user.lodgeId)
+      .query(`
+        SELECT DISTINCT br.room_id, b.id AS booking_id, b.guest_name, b.guest_phone
+        FROM dbo.booking_rooms br
+        JOIN dbo.bookings b ON b.id = br.booking_id
+        WHERE b.lodge_id = @lodgeId AND br.status = 'CHECKED_IN' AND b.status = 'CHECKED_IN'
+        ORDER BY br.room_id, b.id
+      `);
+    res.json({
+      guests: result.recordset.map((g) => ({
+        roomId: g.room_id,
+        bookingId: g.booking_id,
+        guestName: g.guest_name || '',
+        guestPhone: g.guest_phone || '',
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createCounterOrderHandler(req, res, next) {
   try {
     const input = parse(counterOrderSchema, req.body);
@@ -150,7 +183,9 @@ async function createCounterOrderHandler(req, res, next) {
       if (roomResult.recordset.length === 0) {
         throw new ApiError('Room not found.', 404);
       }
-      bookingId = await resolveRoomBooking(lodgeId, input.roomId);
+      bookingId = input.bookingId
+        ? await resolveRoomBooking(lodgeId, input.roomId, input.bookingId)
+        : await resolveRoomBooking(lodgeId, input.roomId);
       // No active booking on the room, so there is nobody to charge the food
       // to. Refused here rather than just noted on the screen — the client
       // check is only a courtesy, and a direct API call has to obey this too.
@@ -354,6 +389,7 @@ module.exports = {
   getOrderHandler,
   createCounterOrderHandler,
   roomOccupancyHandler,
+  roomGuestsHandler,
   updateStatusHandler,
   updateItemReadyHandler,
   editOrderHandler,

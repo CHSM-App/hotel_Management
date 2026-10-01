@@ -514,7 +514,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // Checked against `tabs`, not a fixed list: a property that bills no stays
   // has no "ready" tab, so a link to one has to land somewhere real too.
   const activeTab = forceTab && tabs.some((t) => t.key === forceTab) ? forceTab : tabs.some((t) => t.key === tab) ? tab : defaultTab;
+  // Lists open as a spreadsheet; the cards are one click away.
+  const [listView, setListView] = useState('sheet');
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
+  // A column only earns its place when some stay has something in it.
+  const hasLate = Boolean(queue?.some((b) => b.lateCheckoutCharge > 0));
   const [queueError, setQueueError] = useState('');
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
   const [foodTabsError, setFoodTabsError] = useState('');
@@ -1417,6 +1421,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           <div className="chart-section__header">
             <h3>Ready to bill</h3>
             <span className="chart-section__hint">Checked-out stays waiting for a bill.</span>
+            <ListViewToggle view={listView} onChange={setListView} />
           </div>
 
           {queueError && <div className="form-banner form-banner--error">{queueError}</div>}
@@ -1424,7 +1429,76 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           {!queueError && queue && queue.length === 0 && (
             <div className="dash-state">Nothing waiting — every checked-out stay has a bill.</div>
           )}
-          {!queueError && queue && queue.length > 0 && (
+          {!queueError && queue && queue.length > 0 && listView === 'sheet' && (
+            <section className="history-sheet billing-sheet">
+              <div className="history-table-wrap">
+                <table className="history-table billing-sheet__ready">
+                  <thead>
+                    <tr>
+                      <th>Guest</th>
+                      <th>Room</th>
+                      <th>Stay</th>
+                      <th className="history-table__num">Room charge</th>
+                      {hasLate && <th className="history-table__num">Late checkout</th>}
+                      <th className="history-table__num">Food</th>
+                      <th className="history-table__num">Subtotal</th>
+                      <th className="history-table__num">Advance paid</th>
+                      <th className="history-table__num">To collect</th>
+                      <th aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {queue.map((b) => {
+                      const sub = b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0);
+                      const due = sub - (b.advanceAmount || 0);
+                      return (
+                        <tr key={b.id} className="history-table__row">
+                          <td className="history-table__strong">{b.guestName}</td>
+                          <td>
+                            <span className="history-table__where">{b.roomNumber}</span>
+                            <span className="history-table__note">{b.categoryName}</span>
+                          </td>
+                          <td className="billing-sheet__stay">
+                            <span>{shortDay(b.checkInDate)} → {shortDay(b.checkOutDate)}</span>
+                            <small>{nightsBetween(b.checkInDate, b.checkOutDate)} night{nightsBetween(b.checkInDate, b.checkOutDate) === 1 ? '' : 's'}</small>
+                          </td>
+                          <td className="history-table__num">{formatPrice(b.totalPrice)}</td>
+                          {hasLate && <td className="history-table__num">{b.lateCheckoutCharge ? formatPrice(b.lateCheckoutCharge) : '—'}</td>}
+                          <td className="history-table__num">{b.foodTotal ? formatPrice(b.foodTotal) : '—'}</td>
+                          <td className="history-table__num history-table__strong">{formatPrice(sub)}</td>
+                          <td className="history-table__num">{b.advanceAmount ? `− ${formatPrice(b.advanceAmount)}` : '—'}</td>
+                          <td className="history-table__num billing-sheet__due-cell">{formatPrice(due)}</td>
+                          <td className="history-table__actions">
+                            <div className="history-table__actions-inner">
+                              <button type="button" className="history-table__btn history-table__btn--primary" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
+                                Bill
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3}>{queue.length} stay{queue.length === 1 ? '' : 's'} to bill</td>
+                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice, 0))}</td>
+                      {hasLate && <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + (b.lateCheckoutCharge || 0), 0))}</td>}
+                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + (b.foodTotal || 0), 0))}</td>
+                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0), 0))}</td>
+                      <td className="history-table__num">{queue.some((b) => b.advanceAmount) ? `− ${formatPrice(queue.reduce((n, b) => n + (b.advanceAmount || 0), 0))}` : '—'}</td>
+                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0), 0))}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className="billing-sheet__note">
+                To collect = room charge + late checkout + food − advance already paid. Amounts are before GST: tax is worked out on the bill, night by night, when it is issued.
+              </p>
+            </section>
+          )}
+          {!queueError && queue && queue.length > 0 && listView === 'cards' && (
             <div className="chart-list">
               {queue.map((b) => (
                 <div className="chart-row billing-panel__queue-row" key={b.id}>
@@ -1454,6 +1528,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             <span className="chart-section__hint">
               Most recent first. Tags show what was billed and which document was issued.
             </span>
+            <ListViewToggle view={listView} onChange={setListView} />
           </div>
 
           {invoicesError && <div className="form-banner form-banner--error">{invoicesError}</div>}
@@ -1609,7 +1684,80 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                 </div>
               )}
 
-              <div className="chart-list">
+              {listView === 'sheet' && (
+                <section className="history-sheet billing-sheet">
+                  <div className="history-table-wrap">
+                    <table className="history-table">
+                      <thead>
+                        <tr>
+                          <th>Bill no.</th>
+                          <th>Date</th>
+                          <th>Billed for</th>
+                          <th>Guest / Table</th>
+                          <th>Room</th>
+                          <th>Document</th>
+                          <th>Status</th>
+                          <th className="history-table__num">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleInvoices.map((inv) => {
+                          const source = billSource(inv);
+                          return (
+                            <tr
+                              key={inv.rowKey ?? inv.id}
+                              className={`history-table__row billing-sheet__row${inv.status === 'VOID' ? ' billing-sheet__row--void' : ''}`}
+                              onClick={() => openDetail(inv)}
+                              tabIndex={0}
+                              onKeyDown={(e) => e.key === 'Enter' && openDetail(inv)}
+                            >
+                              <td className="history-table__strong">{inv.invoiceNumber}</td>
+                              <td>{inv.createdAt ? formatBillDate(inv.createdAt) : '—'}</td>
+                              <td>
+                                <span className={`bill-tag bill-tag--${tagClass(source)}`}>{sourceLabel(inv)}</span>
+                              </td>
+                              <td>
+                                {inv.kind === 'FOOD'
+                                  ? inv.tableLabel || 'Counter'
+                                  : inv.kind === 'EVENT'
+                                    ? `${inv.guestName} · ${inv.venueName || 'Function'}`
+                                    : inv.guestName}
+                              </td>
+                              <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '—' : inv.roomNumber || '—'}</td>
+                              <td>
+                                <span className={`bill-tag bill-tag--${DOCUMENT_TAG[inv.documentType]}`}>
+                                  {DOCUMENT_LABEL[inv.documentType]}
+                                </span>
+                              </td>
+                              <td>
+                                {inv.status === 'VOID' ? (
+                                  <span className="bill-tag bill-tag--void">Void</span>
+                                ) : inv.kind === 'ADVANCE' && inv.balanceDue > 0 ? (
+                                  <span className="billing-sheet__due">{formatPrice(inv.balanceDue)} due</span>
+                                ) : (
+                                  <span className="billing-sheet__ok">Issued</span>
+                                )}
+                              </td>
+                              <td className="history-table__num history-table__strong">{formatPrice(inv.totalAmount)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={7}>
+                            {visibleInvoices.length} document{visibleInvoices.length === 1 ? '' : 's'} (void bills not counted)
+                          </td>
+                          <td className="history-table__num">
+                            {formatPrice(visibleInvoices.reduce((n, i) => (i.status === 'VOID' ? n : n + Number(i.totalAmount || 0)), 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </section>
+              )}
+              <div className="chart-list" hidden={listView !== 'cards'}>
                 {visibleInvoices.map((inv) => {
                   const source = billSource(inv);
                   return (
@@ -2601,4 +2749,40 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
     </div>
   );
+}
+
+// Spreadsheet or cards for the bills lists. The spreadsheet is the default: a
+// bill list is read down a column, and the totals row adds it up.
+function ListViewToggle({ view, onChange }) {
+  return (
+    <div className="billing-view-toggle" role="group" aria-label="View">
+      {[
+        ['sheet', 'Spreadsheet view', <path key="p" d="M3 5h18v14H3zM3 10h18M3 15h18M9 5v14M15 5v14" />],
+        ['cards', 'Card view', <path key="p" d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" />],
+      ].map(([key, label, icon]) => (
+        <button
+          key={key}
+          type="button"
+          className={`billing-view-toggle__btn${view === key ? ' billing-view-toggle__btn--on' : ''}`}
+          aria-pressed={view === key}
+          aria-label={label}
+          title={label}
+          onClick={() => onChange(key)}
+        >
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+            {icon}
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// "29 Sep" — the year is on the bill; the queue only needs the day.
+function shortDay(iso) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+function nightsBetween(a, b) {
+  return Math.max(1, Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000));
 }
