@@ -280,7 +280,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           else
             for (final order in filtered)
               Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.s4),
+                padding: const EdgeInsets.only(bottom: AppTheme.s12),
                 child: _OrderCard(
                   order: order,
                   now: state.now,
@@ -423,7 +423,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         return [
           for (final order in orders)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s4),
+              padding: const EdgeInsets.only(bottom: AppTheme.s12),
               child: _OrderCard(
                 order: order,
                 now: state.now,
@@ -547,7 +547,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ...head,
           for (final order in orders)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s4),
+              padding: const EdgeInsets.only(bottom: AppTheme.s12),
               child: _OrderCard(
                 order: order,
                 now: state.now,
@@ -614,8 +614,8 @@ class _TabRow extends StatelessWidget {
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
                   style: TextStyle(
-                    color: isSelected ? AppTheme.accent : AppTheme.muted,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected ? AppTheme.accent : AppTheme.text,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                     fontSize: 13,
                   ),
                   child: Text(label, overflow: TextOverflow.ellipsis),
@@ -696,38 +696,83 @@ class _SearchField extends StatefulWidget {
 }
 
 class _SearchFieldState extends State<_SearchField> {
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 48,
+    final focused = _focusNode.hasFocus;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      height: 50,
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
       decoration: BoxDecoration(
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.border),
-        boxShadow: AppTheme.subtle,
+        border: Border.all(
+          color: focused ? AppTheme.accent : AppTheme.shadowDark,
+          width: focused ? 1.6 : 1.3,
+        ),
+        boxShadow: focused
+            ? [
+                BoxShadow(
+                  color: AppTheme.accent.withValues(alpha: 0.16),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : AppTheme.subtle,
       ),
       child: Row(
         children: [
-          Container(
-            width: 34,
-            height: 34,
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 36,
+            height: 36,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: AppTheme.accent.withValues(alpha: 0.10),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppTheme.accent.withValues(alpha: focused ? 0.95 : 0.12),
+                  AppTheme.sidebarBrand.withValues(alpha: focused ? 0.95 : 0.08),
+                ],
+              ),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+            child: Icon(
+              Icons.search_rounded,
+              size: 18,
+              color: focused ? Colors.white : AppTheme.accent,
+            ),
           ),
           const SizedBox(width: AppTheme.s8),
           Expanded(
             child: TextField(
               controller: widget.controller,
+              focusNode: _focusNode,
               onChanged: (v) {
                 setState(() {});
                 widget.onChanged(v);
               },
-              style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
               decoration: InputDecoration(
                 hintText: widget.hint,
                 hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
@@ -750,8 +795,11 @@ class _SearchFieldState extends State<_SearchField> {
                 height: 30,
                 margin: const EdgeInsets.only(right: 2),
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
-                child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.danger),
               ),
             ),
         ],
@@ -982,6 +1030,40 @@ class _OrderCard extends ConsumerWidget {
     }
   }
 
+  /// A small glyph for the status pill — purely decorative, so a ticket's
+  /// stage reads a beat faster than the label text alone.
+  static IconData _statusIcon(FoodOrder order) {
+    if (order.billed) return Icons.receipt_rounded;
+    if (order.readyToBill) return Icons.point_of_sale_rounded;
+    switch (order.status) {
+      case 'PENDING':
+        return Icons.notifications_active_rounded;
+      case 'PREPARING':
+        return Icons.soup_kitchen_rounded;
+      case 'READY':
+        return Icons.check_circle_rounded;
+      case 'DELIVERED':
+        return Icons.room_service_rounded;
+      case 'CANCELLED':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.circle;
+    }
+  }
+
+  /// A small glyph for where the ticket is from — same vocabulary
+  /// [_OrdersSheetState._whereCell] reads off `order.source`.
+  static IconData _sourceIcon(FoodOrder order) {
+    switch (order.source) {
+      case 'ROOM':
+        return Icons.hotel_rounded;
+      case 'TABLE':
+        return Icons.table_restaurant_rounded;
+      default:
+        return Icons.storefront_rounded;
+    }
+  }
+
   /// The ticket's dishes, grouped by menu section when it spans more than
   /// one — collapsed behind its own summary (name, count, how many are
   /// ready) same as OrdersPanel.jsx's own renderSections, so a long ticket
@@ -1052,13 +1134,36 @@ class _OrderCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colour.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '#${order.orderNumber}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                                color: colour,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                          Icon(
+                            _sourceIcon(order),
+                            size: 13,
+                            color: AppTheme.muted,
+                          ),
+                          const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              // The number the kitchen calls out, then who it
-                              // is for.
-                              '#${order.orderNumber} · ${order.target}',
+                              order.target,
                               style: Theme.of(
                                 context,
                               ).textTheme.titleSmall?.copyWith(fontSize: 14),
@@ -1068,68 +1173,93 @@ class _OrderCard extends ConsumerWidget {
                           const SizedBox(width: AppTheme.s8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
+                              horizontal: 9,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: colour.withValues(alpha: 0.12),
+                              color: colour.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              order.billed
-                                  ? 'Billed'
-                                  : order.readyToBill
-                                  ? 'Ready to bill'
-                                  : order.statusLabel,
-                              style: TextStyle(
-                                color: colour,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
+                              border: Border.all(
+                                color: colour.withValues(alpha: 0.35),
                               ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _statusIcon(order),
+                                  size: 11,
+                                  color: colour,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  order.billed
+                                      ? 'Billed'
+                                      : order.readyToBill
+                                      ? 'Ready to bill'
+                                      : order.statusLabel,
+                                  style: TextStyle(
+                                    color: colour,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                       if ((live && waited != null) ||
                           order.customerLabel != null) ...[
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             if (live && waited != null) ...[
-                              Icon(
-                                Icons.access_time_filled_rounded,
-                                size: 12,
-                                color: overdue
-                                    ? AppTheme.danger
-                                    : AppTheme.muted,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                'Waiting ${_elapsed(waited)}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: overdue
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  // A ticket that has sat for twenty minutes
-                                  // should read as a problem without anybody
-                                  // having to do the subtraction.
-                                  color: overdue
-                                      ? AppTheme.danger
-                                      : AppTheme.muted,
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: (overdue
+                                          ? AppTheme.danger
+                                          : AppTheme.muted)
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.access_time_filled_rounded,
+                                      size: 11,
+                                      color: overdue
+                                          ? AppTheme.danger
+                                          : AppTheme.muted,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      'Waiting ${_elapsed(waited)}',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: overdue
+                                            ? FontWeight.w700
+                                            : FontWeight.w600,
+                                        // A ticket that has sat for twenty
+                                        // minutes should read as a problem
+                                        // without anybody having to do the
+                                        // subtraction.
+                                        color: overdue
+                                            ? AppTheme.danger
+                                            : AppTheme.muted,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                             if (order.customerLabel != null) ...[
                               if (live && waited != null) ...[
-                                const SizedBox(width: AppTheme.s8),
-                                const Text(
-                                  '·',
-                                  style: TextStyle(
-                                    color: AppTheme.muted,
-                                    fontSize: 11,
-                                  ),
-                                ),
                                 const SizedBox(width: AppTheme.s8),
                               ],
                               Expanded(
@@ -1146,13 +1276,15 @@ class _OrderCard extends ConsumerWidget {
 
                       const SizedBox(height: AppTheme.s8),
                       Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.s8,
-                          vertical: 2,
+                          horizontal: AppTheme.s12,
+                          vertical: AppTheme.s8,
                         ),
                         decoration: BoxDecoration(
                           color: AppTheme.bg,
                           borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1170,25 +1302,33 @@ class _OrderCard extends ConsumerWidget {
                         ),
                       ],
 
-                      const SizedBox(height: AppTheme.s4),
-                      const Divider(height: 1, color: AppTheme.border),
-                      const SizedBox(height: AppTheme.s4),
-                      Row(
-                        children: [
-                          Text(
-                            'Total',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                          const Spacer(),
-                          Text(
-                            formatPrice(order.subtotal),
-                            style: const TextStyle(
-                              color: AppTheme.heading,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                      const SizedBox(height: AppTheme.s8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.s12,
+                          vertical: AppTheme.s8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Total',
+                              style: Theme.of(context).textTheme.labelSmall,
                             ),
-                          ),
-                        ],
+                            const Spacer(),
+                            Text(
+                              formatPrice(order.subtotal),
+                              style: const TextStyle(
+                                color: AppTheme.accent,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
 
                       if (order.status == 'CANCELLED' &&
@@ -1755,7 +1895,12 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
   static const _historyWidths = [46.0, 70.0, 108.0, 120.0, 190.0, 104.0, 78.0, 70.0, 132.0];
 
   List<double> get _widths => widget.live ? _liveWidths : _historyWidths;
-  double get _totalWidth => _widths.reduce((a, b) => a + b);
+  /// The status-coloured strip down the left of every data row — the same
+  /// at-a-glance cue [_OrderCard]'s own rail gives, so a ticket's stage is
+  /// readable before the eye even reaches the Status column.
+  static const double _railWidth = 4;
+
+  double get _totalWidth => _widths.reduce((a, b) => a + b) + _railWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1763,10 +1908,10 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       label.toUpperCase(),
       textAlign: align,
       style: const TextStyle(
-        fontSize: 10.5,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.3,
-        color: AppTheme.muted,
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.5,
+        color: AppTheme.sidebarBrandInk,
       ),
     );
 
@@ -1793,10 +1938,13 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
             head('Actions'),
           ];
 
-    return NeuCard(
-      padding: EdgeInsets.zero,
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.subtle,
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.subtle,
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: SingleChildScrollView(
@@ -1810,6 +1958,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                 for (var i = 0; i < widget.orders.length; i++) ...[
                   _sheetRow(
                     shaded: i.isOdd,
+                    accent: _OrderCard._statusColour(widget.orders[i].status),
                     cells: _rowCells(context, widget.orders[i]),
                   ),
                   if (_open.contains(widget.orders[i].id))
@@ -1823,29 +1972,38 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     );
   }
 
-  Widget _sheetRow({required List<Widget> cells, bool header = false, bool shaded = false}) {
+  Widget _sheetRow({
+    required List<Widget> cells,
+    bool header = false,
+    bool shaded = false,
+    Color? accent,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: header
-            ? AppTheme.bg
+            ? AppTheme.sidebarBrandWash
             : shaded
-            ? AppTheme.border.withValues(alpha: 0.4)
+            ? AppTheme.bg
             : AppTheme.card,
         border: Border(
-          bottom: BorderSide(color: AppTheme.border, width: header ? 1.4 : 0.8),
+          bottom: BorderSide(
+            color: header ? AppTheme.sidebarBrandWashEdge : AppTheme.border,
+            width: header ? 1.6 : 0.8,
+          ),
         ),
       ),
       child: IntrinsicHeight(
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Container(width: _railWidth, color: accent ?? Colors.transparent),
             for (var i = 0; i < cells.length; i++)
               SizedBox(
                 width: _widths[i],
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
+                  padding: EdgeInsets.symmetric(
                     horizontal: AppTheme.s8,
-                    vertical: AppTheme.s8,
+                    vertical: header ? AppTheme.s12 : AppTheme.s8 + 2,
                   ),
                   child: cells[i],
                 ),
@@ -1899,7 +2057,11 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                 for (final g in groups)
                   Text(
                     '${g.key} ${g.value.where((i) => i.isReady).length}/${g.value.length}',
-                    style: const TextStyle(fontSize: 12),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.heading,
+                    ),
                   ),
               ],
             ),
@@ -1936,11 +2098,12 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
-                    g.key,
+                    g.key.toUpperCase(),
                     style: const TextStyle(
                       fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.muted,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: AppTheme.sidebarBrandInk,
                     ),
                   ),
                   for (final item in g.value)
@@ -1958,9 +2121,9 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                       child: Text(
                         '${item.quantity}× ${item.name}',
                         style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: item.isReady ? AppTheme.accent : AppTheme.text,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: item.isReady ? AppTheme.accent : AppTheme.heading,
                         ),
                       ),
                     ),

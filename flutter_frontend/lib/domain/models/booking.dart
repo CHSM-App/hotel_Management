@@ -465,6 +465,12 @@ class BookingFoodOrder {
   /// is everything that isn't.
   final bool billed;
 
+  /// Whether the desk has deliberately added this delivered order to the room
+  /// bill — mirrors the backend's own `onRoomBill`. A delivered order that
+  /// isn't billed may still be sitting off the bill until the desk adds it,
+  /// the same distinction Bookings.jsx's own RoomFoodSection draws.
+  final bool onRoomBill;
+
   /// The dishes on this ticket, so the register's own food section can show
   /// what was actually ordered rather than just its total — same lines
   /// Bookings.jsx's own RoomFoodSection reads off `o.items`.
@@ -479,6 +485,7 @@ class BookingFoodOrder {
     this.subtotal = 0,
     this.placedAt,
     this.billed = false,
+    this.onRoomBill = false,
     this.items = const [],
   });
 
@@ -492,6 +499,7 @@ class BookingFoodOrder {
         subtotal: asNumOrNull(json['subtotal']) ?? 0,
         placedAt: asStringOrNull(json['placedAt']),
         billed: asBool(json['billed']),
+        onRoomBill: asBool(json['onRoomBill']),
         items: (json['items'] as List? ?? const [])
             .map((e) => BookingFoodOrderItem.fromJson(e as Map<String, dynamic>))
             .toList(),
