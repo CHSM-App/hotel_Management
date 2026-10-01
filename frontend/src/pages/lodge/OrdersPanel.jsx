@@ -239,8 +239,9 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   const [billTab, setBillTab] = useState(null);
   const [roomOrder, setRoomOrder] = useState(null);
   // A table or takeaway can also go on a staying guest's room bill (rooms only).
-  const canIssue = (o) => canBillHere && o.status === 'DELIVERED' && (o.source !== 'ROOM' || !o.bookingId);
-  const canRoom = (o) => canIssue(o) && lodge?.hasRooms !== false && o.source !== 'ROOM';
+  const canIssue = (o) => canBillHere && o.status === 'DELIVERED';
+  // A room order can go on its own guest's room bill; the room is already known.
+  const canRoom = (o) => canIssue(o) && lodge?.hasRooms !== false && (o.source !== 'ROOM' || Boolean(o.bookingId));
   const issueBill = async (o) => {
     setBusyId(o.id);
     try {
@@ -250,7 +251,9 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
           ? { tab: `table-${o.tableId}`, label: o.tableLabel }
           : o.source === 'COUNTER'
             ? { tab: `counter-${o.id}`, label: `Takeaway #${o.orderNumber}` }
-            : { tab: `room-${o.roomId}`, label: `Room ${o.roomNumber}` }
+            : o.bookingId
+              ? { tab: `room-booking-${o.bookingId}`, label: `Room ${o.roomNumber}` }
+              : { tab: `room-${o.roomId}`, label: `Room ${o.roomNumber}` }
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not open the bill.');
@@ -1189,15 +1192,17 @@ function AddToRoomDialog({ order, onClose, onDone }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const tab = order.source === 'TABLE' ? `table-${order.tableId}` : `counter-${order.id}`;
-  const label = order.source === 'TABLE' ? order.tableLabel : `Takeaway #${order.orderNumber}`;
+  // An order taken from a room already knows its guest and stay: nothing to pick.
+  const ownStay = order.source === 'ROOM' && order.bookingId ? order.bookingId : null;
+  const tab = ownStay ? `room-booking-${ownStay}` : order.source === 'TABLE' ? `table-${order.tableId}` : `counter-${order.id}`;
+  const label = ownStay ? `Room ${order.roomNumber}` : order.source === 'TABLE' ? order.tableLabel : `Takeaway #${order.orderNumber}`;
 
   const confirmAdd = async () => {
     setBusy(true);
     setError('');
     try {
       if (!order.readyToBill) await apiPost(`/orders/${order.id}/ready-to-bill`, {}, { token: session?.token });
-      await apiPost(`/billing/food-tabs/${tab}/add-to-room`, { bookingId: Number(bookingId) }, { token: session?.token });
+      await apiPost(`/billing/food-tabs/${tab}/add-to-room`, { bookingId: Number(ownStay || bookingId) }, { token: session?.token });
       onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add this to the room bill.');
@@ -1221,9 +1226,18 @@ function AddToRoomDialog({ order, onClose, onDone }) {
         </div>
         <div className="cancel-modal__body">
           {error && <div className="cancel-modal__notice" role="alert">{error}</div>}
-          {!guests && <p className="cancel-modal__hint">Loading guests…</p>}
-          {guests && guests.length === 0 && <p className="cancel-modal__hint">Nobody is checked in right now.</p>}
-          {guests && guests.length > 0 && (
+          {ownStay && (
+            <div className="field">
+              <label>Guest</label>
+              <div className="order-customer" style={{ display: 'block' }}>
+                {order.guestName || 'Guest'} · {label}
+              </div>
+              <p className="cancel-modal__hint">This food was ordered from the room, so it goes on this stay’s bill.</p>
+            </div>
+          )}
+          {!ownStay && !guests && <p className="cancel-modal__hint">Loading guests…</p>}
+          {!ownStay && guests && guests.length === 0 && <p className="cancel-modal__hint">Nobody is checked in right now.</p>}
+          {!ownStay && guests && guests.length > 0 && (
             <div className="field">
               <label htmlFor="addRoomGuest">Guest</label>
               <select id="addRoomGuest" value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
@@ -1241,7 +1255,7 @@ function AddToRoomDialog({ order, onClose, onDone }) {
           <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className="btn-accent" onClick={confirmAdd} disabled={busy || !bookingId}>
+          <button type="button" className="btn-accent" onClick={confirmAdd} disabled={busy || (!ownStay && !bookingId)}>
             {busy ? 'Adding…' : 'Add to room bill'}
           </button>
         </div>
@@ -1331,7 +1345,9 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                   ? { tab: `table-${o.tableId}`, label: o.tableLabel }
                   : o.source === 'COUNTER'
                     ? { tab: `counter-${o.id}`, label: `Takeaway #${o.orderNumber}` }
-                    : { tab: `room-${o.roomId}`, label: `Room ${o.roomNumber}` }
+                    : o.bookingId
+                      ? { tab: `room-booking-${o.bookingId}`, label: `Room ${o.roomNumber}` }
+                      : { tab: `room-${o.roomId}`, label: `Room ${o.roomNumber}` }
               );
             } catch (err) {
               setError(err instanceof ApiError ? err.message : 'Could not open the bill.');
@@ -1426,13 +1442,13 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
 
   const inScope = (o) =>
     scope === 'active'
-      ? !o.billed && !o.readyToBill && o.status !== 'CANCELLED'
+      ? !o.billed && !o.onRoomBill && !o.readyToBill && o.status !== 'CANCELLED'
       : scope === 'done'
-      ? o.billed || o.readyToBill || o.status === 'CANCELLED'
+      ? o.billed || o.onRoomBill || o.readyToBill || o.status === 'CANCELLED'
       : // Today's History is the settled record: what has been billed (or cancelled).
         // Today's open orders stay in the Kitchen queue until they are billed.
         period === 'today'
-      ? o.billed || o.status === 'CANCELLED'
+      ? o.billed || o.onRoomBill || o.status === 'CANCELLED'
       : true;
   const orders = validRange ? loaded.orders.filter(inScope) : [];
   // Counts for the tiles and chips come from the whole day; the search only
@@ -1460,7 +1476,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
     placed: (o) => new Date(o.placedAt).getTime(),
     where: (o) => targetLabel(o).toLowerCase(),
     customer: (o) => (o.guestName || o.guestPhone || '').toLowerCase(),
-    status: (o) => (o.billed ? billedLabel(o) : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]).toLowerCase(),
+    status: (o) => (o.billed ? billedLabel(o) : o.onRoomBill ? 'On room bill' : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]).toLowerCase(),
     total: (o) => o.subtotal,
     took: (o) => {
       const end = o.deliveredAt || o.cancelledAt;
@@ -1485,7 +1501,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
       (canHandOver() && o.status === 'READY') ||
       (viewBill && o.invoiceId != null) ||
       (onEdit && !o.billed && !o.readyToBill && o.status !== 'CANCELLED') ||
-      (readyToBill && !o.billed && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED' && (!readyToBill.issues || o.source !== 'ROOM' || !o.bookingId)) ||
+      (readyToBill && !o.billed && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED') ||
       (canDeliver && !o.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(o.status) && o.items.some((i) => !i.readyAt))
   );
 
@@ -1713,16 +1729,43 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                           </td>
                           <td className="history-table__items">
                             {o.items.map((i) => (
-                              <span key={i.id} className={i.readyAt ? 'history-table__item history-table__item--ready' : 'history-table__item'}>
-                                {i.quantity}× {i.name}
+                              <span
+                                key={i.id}
+                                className={`history-table__item${i.readyAt ? ' history-table__item--ready' : ''}${
+                                  canHandOver() && canDeliver && ['PREPARING', 'READY'].includes(o.status) ? ' history-table__item--row' : ''
+                                }`}
+                              >
+                                <span className="history-table__dish">
+                                  {i.quantity}× {i.name}
+                                </span>
                                 {showPrices && <span className="history-table__price">{formatPrice(i.lineTotal)}</span>}
+                                {i.deliveredAt ? (
+                                  <span className="history-table__served">Delivered</span>
+                                ) : (
+                                  canHandOver() &&
+                                  canDeliver &&
+                                  i.readyAt &&
+                                  ['PREPARING', 'READY'].includes(o.status) && (
+                                    <button
+                                      type="button"
+                                      className="history-table__btn history-table__btn--primary history-table__deliver"
+                                      disabled={busyId === o.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deliverItem(o, i);
+                                      }}
+                                    >
+                                      Deliver
+                                    </button>
+                                  )
+                                )}
                               </span>
                             ))}
                             {o.note && <span className="history-table__note">“{o.note}”</span>}
                           </td>
                           <td>
-                            <span className={`history-table__status history-table__status--${o.billed ? 'billed' : o.status.toLowerCase()}`}>
-                              {o.billed ? billedLabel(o) : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]}
+                            <span className={`history-table__status history-table__status--${o.billed ? 'billed' : o.onRoomBill ? 'room' : o.status.toLowerCase()}`}>
+                              {o.billed ? billedLabel(o) : o.onRoomBill ? 'On room bill' : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]}
                             </span>
                             {o.invoiceNumber && <span className="history-table__note">Bill {o.invoiceNumber}</span>}
                           </td>
@@ -1751,12 +1794,12 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                                 Edit
                               </button>
                             )}
-                            {readyToBill && !o.billed && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED' && (!readyToBill.issues || o.source !== 'ROOM' || !o.bookingId) && (
+                            {readyToBill && !o.billed && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED' && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill(o)}>
                                 {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
                               </button>
                             )}
-                            {readyToBill && readyToBill.addToRoom && !o.billed && o.status === 'DELIVERED' && o.source !== 'ROOM' && (
+                            {readyToBill && readyToBill.addToRoom && !o.billed && o.status === 'DELIVERED' && (o.source !== 'ROOM' || o.bookingId) && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill.addToRoom(o)}>
                                 Add to room bill
                               </button>
@@ -1796,14 +1839,14 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
     canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED' && (!readyToBill.issues || order.source !== 'ROOM' || !order.bookingId);
+  const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED';
 
   return (
     <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 10 ? ' order-card--full' : order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
       <div className="order-card__head">
         <span className="order-card__number">#{order.orderNumber}</span>
           <Customer order={order} />
-        <span className="order-card__badge">{order.billed ? billedLabel(order) : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
+        <span className="order-card__badge">{order.billed ? billedLabel(order) : order.onRoomBill ? 'On room bill' : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
       </div>
 
       <div className="order-card__meta">
@@ -1892,7 +1935,7 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
               {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
             </button>
           )}
-          {canBillNow && readyToBill.addToRoom && order.source !== 'ROOM' && (
+          {canBillNow && readyToBill.addToRoom && (order.source !== 'ROOM' || order.bookingId) && (
             <button type="button" className="order-btn order-btn--cancel" disabled={busy} onClick={() => readyToBill.addToRoom(order)}>
               Add to room bill
             </button>
@@ -1912,7 +1955,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
   const canCancel = canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED' && (!readyToBill.issues || order.source !== 'ROOM' || !order.bookingId);
+  const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED';
   // How long the kitchen actually had it. Only honest once the order has
   // landed somewhere — a live one is still running.
   const settledAt = order.deliveredAt || order.cancelledAt;
@@ -1924,7 +1967,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
         <span className="history-row__target">{targetLabel(order)}</span>
         <SourceTag order={order} />
         <Customer order={order} />
-        <span className="history-row__badge">{order.billed ? billedLabel(order) : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
+        <span className="history-row__badge">{order.billed ? billedLabel(order) : order.onRoomBill ? 'On room bill' : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
         {order.status === 'PREPARING' && order.items.some((i) => i.readyAt) && (
           <span className="history-row__ready">
             {order.items.filter((i) => i.readyAt).length} of {order.items.length} ready
@@ -1995,7 +2038,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
               {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
             </button>
           )}
-          {canBillNow && readyToBill.addToRoom && order.source !== 'ROOM' && (
+          {canBillNow && readyToBill.addToRoom && (order.source !== 'ROOM' || order.bookingId) && (
             <button type="button" className="order-btn order-btn--cancel" disabled={busy} onClick={() => readyToBill.addToRoom(order)}>
               Add to room bill
             </button>

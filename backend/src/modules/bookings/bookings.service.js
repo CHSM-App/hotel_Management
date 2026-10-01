@@ -1818,6 +1818,8 @@ async function getBooking(lodgeId, bookingId) {
     subtotal: Number(o.subtotal),
     placedAt: o.placed_at,
     billed: o.invoice_id != null,
+    // Only food the desk has deliberately added counts on the room bill.
+    onRoomBill: !!o.on_room_bill,
     items: foodItemsResult.recordset
       .filter((i) => String(i.order_id) === String(o.id))
       .map((i) => ({ name: i.item_name, quantity: i.quantity, lineTotal: Number(i.line_total) })),

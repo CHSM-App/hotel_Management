@@ -2127,10 +2127,13 @@ async function addTabToRoomBill(lodgeId, tab, bookingId) {
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('stayId', sql.BigInt, bookingId);
   const scope = tabScope(request, tab);
   const result = await request.query(`
-    UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1
+    -- Adding to the stay is the desk's own deliberate act, so a room order does not
+    -- need to have been marked ready to bill first; table and takeaway food does.
+    UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1,
+                 o.ready_to_bill_at = COALESCE(o.ready_to_bill_at, SYSDATETIMEOFFSET())
     FROM dbo.food_orders o
     WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-      AND o.ready_to_bill_at IS NOT NULL AND o.on_room_bill = 0 ${scope}
+      AND (o.ready_to_bill_at IS NOT NULL OR ${roomStay ? '1 = 1' : '1 = 0'}) AND o.on_room_bill = 0 ${scope}
   `);
   if (result.rowsAffected[0] === 0) {
     throw new ApiError('Nothing to add — no delivered orders are waiting on this tab.', 409);

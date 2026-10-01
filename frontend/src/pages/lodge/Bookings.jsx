@@ -2428,9 +2428,32 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // question is for; null means every room that can go.
   const [checkInRoomId, setCheckInRoomId] = useState(null);
   const [checkOutRoomId, setCheckOutRoomId] = useState(null);
+  // Food ordered to a room goes on the room bill only when the desk adds it.
+  const [addingFood, setAddingFood] = useState(false);
+  const [foodError, setFoodError] = useState('');
+  const addFoodToRoomBill = async () => {
+    setAddingFood(true);
+    setFoodError('');
+    try {
+      await apiPost(
+        `/billing/food-tabs/room-booking-${selectedBookingId}/add-to-room`,
+        { bookingId: Number(selectedBookingId) },
+        { token }
+      );
+      const data = await apiGet(`/bookings/${selectedBookingId}`, { token });
+      setBookingDetail(data.booking);
+    } catch (err) {
+      setFoodError(err instanceof ApiError ? err.message : 'Could not add the food to the room bill.');
+    } finally {
+      setAddingFood(false);
+    }
+  };
   // The rooms still to be taken through their own check-out after the one on
   // screen, when "Check out all rooms" was pressed.
-  const [checkOutQueue, setCheckOutQueue] = useState([]);
+  // A ref, not state: when a room has no late fee its check-out runs in the same
+  // tick as the press, and a state value would still be the empty list there —
+  // so only the first room went and the rest were dropped.
+  const checkOutQueueRef = useRef([]);
   // The settlement step a cancellation goes through: null until "Cancel
   // booking" is pressed, then the answers being typed — how much of the
   // advance goes back, and why the stay fell through. What is not refunded is
@@ -2919,7 +2942,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       openCheckOut(null);
       return;
     }
-    setCheckOutQueue(ids.slice(1));
+    checkOutQueueRef.current = ids.slice(1);
     openCheckOut(ids[0]);
   };
 
@@ -2944,14 +2967,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         setBookingDetail(after);
         loadTapeChart();
         // On to the next room of a check-out-all.
-        if (checkOutQueue.length > 0) {
-          const [next, ...rest] = checkOutQueue;
-          setCheckOutQueue(rest);
+        if (checkOutQueueRef.current.length > 0) {
+          const [next, ...rest] = checkOutQueueRef.current;
+          checkOutQueueRef.current = rest;
           await openCheckOut(next);
         }
         return;
       }
-      setCheckOutQueue([]);
+      checkOutQueueRef.current = [];
 
       // Everything this screen was showing goes, and the bill takes its place.
       //
@@ -5027,7 +5050,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 )}
 
                 {!showCheckInForm && bookingDetail.foodOrders?.length > 0 && (
-                  <RoomFoodSection orders={bookingDetail.foodOrders} />
+                  <RoomFoodSection
+                    orders={bookingDetail.foodOrders}
+                    canAdd={!bookingDetail.invoice && bookingDetail.status !== 'CANCELLED'}
+                    adding={addingFood}
+                    error={foodError}
+                    onAdd={addFoodToRoomBill}
+                  />
                 )}
 
                 {idProofPreviewUrl && (
@@ -5781,7 +5810,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           error={actionError}
           onCancel={() => {
             setLateCheckout(null);
-            setCheckOutQueue([]);
+            checkOutQueueRef.current = [];
           }}
           onConfirm={commitCheckOut}
         />
@@ -6585,9 +6614,10 @@ const FOOD_STATUS_LABEL = {
   DELIVERED: 'Delivered',
 };
 
-function RoomFoodSection({ orders }) {
+function RoomFoodSection({ orders, canAdd = false, adding = false, error = '', onAdd }) {
   const total = orders.reduce((sum, o) => sum + o.subtotal, 0);
-  const pending = orders.filter((o) => !o.billed).reduce((sum, o) => sum + o.subtotal, 0);
+  const onBill = orders.filter((o) => o.onRoomBill && !o.billed).reduce((sum, o) => sum + o.subtotal, 0);
+  const addable = orders.filter((o) => !o.onRoomBill && !o.billed && o.status === 'DELIVERED');
   return (
     <section className="room-food">
       <div className="room-food__title">
@@ -6601,7 +6631,7 @@ function RoomFoodSection({ orders }) {
         <div>
           <h4>Food ordered</h4>
           <p>
-            {orders.length} order{orders.length === 1 ? '' : 's'} · added to the room bill at checkout
+            {orders.length} order{orders.length === 1 ? '' : 's'} · on the room bill only once added
           </p>
         </div>
       </div>
@@ -6620,6 +6650,11 @@ function RoomFoodSection({ orders }) {
               <span className={`room-food__status room-food__status--${o.billed ? 'billed' : String(o.status).toLowerCase()}`}>
                 {o.billed ? 'Billed' : FOOD_STATUS_LABEL[o.status] || o.status}
               </span>
+              {!o.billed && (
+                <span className={`room-food__bill-tag${o.onRoomBill ? ' room-food__bill-tag--on' : ''}`}>
+                  {o.onRoomBill ? 'On room bill' : 'Not on room bill'}
+                </span>
+              )}
               <span className="room-food__amount">{formatPrice(o.subtotal)}</span>
             </div>
             <ul className="room-food__items">
@@ -6639,8 +6674,14 @@ function RoomFoodSection({ orders }) {
         <span>Food total</span>
         <strong>{formatPrice(total)}</strong>
       </div>
-      {pending !== total && (
-        <p className="room-food__note">{formatPrice(pending)} of this is not on a bill yet.</p>
+      <p className="room-food__note">
+        {formatPrice(onBill)} of this is on the room bill{onBill === total ? '' : ` · ${formatPrice(total - onBill)} is not`}.
+      </p>
+      {error && <p className="room-food__error">{error}</p>}
+      {canAdd && addable.length > 0 && (
+        <button type="button" className="btn-accent room-food__add" disabled={adding} onClick={onAdd}>
+          {adding ? 'Adding…' : `Add ${addable.length} delivered order${addable.length === 1 ? '' : 's'} to the room bill`}
+        </button>
       )}
     </section>
   );

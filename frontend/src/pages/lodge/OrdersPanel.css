@@ -2667,3 +2667,104 @@ label.order-card__item { padding: 3px 6px; }
   width: 1%;
   white-space: nowrap;
 }
+
+/* Per-dish Deliver button on a spreadsheet chip, and the served marker. */
+.history-table__deliver {
+  margin-left: 8px;
+  padding: 1px 10px;
+  font-size: 11.5px;
+}
+
+.history-table__served {
+  margin-left: 8px;
+  padding: 0 7px;
+  border: 1px solid #0f6d37;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0f6d37;
+  background: var(--surface);
+}
+
+/* ---- Dishes you can deliver one by one: each dish is a tidy row — name on the
+   left, price, then the action or served marker pinned at the right edge. ---- */
+.history-table__items .history-table__item--row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 400px;
+  min-height: 34px;
+  margin: 0 0 4px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 8px;
+}
+
+.history-table__item--row .history-table__dish {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-table__item--row .history-table__price {
+  margin: 0;
+  padding: 0;
+  border: none;
+  flex: none;
+  font-weight: 700;
+}
+
+.history-table__item--row .history-table__deliver,
+.history-table__item--row .history-table__served {
+  margin: 0;
+  flex: none;
+  min-width: 78px;
+  text-align: center;
+}
+
+.history-table__item--row .history-table__deliver {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.history-table__item--row .history-table__served {
+  padding: 3px 0;
+  background: transparent;
+}
+
+/* Compact pass for deliverable dish rows. */
+.history-table__items .history-table__item--row {
+  gap: 8px;
+  min-height: 26px;
+  max-width: 330px;
+  margin: 0 0 3px;
+  padding: 1px 3px 1px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.2;
+}
+
+.history-table__item--row .history-table__deliver,
+.history-table__item--row .history-table__served {
+  min-width: 62px;
+}
+
+.history-table__item--row .history-table__deliver {
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.history-table__item--row .history-table__served {
+  padding: 1px 0;
+  font-size: 10.5px;
+}
+
+.history-table__status--room {
+  color: #6b3fa0;
+  border-color: #d9c6ef;
+  background: #f4ecfb;
+}
