@@ -102,6 +102,11 @@ class Booking {
   /// The bill, once one has been issued — null on every stay still unbilled.
   final Invoice? invoice;
 
+  /// Food this stay has ordered: room service, plus table or takeaway food
+  /// the desk moved onto the room bill. Cancelled orders are left out by the
+  /// server. Only populated by the detail fetch, same as [rooms].
+  final List<BookingFoodOrder> foodOrders;
+
   /// A stay stays editable right up until its bill is issued — extend it,
   /// move rooms, correct the party, fix a detail. Once this is true only the
   /// server's own further guards (room and check-out date edits close once
@@ -169,6 +174,7 @@ class Booking {
     this.vehicles = const [],
     this.roomCharges = const [],
     this.invoice,
+    this.foodOrders = const [],
     this.hasIssuedInvoice = false,
     this.rooms = const [],
     this.roomCount,
@@ -243,6 +249,10 @@ class Booking {
     invoice: json['invoice'] == null
         ? null
         : Invoice.fromJson(json['invoice'] as Map<String, dynamic>),
+    foodOrders: (json['foodOrders'] as List?)
+            ?.map((e) => BookingFoodOrder.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
     hasIssuedInvoice: asBool(json['hasIssuedInvoice']),
     rooms: (json['rooms'] as List?)
             ?.map((e) => BookingRoom.fromJson(e as Map<String, dynamic>))
@@ -254,6 +264,19 @@ class Booking {
 
   /// Whether this stay holds more than one room.
   bool get isMultiRoom => rooms.length > 1;
+
+  /// Food on this stay that no bill carries yet. It lands on the stay bill
+  /// at checkout, so it belongs in what is still to collect — same filter
+  /// StayDetails.jsx's own `foodOrdersOpen` applies.
+  List<BookingFoodOrder> get foodOrdersOpen =>
+      foodOrders.where((o) => !o.billed).toList();
+
+  /// The unbilled food total, rounded the same way StayDetails.jsx rounds
+  /// `foodOpenTotal` — to the paisa, not the rupee.
+  num get foodOpenTotal =>
+      (foodOrdersOpen.fold<num>(0, (sum, o) => sum + o.subtotal) * 100)
+          .round() /
+      100;
 
   /// What is still to collect, before the bill is cut — the room charge and
   /// whatever was agreed for leaving late, less the advance. Deliberately
@@ -416,6 +439,84 @@ class RoomChargeLine {
         label: json['label']?.toString() ?? '',
         amount: asNum(json['amount']),
         nights: asInt(json['nights']),
+      );
+}
+
+/// One food order against a stay — room service, or table/takeaway food the
+/// desk moved onto the room bill. Mirrors the shape bookings.service.js's own
+/// `getBooking` builds for StayDetails.jsx's price breakdown.
+class BookingFoodOrder {
+  final int id;
+  final int orderNumber;
+
+  /// ROOM_SERVICE (ordered from the room) or ADDED (a table/takeaway order
+  /// the desk charged to this stay).
+  final String origin;
+
+  /// Where an ADDED order came from — a table's label, or "Takeaway" — null
+  /// for ROOM_SERVICE, which has nowhere else to say.
+  final String? placedFrom;
+
+  final String status;
+  final num subtotal;
+  final String? placedAt;
+
+  /// Whether an invoice already carries this order — [Booking.foodOrdersOpen]
+  /// is everything that isn't.
+  final bool billed;
+
+  /// The dishes on this ticket, so the register's own food section can show
+  /// what was actually ordered rather than just its total — same lines
+  /// Bookings.jsx's own RoomFoodSection reads off `o.items`.
+  final List<BookingFoodOrderItem> items;
+
+  const BookingFoodOrder({
+    required this.id,
+    this.orderNumber = 0,
+    this.origin = 'ADDED',
+    this.placedFrom,
+    this.status = 'DELIVERED',
+    this.subtotal = 0,
+    this.placedAt,
+    this.billed = false,
+    this.items = const [],
+  });
+
+  factory BookingFoodOrder.fromJson(Map<String, dynamic> json) =>
+      BookingFoodOrder(
+        id: asInt(json['id']),
+        orderNumber: asIntOrNull(json['orderNumber']) ?? 0,
+        origin: json['origin']?.toString() ?? 'ADDED',
+        placedFrom: asStringOrNull(json['placedFrom']),
+        status: json['status']?.toString() ?? 'DELIVERED',
+        subtotal: asNumOrNull(json['subtotal']) ?? 0,
+        placedAt: asStringOrNull(json['placedAt']),
+        billed: asBool(json['billed']),
+        items: (json['items'] as List? ?? const [])
+            .map((e) => BookingFoodOrderItem.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// One dish on a [BookingFoodOrder] ticket, as the booking detail endpoint
+/// sends it — just enough to print a line, not the full ticket shape
+/// [FoodOrderItem] carries.
+class BookingFoodOrderItem {
+  final String name;
+  final int quantity;
+  final num lineTotal;
+
+  const BookingFoodOrderItem({
+    required this.name,
+    this.quantity = 1,
+    this.lineTotal = 0,
+  });
+
+  factory BookingFoodOrderItem.fromJson(Map<String, dynamic> json) =>
+      BookingFoodOrderItem(
+        name: asStringOrNull(json['name']) ?? '',
+        quantity: asIntOrNull(json['quantity']) ?? 1,
+        lineTotal: asNumOrNull(json['lineTotal']) ?? 0,
       );
 }
 

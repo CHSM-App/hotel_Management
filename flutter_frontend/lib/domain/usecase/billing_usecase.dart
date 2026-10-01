@@ -39,6 +39,15 @@ class BillingUsecase {
   Future<Invoice> issueFoodInvoice(String tab, Map<String, dynamic> body) =>
       repository.issueFoodInvoice(tab, body);
 
+  /// Everyone checked in right now — the destination list for adding a
+  /// table/takeaway tab to a room bill.
+  Future<List<InHouseGuest>> inHouseGuests() => repository.inHouseGuests();
+
+  /// Moves a table or takeaway tab's delivered, unbilled food onto a stay's
+  /// bill.
+  Future<void> addFoodTabToRoom(String tab, int bookingId) =>
+      repository.addFoodTabToRoom(tab, bookingId);
+
   /// Bills already issued.
   Future<List<Invoice>> invoices() => repository.invoices();
 
@@ -85,4 +94,8 @@ class BillingUsecase {
   /// Sets where one series continues from.
   Future<BillSeries> updateBillingSeries(String series, int nextNumber) =>
       repository.updateBillingSeries(series, nextNumber);
+
+  /// Every advance receipt on file for the lodge, for the Bills list.
+  Future<List<AdvanceReceipt>> allAdvanceReceipts() =>
+      repository.allAdvanceReceipts();
 }

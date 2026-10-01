@@ -452,6 +452,25 @@ class ApiService {
     return FoodBillPreview.fromJson(_map(res.data));
   }
 
+  /// Everyone checked in right now — the destination list AddToRoomDialog
+  /// offers when a table or takeaway order is moved onto a room bill.
+  Future<List<InHouseGuest>> inHouseGuests() async {
+    final res = await _dio.get('/billing/food-tabs/in-house-guests');
+    return (_map(res.data)['guests'] as List? ?? [])
+        .map((e) => InHouseGuest.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Moves a table or takeaway tab's delivered, unbilled food onto
+  /// [bookingId]'s stay bill — same as OrdersPanel.jsx's own
+  /// `AddToRoomDialog.confirmAdd`.
+  Future<void> addFoodTabToRoom(String tab, int bookingId) async {
+    await _dio.post(
+      '/billing/food-tabs/$tab/add-to-room',
+      data: {'bookingId': bookingId},
+    );
+  }
+
   /// Close one tab — sweeps every delivered order on it into one document.
   Future<Invoice> issueFoodInvoice(
     String tab,
@@ -541,6 +560,16 @@ class ApiService {
   /// Every advance receipt written against this stay, newest first.
   Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) async {
     final res = await _dio.get('/billing/bookings/$bookingId/advance-receipts');
+    return (_map(res.data)['receipts'] as List? ?? [])
+        .map((e) => AdvanceReceipt.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Every advance receipt on file for the lodge, not scoped to one booking —
+  /// what the Bills list merges in alongside invoices (mirrors the web's own
+  /// `apiGet('/billing/advance-receipts')` in Billing.jsx).
+  Future<List<AdvanceReceipt>> allAdvanceReceipts() async {
+    final res = await _dio.get('/billing/advance-receipts');
     return (_map(res.data)['receipts'] as List? ?? [])
         .map((e) => AdvanceReceipt.fromJson(e as Map<String, dynamic>))
         .toList();

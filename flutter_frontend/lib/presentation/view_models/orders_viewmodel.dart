@@ -275,7 +275,13 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     if (!silent) state = state.copyWith(history: const AsyncValue.loading());
     try {
       final range = _historyRange();
-      final orders = state.myOrdersMode
+      // Only the captain's own "Kitchen queue" tab (what's still open) is
+      // compact and looks back a month regardless of the period picker — the
+      // same `scope === 'active'` condition OrdersPanel.jsx's own `compact`
+      // reads. Their History tab (what's settled) is not compact: it gets
+      // the full period picker and status filter, same as everyone else's.
+      final compact = state.myOrdersMode && state.tab == OrdersTab.queue;
+      final orders = compact
           ? await usecase.orders(from: iso(_monthStart()), to: iso(_today()))
           : await usecase.orders(
               from: iso(range.$1),

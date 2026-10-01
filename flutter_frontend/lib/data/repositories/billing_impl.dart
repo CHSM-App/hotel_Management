@@ -48,6 +48,13 @@ class BillingImpl implements BillingRepository {
       api.issueFoodInvoice(tab, body);
 
   @override
+  Future<List<InHouseGuest>> inHouseGuests() => api.inHouseGuests();
+
+  @override
+  Future<void> addFoodTabToRoom(String tab, int bookingId) =>
+      api.addFoodTabToRoom(tab, bookingId);
+
+  @override
   Future<List<Invoice>> invoices() => api.invoices();
 
   @override
@@ -65,6 +72,9 @@ class BillingImpl implements BillingRepository {
   @override
   Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) =>
       api.advanceReceipts(bookingId);
+
+  @override
+  Future<List<AdvanceReceipt>> allAdvanceReceipts() => api.allAdvanceReceipts();
 
   @override
   Future<AdvanceReceipt> issueAdvanceReceipt(

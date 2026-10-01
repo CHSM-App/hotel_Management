@@ -105,6 +105,7 @@ class FoodOrder {
   final String? roomNumber;
   final String? tableLabel;
   final String? guestName;
+  final String? guestPhone;
   final String? note;
   final String status;
   final num subtotal;
@@ -141,6 +142,10 @@ class FoodOrder {
 
   final int? invoiceId;
 
+  /// The bill number once one has been issued — shown under the status
+  /// badge, same as OrdersPanel.jsx's own `Bill {o.invoiceNumber}` note.
+  final String? invoiceNumber;
+
   /// Where this order may go next, decided by the server.
   final List<String> nextStatuses;
 
@@ -154,6 +159,7 @@ class FoodOrder {
     this.roomNumber,
     this.tableLabel,
     this.guestName,
+    this.guestPhone,
     this.note,
     this.status = 'PENDING',
     this.subtotal = 0,
@@ -169,6 +175,7 @@ class FoodOrder {
     this.billed = false,
     this.readyToBill = false,
     this.invoiceId,
+    this.invoiceNumber,
     this.nextStatuses = const [],
     this.items = const [],
   });
@@ -181,6 +188,7 @@ class FoodOrder {
     roomNumber: asStringOrNull(json['roomNumber']),
     tableLabel: asStringOrNull(json['tableLabel']),
     guestName: asStringOrNull(json['guestName']),
+    guestPhone: asStringOrNull(json['guestPhone']),
     note: asStringOrNull(json['note']),
     status: asStringOrNull(json['status']) ?? 'PENDING',
     subtotal: asNumOrNull(json['subtotal']) ?? 0,
@@ -196,6 +204,7 @@ class FoodOrder {
     billed: json['billed'] == true,
     readyToBill: json['readyToBill'] == true,
     invoiceId: asIntOrNull(json['invoiceId']),
+    invoiceNumber: asStringOrNull(json['invoiceNumber']),
     nextStatuses: (json['nextStatuses'] as List? ?? const [])
         .map((e) => e.toString())
         .toList(),
@@ -235,6 +244,17 @@ class FoodOrder {
   bool get isEditable => !billed && !readyToBill && status != 'CANCELLED';
 
   String get statusLabel => kOrderStatusLabels[status] ?? status;
+
+  /// Who the food is for: the name (and number) typed at the counter, or the
+  /// guest staying in the room. Null for a table order nobody has named yet
+  /// — same as OrdersPanel.jsx's own `Customer` component.
+  String? get customerLabel {
+    if ((guestName ?? '').isEmpty && (guestPhone ?? '').isEmpty) return null;
+    final name = guestName ?? '';
+    final phone = guestPhone ?? '';
+    if (name.isNotEmpty && phone.isNotEmpty) return '$name · $phone';
+    return name.isNotEmpty ? name : phone;
+  }
 
   /// Who this is for, in the words the kitchen uses: a room, a table, or the
   /// counter. Never a raw source code.

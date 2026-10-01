@@ -18,6 +18,11 @@ class BillingState {
   final AsyncValue<List<FoodTab>> foodQueue;
   final AsyncValue<List<Invoice>> invoices;
 
+  /// Every advance receipt on file for the lodge — merged alongside
+  /// [invoices] into the Bills list, the same way the web's own
+  /// `asDocument()` restates a receipt onto the invoice shape (Billing.jsx).
+  final AsyncValue<List<AdvanceReceipt>> advanceReceipts;
+
   // ── The bill being cut ───────────────────────────────────────────────────
   final BillableStay? target;
   final BillPreview? preview;
@@ -71,6 +76,7 @@ class BillingState {
     this.queue = const AsyncValue.loading(),
     this.foodQueue = const AsyncValue.loading(),
     this.invoices = const AsyncValue.loading(),
+    this.advanceReceipts = const AsyncValue.loading(),
     this.target,
     this.preview,
     this.foodTarget,
@@ -92,6 +98,7 @@ class BillingState {
     AsyncValue<List<BillableStay>>? queue,
     AsyncValue<List<FoodTab>>? foodQueue,
     AsyncValue<List<Invoice>>? invoices,
+    AsyncValue<List<AdvanceReceipt>>? advanceReceipts,
     BillableStay? target,
     bool clearTarget = false,
     BillPreview? preview,
@@ -118,6 +125,7 @@ class BillingState {
     queue: queue ?? this.queue,
     foodQueue: foodQueue ?? this.foodQueue,
     invoices: invoices ?? this.invoices,
+    advanceReceipts: advanceReceipts ?? this.advanceReceipts,
     target: clearTarget ? null : (target ?? this.target),
     preview: clearPreview ? null : (preview ?? this.preview),
     foodTarget: clearFoodTarget ? null : (foodTarget ?? this.foodTarget),
@@ -232,6 +240,12 @@ class BillingViewModel extends StateNotifier<BillingState> {
       state = state.copyWith(invoices: AsyncValue.data(rows));
     } catch (e, st) {
       state = state.copyWith(invoices: AsyncValue.error(e, st));
+    }
+    try {
+      final rows = await usecase.allAdvanceReceipts();
+      state = state.copyWith(advanceReceipts: AsyncValue.data(rows));
+    } catch (e, st) {
+      state = state.copyWith(advanceReceipts: AsyncValue.error(e, st));
     }
   }
 
