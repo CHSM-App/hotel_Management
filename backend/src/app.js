@@ -26,6 +26,7 @@ const eventsRoutes = require('./modules/events/events.routes');
 const assetsRoutes = require('./modules/assets/assets.routes');
 const expensesRoutes = require('./modules/expenses/expenses.routes');
 const incomeRoutes = require('./modules/income/income.routes');
+const lodgeServicesRoutes = require('./modules/services/services.routes');
 const publicRoutes = require('./modules/public/public.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
@@ -98,9 +99,13 @@ app.use(
         // no script or fetch goes to a third party.
         imgSrc: ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org'],
         fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
-        // Same-origin API only. Nothing in this app talks to a third party, so
-        // anything that tries is either a bug or an exfiltration attempt.
-        connectSrc: ["'self'"],
+        // Same-origin API, plus the two font hosts and nothing else. The bill is
+        // rasterised to a PDF in the browser (html-to-image), which has to read the
+        // font stylesheet and files to carry the masthead face into the image; with
+        // fetch blocked it fell back to a wider serif and the hotel name wrapped
+        // over the lines below it. Anything else that tries is a bug or an
+        // exfiltration attempt.
+        connectSrc: ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
         // Nothing may embed this app — the clickjacking defence, and the
         // modern replacement for X-Frame-Options.
         frameAncestors: ["'none'"],
@@ -269,6 +274,7 @@ const API_ROUTES = [
   ['/assets', assetsRoutes],
   ['/expenses', expensesRoutes],
   ['/income', incomeRoutes],
+  ['/lodge-services', lodgeServicesRoutes],
   ['/public', publicRoutes],
 ];
 

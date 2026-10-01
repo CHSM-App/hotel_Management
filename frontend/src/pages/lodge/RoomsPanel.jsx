@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiGet, apiPut, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
+import { apiGet, apiPost, apiPut, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { matchesSearch } from '../../lib/searchContext';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -16,6 +16,9 @@ const BED_SIZES = ['SINGLE', 'DOUBLE', 'QUEEN', 'KING'];
 const BATHROOM_TYPES = ['ATTACHED', 'COMMON'];
 const MAX_ROOM_IMAGES = 6;
 const ROOM_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp';
+// Stands in for a Dormitory category that doesn't exist yet; it is created, priced
+// at the dormitory's per-bed rate, the moment the room is saved.
+const NEW_DORM_CATEGORY = '__new_dorm__';
 const DORMITORY_GENDERS = ['MALE', 'FEMALE', 'BOTH'];
 const DORMITORY_AC_OPTIONS = ['AC', 'NON_AC'];
 
@@ -300,6 +303,21 @@ export default function RoomsPanel() {
   // default rate or room type worth falling back to), and the same open
   // modal swings straight into edit mode where the bed editor already
   // lives — no second screen, no reopening.
+  // A dormitory room belongs to a Dormitory category. When the property has none
+  // yet, picking "Dormitory" here creates it (rate = the per-bed price) just before
+  // the room is saved, so the desk never has to leave this form to set one up.
+  const ensureCategoryId = async () => {
+    if (form.categoryId !== NEW_DORM_CATEGORY) return form.categoryId;
+    const created = await apiPost(
+      '/categories',
+      { name: 'Dormitory', basePrice: Number(form.dormitoryPrice) },
+      { token: session?.token }
+    );
+    const id = String(created.id);
+    setForm((f) => ({ ...f, categoryId: id }));
+    return id;
+  };
+
   const tryAutoCreateDormitory = async () => {
     if (
       !form.categoryId ||
@@ -318,8 +336,9 @@ export default function RoomsPanel() {
     setFieldError(null);
     setAutoCreating(true);
     try {
+      const categoryId = await ensureCategoryId();
       const formData = new FormData();
-      formData.append('categoryId', String(Number(form.categoryId)));
+      formData.append('categoryId', String(Number(categoryId)));
       formData.append('roomNumber', form.roomNumber.trim());
       formData.append('floor', form.floor.trim());
       formData.append('bathroomType', form.bathroomType);
@@ -553,8 +572,9 @@ export default function RoomsPanel() {
 
     setSubmitting(true);
     try {
+      const categoryId = await ensureCategoryId();
       const formData = new FormData();
-      formData.append('categoryId', String(Number(form.categoryId)));
+      formData.append('categoryId', String(Number(categoryId)));
       formData.append('floor', form.floor.trim());
       // A dormitory sends neither — the server treats their absence as
       // deliberate for a dormitory (see rooms.schema.js), the same way this
@@ -652,6 +672,7 @@ export default function RoomsPanel() {
   // box and hoping it's spelled the way the card shows it. A dropdown next to
   // the room count answers the same question in one click.
   const [categoryFilter, setCategoryFilter] = useState('');
+  const dormCategory = (categories || []).find((c) => /dormitor/i.test(c.name)) || null;
   const visibleRooms = (rooms || [])
     .filter((room) => !categoryFilter || String(room.category?.id) === categoryFilter)
     .filter((room) =>
@@ -1080,6 +1101,13 @@ export default function RoomsPanel() {
                         setForm((f) => ({
                           ...f,
                           isDormitory: checked,
+                          // Ticking it picks the Dormitory category for the desk, and
+                          // unticking lets go of a category that only existed for it.
+                          categoryId: checked
+                            ? f.categoryId || (dormCategory ? String(dormCategory.id) : NEW_DORM_CATEGORY)
+                            : f.categoryId === NEW_DORM_CATEGORY
+                              ? ''
+                              : f.categoryId,
                           // A dormitory is always a single room — see the
                           // disabled Bulk toggle above.
                           mode: checked ? 'single' : f.mode,
@@ -1200,6 +1228,9 @@ export default function RoomsPanel() {
                     onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
                   >
                     <option value="">Choose a category</option>
+                    {form.isDormitory && !dormCategory && (
+                      <option value={NEW_DORM_CATEGORY}>Dormitory — new category, priced per bed</option>
+                    )}
                     {categories?.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} — {formatPrice(c.basePrice)}

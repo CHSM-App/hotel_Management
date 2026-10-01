@@ -166,6 +166,18 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
+    key: 'otherServices',
+    title: 'Other services',
+    description: 'Laundry, private pool, gaming and other services sold per use, billed like food.',
+    // Front desk runs the uses; the owner prices them.
+    permission: ['rooms.manage', 'bookings.manage', 'billing.manage'],
+    // An add-on, switched on per property like events, assets and expenses.
+    // (Needs rooms too, which the admin forms and the server both enforce.)
+    capability: 'hasOtherServices',
+    icon: 'wrench',
+    group: 'Rooms',
+  },
+  {
     key: 'menu',
     title: 'Menu & QR codes',
     description: 'The food menu, dining tables, and the QR codes guests scan to order.',

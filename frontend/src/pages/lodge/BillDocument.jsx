@@ -734,7 +734,10 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   if (!invoice) return null;
 
   const isGst = invoice.billingSide === 'GST';
-  const isFoodBill = invoice.kind === 'FOOD';
+  // A bill of other services alone (laundry, pool ...) has no stay behind it,
+  // so it prints on the same stay-less layout a food bill uses.
+  const isServiceBill = invoice.kind === 'SERVICE';
+  const isFoodBill = invoice.kind === 'FOOD' || isServiceBill;
   const isEventBill = invoice.kind === 'EVENT';
   const venueSac = invoice.venueSacCode || SAC_VENUE;
   const isPreview = invoice.status === 'PREVIEW';
@@ -755,10 +758,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   // the same routine that produced the tax. The fallback only fires on a
   // payload predating that field, and is exact whenever the bill carries a
   // single supply — which is every bill that isn't a stay with a food tab.
-  const gross = round2(invoice.roomSubtotal + invoice.foodSubtotal);
+  const serviceSubtotal = invoice.serviceSubtotal ?? 0;
+  const gross = round2(invoice.roomSubtotal + invoice.foodSubtotal + serviceSubtotal);
   const shareOf = (part) => (gross > 0 ? round2(part - (invoice.discountAmount * part) / gross) : part);
   const roomTaxable = invoice.roomTaxable ?? shareOf(invoice.roomSubtotal);
   const foodTaxable = invoice.foodTaxable ?? shareOf(invoice.foodSubtotal);
+  const serviceTaxable = invoice.serviceTaxable ?? shareOf(serviceSubtotal);
 
   // The room charge is built base rate first, then any season uplift, then each
   // switched-on extra — bed, AC, extra person — in the order the quote applied
@@ -837,7 +842,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   // Deliberately the same expression the TOTAL AMOUNT line uses, so the two can
   // never drift: this is that line, written once at the top of the column where
   // the printed memo puts it.
-  const leadAmount = round2(roomTaxable + foodTaxable);
+  const leadAmount = round2(roomTaxable + foodTaxable + serviceTaxable);
   const grossWhole = Math.floor(Math.round(leadAmount * 100) / 100);
   const grossPaise = Math.round(leadAmount * 100) % 100;
 
@@ -1139,6 +1144,26 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                   ))}
                 </div>
               )}
+
+              {/* Other services (laundry, pool, gaming ...) — a third supply, so
+                  itemised on its own with the rate each was sold at. */}
+              {serviceSubtotal > 0 && (
+                <div className="memo__misc">
+                  <div className="memo__misc-head">Other services</div>
+                  {invoice.serviceItems?.map((item, index) => (
+                    <div className="memo__misc-line" key={`${item.name}-${item.unitPrice}-${index}`}>
+                      <span>
+                        {item.name}
+                        <span className="memo__qty">
+                          {item.quantity} × {amt(item.unitPrice)}
+                          {isGst && item.gstRatePercent > 0 ? ` · GST ${item.gstRatePercent}%` : ''}
+                        </span>
+                      </span>
+                      <span>{amt(item.lineTotal)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </td>
             {/* The gross the stay came to, against the top of the stay block —
                 where the memo writes it. */}
@@ -1164,7 +1189,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
               value={-invoice.discountAmount}
             />
           )}
-          <Money label={T.totalAmount} value={round2(roomTaxable + foodTaxable)} rule />
+          <Money label={T.totalAmount} value={round2(roomTaxable + foodTaxable + serviceTaxable)} rule />
           {invoice.cgstAmount > 0 && <Money label={`CGST ${invoice.cgstRatePercent} %`} value={invoice.cgstAmount} />}
           {invoice.sgstAmount > 0 && <Money label={`SGST ${invoice.sgstRatePercent} %`} value={invoice.sgstAmount} />}
           {invoice.foodCgstAmount > 0 && (
@@ -1172,6 +1197,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           )}
           {invoice.foodSgstAmount > 0 && (
             <Money label={`SGST ${invoice.foodSgstRatePercent} % (${T.miscTag})`} value={invoice.foodSgstAmount} />
+          )}
+          {invoice.serviceCgstAmount > 0 && (
+            <Money label={`CGST ${invoice.serviceCgstRatePercent} % (Services)`} value={invoice.serviceCgstAmount} />
+          )}
+          {invoice.serviceSgstAmount > 0 && (
+            <Money label={`SGST ${invoice.serviceSgstRatePercent} % (Services)`} value={invoice.serviceSgstAmount} />
           )}
           {invoice.roundOff !== 0 && <Money label={T.roundOff} value={invoice.roundOff} />}
           <Money label={T.grandTotal} value={invoice.totalAmount} strong rule />

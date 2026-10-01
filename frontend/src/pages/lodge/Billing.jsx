@@ -91,11 +91,14 @@ const SOURCE_LABEL = {
   TABLE: 'Table',
   EVENT: 'Function',
   ADVANCE: 'Advance',
+  SERVICE: 'Services',
 };
 
 function billSource(inv) {
   if (inv.kind === 'ADVANCE') return 'ADVANCE';
   if (inv.kind === 'EVENT') return 'EVENT';
+  // Laundry, pool, gaming ... billed on their own, with no stay behind them.
+  if (inv.kind === 'SERVICE') return 'SERVICE';
   // A food bill is one of three tabs (see tabIdentity on the backend): a
   // dining table, room service with nobody checked in to carry it on a stay
   // bill, or the counter. Only the first of those is actually a table — a
@@ -494,9 +497,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const billsStays = stream === 'room' && lodge?.hasRooms !== false;
   const billsTables = restaurant && Boolean(lodge?.servesFood);
   const canAddToRoom = restaurant && lodge?.hasRooms !== false;
+  // Other services is a per-property add-on, shown with the room billing.
+  const billsServices = billsStays && Boolean(lodge?.hasOtherServices);
 
   const tabs = [
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
+    ...(billsServices ? [{ key: 'services', label: 'Services to bill' }] : []),
     ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
     { key: 'bills', label: 'Bills' },
     // Last, and deliberately not first: numbering is set once at setup and
@@ -586,6 +592,54 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     }
   };
 
+  // Other services (laundry, pool, gaming ...) completed and waiting to be
+  // billed — on their own document, or added to a guest's room bill.
+  const [serviceUsages, setServiceUsages] = useState(() => readCache('/lodge-services/usages?status=tobill'));
+  const [serviceError, setServiceError] = useState('');
+  const [serviceSel, setServiceSel] = useState([]);
+  const [servicePick, setServicePick] = useState(null);
+
+  const loadServices = () => {
+    if (!billsServices) return;
+    apiGet('/lodge-services/usages?status=tobill', { token })
+      .then((data) => {
+        setServiceUsages(writeCache('/lodge-services/usages?status=tobill', data.usages));
+        // Drop ticks on rows that have since been billed elsewhere.
+        setServiceSel((sel) => sel.filter((id) => data.usages.some((u) => u.id === id)));
+        setServiceError('');
+      })
+      .catch((err) => setServiceError(err instanceof ApiError ? err.message : 'Could not load services to bill.'));
+  };
+  const toggleServiceSel = (id) =>
+    setServiceSel((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]));
+
+  // "Add to room bill": a use already tied to a stay goes straight on it;
+  // otherwise the desk picks one of the guests staying in-house.
+  const openServicePick = () => {
+    const chosen = (serviceUsages ?? []).filter((u) => serviceSel.includes(u.id));
+    const stays = [...new Set(chosen.map((u) => u.bookingId).filter(Boolean))];
+    if (stays.length === 1 && chosen.every((u) => u.bookingId === stays[0])) {
+      addServicesToRoom(stays[0]);
+      return;
+    }
+    setServicePick({ guests: null, bookingId: '', error: '' });
+    apiGet('/billing/food-tabs/in-house-guests', { token })
+      .then((data) => setServicePick((p) => p && { ...p, guests: data.guests }))
+      .catch(() => setServicePick((p) => p && { ...p, guests: [], error: 'Could not load guests.' }));
+  };
+  const addServicesToRoom = async (bookingId) => {
+    try {
+      await apiPost('/billing/services/add-to-room', { usageIds: serviceSel, bookingId: Number(bookingId) }, { token });
+      setServicePick(null);
+      setServiceSel([]);
+      loadServices();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not add to the room bill.';
+      if (servicePick) setServicePick((p) => ({ ...p, error: message }));
+      else setServiceError(message);
+    }
+  };
+
   const loadInvoices = () => {
     apiGet('/billing/invoices', { token })
       .then((data) => {
@@ -608,6 +662,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   useEffect(() => {
     loadQueue();
     loadFoodTabs();
+    loadServices();
     loadInvoices();
     loadReceipts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -617,6 +672,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const refreshAll = () => {
     loadQueue();
     loadFoodTabs();
+    loadServices();
     loadInvoices();
     loadReceipts();
   };
@@ -850,7 +906,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               ? `?discountAmount=${cycleDiscount}&discountReason=${encodeURIComponent(discountReason.trim())}`
               : ''
           }`
-        : `/billing/food-tabs/${billTarget.tab}/preview`
+        : billTarget.kind === 'SERVICE'
+          ? `/billing/services/preview?ids=${billTarget.usageIds.join(',')}`
+          : `/billing/food-tabs/${billTarget.tab}/preview`
     : null;
 
   useEffect(() => {
@@ -999,7 +1057,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         ? `/billing/bookings/${billTarget.bookingId}/invoice`
         : billTarget.kind === 'EVENT'
           ? `/billing/events/${billTarget.eventBookingId}/invoice`
-          : `/billing/food-tabs/${billTarget.tab}/invoice`;
+          : billTarget.kind === 'SERVICE'
+            ? '/billing/services/invoice'
+            : `/billing/food-tabs/${billTarget.tab}/invoice`;
 
     setSubmitting(true);
     try {
@@ -1018,6 +1078,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           // Sent only for a stay — a table has no checkout to be late for.
           ...(billTarget.kind === 'STAY' ? { includeLateCheckout } : {}),
           ...(billTarget.kind === 'FOOD' && billAnyway ? { billAnyway: true } : {}),
+          ...(billTarget.kind === 'SERVICE' ? { usageIds: billTarget.usageIds } : {}),
           collectedAmount: collected,
           ...(collected > 0 ? { paymentMethod } : {}),
           // Dropped on cash: switching UPI → Cash after typing a reference
@@ -1315,6 +1376,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             {t.key === 'ready' && queue && queue.length > 0 && (
               <span className="billing-panel__subtabs-count">{queue.length}</span>
             )}
+            {t.key === 'services' && serviceUsages && serviceUsages.length > 0 && (
+              <span className="billing-panel__subtabs-count">{serviceUsages.length}</span>
+            )}
             {t.key === 'tables' && foodTabs && foodTabs.length > 0 && (
               <span className="billing-panel__subtabs-count">{foodTabs.length}</span>
             )}
@@ -1412,6 +1476,109 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'services' && (
+        <div className="chart-section">
+          <div className="chart-section__header">
+            <h3>Services to bill</h3>
+            <span className="chart-section__hint">
+              Laundry, pool, gaming and other services that are completed but not yet paid for. Tick
+              what to bill together, then bill it on its own document or add it to a guest’s room bill.
+            </span>
+          </div>
+
+          {serviceError && <div className="form-banner form-banner--error">{serviceError}</div>}
+          {!serviceError && !serviceUsages && <PageLoader inline label="Loading" />}
+          {!serviceError && serviceUsages && serviceUsages.length === 0 && (
+            <div className="dash-state">Nothing waiting — every completed service has been billed.</div>
+          )}
+          {!serviceError && serviceUsages && serviceUsages.length > 0 && (
+            <>
+              <div className="chart-list">
+                {serviceUsages.map((u) => (
+                  <label className="chart-row billing-panel__queue-row" key={u.id} style={{ cursor: 'pointer' }}>
+                    <span className="chart-row__name">
+                      <input
+                        type="checkbox"
+                        checked={serviceSel.includes(u.id)}
+                        onChange={() => toggleServiceSel(u.id)}
+                        style={{ marginRight: 10 }}
+                      />
+                      {u.serviceName}
+                      <span className="chart-row__dates">
+                        {u.quantity} × {formatPrice(u.unitPrice)}
+                        {[u.roomNumber ? `Room ${u.roomNumber}` : null, u.guestName].filter(Boolean).map((s) => ` · ${s}`).join('')}
+                        {u.onRoomBill ? ' · its stay bill was already issued' : ''}
+                      </span>
+                    </span>
+                    <span className="chart-row__value">{formatPrice(u.lineTotal)}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="billing-panel__queue-actions" style={{ marginTop: 12 }}>
+                <span className="chart-row__value">
+                  {serviceSel.length} selected ·{' '}
+                  {formatPrice(serviceUsages.filter((u) => serviceSel.includes(u.id)).reduce((n, u) => n + u.lineTotal, 0))}
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={serviceSel.length === 0}
+                  onClick={openServicePick}
+                >
+                  Add to room bill
+                </button>
+                <button
+                  type="button"
+                  className="btn-accent"
+                  disabled={serviceSel.length === 0}
+                  onClick={() => openBilling({ kind: 'SERVICE', usageIds: serviceSel })}
+                >
+                  Bill selected
+                </button>
+              </div>
+              {servicePick && (
+                <div className="room-pick">
+                  <div className="room-pick__label">Add the selected services to a guest’s room bill</div>
+                  <div className="room-pick__controls">
+                    {!servicePick.guests ? (
+                      <span className="room-pick__note">Loading guests…</span>
+                    ) : servicePick.guests.length === 0 ? (
+                      <span className="room-pick__note">Nobody is checked in.</span>
+                    ) : (
+                      <select
+                        className="room-pick__select"
+                        aria-label="Guest"
+                        value={servicePick.bookingId}
+                        onChange={(e) => setServicePick({ ...servicePick, bookingId: e.target.value })}
+                      >
+                        <option value="">Choose guest…</option>
+                        {servicePick.guests.map((g) => (
+                          <option key={g.bookingId} value={g.bookingId}>
+                            Room {g.roomNumber} · {g.guestName}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button type="button" className="btn-secondary" onClick={() => setServicePick(null)}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-accent"
+                      disabled={!servicePick.bookingId}
+                      onClick={() => addServicesToRoom(servicePick.bookingId)}
+                    >
+                      Add to room bill
+                    </button>
+                  </div>
+                  {servicePick.error && <div className="form-banner form-banner--error">{servicePick.error}</div>}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1719,11 +1886,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                               <td>
                                 {inv.kind === 'FOOD'
                                   ? inv.tableLabel || 'Counter'
-                                  : inv.kind === 'EVENT'
-                                    ? `${inv.guestName} · ${inv.venueName || 'Function'}`
-                                    : inv.guestName}
+                                  : inv.kind === 'SERVICE'
+                                    ? inv.guestName || inv.tableLabel || 'Walk-in'
+                                    : inv.kind === 'EVENT'
+                                      ? `${inv.guestName} · ${inv.venueName || 'Function'}`
+                                      : inv.guestName}
                               </td>
-                              <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '—' : inv.roomNumber || '—'}</td>
+                              <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' || inv.kind === 'SERVICE' ? '—' : inv.roomNumber || '—'}</td>
                               <td>
                                 <span className={`bill-tag bill-tag--${DOCUMENT_TAG[inv.documentType]}`}>
                                   {DOCUMENT_LABEL[inv.documentType]}
@@ -1781,9 +1950,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                               without it a row can't say why it is on screen. */}
                           {inv.kind === 'FOOD'
                             ? inv.tableLabel || 'Counter'
-                            : inv.kind === 'EVENT'
-                              ? `${inv.guestName} · ${inv.venueName || 'Function'}`
-                              : `${inv.guestName} · ${inv.roomNumber}`}
+                            : inv.kind === 'SERVICE'
+                              ? inv.guestName || inv.tableLabel || 'Walk-in'
+                              : inv.kind === 'EVENT'
+                                ? `${inv.guestName} · ${inv.venueName || 'Function'}`
+                                : `${inv.guestName} · ${inv.roomNumber}`}
                           {inv.createdAt && ` · ${formatBillDate(inv.createdAt)}`}
                           {/* Why anybody looks a receipt up again: what is
                               still to come on the stay it was taken against. */}
@@ -2087,7 +2258,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     rather than folded into the section title: the biller reads
                     it to confirm the walk-in in front of them before the bill
                     is cut, the same way the STAY section confirms the guest. */}
-                {billTarget.kind === 'FOOD' && preview.customerName && (
+                {(billTarget.kind === 'FOOD' || billTarget.kind === 'SERVICE') && preview.customerName && (
                   <div className="form-section">
                     <div className="chart-list">
                       <div className="chart-row">
@@ -2134,6 +2305,27 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         {(preview.orders ?? preview.foodOrders).map((o) => `#${o.orderNumber}`).join(', ')}
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Other services on this bill, itemised the same way. */}
+                {preview.serviceItems?.length > 0 && (
+                  <div className="form-section">
+                    <div className="form-section__title">Other services</div>
+                    <div className="chart-list">
+                      {preview.serviceItems.map((item) => (
+                        <div className="chart-row" key={item.id}>
+                          <span className="chart-row__name">
+                            {item.name}
+                            <span className="chart-row__dates">
+                              {item.quantity} × {formatPrice(item.unitPrice)}
+                              {item.gstRatePercent > 0 ? ` · GST ${item.gstRatePercent}%` : ''}
+                            </span>
+                          </span>
+                          <span className="chart-row__value">{formatPrice(item.lineTotal)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -2205,6 +2397,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         </div>
                       )}
 
+                      {activeAmounts.serviceSubtotal > 0 && (
+                        <div className="sim-result__line">
+                          <span>Other services</span>
+                          <span>{formatPrice(activeAmounts.serviceSubtotal)}</span>
+                        </div>
+                      )}
+
                       {/* Before every tax line, because that is where it is
                           actually applied: GST is computed on the subtotal
                           less this, not on the subtotal. Printed under the tax
@@ -2247,6 +2446,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           <div className="sim-result__line">
                             <span>SGST ({activeAmounts.foodSgstRatePercent}%) on food</span>
                             <span>{formatPrice(activeAmounts.foodSgstAmount)}</span>
+                          </div>
+                        </>
+                      )}
+                      {(activeAmounts.serviceCgstAmount > 0 || activeAmounts.serviceSgstAmount > 0) && (
+                        <>
+                          <div className="sim-result__line">
+                            <span>CGST ({activeAmounts.serviceCgstRatePercent}%) on services</span>
+                            <span>{formatPrice(activeAmounts.serviceCgstAmount)}</span>
+                          </div>
+                          <div className="sim-result__line">
+                            <span>SGST ({activeAmounts.serviceSgstRatePercent}%) on services</span>
+                            <span>{formatPrice(activeAmounts.serviceSgstAmount)}</span>
                           </div>
                         </>
                       )}

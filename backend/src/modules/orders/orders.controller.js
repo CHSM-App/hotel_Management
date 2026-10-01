@@ -351,6 +351,17 @@ async function cancelItemsHandler(req, res, next) {
   }
 }
 
+// The captain taking a whole ticket out (every dish ready). Not the owner, who
+// watches the floor but does not hand food over.
+async function deliverAllHandler(req, res, next) {
+  try {
+    if (req.user.role === 'OWNER') throw new ApiError('Not allowed.', 403);
+    res.json({ order: await ordersService.deliverAllItems(req.user.lodgeId, Number(req.params.id)) });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // The captain carrying one dish out. A captain may only hand over dishes on
 // orders they rang in; owner and reception (orders.manage) on any.
 async function updateItemDeliveredHandler(req, res, next) {
@@ -398,5 +409,6 @@ module.exports = {
   readyToBillHandler,
   listTabsHandler,
   updateItemDeliveredHandler,
+  deliverAllHandler,
   clearPinLockoutHandler,
 };

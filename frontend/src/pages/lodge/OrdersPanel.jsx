@@ -239,7 +239,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   const [billTab, setBillTab] = useState(null);
   const [roomOrder, setRoomOrder] = useState(null);
   // A table or takeaway can also go on a staying guest's room bill (rooms only).
-  const canIssue = (o) => canBillHere && o.status === 'DELIVERED';
+  const canIssue = (o) => canBillHere && o.status === 'DELIVERED' && !o.onRoomBill && !o.voided;
   // A room order can go on its own guest's room bill; the room is already known.
   const canRoom = (o) => canIssue(o) && lodge?.hasRooms !== false && (o.source !== 'ROOM' || Boolean(o.bookingId));
   const issueBill = async (o) => {
@@ -1393,7 +1393,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
   const deliver = async (order) => {
     setBusyId(order.id);
     try {
-      await apiPatch(`/orders/${order.id}/status`, { status: 'DELIVERED' }, { token: session?.token });
+      await apiPost(`/orders/${order.id}/deliver-all`, {}, { token: session?.token });
       setTick((t) => t + 1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not mark the order delivered.');
@@ -1442,13 +1442,13 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
 
   const inScope = (o) =>
     scope === 'active'
-      ? !o.billed && !o.onRoomBill && !o.readyToBill && o.status !== 'CANCELLED'
+      ? !o.billed && !o.voided && !o.onRoomBill && !o.readyToBill && o.status !== 'CANCELLED'
       : scope === 'done'
-      ? o.billed || o.onRoomBill || o.readyToBill || o.status === 'CANCELLED'
+      ? o.billed || o.voided || o.onRoomBill || o.readyToBill || o.status === 'CANCELLED'
       : // Today's History is the settled record: what has been billed (or cancelled).
         // Today's open orders stay in the Kitchen queue until they are billed.
         period === 'today'
-      ? o.billed || o.onRoomBill || o.status === 'CANCELLED'
+      ? o.billed || o.voided || o.onRoomBill || o.status === 'CANCELLED'
       : true;
   const orders = validRange ? loaded.orders.filter(inScope) : [];
   // Counts for the tiles and chips come from the whole day; the search only
@@ -1465,6 +1465,8 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
       ? LIVE_STATUSES.includes(o.status)
       : filter === 'BILLED'
       ? o.billed
+      : filter === 'VOIDED'
+      ? o.voided
       : o.status === filter);
   const filtered = orders.filter((o) => inFilter(o) && matchesSearch(o));
 
@@ -1476,7 +1478,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
     placed: (o) => new Date(o.placedAt).getTime(),
     where: (o) => targetLabel(o).toLowerCase(),
     customer: (o) => (o.guestName || o.guestPhone || '').toLowerCase(),
-    status: (o) => (o.billed ? billedLabel(o) : o.onRoomBill ? 'On room bill' : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]).toLowerCase(),
+    status: (o) => (o.voided ? 'Voided' : o.billed ? billedLabel(o) : o.onRoomBill ? 'On room bill' : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]).toLowerCase(),
     total: (o) => o.subtotal,
     took: (o) => {
       const end = o.deliveredAt || o.cancelledAt;
@@ -1498,10 +1500,10 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
   const sheetHasActions = shown.some(
     (o) =>
       (canHandOver() && canDeliver && o.status === 'PENDING') ||
-      (canHandOver() && o.status === 'READY') ||
+      (canHandOver() && ['PREPARING', 'READY'].includes(o.status) && o.items.length > 0 && o.items.every((i) => i.readyAt)) ||
       (viewBill && o.invoiceId != null) ||
       (onEdit && !o.billed && !o.readyToBill && o.status !== 'CANCELLED') ||
-      (readyToBill && !o.billed && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED') ||
+      (readyToBill && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED') ||
       (canDeliver && !o.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(o.status) && o.items.some((i) => !i.readyAt))
   );
 
@@ -1622,6 +1624,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
               ['ACTIVE', active.length, 'In progress', 'live'],
               ['DELIVERED', delivered.length, 'Delivered', 'ok'],
               ['BILLED', orders.filter((o) => o.billed).length, 'Billed', 'billed'],
+              ...(orders.some((o) => o.voided) ? [['VOIDED', orders.filter((o) => o.voided).length, 'Voided', 'bad']] : []),
               ['CANCELLED', cancelled.length, 'Cancelled', 'bad'],
             ].map(([key, value, label, tone]) => (
               <button
@@ -1764,8 +1767,8 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                             {o.note && <span className="history-table__note">“{o.note}”</span>}
                           </td>
                           <td>
-                            <span className={`history-table__status history-table__status--${o.billed ? 'billed' : o.onRoomBill ? 'room' : o.status.toLowerCase()}`}>
-                              {o.billed ? billedLabel(o) : o.onRoomBill ? 'On room bill' : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]}
+                            <span className={`history-table__status history-table__status--${o.voided ? 'voided' : o.billed ? 'billed' : o.onRoomBill ? 'room' : o.status.toLowerCase()}`}>
+                              {o.voided ? 'Voided' : o.billed ? billedLabel(o) : o.onRoomBill ? 'On room bill' : o.readyToBill ? 'Ready to bill' : STATUS_LABEL[o.status]}
                             </span>
                             {o.invoiceNumber && <span className="history-table__note">Bill {o.invoiceNumber}</span>}
                           </td>
@@ -1779,9 +1782,9 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                                 Accept
                               </button>
                             )}
-                            {canHandOver() && o.status === 'READY' && (
+                            {canHandOver() && ['PREPARING', 'READY'].includes(o.status) && o.items.length > 0 && o.items.every((i) => i.readyAt) && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => deliver(o)}>
-                                {ACTION_LABEL.DELIVERED}
+                                Deliver all
                               </button>
                             )}
                             {viewBill && o.invoiceId != null && (
@@ -1794,12 +1797,12 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                                 Edit
                               </button>
                             )}
-                            {readyToBill && !o.billed && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED' && (
+                            {readyToBill && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && o.status === 'DELIVERED' && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill(o)}>
                                 {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
                               </button>
                             )}
-                            {readyToBill && readyToBill.addToRoom && !o.billed && o.status === 'DELIVERED' && (o.source !== 'ROOM' || o.bookingId) && (
+                            {readyToBill && readyToBill.addToRoom && !o.billed && !o.onRoomBill && !o.voided && o.status === 'DELIVERED' && (o.source !== 'ROOM' || o.bookingId) && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill.addToRoom(o)}>
                                 Add to room bill
                               </button>
@@ -1839,14 +1842,14 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
     canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED';
+  const canBillNow = Boolean(readyToBill) && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED';
 
   return (
     <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 10 ? ' order-card--full' : order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
       <div className="order-card__head">
         <span className="order-card__number">#{order.orderNumber}</span>
           <Customer order={order} />
-        <span className="order-card__badge">{order.billed ? billedLabel(order) : order.onRoomBill ? 'On room bill' : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
+        <span className="order-card__badge">{order.voided ? 'Voided' : order.billed ? billedLabel(order) : order.onRoomBill ? 'On room bill' : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
       </div>
 
       <div className="order-card__meta">
@@ -1908,16 +1911,16 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
 
       {order.cancelReason && <p className="order-card__tick-hint">Cancelled: {order.cancelReason}</p>}
 
-      {((canHandOver() && (order.status === 'READY' || order.status === 'PENDING')) || (viewBill && order.invoiceId != null) || canEdit || canCancel || canBillNow) && (
+      {((canHandOver() && (order.status === 'READY' || order.status === 'PENDING' || order.status === 'PREPARING')) || (viewBill && order.invoiceId != null) || canEdit || canCancel || canBillNow) && (
         <div className="order-card__actions">
           {canHandOver() && canDeliver && order.status === 'PENDING' && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => accept(order)}>
               Accept
             </button>
           )}
-          {canHandOver() && order.status === 'READY' && (
+          {canHandOver() && ['PREPARING', 'READY'].includes(order.status) && order.items.length > 0 && order.items.every((i) => i.readyAt) && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => deliver(order)}>
-              {ACTION_LABEL.DELIVERED}
+              Deliver all
             </button>
           )}
           {canEdit && (
@@ -1955,7 +1958,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
   const canCancel = canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.billed && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED';
+  const canBillNow = Boolean(readyToBill) && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && order.status === 'DELIVERED';
   // How long the kitchen actually had it. Only honest once the order has
   // landed somewhere — a live one is still running.
   const settledAt = order.deliveredAt || order.cancelledAt;
@@ -1967,7 +1970,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
         <span className="history-row__target">{targetLabel(order)}</span>
         <SourceTag order={order} />
         <Customer order={order} />
-        <span className="history-row__badge">{order.billed ? billedLabel(order) : order.onRoomBill ? 'On room bill' : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
+        <span className="history-row__badge">{order.voided ? 'Voided' : order.billed ? billedLabel(order) : order.onRoomBill ? 'On room bill' : order.readyToBill ? 'Ready to bill' : STATUS_LABEL[order.status]}</span>
         {order.status === 'PREPARING' && order.items.some((i) => i.readyAt) && (
           <span className="history-row__ready">
             {order.items.filter((i) => i.readyAt).length} of {order.items.length} ready
@@ -2007,7 +2010,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
         <div className="history-row__reason">Cancelled because: {order.cancelReason}</div>
       )}
 
-      {((canHandOver() && (order.status === 'READY' || order.status === 'PENDING')) ||
+      {((canHandOver() && (order.status === 'READY' || order.status === 'PENDING' || order.status === 'PREPARING')) ||
         (viewBill && order.invoiceId != null) ||
         canCancel ||
         canBillNow ||
@@ -2018,9 +2021,9 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
               Accept
             </button>
           )}
-          {canHandOver() && order.status === 'READY' && (
+          {canHandOver() && ['PREPARING', 'READY'].includes(order.status) && order.items.length > 0 && order.items.every((i) => i.readyAt) && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => deliver(order)}>
-              {ACTION_LABEL.DELIVERED}
+              Deliver all
             </button>
           )}
           {onEdit && !order.billed && !order.readyToBill && order.status !== 'CANCELLED' && (

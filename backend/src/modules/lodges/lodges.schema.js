@@ -82,6 +82,7 @@ const createLodgeSchema = z
     // for this property.
     hasAssets: z.boolean().default(false),
     hasExpenses: z.boolean().default(false),
+    hasOtherServices: z.boolean().default(false),
     ownerName: z.string().trim().min(1, 'Owner name is required.'),
     ownerEmail: z.string().trim().email('Enter a valid email.').optional().or(z.literal('')).default(''),
     ownerPhone: z.string().trim().min(1, 'Owner phone is required.'),
@@ -95,6 +96,10 @@ const createLodgeSchema = z
   .refine((data) => data.hasRooms || data.servesFood || data.hasEvents, {
     message: 'A property with no rooms, no food service and no venue has nothing to sell.',
     path: ['hasRooms'],
+  })
+  .refine((data) => !data.hasOtherServices || data.hasRooms, {
+    message: 'Other services are sold from the rooms side — turn on rooms first.',
+    path: ['hasOtherServices'],
   })
   .refine((data) => !data.foodRoomService || data.hasRooms, {
     message: 'In-room ordering needs rooms — turn it off for a restaurant.',
@@ -149,6 +154,7 @@ const updateLodgeSchema = z.object({
   hasEvents: z.boolean().optional(),
   hasAssets: z.boolean().optional(),
   hasExpenses: z.boolean().optional(),
+  hasOtherServices: z.boolean().optional(),
   isActive: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
 });

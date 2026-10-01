@@ -1,11 +1,12 @@
 const { Router } = require('express');
-const { authenticate, requirePermission } = require('../../middleware/authenticate');
+const { authenticate, requirePermission, requireCapability } = require('../../middleware/authenticate');
 const {
   getOccupancyHandler,
   getGstSummaryHandler,
   getBookingsReportHandler,
   getEventsReportHandler,
   getFoodOrdersReportHandler,
+  getServicesReportHandler,
   getAnalyticsOverviewHandler,
   getRoomsAnalyticsHandler,
   getProfitLossHandler,
@@ -28,6 +29,7 @@ router.get('/gst-summary', authenticate, owner, getGstSummaryHandler);
 router.get('/bookings', authenticate, owner, getBookingsReportHandler);
 router.get('/events', authenticate, owner, getEventsReportHandler);
 router.get('/food-orders', authenticate, owner, getFoodOrdersReportHandler);
+router.get('/services', authenticate, requireCapability('hasOtherServices'), owner, getServicesReportHandler);
 router.get('/analytics-overview', authenticate, owner, getAnalyticsOverviewHandler);
 router.get('/rooms-analytics', authenticate, owner, getRoomsAnalyticsHandler);
 router.get('/profit-loss', ...profitLossGate, getProfitLossHandler);

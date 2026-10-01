@@ -44,13 +44,15 @@ const DOCUMENT_LABEL = {
   CASH_RECEIPT: 'Cash receipt',
 };
 
-const STREAM_LABEL = { ROOMS: 'Rooms', FUNCTIONS: 'Functions', FOOD: 'Food' };
+const STREAM_LABEL = { ROOMS: 'Rooms', FUNCTIONS: 'Functions', FOOD: 'Food', SERVICES: 'Services' };
 
 const ALL_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'bookings', label: 'Room Bookings', capability: 'hasRooms' },
   { key: 'events', label: 'Events & Functions', capability: 'hasEvents' },
   { key: 'food', label: 'Restaurant', capability: 'servesFood' },
+  // Laundry, pool, gaming ... sold from the rooms side.
+  { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
   // figures expenses.manage individually gates elsewhere, so profitLoss.view
@@ -264,6 +266,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const [eventsError, setEventsError] = useState('');
   const [foodOrders, setFoodOrders] = useState(null);
   const [foodOrdersError, setFoodOrdersError] = useState('');
+  const [servicesReport, setServicesReport] = useState(null);
+  const [servicesReportError, setServicesReportError] = useState('');
   const [profitLoss, setProfitLoss] = useState(null);
   const [profitLossError, setProfitLossError] = useState('');
   // The Screener-style multi-year table — full history, not the date-range
@@ -534,6 +538,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     apiGet(`/reports/food-orders?fromDate=${fromDate}&toDate=${toDate}`, { token })
       .then((data) => setFoodOrders(data))
       .catch((err) => setFoodOrdersError(err instanceof ApiError ? err.message : 'Could not load the food orders report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab]);
+
+  useEffect(() => {
+    if (!validRange || activeTab !== 'services') return;
+    setServicesReport(null);
+    setServicesReportError('');
+    apiGet(`/reports/services?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setServicesReport(data))
+      .catch((err) => setServicesReportError(err instanceof ApiError ? err.message : 'Could not load the services report.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, activeTab]);
 
@@ -1413,6 +1427,12 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                           <td>Food</td>
                           <td>{formatPrice(profitLoss.revenue.foodRevenue)}</td>
                         </tr>
+                        {profitLoss.revenue.serviceRevenue > 0 && (
+                          <tr>
+                            <td>Other services</td>
+                            <td>{formatPrice(profitLoss.revenue.serviceRevenue)}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1618,6 +1638,128 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
         </>
       )}
 
+      {activeTab === 'services' && (
+        <>
+          {servicesReportError && (
+            <div className="dash-card">
+              <div className="dash-state">{servicesReportError}</div>
+            </div>
+          )}
+          {!servicesReportError && validRange && !servicesReport && (
+            <div className="dash-card">
+              <PageLoader inline label="Loading" />
+            </div>
+          )}
+          {!servicesReportError && servicesReport && (
+            <>
+              <p className="reports-panel__section-label">This period at a glance</p>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Uses</span>
+                  <span className="reports-panel__stat-value">{servicesReport.totals.count}</span>
+                  {servicesReport.totals.cancelledCount > 0 && (
+                    <span className="reports-panel__muted">{servicesReport.totals.cancelledCount} cancelled</span>
+                  )}
+                </div>
+                <div className="reports-panel__stat reports-panel__stat--positive">
+                  <span className="reports-panel__stat-label">Billed</span>
+                  <span className="reports-panel__stat-value">{formatPrice(servicesReport.totals.billedValue)}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Completed, not billed</span>
+                  <span className="reports-panel__stat-value">{formatPrice(servicesReport.totals.unbilledValue)}</span>
+                </div>
+                {servicesReport.totals.voidedCount > 0 && (
+                  <div className="reports-panel__stat">
+                    <span className="reports-panel__stat-label">Voided bills</span>
+                    <span className="reports-panel__stat-value">{servicesReport.totals.voidedCount}</span>
+                    <span className="reports-panel__muted">not counted</span>
+                  </div>
+                )}
+              </div>
+
+              <p className="reports-panel__section-label">By service</p>
+              {servicesReport.byService.length === 0 ? (
+                <div className="dash-card">
+                  <div className="dash-state">No services used in this period.</div>
+                </div>
+              ) : (
+                <div className="dash-card">
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Service</th>
+                          <th>Uses</th>
+                          <th>Quantity</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {servicesReport.byService.map((s) => (
+                          <tr key={s.serviceName}>
+                            <td>{s.serviceName}</td>
+                            <td>{s.uses}</td>
+                            <td>{s.quantity}</td>
+                            <td>{formatPrice(s.value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <p className="reports-panel__section-label">Every use</p>
+              {servicesReport.usages.length > 0 && (
+                <div className="dash-card">
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Started</th>
+                          <th>Service</th>
+                          <th>Guest</th>
+                          <th>Status</th>
+                          <th>Bill no.</th>
+                          <th>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {servicesReport.usages.map((u) => (
+                          <tr key={u.id}>
+                            <td>{formatTimestamp(u.startedAt)}</td>
+                            <td>
+                              {u.serviceName} × {u.quantity}
+                            </td>
+                            <td>
+                              {u.guestName || '—'}
+                              {u.roomNumber && (
+                                <>
+                                  <br />
+                                  <span className="reports-panel__muted">Room {u.roomNumber}</span>
+                                </>
+                              )}
+                            </td>
+                            <td>
+                              <span className={`badge ${u.status === 'CANCELLED' || u.voided ? 'badge--off' : 'badge--on'}`}>
+                                {u.voided ? 'Voided' : u.status === 'IN_USE' ? 'In use' : u.status === 'COMPLETED' ? 'Completed' : 'Cancelled'}
+                              </span>
+                            </td>
+                            <td>{u.invoiceNumber || (u.onRoomBill ? 'Room bill' : '—')}</td>
+                            <td>{formatPrice(u.lineTotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
       {activeTab === 'food' && (
         <>
           {foodOrdersError && (
@@ -1646,6 +1788,13 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-label">Cancelled</span>
                   <span className="reports-panel__stat-value">{foodOrders.summary.cancelledCount}</span>
                 </div>
+                {foodOrders.summary.voidedCount > 0 && (
+                  <div className="reports-panel__stat">
+                    <span className="reports-panel__stat-label">Voided bills</span>
+                    <span className="reports-panel__stat-value">{foodOrders.summary.voidedCount}</span>
+                    <span className="reports-panel__muted">{formatPrice(foodOrders.summary.voidedValue)} not counted</span>
+                  </div>
+                )}
                 <div className="reports-panel__stat reports-panel__stat--positive">
                   <span className="reports-panel__stat-label">Billed</span>
                   <span className="reports-panel__stat-value">{formatPrice(foodOrders.summary.billedValue)}</span>
@@ -1713,9 +1862,9 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                             <td>{o.itemCount}</td>
                             <td>
                               <span
-                                className={`badge ${o.status === 'CANCELLED' ? 'badge--off' : 'badge--on'}`}
+                                className={`badge ${o.status === 'CANCELLED' || o.voided ? 'badge--off' : 'badge--on'}`}
                               >
-                                {ORDER_STATUS_LABEL[o.status] || o.status}
+                                {o.voided ? 'Voided' : ORDER_STATUS_LABEL[o.status] || o.status}
                               </span>
                             </td>
                             <td>{o.invoiceNumber || '—'}</td>

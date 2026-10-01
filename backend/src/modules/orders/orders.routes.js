@@ -13,6 +13,7 @@ const {
   readyToBillHandler,
   listTabsHandler,
   updateItemDeliveredHandler,
+  deliverAllHandler,
   clearPinLockoutHandler,
   roomOccupancyHandler,
   roomGuestsHandler,
@@ -58,6 +59,7 @@ router.patch('/:id/items', authenticate, requirePermission('orders.take'), editO
 router.post('/:id/ready-to-bill', authenticate, requirePermission('orders.take'), readyToBillHandler);
 router.post('/:id/items/return', authenticate, requirePermission('orders.take'), returnItemsHandler);
 router.post('/:id/items/cancel', authenticate, requirePermission('orders.take'), cancelItemsHandler);
+router.post('/:id/deliver-all', authenticate, requirePermission('orders.take'), deliverAllHandler);
 router.patch('/:id/items/:itemId/delivered', authenticate, requirePermission('orders.take'), updateItemDeliveredHandler);
 router.patch(
   '/:id/items/:itemId/ready',

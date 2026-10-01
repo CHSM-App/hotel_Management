@@ -2768,3 +2768,10 @@ label.order-card__item { padding: 3px 6px; }
   border-color: #d9c6ef;
   background: #f4ecfb;
 }
+
+.history-table__status--voided {
+  color: var(--danger);
+  border-color: #e6c3c0;
+  background: #fbeceb;
+  text-decoration: line-through;
+}
