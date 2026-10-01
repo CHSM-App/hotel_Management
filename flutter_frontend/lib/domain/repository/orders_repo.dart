@@ -6,14 +6,35 @@ abstract class OrdersRepository {
   /// Everything still cooking, whatever day it was placed.
   Future<List<FoodOrder>> queue();
 
-  /// One IST day, optionally narrowed to a status.
-  Future<List<FoodOrder>> orders({String? date, String? status});
+  /// One IST day, or (via [from]/[to]) a wider period, optionally narrowed
+  /// to a status.
+  Future<List<FoodOrder>> orders({
+    String? date,
+    String? from,
+    String? to,
+    String? status,
+  });
 
   Future<FoodOrder> setStatus(int id, String status, {String? cancelReason});
 
   Future<FoodOrder> setItemReady(int id, int itemId, bool ready);
 
+  /// The captain carrying one ready dish out to the guest.
+  Future<FoodOrder> setItemDelivered(int id, int itemId);
+
+  /// The captain saying a fully delivered order is done and the guest is
+  /// ready to pay: it leaves the "My orders" list and shows up in Billing's
+  /// "Food to bill" queue.
+  Future<FoodOrder> markReadyToBill(int id);
+
   Future<FoodOrder> createCounterOrder(Map<String, dynamic> body);
+
+  /// Replace an unbilled order's items wholesale.
+  Future<FoodOrder> editOrder(
+    int id,
+    List<Map<String, dynamic>> items,
+    String note,
+  );
 
   Future<List<MenuSection>> menu();
 

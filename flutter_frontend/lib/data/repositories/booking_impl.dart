@@ -129,6 +129,14 @@ class BookingImpl implements BookingRepository {
       api.checkOut(id, body);
 
   @override
+  Future<LateCheckout> roomLateCheckout(int id, int roomId) =>
+      api.roomLateCheckout(id, roomId);
+
+  @override
+  Future<Booking> checkOutRoom(int id, int roomId, Map<String, dynamic> body) =>
+      api.checkOutRoom(id, roomId, body);
+
+  @override
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
       api.cancelBooking(id, body);
 

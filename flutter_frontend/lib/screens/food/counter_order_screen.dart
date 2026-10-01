@@ -27,7 +27,14 @@ import '../theme.dart';
 /// the room list is empty for them and the picker quietly falls back to
 /// Counter/takeaway and tables — not an error, just nothing to offer.
 class CounterOrderScreen extends ConsumerStatefulWidget {
-  const CounterOrderScreen({super.key});
+  /// Set to edit that order's items instead of taking a new one — same modal
+  /// the web reuses for its "Edit order", just as a pushed screen. The
+  /// target (room/table/counter) and guest details aren't sent by
+  /// PATCH /orders/:id/items, so this screen shows them read-only rather
+  /// than lets them be changed.
+  final FoodOrder? editingOrder;
+
+  const CounterOrderScreen({super.key, this.editingOrder});
 
   @override
   ConsumerState<CounterOrderScreen> createState() => _CounterOrderScreenState();
@@ -105,6 +112,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
         }
         _loading = false;
       });
+      _prefillForEdit();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -113,6 +121,44 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
             'Could not load the menu.';
       });
     }
+  }
+
+  FoodOrder? get _editingOrder => widget.editingOrder;
+  bool get _editing => _editingOrder != null;
+
+  /// Rebuild the cart from the order being edited, once the menu has
+  /// loaded — matched by menuItemId/portionId the same way the web's
+  /// editOrder modal seeds itself from the order it was opened on. A line
+  /// whose dish has since been removed from the menu is left off; its
+  /// quantity can no longer be expressed through this picker.
+  void _prefillForEdit() {
+    final order = _editingOrder;
+    if (order == null || _lines.isNotEmpty) return;
+    final allItems = _sections.expand((s) => s.items);
+    final drafts = <OrderLineDraft>[];
+    for (final line in order.items) {
+      if (line.menuItemId == null) continue;
+      MenuItem? item;
+      for (final i in allItems) {
+        if (i.id == line.menuItemId) {
+          item = i;
+          break;
+        }
+      }
+      if (item == null) continue;
+      final portion = line.portionId == null
+          ? null
+          : item.portions.where((p) => p.id == line.portionId).firstOrNull;
+      drafts.add(
+        OrderLineDraft(item: item, portion: portion, quantity: line.quantity),
+      );
+    }
+    setState(() {
+      _lines
+        ..clear()
+        ..addAll(drafts);
+      _note.text = order.note ?? '';
+    });
   }
 
   /// Rooms for the target picker, or nothing if this login can't reach
@@ -225,9 +271,11 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
               ),
             ),
             const SizedBox(width: AppTheme.s12),
-            const Expanded(
+            Expanded(
               child: Text(
-                'Take an order',
+                _editing
+                    ? 'Edit order #${_editingOrder!.orderNumber}'
+                    : 'Take an order',
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),
@@ -278,8 +326,11 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       ),
       children: [
         Text(
-          'Goes straight into the kitchen queue — staff took it, so it '
-          'skips the accept step.',
+          _editing
+              ? 'Saving replaces this order\'s items wholesale — billed or '
+                    'ready-to-bill orders can no longer be edited.'
+              : 'Goes straight into the kitchen queue — staff took it, so it '
+                    'skips the accept step.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: AppTheme.s8),
@@ -295,83 +346,112 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionLabel("Where's it going", number: 1),
-              const SizedBox(height: AppTheme.s8),
-              _TargetField(
-                tables: _tables,
-                rooms: _rooms,
-                selectedTable: _table,
-                selectedRoom: _room,
-                onSelectTable: (t) => setState(() {
-                  _table = t;
-                  _room = null;
-                  _clearOccupancy();
-                }),
-                onSelectRoom: (r) {
-                  setState(() {
-                    _room = r;
-                    _table = null;
+              // The target (room/table/counter) isn't sent by
+              // PATCH /orders/:id/items — it can't be changed here, so it's
+              // shown as a fact rather than a field, same as the web's own
+              // editOrder modal.
+              if (_editing) ...[
+                const SectionLabel('Order for', number: 1),
+                const SizedBox(height: AppTheme.s8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.s16,
+                    vertical: AppTheme.s12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.bg,
+                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Text(
+                    '${_editingOrder!.target}'
+                    '${(_editingOrder!.guestName ?? '').isNotEmpty ? ' · ${_editingOrder!.guestName}' : ''}',
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                const SectionLabel("Where's it going", number: 1),
+                const SizedBox(height: AppTheme.s8),
+                _TargetField(
+                  tables: _tables,
+                  rooms: _rooms,
+                  selectedTable: _table,
+                  selectedRoom: _room,
+                  onSelectTable: (t) => setState(() {
+                    _table = t;
+                    _room = null;
                     _clearOccupancy();
-                  });
-                  if (r != null) _loadOccupancy(r.id);
-                },
-              ),
-
-              if (_room != null) ...[
-                const SizedBox(height: AppTheme.s8),
-                _OccupancyCard(
-                  loading: _occupancyLoading,
-                  failed: _occupancyFailed,
-                  occupancy: _occupancy,
+                  }),
+                  onSelectRoom: (r) {
+                    setState(() {
+                      _room = r;
+                      _table = null;
+                      _clearOccupancy();
+                    });
+                    if (r != null) _loadOccupancy(r.id);
+                  },
                 ),
-              ],
 
-              // Only a true counter order — no room and no table — asks for
-              // these. A room or a table already identifies who the food is
-              // for, so re-typing a name there would be a second, weaker
-              // record of something already known; a walk-in has nothing
-              // else, so it's required rather than optional, same as the web
-              // counter form.
-              if (_isCounter) ...[
-                const SizedBox(height: AppTheme.s8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: NeuField(
-                        controller: _guestName,
-                        label: 'Guest name',
-                        hint: "Who's collecting",
-                        required: true,
-                        errorText: _guestNameError,
-                        maxLength: 200,
-                        onChanged: (_) {
-                          if (_guestNameError != null) {
-                            setState(() => _guestNameError = null);
-                          }
-                        },
-                        forceCapitalizeWords: true,
+                if (_room != null) ...[
+                  const SizedBox(height: AppTheme.s8),
+                  _OccupancyCard(
+                    loading: _occupancyLoading,
+                    failed: _occupancyFailed,
+                    occupancy: _occupancy,
+                  ),
+                ],
+
+                // Only a true counter order — no room and no table — asks
+                // for these. A room or a table already identifies who the
+                // food is for, so re-typing a name there would be a second,
+                // weaker record of something already known; a walk-in has
+                // nothing else, so it's required rather than optional, same
+                // as the web counter form.
+                if (_isCounter) ...[
+                  const SizedBox(height: AppTheme.s8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: NeuField(
+                          controller: _guestName,
+                          label: 'Guest name',
+                          hint: "Who's collecting",
+                          required: true,
+                          errorText: _guestNameError,
+                          maxLength: 200,
+                          onChanged: (_) {
+                            if (_guestNameError != null) {
+                              setState(() => _guestNameError = null);
+                            }
+                          },
+                          forceCapitalizeWords: true,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: AppTheme.s12),
-                    Expanded(
-                      child: NeuField(
-                        controller: _guestPhone,
-                        label: 'Phone',
-                        hint: '10-digit mobile',
-                        required: true,
-                        errorText: _guestPhoneError,
-                        keyboardType: TextInputType.phone,
-                        maxLength: 10,
-                        onChanged: (_) {
-                          if (_guestPhoneError != null) {
-                            setState(() => _guestPhoneError = null);
-                          }
-                        },
+                      const SizedBox(width: AppTheme.s12),
+                      Expanded(
+                        child: NeuField(
+                          controller: _guestPhone,
+                          label: 'Phone',
+                          hint: '10-digit mobile',
+                          required: true,
+                          errorText: _guestPhoneError,
+                          keyboardType: TextInputType.phone,
+                          maxLength: 10,
+                          onChanged: (_) {
+                            if (_guestPhoneError != null) {
+                              setState(() => _guestPhoneError = null);
+                            }
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ],
 
               const SectionDivider(),
@@ -465,6 +545,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
           lines: _lines,
           total: _total,
           working: working,
+          editing: _editing,
           onCancel: working ? null : () => Navigator.of(context).pop(),
           onPlace: (working || _lines.isEmpty) ? null : _place,
         ),
@@ -527,6 +608,11 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   }
 
   Future<void> _place() async {
+    if (_editing) {
+      await _saveEdit();
+      return;
+    }
+
     // Checked in the order the fields sit on the form, same as the web
     // counter form: guest details before anything else, so the first thing
     // reported is the first thing the eye reaches scrolling down.
@@ -575,6 +661,32 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Order #${order.orderNumber} is with the kitchen.'),
+        backgroundColor: AppTheme.heading,
+      ),
+    );
+  }
+
+  Future<void> _saveEdit() async {
+    if (_lines.isEmpty) return;
+    final vm = ref.read(ordersViewModelProvider.notifier);
+    final order = await vm.editOrder(_editingOrder!.id, _lines, _note.text);
+    if (!mounted) return;
+    if (order == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(ordersViewModelProvider).error ??
+                'Could not save those changes.',
+          ),
+          backgroundColor: AppTheme.heading,
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop(true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Order #${order.orderNumber} updated.'),
         backgroundColor: AppTheme.heading,
       ),
     );
@@ -1082,6 +1194,7 @@ class _OrderBar extends StatelessWidget {
   final List<OrderLineDraft> lines;
   final num total;
   final bool working;
+  final bool editing;
   final VoidCallback? onCancel;
   final VoidCallback? onPlace;
 
@@ -1089,6 +1202,7 @@ class _OrderBar extends StatelessWidget {
     required this.lines,
     required this.total,
     required this.working,
+    this.editing = false,
     required this.onCancel,
     required this.onPlace,
   });
@@ -1154,7 +1268,7 @@ class _OrderBar extends StatelessWidget {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Place order'),
+                      : Text(editing ? 'Save changes' : 'Place order'),
                 ),
               ),
             ],

@@ -116,6 +116,13 @@ class BookingUsecase {
   Future<Booking> checkOut(int id, {num lateCharge = 0}) =>
       repository.checkOut(id, {'lateCharge': lateCharge});
 
+  /// One room of a multi-room stay, on its own.
+  Future<LateCheckout> roomLateCheckout(int id, int roomId) =>
+      repository.roomLateCheckout(id, roomId);
+
+  Future<Booking> checkOutRoom(int id, int roomId, {num lateCharge = 0}) =>
+      repository.checkOutRoom(id, roomId, {'lateCharge': lateCharge});
+
   /// Call off a reservation. Only a stay still sitting at BOOKED can be
   /// cancelled; the server answers 409 for anything further along.
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>

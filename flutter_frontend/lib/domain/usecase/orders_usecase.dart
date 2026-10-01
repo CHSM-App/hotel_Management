@@ -11,9 +11,14 @@ class OrdersUsecase {
   /// What the kitchen is working on.
   Future<List<FoodOrder>> queue() => repository.queue();
 
-  /// A day's orders, for looking back at what happened.
-  Future<List<FoodOrder>> orders({String? date, String? status}) =>
-      repository.orders(date: date, status: status);
+  /// A day's orders, for looking back at what happened — or, with [from]/
+  /// [to], a wider period (a captain's "My orders" looks back a month).
+  Future<List<FoodOrder>> orders({
+    String? date,
+    String? from,
+    String? to,
+    String? status,
+  }) => repository.orders(date: date, from: from, to: to, status: status);
 
   /// Move an order on, or call it off.
   ///
@@ -30,6 +35,14 @@ class OrdersUsecase {
   /// Tick one dish off a ticket, or take the tick back.
   Future<FoodOrder> setItemReady(int id, int itemId, bool ready) =>
       repository.setItemReady(id, itemId, ready);
+
+  /// Carry one ready dish out to the guest.
+  Future<FoodOrder> setItemDelivered(int id, int itemId) =>
+      repository.setItemDelivered(id, itemId);
+
+  /// Send a fully delivered order to Billing's "Food to bill" queue.
+  Future<FoodOrder> markReadyToBill(int id) =>
+      repository.markReadyToBill(id);
 
   /// Put through an order somebody dictated at the counter.
   Future<FoodOrder> createCounterOrder({
@@ -49,6 +62,18 @@ class OrdersUsecase {
     if (note.trim().isNotEmpty) 'note': note.trim(),
     'items': lines.map((l) => l.toJson()).toList(),
   });
+
+  /// Replace an unbilled order's items wholesale — the captain correcting
+  /// what was rung in.
+  Future<FoodOrder> editOrder(
+    int id,
+    List<OrderLineDraft> lines,
+    String note,
+  ) => repository.editOrder(
+    id,
+    lines.map((l) => l.toJson()).toList(),
+    note.trim(),
+  );
 
   Future<List<MenuSection>> menu() => repository.menu();
 

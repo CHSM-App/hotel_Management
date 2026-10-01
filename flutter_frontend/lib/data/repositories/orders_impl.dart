@@ -18,8 +18,12 @@ class OrdersImpl implements OrdersRepository {
   Future<List<FoodOrder>> queue() => api.orderQueue();
 
   @override
-  Future<List<FoodOrder>> orders({String? date, String? status}) =>
-      api.orders(date: date, status: status);
+  Future<List<FoodOrder>> orders({
+    String? date,
+    String? from,
+    String? to,
+    String? status,
+  }) => api.orders(date: date, from: from, to: to, status: status);
 
   @override
   Future<FoodOrder> setStatus(int id, String status, {String? cancelReason}) =>
@@ -30,8 +34,22 @@ class OrdersImpl implements OrdersRepository {
       api.setItemReady(id, itemId, ready);
 
   @override
+  Future<FoodOrder> setItemDelivered(int id, int itemId) =>
+      api.setItemDelivered(id, itemId);
+
+  @override
+  Future<FoodOrder> markReadyToBill(int id) => api.markReadyToBill(id);
+
+  @override
   Future<FoodOrder> createCounterOrder(Map<String, dynamic> body) =>
       api.createCounterOrder(body);
+
+  @override
+  Future<FoodOrder> editOrder(
+    int id,
+    List<Map<String, dynamic>> items,
+    String note,
+  ) => api.editOrder(id, items, note);
 
   @override
   Future<List<MenuSection>> menu() => api.menu();

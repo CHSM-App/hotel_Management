@@ -79,6 +79,12 @@ abstract class BookingRepository {
 
   Future<Booking> checkOut(int id, Map<String, dynamic> body);
 
+  /// One room of a multi-room stay, checked out on its own while the rest
+  /// stay in.
+  Future<LateCheckout> roomLateCheckout(int id, int roomId);
+
+  Future<Booking> checkOutRoom(int id, int roomId, Map<String, dynamic> body);
+
   /// Call off a reservation. Only a BOOKED stay can be cancelled. [body]
   /// settles whatever advance was on file.
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]);
