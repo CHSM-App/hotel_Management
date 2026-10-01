@@ -402,10 +402,16 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
     // A period (from..to, inclusive) or a single day; today when neither is given.
     if (from && to) {
       request.input('fromDate', sql.Date, from).input('toDate', sql.Date, to);
-      filters.push('o.order_date BETWEEN @fromDate AND @toDate');
+      // An order also belongs to the period its bill was issued in, so one placed
+      // earlier but billed today still shows in today's History.
+      filters.push(
+        "(o.order_date BETWEEN @fromDate AND @toDate OR EXISTS (SELECT 1 FROM dbo.invoices bi WHERE bi.id = o.invoice_id AND CAST(SWITCHOFFSET(bi.created_at, '+05:30') AS date) BETWEEN @fromDate AND @toDate))"
+      );
     } else {
       request.input('orderDate', sql.Date, date || todayIsoIST());
-      filters.push('o.order_date = @orderDate');
+      filters.push(
+        "(o.order_date = @orderDate OR EXISTS (SELECT 1 FROM dbo.invoices bi WHERE bi.id = o.invoice_id AND CAST(SWITCHOFFSET(bi.created_at, '+05:30') AS date) = @orderDate))"
+      );
     }
     if (status) {
       request.input('status', sql.NVarChar, status);
@@ -422,7 +428,8 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
   }
 
   const ordersResult = await request.query(`
-    SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id, o.guest_name, o.guest_phone,
+    SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id,
+           COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
            o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
            o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.created_by, uh.name AS handler_name,
            o.table_id, o.room_id,
@@ -435,6 +442,7 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.users uh ON uh.id = COALESCE(o.accepted_by, o.created_by)
+    LEFT JOIN dbo.bookings bk ON bk.id = o.booking_id
     WHERE ${filters.join(' AND ')}
     -- The kitchen queue works oldest-first; the history reads newest-first.
     ORDER BY o.placed_at ${live ? 'ASC' : 'DESC'}
@@ -478,7 +486,8 @@ async function getOrder(lodgeId, orderId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('orderId', sql.BigInt, orderId)
     .query(`
-      SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id, o.guest_name, o.guest_phone,
+      SELECT o.id, o.order_number, o.order_date, o.source, o.booking_id,
+           COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
              o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
              o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.created_by, uh.name AS handler_name,
            o.table_id, o.room_id,
@@ -491,6 +500,7 @@ async function getOrder(lodgeId, orderId) {
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
       LEFT JOIN dbo.users uh ON uh.id = COALESCE(o.accepted_by, o.created_by)
+      LEFT JOIN dbo.bookings bk ON bk.id = o.booking_id
       WHERE o.id = @orderId AND o.lodge_id = @lodgeId
     `);
 

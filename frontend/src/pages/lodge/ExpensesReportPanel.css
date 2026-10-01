@@ -119,3 +119,18 @@
   font-weight: 600;
   color: var(--text-muted);
 }
+
+@media (max-width: 640px) {
+  .expense-report__range {
+    flex-wrap: wrap;
+    margin-right: 0;
+  }
+  .expense-report__range input[type='date'] {
+    flex: 1;
+    min-width: 0;
+  }
+  .expense-report__preview {
+    height: 60vh;
+    min-height: 320px;
+  }
+}

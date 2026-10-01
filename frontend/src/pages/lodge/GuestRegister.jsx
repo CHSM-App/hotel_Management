@@ -443,6 +443,16 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
         if (latest > todayIso()) {
           setToDate((current) => (current === todayIso() ? latest : current));
         }
+        // Same idea at the other end: a guest still checked in from last month
+        // would be hidden by a month-to-date opening range, so 'From' reaches
+        // back to the oldest check-in that has not left yet. Only moves the
+        // untouched default, never a range the desk has since chosen.
+        const oldest = (data.bookings || [])
+          .filter((b) => b.status === 'CHECKED_IN')
+          .reduce((min, b) => (!min || b.checkInDate < min ? b.checkInDate : min), '');
+        if (oldest && oldest < startOfMonthIso()) {
+          setFromDate((current) => (current === startOfMonthIso() ? oldest : current));
+        }
       })
       .catch(() => {});
     return () => {

@@ -1015,3 +1015,72 @@
   position: relative;
   min-height: 60vh;
 }
+
+/* --- Phone: rail becomes an off-canvas drawer ------------------------------
+   Last in the file and at .dash-shell .dash-body specificity so it wins over
+   the earlier strip rules and the width pin on .dash-topbar--light + .dash-body. */
+.dash-backdrop {
+  display: none;
+}
+
+@media (max-width: 800px) {
+  .dash-shell .dash-body .dash-sidebar {
+    position: fixed;
+    top: var(--dash-topbar-h);
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(280px, 85vw);
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 18px 14px;
+    border-bottom: none;
+    box-shadow: 6px 0 24px rgba(22, 33, 46, 0.25);
+    transition: transform 0.2s ease;
+  }
+
+  .dash-shell .dash-body .dash-sidebar--collapsed {
+    display: flex;
+    transform: translateX(-105%);
+    visibility: hidden;
+    box-shadow: none;
+  }
+
+  .dash-shell .dash-body .dash-sidebar__scroll {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .dash-shell .dash-body .dash-sidebar__group {
+    display: block;
+  }
+
+  .dash-shell .dash-body .dash-sidebar__collapse {
+    display: block;
+  }
+
+  .dash-shell .dash-body .dash-sidebar__collapse[data-open='false'] {
+    display: none;
+  }
+
+  .dash-shell .dash-body .dash-sidebar__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .dash-shell .dash-body .dash-sidebar__item {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dash-backdrop {
+    display: block;
+    position: fixed;
+    inset: var(--dash-topbar-h) 0 0 0;
+    z-index: 35;
+    background: rgba(22, 33, 46, 0.45);
+  }
+}

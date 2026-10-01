@@ -23,6 +23,8 @@ const counterOrderSchema = z
   .object({
     tableId: z.coerce.number().int().positive().optional().nullable(),
     roomId: z.coerce.number().int().positive().optional().nullable(),
+    // Which guest in a dormitory the food goes to; ignored without a roomId.
+    bookingId: z.coerce.number().int().positive().optional().nullable(),
     guestName: z.string().trim().max(200).optional().default(''),
     guestPhone: z.string().trim().max(20).optional().default(''),
     note: z.string().trim().max(300).optional().default(''),

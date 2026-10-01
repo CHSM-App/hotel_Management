@@ -2534,3 +2534,230 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Food ordered, in the booking details: a card in the same family as the room
+   charge summary above it — soft panel, a header with the count, orders as rows,
+   and a highlighted total. */
+.room-food {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--paper, var(--surface));
+}
+
+.room-food__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.room-food__title h4 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.room-food__title p {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.room-food__icon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accent-soft, #eeeafc);
+  color: var(--brand);
+}
+
+.room-food__list,
+.room-food__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.room-food__order {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.room-food__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.room-food__num {
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.room-food__origin {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft, #eeeafc);
+  color: var(--brand);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.room-food__origin--added {
+  background: #fff3d6;
+  color: #9a5f00;
+}
+
+.room-food__time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.room-food__status {
+  margin-left: auto;
+  padding: 1px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.room-food__status--delivered,
+.room-food__status--billed {
+  background: #e3f4ea;
+  border-color: #b5dec5;
+  color: #0f6d37;
+}
+
+.room-food__status--preparing,
+.room-food__status--queued,
+.room-food__status--pending {
+  background: #fff6e0;
+  border-color: #efd39a;
+  color: #9a5f00;
+}
+
+.room-food__status--ready {
+  background: #e8f0fc;
+  border-color: #b9cdee;
+  color: #1f4fa3;
+}
+
+.room-food__amount {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-food__items {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  display: grid;
+  gap: 4px;
+}
+
+.room-food__items li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-food__qty {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.room-food__name {
+  overflow-wrap: anywhere;
+}
+
+.room-food__line {
+  color: var(--text-muted);
+}
+
+.room-food__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--brand);
+}
+
+.room-food__note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Price breakdown: grouped lines (Room, Food, Payments), a subtotal per group, and
+   one emphasised line for what is still owed. */
+.pb .pb__group {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pb .pb__group:first-child {
+  margin-top: 0;
+}
+
+.pb .pb__sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pb .pb__due {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft, #eeeafc);
+  color: var(--brand);
+}
+
+.pb .pb__due span {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.pb .pb__due small {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.pb .pb__due strong {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}

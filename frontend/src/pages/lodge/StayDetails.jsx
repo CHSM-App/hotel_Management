@@ -49,6 +49,10 @@ export default function StayDetails({
   // figures rather than stored: the server allows an advance equal to the
   // stay, and once it is, "advance" is the wrong word for it everywhere the
   // desk reads this — there is nothing left to collect.
+  // Food on this stay that no bill carries yet. It lands on the stay bill at
+  // checkout, so it belongs in what is still to collect.
+  const foodOrdersOpen = (booking.foodOrders || []).filter((o) => !o.billed);
+  const foodOpenTotal = Math.round(foodOrdersOpen.reduce((sum, o) => sum + o.subtotal, 0) * 100) / 100;
   const paidInFull =
     booking.advanceAmount != null &&
     booking.totalPrice != null &&
@@ -378,19 +382,14 @@ export default function StayDetails({
           to — and a stay crossing a season shows that in its lines. */}
       <div className="form-section">
         <div className="form-section__title">
-          <span className="form-section__num">5</span>Charges &amp; discount
+          <span className="form-section__num">5</span>Price breakdown
         </div>
-        <div className="sim-result">
-          {/* What those nightly figures are made of — the base rate,
-              any season on top, each extra, the discount — summed
-              across the nights each one applied to. Read from the
-              booking's own snapshot, so it says what was charged even
-              if a season or an extra has been re-priced since. A
-              guest querying the total argues about these lines, not
-              the sum of them.
-
-              Empty for bookings taken before the snapshot existed,
-              which fall through to the total on its own as before. */}
+        <div className="sim-result pb">
+          {/* ROOM — what those nightly figures are made of: the base rate, any
+              season on top, each extra, the discount, summed across the nights each
+              one applied to. Read from the booking's own snapshot, so it says what
+              was charged even if a season or an extra has been re-priced since. */}
+          <div className="pb__group">Room</div>
           {booking.roomCharges?.map((line) => (
             <div className="sim-result__line sim-result__line--part" key={line.label}>
               <span>
@@ -402,10 +401,8 @@ export default function StayDetails({
               <span>{formatPrice(line.amount)}</span>
             </div>
           ))}
-          <div className="sim-result__total">
-            <span>
-              Room charge for {booking.nights?.length === 1 ? 'the night' : 'all nights'}
-            </span>
+          <div className="pb__sub">
+            <span>Room charge for {booking.nights?.length === 1 ? 'the night' : 'all nights'}</span>
             <span>{formatPrice(booking.totalPrice)}</span>
           </div>
           {booking.lateCheckoutCharge > 0 && (
@@ -414,6 +411,35 @@ export default function StayDetails({
               <span>{formatPrice(booking.lateCheckoutCharge)}</span>
             </div>
           )}
+
+          {/* FOOD — everything this stay has ordered that is not on a bill yet:
+              room service, and table food moved onto the room. Cancelled orders are
+              not in the list the server sends. Orders still being cooked count too,
+              and say so, because they will be on the bill. */}
+          {foodOrdersOpen.length > 0 && (
+            <>
+              <div className="pb__group">Food</div>
+              {foodOrdersOpen.map((o) => (
+                <div className="sim-result__line sim-result__line--part" key={o.id}>
+                  <span>
+                    Order #{o.orderNumber}
+                    <span className="sim-result__part-nights">
+                      {o.origin === 'ROOM_SERVICE' ? 'room service' : `from ${o.placedFrom || 'restaurant'}`}
+                      {o.status !== 'DELIVERED' ? ' · in progress' : ''}
+                    </span>
+                  </span>
+                  <span>{formatPrice(o.subtotal)}</span>
+                </div>
+              ))}
+              <div className="pb__sub">
+                <span>Food ordered</span>
+                <span>{formatPrice(foodOpenTotal)}</span>
+              </div>
+            </>
+          )}
+
+          {/* PAYMENTS */}
+          {(booking.advanceAmount != null || foodOrdersOpen.length > 0) && <div className="pb__group">Payments</div>}
           {booking.advanceAmount != null && (
             <div className="sim-result__line">
               <span>
@@ -427,14 +453,21 @@ export default function StayDetails({
               <span>− {formatPrice(booking.advanceAmount)}</span>
             </div>
           )}
-          {/* Only while the stay is still unbilled. Once a bill
-              exists it is the answer to "what is owed", and a
-              pre-tax guess sitting beside it would be a second,
-              wrong one. */}
+
+          {/* Only while the stay is still unbilled. Once a bill exists it is the
+              answer to "what is owed", and a pre-tax guess sitting beside it would
+              be a second, wrong one. */}
           {showOutstanding && !booking.invoice && (
-            <div className="sim-result__total">
-              <span>Still to collect</span>
-              <span>{formatPrice(outstandingBeforeTax(booking))}</span>
+            <div className="pb__due">
+              <div>
+                <span>Still to collect</span>
+                <small>
+                  {foodOrdersOpen.length > 0
+                    ? 'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + ' + food − advance'
+                    : 'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + ' − advance'}
+                </small>
+              </div>
+              <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal)}</strong>
             </div>
           )}
         </div>

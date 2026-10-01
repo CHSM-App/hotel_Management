@@ -15,6 +15,7 @@ const {
   updateItemDeliveredHandler,
   clearPinLockoutHandler,
   roomOccupancyHandler,
+  roomGuestsHandler,
 } = require('./orders.controller');
 
 const router = Router();
@@ -36,6 +37,7 @@ router.get('/queue', authenticate, requirePermission('orders.manage'), listQueue
 
 // Looking up who's in a room is how a captain places a room order, so it
 // takes orders.take as well as the kitchen's orders.manage.
+router.get('/room-guests', authenticate, requirePermission('orders.manage', 'orders.take'), roomGuestsHandler);
 router.get(
   '/room-occupancy/:roomId',
   authenticate,

@@ -1816,3 +1816,16 @@
     justify-content: center;
   }
 }
+
+@media (max-width: 640px) {
+  .guest-register .guest-register__range .guest-register__range-field,
+  .guest-register .guest-register__range .guest-register__range-field input {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .guest-register .guest-register__range {
+    min-width: 0;
+    width: 100%;
+  }
+}

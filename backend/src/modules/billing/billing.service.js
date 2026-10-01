@@ -494,9 +494,13 @@ async function listBillableBookings(lodgeId) {
     .query(`
       SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
              b.total_price, b.advance_amount, b.actual_check_out_at,
+             (SELECT COALESCE(SUM(brl.late_checkout_charge), 0) FROM dbo.booking_rooms brl
+              WHERE brl.booking_id = b.id AND brl.status <> 'CANCELLED') AS late_charge,
+             -- Same set the stay details modal lists (everything unbilled that is not
+             -- cancelled), so this row and the modal never disagree.
              (SELECT COALESCE(SUM(fo.subtotal), 0) FROM dbo.food_orders fo
-              WHERE fo.booking_id = b.id AND fo.on_room_bill = 1
-                AND fo.status = 'DELIVERED' AND fo.invoice_id IS NULL) AS food_total,
+              WHERE fo.booking_id = b.id
+                AND fo.status <> 'CANCELLED' AND fo.invoice_id IS NULL) AS food_total,
              COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
                        WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, c.name AS category_name
@@ -521,6 +525,7 @@ async function listBillableBookings(lodgeId) {
     checkOutDate: row.check_out_date.toISOString().slice(0, 10),
     totalPrice: Number(row.total_price),
     foodTotal: Number(row.food_total),
+    lateCheckoutCharge: Number(row.late_charge ?? 0),
     advanceAmount: row.advance_amount != null ? Number(row.advance_amount) : null,
     actualCheckOutAt: row.actual_check_out_at,
   }));
