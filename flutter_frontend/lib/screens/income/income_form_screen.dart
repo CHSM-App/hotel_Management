@@ -42,11 +42,21 @@ Future<void> showLogIncomeOccurrenceFormSheet(BuildContext context, {required In
   );
 }
 
+/// "+ Add interest voucher" — opens the same form pre-filled with the
+/// Interest Earned category, a "Bank interest" title and Bank transfer as the
+/// payment method, same as openInterestVoucher in IncomePanel.jsx.
+Future<void> showInterestVoucherFormSheet(BuildContext context) {
+  return Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => const IncomeFormScreen(interestVoucher: true)),
+  );
+}
+
 class IncomeFormScreen extends ConsumerStatefulWidget {
   final IncomeEntry? income;
   final bool viewMode;
   final IncomeRecurringTemplate? loggingTemplate;
-  const IncomeFormScreen({super.key, this.income, this.viewMode = false, this.loggingTemplate});
+  final bool interestVoucher;
+  const IncomeFormScreen({super.key, this.income, this.viewMode = false, this.loggingTemplate, this.interestVoucher = false});
 
   @override
   ConsumerState<IncomeFormScreen> createState() => _IncomeFormScreenState();
@@ -59,7 +69,9 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
   // flips this off to turn the same screen into the form.
   late bool _viewMode = widget.viewMode && _isEdit;
 
-  late final _category = TextEditingController(text: widget.income?.categoryName ?? widget.loggingTemplate?.categoryName ?? '');
+  late final _category = TextEditingController(
+    text: widget.income?.categoryName ?? widget.loggingTemplate?.categoryName ?? (widget.interestVoucher ? kInterestIncomeCategory : ''),
+  );
   late final _payer = TextEditingController(text: widget.income?.payerName ?? widget.loggingTemplate?.payerName ?? '');
   // Payer sub-fields — auto-filled from the picked payer's own record
   // (mirrors payerContactPerson/payerPhone/payerEmail/payerSpecialty in
@@ -79,7 +91,9 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
   String _paymentStatus = 'PAID';
   late final _amountReceived = TextEditingController();
   late final _referenceNumber = TextEditingController();
-  late final _title = TextEditingController(text: widget.income?.title ?? widget.loggingTemplate?.title ?? '');
+  late final _title = TextEditingController(
+    text: widget.income?.title ?? widget.loggingTemplate?.title ?? (widget.interestVoucher ? 'Bank interest' : ''),
+  );
   late final _description = TextEditingController(text: widget.income?.description ?? '');
   late final _amount = TextEditingController(text: widget.income?.amount == null ? '' : widget.income!.amount.toString());
   late final _incomeDate = TextEditingController(
@@ -159,7 +173,7 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
   @override
   void initState() {
     super.initState();
-    _paymentMethod = widget.income?.paymentMethod ?? 'CASH';
+    _paymentMethod = widget.income?.paymentMethod ?? (widget.interestVoucher ? 'BANK_TRANSFER' : 'CASH');
     _paymentStatus = widget.income?.paymentStatus ?? 'PAID';
     _currentAmountReceived = widget.income?.amountReceived ?? 0;
     if (widget.income?.amountReceived != null) {

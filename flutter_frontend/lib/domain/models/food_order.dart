@@ -109,7 +109,28 @@ class FoodOrder {
   final String status;
   final num subtotal;
   final String? placedAt;
+  final String? deliveredAt;
+  final String? cancelledAt;
   final String? cancelReason;
+
+  /// The table, room and booking this order belongs to — carried so a
+  /// delivered order can be billed straight from here, the same opaque key
+  /// (`table-5`, `room-12`, `counter-88`) Billing's own food queue uses. A
+  /// room order tied to a live booking is left off that direct path: its
+  /// food rides on the stay bill instead, the same exception
+  /// OrdersPanel.jsx's own `canIssue` makes.
+  final int? tableId;
+  final int? roomId;
+  final int? bookingId;
+
+  /// A guest's own QR scan has nobody behind it until someone accepts it;
+  /// a staff-entered order carries its author from the start — same split
+  /// OrdersPanel.jsx's own `SourceTag` reads.
+  final bool guestOrder;
+
+  /// Who accepted (a guest order) or took (a staff order) this ticket, once
+  /// somebody has — null on a still-unaccepted guest order.
+  final String? handledBy;
 
   /// Once an invoice carries the order its lines are money — no more edits.
   final bool billed;
@@ -137,7 +158,14 @@ class FoodOrder {
     this.status = 'PENDING',
     this.subtotal = 0,
     this.placedAt,
+    this.deliveredAt,
+    this.cancelledAt,
     this.cancelReason,
+    this.tableId,
+    this.roomId,
+    this.bookingId,
+    this.guestOrder = false,
+    this.handledBy,
     this.billed = false,
     this.readyToBill = false,
     this.invoiceId,
@@ -157,7 +185,14 @@ class FoodOrder {
     status: asStringOrNull(json['status']) ?? 'PENDING',
     subtotal: asNumOrNull(json['subtotal']) ?? 0,
     placedAt: asStringOrNull(json['placedAt']),
+    deliveredAt: asStringOrNull(json['deliveredAt']),
+    cancelledAt: asStringOrNull(json['cancelledAt']),
     cancelReason: asStringOrNull(json['cancelReason']),
+    tableId: asIntOrNull(json['tableId']),
+    roomId: asIntOrNull(json['roomId']),
+    bookingId: asIntOrNull(json['bookingId']),
+    guestOrder: json['guestOrder'] == true,
+    handledBy: asStringOrNull(json['handledBy']),
     billed: json['billed'] == true,
     readyToBill: json['readyToBill'] == true,
     invoiceId: asIntOrNull(json['invoiceId']),
@@ -172,6 +207,27 @@ class FoodOrder {
   /// A fully delivered, unbilled order the captain can send to Billing's
   /// "Food to bill" queue.
   bool get canMarkReadyToBill => status == 'DELIVERED' && !billed && !readyToBill;
+
+  /// Delivered and not yet billed — the base condition both "Ready to bill"
+  /// and "Issue bill" share. Unlike [canMarkReadyToBill] this stays true once
+  /// [readyToBill] is set: a login that can issue the bill directly may still
+  /// do so for an order a captain already sent to the queue.
+  bool get isDeliveredUnbilled => status == 'DELIVERED' && !billed;
+
+  /// A room order still tied to a live booking bills through the stay's own
+  /// room bill at checkout, not as a standalone food invoice — same
+  /// exception OrdersPanel.jsx's own `canIssue` carves out
+  /// (`order.source !== 'ROOM' || !order.bookingId`).
+  bool get billableAsFoodTab => source != 'ROOM' || bookingId == null;
+
+  /// The opaque key Billing's own food queue addresses this ticket's tab by
+  /// — `table-5`, `counter-88`, `room-12` — so "Issue bill" can open the
+  /// right bill without first reading the queue itself.
+  String get billingTabKey => switch (source) {
+    'TABLE' => 'table-$tableId',
+    'COUNTER' => 'counter-$id',
+    _ => 'room-$roomId',
+  };
 
   /// Unbilled, not sent to billing, not called off — the same rule
   /// OrdersPanel.jsx's `canEdit`/`editable` checks. Its items can still be
@@ -215,6 +271,19 @@ class FoodOrder {
     final placed = DateTime.tryParse(placedAt ?? '');
     if (placed == null) return null;
     final elapsed = now.difference(placed.toLocal());
+    return elapsed.isNegative ? Duration.zero : elapsed;
+  }
+
+  /// How long this ticket actually took, once it is settled — from placed to
+  /// delivered or cancelled, same as History's own "Took" column
+  /// (OrdersPanel.jsx's `elapsedLabel(o.placedAt, new Date(settledAt))`).
+  /// Null while it is still live.
+  Duration? get took {
+    final settledIso = deliveredAt ?? cancelledAt;
+    final placed = DateTime.tryParse(placedAt ?? '');
+    final settled = DateTime.tryParse(settledIso ?? '');
+    if (placed == null || settled == null) return null;
+    final elapsed = settled.difference(placed);
     return elapsed.isNegative ? Duration.zero : elapsed;
   }
 }

@@ -78,4 +78,11 @@ class BillingUsecase {
   /// Cut the bill for a function.
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>
       repository.issueEventInvoice(eventId, body);
+
+  /// Where the next bill and the next advance receipt continue from.
+  Future<Map<String, BillSeries>> billingSeries() => repository.billingSeries();
+
+  /// Sets where one series continues from.
+  Future<BillSeries> updateBillingSeries(String series, int nextNumber) =>
+      repository.updateBillingSeries(series, nextNumber);
 }

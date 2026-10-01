@@ -6,15 +6,44 @@ class AssetCategory {
   final int id;
   final String name;
   final bool isActive;
+  final String? depreciationBlock;
+  final num? depreciationRatePercent;
+  final String depreciationMethod;
 
-  const AssetCategory({required this.id, this.name = '', this.isActive = true});
+  const AssetCategory({
+    required this.id,
+    this.name = '',
+    this.isActive = true,
+    this.depreciationBlock,
+    this.depreciationRatePercent,
+    this.depreciationMethod = 'WDV',
+  });
 
   factory AssetCategory.fromJson(Map<String, dynamic> json) => AssetCategory(
     id: asInt(json['id']),
     name: asStringOrNull(json['name']) ?? '',
     isActive: asBool(json['isActive']),
+    depreciationBlock: asStringOrNull(json['depreciationBlock']),
+    depreciationRatePercent: asNumOrNull(json['depreciationRatePercent']),
+    depreciationMethod: asStringOrNull(json['depreciationMethod']) ?? 'WDV',
   );
 }
+
+/// Standard Income Tax Act block rates, offered as a picker when assigning a
+/// category's depreciation rate — mirrors IT_ACT_BLOCKS in AssetsPanel.jsx.
+const kItActBlocks = <String, num>{
+  'Buildings': 10,
+  'Furniture & Fixtures': 10,
+  'Plant & Machinery': 15,
+  'Computers & Software': 40,
+  'Motor Vehicles': 15,
+};
+
+const kDepreciationMethods = ['WDV', 'SLM'];
+const kDepreciationMethodLabel = {
+  'WDV': 'Reducing balance (WDV)',
+  'SLM': 'Straight-line (SLM)',
+};
 
 /// A repair/service payee — shared between Assets and Expenses (one
 /// dbo.vendors directory, see vendors/vendors.service.js).
@@ -79,6 +108,11 @@ class Asset {
   final String? qrToken;
   final bool isActive;
   final int openWorkOrders;
+  final String? deadDate;
+  final String? deadReason;
+  final String? disposalNote;
+  final num? recoveryCost;
+  final String? disposedBy;
 
   const Asset({
     required this.id,
@@ -106,6 +140,11 @@ class Asset {
     this.qrToken,
     this.isActive = true,
     this.openWorkOrders = 0,
+    this.deadDate,
+    this.deadReason,
+    this.disposalNote,
+    this.recoveryCost,
+    this.disposedBy,
   });
 
   factory Asset.fromJson(Map<String, dynamic> json) => Asset(
@@ -134,6 +173,11 @@ class Asset {
     qrToken: asStringOrNull(json['qrToken']),
     isActive: asBool(json['isActive']),
     openWorkOrders: asInt(json['openWorkOrders']),
+    deadDate: asStringOrNull(json['deadDate']),
+    deadReason: asStringOrNull(json['deadReason']),
+    disposalNote: asStringOrNull(json['disposalNote']),
+    recoveryCost: asNumOrNull(json['recoveryCost']),
+    disposedBy: asStringOrNull(json['disposedBy']),
   );
 }
 

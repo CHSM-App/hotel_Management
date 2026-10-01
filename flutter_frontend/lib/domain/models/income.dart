@@ -114,8 +114,10 @@ class IncomeReceipt {
 /// IncomePanel.jsx. A category only exists once it's been typed or picked and
 /// used to save an income entry or recurring template; there is no separate
 /// "manage categories" screen.
+const kInterestIncomeCategory = 'Interest Earned';
+
 const kSuggestedIncomeCategories = [
-  'Interest Earned',
+  kInterestIncomeCategory,
   'Scrap Sale',
   'Rent Received',
   'Commission Received',

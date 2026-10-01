@@ -83,11 +83,22 @@ class _ReportTab {
   };
 }
 
+/// The four sidebar sections under Reports & Analytics, and the tabs each
+/// holds — mirrors frontend/src/lib/reportSections.js's REPORT_SECTIONS. A
+/// section shows only the tabs the property and the login can use, and no
+/// tab strip at all when just one is left.
+const _kReportSections = <String, List<String>>{
+  'overview': ['overview'],
+  'sales': ['bookings', 'events', 'food'],
+  'finance': ['profitLoss', 'expenses', 'income', 'gst'],
+  'assets': ['assets'],
+};
+
 const _kAllReportTabs = <_ReportTab>[
   _ReportTab(key: 'overview', label: 'Overview'),
   _ReportTab(key: 'bookings', label: 'Room Bookings', capability: 'hasRooms'),
   _ReportTab(key: 'events', label: 'Events & functions', capability: 'hasEvents'),
-  _ReportTab(key: 'food', label: 'Food orders', capability: 'servesFood'),
+  _ReportTab(key: 'food', label: 'Restaurant', capability: 'servesFood'),
   _ReportTab(key: 'gst', label: 'Tax & GST'),
   _ReportTab(
     key: 'profitLoss',
@@ -110,7 +121,13 @@ class ReportsScreen extends ConsumerStatefulWidget {
   /// own, which needs no way back to anywhere.
   final VoidCallback? onBack;
 
-  const ReportsScreen({super.key, this.onBack});
+  /// Which sidebar section opened this screen — one of [_kReportSections]'
+  /// keys ('overview', 'sales', 'finance', 'assets'), mirroring the web's own
+  /// `only` prop on ReportsPanel. Null keeps every tab, same as before these
+  /// four sidebar rows existed.
+  final String? only;
+
+  const ReportsScreen({super.key, this.onBack, this.only});
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -144,8 +161,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _localFromDate = startOfMonthIso();
   String _localToDate = todayIso();
 
-  List<_ReportTab> _visibleTabs(Me me) =>
-      _kAllReportTabs.where((t) => t.availableTo(me)).toList();
+  List<_ReportTab> _visibleTabs(Me me) {
+    final section = widget.only == null ? null : _kReportSections[widget.only];
+    return _kAllReportTabs
+        .where((t) => t.availableTo(me) && (section == null || section.contains(t.key)))
+        .toList();
+  }
 
   bool _canDownload(ReportsState state) => switch (_tab) {
     'events' => state.events is AsyncData,
@@ -281,7 +302,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 ),
                 const SizedBox(height: AppTheme.s12),
               ],
-              _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
+              if (tabs.length > 1)
+                _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
             ],
           ),
         ),

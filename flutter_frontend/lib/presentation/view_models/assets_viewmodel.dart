@@ -61,6 +61,8 @@ class AssetsState {
 
   List<Vendor> get activeVendors => vendors.where((v) => v.isActive).toList();
 
+  List<Asset> get deadStockAssets => assets.where((a) => a.status == 'RETIRED').toList();
+
   int get openWorkOrderCount => workOrders.where((w) => w.status != 'CLOSED').length;
 }
 
@@ -123,6 +125,19 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
     }
   }
 
+  Future<bool> saveDepreciation(int categoryId, Map<String, dynamic> body) async {
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      await usecase.updateCategoryDepreciation(categoryId, body);
+      state = state.copyWith(submitting: false);
+      await loadCatalogue();
+      return true;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      return false;
+    }
+  }
+
   Future<bool> saveVendor(Map<String, dynamic> body, {int? id}) async {
     state = state.copyWith(submitting: true, clearError: true);
     try {
@@ -162,7 +177,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       }
       state = state.copyWith(submitting: false);
       _bump();
-      await loadAssets();
+      await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
       state = state.copyWith(submitting: false, error: apiErrorMessage(e));
@@ -176,7 +191,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await usecase.createAssetsBulk(form);
       state = state.copyWith(submitting: false);
       _bump();
-      await loadAssets();
+      await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
       state = state.copyWith(submitting: false, error: apiErrorMessage(e));
@@ -184,11 +199,11 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
     }
   }
 
-  Future<bool> setStatus(int id, String status) async {
+  Future<bool> setStatus(int id, String status, {Map<String, dynamic>? deadStock}) async {
     try {
-      await usecase.setAssetStatus(id, status);
+      await usecase.setAssetStatus(id, status, deadStock: deadStock);
       _bump();
-      await loadAssets();
+      await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
       state = state.copyWith(error: apiErrorMessage(e));
@@ -200,7 +215,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
     try {
       await usecase.deleteAsset(id);
       _bump();
-      await loadAssets();
+      await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
       state = state.copyWith(error: apiErrorMessage(e));

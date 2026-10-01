@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/asset.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
@@ -10,7 +11,8 @@ import 'asset_form_sheet.dart';
 import 'work_orders_panel.dart';
 
 /// Assets > Assets — mirrors the Register tab in AssetsPanel.jsx: a search
-/// box, a status filter, and every unit on file, tap-through to its detail.
+/// box and every unit on file, either as cards or as a spreadsheet-style
+/// table, tap-through to its detail either way.
 class AssetsListPanel extends ConsumerStatefulWidget {
   const AssetsListPanel({super.key});
 
@@ -20,12 +22,16 @@ class AssetsListPanel extends ConsumerStatefulWidget {
 
 class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
   final _search = TextEditingController();
-  String _status = '';
+
+  // 'cards' is the everyday view — one asset at a time is easy to read on a
+  // phone. 'table' is the sheet-style view for scanning every asset's
+  // warranty/AMC/location at once, mirroring assetView in AssetsPanel.jsx.
+  String _view = 'cards';
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(assetsViewModelProvider.notifier).loadAssets());
+    Future.microtask(() => ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true));
   }
 
   @override
@@ -38,7 +44,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => AssetDetailScreen(assetId: a.id)),
     );
-    ref.read(assetsViewModelProvider.notifier).loadAssets();
+    ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
   }
 
   // Soft-delete, same as deleteAsset in AssetsPanel.jsx — service history
@@ -72,7 +78,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
     final needle = _search.text.trim().toLowerCase();
     final shown = [...state.assets]
       ..removeWhere((a) =>
-          (_status.isNotEmpty && a.status != _status) ||
+          a.status == 'RETIRED' ||
           (needle.isNotEmpty &&
               !a.name.toLowerCase().contains(needle) &&
               !(a.assetTag ?? '').toLowerCase().contains(needle) &&
@@ -85,7 +91,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
-          onRefresh: () => ref.read(assetsViewModelProvider.notifier).loadAssets(),
+          onRefresh: () => ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true),
           color: AppTheme.accent,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
@@ -149,7 +155,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
-                  _StatusFilterButton(selected: _status, onSelect: (s) => setState(() => _status = s)),
+                  _ViewToggleButton(view: _view, onSelect: (v) => setState(() => _view = v)),
                 ],
               ),
               const SizedBox(height: AppTheme.s12),
@@ -162,21 +168,33 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
               else ...[
                 _SummaryStrip(count: shown.length, openWorkOrders: openWorkOrders),
                 const SizedBox(height: AppTheme.s8),
-                for (final a in shown)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: _AssetCard(
-                      asset: a,
-                      onTap: () => _viewDetails(context, ref, a),
-                      onViewDetails: () => _viewDetails(context, ref, a),
-                      onEdit: () async {
-                        await showAssetFormSheet(context, asset: a);
-                        ref.read(assetsViewModelProvider.notifier).loadAssets();
-                      },
-                      onReportIssue: () => showReportIssueDialog(context, assetId: a.id),
-                      onDelete: () => _confirmDelete(context, ref, a),
+                if (_view == 'table')
+                  _AssetTable(
+                    assets: shown,
+                    onTap: (a) => _viewDetails(context, ref, a),
+                    onEdit: (a) async {
+                      await showAssetFormSheet(context, asset: a);
+                      ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
+                    },
+                    onReportIssue: (a) => showReportIssueDialog(context, assetId: a.id),
+                    onDelete: (a) => _confirmDelete(context, ref, a),
+                  )
+                else
+                  for (final a in shown)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _AssetCard(
+                        asset: a,
+                        onTap: () => _viewDetails(context, ref, a),
+                        onViewDetails: () => _viewDetails(context, ref, a),
+                        onEdit: () async {
+                          await showAssetFormSheet(context, asset: a);
+                          ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
+                        },
+                        onReportIssue: () => showReportIssueDialog(context, assetId: a.id),
+                        onDelete: () => _confirmDelete(context, ref, a),
+                      ),
                     ),
-                  ),
               ],
             ],
           ),
@@ -190,7 +208,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
             elevation: 2,
             onPressed: () async {
               await showAssetFormSheet(context);
-              ref.read(assetsViewModelProvider.notifier).loadAssets();
+              ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
             },
             child: const Icon(Icons.add_rounded),
           ),
@@ -226,68 +244,322 @@ class _SummaryStrip extends StatelessWidget {
   }
 }
 
-class _StatusFilterButton extends StatelessWidget {
-  final String selected;
+/// Cards vs. spreadsheet — mirrors the toggle-group in AssetsPanel.jsx's
+/// own asset-view-toggle, sitting where the status filter icon used to be.
+class _ViewToggleButton extends StatelessWidget {
+  final String view;
   final ValueChanged<String> onSelect;
 
-  const _StatusFilterButton({required this.selected, required this.onSelect});
+  const _ViewToggleButton({required this.view, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
-    final isFiltered = selected.isNotEmpty;
-    return PopupMenuButton<String>(
-      tooltip: 'Filter by status',
-      initialValue: selected,
-      onSelected: onSelect,
-      offset: const Offset(0, 44),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        _item('', 'All'),
-        for (final s in kAssetStatuses) _item(s, kAssetStatusLabel[s]!),
-      ],
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isFiltered ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.card,
-              borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              border: Border.all(color: isFiltered ? AppTheme.accent : AppTheme.border, width: isFiltered ? 1.4 : 1),
-            ),
-            child: Icon(Icons.filter_list_rounded, size: 21, color: isFiltered ? AppTheme.accent : AppTheme.muted),
+    Widget seg(String v, IconData icon) {
+      final isSelected = v == view;
+      return GestureDetector(
+        onTap: () => onSelect(v),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
           ),
-          if (isFiltered)
-            Positioned(
-              right: -2,
-              top: -2,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(color: AppTheme.accent, shape: BoxShape.circle),
-              ),
-            ),
+          child: Icon(icon, size: 19, color: isSelected ? Colors.white : AppTheme.muted),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          seg('cards', Icons.view_agenda_outlined),
+          seg('table', Icons.table_rows_outlined),
         ],
       ),
     );
   }
+}
 
-  PopupMenuItem<String> _item(String key, String label) {
-    final isSelected = key == selected;
-    return PopupMenuItem(
-      value: key,
-      child: Row(
-        children: [
-          Icon(
-            isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-            size: 16,
-            color: isSelected ? AppTheme.accent : AppTheme.muted,
+class _AssetTableColumn {
+  final String key;
+  final String label;
+  final double width;
+  final TextAlign align;
+
+  const _AssetTableColumn(this.key, this.label, {this.width = 100, this.align = TextAlign.left});
+}
+
+const _kAssetTableColumns = [
+  _AssetTableColumn('tag', 'Tag', width: 86),
+  _AssetTableColumn('name', 'Name', width: 160),
+  _AssetTableColumn('category', 'Category', width: 110),
+  _AssetTableColumn('location', 'Location', width: 96),
+  _AssetTableColumn('status', 'Status', width: 84),
+  _AssetTableColumn('warranty', 'Warranty', width: 92),
+  _AssetTableColumn('amc', 'AMC', width: 92),
+  _AssetTableColumn('openWos', 'Open WOs', width: 76, align: TextAlign.right),
+];
+
+/// The sheet-style view — every asset's tag/name/category/location/status/
+/// warranty/AMC/open-work-orders in one scrollable, sortable grid, mirroring
+/// the web table (TABLE_SORT_ACCESSORS/asset-table in AssetsPanel.jsx):
+/// clickable column headers, a coloured status pill, and a per-row ⋮ menu
+/// for the same actions the card view offers.
+class _AssetTable extends StatefulWidget {
+  final List<Asset> assets;
+  final ValueChanged<Asset> onTap;
+  final ValueChanged<Asset> onEdit;
+  final ValueChanged<Asset> onReportIssue;
+  final ValueChanged<Asset> onDelete;
+
+  const _AssetTable({
+    required this.assets,
+    required this.onTap,
+    required this.onEdit,
+    required this.onReportIssue,
+    required this.onDelete,
+  });
+
+  @override
+  State<_AssetTable> createState() => _AssetTableState();
+}
+
+class _AssetTableState extends State<_AssetTable> {
+  // null key means unsorted (register order) — three-state toggle per
+  // column, same cycle as toggleTableSort in AssetsPanel.jsx: asc -> desc ->
+  // unsorted.
+  String? _sortKey;
+  bool _sortDesc = false;
+
+  String _location(Asset a) {
+    if (a.roomNumber != null) return 'Room ${a.roomNumber}';
+    return [if (a.floor.isNotEmpty) 'Floor ${a.floor}', a.department].where((s) => s.isNotEmpty).join(' · ');
+  }
+
+  Comparable? _sortValue(Asset a, String key) => switch (key) {
+    'tag' => a.assetTag,
+    'name' => a.name,
+    'category' => a.categoryName,
+    'location' => _location(a),
+    'status' => kAssetStatusLabel[a.status] ?? a.status,
+    'warranty' => a.warrantyExpiry,
+    'amc' => a.amcExpiry,
+    'openWos' => a.openWorkOrders,
+    _ => null,
+  };
+
+  List<Asset> get _sorted {
+    final key = _sortKey;
+    if (key == null) return widget.assets;
+    final dir = _sortDesc ? -1 : 1;
+    final sorted = [...widget.assets];
+    sorted.sort((a, b) {
+      final av = _sortValue(a, key);
+      final bv = _sortValue(b, key);
+      final aEmpty = av == null || av == '';
+      final bEmpty = bv == null || bv == '';
+      // Nulls/empties sink to the bottom regardless of direction — same as
+      // the web's own sort, where "no warranty on file" isn't meaningfully
+      // before or after a real date.
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (av is num && bv is num) return (av - bv).sign.toInt() * dir;
+      return av.toString().toLowerCase().compareTo(bv.toString().toLowerCase()) * dir;
+    });
+    return sorted;
+  }
+
+  void _toggleSort(String key) {
+    setState(() {
+      if (_sortKey != key) {
+        _sortKey = key;
+        _sortDesc = false;
+      } else if (!_sortDesc) {
+        _sortDesc = true;
+      } else {
+        _sortKey = null;
+        _sortDesc = false;
+      }
+    });
+  }
+
+  Color _statusColor(String status) => switch (status) {
+    'IN_USE' => AppTheme.vacant,
+    'UNDER_REPAIR' => AppTheme.draft,
+    _ => AppTheme.muted,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = _sorted;
+    final width = _kAssetTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
+
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: AppTheme.bg,
+                    border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+                  ),
+                  child: Row(
+                    children: [
+                      for (final c in _kAssetTableColumns)
+                        SizedBox(
+                          width: c.width,
+                          child: GestureDetector(
+                            onTap: () => _toggleSort(c.key),
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                              child: Row(
+                                mainAxisAlignment: c.align == TextAlign.right ? MainAxisAlignment.end : MainAxisAlignment.start,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      c.label.toUpperCase(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(
+                                    _sortKey != c.key
+                                        ? Icons.unfold_more_rounded
+                                        : (_sortDesc ? Icons.arrow_drop_down_rounded : Icons.arrow_drop_up_rounded),
+                                    size: 14,
+                                    color: _sortKey == c.key ? AppTheme.accent : AppTheme.muted,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 36),
+                    ],
+                  ),
+                ),
+                for (var i = 0; i < rows.length; i++) _AssetTableRow(asset: rows[i], shaded: i.isOdd, statusColor: _statusColor, parent: widget),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: AppTheme.text, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, fontSize: 13)),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AssetTableRow extends StatelessWidget {
+  final Asset asset;
+  final bool shaded;
+  final Color Function(String) statusColor;
+  final _AssetTable parent;
+
+  const _AssetTableRow({required this.asset, required this.shaded, required this.statusColor, required this.parent});
+
+  String _location(Asset a) {
+    if (a.roomNumber != null) return 'Room ${a.roomNumber}';
+    return [if (a.floor.isNotEmpty) 'Floor ${a.floor}', a.department].where((s) => s.isNotEmpty).join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cells = {
+      'tag': asset.assetTag ?? '—',
+      'name': asset.name,
+      'category': asset.categoryName,
+      'location': _location(asset).isEmpty ? '—' : _location(asset),
+      'warranty': asset.warrantyExpiry != null ? formatIsoDate(asset.warrantyExpiry!) : '—',
+      'amc': asset.amcExpiry != null ? formatIsoDate(asset.amcExpiry!) : '—',
+      'openWos': asset.openWorkOrders > 0 ? '${asset.openWorkOrders}' : '—',
+    };
+    final color = statusColor(asset.status);
+
+    return GestureDetector(
+      onTap: () => parent.onTap(asset),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        decoration: BoxDecoration(
+          color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
+          border: const Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            for (final c in _kAssetTableColumns)
+              SizedBox(
+                width: c.width,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                  child: c.key == 'status'
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                            child: Text(
+                              kAssetStatusLabel[asset.status] ?? asset.status,
+                              style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        )
+                      : Text(
+                          cells[c.key] ?? '',
+                          textAlign: c.align,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: c.key == 'tag' ? AppTheme.muted : (c.key == 'category' ? AppTheme.accent : AppTheme.text),
+                            fontSize: 12.5,
+                            fontWeight: c.key == 'name' ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                        ),
+                ),
+              ),
+            SizedBox(
+              width: 36,
+              child: PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+                onSelected: (v) => switch (v) {
+                  'view' => parent.onTap(asset),
+                  'edit' => parent.onEdit(asset),
+                  'report' => parent.onReportIssue(asset),
+                  'delete' => parent.onDelete(asset),
+                  _ => null,
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'view', child: Text('View details')),
+                  PopupMenuItem(value: 'edit', child: Text('Edit asset')),
+                  PopupMenuItem(value: 'report', child: Text('Report an issue')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

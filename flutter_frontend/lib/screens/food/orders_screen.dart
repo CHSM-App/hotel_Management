@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/food_order.dart';
+import '../../domain/models/invoice.dart';
+import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../billing/invoice_preview_screen.dart';
+import '../billing/issue_food_bill_screen.dart';
 import '../theme.dart';
 import 'counter_order_screen.dart';
 
@@ -17,35 +21,32 @@ import 'counter_order_screen.dart';
 /// only) never sees the Kitchen queue tab or its actions — it lands on "My
 /// orders" with the "+ Take an order" button instead, exactly like the web.
 class OrdersScreen extends ConsumerStatefulWidget {
-  const OrdersScreen({super.key});
+  /// True when a parent (food_billing_screen.dart) already renders the
+  /// Kitchen queue/History switch itself, alongside a Numbering tab neither
+  /// enum here knows about — the same `hideTabs` OrdersPanel.jsx takes from
+  /// FoodSection.jsx so one strip can cover both halves of the merged "Food
+  /// orders & Billing" section.
+  final bool hideTabs;
+
+  const OrdersScreen({super.key, this.hideTabs = false});
 
   @override
   ConsumerState<OrdersScreen> createState() => _OrdersScreenState();
 }
 
 class _OrdersScreenState extends ConsumerState<OrdersScreen> {
-  /// The status cut, behind its own icon rather than sitting permanently on
-  /// screen — folds open right under the date field, the same way the
-  /// register page's own status filter does.
-  bool _filterOpen = false;
-  final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController =
-      OverlayPortalController();
-
   final _historySearch = TextEditingController();
 
-  void _toggleFilterOpen() {
-    setState(() => _filterOpen = !_filterOpen);
-    if (_filterOpen) {
-      _filterPortalController.show();
-    } else {
-      _filterPortalController.hide();
-    }
-  }
+  /// The Kitchen queue's own search — client-side over whatever the poll
+  /// already holds, same as History's own search box but with nothing to
+  /// fetch: the live queue is already the whole list.
+  final _queueSearch = TextEditingController();
+  String _queueSearchText = '';
 
   @override
   void dispose() {
     _historySearch.dispose();
+    _queueSearch.dispose();
     super.dispose();
   }
 
@@ -58,6 +59,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     final canWorkQueue = permissions.contains('orders.manage');
     final canTakeOrders = permissions.contains('orders.take');
     final canCook = permissions.contains('orders.cook');
+    final canBill = permissions.contains('billing.manage');
     // A cook-only login (orders.manage + orders.cook, no orders.take — the
     // kitchen role) never accepts a guest's own order: that is front-of-
     // house's job. Same formula as OrdersPanel.jsx's own canAccept.
@@ -65,6 +67,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     // The owner watches the kitchen and the queue but doesn't physically
     // hand food to a guest — same canHandOver() the web checks by role.
     final canHandOver = me?.user.role != 'OWNER';
+    // Issuing a bill straight from an order needs orders.manage AND
+    // orders.take AND billing.manage in the Kitchen queue (OrdersPanel.jsx's
+    // own `canBillHere`), but only orders.take AND billing.manage in History
+    // (its own `canViewBill`/`canDeliver` pair, no orders.manage required) —
+    // the two differ because History is reachable without the queue at all.
+    final canIssueBillQueue = canWorkQueue && canTakeOrders && canBill;
+    final canIssueBillHistory = canTakeOrders && canBill;
 
     // A captain with no queue access lands on "My orders" instead — the
     // Kitchen tab is never shown to them, mirroring OrdersPanel.jsx. This
@@ -102,12 +111,14 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             ),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              _TabRow(
-                state: state,
-                canWorkQueue: canWorkQueue,
-                onSelect: vm.setTab,
-              ),
-              const SizedBox(height: AppTheme.s12),
+              if (!widget.hideTabs) ...[
+                _TabRow(
+                  state: state,
+                  canWorkQueue: canWorkQueue,
+                  onSelect: vm.setTab,
+                ),
+                const SizedBox(height: AppTheme.s12),
+              ],
               if (state.tab == OrdersTab.queue && canWorkQueue)
                 ..._queue(
                   context,
@@ -117,6 +128,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                   canDeliver: canTakeOrders,
                   canAccept: canAccept,
                   canHandOver: canHandOver,
+                  canIssueBill: canIssueBillQueue,
                 )
               else
                 ..._history(
@@ -127,6 +139,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                   canCook: canCook,
                   canDeliver: canTakeOrders,
                   canHandOver: canHandOver,
+                  canIssueBill: canIssueBillHistory,
+                  canViewBill: canBill,
                 ),
             ],
           ),
@@ -153,16 +167,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
 
   // ── The queue ─────────────────────────────────────────────────────────────
 
-  /// PENDING, QUEUED, PREPARING, READY, in that order — the stages the
-  /// queue is sectioned by, same as OrdersPanel.jsx's own STATUS_ORDER.
-  static const _stageOrder = ['PENDING', 'QUEUED', 'PREPARING', 'READY'];
-  static const _stageLabel = {
-    'PENDING': 'Waiting for you to accept',
-    'QUEUED': 'In the queue',
-    'PREPARING': 'Preparing',
-    'READY': 'Ready to serve',
-  };
-
   List<Widget> _queue(
     BuildContext context,
     WidgetRef ref,
@@ -171,6 +175,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     required bool canDeliver,
     required bool canAccept,
     required bool canHandOver,
+    required bool canIssueBill,
   }) {
     return state.queue.when(
       loading: () => const [
@@ -206,50 +211,88 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ];
         }
 
-        final byStage = <String, List<FoodOrder>>{};
-        for (final order in orders) {
-          (byStage[order.status] ??= []).add(order);
-        }
+        // One flat list, oldest first — same as OrdersPanel.jsx's own
+        // `queue`/`groups`, which stopped sectioning by stage: every live
+        // ticket (including an old delivered-but-unbilled one still
+        // waiting on "Issue bill") sits under one "Live orders" heading,
+        // card view and spreadsheet alike.
+        final sorted = [...orders]..sort(
+          (a, b) => (a.placedAt ?? '').compareTo(b.placedAt ?? ''),
+        );
+        final pending = orders.where((o) => o.status == 'PENDING').length;
+        final filtered = _queueSearchText.trim().isEmpty
+            ? sorted
+            : sorted.where((o) => o.matchesSearch(_queueSearchText)).toList();
 
         return [
-          for (final stage in _stageOrder)
-            if (byStage[stage] != null) ...[
-              Padding(
-                padding: const EdgeInsets.only(
-                  top: AppTheme.s4,
-                  bottom: AppTheme.s8,
-                ),
-                child: Text(
-                  '${_stageLabel[stage]} (${byStage[stage]!.length})',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: stage == 'PENDING' ? AppTheme.danger : null,
-                  ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _SearchField(
+                  controller: _queueSearch,
+                  hint: 'Order #, room/table, guest, dish…',
+                  onChanged: (v) => setState(() => _queueSearchText = v),
                 ),
               ),
-              if (stage == 'PENDING')
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Text(
-                    "These came from a table QR, so nobody has checked "
-                    'them. Accept to send them to the kitchen, or cancel.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              for (final order in byStage[stage]!)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s4),
-                  child: _OrderCard(
-                    order: order,
-                    now: state.now,
-                    live: true,
-                    canCook: canCook,
-                    canDeliver: canDeliver,
-                    canAccept: canAccept,
-                    canHandOver: canHandOver,
-                  ),
-                ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(width: AppTheme.s8),
+              OrdersViewToggle(
+                view: state.listView,
+                onChanged: ref.read(ordersViewModelProvider.notifier).setListView,
+              ),
             ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          if (pending > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
+              child: NeuNotice(
+                icon: Icons.notifications_active_rounded,
+                message:
+                    '$pending guest QR order${pending == 1 ? '' : 's'} '
+                    'are waiting to be accepted — nobody has checked them yet.',
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
+            child: Text(
+              'Live orders (${filtered.length})',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          if (filtered.isEmpty)
+            const NeuNotice(
+              icon: Icons.search_off_rounded,
+              message: 'Nothing matches that search.',
+            )
+          else if (state.listView == 'sheet')
+            _OrdersSheet(
+              orders: filtered,
+              now: state.now,
+              live: true,
+              canCook: canCook,
+              canDeliver: canDeliver,
+              canAccept: canAccept,
+              canHandOver: canHandOver,
+              canIssueBill: canIssueBill,
+              isRealQueue: true,
+            )
+          else
+            for (final order in filtered)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.s4),
+                child: _OrderCard(
+                  order: order,
+                  now: state.now,
+                  live: true,
+                  canCook: canCook,
+                  canDeliver: canDeliver,
+                  canAccept: canAccept,
+                  canHandOver: canHandOver,
+                  canIssueBill: canIssueBill,
+                  isRealQueue: true,
+                ),
+              ),
         ];
       },
     );
@@ -265,6 +308,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     required bool canCook,
     required bool canDeliver,
     required bool canHandOver,
+    required bool canIssueBill,
+    required bool canViewBill,
   }) {
     final vm = ref.read(ordersViewModelProvider.notifier);
 
@@ -280,92 +325,50 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         canCook: canCook,
         canDeliver: canDeliver,
         canHandOver: canHandOver,
+        canIssueBill: canIssueBill,
+        canViewBill: canViewBill,
       );
     }
 
     final head = <Widget>[
       Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: _PeriodField(
-              period: state.historyPeriod,
-              from: state.historyCustomFrom,
-              to: state.historyCustomTo,
-              onSelect: (period) async {
-                if (period != 'custom') {
-                  await vm.setHistoryPeriod(period);
-                  return;
-                }
-                final now = DateTime.now();
-                final range = await showDateRangePicker(
-                  context: context,
-                  initialDateRange: DateTimeRange(
-                    start: state.historyCustomFrom,
-                    end: state.historyCustomTo,
-                  ),
-                  firstDate: DateTime(now.year - 2),
-                  lastDate: now,
-                );
-                if (range != null) {
-                  await vm.setHistoryCustomRange(range.start, range.end);
-                }
-              },
+            child: _SearchField(
+              controller: _historySearch,
+              hint: 'Order #, room/table, guest, dish…',
+              onChanged: vm.setHistorySearch,
             ),
           ),
           const SizedBox(width: AppTheme.s8),
-          CompositedTransformTarget(
-            link: _filterLink,
-            child: OverlayPortal(
-              controller: _filterPortalController,
-              overlayChildBuilder: (context) => Stack(
-                children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: _toggleFilterOpen,
-                    ),
-                  ),
-                  CompositedTransformFollower(
-                    link: _filterLink,
-                    showWhenUnlinked: false,
-                    targetAnchor: Alignment.bottomRight,
-                    followerAnchor: Alignment.topRight,
-                    offset: const Offset(0, AppTheme.s8),
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: _StatusChips(
-                          selected: state.historyStatus,
-                          onSelect: (status) {
-                            vm.setHistoryStatus(status);
-                            _toggleFilterOpen();
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              child: _FilterButton(
-                active: state.historyStatus != null,
-                open: _filterOpen,
-                onTap: _toggleFilterOpen,
-              ),
-            ),
-          ),
+          OrdersViewToggle(view: state.listView, onChanged: vm.setListView),
         ],
       ),
       const SizedBox(height: AppTheme.s8),
-      NeuField(
-        controller: _historySearch,
-        hint: 'Order #, room/table, guest, dish…',
-        label: '',
-        suffix: const Padding(
-          padding: EdgeInsets.only(right: AppTheme.s12),
-          child: Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
-        ),
-        onChanged: vm.setHistorySearch,
+      _PeriodChipsRow(
+        period: state.historyPeriod,
+        from: state.historyCustomFrom,
+        to: state.historyCustomTo,
+        onSelect: (period) async {
+          if (period != 'custom') {
+            await vm.setHistoryPeriod(period);
+            return;
+          }
+          final now = DateTime.now();
+          final range = await showDateRangePicker(
+            context: context,
+            initialDateRange: DateTimeRange(
+              start: state.historyCustomFrom,
+              end: state.historyCustomTo,
+            ),
+            firstDate: DateTime(now.year - 2),
+            lastDate: now,
+          );
+          if (range != null) {
+            await vm.setHistoryCustomRange(range.start, range.end);
+          }
+        },
       ),
       const SizedBox(height: AppTheme.s12),
     ];
@@ -400,6 +403,21 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             ),
           ];
         }
+        if (state.listView == 'sheet') {
+          return [
+            _OrdersSheet(
+              orders: orders,
+              now: state.now,
+              live: false,
+              canBillFood: canBillFood,
+              canDeliver: canDeliver,
+              canAccept: canDeliver && canHandOver,
+              canHandOver: canHandOver,
+              canIssueBill: canIssueBill,
+              canViewBill: canViewBill,
+            ),
+          ];
+        }
         return [
           for (final order in orders)
             Padding(
@@ -417,6 +435,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 // orders.take.
                 canAccept: canDeliver && canHandOver,
                 canHandOver: canHandOver,
+                canIssueBill: canIssueBill,
+                canViewBill: canViewBill,
               ),
             ),
         ];
@@ -436,6 +456,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     required bool canCook,
     required bool canDeliver,
     required bool canHandOver,
+    required bool canIssueBill,
+    required bool canViewBill,
   }) {
     final vm = ref.read(ordersViewModelProvider.notifier);
 
@@ -454,14 +476,33 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ),
         ),
       ],
-      data: (orders) {
+      data: (all) {
         // Same split as the tab itself: "Kitchen queue" is what's still
         // open, "History" is what's been settled — so the empty state reads
         // right for whichever one is actually showing nothing.
         final onQueueTab = state.tab == OrdersTab.queue;
-        if (orders.isEmpty) {
+        final head = <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _SearchField(
+                  controller: _historySearch,
+                  hint: 'Order #, room/table, guest, dish…',
+                  onChanged: vm.setHistorySearch,
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              OrdersViewToggle(view: state.listView, onChanged: vm.setListView),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+        ];
+
+        if (all.isEmpty) {
           return [
-            const SizedBox(height: 60),
+            ...head,
+            const SizedBox(height: 48),
             NeuNotice(
               icon: Icons.receipt_long_rounded,
               message: onQueueTab
@@ -470,7 +511,38 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             ),
           ];
         }
+
+        final orders = all.where((o) => o.matchesSearch(state.historySearch)).toList();
+        if (orders.isEmpty) {
+          return [
+            ...head,
+            const SizedBox(height: 48),
+            const NeuNotice(
+              icon: Icons.search_off_rounded,
+              message: 'Nothing matches that search.',
+            ),
+          ];
+        }
+
+        if (state.listView == 'sheet') {
+          return [
+            ...head,
+            _OrdersSheet(
+              orders: orders,
+              now: state.now,
+              live: onQueueTab,
+              canCook: canCook,
+              canBillFood: canBillFood,
+              canDeliver: canDeliver,
+              canAccept: canDeliver && canHandOver,
+              canHandOver: canHandOver,
+              canIssueBill: canIssueBill,
+              canViewBill: canViewBill,
+            ),
+          ];
+        }
         return [
+          ...head,
           for (final order in orders)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s4),
@@ -486,6 +558,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 // canAccept — same as OrdersPanel.jsx's renderCaptainCard.
                 canAccept: canDeliver && canHandOver,
                 canHandOver: canHandOver,
+                canIssueBill: canIssueBill,
+                canViewBill: canViewBill,
               ),
             ),
         ];
@@ -597,192 +671,86 @@ class _TabRow extends StatelessWidget {
   }
 }
 
-/// History's own period picker — Today, This month, or a custom range —
-/// same three OrdersPanel.jsx's period control offers, behind one field
-/// instead of three always-visible chips.
-class _PeriodField extends StatelessWidget {
-  final String period;
-  final DateTime from;
-  final DateTime to;
-  final ValueChanged<String> onSelect;
+// ── Search ───────────────────────────────────────────────────────────────────
 
-  const _PeriodField({
-    required this.period,
-    required this.from,
-    required this.to,
-    required this.onSelect,
-  });
+/// The same pill-shaped search field every other list screen in the app uses
+/// (assets_list_panel.dart, events_list_panel.dart, expenses_list_panel.dart,
+/// income_list_panel.dart) — a circular accent-tinted icon badge, a borderless
+/// field, and a clear (×) button once there is something to clear — rather
+/// than the plain boxed [NeuField] this screen's search used before.
+class _SearchField extends StatefulWidget {
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String> onChanged;
 
-  String get _label => switch (period) {
-    'month' => 'This month',
-    'custom' => from == to
-        ? formatDate(from)
-        : '${formatDate(from)} – ${formatDate(to)}',
-    _ => 'Today',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      onSelected: onSelect,
-      offset: const Offset(0, 8),
-      color: AppTheme.card,
-      elevation: 6,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      itemBuilder: (context) => [
-        for (final entry in const {
-          'today': 'Today',
-          'month': 'This month',
-          'custom': 'Custom range…',
-        }.entries)
-          PopupMenuItem<String>(
-            value: entry.key,
-            height: 44,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    entry.value,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-                if (entry.key == period)
-                  const Icon(Icons.check_rounded, color: AppTheme.accent, size: 18),
-              ],
-            ),
-          ),
-      ],
-      child: NeuCard(
-        radius: AppTheme.rSmall,
-        shadow: AppTheme.subtle,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.s12,
-          vertical: AppTheme.s8,
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.event_rounded, size: 15, color: AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                _label,
-                style: Theme.of(context).textTheme.bodyMedium,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 18,
-              color: AppTheme.muted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The status cut's own door — a funnel icon with a dot when a status is on,
-/// right beside the date field. Tapping it folds the status chips open
-/// directly underneath, the same way the register page's own filter icon
-/// works, rather than the chips sitting permanently on screen.
-class _FilterButton extends StatelessWidget {
-  final bool active;
-  final bool open;
-  final VoidCallback onTap;
-
-  const _FilterButton({
-    required this.active,
-    required this.open,
-    required this.onTap,
+  const _SearchField({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final on = active || open;
-    return GestureDetector(
-      onTap: onTap,
-      child: NeuCard(
-        radius: AppTheme.rSmall,
-        shadow: AppTheme.subtle,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.s12,
-          vertical: AppTheme.s8,
-        ),
-        child: SizedBox(
-          width: 18,
-          height: 15,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                Icons.filter_alt_rounded,
-                size: 18,
-                color: on ? AppTheme.accent : AppTheme.muted,
-              ),
-              if (active)
-                Positioned(
-                  top: -2,
-                  right: -2,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.accent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  State<_SearchField> createState() => _SearchFieldState();
 }
 
-class _StatusChips extends StatelessWidget {
-  final String? selected;
-  final ValueChanged<String?> onSelect;
-
-  static const _options = <String?, String>{
-    null: 'All',
-    'DELIVERED': 'Delivered',
-    'CANCELLED': 'Cancelled',
-  };
-
-  static const _icons = <String?, IconData>{
-    null: Icons.apps_rounded,
-    'DELIVERED': Icons.check_circle_rounded,
-    'CANCELLED': Icons.cancel_rounded,
-  };
-
-  const _StatusChips({required this.selected, required this.onSelect});
-
+class _SearchFieldState extends State<_SearchField> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 170,
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
       decoration: BoxDecoration(
         color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppTheme.border),
         boxShadow: AppTheme.subtle,
       ),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          for (final entry in _options.entries)
-            _Chip(
-              label: entry.value,
-              icon: _icons[entry.key]!,
-              on: entry.key == selected,
-              onTap: () => onSelect(entry.key),
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+          ),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              onChanged: (v) {
+                setState(() {});
+                widget.onChanged(v);
+              },
+              style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: widget.hint,
+                hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 13),
+              ),
+            ),
+          ),
+          if (widget.controller.text.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                widget.controller.clear();
+                setState(() {});
+                widget.onChanged('');
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 30,
+                height: 30,
+                margin: const EdgeInsets.only(right: 2),
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
+                child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
+              ),
             ),
         ],
       ),
@@ -790,53 +758,123 @@ class _StatusChips extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool on;
-  final VoidCallback onTap;
+// ── Spreadsheet / cards ──────────────────────────────────────────────────────
 
-  const _Chip({
-    required this.label,
-    required this.icon,
-    required this.on,
-    required this.onTap,
-  });
+/// Same `ViewToggle` OrdersPanel.jsx renders for the kitchen queue and
+/// History: a dense spreadsheet (every ticket as one row) or the cards
+/// everywhere else on this screen already used before this switch existed.
+///
+/// Public (not `_ViewToggle`) so food_billing_screen.dart can place it
+/// itself, in the corner of its own tab strip, when it hides this screen's
+/// own one.
+class OrdersViewToggle extends StatelessWidget {
+  final String view;
+  final ValueChanged<String> onChanged;
+
+  const OrdersViewToggle({super.key, required this.view, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.s12,
-          vertical: AppTheme.s8,
-        ),
-        decoration: BoxDecoration(
-          color: on
-              ? AppTheme.accent.withValues(alpha: 0.10)
-              : Colors.transparent,
-          border: Border(
-            left: BorderSide(
-              color: on ? AppTheme.accent : Colors.transparent,
-              width: 3,
+    Widget button(String value, IconData icon, String tooltip) {
+      final on = view == value;
+      return Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: () => onChanged(value),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          child: Container(
+            padding: const EdgeInsets.all(AppTheme.s8),
+            decoration: BoxDecoration(
+              color: on ? AppTheme.accent.withValues(alpha: 0.1) : null,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            ),
+            child: Icon(
+              icon,
+              size: 17,
+              color: on ? AppTheme.accent : AppTheme.muted,
             ),
           ),
         ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.centerRight,
+      child: NeuCard(
+        radius: AppTheme.rSmall,
+        shadow: AppTheme.subtle,
+        padding: const EdgeInsets.all(2),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: on ? AppTheme.accent : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Text(
-              label,
-              style: TextStyle(
-                color: on ? AppTheme.accent : AppTheme.text,
-                fontSize: 13,
-                fontWeight: on ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
+            button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
+            button('cards', Icons.view_agenda_rounded, 'Card view'),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// History's own period picker — Today, This month, or a custom range, as
+/// three always-visible chips, same as OrdersPanel.jsx's own
+/// `order-history__filters` period row — not folded behind a funnel icon.
+class _PeriodChipsRow extends StatelessWidget {
+  final String period;
+  final DateTime from;
+  final DateTime to;
+  final ValueChanged<String> onSelect;
+
+  const _PeriodChipsRow({
+    required this.period,
+    required this.from,
+    required this.to,
+    required this.onSelect,
+  });
+
+  String get _customLabel =>
+      from == to ? formatDate(from) : '${formatDate(from)} – ${formatDate(to)}';
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(String key, String label) {
+      final on = period == key;
+      return Padding(
+        padding: const EdgeInsets.only(right: AppTheme.s8),
+        child: InkWell(
+          onTap: () => onSelect(key),
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s8,
+            ),
+            decoration: BoxDecoration(
+              color: on ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.card,
+              border: Border.all(color: on ? AppTheme.accent : AppTheme.border),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                color: on ? AppTheme.accent : AppTheme.text,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          chip('today', 'Today'),
+          chip('month', 'This month'),
+          chip('custom', period == 'custom' ? _customLabel : 'Custom'),
+        ],
       ),
     );
   }
@@ -875,6 +913,24 @@ class _OrderCard extends ConsumerWidget {
   /// for OWNER, same as OrdersPanel.jsx's `canHandOver()`.
   final bool canHandOver;
 
+  /// Whether this login may issue the bill directly from here — same
+  /// `canBillHere`/`canViewBill && canDeliver` OrdersPanel.jsx computes per
+  /// screen. When true, a delivered order offers "Issue bill" (which opens
+  /// the bill straight away) instead of merely "Ready to bill".
+  final bool canIssueBill;
+
+  /// Whether this login may open an already-issued bill from here — History
+  /// only; the Kitchen queue never shows "View bill".
+  final bool canViewBill;
+
+  /// True only for the real Kitchen queue (Owner/Kitchen/Reception's own
+  /// cooking pipeline) — the one place OrdersPanel.jsx's renderOrder never
+  /// offers Edit or View bill at all. A captain's own "Kitchen" tab is not
+  /// this: it is myOrdersMode's own live list, and OrdersPanel.jsx's
+  /// renderCaptainCard (used there too) offers both regardless of whether
+  /// the order is still open — same as this screen's own History tab.
+  final bool isRealQueue;
+
   const _OrderCard({
     required this.order,
     required this.now,
@@ -884,6 +940,9 @@ class _OrderCard extends ConsumerWidget {
     this.canDeliver = false,
     this.canAccept = false,
     this.canHandOver = true,
+    this.canIssueBill = false,
+    this.canViewBill = false,
+    this.isRealQueue = false,
   });
 
   /// Which of the order's own [FoodOrder.nextStatuses] this login may act
@@ -1199,10 +1258,68 @@ class _OrderCard extends ConsumerWidget {
                         ),
                       ],
 
-                      // Delivered and unbilled: the captain can send it on
-                      // to Billing's "Food to bill" queue — from history, or
-                      // straight from "My orders" once it's fully delivered.
-                      if (canBillFood && order.canMarkReadyToBill) ...[
+                      // Still unbilled and not sent to billing: the captain
+                      // can correct what was rung in — same "Edit order" the
+                      // web offers alongside Accept/Cancel. Not on the real
+                      // Kitchen queue — OrdersPanel.jsx's renderOrder never
+                      // offers it there — but shown everywhere else,
+                      // including a captain's own "Kitchen" tab, same as
+                      // renderCaptainCard.
+                      if (!isRealQueue && canDeliver && order.isEditable) ...[
+                        const SizedBox(height: AppTheme.s8),
+                        NeuButton(
+                          expand: true,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppTheme.s8 + 2,
+                          ),
+                          onPressed: () => _editOrder(context),
+                          child: const Text(
+                            'Edit order',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+
+                      // Already billed: open what was issued. Not on the
+                      // real Kitchen queue, same as OrdersPanel.jsx's own
+                      // `viewBill`.
+                      if (!isRealQueue && canViewBill && order.invoiceId != null) ...[
+                        const SizedBox(height: AppTheme.s8),
+                        NeuButton(
+                          expand: true,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppTheme.s8 + 2,
+                          ),
+                          onPressed: () =>
+                              _viewOrderBill(context, ref, order.invoiceId!),
+                          child: const Text(
+                            'View bill',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+
+                      // Delivered and unbilled: either straight to a bill
+                      // (this login also holds billing.manage, same as
+                      // OrdersPanel.jsx's `readyToBill.issues`) or queued for
+                      // whoever does (`canBillFood` alone) — never both.
+                      if (canIssueBill &&
+                          order.isDeliveredUnbilled &&
+                          order.billableAsFoodTab) ...[
+                        const SizedBox(height: AppTheme.s8),
+                        NeuButton(
+                          primary: true,
+                          expand: true,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppTheme.s8 + 2,
+                          ),
+                          onPressed: () => _issueBillForOrder(context, ref, order),
+                          child: const Text(
+                            'Issue bill',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ] else if (canBillFood && order.canMarkReadyToBill) ...[
                         const SizedBox(height: AppTheme.s8),
                         NeuButton(
                           primary: true,
@@ -1213,24 +1330,6 @@ class _OrderCard extends ConsumerWidget {
                           onPressed: () => _markReadyToBill(context, ref),
                           child: const Text(
                             'Ready to bill',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-
-                      // Still unbilled and not sent to billing: the captain
-                      // can correct what was rung in — same "Edit order" the
-                      // web offers alongside Accept/Cancel.
-                      if (canDeliver && order.isEditable) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(
-                          expand: true,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTheme.s8 + 2,
-                          ),
-                          onPressed: () => _editOrder(context),
-                          child: const Text(
-                            'Edit order',
                             style: TextStyle(fontSize: 13),
                           ),
                         ),
@@ -1563,4 +1662,702 @@ class _ItemLine extends ConsumerWidget {
       child: row,
     );
   }
+}
+
+// ── The spreadsheet ──────────────────────────────────────────────────────────
+
+/// One ticket per row, same column set OrdersPanel.jsx's own
+/// `renderQueueTable` (and History's own spreadsheet) lay out: order
+/// number, where it's for, the dishes, status, a time column, the total,
+/// and whatever actions this login may take — a dense read for a desk that
+/// wants to scan many tickets at once rather than scroll a wall of cards.
+class _OrdersSheet extends ConsumerStatefulWidget {
+  final List<FoodOrder> orders;
+  final DateTime now;
+
+  /// A live ticket shows how long it has been waiting; a settled one shows
+  /// when it was placed instead — same as the queue/History split elsewhere
+  /// on this screen.
+  final bool live;
+
+  final bool canCook;
+  final bool canBillFood;
+  final bool canDeliver;
+  final bool canAccept;
+  final bool canHandOver;
+
+  /// Same `canBillHere`/`canViewBill && canDeliver` OrdersPanel.jsx computes
+  /// per screen — when true, a delivered order's bill button reads "Issue
+  /// bill" and opens it directly instead of only queueing it.
+  final bool canIssueBill;
+
+  /// History only — the Kitchen queue never offers "View bill".
+  final bool canViewBill;
+
+  /// True only for the real Kitchen queue — see `_OrderCard.isRealQueue`,
+  /// which this mirrors.
+  final bool isRealQueue;
+
+  const _OrdersSheet({
+    required this.orders,
+    required this.now,
+    required this.live,
+    this.canCook = false,
+    this.canBillFood = false,
+    this.canDeliver = false,
+    this.canAccept = false,
+    this.canHandOver = true,
+    this.canIssueBill = false,
+    this.canViewBill = false,
+    this.isRealQueue = false,
+  });
+
+  @override
+  ConsumerState<_OrdersSheet> createState() => _OrdersSheetState();
+}
+
+class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
+  /// Tickets whose dishes are open, by order id — same `<details>` behaviour
+  /// OrdersPanel.jsx's own `renderSections`/`sumline` toggle gives each
+  /// ticket, read by course rather than a bare count.
+  final Set<int> _open = {};
+
+  /// Queue columns: #, Where, Dishes, Status, Waiting, Total, Actions — same
+  /// as OrdersPanel.jsx's own `renderQueueTable`. History adds Placed and
+  /// Took (how long the ticket ran from placed to settled), same as its own
+  /// history-table columns.
+  static const _liveWidths = [46.0, 118.0, 190.0, 104.0, 72.0, 78.0, 132.0];
+  static const _historyWidths = [46.0, 70.0, 108.0, 190.0, 104.0, 78.0, 70.0, 132.0];
+
+  List<double> get _widths => widget.live ? _liveWidths : _historyWidths;
+  double get _totalWidth => _widths.reduce((a, b) => a + b);
+
+  @override
+  Widget build(BuildContext context) {
+    Widget head(String label, {TextAlign align = TextAlign.left}) => Text(
+      label.toUpperCase(),
+      textAlign: align,
+      style: const TextStyle(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.3,
+        color: AppTheme.muted,
+      ),
+    );
+
+    final headerCells = widget.live
+        ? [
+            head('#'),
+            head('Where'),
+            head('Dishes'),
+            head('Status'),
+            head('Waiting'),
+            head('Total', align: TextAlign.right),
+            head('Actions'),
+          ]
+        : [
+            head('#'),
+            head('Placed'),
+            head('Where'),
+            head('Dishes'),
+            head('Status'),
+            head('Total', align: TextAlign.right),
+            head('Took'),
+            head('Actions'),
+          ];
+
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: _totalWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _sheetRow(header: true, cells: headerCells),
+                for (var i = 0; i < widget.orders.length; i++) ...[
+                  _sheetRow(
+                    shaded: i.isOdd,
+                    cells: _rowCells(context, widget.orders[i]),
+                  ),
+                  if (_open.contains(widget.orders[i].id))
+                    _dishesExpanded(widget.orders[i], shaded: i.isOdd),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetRow({required List<Widget> cells, bool header = false, bool shaded = false}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: header
+            ? AppTheme.bg
+            : shaded
+            ? AppTheme.border.withValues(alpha: 0.4)
+            : AppTheme.card,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.border, width: header ? 1.4 : 0.8),
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < cells.length; i++)
+              SizedBox(
+                width: _widths[i],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.s8,
+                    vertical: AppTheme.s8,
+                  ),
+                  child: cells[i],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Dishes grouped by menu section, in menu order — same grouping
+  /// OrdersPanel.jsx's own `sectionsOf`/`renderSections` reads.
+  static List<MapEntry<String, List<FoodOrderItem>>> _groups(FoodOrder order) {
+    final sorted = [...order.items]
+      ..sort((a, b) => a.categorySort.compareTo(b.categorySort));
+    final groups = <String, List<FoodOrderItem>>{};
+    for (final item in sorted) {
+      final name = (item.category ?? '').isNotEmpty ? item.category! : 'Other';
+      (groups[name] ??= []).add(item);
+    }
+    return groups.entries.toList();
+  }
+
+  /// The Dishes cell itself — a tap target the whole row's width, summarised
+  /// by section ("Snacks 3/3"), same as the web's own `sumline`. Tapping
+  /// opens [_dishesExpanded] below with every dish named.
+  Widget _dishesCell(FoodOrder order) {
+    final isOpen = _open.contains(order.id);
+    final groups = _groups(order);
+    return InkWell(
+      onTap: () => setState(() {
+        if (isOpen) {
+          _open.remove(order.id);
+        } else {
+          _open.add(order.id);
+        }
+      }),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isOpen ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
+            size: 16,
+            color: AppTheme.muted,
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 2,
+              children: [
+                for (final g in groups)
+                  Text(
+                    '${g.key} ${g.value.where((i) => i.isReady).length}/${g.value.length}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Every dish on [order], by name — the full-width row that opens under a
+  /// ticket once [_dishesCell] is tapped, same as the web's own
+  /// `queue-sub`/expanded `<details>`: each section's dishes as a row of
+  /// pills, a dish's pill tinted once the kitchen has ticked it ready.
+  Widget _dishesExpanded(FoodOrder order, {required bool shaded}) {
+    return Container(
+      width: _totalWidth,
+      color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.bg,
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s16 + AppTheme.s8,
+        0,
+        AppTheme.s8,
+        AppTheme.s8,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final g in _groups(order))
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.s4),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    g.key,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.muted,
+                    ),
+                  ),
+                  for (final item in g.value)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: item.isReady
+                            ? AppTheme.accent.withValues(alpha: 0.12)
+                            : AppTheme.card,
+                        border: item.isReady
+                            ? null
+                            : Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${item.quantity}× ${item.name}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: item.isReady ? AppTheme.accent : AppTheme.text,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (order.note != null && order.note!.isNotEmpty)
+            Text(
+              '"${order.note}"',
+              style: const TextStyle(fontSize: 11, color: AppTheme.muted, fontStyle: FontStyle.italic),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Where this ticket is for, plus who it came from and who is working it
+  /// — a guest's own QR scan or a member of staff, and (once somebody has)
+  /// their name — same as OrdersPanel.jsx's own `SourceTag`/`HandledBy`.
+  Widget _whereCell(FoodOrder order) {
+    final place = order.source == 'ROOM'
+        ? 'Room'
+        : order.source == 'TABLE'
+        ? 'Table'
+        : 'Counter';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Wrap(
+          spacing: 4,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              order.target,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: order.guestOrder
+                    ? AppTheme.accent.withValues(alpha: 0.12)
+                    : AppTheme.border.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                order.guestOrder ? '$place QR' : 'Staff',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: order.guestOrder ? AppTheme.accent : AppTheme.muted,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if ((order.handledBy ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '${order.guestOrder ? 'Accepted' : 'Taken'} by ${order.handledBy}',
+              style: const TextStyle(fontSize: 10.5, color: AppTheme.muted),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _statusCell(FoodOrder order) {
+    final colour = _OrderCard._statusColour(order.status);
+    final statusText = order.billed
+        ? 'Billed'
+        : order.readyToBill
+        ? 'Ready to bill'
+        : order.statusLabel;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: colour.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          statusText,
+          style: TextStyle(color: colour, fontSize: 10, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _rowCells(BuildContext context, FoodOrder order) {
+    final numberCell = Text(
+      '#${order.orderNumber}',
+      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+    );
+    final totalCell = Text(
+      formatPrice(order.subtotal),
+      textAlign: TextAlign.right,
+      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+    );
+    final actionsCell = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _sheetActionButtons(context, order),
+    );
+
+    if (widget.live) {
+      final waited = order.waitingFor(widget.now);
+      final overdue = waited != null && waited.inMinutes >= 20;
+      return [
+        numberCell,
+        _whereCell(order),
+        _dishesCell(order),
+        _statusCell(order),
+        Text(
+          waited == null ? '—' : _OrderCard._elapsed(waited),
+          style: TextStyle(
+            fontSize: 12,
+            color: overdue ? AppTheme.danger : AppTheme.muted,
+            fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
+          ),
+        ),
+        totalCell,
+        actionsCell,
+      ];
+    }
+
+    final took = order.took;
+    return [
+      numberCell,
+      Text(formatTimeOfDay(order.placedAt), style: const TextStyle(fontSize: 12)),
+      _whereCell(order),
+      _dishesCell(order),
+      _statusCell(order),
+      totalCell,
+      Text(
+        took == null ? '—' : _OrderCard._elapsed(took),
+        style: const TextStyle(fontSize: 12, color: AppTheme.muted),
+      ),
+      actionsCell,
+    ];
+  }
+
+  /// Every action this login may take on [order] from the spreadsheet row —
+  /// the same per-status split `_OrderCard._visibleStatuses` makes, in the
+  /// same order OrdersPanel.jsx's own history row does: the next-status
+  /// buttons, then Edit, View bill, Issue/Ready to bill — so the spreadsheet
+  /// never offers less than the card view would. Full-width stacked buttons,
+  /// the same solid/outline pair the web's own `.history-table__btn` and
+  /// `.history-table__btn--danger` are, rather than a row of small chips.
+  List<Widget> _sheetActionButtons(BuildContext context, FoodOrder order) {
+    final actions = order.nextStatuses.where((s) {
+      switch (s) {
+        case 'QUEUED':
+          return widget.canAccept;
+        case 'CANCELLED':
+          return widget.canDeliver && order.items.any((i) => !i.isReady);
+        case 'DELIVERED':
+          return widget.canDeliver && widget.canHandOver;
+        default:
+          return widget.canCook;
+      }
+    });
+
+    final buttons = <Widget>[
+      for (final status in actions)
+        _SheetActionButton(
+          label: kOrderActionLabels[status] ?? status,
+          danger: status == 'CANCELLED',
+          primary: status != 'CANCELLED',
+          onTap: () => _advanceOrderStatus(context, ref, order, status),
+        ),
+    ];
+
+    // Edit and View bill are never on the real Kitchen queue, same as
+    // OrdersPanel.jsx's renderOrder — but a captain's own "Kitchen" tab
+    // (myOrdersMode, not isRealQueue) gets both, same as renderCaptainCard.
+    if (!widget.isRealQueue && widget.canDeliver && order.isEditable) {
+      buttons.add(
+        _SheetActionButton(
+          label: 'Edit',
+          onTap: () => _openEditOrder(context, order),
+        ),
+      );
+    }
+    if (!widget.isRealQueue && widget.canViewBill && order.invoiceId != null) {
+      buttons.add(
+        _SheetActionButton(
+          label: 'View bill',
+          onTap: () => _viewOrderBill(context, ref, order.invoiceId!),
+        ),
+      );
+    }
+
+    if (widget.canIssueBill && order.isDeliveredUnbilled && order.billableAsFoodTab) {
+      buttons.add(
+        _SheetActionButton(
+          label: 'Issue bill',
+          primary: true,
+          onTap: () => _issueBillForOrder(context, ref, order),
+        ),
+      );
+    } else if (widget.canBillFood && order.canMarkReadyToBill) {
+      buttons.add(
+        _SheetActionButton(
+          label: 'Ready to bill',
+          primary: true,
+          onTap: () async {
+            final ok = await ref
+                .read(ordersViewModelProvider.notifier)
+                .markReadyToBill(order.id);
+            if (!context.mounted) return;
+            if (!ok) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    ref.read(ordersViewModelProvider).error ??
+                        'Could not send that order to billing.',
+                  ),
+                  backgroundColor: AppTheme.heading,
+                ),
+              );
+            }
+          },
+        ),
+      );
+    }
+
+    return buttons;
+  }
+}
+
+/// One full-width button inside a spreadsheet row's Actions cell — solid
+/// accent for the action that moves a ticket forward or bills it, a plain
+/// outline for a side action (Edit, View bill), a red outline for Cancel —
+/// the same three the web's own `.history-table__btn` carries, stacked
+/// instead of wrapped so each reads its whole label.
+class _SheetActionButton extends StatelessWidget {
+  final String label;
+  final bool primary;
+  final bool danger;
+  final VoidCallback onTap;
+
+  const _SheetActionButton({
+    required this.label,
+    this.primary = false,
+    this.danger = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = danger ? AppTheme.danger : (primary ? Colors.white : AppTheme.accent);
+    final bg = primary && !danger ? AppTheme.accent : Colors.transparent;
+    final border = danger ? AppTheme.danger : AppTheme.accent;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border.all(color: border),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Issue the bill for [order] straight away — same flow as OrdersPanel.jsx's
+/// own `issueBill`: marks it ready-to-bill first if nothing has yet (a
+/// captain may already have queued it), then opens the bill for that order's
+/// own table/room/counter tab. Used by both the card and the spreadsheet row,
+/// from the Kitchen queue and from History alike.
+Future<void> _issueBillForOrder(
+  BuildContext context,
+  WidgetRef ref,
+  FoodOrder order,
+) async {
+  final ordersVm = ref.read(ordersViewModelProvider.notifier);
+  if (!order.readyToBill) {
+    final ok = await ordersVm.markReadyToBill(order.id);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(ordersViewModelProvider).error ?? 'Could not open the bill.',
+          ),
+          backgroundColor: AppTheme.heading,
+        ),
+      );
+      return;
+    }
+  }
+
+  await ref.read(billingViewModelProvider.notifier).openFood(
+    FoodTab(
+      tab: order.billingTabKey,
+      tableLabel: order.source == 'ROOM' ? 'Room ${order.roomNumber ?? ''}' : order.tableLabel,
+      guestName: order.guestName,
+      subtotal: order.subtotal,
+    ),
+  );
+  if (!context.mounted) return;
+  await Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => const IssueFoodBillScreen()),
+  );
+  if (!context.mounted) return;
+  await ordersVm.loadQueue();
+  await ordersVm.loadHistory();
+}
+
+/// Opens the bill already issued for [invoiceId] — History's own "View
+/// bill", fetched fresh since an order only carries the bare id.
+Future<void> _viewOrderBill(
+  BuildContext context,
+  WidgetRef ref,
+  int invoiceId,
+) async {
+  try {
+    final invoice = await ref.read(billingUsecaseProvider).invoice(invoiceId);
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => InvoicePreviewScreen(invoice: invoice)),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not load that bill.'),
+        backgroundColor: AppTheme.heading,
+      ),
+    );
+  }
+}
+
+/// Opens the editor for [order] — the spreadsheet row's own "Edit", same
+/// push `_OrderCard._editOrder` makes.
+Future<void> _openEditOrder(BuildContext context, FoodOrder order) async {
+  await Navigator.of(context).push<bool>(
+    MaterialPageRoute(builder: (_) => CounterOrderScreen(editingOrder: order)),
+  );
+}
+
+/// Moves [order] on, same flow as `_OrderCard._advance` — a standalone
+/// function rather than a method so the spreadsheet row (which has no
+/// `_OrderCard` instance of its own) can trigger exactly the same
+/// cancel-reason prompt and error handling.
+Future<void> _advanceOrderStatus(
+  BuildContext context,
+  WidgetRef ref,
+  FoodOrder order,
+  String next,
+) async {
+  final vm = ref.read(ordersViewModelProvider.notifier);
+
+  String? reason;
+  if (next == 'CANCELLED') {
+    reason = await _askCancelReason(context, order);
+    if (reason == null || !context.mounted) return;
+  }
+
+  final ok = await vm.advance(order.id, next, cancelReason: reason);
+  if (!context.mounted) return;
+  if (!ok) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ref.read(ordersViewModelProvider).error ?? 'Could not update that order.',
+        ),
+        backgroundColor: AppTheme.heading,
+      ),
+    );
+  }
+}
+
+Future<String?> _askCancelReason(BuildContext context, FoodOrder order) {
+  final controller = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppTheme.bg,
+      title: const Text(
+        'Cancel this order?',
+        style: TextStyle(color: AppTheme.heading),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order #${order.orderNumber} for ${order.target}.',
+            style: const TextStyle(color: AppTheme.text, fontSize: 13),
+          ),
+          const SizedBox(height: AppTheme.s16),
+          NeuField(controller: controller, label: 'Why (optional)', maxLength: 200),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Keep it'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, controller.text.trim()),
+          child: const Text('Cancel order'),
+        ),
+      ],
+    ),
+  );
 }

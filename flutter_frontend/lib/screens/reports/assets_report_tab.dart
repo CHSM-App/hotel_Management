@@ -9,17 +9,28 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'report_widgets.dart';
 
+/// Category donut slice colors, in assignment order — mirrors
+/// AssetsReportPanel.jsx's CATEGORY_COLORS (brand, accent, then four more
+/// fixed hues), reusing AppTheme's own tokens where one already fits.
+const _kCategoryColors = <Color>[
+  AppTheme.accent,
+  AppTheme.draft,
+  Color(0xFF2FA0A0),
+  AppTheme.checkout,
+  Color(0xFF7A5FD1),
+  Color(0xFF3A8FC7),
+];
+
 /// Reports > Assets — mirrors AssetsReportPanel.jsx's read-only view over the
 /// asset register and its work orders, filtered to [fromDate]/[toDate] —
 /// held by [ReportsScreen] and shown in the same header spot as the
 /// server-ranged tabs' picker, just filtering the already-loaded lists
 /// instead of triggering a refetch.
 ///
-/// Scoped down from the web version: no purchase-value-by-category donut — the app
-/// already has a full Asset inventory feature elsewhere (screens/assets/)
-/// with its own detail screens; this tab is the report-shaped summary the
-/// web's Reports page adds on top. PDF/Excel export is
-/// AssetReportPdf/AssetReportExcel (asset_report_pdf.dart/
+/// The app already has a full Asset inventory feature elsewhere
+/// (screens/assets/) with its own detail screens; this tab is the
+/// report-shaped summary the web's Reports page adds on top. PDF/Excel
+/// export is AssetReportPdf/AssetReportExcel (asset_report_pdf.dart/
 /// asset_report_excel.dart), wired up in reports_screen.dart.
 class AssetsReportTab extends ConsumerWidget {
   final String fromDate;
@@ -116,6 +127,15 @@ class _Loaded extends StatelessWidget {
     }
     final vendorEntries = byVendor.entries.toList()..sort((a, b) => b.value.$1.compareTo(a.value.$1));
 
+    final donutSlices = [
+      for (var i = 0; i < categoryEntries.length && i < 6; i++)
+        DonutSlice(
+          label: categoryEntries[i].key,
+          value: categoryEntries[i].value,
+          color: _kCategoryColors[i % _kCategoryColors.length],
+        ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -135,6 +155,16 @@ class _Loaded extends StatelessWidget {
             formatValue: (v) => '${v.round()} asset${v.round() == 1 ? '' : 's'}',
           ),
         ],
+        if (donutSlices.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportDonut(
+            title: 'Purchase value by category',
+            slices: donutSlices,
+            centerLabel: formatPrice(purchaseValue),
+            centerSub: 'Total',
+            formatValue: formatPrice,
+          ),
+        ],
         if (categoryEntries.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s16),
           ReportBarList(
@@ -146,7 +176,7 @@ class _Loaded extends StatelessWidget {
         if (vendorEntries.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s16),
           ReportRankList(
-            title: 'Top vendors',
+            title: 'Top vendors (purchases + repairs)',
             rows: [
               for (final v in vendorEntries.take(8))
                 (v.key, '${v.value.$2} entr${v.value.$2 == 1 ? 'y' : 'ies'}', formatPrice(v.value.$1)),

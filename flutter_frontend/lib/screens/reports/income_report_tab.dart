@@ -8,6 +8,18 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'report_widgets.dart';
 
+/// Category donut slice colors, in assignment order — mirrors
+/// IncomeReportPanel.jsx's CATEGORY_COLORS (brand, accent, then four more
+/// fixed hues), reusing AppTheme's own tokens where one already fits.
+const _kCategoryColors = <Color>[
+  AppTheme.accent,
+  AppTheme.draft,
+  Color(0xFF2FA0A0),
+  AppTheme.checkout,
+  Color(0xFF7A5FD1),
+  Color(0xFF3A8FC7),
+];
+
 /// Reports > Other Income — mirrors IncomeReportPanel.jsx's read-only view
 /// over the full income history, filtered to [fromDate]/[toDate] — held by
 /// [ReportsScreen] and shown in the same header spot as the server-ranged
@@ -17,8 +29,7 @@ import 'report_widgets.dart';
 /// place income entries show up on the Flutter side — read-only, same as
 /// the web report it mirrors (opened with `onClose={null}`).
 ///
-/// Scoped down from the web version: no trend chart or donut/rank
-/// breakdowns. PDF/Excel export is IncomeReportPdf/IncomeReportExcel
+/// PDF/Excel export is IncomeReportPdf/IncomeReportExcel
 /// (income_report_pdf.dart/income_report_excel.dart), wired up in
 /// reports_screen.dart.
 class IncomeReportTab extends ConsumerWidget {
@@ -76,6 +87,26 @@ class _Loaded extends StatelessWidget {
     }
     final payerEntries = byPayer.entries.toList()..sort((a, b) => b.value.$1.compareTo(a.value.$1));
 
+    // Income by month for the current calendar year — same shape as
+    // ExpensesReportTab's monthlyTotals, mirroring IncomeReportPanel.jsx's
+    // own monthlyTrend.
+    final year = DateTime.now().year;
+    final monthlyTotals = List<num>.filled(12, 0);
+    for (final e in income) {
+      final d = DateTime.tryParse(e.incomeDate);
+      if (d != null && d.year == year) monthlyTotals[d.month - 1] += e.amount;
+    }
+    final monthDates = [for (var m = 1; m <= 12; m++) '$year-${m.toString().padLeft(2, '0')}-01'];
+
+    final donutSlices = [
+      for (var i = 0; i < categoryEntries.length && i < 6; i++)
+        DonutSlice(
+          label: categoryEntries[i].key,
+          value: categoryEntries[i].value,
+          color: _kCategoryColors[i % _kCategoryColors.length],
+        ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -87,6 +118,27 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Top category', value: topCategory?.key ?? '—'),
           ],
         ),
+        if (income.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportTrendChart(
+            title: 'Income by month, $year',
+            values: monthlyTotals,
+            firstLabel: formatShortDate(monthDates.first),
+            midLabel: formatShortDate(monthDates[5]),
+            lastLabel: formatShortDate(monthDates.last),
+            formatValue: formatPrice,
+          ),
+        ],
+        if (donutSlices.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.s16),
+          ReportDonut(
+            title: "Where it's coming from",
+            slices: donutSlices,
+            centerLabel: formatPrice(total),
+            centerSub: 'Total',
+            formatValue: formatPrice,
+          ),
+        ],
         if (categoryEntries.isNotEmpty) ...[
           const SizedBox(height: AppTheme.s16),
           ReportBarList(

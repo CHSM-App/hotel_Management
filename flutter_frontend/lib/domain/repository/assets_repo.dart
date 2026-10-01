@@ -8,6 +8,8 @@ abstract class AssetsRepository {
 
   Future<AssetCategory> createCategory(String name);
 
+  Future<AssetCategory> updateCategoryDepreciation(int id, Map<String, dynamic> body);
+
   Future<List<Vendor>> vendors({bool includeInactive = false});
 
   Future<void> createVendor(Map<String, dynamic> body);
@@ -26,7 +28,7 @@ abstract class AssetsRepository {
 
   Future<Asset> updateAsset(int id, FormData form);
 
-  Future<Asset> setAssetStatus(int id, String status);
+  Future<Asset> setAssetStatus(int id, String status, {Map<String, dynamic>? deadStock});
 
   Future<void> deleteAsset(int id);
 

@@ -139,6 +139,7 @@ class _SidebarNav extends StatefulWidget {
     'Restaurant',
     'Events',
     'Finance & Management',
+    'Reports & Analytics',
     'Setup',
   ];
 

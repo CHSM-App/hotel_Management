@@ -26,13 +26,11 @@ class WorkOrdersPanel extends ConsumerStatefulWidget {
 }
 
 class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
-  String _status = '';
-
   @override
   void initState() {
     super.initState();
     Future.microtask(() {
-      ref.read(assetsViewModelProvider.notifier).loadAssets();
+      ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
       ref.read(assetsViewModelProvider.notifier).loadCatalogue();
     });
   }
@@ -51,10 +49,7 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
-    final shown = _status.isEmpty
-        ? state.workOrders
-        : state.workOrders.where((w) => w.status == _status).toList();
-    shown.sort((a, b) => b.openedAt.compareTo(a.openedAt));
+    final shown = [...state.workOrders]..sort((a, b) => b.openedAt.compareTo(a.openedAt));
 
     return Stack(
       fit: StackFit.expand,
@@ -70,14 +65,6 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
                 AssetStatGrid(items: _summaryStats(state.workOrders)),
                 const SizedBox(height: AppTheme.s12),
               ],
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _StatusFilterButton(
-                  selected: _status,
-                  onSelect: (s) => setState(() => _status = s),
-                ),
-              ),
-              const SizedBox(height: AppTheme.s12),
               if (state.catalogueLoading && state.workOrders.isEmpty)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
               else if (shown.isEmpty)
@@ -108,62 +95,6 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _StatusFilterButton extends StatelessWidget {
-  final String selected;
-  final ValueChanged<String> onSelect;
-
-  const _StatusFilterButton({required this.selected, required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    final isFiltered = selected.isNotEmpty;
-    return PopupMenuButton<String>(
-      tooltip: 'Filter by status',
-      initialValue: selected,
-      onSelected: onSelect,
-      offset: const Offset(0, 44),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        _item('', 'All'),
-        for (final s in kWorkOrderStatuses) _item(s, kWorkOrderStatusLabel[s]!),
-      ],
-      child: NeuPressed(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        focused: isFiltered,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.filter_list_rounded, size: 18, color: isFiltered ? AppTheme.accent : AppTheme.muted),
-            const SizedBox(width: 6),
-            Text(
-              isFiltered ? kWorkOrderStatusLabel[selected]! : 'All statuses',
-              style: TextStyle(color: isFiltered ? AppTheme.accent : AppTheme.text, fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  PopupMenuItem<String> _item(String key, String label) {
-    final isSelected = key == selected;
-    return PopupMenuItem(
-      value: key,
-      child: Row(
-        children: [
-          Icon(
-            isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-            size: 16,
-            color: isSelected ? AppTheme.accent : AppTheme.muted,
-          ),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: AppTheme.text, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, fontSize: 13)),
-        ],
-      ),
     );
   }
 }

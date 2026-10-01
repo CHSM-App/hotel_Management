@@ -1054,3 +1054,37 @@ class AdvanceReceipt {
             ),
         ];
 }
+
+/// One document series' numbering — GET/PATCH /billing/series, the same
+/// shape BillNumberingPanel.jsx reads: where the next bill or advance
+/// receipt continues from, and the floor below which a number has already
+/// been printed.
+class BillSeries {
+  final String series;
+  final int nextNumber;
+  final String prefix;
+  final String nextDocumentNumber;
+  final int highestIssued;
+  final int issuedCount;
+  final int minimumAllowed;
+
+  const BillSeries({
+    required this.series,
+    required this.nextNumber,
+    this.prefix = '',
+    required this.nextDocumentNumber,
+    this.highestIssued = 0,
+    this.issuedCount = 0,
+    this.minimumAllowed = 1,
+  });
+
+  factory BillSeries.fromJson(Map<String, dynamic> json) => BillSeries(
+    series: json['series']?.toString() ?? '',
+    nextNumber: asInt(json['nextNumber']),
+    prefix: json['prefix']?.toString() ?? '',
+    nextDocumentNumber: json['nextDocumentNumber']?.toString() ?? '',
+    highestIssued: asIntOrNull(json['highestIssued']) ?? 0,
+    issuedCount: asIntOrNull(json['issuedCount']) ?? 0,
+    minimumAllowed: asIntOrNull(json['minimumAllowed']) ?? 1,
+  );
+}

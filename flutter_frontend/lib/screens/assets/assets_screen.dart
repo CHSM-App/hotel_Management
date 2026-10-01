@@ -4,13 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../theme.dart';
 import 'assets_list_panel.dart';
+import 'dead_stock_panel.dart';
+import 'depreciation_panel.dart';
 import 'vendors_panel.dart';
 import 'work_orders_panel.dart';
 
-/// Asset inventory — mirrors AssetsPanel.jsx's shell: the same three tabs,
-/// Asset Register / Work Orders / Vendors. There is no separate "Setup" tab
-/// on the web app — categories are named inline from the register form's
-/// own Category field, so Vendors is the only thing with a tab of its own.
+/// Asset inventory — mirrors AssetsPanel.jsx's shell: the same five tabs,
+/// Asset Register / Work Orders / Vendors / Dead Stock / Depreciation.
+/// There is no separate "Setup" tab on the web app — categories are named
+/// inline from the register form's own Category field.
 class AssetsScreen extends ConsumerStatefulWidget {
   const AssetsScreen({super.key});
 
@@ -24,7 +26,10 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(assetsViewModelProvider.notifier).loadCatalogue());
+    Future.microtask(() {
+      ref.read(assetsViewModelProvider.notifier).loadCatalogue();
+      ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
+    });
   }
 
   @override
@@ -39,6 +44,8 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
           child: switch (_tab) {
             'workOrders' => const WorkOrdersPanel(),
             'vendors' => const VendorsPanel(),
+            'deadStock' => const DeadStockPanel(),
+            'depreciation' => const DepreciationPanel(),
             _ => const AssetsListPanel(),
           },
         ),
@@ -47,9 +54,10 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
   }
 }
 
-/// Same sliding-pill segmented control the Rooms & Rates / Billing screens
-/// use — one connected control with a moving highlight, rather than a
-/// content-hugging pill row.
+/// A horizontally scrolling pill row — five labels (Asset Register …
+/// Depreciation) don't fit as equal-width segments on a phone the way the
+/// three-tab sliding control on Rooms & Rates / Billing does, so each pill
+/// sizes to its own label instead and the row scrolls.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
@@ -60,74 +68,56 @@ class _SubTabs extends StatelessWidget {
     'assets': 'Asset Register',
     'workOrders': 'Work Orders',
     'vendors': 'Vendors',
+    'deadStock': 'Dead Stock',
+    'depreciation': 'Depreciation',
   };
-
-  static const double _height = 44;
 
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final entry in _tabs.entries) ...[
+            _Pill(label: entry.value, selected: entry.key == selected, onTap: () => onSelect(entry.key)),
+            const SizedBox(width: AppTheme.s8),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.text,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
+class _Pill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _Pill({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.accent : AppTheme.bg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : AppTheme.text,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 13,
           ),
         ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(
-              -1 + (2 / (keys.length - 1)) * selectedIndex,
-              0,
-            ),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.accent,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              for (final entry in _tabs.entries) segment(entry.key, entry.value),
-            ],
-          ),
-        ],
       ),
     );
   }

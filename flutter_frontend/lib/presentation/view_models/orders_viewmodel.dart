@@ -39,6 +39,11 @@ class OrdersState {
   /// box.
   final String historySearch;
 
+  /// 'sheet' (a dense spreadsheet, the default) or 'cards' — the same choice
+  /// OrdersPanel.jsx's own `listView` offers, shared between the Kitchen
+  /// queue and History the same way the web lifts it to one state.
+  final String listView;
+
   /// A captain (`orders.take` without `orders.manage`) has no queue tab —
   /// this list is their queue instead: everything still open (not billed,
   /// not ready to bill, not cancelled) over the last month, rather than a
@@ -70,6 +75,7 @@ class OrdersState {
     this.working = false,
     this.error,
     required this.now,
+    this.listView = 'sheet',
   });
 
   OrdersState copyWith({
@@ -87,6 +93,7 @@ class OrdersState {
     String? error,
     bool clearError = false,
     DateTime? now,
+    String? listView,
   }) => OrdersState(
     tab: tab ?? this.tab,
     queue: queue ?? this.queue,
@@ -102,6 +109,7 @@ class OrdersState {
     working: working ?? this.working,
     error: clearError ? null : (error ?? this.error),
     now: now ?? this.now,
+    listView: listView ?? this.listView,
   );
 
   List<FoodOrder> get liveOrders => queue.valueOrNull ?? const [];
@@ -339,6 +347,10 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
   /// typing doesn't reload the day, same as the web's own search box.
   void setHistorySearch(String query) =>
       state = state.copyWith(historySearch: query);
+
+  /// Spreadsheet or cards — shared between the Kitchen queue and History,
+  /// same as the web's own `listView`/`setListView`.
+  void setListView(String view) => state = state.copyWith(listView: view);
 
   /// Move an order on.
   ///

@@ -473,6 +473,26 @@ class ApiService {
         .toList();
   }
 
+  /// Where the next bill and the next advance receipt continue from — same
+  /// GET /billing/series BillNumberingPanel.jsx reads, returning `{ final,
+  /// advance }`.
+  Future<Map<String, BillSeries>> billingSeries() async {
+    final map = _map((await _dio.get('/billing/series')).data);
+    return {
+      for (final key in ['final', 'advance'])
+        key: BillSeries.fromJson(map[key] as Map<String, dynamic>),
+    };
+  }
+
+  /// Sets where [series] ('FINAL' or 'ADVANCE') continues from.
+  Future<BillSeries> updateBillingSeries(String series, int nextNumber) async {
+    final res = await _dio.patch(
+      '/billing/series/$series',
+      data: {'nextNumber': nextNumber},
+    );
+    return BillSeries.fromJson(_map(res.data));
+  }
+
   Future<Invoice> invoice(int id) async {
     final res = await _dio.get('/billing/invoices/$id');
     final map = _map(res.data);
@@ -1531,6 +1551,11 @@ class ApiService {
     return AssetCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
   }
 
+  Future<AssetCategory> updateAssetCategoryDepreciation(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/assets/categories/$id/depreciation', data: body);
+    return AssetCategory.fromJson(_map(res.data)['category'] as Map<String, dynamic>);
+  }
+
   /// dbo.vendors is a directory shared with Expenses — this and
   /// [expenseVendors] hit the same rows through each module's own route so
   /// neither repository has to reach across into the other's.
@@ -1595,8 +1620,11 @@ class ApiService {
     return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
   }
 
-  Future<Asset> setAssetStatus(int id, String status) async {
-    final res = await _dio.patch('/assets/$id/status', data: {'status': status});
+  /// [deadStock] carries the dead stock register fields (deadDate,
+  /// deadReason, disposalNote, recoveryCost, disposedBy) — required by the
+  /// server when [status] is RETIRED, ignored otherwise.
+  Future<Asset> setAssetStatus(int id, String status, {Map<String, dynamic>? deadStock}) async {
+    final res = await _dio.patch('/assets/$id/status', data: {'status': status, ...?deadStock});
     return Asset.fromJson(_map(res.data)['asset'] as Map<String, dynamic>);
   }
 
