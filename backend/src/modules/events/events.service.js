@@ -3,14 +3,10 @@ const { ApiError } = require('../../middleware/errorHandler');
 const { priceEvent, billablePax, round2 } = require('./eventPricing');
 const notifications = require('../notifications/bookingConfirmation');
 
-// The statuses that keep a venue busy. An enquiry does not — two families can
-// ask about the same Saturday and the first to put money down gets it — and
-// neither does anything that has been settled, cancelled or lapsed.
-const BLOCKING = ['TENTATIVE', 'CONFIRMED'];
-// How long a tentative hold stands before the date is released. Two days is
-// what the banquet trade actually gives: long enough to arrange the advance,
-// short enough that a serious party is not turned away for a maybe.
-const DEFAULT_HOLD_HOURS = 48;
+// The statuses that keep a venue busy. A draft does not — two families can
+// ask about the same Saturday and the first to confirm gets it — and neither
+// does anything that has been settled or cancelled.
+const BLOCKING = ['CONFIRMED'];
 
 function toIso(value) {
   if (value == null) return null;
@@ -431,7 +427,6 @@ async function findClashes(request, lodgeId, { venueId, startAt, endAt, excludeI
 async function checkAvailability(lodgeId, { venueId, startAt, endAt, excludeId = null }) {
   const pool = await getPool();
   await getVenue(lodgeId, venueId);
-  await lapseExpiredHolds(lodgeId, pool);
   const clashes = await findClashes(pool.request(), lodgeId, { venueId, startAt, endAt, excludeId });
   return { available: clashes.length === 0, clashes };
 }
@@ -439,26 +434,9 @@ async function checkAvailability(lodgeId, { venueId, startAt, endAt, excludeId =
 function clashError(clashes) {
   const first = clashes[0];
   return new ApiError(
-    `That venue is already ${first.status === 'CONFIRMED' ? 'booked' : 'on hold'} for “${first.title}” at that time.`,
+    `That venue is already booked for “${first.title}” at that time.`,
     409
   );
-}
-
-// A hold that ran out is released. Done on read rather than by a scheduler —
-// there is none in this process, and the diary is opened often enough that a
-// lapsed hold is never more than a screen-load stale. Same shape as the way
-// late checkouts are noticed.
-async function lapseExpiredHolds(lodgeId, pool = null) {
-  const db = pool ?? (await getPool());
-  await db
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .query(`
-      UPDATE dbo.event_bookings
-      SET status = 'EXPIRED', updated_at = SYSDATETIMEOFFSET()
-      WHERE lodge_id = @lodgeId AND status = 'TENTATIVE'
-        AND hold_expires_at IS NOT NULL AND hold_expires_at < SYSDATETIMEOFFSET()
-    `);
 }
 
 // ---------------------------------------------------------------------------
@@ -541,7 +519,6 @@ function mapEvent(row) {
     roomsTo: toDateOnly(row.rooms_to),
     roomsNotes: row.rooms_notes ?? null,
     status: row.status,
-    holdExpiresAt: toIso(row.hold_expires_at),
     cancelReason: row.cancel_reason ?? null,
     refundAmount: row.refund_amount == null ? null : Number(row.refund_amount),
     refundPaymentMethod: row.refund_payment_method ?? null,
@@ -572,7 +549,6 @@ async function getEventBooking(lodgeId, id, { request = null } = {}) {
 // are only returned when asked for, since the diary is about what is on.
 async function listEventBookings(lodgeId, { fromDate = null, toDate = null, status = null, venueId = null, includeClosed = false } = {}) {
   const pool = await getPool();
-  await lapseExpiredHolds(lodgeId, pool);
   const request = pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -592,7 +568,7 @@ async function listEventBookings(lodgeId, { fromDate = null, toDate = null, stat
   }
   if (venueId) clauses.push('e.venue_id = @venueId');
   if (status) clauses.push('e.status = @status');
-  else if (!includeClosed) clauses.push("e.status NOT IN ('CANCELLED', 'EXPIRED')");
+  else if (!includeClosed) clauses.push("e.status <> 'CANCELLED'");
   const result = await request.query(`${EVENT_SELECT} WHERE ${clauses.join(' AND ')} ORDER BY e.start_at ASC`);
   return result.recordset.map(mapEvent);
 }
@@ -622,11 +598,6 @@ async function replaceAddonLines(transaction, eventId, lines) {
         VALUES (@eventId, @addonId, @label, @quantity, @unitAmount, @agreedAmount, @isExtra, @needsPricing, @notedAt)
       `);
   }
-}
-
-function holdExpiry(holdHours) {
-  const hours = Number(holdHours) || DEFAULT_HOLD_HOURS;
-  return new Date(Date.now() + hours * 3600 * 1000);
 }
 
 // The rooms need as one set. Off means every column is cleared, so a stale
@@ -699,8 +670,7 @@ async function createEventBooking(lodgeId, userId, input) {
       .input('menuNotes', sql.NVarChar(sql.MAX), input.menuNotes ?? null)
       .input('setupNotes', sql.NVarChar(sql.MAX), input.setupNotes ?? null)
       .input('scheduleNotes', sql.NVarChar(sql.MAX), input.scheduleNotes ?? null)
-      .input('status', sql.NVarChar(10), input.status ?? 'ENQUIRY')
-      .input('holdExpiresAt', sql.DateTimeOffset, input.status === 'TENTATIVE' ? holdExpiry(input.holdHours) : null)
+      .input('status', sql.NVarChar(10), input.status ?? 'DRAFT')
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.event_bookings
@@ -709,7 +679,7 @@ async function createEventBooking(lodgeId, userId, input) {
            venue_charge, per_plate_rate, catering_amount, addons_total, discount_amount, discount_reason,
            total_amount, pricing_breakdown, menu_notes, setup_notes, schedule_notes,
            rooms_required, rooms_count, rooms_from, rooms_to, rooms_notes,
-           status, hold_expires_at, created_by)
+           status, created_by)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @venueId, @eventType, @title, @organiserName, @organiserPhone, @organiserAltPhone,
@@ -717,15 +687,15 @@ async function createEventBooking(lodgeId, userId, input) {
            @venueCharge, @perPlateRate, @cateringAmount, @addonsTotal, @discountAmount, @discountReason,
            @totalAmount, @breakdown, @menuNotes, @setupNotes, @scheduleNotes,
            @roomsRequired, @roomsCount, @roomsFrom, @roomsTo, @roomsNotes,
-           @status, @holdExpiresAt, @createdBy)
+           @status, @createdBy)
       `);
     const id = inserted.recordset[0].id;
     await replaceAddonLines(transaction, id, addons);
     await transaction.commit();
     const event = await getEventBooking(lodgeId, id);
-    // The organiser hears from us once the venue is theirs. An enquiry holds
+    // The organiser hears from us once the venue is theirs. A draft holds
     // nothing, so it is not told "confirmed"; it gets the message when it is
-    // held or confirmed (see transition). Not awaited — best-effort, logged.
+    // confirmed (see transition). Not awaited — best-effort, logged.
     if (blocks) void notifications.notifyEventBooked(lodgeId, event);
     return event;
   } catch (err) {
@@ -913,16 +883,13 @@ async function removeExtra(lodgeId, id, lineId) {
 // ---------------------------------------------------------------------------
 // The state machine
 // ---------------------------------------------------------------------------
-//   ENQUIRY ──hold──▶ TENTATIVE ──confirm──▶ CONFIRMED ──bill──▶ SETTLED
-//      │                 │  ▲ release                 │
-//      └──confirm────────┘  └── EXPIRED (lapsed)      │
-//   any of the first three, or EXPIRED ──cancel──▶ CANCELLED
-// A hold or a confirmation takes the venue, so both re-check for a clash
+//   DRAFT ──confirm──▶ CONFIRMED ──bill──▶ SETTLED
+//   DRAFT or CONFIRMED ──cancel──▶ CANCELLED
+// A confirmation takes the venue, so it re-checks for a clash
 // under the lock. Settling is billing's move, made when the bill is issued.
 
 async function transition(lodgeId, id, { from, to, set = '', bind = () => {}, takesVenue = false }) {
   const pool = await getPool();
-  await lapseExpiredHolds(lodgeId, pool);
   const current = await getEventBooking(lodgeId, id);
   if (!from.includes(current.status)) {
     throw new ApiError(`This function is ${current.status.toLowerCase()} and can’t be moved to ${to.toLowerCase()}.`, 409);
@@ -957,39 +924,18 @@ async function transition(lodgeId, id, { from, to, set = '', bind = () => {}, ta
     throw err;
   }
   const updated = await getEventBooking(lodgeId, id);
-  // First time this function takes the venue: an enquiry or a lapsed hold
-  // becoming tentative or confirmed. A tentative hold that is then confirmed
-  // was already told, and is not told twice.
+  // First time this function takes the venue: a draft becoming confirmed.
   if (BLOCKING.includes(to) && !BLOCKING.includes(current.status)) {
     void notifications.notifyEventBooked(lodgeId, updated);
   }
   return updated;
 }
 
-function holdEventBooking(lodgeId, id, { holdHours } = {}) {
-  return transition(lodgeId, id, {
-    from: ['ENQUIRY', 'EXPIRED'],
-    to: 'TENTATIVE',
-    takesVenue: true,
-    set: ', hold_expires_at = @holdExpiresAt',
-    bind: (r) => r.input('holdExpiresAt', sql.DateTimeOffset, holdExpiry(holdHours)),
-  });
-}
-
 function confirmEventBooking(lodgeId, id) {
   return transition(lodgeId, id, {
-    from: ['ENQUIRY', 'TENTATIVE', 'EXPIRED'],
+    from: ['DRAFT'],
     to: 'CONFIRMED',
     takesVenue: true,
-    set: ', hold_expires_at = NULL',
-  });
-}
-
-function releaseEventBooking(lodgeId, id) {
-  return transition(lodgeId, id, {
-    from: ['TENTATIVE'],
-    to: 'ENQUIRY',
-    set: ', hold_expires_at = NULL',
   });
 }
 
@@ -1014,9 +960,9 @@ async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, re
     throw new ApiError('Choose how the refund was given.', 400);
   }
   return transition(lodgeId, id, {
-    from: ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'],
+    from: ['DRAFT', 'CONFIRMED'],
     to: 'CANCELLED',
-    set: `, hold_expires_at = NULL, cancel_reason = @reason, refund_amount = @refund,
+    set: `, cancel_reason = @reason, refund_amount = @refund,
           refund_payment_method = @refundMethod, cancelled_at = SYSDATETIMEOFFSET(),
           cancellation_charge = CASE WHEN @refund IS NULL THEN NULL ELSE ISNULL(advance_amount, 0) - @refund END`,
     bind: (r) =>
@@ -1052,7 +998,7 @@ async function unsettle(transaction, lodgeId, id) {
 
 // The advance an event holds, written the way bookings.advance_amount is:
 // added to on a receipt, floored at zero on a void. Money in also confirms a
-// function that was only held or enquired about — a deposit is what
+// function that was still a draft — a deposit is what
 // confirmation means.
 async function addAdvance(transaction, lodgeId, id, amount, method, reference) {
   await new sql.Request(transaction)
@@ -1064,8 +1010,7 @@ async function addAdvance(transaction, lodgeId, id, amount, method, reference) {
       UPDATE dbo.event_bookings
       SET advance_amount = ISNULL(advance_amount, 0) + @amount,
           advance_payment_method = COALESCE(@method, advance_payment_method),
-          status = CASE WHEN status IN ('ENQUIRY', 'TENTATIVE', 'EXPIRED') THEN 'CONFIRMED' ELSE status END,
-          hold_expires_at = NULL,
+          status = CASE WHEN status = 'DRAFT' THEN 'CONFIRMED' ELSE status END,
           updated_at = SYSDATETIMEOFFSET()
       WHERE id = @id AND lodge_id = @lodgeId
     `);
@@ -1087,7 +1032,6 @@ async function subtractAdvance(transaction, lodgeId, id, amount) {
 
 module.exports = {
   BLOCKING,
-  DEFAULT_HOLD_HOURS,
   listVenues,
   getVenue,
   createVenue,
@@ -1100,7 +1044,6 @@ module.exports = {
   quote,
   checkAvailability,
   findClashes,
-  lapseExpiredHolds,
   listEventBookings,
   getEventBooking,
   createEventBooking,
@@ -1108,9 +1051,7 @@ module.exports = {
   addExtra,
   priceExtra,
   removeExtra,
-  holdEventBooking,
   confirmEventBooking,
-  releaseEventBooking,
   cancelEventBooking,
   markSettled,
   unsettle,

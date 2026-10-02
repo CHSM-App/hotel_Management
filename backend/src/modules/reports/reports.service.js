@@ -911,7 +911,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   };
 }
 
-const EVENT_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED'];
+const EVENT_STATUSES = ['DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED'];
 
 function emptyEventTotals() {
   return { count: 0, venueCharge: 0, cateringAmount: 0, addonsTotal: 0, discountAmount: 0, totalAmount: 0, advanceAmount: 0, balanceDue: 0 };
@@ -1017,7 +1017,6 @@ async function getEventsReport(lodgeId, fromDate, toDate) {
       cancelled.chargesKept = round2(cancelled.chargesKept + (ev.cancellationCharge ?? 0));
       continue;
     }
-    if (ev.status === 'EXPIRED') continue;
 
     addEventTotals(totals, ev);
     if (!byEventType[ev.eventType]) byEventType[ev.eventType] = emptyEventTotals();
@@ -1578,7 +1577,7 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
              e.total_amount, e.advance_amount, v.name AS venue_name
       FROM dbo.event_bookings e
       JOIN dbo.event_venues v ON v.id = e.venue_id
-      WHERE e.lodge_id = @lodgeId AND e.status IN ('CONFIRMED', 'TENTATIVE')
+      WHERE e.lodge_id = @lodgeId AND e.status = 'CONFIRMED'
         AND e.start_at >= SYSDATETIMEOFFSET()
       ORDER BY e.start_at ASC
     `);
@@ -1605,7 +1604,7 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
       FROM dbo.event_bookings e
       JOIN dbo.event_venues v ON v.id = e.venue_id
       WHERE e.lodge_id = @lodgeId AND e.start_at >= @fromDate AND e.start_at < @toDate
-        AND e.status NOT IN ('CANCELLED', 'EXPIRED')
+        AND e.status <> 'CANCELLED'
       GROUP BY v.id, v.name
       ORDER BY cnt DESC
     `);

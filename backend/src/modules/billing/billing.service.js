@@ -122,16 +122,24 @@ function roomChargeLines(booking) {
   }
   if (!Array.isArray(nights)) return [];
 
+  // One entry per label. `nights` counts distinct dates, and `rooms` is the most
+  // of the same line on any one date — an extra taken on two rooms is one line
+  // for two rooms rather than a line that claims two nights.
   const totals = new Map();
   for (const night of nights) {
+    const seen = new Map();
     for (const line of night.lines ?? []) {
-      const prev = totals.get(line.label) ?? { label: line.label, amount: 0, nights: 0 };
+      const prev = totals.get(line.label) ?? { label: line.label, amount: 0, nights: 0, rooms: 1 };
       prev.amount = round2(prev.amount + Number(line.amount));
-      prev.nights += 1;
+      seen.set(line.label, (seen.get(line.label) ?? 0) + 1);
+      prev.rooms = Math.max(prev.rooms, seen.get(line.label));
       totals.set(line.label, prev);
     }
+    for (const label of seen.keys()) totals.get(label).nights += 1;
   }
-  return Array.from(totals.values());
+  return Array.from(totals.values(), ({ rooms, ...line }) =>
+    rooms > 1 ? { ...line, label: `${line.label} × ${rooms} rooms` } : line
+  );
 }
 
 async function getGstSlabs(pool) {

@@ -18,9 +18,7 @@ const {
   addExtraHandler,
   priceExtraHandler,
   removeExtraHandler,
-  holdEventHandler,
   confirmEventHandler,
-  releaseEventHandler,
   cancelEventHandler,
 } = require('./events.controller');
 
@@ -52,9 +50,7 @@ router.patch('/:id', authenticate, staff, updateEventHandler);
 router.post('/:id/extras', authenticate, staff, addExtraHandler);
 router.patch('/:id/extras/:lineId', authenticate, staff, priceExtraHandler);
 router.delete('/:id/extras/:lineId', authenticate, staff, removeExtraHandler);
-router.patch('/:id/hold', authenticate, staff, holdEventHandler);
 router.patch('/:id/confirm', authenticate, staff, confirmEventHandler);
-router.patch('/:id/release', authenticate, staff, releaseEventHandler);
 router.patch('/:id/cancel', authenticate, staff, cancelEventHandler);
 
 module.exports = router;

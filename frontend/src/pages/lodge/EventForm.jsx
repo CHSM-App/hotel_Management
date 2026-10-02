@@ -30,7 +30,7 @@ function clashSummary(venue, clashes = []) {
   const what = clashes
     .map((c) => `• “${c.title}” — ${c.organiserName} (${formatEventWhen(c.startAt, c.endAt)})`)
     .join('\n');
-  return `${venue?.name || 'This venue'} is already booked at these hours:\n${what}\n\nAn enquiry can still be saved on a taken slot, but it does not hold the date.`;
+  return `${venue?.name || 'This venue'} is already booked at these hours:\n${what}\n\nA draft can still be saved on a taken slot, but it does not hold the date.`;
 }
 
 // `required` marks the label with an asterisk. It says what the form will
@@ -106,11 +106,10 @@ function initialForm(event, initialDate, venues, initialVenueId = null) {
       menuNotes: event.menuNotes || '',
       setupNotes: event.setupNotes || '',
       scheduleNotes: event.scheduleNotes || '',
-      holdHours: '48',
     };
   }
   // Started from a venue's row on the diary, that venue; from the plain "New
-  // enquiry" button, none — silently picking one for the desk is how the
+  // draft" button, none — silently picking one for the desk is how the
   // wrong venue gets booked unnoticed, so the field starts blank and the
   // "Choose a venue" option shows until the desk actually picks one.
   const firstVenue = initialVenueId != null ? venues.find((v) => String(v.id) === String(initialVenueId)) : null;
@@ -145,7 +144,6 @@ function initialForm(event, initialDate, venues, initialVenueId = null) {
     menuNotes: '',
     setupNotes: '',
     scheduleNotes: '',
-    holdHours: '48',
   };
 }
 
@@ -223,7 +221,7 @@ export default function EventForm({
   const [form, setForm] = useState(() => initialForm(event, initialDate, venues, initialVenueId));
   const [lines, setLines] = useState(() => initialLines(event, addons));
   const [oneOff, setOneOff] = useState({ label: '', amount: '' });
-  // Money taken with the enquiry, as the booking form takes a deposit: the
+  // Money taken with the draft, as the booking form takes a deposit: the
   // advance is whatever the rows add up to. Only on a new function — money
   // against an existing one is taken from its page, where the receipt is.
   const [advanceLines, setAdvanceLines] = useState(() => [emptyPaymentLine()]);
@@ -242,9 +240,9 @@ export default function EventForm({
   // screen at the moment it matters — the clash was being saved straight past.
   //
   // Two shapes, because the server treats the two cases differently:
-  //   'blocked'  — a hold or a confirmation was refused (409). Nothing to
+  //   'blocked'  — a confirmation was refused (409). Nothing to
   //                decide; the dialog reports it and the desk picks new hours.
-  //   'confirm'  — an enquiry, which is allowed to sit on a taken slot. The
+  //   'confirm'  — a draft, which is allowed to sit on a taken slot. The
   //                desk is told what it is landing on and says whether to go on.
   const [clash, setClash] = useState(null);
   const [quote, setQuote] = useState(null);
@@ -289,7 +287,7 @@ export default function EventForm({
     setForm((f) => ({ ...f, venueId, venueCharge: v ? String(v.baseCharge ?? '') : f.venueCharge }));
   };
 
-  // Availability: the diary can hold an ENQUIRY on a booked slot, but the desk
+  // Availability: the diary can hold a DRAFT on a booked slot, but the desk
   // should know before they take a deposit. Debounced because every keystroke
   // in the time box is a new query.
   useEffect(() => {
@@ -481,7 +479,7 @@ export default function EventForm({
       return;
     }
 
-    // An enquiry is allowed onto a taken slot, so the server will not stop it
+    // A draft is allowed onto a taken slot, so the server will not stop it
     // and the desk has to be the one to decide. Asked before anything is sent,
     // and only when the check has actually come back saying the venue is taken.
     const taken = availability && !availability.checking && !availability.available ? availability.clashes : null;
@@ -518,7 +516,6 @@ export default function EventForm({
     };
     if (!isEdit) {
       body.status = status;
-      if (status === 'TENTATIVE') body.holdHours = Number(form.holdHours) || 48;
       if (advanceAmount > 0) {
         body.advanceAmount = advanceAmount;
         body.advancePaymentMethod = advanceLines[0].method;
@@ -540,7 +537,7 @@ export default function EventForm({
       }
       onSaved?.(data.event);
     } catch (err) {
-      // 409 is the venue being taken. The desk asked for a hold or a
+      // 409 is the venue being taken. The desk asked for a
       // confirmation on hours that are already someone else's, and the server
       // refused — raised as a dialog because this is the message that was
       // being missed at the top of a scrolled form.
@@ -597,7 +594,7 @@ export default function EventForm({
             row of four, none of which should scroll out of reach. */}
         <div className="modal-form__head">
           <div className="modal-form__head-row">
-            <h3 id="event-form-title">{isEdit ? `Edit “${event.title}”` : 'New function enquiry'}</h3>
+            <h3 id="event-form-title">{isEdit ? `Edit “${event.title}”` : 'New function'}</h3>
             <button
               type="button"
               className="modal-form__close"
@@ -670,7 +667,7 @@ export default function EventForm({
                 <input
                   id="ev-startDate"
                   type="date"
-                  // A new enquiry can't be backdated; editing an existing function
+                  // A new function can't be backdated; editing an existing function
                   // leaves its date open so a past record can still be corrected.
                   min={isEdit ? undefined : toDateKey(new Date())}
                   value={form.startDate}
@@ -1040,21 +1037,8 @@ export default function EventForm({
             </button>
           ) : (
             <>
-              <button type="button" className="btn-secondary" onClick={() => save('ENQUIRY')} disabled={saving}>
-                Save as enquiry
-              </button>
-              <div className="field">
-                <input
-                  type="number"
-                  min="1"
-                  value={form.holdHours}
-                  onChange={(e) => update('holdHours', e.target.value)}
-                  aria-label="Hold hours"
-                  title="Hours to hold the date"
-                />
-              </div>
-              <button type="button" className="btn-secondary" onClick={() => save('TENTATIVE')} disabled={saving}>
-                Hold the date ({form.holdHours || 48} h)
+              <button type="button" className="btn-secondary" onClick={() => save('DRAFT')} disabled={saving}>
+                Save as draft
               </button>
               <button type="button" className="btn-accent" onClick={() => save('CONFIRMED')} disabled={saving}>
                 {saving ? 'Saving…' : 'Confirm now'}
@@ -1071,7 +1055,7 @@ export default function EventForm({
           message={clash.kind === 'blocked' ? clash.message : clashSummary(venue, clash.clashes)}
           // Nothing to weigh up on a refusal — the only way on is different
           // hours — so the dialog carries one button and no false choice.
-          confirmLabel={clash.kind === 'blocked' ? 'Pick other hours' : 'Save the enquiry anyway'}
+          confirmLabel={clash.kind === 'blocked' ? 'Pick other hours' : 'Save the draft anyway'}
           cancelLabel={clash.kind === 'blocked' ? undefined : 'Go back'}
           soleAction={clash.kind === 'blocked'}
           danger={clash.kind === 'confirm'}

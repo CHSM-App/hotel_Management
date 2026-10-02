@@ -224,7 +224,7 @@ async function notifyStayBooked(lodgeId, bookingId) {
 }
 
 // A function that has just taken its venue — created as, or moved to,
-// TENTATIVE or CONFIRMED. The events service passes the booking it already
+// CONFIRMED. The events service passes the booking it already
 // holds, so only the lodge is read here.
 async function notifyEventBooked(lodgeId, event) {
   if (!whatsapp.isBookingTemplateConfigured()) return skipped('not configured');

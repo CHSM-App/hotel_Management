@@ -9,7 +9,6 @@ const {
   quoteSchema,
   createEventSchema,
   updateEventSchema,
-  holdSchema,
   cancelSchema,
   extraSchema,
   priceExtraSchema,
@@ -278,31 +277,9 @@ async function removeExtraHandler(req, res, next) {
   }
 }
 
-async function holdEventHandler(req, res, next) {
-  try {
-    const event = await eventsService.holdEventBooking(
-      req.user.lodgeId,
-      idParam(req.params.id),
-      parse(holdSchema, req.body)
-    );
-    res.json({ event });
-  } catch (err) {
-    next(err);
-  }
-}
-
 async function confirmEventHandler(req, res, next) {
   try {
     const event = await eventsService.confirmEventBooking(req.user.lodgeId, idParam(req.params.id));
-    res.json({ event });
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function releaseEventHandler(req, res, next) {
-  try {
-    const event = await eventsService.releaseEventBooking(req.user.lodgeId, idParam(req.params.id));
     res.json({ event });
   } catch (err) {
     next(err);
@@ -339,8 +316,6 @@ module.exports = {
   addExtraHandler,
   priceExtraHandler,
   removeExtraHandler,
-  holdEventHandler,
   confirmEventHandler,
-  releaseEventHandler,
   cancelEventHandler,
 };

@@ -9,8 +9,8 @@ const requiredMobileField = (message) => z.preprocess(normaliseMobile, z.string(
 const EVENT_TYPES = ['BIRTHDAY', 'WEDDING', 'RECEPTION', 'ENGAGEMENT', 'CORPORATE', 'OTHER'];
 const SLOTS = ['MORNING', 'EVENING', 'FULL_DAY', 'CUSTOM'];
 // The states the desk can put a fresh booking straight into. SETTLED only
-// ever comes from the bill, and CANCELLED / EXPIRED are ways out, not in.
-const OPENING_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED'];
+// ever comes from the bill, and CANCELLED is a way out, not in.
+const OPENING_STATUSES = ['DRAFT', 'CONFIRMED'];
 
 // An instant with its offset, as the browser sends it. Parsed rather than
 // pattern-matched: what matters is that it is a real moment, and Date.parse is
@@ -212,11 +212,9 @@ const createEventSchema = withRoomsCheck(
       ...detailFields,
       ...roomsFields,
       ...advanceFields,
-      // Where the booking starts its life. A phone enquiry stays ENQUIRY; a desk
-      // taking a hold or money at the same time can go straight past it.
-      status: z.enum(OPENING_STATUSES).optional().default('ENQUIRY'),
-      // How long a tentative hold stands. Only read when status is TENTATIVE.
-      holdHours: z.coerce.number().int().min(1).max(720).optional(),
+      // Where the booking starts its life. A half-filled booking stays DRAFT; a desk
+      // taking money at the same time can go straight to CONFIRMED.
+      status: z.enum(OPENING_STATUSES).optional().default('DRAFT'),
     })
     .refine((data) => data.expectedPax != null, {
       message: 'Enter the expected number of guests.',
@@ -291,10 +289,6 @@ const priceExtraSchema = z.object({
   ),
 });
 
-const holdSchema = z.object({
-  holdHours: z.coerce.number().int().min(1, 'A hold needs at least an hour.').max(720, 'A hold can’t run past 30 days.').optional(),
-});
-
 const cancelSchema = z.object({
   reason: z.string({ error: 'Enter a reason for cancelling.' }).trim().min(1, 'Enter a reason for cancelling.').max(200),
   refundAmount: moneyField('Enter the refund as a number.'),
@@ -315,7 +309,6 @@ module.exports = {
   quoteSchema,
   createEventSchema,
   updateEventSchema,
-  holdSchema,
   cancelSchema,
   extraSchema,
   priceExtraSchema,

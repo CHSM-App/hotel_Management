@@ -143,12 +143,7 @@
 }
 
 /* Status badges reuse .badge from the dashboard and only add colour. */
-.events-badge--enquiry {
-  background: #e4edf9;
-  color: #2f5f9e;
-}
-
-.events-badge--tentative {
+.events-badge--draft {
   background: #fbf1e0;
   color: #8a5a10;
 }
@@ -163,50 +158,9 @@
   color: #55636f;
 }
 
-.events-badge--cancelled,
-.events-badge--expired {
+.events-badge--cancelled {
   background: var(--danger-bg);
   color: var(--danger);
-}
-
-.events-holds {
-  padding: 16px 20px;
-}
-
-.events-holds h4 {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #8a5a10;
-  margin-bottom: 8px;
-}
-
-.events-holds__row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 13.5px;
-  background: none;
-  border-left: none;
-  border-right: none;
-  border-top: none;
-  width: 100%;
-  cursor: pointer;
-  text-align: left;
-  color: var(--ink);
-  font-family: inherit;
-}
-
-.events-holds__row:last-child {
-  border-bottom: none;
-}
-
-.events-holds__when {
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------------- list */
@@ -1074,11 +1028,6 @@
   font-style: italic;
 }
 
-.events-detail__hold {
-  font-size: 13px;
-  font-weight: 600;
-  color: #8a5a10;
-}
 
 .events-detail__cancelled {
   padding: 10px 12px;

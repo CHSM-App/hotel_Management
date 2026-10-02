@@ -86,20 +86,58 @@ export function roomsPayload(form) {
 // totals. The several-room quote comes back per room, so it is folded into that
 // shape: the first room's lines stay editable as they always were, and each
 // further room's lines are labelled with its room number and read-only.
+// The same extra on several rooms is one line with a room count and the summed
+// amount, editable as one total, which is shared out evenly across the rooms. An extra on
+// one room only stays as it was, editable.
+function groupSharedExtras(charges) {
+  const keyOf = (c) => (c.chargeId != null && !c.isBase ? `${c.chargeId}|${c.rawLabel}|${c.nights}` : null);
+  const groups = new Map();
+  for (const c of charges) {
+    const key = keyOf(c);
+    if (key) groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  const done = new Set();
+  const out = [];
+  for (const c of charges) {
+    const key = keyOf(c);
+    const group = key && groups.get(key);
+    if (!group || group.length < 2) {
+      out.push(c);
+    } else if (!done.has(key)) {
+      done.add(key);
+      out.push({
+        label: `${c.rawLabel} × ${group.length} rooms`,
+        amount: group.reduce((sum, g) => Math.round((sum + g.amount) * 100) / 100, 0),
+        isBase: false,
+        nights: c.nights,
+        // The lines it stands for, so a typed total can be shared back out.
+        members: group,
+        groupKey: key,
+      });
+    }
+  }
+  return out.map(({ rawLabel, ...c }) => c);
+}
+
 export function combineQuote(response, roomNumbers) {
   const [first, ...rest] = response.rooms;
   const nightDates = new Set();
   for (const room of response.rooms) for (const n of room.nights) nightDates.add(n.date);
-  return {
-    charges: [
+  const charges = [
       // Each line says how many nights it covers: rooms on their own dates stay for
       // different lengths, so the stay's night count is wrong for most of them.
-      ...first.charges.map((c) => ({ ...c, nights: first.nights.length })),
+      ...first.charges.map((c) => ({
+        ...c,
+        rawLabel: c.label,
+        label: `Room ${roomNumbers[0] ?? ''} · ${c.label}`.replace('Room  ·', 'Room ·'),
+        nights: first.nights.length,
+      })),
       // Each further room's lines keep their ids so the form can edit them, and
       // say which room they belong to (1 is the first further room).
       ...rest.flatMap((room, i) =>
         room.charges.map((c) => ({
           label: `Room ${roomNumbers[i + 1] ?? ''} · ${c.label}`.replace('Room  ·', 'Room ·'),
+          rawLabel: c.label,
           amount: c.amount,
           isBase: Boolean(c.isBase),
           chargeId: c.chargeId,
@@ -108,7 +146,9 @@ export function combineQuote(response, roomNumbers) {
           nights: room.nights.length,
         }))
       ),
-    ],
+  ];
+  return {
+    charges: groupSharedExtras(charges),
     nights: Array.from(nightDates).map((date) => ({ date })),
     grossTotal: response.grossTotal,
     discountAmount: response.discountAmount,

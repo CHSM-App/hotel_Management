@@ -627,13 +627,6 @@ export default function OwnerDashboard() {
 
           {!error && me && (
             <>
-              {me.user.mustResetPassword && (
-                <div className="reset-banner">
-                  You&apos;re signed in with the temporary password Vengurla Tech set up. Open your
-                  profile menu (top right) and choose &quot;Change password&quot; to set your own.
-                </div>
-              )}
-
               {activeFeature && activeFeature.key === 'rooms' && (
                 <RoomsAndRates />
               )}

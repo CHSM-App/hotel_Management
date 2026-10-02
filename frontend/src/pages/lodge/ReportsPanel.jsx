@@ -79,12 +79,10 @@ const EVENT_TYPE_LABEL = {
 };
 
 const EVENT_STATUS_LABEL = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'Tentative',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
 const ORDER_STATUS_LABEL = {
@@ -1657,7 +1655,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                             <td>{ev.finalPax ?? ev.guaranteedPax ?? ev.expectedPax}</td>
                             <td>
                               <span
-                                className={`badge ${ev.status === 'CANCELLED' || ev.status === 'EXPIRED' ? 'badge--off' : 'badge--on'}`}
+                                className={`badge ${ev.status === 'CANCELLED' ? 'badge--off' : 'badge--on'}`}
                               >
                                 {EVENT_STATUS_LABEL[ev.status] || ev.status}
                               </span>

@@ -13,24 +13,20 @@ export const EVENT_TYPE_LABEL = {
 };
 
 export const EVENT_STATUS_LABEL = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'Tentative',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
 const EVENT_STATUS_SHORT = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'Tentative',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
-const EVENT_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED'];
+const EVENT_STATUSES = ['DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED'];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -220,7 +216,7 @@ function eventsSheet(report) {
   const rows = [headerRow(columns.map((c) => c.label))];
 
   for (const ev of report.events) {
-    const isCancelled = ev.status === 'CANCELLED' || ev.status === 'EXPIRED';
+    const isCancelled = ev.status === 'CANCELLED';
     rows.push(
       columns.map((column) => {
         const raw = column.value(ev);
@@ -608,7 +604,7 @@ export async function buildEventsReportPdf(report) {
       fontSize: 7,
       rowHeight: 12,
       rows: report.events.map((ev) => {
-        const excluded = ev.status === 'CANCELLED' || ev.status === 'EXPIRED';
+        const excluded = ev.status === 'CANCELLED';
         const val = (v) => (excluded ? '—' : formatAmount(v));
         return [
           ev.invoiceNumber || '—',

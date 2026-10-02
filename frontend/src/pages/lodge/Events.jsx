@@ -16,7 +16,6 @@ import {
   formatDateHead,
   formatEventDate,
   formatEventWhen,
-  formatHoldRemaining,
   formatMonthBand,
   formatWindowLabel,
   isClosedStatus,
@@ -55,7 +54,7 @@ const MAX_WINDOW_DAYS = 180;
 // How close to an edge counts as "at the edge" — a little over three columns.
 const GROW_WITHIN_PX = 90;
 // The order the legend reads in — the walk a booking takes.
-const DIARY_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+const DIARY_STATUSES = ['CONFIRMED', 'SETTLED', 'DRAFT', 'CANCELLED'];
 
 function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, refreshKey }) {
   const token = getSession()?.token;
@@ -63,7 +62,6 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const [windowStart, setWindowStart] = useState(() => addDays(today, -WINDOW_PAST_DAYS));
   const [windowDays, setWindowDays] = useState(WINDOW_DAYS);
   const [events, setEvents] = useState([]);
-  const [holds, setHolds] = useState([]);
   const [error, setError] = useState('');
   const [hover, setHover] = useState(null);
 
@@ -77,16 +75,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
     apiGet(`/events?${q}`, { token })
       .then((data) => {
         const list = data.events || [];
-        // Holds lapsing within two days, soonest first. Worked out when the
-        // window loads rather than on every render: a hold that lapses while
-        // the diary sits open is caught by the next fetch.
-        const limit = Date.now() + 48 * 3600 * 1000;
         setEvents(list);
-        setHolds(
-          list
-            .filter((e) => e.status === 'TENTATIVE' && e.holdExpiresAt && new Date(e.holdExpiresAt).getTime() <= limit)
-            .sort((a, b) => new Date(a.holdExpiresAt) - new Date(b.holdExpiresAt))
-        );
         setError('');
       })
       .catch((err) => setError(err.message));
@@ -218,7 +207,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           onFocus={(e) => showHover(e, { venue, date: d, ev: null })}
           onMouseLeave={hide}
           onBlur={hide}
-          aria-label={`${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start an enquiry`}
+          aria-label={`${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start a new event`}
         />
       );
     }
@@ -273,11 +262,15 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           Show cancelled
         </label>
         <button type="button" className="btn-accent" onClick={() => onNew(null, null)}>
-          + New enquiry
+          + New event
         </button>
       </div>
 
       <div className="tape-legend">
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--vacant" />
+          Vacant
+        </span>
         {DIARY_STATUSES.map((s) => (
           <button
             key={s}
@@ -290,11 +283,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
             {EVENT_STATUS_LABEL[s]}
           </button>
         ))}
-        <span className="tape-legend__item">
-          <i className="tape-legend__swatch tape-legend__swatch--vacant" />
-          Vacant
-        </span>
-        <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start an enquiry</span>
+        <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start a new event</span>
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -368,20 +357,6 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
         </section>
       )}
 
-      {holds.length > 0 && (
-        <div className="dash-card events-holds">
-          <h4>Holds expiring soon</h4>
-          {holds.map((ev) => (
-            <button key={ev.id} type="button" className="events-holds__row" onClick={() => onOpen(ev.id)}>
-              <span>
-                <strong>{ev.title}</strong> · {ev.venueName} · {ev.organiserName}
-              </span>
-              <span className="events-holds__when">expires {formatHoldRemaining(ev.holdExpiresAt)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
       {hover && (
         <div className={`tape-tooltip${hover.below ? ' tape-tooltip--below' : ''}`} role="tooltip" style={{ left: `${hover.x}px`, top: `${hover.y}px` }}>
           {hover.ev ? (
@@ -398,11 +373,8 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               <span className="tape-tooltip__meta">
                 {hover.ev.organiserName} · {hover.ev.organiserPhone} · {hover.ev.expectedPax} guests
               </span>
-              {hover.ev.status === 'TENTATIVE' && hover.ev.holdExpiresAt && (
-                <span className="tape-tooltip__hint">Hold expires {formatHoldRemaining(hover.ev.holdExpiresAt)}</span>
-              )}
               {isClosedStatus(hover.ev.status) && (
-                <span className="tape-tooltip__hint">{hover.ev.status === 'CANCELLED' ? 'Cancelled' : 'Hold lapsed'} — kept for the record</span>
+                <span className="tape-tooltip__hint">Cancelled — kept for the record</span>
               )}
             </>
           ) : (
@@ -413,7 +385,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               </span>
               <strong>{hover.venue.name}</strong>
               <span className="tape-tooltip__dates">{formatEventDate(`${hover.date}T00:00:00`)}</span>
-              <span className="tape-tooltip__hint">{hover.past ? 'Past date — bookings are closed' : 'Click to start an enquiry'}</span>
+              <span className="tape-tooltip__hint">{hover.past ? 'Past date — bookings are closed' : 'Click to start a new event'}</span>
             </>
           )}
         </div>
@@ -473,15 +445,13 @@ const EVENT_PRESETS = [
   { key: 'next', label: 'Next 30 days', range: () => ({ from: todayKey(), to: addDays(todayKey(), 30) }) },
 ];
 
-// Dots reuse the booking register's swatches: amber is held, red is sold,
-// slate is finished, blue is an open enquiry.
+// Dots reuse the booking register's swatches: amber is a draft, red is sold,
+// slate is finished.
 const EVENT_STATUS_SWATCH = {
-  ENQUIRY: 'checked-in',
-  TENTATIVE: 'draft',
+  DRAFT: 'draft',
   CONFIRMED: 'booked',
   SETTLED: 'checked-out',
   CANCELLED: 'cancelled',
-  EXPIRED: 'cancelled',
 };
 
 function EventStatTile({ label, value, note, active, hint, onClick, className = '' }) {
@@ -567,7 +537,7 @@ function EventList({ venues, onOpen, refreshKey }) {
     for (const e of events || []) c[e.status] = (c[e.status] || 0) + 1;
     return c;
   }, [events]);
-  const live = (events || []).filter((e) => !['CANCELLED', 'EXPIRED'].includes(e.status));
+  const live = (events || []).filter((e) => e.status !== 'CANCELLED');
   const stats = {
     functions: live.length,
     guests: live.reduce((n, e) => n + Number(e.finalPax ?? e.expectedPax ?? 0), 0),
@@ -825,7 +795,7 @@ function EventList({ venues, onOpen, refreshKey }) {
                     <td className={`events-list__num${ev.advanceAmount ? '' : ' events-sheet__zero'}`}>{formatPrice(ev.advanceAmount || 0)}</td>
                     <td
                       className={`events-list__num${
-                        Number(ev.balanceDue) > 0 && !['SETTLED', 'CANCELLED', 'EXPIRED'].includes(ev.status) ? ' events-sheet__due' : ''
+                        Number(ev.balanceDue) > 0 && !['SETTLED', 'CANCELLED'].includes(ev.status) ? ' events-sheet__due' : ''
                       }`}
                     >
                       {formatPrice(ev.balanceDue)}

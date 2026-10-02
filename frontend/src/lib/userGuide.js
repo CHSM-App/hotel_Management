@@ -246,15 +246,15 @@ const SECTIONS = [
     permission: 'events.manage',
     when: (f) => f.hasEvents,
     summary:
-      'The function diary for halls and lawns — from a first enquiry through to the final bill.',
+      'The function diary for halls and lawns — from a first draft through to the final bill.',
     steps: [
       {
-        heading: 'Log the enquiry',
-        body: 'Create the event with the date, the space and who is asking. It sits in the diary as an enquiry, holding nothing yet.',
+        heading: 'Start a draft',
+        body: 'Create the event with the date, the space and who is asking. It sits in the diary as a draft, holding nothing yet.',
       },
       {
-        heading: 'Hold the date',
-        body: 'Confirm it to a hold so the space shows as taken and nobody books over it.',
+        heading: 'Confirm the date',
+        body: 'Confirm the draft so the space shows as taken and nobody books over it.',
       },
       {
         heading: 'Quote and take an advance',
@@ -267,7 +267,7 @@ const SECTIONS = [
     ],
     notes: [
       {
-        text: 'An enquiry holds nothing. Until you confirm it to a hold, the same date can still be promised to somebody else.',
+        text: 'A draft holds nothing. Until you confirm it, the same date can still be promised to somebody else.',
       },
     ],
   },

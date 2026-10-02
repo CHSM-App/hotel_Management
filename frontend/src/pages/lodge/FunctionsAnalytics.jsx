@@ -4,12 +4,10 @@ import './AnalyticsCharts.css';
 import PageLoader from '../../components/PageLoader';
 
 const EVENT_STATUS_LABEL = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'Tentative',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
 const EVENT_TYPE_LABEL = {
@@ -22,12 +20,10 @@ const EVENT_TYPE_LABEL = {
 };
 
 const STAGE_DOT = {
-  ENQUIRY: 'var(--text-muted)',
-  TENTATIVE: 'var(--color-warning, var(--accent))',
+  DRAFT: 'var(--color-warning, var(--accent))',
   CONFIRMED: 'var(--brand)',
   SETTLED: 'var(--color-success)',
   CANCELLED: 'var(--color-danger)',
-  EXPIRED: 'var(--border)',
 };
 
 function formatUpcomingDate(iso) {

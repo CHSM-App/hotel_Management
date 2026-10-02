@@ -1725,6 +1725,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   ]);
 
   const selectedRoom = availableRooms?.find((r) => String(r.id) === bookingForm.roomId);
+  const separateRooms = bookingForm.multiRoom && !bookingForm.sameDates;
 
   // Which beds are free in this dormitory room, refetched whenever the room
   // or the dates change — the same shape of effect as the price quote, since
@@ -1979,6 +1980,24 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         switchableCharges: withAgreedAmount(room.switchableCharges, charge.chargeId, perNight),
       });
     }
+  };
+  // A shared extra (AC on two rooms) is one box. What is typed is the total for
+  // all the rooms, split evenly back onto each room's own line, the last taking
+  // the remainder so the shares add up to what was typed.
+  const [groupTotals, setGroupTotals] = useState({});
+  const setGroupTotal = (charge, value) => {
+    setGroupTotals((t) => ({ ...t, [charge.groupKey]: value }));
+    const total = Number(value);
+    const blank = String(value).trim() === '' || !Number.isFinite(total) || total < 0;
+    const n = charge.members.length;
+    let left = total;
+    charge.members.forEach((m, i) => {
+      const share = i === n - 1 ? left : Math.round((total / n) * 100) / 100;
+      left = Math.round((left - share) * 100) / 100;
+      const text = blank ? '' : String(share);
+      if (m.roomIndex) setExtraRoomLine(m, text);
+      else setChargeTotal(m, text);
+    });
   };
   const extraLineValue = (charge) => {
     const room = pickedExtraRooms(bookingForm)[charge.roomIndex - 1];
@@ -4192,8 +4211,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   <div className="form-section__title">
                     <StepNum n={1} done={stepDone[1]} />Stay &amp; room
                   </div>
-                  {bookingForm.extraRooms.length > 0 && (
-                    <div className="booking-form__room-head">Room 1</div>
+                  {/* Separate dates: every room, the first included, is a card of
+                      its own, so Room 1 reads as one of a set rather than as the
+                      form itself. (Shared dates keep the chooser below.) */}
+                  <div className={separateRooms ? 'booking-form__extra-room' : undefined}>
+                  {separateRooms && (
+                    <div className="booking-form__extra-room-head">
+                      <strong>Room 1</strong>
+                    </div>
                   )}
                   <div className="field-row">
                   <div className="field">
@@ -4528,6 +4553,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 )}
 
                 </div>
+                  </div>
 
                 {/* More rooms on the same booking. Each further room is a card
                     of its own; the switch says whether they all keep the dates
@@ -4593,7 +4619,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                             A season uplift stays fixed — it is a percentage of
                             the rate above it, so it follows on its own. */}
-                        {charge.roomIndex && (charge.isBase || charge.chargeId) ? (
+                        {charge.members ? (
+                          <EditableAmount
+                            label={charge.label}
+                            value={groupTotals[charge.groupKey] ?? String(charge.amount)}
+                            onChange={(v) => setGroupTotal(charge, v)}
+                          />
+                        ) : charge.roomIndex && (charge.isBase || charge.chargeId) ? (
                           <EditableAmount
                             label={charge.label}
                             value={extraLineValue(charge)}

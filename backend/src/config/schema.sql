@@ -1873,7 +1873,7 @@ CREATE TABLE dbo.event_addons (
 );
 
 -- One function, from the first call to the settled bill. Time is a real
--- range (a wedding runs 6 pm to 1 am). TENTATIVE and CONFIRMED block the venue.
+-- range (a wedding runs 6 pm to 1 am). Only CONFIRMED blocks the venue.
 IF OBJECT_ID('dbo.event_bookings', 'U') IS NULL
 CREATE TABLE dbo.event_bookings (
     id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -1918,10 +1918,9 @@ CREATE TABLE dbo.event_bookings (
     rooms_from          DATE NULL,
     rooms_to            DATE NULL,
     rooms_notes         NVARCHAR(500) NULL,
-    status              NVARCHAR(10) NOT NULL CONSTRAINT df_event_bookings_status DEFAULT 'ENQUIRY'
+    status              NVARCHAR(10) NOT NULL CONSTRAINT df_event_bookings_status DEFAULT 'DRAFT'
         CONSTRAINT ck_event_bookings_status
-        CHECK (status IN ('ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED')),
-    hold_expires_at     DATETIMEOFFSET NULL,
+        CHECK (status IN ('DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED')),
     cancel_reason       NVARCHAR(200) NULL,
     refund_amount       DECIMAL(10,2) NULL,
     created_by          BIGINT NULL REFERENCES dbo.users(id),

@@ -12,26 +12,21 @@ export const EVENT_TYPE_LABEL = {
 };
 
 export const EVENT_STATUS_LABEL = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'On hold',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
 // The colour each status wears on the diary, the legend and the hover card.
-// Chosen to say the same thing the tape chart's colours say: amber is held
-// but not yet sold (a draft there, a hold here), red is sold (a reservation
-// there, a confirmed function here), slate is finished business. Blue is the
-// one hue left over for an enquiry — interest, nothing taken.
+// Chosen to say the same thing the tape chart's colours say: amber is not
+// yet sold (a draft there and here), red is sold (a reservation there, a
+// confirmed function here), slate is finished business.
 export const EVENT_STATUS_COLOR = {
-  ENQUIRY: '#5a8fd0',
-  TENTATIVE: '#f2c31d',
+  DRAFT: '#f2c31d',
   CONFIRMED: '#c0392b',
   SETTLED: '#8695a3',
   CANCELLED: '#cfd6dd',
-  EXPIRED: '#cfd6dd',
 };
 
 export const SLOT_LABEL = {
@@ -50,12 +45,12 @@ export const SLOT_HOURS = {
   FULL_DAY: ['09:00', '23:00'],
 };
 
-// Statuses that still occupy the diary. Cancelled and expired ones are kept
+// Statuses that still occupy the diary. Cancelled ones are kept
 // for the record but hidden unless asked for.
-export const LIVE_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+export const LIVE_STATUSES = ['DRAFT', 'CONFIRMED', 'SETTLED'];
 
 export function isClosedStatus(status) {
-  return status === 'CANCELLED' || status === 'EXPIRED';
+  return status === 'CANCELLED';
 }
 
 // YYYY-MM-DD in local time. toISOString() would give the UTC day, which is
@@ -125,18 +120,6 @@ export function eventDayKeys(startAt, endAt) {
     cursor.setDate(cursor.getDate() + 1);
   }
   return keys;
-}
-
-// "in 3 h 20 m" / "expired" for a tentative hold's countdown.
-export function formatHoldRemaining(holdExpiresAt, now = Date.now()) {
-  if (!holdExpiresAt) return '';
-  const ms = new Date(holdExpiresAt).getTime() - now;
-  if (ms <= 0) return 'expired';
-  const mins = Math.floor(ms / 60000);
-  const hours = Math.floor(mins / 60);
-  if (hours >= 48) return `in ${Math.floor(hours / 24)} days`;
-  if (hours >= 1) return `in ${hours} h ${mins % 60} m`;
-  return `in ${mins} m`;
 }
 
 // ---------------------------------------------------------------------------

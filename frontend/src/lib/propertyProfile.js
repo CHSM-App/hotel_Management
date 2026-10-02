@@ -121,7 +121,7 @@ export const FEATURES = [
   {
     key: 'events',
     title: 'Event Chart',
-    description: 'The function diary — enquiries, holds, quotes and advances for halls and lawns.',
+    description: 'The function diary — drafts, quotes and advances for halls and lawns.',
     permission: 'events.manage',
     // Its own bit rather than a property type: a rooms-only lodge with a
     // lawn and a restaurant with a party hall are both real.

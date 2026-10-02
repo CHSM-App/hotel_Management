@@ -13,13 +13,12 @@ import {
   SLOT_LABEL,
   formatEventDate,
   formatEventWhen,
-  formatHoldRemaining,
   statusBadgeClass,
 } from './eventFormat';
 import './forms.css';
 import './Events.css';
 
-const TIMELINE = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+const TIMELINE = ['DRAFT', 'CONFIRMED', 'SETTLED'];
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -355,8 +354,6 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   const [takingAdvance, setTakingAdvance] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelForm, setCancelForm] = useState({ reason: '', refundAmount: '', refundPaymentMethod: '' });
-  const [holdHours, setHoldHours] = useState('48');
-  const [now, setNow] = useState(() => Date.now());
 
   const reload = useCallback(async () => {
     try {
@@ -377,13 +374,6 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   useEffect(() => {
     reload();
   }, [reload]);
-
-  // The hold countdown ticks by the minute; nothing else on the modal moves.
-  useEffect(() => {
-    if (event?.status !== 'TENTATIVE') return undefined;
-    const t = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(t);
-  }, [event?.status]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -492,10 +482,10 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
 
   const status = event.status;
   const pricingLines = event.pricing?.lines || [];
-  const closed = status === 'CANCELLED' || status === 'EXPIRED';
+  const closed = status === 'CANCELLED';
   const currentIdx = TIMELINE.indexOf(status);
-  const canEdit = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'].includes(status);
-  const canTakeAdvance = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED'].includes(status);
+  const canEdit = ['DRAFT', 'CONFIRMED'].includes(status);
+  const canTakeAdvance = ['DRAFT', 'CONFIRMED'].includes(status);
 
   return (
     <>
@@ -553,14 +543,6 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 }`}
               {Number(event.cancellationCharge) > 0 &&
                 ` · Cancellation charge kept ${formatPrice(event.cancellationCharge)}`}
-            </div>
-          )}
-          {status === 'EXPIRED' && (
-            <div className="events-detail__cancelled">The hold on this date lapsed{event.holdExpiresAt ? ` on ${formatEventDate(event.holdExpiresAt)}` : ''}.</div>
-          )}
-          {status === 'TENTATIVE' && event.holdExpiresAt && (
-            <div className="events-detail__hold" style={{ marginBottom: 12 }}>
-              Hold expires {formatHoldRemaining(event.holdExpiresAt, now)} ({formatEventWhen(event.holdExpiresAt)})
             </div>
           )}
 
@@ -750,27 +732,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             </button>
             <span className="events-modal__spacer" />
 
-            {(status === 'ENQUIRY' || status === 'EXPIRED') && (
-              <>
-                <input
-                  type="number"
-                  min="1"
-                  value={holdHours}
-                  onChange={(e) => setHoldHours(e.target.value)}
-                  aria-label="Hold hours"
-                  style={{ width: 70, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
-                />
-                <button type="button" className="btn-secondary" disabled={busy} onClick={() => transition('hold', { holdHours: Number(holdHours) || 48 })}>
-                  {status === 'EXPIRED' ? 'Hold again' : 'Hold date'}
-                </button>
-              </>
-            )}
-            {status === 'TENTATIVE' && (
-              <button type="button" className="btn-secondary" disabled={busy} onClick={() => transition('release')}>
-                Release hold
-              </button>
-            )}
-            {['ENQUIRY', 'TENTATIVE', 'EXPIRED'].includes(status) && (
+            {status === 'DRAFT' && (
               <button type="button" className="btn-accent" disabled={busy} onClick={() => transition('confirm')}>
                 Confirm
               </button>
@@ -791,7 +753,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 View bill
               </button>
             )}
-            {canEdit && status !== 'EXPIRED' && (
+            {canEdit && (
               <button type="button" className="btn-secondary" disabled={busy} onClick={() => setEditing(true)}>
                 Edit
               </button>
