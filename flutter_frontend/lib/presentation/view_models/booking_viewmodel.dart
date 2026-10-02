@@ -110,13 +110,14 @@ class BookingState {
   final int? draftId;
 
   // ── Multi-room bookings ──────────────────────────────────────────────────
-  /// "Book multiple rooms" — off means the ordinary single-room flow above is
-  /// the whole booking, exactly as it always has been.
+  /// Always on now, mirroring the web form: a booking can simply gain more
+  /// rooms with "+ Add another room" rather than needing a switch flipped
+  /// first.
   final bool multiRoomMode;
 
-  /// Only meaningful while [multiRoomMode] is on: false ("Same dates for all
-  /// rooms", the default) means every extra room follows [checkIn]/[checkOut]
-  /// above; true lets each carry its own.
+  /// False ("Same dates for all rooms") means every extra room follows
+  /// [checkIn]/[checkOut] above; true lets each carry its own — the default,
+  /// matching the web form's own.
   final bool multiRoomDifferentDates;
 
   /// Every room after the first — room 1 itself is still [room]/[bedIds]/
@@ -159,8 +160,8 @@ class BookingState {
     this.submitting = false,
     this.bookingTypeOverride,
     this.draftId,
-    this.multiRoomMode = false,
-    this.multiRoomDifferentDates = false,
+    this.multiRoomMode = true,
+    this.multiRoomDifferentDates = true,
     this.extraRooms = const [],
     this.multiQuote,
     this.primaryBookingRoomId,
@@ -1283,17 +1284,26 @@ class BookingViewModel extends StateNotifier<BookingState> {
     await refreshQuote();
   }
 
-  /// The different-dates path's "+ Add another room".
+  /// "+ Add another room" — starts the new room on the last room's dates (or
+  /// the stay's own, for the first extra room), since that is the ordinary
+  /// case; its own date fields stay editable for the desk to change just
+  /// that room's nights. Dates arriving pre-filled still have to trigger the
+  /// same available-rooms fetch a picked date would — otherwise the card
+  /// has dates but never asks which rooms are free for them, and its
+  /// dropdown never appears.
   Future<void> addExtraRoom() async {
+    final last = state.extraRooms.isNotEmpty ? state.extraRooms.last : null;
+    final checkIn = last?.checkIn ?? state.checkIn;
+    final checkOut = last?.checkOut ?? state.checkOut;
     state = state.copyWith(
       extraRooms: [
         ...state.extraRooms,
-        MultiRoomLogic.blankExtraRoom(
-          checkIn: state.multiRoomDifferentDates ? null : state.checkIn,
-          checkOut: state.multiRoomDifferentDates ? null : state.checkOut,
-        ),
+        MultiRoomLogic.blankExtraRoom(checkIn: checkIn, checkOut: checkOut),
       ],
     );
+    if (checkIn != null && checkOut != null) {
+      await loadExtraRoomAvailableRooms(state.extraRooms.length - 1);
+    }
   }
 
   /// Remove one extra room. Only a room still at BOOKED may be removed — the

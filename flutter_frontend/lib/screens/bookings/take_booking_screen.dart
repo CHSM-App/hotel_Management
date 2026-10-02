@@ -796,8 +796,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
                   if (state.datesChosen) ...[
                     const SizedBox(height: AppTheme.s16),
-                    _MultiRoomToggle(state: state),
-                    const SizedBox(height: AppTheme.s12),
                     Row(
                       children: [
                         _RequiredLabel(
@@ -888,14 +886,14 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                   showDatePickers: state.multiRoomDifferentDates,
                                 ),
                               ),
-                            if (state.multiRoomDifferentDates)
-                              NeuButton(
-                                expand: true,
-                                onPressed: () => ref
-                                    .read(bookingViewModelProvider.notifier)
-                                    .addExtraRoom(),
-                                child: const Text('+ Add another room'),
-                              ),
+                            NeuButton(
+                              expand: true,
+                              primary: true,
+                              onPressed: () => ref
+                                  .read(bookingViewModelProvider.notifier)
+                                  .addExtraRoom(),
+                              child: const Text('+ Add another room'),
+                            ),
                           ],
                         ),
                       ),
@@ -1957,185 +1955,6 @@ class _RoomPicker extends ConsumerWidget {
           ),
         );
       },
-    );
-  }
-}
-
-// ── Multi-room bookings ─────────────────────────────────────────────────────
-
-/// "Book multiple rooms", and — once it's on — the choice between one set of
-/// dates for every room or each room carrying its own. Mirrors the web
-/// form's own card at the top of the room section: an accent-tinted panel
-/// with a switch, and — once it's on — two labelled options rather than a
-/// bare pair of pills, so the difference between them reads on its own
-/// without a caption elsewhere on the page.
-class _MultiRoomToggle extends ConsumerWidget {
-  final BookingState state;
-
-  const _MultiRoomToggle({required this.state});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final vm = ref.read(bookingViewModelProvider.notifier);
-    final on = state.multiRoomMode;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      padding: const EdgeInsets.all(AppTheme.s12),
-      decoration: BoxDecoration(
-        color: AppTheme.accent.withValues(alpha: 0.05),
-        border: Border.all(
-          color: AppTheme.accent.withValues(alpha: on ? 0.35 : 0.14),
-        ),
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () => vm.toggleMultiRoomMode(!on),
-            borderRadius: BorderRadius.circular(AppTheme.rSmall),
-            child: Row(
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppTheme.accent.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.meeting_room_rounded,
-                    size: 15,
-                    color: AppTheme.accent,
-                  ),
-                ),
-                const SizedBox(width: AppTheme.s12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Book multiple rooms',
-                        style: TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'Put more than one room on this booking — same '
-                        'guest, one bill.',
-                        style: TextStyle(color: AppTheme.muted, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-                Switch(
-                  value: on,
-                  activeThumbColor: AppTheme.accent,
-                  onChanged: (v) => vm.toggleMultiRoomMode(v),
-                ),
-              ],
-            ),
-          ),
-          if (on) ...[
-            const SizedBox(height: AppTheme.s8),
-            const Text(
-              'CHECK-IN & CHECK-OUT',
-              style: TextStyle(
-                color: AppTheme.muted,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.4,
-              ),
-            ),
-            const SizedBox(height: AppTheme.s8),
-            _DatesModeOption(
-              title: 'Same for all rooms',
-              subtitle: 'Pick the dates once, then tick the rooms you want.',
-              selected: !state.multiRoomDifferentDates,
-              onTap: () => vm.setMultiRoomDifferentDates(false),
-            ),
-            const SizedBox(height: AppTheme.s8),
-            _DatesModeOption(
-              title: 'Different for each room',
-              subtitle: 'Set the dates room by room. Start with Room 1, '
-                  'then add more.',
-              selected: state.multiRoomDifferentDates,
-              onTap: () => vm.setMultiRoomDifferentDates(true),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _DatesModeOption extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _DatesModeOption({
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppTheme.s8 + 2),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent.withValues(alpha: 0.08) : AppTheme.card,
-          border: Border.all(
-            color: selected ? AppTheme.accent : AppTheme.border,
-            width: selected ? 1.4 : 1,
-          ),
-          borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked,
-                  size: 15,
-                  color: selected ? AppTheme.accent : AppTheme.muted,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: AppTheme.heading,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
