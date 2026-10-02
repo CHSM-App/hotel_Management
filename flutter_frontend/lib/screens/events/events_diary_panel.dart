@@ -143,7 +143,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
       }
       _growingPast = false;
     });
-    _load();
+    _load(silent: true);
   }
 
   /// Later days, appended — nothing already on screen has to move for this
@@ -159,16 +159,17 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
       );
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _growingFuture = false);
-    _load();
+    _load(silent: true);
   }
 
-  Future<void> _load() {
+  Future<void> _load({bool silent = false}) {
     return ref
         .read(eventsViewModelProvider.notifier)
         .loadEvents(
           fromDate: _dateKey(_dates.first),
           toDate: _dateKey(_dates.last),
           includeClosed: true,
+          silent: silent,
         );
   }
 

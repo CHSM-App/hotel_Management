@@ -94,8 +94,9 @@ class EventsViewModel extends StateNotifier<EventsState> {
     String? status,
     int? venueId,
     bool includeClosed = true,
+    bool silent = false,
   }) async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    if (!silent) state = state.copyWith(isLoading: true, clearError: true);
     try {
       final events = await usecase.events(
         fromDate: fromDate,

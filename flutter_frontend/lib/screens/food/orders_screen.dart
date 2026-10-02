@@ -1478,12 +1478,13 @@ class _OrderCard extends ConsumerWidget {
                       ],
 
                       // A table or takeaway can also go on a staying guest's
-                      // room bill instead of being paid for here — same
-                      // `canRoom` exception OrdersPanel.jsx carves out (rooms
-                      // only, never a room order itself).
+                      // room bill instead of being paid for here — and so can
+                      // a room-QR order already tied to its own stay, same as
+                      // OrdersPanel.jsx's own `readyToBill.addToRoom` check
+                      // (`o.source !== 'ROOM' || o.bookingId`).
                       if ((canIssueBill || canBillFood) &&
                           order.isDeliveredUnbilled &&
-                          order.source != 'ROOM' &&
+                          (order.source != 'ROOM' || order.bookingId != null) &&
                           (ref.watch(authViewModelProvider).me?.lodge.hasRooms ??
                               false)) ...[
                         const SizedBox(height: AppTheme.s8),
@@ -2398,11 +2399,12 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     }
 
     // A table or takeaway can also go on a staying guest's room bill instead
-    // of being paid for here — same `canRoom` exception OrdersPanel.jsx
-    // carves out (rooms only, never a room order itself).
+    // of being paid for here — and so can a room-QR order already tied to
+    // its own stay, same as OrdersPanel.jsx's own `readyToBill.addToRoom`
+    // check (`o.source !== 'ROOM' || o.bookingId`).
     if ((widget.canIssueBill || widget.canBillFood) &&
         order.isDeliveredUnbilled &&
-        order.source != 'ROOM' &&
+        (order.source != 'ROOM' || order.bookingId != null) &&
         (ref.watch(authViewModelProvider).me?.lodge.hasRooms ?? false)) {
       buttons.add(
         _SheetActionButton(

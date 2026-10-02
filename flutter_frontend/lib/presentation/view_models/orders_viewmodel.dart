@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/new_order_chime.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/menu.dart';
 import '../../domain/models/room.dart';
@@ -156,6 +157,25 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
   /// rebuild that says the same thing again. Null before the first call.
   bool? _configuredCanWorkQueue;
 
+  /// Order ids seen on the previous [loadQueue] — OrdersPanel.jsx's own
+  /// `knownIdsRef`. Null until the first fetch lands, so that fetch seeds the
+  /// set silently instead of chiming for every order already cooking.
+  Set<int>? _knownOrderIds;
+
+  /// Guest (QR) order ids seen on the previous [loadHistory] while
+  /// [OrdersState.myOrdersMode] is on — OrdersPanel.jsx's own
+  /// `knownGuestIds`, which a captain's "Kitchen queue"/History pair relies
+  /// on since they never see [loadQueue]'s real queue at all.
+  Set<int>? _knownGuestIds;
+
+  /// A new order nobody has seen yet — the same load-bearing alert
+  /// OrdersPanel.jsx's synthesised Web Audio chime gives the kitchen screen,
+  /// rebuilt sample-for-sample in [NewOrderChime] so this app sounds the same
+  /// two-tone alert rather than a generic platform beep.
+  void _chimeNewOrder() {
+    NewOrderChime.play();
+  }
+
   OrdersViewModel(this.usecase)
     : super(
         OrdersState(
@@ -228,6 +248,11 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     // between them always needs a fresh fetch under the new scope, not just
     // when landing on History the way the real Kitchen-queue/History pair
     // does.
+    // OrdersPanel.jsx remounts its History component on every tab change
+    // (key={view}), which drops its own knownGuestIds ref — otherwise a
+    // scope switch (active orders vs. settled ones) would look like a batch
+    // of brand-new guest orders and chime for all of them at once.
+    if (state.myOrdersMode) _knownGuestIds = null;
     if (state.myOrdersMode || tab == OrdersTab.history) loadHistory();
   }
 
@@ -248,6 +273,14 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
         now: DateTime.now(),
         clearError: true,
       );
+
+      // Chime for orders that weren't on the previous poll — see
+      // _knownOrderIds.
+      final ids = orders.map((o) => o.id).toSet();
+      if (_knownOrderIds != null && ids.any((id) => !_knownOrderIds!.contains(id))) {
+        _chimeNewOrder();
+      }
+      _knownOrderIds = ids;
     } catch (e, st) {
       if (!mounted) return;
       if (silent) {
@@ -300,6 +333,17 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
           ? orders.where((o) => !o.billed && !o.readyToBill && o.status != 'CANCELLED').toList()
           : orders.where((o) => o.billed || o.readyToBill || o.status == 'CANCELLED').toList();
       state = state.copyWith(history: AsyncValue.data(visible), clearError: true);
+
+      // A captain never sees loadQueue's real queue, so guest QR orders are
+      // chimed here instead — same reasoning OrdersPanel.jsx's own
+      // `onNewGuestOrders` carries for the "my orders" history view.
+      if (state.myOrdersMode) {
+        final guestIds = orders.where((o) => o.guestOrder).map((o) => o.id).toSet();
+        if (_knownGuestIds != null && guestIds.any((id) => !_knownGuestIds!.contains(id))) {
+          _chimeNewOrder();
+        }
+        _knownGuestIds = guestIds;
+      }
     } catch (e, st) {
       if (!mounted) return;
       if (silent && state.history.valueOrNull != null) return;
