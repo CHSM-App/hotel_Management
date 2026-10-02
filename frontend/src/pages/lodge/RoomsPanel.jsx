@@ -29,7 +29,9 @@ const dormitoryAcLabel = { AC: 'AC', NON_AC: 'Non-AC' };
 function bedSummary(room) {
   const beds = room.beds && room.beds.length > 0 ? room.beds : room.bedSize ? [{ size: room.bedSize, count: 1 }] : [];
   if (beds.length === 0) return null;
-  return beds.map((b) => `${b.count} ${bedSizeLabel[b.size] || b.size}`).join(' + ');
+  return beds
+    .map((b) => `${b.count} ${bedSizeLabel[b.size] || b.size} Bed${Number(b.count) === 1 ? '' : 's'}`)
+    .join(' + ');
 }
 const bathroomTypeLabel = { ATTACHED: 'Attached Bathroom', COMMON: 'Common Bathroom' };
 
