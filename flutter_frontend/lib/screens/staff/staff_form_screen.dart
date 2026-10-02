@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/form_feedback.dart';
 import '../../domain/models/staff.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
@@ -36,6 +37,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   bool _submitAttempted = false;
 
   final _nameFocus = FocusNode();
+  final _phoneFocus = FocusNode();
 
   static final _phoneTen = RegExp(r'^[6-9]\d{9}$');
 
@@ -69,13 +71,17 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     _email.dispose();
     _tempPassword.dispose();
     _nameFocus.dispose();
+    _phoneFocus.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    setState(() => _submitAttempted = true);
+    setState(() {
+      _error = null;
+      _submitAttempted = true;
+    });
     if (_nameError != null) {
-      _nameFocus.requestFocus();
+      focusFieldWithError(_nameFocus);
       return;
     }
     if (_phoneError != null || _roleError != null || _passwordError != null) {
@@ -96,11 +102,17 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     if (!mounted) return;
     if (ok) {
       Navigator.pop(context);
-    } else {
-      setState(() {
-        _error = ref.read(staffViewModelProvider).error ?? 'Could not save this staff member.';
-      });
+      return;
     }
+    final message = ref.read(staffViewModelProvider).error ?? 'Could not save this staff member.';
+    setState(() => _error = message);
+    // The backend's conflict here ("Someone already uses that phone number
+    // or email.") carries no field key — it's a shared check across both
+    // inputs — so this matches by keyword instead of apiErrorField, same as
+    // any other field-less conflict form_feedback.dart is built to handle.
+    focusBackendFieldError(message, [
+      BackendFieldError(_phoneFocus, ['phone number']),
+    ]);
   }
 
   @override
@@ -149,6 +161,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                     keyboardType: TextInputType.phone,
                     maxLength: 10,
                     errorText: _phoneError,
+                    focusNode: _phoneFocus,
                     hint: '9876543210',
                     onChanged: (_) => setState(() {}),
                   ),

@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../../core/constant.dart';
 import '../../domain/models/booking.dart' show PaymentLine;
 import '../../domain/models/invoice.dart';
 import '../bookings/receipt_download.dart';
@@ -35,13 +37,31 @@ class AdvanceReceiptPdf {
 
   static Future<Uint8List> build(AdvanceReceipt receipt, {String? lodgeName, bool compress = true}) async {
     final doc = pw.Document(compress: compress);
+    final logo = await _fetchLogo(receipt.lodgeLogoUrl);
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a6.copyWith(marginTop: 16, marginBottom: 16, marginLeft: 16, marginRight: 16),
-        build: (context) => _voucher(receipt, lodgeName),
+        build: (context) => _voucher(receipt, lodgeName, logo),
       ),
     );
     return doc.save();
+  }
+
+  /// Same best-effort fetch BillPdf uses — null on no logo, no permission to
+  /// print it, or a failed fetch, and the voucher prints without one either
+  /// way.
+  static Future<Uint8List?> _fetchLogo(String? url) async {
+    if (url == null) return null;
+    try {
+      final res = await Dio().get<List<int>>(
+        '$baseUrl$url',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = res.data;
+      return data == null ? null : Uint8List.fromList(data);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Fold the few non-Latin-1 characters this voucher's own strings carry
@@ -53,7 +73,7 @@ class AdvanceReceiptPdf {
       .replaceAll(RegExp('[‘’]'), "'")
       .replaceAll(RegExp('[“”]'), '"');
 
-  static pw.Widget _voucher(AdvanceReceipt r, String? fallbackName) {
+  static pw.Widget _voucher(AdvanceReceipt r, String? fallbackName, Uint8List? logo) {
     final isGst = r.billingSide == 'GST';
     final name = r.lodgeName ?? fallbackName ?? '';
     final isEvent = r.isEventReceipt;
@@ -72,23 +92,46 @@ class AdvanceReceiptPdf {
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           // ── Masthead ────────────────────────────────────────────────────
-          pw.Row(
+          pw.Stack(
             children: [
-              pw.Expanded(
-                child: pw.Text(
-                  'Receipt Voucher',
-                  textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic),
-                ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          'Receipt Voucher',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic),
+                        ),
+                      ),
+                      if (r.lodgePhone != null)
+                        pw.Text(_ascii('Mob. ${r.lodgePhone}'), style: const pw.TextStyle(fontSize: 7)),
+                    ],
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Center(
+                    child: pw.Text(_ascii(name), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                  ),
+                  if (r.lodgeAddress != null)
+                    pw.Center(child: pw.Text(_ascii(r.lodgeAddress!), style: const pw.TextStyle(fontSize: 7))),
+                ],
               ),
-              if (r.lodgePhone != null)
-                pw.Text(_ascii('Mob. ${r.lodgePhone}'), style: const pw.TextStyle(fontSize: 7)),
+              // Same corner spot BillPdf uses, opposite the "Mob." line.
+              if (logo != null)
+                pw.Positioned(
+                  left: 0,
+                  top: 0,
+                  child: pw.Container(
+                    height: 22,
+                    width: 22,
+                    alignment: pw.Alignment.center,
+                    child: pw.Image(pw.MemoryImage(logo), fit: pw.BoxFit.contain),
+                  ),
+                ),
             ],
           ),
-          pw.SizedBox(height: 2),
-          pw.Center(child: pw.Text(_ascii(name), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold))),
-          if (r.lodgeAddress != null)
-            pw.Center(child: pw.Text(_ascii(r.lodgeAddress!), style: const pw.TextStyle(fontSize: 7))),
 
           _rule(),
           _strip([_label('No.-'), _filled('${r.receiptNumber ?? r.id}', width: 60), _label('Date -'), _filled(_date(r.createdAt), width: 80)]),

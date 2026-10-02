@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/form_feedback.dart';
 import '../../domain/models/asset.dart' show Vendor;
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
@@ -35,12 +36,19 @@ class _PayerFormScreenState extends ConsumerState<PayerFormScreen> {
   late final _specialty = TextEditingController(text: widget.payer?.specialty ?? '');
   late final _notes = TextEditingController(text: widget.payer?.notes ?? '');
   String? _error;
+  String? _backendErrorField;
   bool _submitAttempted = false;
 
-  String? get _nameError =>
-      (_submitAttempted && _name.text.trim().isEmpty) ? 'Payer name is required.' : null;
+  String? get _nameError {
+    if (_submitAttempted && _name.text.trim().isEmpty) return 'Payer name is required.';
+    if (_backendErrorField == 'name') return _error;
+    return null;
+  }
+
+  String? get _phoneError => _backendErrorField == 'phone' ? _error : null;
 
   final _nameFocus = FocusNode();
+  final _phoneFocus = FocusNode();
 
   @override
   void dispose() {
@@ -51,16 +59,18 @@ class _PayerFormScreenState extends ConsumerState<PayerFormScreen> {
     _specialty.dispose();
     _notes.dispose();
     _nameFocus.dispose();
+    _phoneFocus.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     setState(() {
       _error = null;
+      _backendErrorField = null;
       _submitAttempted = true;
     });
     if (_nameError != null) {
-      _nameFocus.requestFocus();
+      focusFieldWithError(_nameFocus);
       return;
     }
     final body = {
@@ -75,8 +85,21 @@ class _PayerFormScreenState extends ConsumerState<PayerFormScreen> {
     if (!mounted) return;
     if (ok) {
       Navigator.pop(context);
-    } else {
-      setState(() => _error = ref.read(incomeViewModelProvider).error ?? 'Could not save this payer.');
+      return;
+    }
+    final state = ref.read(incomeViewModelProvider);
+    final message = state.error ?? 'Could not save this payer.';
+    setState(() {
+      _error = message;
+      _backendErrorField = state.errorField;
+    });
+    switch (state.errorField) {
+      case 'name':
+        focusFieldWithError(_nameFocus);
+        break;
+      case 'phone':
+        focusFieldWithError(_phoneFocus);
+        break;
     }
   }
 
@@ -93,7 +116,7 @@ class _PayerFormScreenState extends ConsumerState<PayerFormScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_error != null) ...[
+                  if (_error != null && _backendErrorField != 'name' && _backendErrorField != 'phone') ...[
                     _ErrorBanner(_error!),
                     const SizedBox(height: AppTheme.s16),
                   ],
@@ -115,7 +138,14 @@ class _PayerFormScreenState extends ConsumerState<PayerFormScreen> {
                   const SectionDivider(),
                   const SectionLabel('Contact details', number: 2),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _phone, label: 'Phone', keyboardType: TextInputType.phone),
+                  NeuField(
+                    controller: _phone,
+                    label: 'Phone',
+                    keyboardType: TextInputType.phone,
+                    errorText: _phoneError,
+                    focusNode: _phoneFocus,
+                    onChanged: (_) => setState(() {}),
+                  ),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress),
 

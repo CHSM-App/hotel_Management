@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/token_provider.dart';
@@ -116,6 +117,27 @@ class AuthViewModel extends StateNotifier<AuthState> {
   Future<void> updateMyLodge(Map<String, dynamic> body) async {
     try {
       final me = await usecase.updateMyLodge(body);
+      state = state.copyWith(me: me);
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
+  /// Owner-only: upload or replace the property's logo. On success the
+  /// lodge half of [state.me] carries the new `logoUrl`.
+  Future<void> updateMyLodgeLogo(FormData form) async {
+    try {
+      final me = await usecase.updateMyLodgeLogo(form);
+      state = state.copyWith(me: me);
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
+  /// Owner-only: drop the property's logo, and turn off printing it.
+  Future<void> removeMyLodgeLogo() async {
+    try {
+      final me = await usecase.removeMyLodgeLogo();
       state = state.copyWith(me: me);
     } catch (e) {
       throw _message(e);

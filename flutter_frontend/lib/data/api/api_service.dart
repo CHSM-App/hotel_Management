@@ -107,6 +107,18 @@ class ApiService {
     return Me.fromJson(_map(res.data));
   }
 
+  /// Upload or replace the property's logo — [form] carries one file under
+  /// the field name 'logo', the shape `logoUpload` middleware expects.
+  Future<Me> updateMyLodgeLogo(FormData form) async {
+    final res = await _dio.put('/me/lodge/logo', data: form);
+    return Me.fromJson(_map(res.data));
+  }
+
+  Future<Me> removeMyLodgeLogo() async {
+    final res = await _dio.delete('/me/lodge/logo');
+    return Me.fromJson(_map(res.data));
+  }
+
   // ===== BOOKINGS =====
 
   /// Rooms free across the whole range. The server excludes anything already
