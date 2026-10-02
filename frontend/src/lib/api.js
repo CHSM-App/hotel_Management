@@ -2,8 +2,8 @@ import { clearSession, getSession } from './auth';
 
 // Local development: points at the backend on port 8000 (PORT in backend/.env).
 // Swap to the production line below before building for deploy.
-// export const API_BASE = 'https://hotel.vengurlatech.com';
-export const API_BASE = 'http://192.168.1.2:5000';
+export const API_BASE = 'https://hotel.vengurlatech.com';
+// export const API_BASE = 'http://192.168.1.2:5000';
 
 
 
