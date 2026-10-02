@@ -58,6 +58,13 @@ class _FakeAuth implements AuthRepository {
     required String identifier,
     required String newPassword,
   }) async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodgeLogo(FormData form) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Me> removeMyLodgeLogo() async => throw UnimplementedError();
 }
 
 /// One stay for the chart, and the room it sits on. The chart needs both a
@@ -67,7 +74,7 @@ class _Stay {
   final Booking booking;
   final String categoryName;
 
-  const _Stay(this.booking, {this.categoryName = 'Standard'});
+  const _Stay(this.booking) : categoryName = 'Standard';
 }
 
 class _FakeBookings implements BookingRepository {
@@ -181,6 +188,17 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> checkOut(int id, Map<String, dynamic> body) async =>
       Booking(id: id, status: 'CHECKED_OUT');
+
+  @override
+  Future<LateCheckout> roomLateCheckout(int id, int roomId) async =>
+      LateCheckout(bookingId: id);
+
+  @override
+  Future<Booking> checkOutRoom(
+    int id,
+    int roomId,
+    Map<String, dynamic> body,
+  ) async => Booking(id: id, status: 'CHECKED_OUT');
 
   @override
   Future<List<BookingDraft>> drafts() async => const [];

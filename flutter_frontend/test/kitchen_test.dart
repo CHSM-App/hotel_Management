@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,6 +54,13 @@ class _FakeAuth implements AuthRepository {
     required String identifier,
     required String newPassword,
   }) async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodgeLogo(FormData form) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Me> removeMyLodgeLogo() async => throw UnimplementedError();
 }
 
 class _FakeOrders implements OrdersRepository {
@@ -68,7 +76,12 @@ class _FakeOrders implements OrdersRepository {
   Future<List<FoodOrder>> queue() async => live;
 
   @override
-  Future<List<FoodOrder>> orders({String? date, String? status}) async =>
+  Future<List<FoodOrder>> orders({
+    String? date,
+    String? from,
+    String? to,
+    String? status,
+  }) async =>
       const [];
 
   @override
@@ -84,6 +97,24 @@ class _FakeOrders implements OrdersRepository {
   @override
   Future<FoodOrder> setItemReady(int id, int itemId, bool ready) async =>
       FoodOrder(id: id);
+
+  @override
+  Future<FoodOrder> setItemDelivered(int id, int itemId) async =>
+      FoodOrder(id: id);
+
+  @override
+  Future<FoodOrder> markReadyToBill(int id) async => FoodOrder(id: id);
+
+  @override
+  Future<FoodOrder> editOrder(
+    int id,
+    List<Map<String, dynamic>> items,
+    String note,
+  ) async => FoodOrder(id: id);
+
+  @override
+  Future<RoomOccupancy> roomOccupancy(int roomId) async =>
+      throw UnimplementedError();
 
   @override
   Future<FoodOrder> createCounterOrder(Map<String, dynamic> body) async =>
