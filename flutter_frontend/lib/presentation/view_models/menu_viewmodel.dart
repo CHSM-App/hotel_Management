@@ -11,12 +11,19 @@ import '../../domain/usecase/food_setup_usecase.dart';
 class MenuState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about, from
+  /// [apiErrorField] — lets a form focus the exact field instead of leaving
+  /// the user to guess from a banner alone. Null when the error isn't about
+  /// one field.
+  final String? errorField;
   final List<MenuSection> sections;
   final bool submitting;
 
   const MenuState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.sections = const [],
     this.submitting = false,
   });
@@ -24,12 +31,14 @@ class MenuState {
   MenuState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<MenuSection>? sections,
     bool? submitting,
   }) => MenuState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     sections: sections ?? this.sections,
     submitting: submitting ?? this.submitting,
   );
@@ -46,7 +55,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       final sections = await usecase.menu();
       state = state.copyWith(isLoading: false, sections: sections);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -65,7 +74,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -76,7 +85,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -89,7 +98,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -100,7 +109,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -130,7 +139,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -141,7 +150,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -152,7 +161,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -163,7 +172,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -176,7 +185,7 @@ class MenuViewModel extends StateNotifier<MenuState> {
       if (result.created + result.updated > 0) await load();
       return result;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }

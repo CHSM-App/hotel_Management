@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../models/me.dart';
 import '../models/session.dart';
 
@@ -15,4 +17,6 @@ abstract class AuthRepository {
     required String otp,
   });
   Future<Me> updateMyLodge(Map<String, dynamic> body);
+  Future<Me> updateMyLodgeLogo(FormData form);
+  Future<Me> removeMyLodgeLogo();
 }

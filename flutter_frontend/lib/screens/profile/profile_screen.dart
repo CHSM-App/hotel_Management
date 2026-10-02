@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constant.dart';
@@ -186,6 +188,10 @@ class ProfileScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
+                      if (me.user.role == 'OWNER') ...[
+                        const SizedBox(height: AppTheme.s16),
+                        _LogoSection(lodge: me.lodge),
+                      ],
                       if (_hasText(me.lodge.slug)) ...[
                         const SizedBox(height: AppTheme.s16),
                         _PublicLinkCard(lodge: me.lodge),
@@ -929,6 +935,180 @@ class _CircleIconButton extends StatelessWidget {
   }
 }
 
+/// The property's logo — shown before its name on the dashboard, and on the
+/// printed bill masthead once [Lodge.showLogoOnReceipt] is turned on (see
+/// the checkbox in [_EditLodgeSheet]). Owner-only, mirroring the web's
+/// HotelProfileModal logo controls.
+class _LogoSection extends ConsumerStatefulWidget {
+  final Lodge lodge;
+
+  const _LogoSection({required this.lodge});
+
+  @override
+  ConsumerState<_LogoSection> createState() => _LogoSectionState();
+}
+
+class _LogoSectionState extends ConsumerState<_LogoSection> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _pickAndUpload() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (picked == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final form = dio.FormData.fromMap({
+        'logo': await dio.MultipartFile.fromFile(picked.path, filename: picked.name),
+      });
+      await ref.read(authViewModelProvider.notifier).updateMyLodgeLogo(form);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirmRemove() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.bg,
+        title: const Text('Remove logo?', style: TextStyle(color: AppTheme.heading)),
+        content: const Text(
+          'It will no longer show on the dashboard or on printed bills.',
+          style: TextStyle(color: AppTheme.text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove', style: TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(authViewModelProvider.notifier).removeMyLodgeLogo();
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lodge = widget.lodge;
+    final hasLogo = ProfileScreen._hasText(lodge.logoUrl);
+    return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: AppTheme.bg,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: hasLogo
+                    ? Image.network(
+                        '$baseUrl${lodge.logoUrl}',
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            _monogram(lodge.name),
+                      )
+                    : _monogram(lodge.name),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hotel logo',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontSize: 13.5),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      !hasLogo
+                          ? 'Shown before the name once uploaded.'
+                          : (lodge.showLogoOnReceipt
+                              ? 'Shown on the dashboard and printed bills.'
+                              : 'Shown on the dashboard only — turn on printing it under Edit.'),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+          ],
+          const SizedBox(height: AppTheme.s12),
+          Wrap(
+            spacing: AppTheme.s12,
+            runSpacing: AppTheme.s8,
+            children: [
+              _LinkButton(
+                icon: Icons.upload_rounded,
+                label: _busy
+                    ? 'Uploading…'
+                    : (hasLogo ? 'Replace logo' : 'Upload logo'),
+                onTap: _busy ? null : _pickAndUpload,
+              ),
+              if (hasLogo)
+                _LinkButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Remove',
+                  onTap: _busy ? null : _confirmRemove,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _monogram(String name) => Center(
+    child: Text(
+      name.isNotEmpty ? name[0].toUpperCase() : '?',
+      style: const TextStyle(
+        color: AppTheme.accent,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+}
+
 // ── Edit property (owner-only) ───────────────────────────────────────────
 
 class _EditLodgeSheet extends ConsumerStatefulWidget {
@@ -956,6 +1136,7 @@ class _EditLodgeSheetState extends ConsumerState<_EditLodgeSheet> {
   );
   late final _nameMr = TextEditingController(text: widget.lodge.nameMr ?? '');
   late final _addressMr = TextEditingController(text: widget.lodge.addressMr ?? '');
+  late bool _showLogoOnReceipt = widget.lodge.showLogoOnReceipt;
 
   bool _saving = false;
   bool _locating = false;
@@ -1052,6 +1233,8 @@ class _EditLodgeSheetState extends ConsumerState<_EditLodgeSheet> {
         'lodgeNameMr': _nameMr.text.trim(),
         'addressMr': _addressMr.text.trim(),
         if (widget.lodge.isGstRegistered) 'gstin': _gstin.text.trim(),
+        if (ProfileScreen._hasText(widget.lodge.logoUrl))
+          'showLogoOnReceipt': _showLogoOnReceipt,
       });
       if (mounted) {
         Navigator.pop(context);
@@ -1186,6 +1369,52 @@ class _EditLodgeSheetState extends ConsumerState<_EditLodgeSheet> {
               ),
             ],
           ),
+          if (ProfileScreen._hasText(widget.lodge.logoUrl)) ...[
+            const SizedBox(height: AppTheme.s16),
+            InkWell(
+              onTap: () => setState(() => _showLogoOnReceipt = !_showLogoOnReceipt),
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Checkbox(
+                      value: _showLogoOnReceipt,
+                      onChanged: (v) => setState(() => _showLogoOnReceipt = v ?? false),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Show the logo on printed bills',
+                              style: TextStyle(
+                                color: AppTheme.heading,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Prints in the masthead above the hotel name. Upload or '
+                              'change the logo itself from the profile screen.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(fontSize: 11.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (_error != null) ...[
             const SizedBox(height: AppTheme.s12),
             Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),

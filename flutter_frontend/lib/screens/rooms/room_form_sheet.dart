@@ -64,6 +64,27 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
 
   String? _error;
 
+  /// The backend's name for the field [_error] is about (e.g. "roomNumber"
+  /// for "Room number already in use.") — lets this form scroll to and
+  /// highlight the exact field a conflict was about, mirroring
+  /// add_room_page.dart's own handling of the same error.
+  String? _backendErrorField;
+
+  final _roomNumberKey = GlobalKey();
+
+  void _scrollToError(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: 0.1,
+      );
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -118,7 +139,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_error != null) ...[
+                  if (_error != null && _backendErrorField != 'roomNumber') ...[
                     Container(
                       padding: const EdgeInsets.all(AppTheme.s12),
                       decoration: BoxDecoration(
@@ -141,10 +162,13 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
                   const SectionLabel('Numbering', number: 1),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(
+                    key: _roomNumberKey,
                     controller: _roomNumber,
                     label: 'Room number',
                     hint: '101',
                     keyboardType: TextInputType.text,
+                    errorText: _backendErrorField == 'roomNumber' ? _error : null,
+                    onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: AppTheme.s16),
                   NeuField(
@@ -411,7 +435,10 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
   }
 
   Future<void> _submit() async {
-    setState(() => _error = null);
+    setState(() {
+      _error = null;
+      _backendErrorField = null;
+    });
 
     if (_categoryId == null) {
       setState(() => _error = 'Choose a category.');
@@ -492,7 +519,14 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     final result = await vm.saveRoom(form, roomId: widget.room.id);
     if (!mounted) return;
     if (!result.ok) {
-      setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Could not save the room.');
+      final state = ref.read(roomsViewModelProvider);
+      setState(() {
+        _error = state.error ?? 'Could not save the room.';
+        _backendErrorField = state.errorField;
+      });
+      if (state.errorField == 'roomNumber') {
+        _scrollToError(_roomNumberKey);
+      }
       return;
     }
 

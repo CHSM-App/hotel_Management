@@ -29,6 +29,12 @@ class BookingState {
   final bool isLoading;
   final String? error;
 
+  /// The backend's name for the field [error] is about, from
+  /// [apiErrorField] — lets a form focus the exact field instead of leaving
+  /// the user to guess from a banner alone. Null when the error isn't about
+  /// one field (most booking conflicts are plain 409s with no field key).
+  final String? errorField;
+
   // ── The tape chart ───────────────────────────────────────────────────────
   /// GET /bookings/tape-chart's own answer for [chartFrom, chartTo) — every
   /// active room whether or not it has a stay in the window, plus every
@@ -131,6 +137,7 @@ class BookingState {
   BookingState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.chart = const AsyncValue.loading(),
     DateTime? chartFrom,
     DateTime? chartTo,
@@ -173,6 +180,7 @@ class BookingState {
   BookingState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     AsyncValue<TapeChartData>? chart,
     DateTime? chartFrom,
@@ -212,6 +220,7 @@ class BookingState {
   }) => BookingState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     chart: chart ?? this.chart,
     chartFrom: chartFrom ?? this.chartFrom,
     chartTo: chartTo ?? this.chartTo,
@@ -601,7 +610,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       );
       state = state.copyWith(chart: AsyncValue.data(data));
     } catch (e, st) {
-      state = state.copyWith(error: messageFor(e), chart: AsyncValue.error(e, st));
+      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e), chart: AsyncValue.error(e, st));
     }
   }
 
@@ -718,7 +727,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     try {
       return await usecase.lateCheckout(bookingId);
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -733,7 +742,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -744,7 +753,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     try {
       return await usecase.roomLateCheckout(bookingId, roomId);
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -767,7 +776,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -817,7 +826,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -861,7 +870,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -872,7 +881,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     try {
       return await usecase.booking(id);
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -1073,7 +1082,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     try {
       return await usecase.draft(id);
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e));
       return null;
     }
   }
@@ -1092,7 +1101,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       return false;
     }
   }
@@ -1106,7 +1115,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e));
       return false;
     }
   }
@@ -1131,6 +1140,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       state = state.copyWith(
         rooms: AsyncValue.error(e, st),
         error: messageFor(e),
+        errorField: fieldFor(e),
       );
     }
   }
@@ -1507,7 +1517,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       );
       state = state.copyWith(quoting: false, quote: quote);
     } catch (e) {
-      state = state.copyWith(quoting: false, error: messageFor(e));
+      state = state.copyWith(quoting: false, error: messageFor(e), errorField: fieldFor(e));
     }
   }
 
@@ -1539,7 +1549,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         multiQuote: response,
       );
     } catch (e) {
-      state = state.copyWith(quoting: false, error: messageFor(e));
+      state = state.copyWith(quoting: false, error: messageFor(e), errorField: fieldFor(e));
     }
   }
 
@@ -1666,7 +1676,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       state = state.copyWith(submitting: false);
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       // A 409 here means someone else took this room out from under the
       // desk between opening this form and pressing Save. Leaving it
       // selected would let Save be pressed again against the very room that
@@ -1749,7 +1759,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
       // Same as in submit(): a 409 means the room just chosen is no longer
       // free, and refreshing the list is what drops it out of the picker so
       // Save can't be pressed again against it unchanged.
@@ -1829,4 +1839,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// for part of that date range" is the whole answer, and no generic string
   /// can replace it.
   static String messageFor(Object e) => apiErrorMessage(e);
+
+  /// Companion to [messageFor] — the backend's own field name for the error,
+  /// when it is about one field.
+  static String? fieldFor(Object e) => apiErrorField(e);
 }

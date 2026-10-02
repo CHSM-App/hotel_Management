@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../domain/models/me.dart';
 import '../../domain/models/session.dart';
 import '../../domain/repository/auth_repo.dart';
@@ -41,4 +43,10 @@ class AuthImpl implements AuthRepository {
 
   @override
   Future<Me> updateMyLodge(Map<String, dynamic> body) => api.updateMyLodge(body);
+
+  @override
+  Future<Me> updateMyLodgeLogo(FormData form) => api.updateMyLodgeLogo(form);
+
+  @override
+  Future<Me> removeMyLodgeLogo() => api.removeMyLodgeLogo();
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/form_feedback.dart';
 import '../../domain/models/staff.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
@@ -35,8 +36,15 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
   late final Set<String> _permissions = {...?widget.role?.permissions};
 
   String? _error;
+  String? _backendErrorField;
   bool _nameInvalid = false;
   bool _permissionsInvalid = false;
+
+  String? get _nameError {
+    if (_nameInvalid) return 'Enter a role name.';
+    if (_backendErrorField == 'roleName') return _error;
+    return null;
+  }
 
   final _nameFocus = FocusNode();
 
@@ -62,6 +70,7 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
   Future<void> _save() async {
     setState(() {
       _error = null;
+      _backendErrorField = null;
       _nameInvalid = false;
       _permissionsInvalid = false;
     });
@@ -70,7 +79,7 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
         _error = 'Enter a role name.';
         _nameInvalid = true;
       });
-      _nameFocus.requestFocus();
+      focusFieldWithError(_nameFocus);
       return;
     }
     // A role with nothing ticked grants nothing — anyone assigned to it
@@ -94,8 +103,15 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
     if (!mounted) return;
     if (ok) {
       Navigator.pop(context);
-    } else {
-      setState(() => _error = ref.read(staffViewModelProvider).error ?? 'Could not save this role.');
+      return;
+    }
+    final state = ref.read(staffViewModelProvider);
+    setState(() {
+      _error = state.error ?? 'Could not save this role.';
+      _backendErrorField = state.errorField;
+    });
+    if (state.errorField == 'roleName') {
+      focusFieldWithError(_nameFocus);
     }
   }
 
@@ -114,7 +130,7 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_error != null) ...[
+                  if (_error != null && _backendErrorField != 'roleName') ...[
                     _ErrorBanner(_error!),
                     const SizedBox(height: AppTheme.s16),
                   ],
@@ -148,7 +164,7 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
                     label: 'Role name',
                     required: true,
                     readOnly: _locked,
-                    errorText: _nameInvalid ? 'Enter a role name.' : null,
+                    errorText: _nameError,
                     focusNode: _nameFocus,
                     hint: 'Night Manager',
                     forceCapitalizeWords: true,

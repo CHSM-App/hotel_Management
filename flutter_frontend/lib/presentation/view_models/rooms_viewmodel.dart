@@ -17,6 +17,12 @@ import '../../core/network/api_error_message.dart';
 class RoomsState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about (e.g. "roomNumber"
+  /// for "Room number already in use."), from [apiErrorField] — lets the
+  /// form scroll to and highlight the exact field instead of leaving the
+  /// desk to spot it themselves. Null when the error isn't about one field.
+  final String? errorField;
   final List<RoomListing> rooms;
   final List<RoomCategory> categories;
   final List<SwitchableChargeListing> switchableCharges;
@@ -26,6 +32,7 @@ class RoomsState {
   const RoomsState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.rooms = const [],
     this.categories = const [],
     this.switchableCharges = const [],
@@ -36,6 +43,7 @@ class RoomsState {
   RoomsState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<RoomListing>? rooms,
     List<RoomCategory>? categories,
@@ -45,6 +53,7 @@ class RoomsState {
   }) => RoomsState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     rooms: rooms ?? this.rooms,
     categories: categories ?? this.categories,
     switchableCharges: switchableCharges ?? this.switchableCharges,
@@ -75,7 +84,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
         seasons: results[3] as List<Season>,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: messageFor(e));
+      state = state.copyWith(isLoading: false, error: messageFor(e), errorField: apiErrorField(e));
     }
   }
 
@@ -101,7 +110,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return (ok: true, createdRoomId: createdRoomId);
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: apiErrorField(e));
       return (ok: false, createdRoomId: null);
     }
   }
@@ -112,7 +121,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -123,7 +132,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -134,7 +143,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -149,7 +158,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -169,7 +178,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -180,7 +189,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -191,7 +200,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -215,7 +224,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -226,7 +235,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -237,7 +246,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -274,7 +283,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e));
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -285,7 +294,7 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: messageFor(e));
+      state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }

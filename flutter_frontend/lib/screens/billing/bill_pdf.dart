@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../../core/constant.dart';
 import '../../domain/models/booking.dart' show PaymentLine;
 import '../../domain/models/invoice.dart';
 import '../bookings/receipt_download.dart';
@@ -76,6 +78,7 @@ class BillPdf {
     bool compress = true,
   }) async {
     final doc = pw.Document(compress: compress);
+    final logo = await _fetchLogo(invoice.lodgeLogoUrl);
 
     doc.addPage(
       pw.Page(
@@ -88,11 +91,29 @@ class BillPdf {
           marginLeft: 18,
           marginRight: 18,
         ),
-        build: (context) => _memo(invoice, lodgeName),
+        build: (context) => _memo(invoice, lodgeName, logo),
       ),
     );
 
     return doc.save();
+  }
+
+  /// The property's logo, as bytes ready for [pw.MemoryImage] — null when the
+  /// property has none, or hasn't turned on printing it (see
+  /// [Invoice.lodgeLogoUrl]), or the fetch simply fails. A bill that can't
+  /// reach the logo file still has to print; it just prints without one.
+  static Future<Uint8List?> _fetchLogo(String? url) async {
+    if (url == null) return null;
+    try {
+      final res = await Dio().get<List<int>>(
+        '$baseUrl$url',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = res.data;
+      return data == null ? null : Uint8List.fromList(data);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Fold the few non-Latin-1 characters the app's own strings carry down to
@@ -114,7 +135,7 @@ class BillPdf {
 
   // ── The memo ──────────────────────────────────────────────────────────────
 
-  static pw.Widget _memo(Invoice inv, String? fallbackName) {
+  static pw.Widget _memo(Invoice inv, String? fallbackName, Uint8List? logo) {
     final isGst = inv.billingSide == 'GST';
     final name = inv.lodgeName ?? fallbackName ?? '';
     final tenders = inv.tenders;
@@ -127,18 +148,41 @@ class BillPdf {
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           // ── Masthead ────────────────────────────────────────────────────
-          pw.Center(
-            child: pw.Text(
-              ascii(kDocumentLabels[inv.documentType]?.toUpperCase() ?? 'BILL'),
-              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Center(
-            child: pw.Text(
-              ascii(name),
-              style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
-            ),
+          pw.Stack(
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Center(
+                    child: pw.Text(
+                      ascii(kDocumentLabels[inv.documentType]?.toUpperCase() ?? 'BILL'),
+                      style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Center(
+                    child: pw.Text(
+                      ascii(name),
+                      style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              // Corner mark, the same spot the printed pad's "Mob." rule sits
+              // in the opposite corner — kept off the centered name/kind so a
+              // tall logo can't crowd them.
+              if (logo != null)
+                pw.Positioned(
+                  left: 0,
+                  top: 0,
+                  child: pw.Container(
+                    height: 26,
+                    width: 26,
+                    alignment: pw.Alignment.center,
+                    child: pw.Image(pw.MemoryImage(logo), fit: pw.BoxFit.contain),
+                  ),
+                ),
+            ],
           ),
           if (inv.lodgeAddress != null)
             pw.Center(

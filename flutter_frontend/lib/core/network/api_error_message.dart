@@ -25,3 +25,18 @@ String apiErrorMessage(Object e) {
   }
   return 'Something went wrong. Try again.';
 }
+
+/// The backend's own name for the field a validation/conflict error is
+/// about (errorHandler.js sets `field` alongside `error` for exactly this),
+/// e.g. "name" for "A vendor with that name already exists." Null for
+/// errors that aren't about one field (a 500, a network failure, a plain
+/// "Not allowed"). Forms use this to focus the exact field the error names
+/// instead of leaving the user to re-read a banner with no idea where to
+/// look.
+String? apiErrorField(Object e) {
+  if (e is DioException) {
+    final data = e.response?.data;
+    if (data is Map && data['field'] is String) return data['field'] as String;
+  }
+  return null;
+}

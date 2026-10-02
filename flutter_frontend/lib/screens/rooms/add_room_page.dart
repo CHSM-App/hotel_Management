@@ -85,17 +85,26 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 
   String? _error;
 
+  /// The backend's name for the field [_error] is about (e.g. "roomNumber"
+  /// for "Room number already in use.") — lets this form scroll to and
+  /// highlight the exact field a conflict was about, the same way a plain
+  /// required-field error already does, instead of leaving the desk to
+  /// spot it in a banner alone.
+  String? _backendErrorField;
+
   /// Whether Save has been pressed at least once — a field that hasn't been
   /// submitted yet has nothing to be wrong about, so nothing turns red until
   /// the desk actually tries to save.
   bool _submitAttempted = false;
 
   String? get _roomNumberError {
+    if (_backendErrorField == 'roomNumber') return _error;
     if (!_submitAttempted || _bulkMode) return null;
     return _roomNumber.text.trim().isEmpty ? 'Enter a room number.' : null;
   }
 
   String? get _rangeError {
+    if (_backendErrorField == 'rangeStart') return _error;
     if (!_submitAttempted || !_bulkMode) return null;
     return (_rangeStart.text.trim().isEmpty || _rangeEnd.text.trim().isEmpty)
         ? 'Enter the room range.'
@@ -270,7 +279,9 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     ),
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  if (_error != null) ...[
+                  if (_error != null &&
+                      _backendErrorField != 'roomNumber' &&
+                      _backendErrorField != 'rangeStart') ...[
                     Container(
                       padding: const EdgeInsets.all(AppTheme.s12),
                       decoration: BoxDecoration(
@@ -696,7 +707,10 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
   }
 
   Future<void> _submit() async {
-    setState(() => _error = null);
+    setState(() {
+      _error = null;
+      _backendErrorField = null;
+    });
 
     // The room already exists — only its bed count didn't save last time
     // (see below). Nothing else on the form to validate or send again, just
@@ -786,7 +800,14 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
     final result = await vm.saveRoom(form);
     if (!mounted) return;
     if (!result.ok) {
-      setState(() => _error = ref.read(roomsViewModelProvider).error ?? 'Could not save the room.');
+      final state = ref.read(roomsViewModelProvider);
+      setState(() {
+        _error = state.error ?? 'Could not save the room.';
+        _backendErrorField = state.errorField;
+      });
+      if (state.errorField == 'roomNumber' || state.errorField == 'rangeStart') {
+        _scrollToError(_roomNumberKey);
+      }
       return;
     }
 

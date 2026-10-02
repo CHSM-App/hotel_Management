@@ -14,6 +14,12 @@ import '../../domain/usecase/assets_usecase.dart';
 class AssetsState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about (e.g. "categoryId"
+  /// for "Choose a valid category."), from [apiErrorField] — lets a form
+  /// focus the exact field instead of leaving the user to guess from a
+  /// banner alone. Null when the error isn't about one field.
+  final String? errorField;
   final List<Asset> assets;
   final List<AssetCategory> categories;
   final List<Vendor> vendors;
@@ -25,6 +31,7 @@ class AssetsState {
   const AssetsState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.assets = const [],
     this.categories = const [],
     this.vendors = const [],
@@ -37,6 +44,7 @@ class AssetsState {
   AssetsState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<Asset>? assets,
     List<AssetCategory>? categories,
@@ -48,6 +56,7 @@ class AssetsState {
   }) => AssetsState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     assets: assets ?? this.assets,
     categories: categories ?? this.categories,
     vendors: vendors ?? this.vendors,
@@ -77,7 +86,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       final assets = await usecase.assets(includeInactive: includeInactive);
       state = state.copyWith(isLoading: false, assets: assets);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -96,7 +105,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
         workOrders: results[2] as List<WorkOrder>,
       );
     } catch (e) {
-      state = state.copyWith(catalogueLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(catalogueLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -120,7 +129,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadCatalogue();
       return created.id;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -133,7 +142,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -150,7 +159,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -161,7 +170,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
     try {
       return await usecase.asset(id);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -180,7 +189,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -194,7 +203,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -206,7 +215,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -218,7 +227,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadAssets(includeInactive: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -241,7 +250,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       _bump();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -252,7 +261,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       _bump();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -268,7 +277,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -282,7 +291,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -296,7 +305,7 @@ class AssetsViewModel extends StateNotifier<AssetsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
