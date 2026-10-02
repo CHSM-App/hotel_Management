@@ -415,7 +415,6 @@ const MOVE_LABEL = {
   LOST: 'Marked lost',
   DAMAGED: 'Marked damaged',
 };
-const MOVE_TONE = { CHANGED: 'dirty', SENT: 'cleaning', RECEIVED: 'ready', LOST: 'ooo', DAMAGED: 'ooo' };
 const MOVE_FILTERS = [
   { key: 'ALL', label: 'All', kinds: null },
   { key: 'SENT', label: 'Sent', kinds: ['SENT'] },
@@ -424,96 +423,73 @@ const MOVE_FILTERS = [
   { key: 'LOSS', label: 'Lost or damaged', kinds: ['LOST', 'DAMAGED'] },
 ];
 
-// The ledger has one row per item, so sending three kinds of linen is three rows.
-// People think of that as one event, so rows that are the same action by the same
-// person within a minute are shown together: "Sent to laundry: Bedsheet ×10, Towel ×6".
-// Newest first, as the server sends them.
-function groupMovements(movements) {
-  const groups = [];
-  for (const m of movements) {
-    const time = new Date(m.createdAt).getTime();
-    const last = groups[groups.length - 1];
-    if (
-      last &&
-      last.kind === m.kind &&
-      last.roomNumber === m.roomNumber &&
-      last.userName === m.userName &&
-      last.note === m.note &&
-      Math.abs(last.time - time) < 60000
-    ) {
-      last.items.push({ name: m.itemName, quantity: m.quantity });
-    } else {
-      groups.push({
-        id: m.id,
-        kind: m.kind,
-        roomNumber: m.roomNumber,
-        userName: m.userName,
-        note: m.note,
-        time,
-        items: [{ name: m.itemName, quantity: m.quantity }],
-      });
-    }
-  }
-  return groups;
-}
-
-function dayLabel(time, today) {
-  const day = new Date(time);
-  const same = (a, b) => a.toDateString() === b.toDateString();
-  if (same(day, today)) return 'Today';
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (same(day, yesterday)) return 'Yesterday';
-  return day.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-}
-
 // The filtered history as a spreadsheet: one row per item moved, newest first.
-async function downloadLinenActivityExcel(movements) {
+// Cells are plain values; numbers (qty, amounts) are right-aligned as numbers.
+async function downloadSheet(sheet, filename, headings, rows, widths) {
   const { default: writeXlsxFile } = await import('write-excel-file/browser');
-  const head = ['Date', 'Time', 'Action', 'Room', 'Item', 'Qty', 'By', 'Note'].map((label) => ({
-    value: label,
-    fontWeight: 'bold',
-    backgroundColor: '#e8e6f5',
-  }));
-  const rows = movements.map((m) => {
-    const d = new Date(m.createdAt);
-    return [
-      { value: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
-      { value: d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) },
-      { value: MOVE_LABEL[m.kind] },
-      { value: m.roomNumber || null },
-      { value: m.itemName },
-      { value: m.quantity, type: Number, align: 'right' },
-      { value: m.userName || null },
-      { value: m.note || null },
-    ];
-  });
+  const head = headings.map((value) => ({ value, fontWeight: 'bold', backgroundColor: '#e8e6f5' }));
+  const data = rows.map((r) =>
+    r.map((v) => (typeof v === 'number' ? { value: v, type: Number, align: 'right' } : { value: v === '' ? null : v }))
+  );
   const workbook = await writeXlsxFile(
-    [{ data: [head, ...rows], sheet: 'Linen activity', stickyRowsCount: 1, columns: [14, 10, 20, 8, 22, 8, 20, 30].map((width) => ({ width })) }],
+    [{ data: [head, ...data], sheet, stickyRowsCount: 1, columns: widths.map((width) => ({ width })) }],
     { fontFamily: 'Calibri', fontSize: 11 }
   );
-  triggerDownload(await workbook.toBlob(), `linen-activity-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  triggerDownload(await workbook.toBlob(), `${filename}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-// What happened to the linen, newest first, grouped by day. Filterable, and short
-// until asked for more, so a long history never pushes the table off the screen.
+const sheetDate = (value) =>
+  value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+const sheetTime = (value) =>
+  value ? new Date(value).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '';
+
+const LINEN_COLS = ['Date', 'Time', 'Action', 'Room', 'Item', 'Qty', 'By', 'Note'];
+const linenRow = (m) => [
+  sheetDate(m.createdAt), sheetTime(m.createdAt), MOVE_LABEL[m.kind], m.roomNumber || '', m.itemName,
+  m.quantity, m.userName || '', m.note || '',
+];
+
+const GUEST_COLS = ['Tag', 'Guest', 'Room', 'Items', 'Pieces', 'Status', 'Received', 'Handed over', 'Amount', 'Note'];
+const GUEST_STATUS = { RECEIVED: 'Received', WASHING: 'Washing', READY: 'Ready', DELIVERED: 'Handed over', CANCELLED: 'Cancelled' };
+const guestRow = (o) => [
+  o.tagNumber, o.guestName || '', o.roomNumber || 'Walk-in',
+  o.items.map((i) => `${i.name} ×${i.quantity}`).join(', '), o.pieces, GUEST_STATUS[o.status] || o.status,
+  `${sheetDate(o.receivedAt)} ${sheetTime(o.receivedAt)}`.trim(),
+  `${sheetDate(o.deliveredAt)} ${sheetTime(o.deliveredAt)}`.trim(), Number(o.total), o.note || '',
+];
+
+// A spreadsheet-style grid, shared by the linen and guest laundry views.
+function SheetTable({ columns, rows, numericCols = [], actions }) {
+  return (
+    <div className="hk-sheet-wrap">
+      <table className="hk-sheet">
+        <thead>
+          <tr>
+            {columns.map((h) => <th key={h}>{h}</th>)}
+            {actions && <th>Actions</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((v, c) => (
+                <td key={c} className={numericCols.includes(c) ? 'hk-sheet__num' : undefined}>{v}</td>
+              ))}
+              {actions && <td className="hk-sheet__actions">{actions(i)}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// What happened to the linen, newest first, one row per item moved. Filterable
+// and downloadable.
 function LinenActivity({ movements }) {
   const [filter, setFilter] = useState('ALL');
-  const [limit, setLimit] = useState(8);
-  const [view, setView] = useState('LIST'); // LIST | TABLE
-  const [today] = useState(() => new Date());
-
   const kinds = MOVE_FILTERS.find((f) => f.key === filter).kinds;
   const filtered = (movements ?? []).filter((m) => !kinds || kinds.includes(m.kind));
-  const groups = groupMovements(filtered);
-  const visible = groups.slice(0, limit);
-
-  const days = [];
-  for (const g of visible) {
-    const label = dayLabel(g.time, today);
-    if (days.length === 0 || days[days.length - 1].label !== label) days.push({ label, events: [] });
-    days[days.length - 1].events.push(g);
-  }
 
   return (
     <section className="hk-activity" aria-label="Recent linen activity">
@@ -527,104 +503,30 @@ function LinenActivity({ movements }) {
               role="tab"
               aria-selected={filter === f.key}
               className="hk-tab hk-tab--small"
-              onClick={() => {
-                setFilter(f.key);
-                setLimit(8);
-              }}
+              onClick={() => setFilter(f.key)}
             >
               {f.label}
             </button>
           ))}
-        </div>
-        <div className="hk-tabs" role="tablist" aria-label="View">
-          {[['LIST', 'List'], ['TABLE', 'Table']].map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={view === key}
-              className="hk-tab hk-tab--small"
-              onClick={() => setView(key)}
-            >
-              {label}
-            </button>
-          ))}
           <button
             type="button"
-            className="hk-tab hk-tab--small"
+            className="hk-tab hk-tab--small hk-tab--end"
             disabled={filtered.length === 0}
-            onClick={() => downloadLinenActivityExcel(filtered)}
+            onClick={() => downloadSheet('Linen activity', 'linen-activity', LINEN_COLS, filtered.map(linenRow), [14, 10, 20, 8, 22, 8, 20, 30])}
           >
             Download Excel
           </button>
         </div>
       </div>
 
-      {view === 'TABLE' && filtered.length > 0 ? (
-        <div className="hk-sheet-wrap">
-          <table className="hk-sheet">
-            <thead>
-              <tr>
-                {['Date', 'Time', 'Action', 'Room', 'Item', 'Qty', 'By', 'Note'].map((h) => (
-                  <th key={h}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((m) => {
-                const d = new Date(m.createdAt);
-                return (
-                  <tr key={m.id}>
-                    <td>{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                    <td>{d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</td>
-                    <td>{MOVE_LABEL[m.kind]}</td>
-                    <td>{m.roomNumber || ''}</td>
-                    <td>{m.itemName}</td>
-                    <td className="hk-sheet__num">{m.quantity}</td>
-                    <td>{m.userName || ''}</td>
-                    <td>{m.note || ''}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : groups.length === 0 ? (
+      {filtered.length > 0 ? (
+        <SheetTable columns={LINEN_COLS} rows={filtered.map(linenRow)} numericCols={[5]} />
+      ) : (
         <p className="hk-hint">
           {(movements ?? []).length === 0
             ? 'Nothing yet. When linen is changed in a room, sent out or received, it shows here.'
             : 'Nothing of this kind yet.'}
         </p>
-      ) : (
-        <div className="hk-events">
-          {days.map((d) => (
-            <div key={d.label}>
-              <p className="hk-events__day">{d.label}</p>
-              {d.events.map((g) => (
-                <div className="hk-event" key={g.id}>
-                  <span className={`hk-dot hk-dot--${MOVE_TONE[g.kind]}`} aria-hidden="true" />
-                  <div className="hk-event__body">
-                    <div className="hk-event__title">
-                      {MOVE_LABEL[g.kind]}
-                      {g.roomNumber ? `, room ${g.roomNumber}` : ''}
-                    </div>
-                    <div className="hk-event__items">{g.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}</div>
-                    <div className="hk-event__meta">
-                      {new Date(g.time).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
-                      {g.userName ? `, ${g.userName}` : ''}
-                      {g.note ? `, ${g.note}` : ''}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-      {view === 'LIST' && groups.length > limit && (
-        <button type="button" className="hk-link" onClick={() => setLimit(limit + 10)}>
-          Show more ({groups.length - limit} older)
-        </button>
       )}
     </section>
   );
@@ -1095,8 +997,6 @@ function GuestLaundryTab({ token }) {
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState(null); // the order just taken in
   const [confirm, setConfirm] = useState(null); // { order, kind: 'deliver' | 'cancel' }
-  const [menuId, setMenuId] = useState(null);
-  const [now, setNow] = useState(() => Date.now());
 
   const load = () =>
     apiGet('/housekeeping/laundry/orders?scope=all', { token })
@@ -1120,7 +1020,6 @@ function GuestLaundryTab({ token }) {
     // A hand-over at the desk shows up here without a refresh.
     const timer = setInterval(() => {
       load();
-      setNow(Date.now());
     }, 30000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1221,11 +1120,6 @@ function GuestLaundryTab({ token }) {
     }
   };
 
-  const summary = (o) => {
-    const text = o.items.map((i) => `${i.name} ×${i.quantity}`).join(', ');
-    return text.length > 70 ? `${text.slice(0, 67)}…` : text;
-  };
-
   return (
     <div className="chart-section hk-board">
       <div className="hk-toolbar">
@@ -1262,7 +1156,43 @@ function GuestLaundryTab({ token }) {
               <span className="hk-tab__n">{counts[t.key]}</span>
             </button>
           ))}
+          <button
+            type="button"
+            className="hk-tab hk-tab--small hk-tab--end"
+            disabled={shown.length === 0}
+            onClick={() => downloadSheet('Guest laundry', 'guest-laundry', GUEST_COLS, shown.map(guestRow), [8, 20, 10, 40, 8, 14, 20, 20, 12, 24])}
+          >
+            Download Excel
+          </button>
         </div>
+      )}
+
+      {orders && shown.length > 0 && (
+        <SheetTable
+          columns={GUEST_COLS}
+          rows={shown.map(guestRow)}
+          numericCols={[0, 4, 8]}
+          actions={(i) => {
+            const o = shown[i];
+            const step = LAUNDRY_NEXT[o.status];
+            if (!step) return null;
+            return (
+              <>
+                <button
+                  type="button"
+                  className="hk-action"
+                  disabled={busy}
+                  onClick={() => (step.to === 'DELIVERED' ? setConfirm({ order: o, kind: 'deliver' }) : move(o, step.to))}
+                >
+                  {step.action}
+                </button>
+                <button type="button" className="hk-link" onClick={() => setConfirm({ order: o, kind: 'cancel' })}>
+                  Cancel
+                </button>
+              </>
+            );
+          }}
+        />
       )}
 
       {orders && shown.length === 0 && (
@@ -1275,77 +1205,6 @@ function GuestLaundryTab({ token }) {
           </p>
         </div>
       )}
-
-      <div className="hk-orders">
-        {shown.map((o) => {
-          const step = LAUNDRY_NEXT[o.status];
-          const tone = LAUNDRY_TABS.find((t) => t.key === stageOf(o)).tone;
-          return (
-            <article className={`hk-order hk-order--${tone}`} key={o.id}>
-              <span className="hk-order__tag" aria-label={`Tag number ${o.tagNumber}`}>
-                <small>Tag</small>
-                {o.tagNumber}
-              </span>
-              <div className="hk-order__body">
-                <div className="hk-order__who">
-                  <strong>{o.guestName}</strong>
-                  <span className="hk-order__room">{o.roomNumber ? `Room ${o.roomNumber}` : 'Walk-in'}</span>
-                </div>
-                <div className="hk-order__items">
-                  {summary(o)} <span className="hk-order__pieces">({o.pieces} {o.pieces === 1 ? 'piece' : 'pieces'})</span>
-                </div>
-                <div className="hk-order__meta">
-                  <span>{o.status === 'DELIVERED' ? `Handed over ${ago(o.deliveredAt, now)} ago` : o.status === 'CANCELLED' ? 'Cancelled' : `In ${ago(o.receivedAt, now)}`}</span>
-                  <span className="hk-order__price">{formatPrice(o.total)}</span>
-                  {o.note && <span className="hk-order__note">{o.note}</span>}
-                </div>
-              </div>
-              <div className="hk-order__side">
-                {step && (
-                  <button
-                    type="button"
-                    className="hk-action"
-                    disabled={busy}
-                    onClick={() => (step.to === 'DELIVERED' ? setConfirm({ order: o, kind: 'deliver' }) : move(o, step.to))}
-                  >
-                    {step.action}
-                  </button>
-                )}
-                {step && (
-                  <span className="hk-menu">
-                    <button
-                      type="button"
-                      className="hk-more"
-                      aria-label={`More actions for tag ${o.tagNumber}`}
-                      aria-expanded={menuId === o.id}
-                      onClick={() => setMenuId(menuId === o.id ? null : o.id)}
-                    >
-                      ⋯
-                    </button>
-                    {menuId === o.id && (
-                      <>
-                        <button type="button" className="hk-menu__backdrop" aria-label="Close menu" onClick={() => setMenuId(null)} />
-                        <span className="hk-menu__list" role="menu">
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                              setMenuId(null);
-                              setConfirm({ order: o, kind: 'cancel' });
-                            }}
-                          >
-                            Cancel this order
-                          </button>
-                        </span>
-                      </>
-                    )}
-                  </span>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </div>
 
       {tab === 'READY' && shown.length > 0 && (
         <p className="hk-hint">Handing over adds the charge to Room billing → Services to bill.</p>

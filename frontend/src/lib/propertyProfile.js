@@ -166,18 +166,6 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
-    key: 'otherServices',
-    title: 'Other services',
-    description: 'Laundry, private pool, gaming and other services sold per use, billed like food.',
-    // Front desk runs the uses; the owner prices them.
-    permission: ['rooms.manage', 'bookings.manage', 'billing.manage'],
-    // An add-on, switched on per property like events, assets and expenses.
-    // (Needs rooms too, which the admin forms and the server both enforce.)
-    capability: 'hasOtherServices',
-    icon: 'wrench',
-    group: 'Rooms',
-  },
-  {
     key: 'housekeeping',
     title: 'Housekeeping',
     description: 'Room cleaning status, hotel laundry and guests’ laundry.',
@@ -188,6 +176,18 @@ export const FEATURES = [
     // forms and the server both enforce.)
     capability: 'hasHousekeeping',
     icon: 'bed',
+    group: 'Rooms',
+  },
+  {
+    key: 'otherServices',
+    title: 'Other services',
+    description: 'Laundry, private pool, gaming and other services sold per use, billed like food.',
+    // Front desk runs the uses; the owner prices them.
+    permission: ['rooms.manage', 'bookings.manage', 'billing.manage'],
+    // An add-on, switched on per property like events, assets and expenses.
+    // (Needs rooms too, which the admin forms and the server both enforce.)
+    capability: 'hasOtherServices',
+    icon: 'wrench',
     group: 'Rooms',
   },
   {

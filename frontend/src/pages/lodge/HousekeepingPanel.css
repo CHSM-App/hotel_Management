@@ -1105,3 +1105,11 @@ td.hk-matrix__low {
 .hk-sheet__num {
   text-align: right;
 }
+
+.hk-tab--end {
+  margin-left: auto;
+}
+
+.hk-activity .hk-section-head .hk-tabs {
+  width: 100%;
+}
