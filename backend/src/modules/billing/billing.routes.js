@@ -40,6 +40,10 @@ const router = Router();
 
 // Owner and reception cut bills at the counter — same scope as bookings.
 const staff = requirePermission('billing.manage');
+// Reading issued bills (the Bills report) is open to anyone who can open Reports,
+// so an accountant can be given Reports alone. Issuing, voiding and sharing stay
+// with billing.manage.
+const canRead = requirePermission('billing.manage', 'reports.view');
 
 router.get('/queue', authenticate, staff, listBillableBookingsHandler);
 router.get('/bookings/:bookingId/preview', authenticate, staff, previewBillHandler);
@@ -83,8 +87,8 @@ router.get('/advance-receipts', authenticate, staff, listAllAdvanceReceiptsHandl
 router.get('/advance-receipts/:id', authenticate, staff, getAdvanceReceiptHandler);
 router.post('/advance-receipts/:id/void', authenticate, staff, voidAdvanceReceiptHandler);
 
-router.get('/invoices', authenticate, staff, listInvoicesHandler);
-router.get('/invoices/:id', authenticate, staff, getInvoiceHandler);
+router.get('/invoices', authenticate, canRead, listInvoicesHandler);
+router.get('/invoices/:id', authenticate, canRead, getInvoiceHandler);
 router.post('/invoices/:id/void', authenticate, staff, voidInvoiceHandler);
 
 // Sending a bill to the guest, and the record of what has been sent.

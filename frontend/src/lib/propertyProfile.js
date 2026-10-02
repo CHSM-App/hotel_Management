@@ -178,6 +178,19 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
+    key: 'housekeeping',
+    title: 'Housekeeping',
+    description: 'Room cleaning status, hotel laundry and guests’ laundry.',
+    // Reception and the owner already hold the first two; the Housekeeping role
+    // holds only housekeeping.manage and sees nothing else.
+    permission: ['housekeeping.manage', 'bookings.manage', 'rooms.manage'],
+    // An add-on, switched on per property. (Needs rooms too, which the admin
+    // forms and the server both enforce.)
+    capability: 'hasHousekeeping',
+    icon: 'bed',
+    group: 'Rooms',
+  },
+  {
     key: 'menu',
     title: 'Menu & QR codes',
     description: 'The food menu, dining tables, and the QR codes guests scan to order.',

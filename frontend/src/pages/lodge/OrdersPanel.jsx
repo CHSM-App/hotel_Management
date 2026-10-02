@@ -1508,7 +1508,8 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
   );
 
   // Cancelled orders are counted but not banked — nothing was sold.
-  const delivered = orders.filter((o) => o.status === 'DELIVERED');
+  // A delivered order whose bill was voided is not a sale: it is counted as voided.
+  const delivered = orders.filter((o) => o.status === 'DELIVERED' && !o.voided);
   const cancelled = orders.filter((o) => o.status === 'CANCELLED');
   const active = orders.filter((o) => LIVE_STATUSES.includes(o.status));
   const takings = delivered.reduce((sum, o) => sum + o.subtotal, 0);
@@ -1550,7 +1551,16 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
       )}
 
       {viewInvoiceId != null && (
-        <Billing lodge={lodge} viewInvoiceId={viewInvoiceId} modalOnly onClose={() => setViewInvoiceId(null)} />
+        <Billing
+          lodge={lodge}
+          viewInvoiceId={viewInvoiceId}
+          modalOnly
+          onClose={() => {
+            setViewInvoiceId(null);
+            // The bill may have been voided in there: re-read the list so the order's status follows.
+            setTick((t) => t + 1);
+          }}
+        />
       )}
 
       {!compact && <div className="order-history__bar">

@@ -2828,3 +2828,102 @@ IF COL_LENGTH('dbo.invoices', 'service_cgst_amount') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD service_cgst_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_service_cgst DEFAULT 0');
 IF COL_LENGTH('dbo.invoices', 'service_sgst_amount') IS NULL
     EXEC('ALTER TABLE dbo.invoices ADD service_sgst_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_service_sgst DEFAULT 0');
+
+-- Housekeeping add-on (migrations 114-116): room cleaning, hotel linen, guest laundry.
+IF COL_LENGTH('dbo.lodges', 'has_housekeeping') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD has_housekeeping BIT NOT NULL CONSTRAINT df_lodges_has_housekeeping DEFAULT 0');
+
+IF OBJECT_ID('dbo.housekeeping_rooms', 'U') IS NULL
+CREATE TABLE dbo.housekeeping_rooms (
+    room_id             BIGINT NOT NULL PRIMARY KEY REFERENCES dbo.rooms(id),
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    last_cleaned_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    needs_cleaning      BIT NOT NULL DEFAULT 0,
+    cleaning_started_at DATETIMEOFFSET NULL,
+    cleaning_by         BIGINT NULL REFERENCES dbo.users(id),
+    out_of_order        BIT NOT NULL DEFAULT 0,
+    out_of_order_note   NVARCHAR(300) NULL
+);
+
+IF OBJECT_ID('dbo.housekeeping_log', 'U') IS NULL
+CREATE TABLE dbo.housekeeping_log (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    room_id     BIGINT NOT NULL REFERENCES dbo.rooms(id),
+    cleaned_by  BIGINT NULL REFERENCES dbo.users(id),
+    started_at  DATETIMEOFFSET NOT NULL,
+    done_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    issues      NVARCHAR(500) NULL,
+    lost_found  NVARCHAR(500) NULL
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_housekeeping_log_lodge' AND object_id = OBJECT_ID('dbo.housekeeping_log'))
+    EXEC('CREATE INDEX ix_housekeeping_log_lodge ON dbo.housekeeping_log(lodge_id, done_at)');
+
+IF OBJECT_ID('dbo.linen_items', 'U') IS NULL
+CREATE TABLE dbo.linen_items (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name        NVARCHAR(80) NOT NULL,
+    total_owned INT NOT NULL DEFAULT 0 CONSTRAINT ck_linen_items_owned CHECK (total_owned >= 0),
+    is_active   BIT NOT NULL DEFAULT 1
+);
+
+IF OBJECT_ID('dbo.linen_movements', 'U') IS NULL
+CREATE TABLE dbo.linen_movements (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    linen_item_id  BIGINT NOT NULL REFERENCES dbo.linen_items(id),
+    kind           NVARCHAR(10) NOT NULL
+        CONSTRAINT ck_linen_movements_kind CHECK (kind IN ('CHANGED', 'SENT', 'RECEIVED', 'LOST', 'DAMAGED')),
+    source         NVARCHAR(10) NULL
+        CONSTRAINT ck_linen_movements_source CHECK (source IS NULL OR source IN ('LAUNDRY', 'STORE')),
+    quantity       INT NOT NULL CONSTRAINT ck_linen_movements_qty CHECK (quantity > 0),
+    room_id        BIGINT NULL REFERENCES dbo.rooms(id),
+    note           NVARCHAR(300) NULL,
+    created_by     BIGINT NULL REFERENCES dbo.users(id),
+    created_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_linen_movements_item' AND object_id = OBJECT_ID('dbo.linen_movements'))
+    EXEC('CREATE INDEX ix_linen_movements_item ON dbo.linen_movements(lodge_id, linen_item_id)');
+
+IF OBJECT_ID('dbo.laundry_orders', 'U') IS NULL
+CREATE TABLE dbo.laundry_orders (
+    id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id      BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    tag_number    INT NOT NULL,
+    room_id       BIGINT NULL REFERENCES dbo.rooms(id),
+    booking_id    BIGINT NULL REFERENCES dbo.bookings(id),
+    guest_name    NVARCHAR(200) NULL,
+    guest_phone   NVARCHAR(20) NULL,
+    note          NVARCHAR(300) NULL,
+    status        NVARCHAR(12) NOT NULL DEFAULT 'RECEIVED'
+        CONSTRAINT ck_laundry_orders_status CHECK (status IN ('RECEIVED', 'WASHING', 'READY', 'DELIVERED', 'CANCELLED')),
+    received_at   DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    delivered_at  DATETIMEOFFSET NULL,
+    created_by    BIGINT NULL REFERENCES dbo.users(id),
+    CONSTRAINT uq_laundry_orders_tag UNIQUE (lodge_id, tag_number)
+);
+
+IF OBJECT_ID('dbo.laundry_order_items', 'U') IS NULL
+CREATE TABLE dbo.laundry_order_items (
+    id                BIGINT IDENTITY(1,1) PRIMARY KEY,
+    order_id          BIGINT NOT NULL REFERENCES dbo.laundry_orders(id),
+    service_id        BIGINT NULL REFERENCES dbo.lodge_services(id),
+    item_name         NVARCHAR(100) NOT NULL,
+    unit_label        NVARCHAR(30) NOT NULL,
+    unit_price        DECIMAL(10,2) NOT NULL,
+    gst_rate_percent  DECIMAL(5,2) NOT NULL,
+    quantity          INT NOT NULL CONSTRAINT ck_laundry_order_items_qty CHECK (quantity > 0)
+);
+
+IF COL_LENGTH('dbo.lodge_services', 'is_laundry') IS NULL
+    EXEC('ALTER TABLE dbo.lodge_services ADD is_laundry BIT NOT NULL CONSTRAINT df_lodge_services_is_laundry DEFAULT 0');
+
+IF COL_LENGTH('dbo.service_usages', 'laundry_order_id') IS NULL
+    EXEC('ALTER TABLE dbo.service_usages ADD laundry_order_id BIGINT NULL REFERENCES dbo.laundry_orders(id)');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'HOUSEKEEPING')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'HOUSEKEEPING', 'Housekeeping', 'Cleans rooms, tracks linen and takes guest laundry.', 1, '["housekeeping.manage"]');

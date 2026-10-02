@@ -519,6 +519,8 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
       // food_subtotal/food_cgst/food_sgst is food tax wherever it rides —
       // including room-service food billed onto a stay's own invoice.
       isEvent: row.event_booking_id != null,
+      // What the bill was raised against, for the register's "Against" column.
+      source: row.event_booking_id != null ? 'EVENT' : row.booking_id != null ? 'STAY' : 'FOOD',
       roomCgst: figures.roomCgst,
       roomSgst: figures.roomSgst,
       foodCgst: figures.foodCgst,
@@ -555,7 +557,45 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     byRevenueStream.SERVICES.sgstAmount = round2(byRevenueStream.SERVICES.sgstAmount + invoice.serviceSgst);
   }
 
-  return { fromDate, toDate, totals, byDocumentType, byRevenueStream, invoices };
+  // Voided bill numbers: excluded from every figure above, but a return has to
+  // account for the whole number series, so they are listed rather than dropped.
+  const voidedResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT invoice_number, document_type, total_amount, created_at
+      FROM dbo.invoices
+      WHERE lodge_id = @lodgeId AND status = 'VOID'
+        AND CAST(created_at AS DATE) BETWEEN @fromDate AND @toDate
+      ORDER BY created_at ASC
+    `);
+  const voided = voidedResult.recordset.map((row) => ({
+    invoiceNumber: row.invoice_number,
+    documentType: row.document_type,
+    totalAmount: Number(row.total_amount),
+    createdAt: row.created_at,
+  }));
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name, gstin, is_gst_registered FROM dbo.lodges WHERE id = @lodgeId');
+  const lodge = lodgeResult.recordset[0];
+
+  return {
+    fromDate,
+    toDate,
+    lodgeName: lodge?.name || null,
+    gstin: lodge?.is_gst_registered ? lodge.gstin || null : null,
+    generatedAt: new Date().toISOString(),
+    totals,
+    byDocumentType,
+    byRevenueStream,
+    invoices,
+    voided,
+  };
 }
 
 // The bill-level totals the report foots: one set for every issued bill in the
@@ -665,6 +705,20 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   const bookings = result.recordset.map((row) => {
     const billed = row.invoice_number != null;
     const figures = billed ? billFigures(row) : null;
+    // The room report is about rooms: food that rode on the stay bill is reported
+    // under Restaurant, so every money figure here is the room side only (room +
+    // other services), and the food slice is carried as a memo.
+    const roomSide = figures && {
+      gross: round2(figures.roomGross + figures.serviceGross),
+      taxable: round2(figures.roomTaxable + figures.serviceTaxable),
+      cgst: round2(figures.roomCgst + figures.serviceCgst),
+      sgst: round2(figures.roomSgst + figures.serviceSgst),
+      foodBilled: round2(figures.foodTaxable + figures.foodCgst + figures.foodSgst),
+    };
+    if (roomSide) {
+      roomSide.net = round2(roomSide.taxable + roomSide.cgst + roomSide.sgst);
+      roomSide.billed = round2(figures.billedAmount - roomSide.foodBilled);
+    }
     const advanceAmount = row.advance_amount != null ? Number(row.advance_amount) : 0;
     const balanceCollected = billed ? Number(row.balance_collected ?? 0) : null;
     return {
@@ -703,24 +757,26 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       invoiceDate: row.invoice_created_at || null,
       // The bill's own figures — null on every one of them until a bill exists.
       // See billFigures for the identity that ties them together.
-      grossAmount: figures?.grossAmount ?? null,
+      grossAmount: roomSide?.gross ?? null,
       roomGross: figures?.roomGross ?? null,
       foodGross: figures?.foodGross ?? null,
-      discountAmount: figures?.discountAmount ?? null,
-      netAmount: figures?.netAmount ?? null,
+      discountAmount: roomSide ? round2(roomSide.gross - roomSide.net) : null,
+      netAmount: roomSide?.net ?? null,
       lateCheckoutCharge: figures?.lateCheckoutCharge ?? null,
       roomTaxable: figures?.roomTaxable ?? null,
       foodTaxable: figures?.foodTaxable ?? null,
-      taxableValue: figures?.taxableValue ?? null,
+      taxableValue: roomSide?.taxable ?? null,
       roomCgst: figures?.roomCgst ?? null,
       roomSgst: figures?.roomSgst ?? null,
       foodCgst: figures?.foodCgst ?? null,
       foodSgst: figures?.foodSgst ?? null,
-      cgstAmount: figures?.cgstAmount ?? null,
-      sgstAmount: figures?.sgstAmount ?? null,
-      totalTax: figures?.totalTax ?? null,
+      cgstAmount: roomSide?.cgst ?? null,
+      sgstAmount: roomSide?.sgst ?? null,
+      totalTax: roomSide ? round2(roomSide.cgst + roomSide.sgst) : null,
       roundOff: figures?.roundOff ?? null,
-      billedAmount: figures?.billedAmount ?? null,
+      billedAmount: roomSide?.billed ?? null,
+      // Food charged on this stay's bill (incl. its GST): reported under Restaurant.
+      foodBilledAmount: roomSide?.foodBilled ?? null,
       // What the bill deducted as advance and what was collected on it. The
       // advance deducted is the booking's advance as it stood at issue; a
       // receipt raised after the bill would leave it behind, so the register
@@ -757,6 +813,8 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     unbilledCount: 0,
     unbilledValue: 0,
     billedAmount: 0,
+    // Food on these stays' bills, left out of every figure above.
+    foodBilledAmount: 0,
     billedCount: 0,
     // Money attached to the stays listed in this register — i.e. keyed to
     // check-in date, so an advance for one of these stays may well have been
@@ -799,6 +857,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
 
     summary.billedCount += 1;
     summary.billedAmount = round2(summary.billedAmount + booking.billedAmount);
+    summary.foodBilledAmount = round2(summary.foodBilledAmount + (booking.foodBilledAmount || 0));
     summary.stayBalance = round2(summary.stayBalance + booking.balanceCollected);
     summary.stayBalanceDue = round2(summary.stayBalanceDue + booking.balanceDue);
     addBill(bills, booking);
@@ -1088,7 +1147,8 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       SELECT o.id, o.order_number, o.order_date, o.source, o.guest_name, o.guest_phone,
              o.status, o.subtotal, o.placed_at, o.delivered_at, o.cancelled_at, o.cancel_reason,
              r.room_number, t.label AS table_label,
-             i.invoice_number, i.document_type, i.status AS invoice_status
+             i.invoice_number, i.document_type, i.status AS invoice_status,
+             i.booking_id AS invoice_booking_id, i.event_booking_id AS invoice_event_id
       FROM dbo.food_orders o
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
@@ -1112,7 +1172,7 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     for (const row of itemsResult.recordset) itemCounts.set(String(row.order_id), Number(row.qty));
   }
 
-  const orders = result.recordset.map((row) => ({
+  const allOrders = result.recordset.map((row) => ({
     id: row.id,
     orderNumber: row.order_number,
     orderDate: toIsoDate(row.order_date),
@@ -1133,8 +1193,15 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     billed: row.invoice_number != null && row.invoice_status === 'ISSUED',
     // Its bill was voided: not sales, and not waiting to be billed either.
     voided: row.invoice_status === 'VOID',
+    // Which kind of bill carried it: a dedicated food bill, or room service riding
+    // on a stay (or function) bill. Either way it is restaurant revenue.
+    billedOn: row.invoice_number == null ? null : row.invoice_booking_id != null ? 'STAY' : row.invoice_event_id != null ? 'EVENT' : 'FOOD',
   }));
 
+  // An order whose bill was voided is not part of this report at all: it is left
+  // out of the list and every count and total. Only the memo below says that some
+  // were left out, so the gap is visible rather than silent.
+  const orders = allOrders.filter((o) => !o.voided);
   const byStatus = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
   const bySource = Object.fromEntries(ORDER_SOURCES.map((s) => [s, 0]));
   let deliveredCount = 0;
@@ -1145,6 +1212,13 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
   let unbilledDeliveredValue = 0;
   let voidedCount = 0;
   let voidedValue = 0;
+  let onStayBillValue = 0;
+  for (const o of allOrders) {
+    if (o.voided) {
+      voidedCount += 1;
+      voidedValue = round2(voidedValue + o.subtotal);
+    }
+  }
 
   for (const order of orders) {
     if (byStatus[order.status] === undefined) byStatus[order.status] = 0;
@@ -1156,11 +1230,6 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       cancelledCount += 1;
       continue;
     }
-    if (order.voided) {
-      voidedCount += 1;
-      voidedValue = round2(voidedValue + order.subtotal);
-      continue;
-    }
     if (order.status === 'DELIVERED') {
       deliveredCount += 1;
       deliveredValue = round2(deliveredValue + order.subtotal);
@@ -1168,6 +1237,7 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     if (order.billed) {
       billedCount += 1;
       billedValue = round2(billedValue + order.subtotal);
+      if (order.billedOn === 'STAY') onStayBillValue = round2(onStayBillValue + order.subtotal);
     } else if (order.status === 'DELIVERED') {
       unbilledDeliveredValue = round2(unbilledDeliveredValue + order.subtotal);
     }
@@ -1190,6 +1260,8 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       unbilledDeliveredValue,
       voidedCount,
       voidedValue,
+      // Part of billedValue that went out on guests' room bills.
+      onStayBillValue,
     },
     orders,
   };

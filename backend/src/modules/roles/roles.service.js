@@ -41,7 +41,7 @@ async function lodgeCapabilities(pool, lodgeId) {
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT has_rooms, serves_food, has_events, has_assets, has_expenses, has_other_services FROM dbo.lodges WHERE id = @lodgeId');
+    .query('SELECT has_rooms, serves_food, has_events, has_assets, has_expenses, has_other_services, has_housekeeping FROM dbo.lodges WHERE id = @lodgeId');
   const row = result.recordset[0];
   return {
     hasRooms: !!row?.has_rooms,
@@ -50,6 +50,7 @@ async function lodgeCapabilities(pool, lodgeId) {
     hasAssets: !!row?.has_assets,
     hasExpenses: !!row?.has_expenses,
     hasOtherServices: !!row?.has_other_services,
+    hasHousekeeping: !!row?.has_housekeeping,
   };
 }
 

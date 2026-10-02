@@ -511,11 +511,11 @@ const initialBookingForm = {
   // sameDates says whether they follow the dates above (the usual case) or each
   // carries its own check-in and check-out.
   extraRooms: [],
-  sameDates: true,
+  sameDates: false,
   // The "Book multiple rooms" box at the top of the form. Off is the ordinary
   // one-room booking and nothing else on screen changes; on, the form asks whether
   // the rooms share dates and lets more than one be chosen.
-  multiRoom: false,
+  multiRoom: true,
   // Which bed(s) this stay holds, on a dormitory room — one or more, picked
   // by clicking multiple chips. Empty on every other room.
   bedIds: [],
@@ -1337,16 +1337,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const [availableBedsError, setAvailableBedsError] = useState('');
   const [quote, setQuote] = useState(null);
 
-  // Switching "collect full payment" on rebuilds the rows to the stay total;
-  // off leaves whatever is there as an ordinary advance. Off is also what a
-  // missing quote gets — there is no total to promise yet.
-  const setCollectFull = (on) =>
-    setBookingForm((f) => {
-      if (!on) return { ...f, collectFull: false };
-      if (!quote) return f;
-      return { ...withAdvanceLines(f, fullPaymentLines(f.advanceLines, quote.totalPrice)), collectFull: true };
-    });
-
   // Row edits on the booking form. Under a full payment the last row is
   // re-derived after every keystroke in the rows above, so the sum stays the
   // stay total no matter how the split is carved up.
@@ -1429,8 +1419,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       advanceLines: form.advanceLines?.length ? form.advanceLines : [emptyPaymentLine()],
       // A draft parked before bookings could hold several rooms has neither.
       extraRooms: form.extraRooms ?? [],
-      sameDates: form.sameDates ?? true,
-      multiRoom: form.multiRoom ?? (form.extraRooms?.length > 0),
+      // Every room carries its own dates; extra rooms are added with the button.
+      sameDates: false,
+      multiRoom: true,
     };
     setBookingForm(seeded);
     setBaseTotal(null);
@@ -1596,13 +1587,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // fact — the backend refuses to change it, and this keeps the box from
   // offering something the save would reject.
   const canEditCheckIn = !editing || primaryRoomStatus === 'BOOKED';
-  // A room that has checked in or out is part of the stay and can only leave by
-  // checking out, so a booking holding one can't be turned back into a one-room form.
-  const multiLocked =
-    editing &&
-    (!canEditStay ||
-      (bookingForm.extraRooms.some((r) => r.status && r.status !== 'BOOKED') && bookingForm.multiRoom));
-
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
   // guest is already in would look taken and drop off its own picker.
@@ -1803,7 +1787,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const addExtraRoom = () =>
     setBookingForm((f) => ({
       ...f,
-      extraRooms: [...f.extraRooms, blankExtraRoom({ checkInDate: f.checkInDate, checkOutDate: f.checkOutDate })],
+      extraRooms: [
+        ...f.extraRooms,
+        // Starts on the dates of the room above it; the desk can change them.
+        blankExtraRoom(f.extraRooms.at(-1) ?? { checkInDate: f.checkInDate, checkOutDate: f.checkOutDate }),
+      ],
     }));
   const removeExtraRoom = (key) =>
     setBookingForm((f) => ({
@@ -1896,10 +1884,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // "Done" is deliberately each section's own minimum, not the form's: 3 and 4
   // are genuinely optional, so they tick as soon as they hold anything and
   // never nag when left alone.
+  // Settling the whole stay is recognised from the amount typed, not chosen.
+  const advanceTyped = Number(bookingForm.advanceAmount) || 0;
+  const paidInFull = Boolean(quote && advanceTyped > 0 && Math.abs(advanceTyped - quote.totalPrice) <= 0.005);
+  const advanceOverTotal = Boolean(quote && advanceTyped > quote.totalPrice + 0.005);
   const stepDone = {
     1: Boolean(bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.roomId),
     2: Boolean(bookingForm.adults[0]?.name?.trim()) && !overOccupancy,
-    3: bookingForm.collectFull || String(bookingForm.advanceAmount ?? '').trim() !== '',
+    3: String(bookingForm.advanceAmount ?? '').trim() !== '',
     4: bookingForm.vehicles.length > 0,
   };
 
@@ -2383,7 +2375,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           advanceMethod: bookingForm.advancePaymentMethod || null,
           // So the confirmation can say what the desk just did in its own
           // words: a full payment is not "an advance taken".
-          paidInFull: bookingForm.collectFull,
+          paidInFull: Boolean(quote && Math.abs((Number(bookingForm.advanceAmount) || 0) - quote.totalPrice) <= 0.005),
         });
       }
 
@@ -2568,10 +2560,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           categoryName: room.categoryName,
         },
       })),
-      sameDates: first
-        ? rest.every((r) => r.checkInDate === first.checkInDate && r.checkOutDate === first.checkOutDate)
-        : true,
-      multiRoom: rest.length > 0,
+      sameDates: false,
+      multiRoom: true,
       // A stay with no bed reopens as a whole-room booking — a buyout, on a
       // dormitory room, or simply the normal case everywhere else.
       bedIds: (first ? first.bedIds : bookingDetail.bedIds || []).map(String),
@@ -4198,82 +4188,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 )}
                 {draftNote && <div className="form-banner form-banner--info">{draftNote}</div>}
 
-                {/* The first question on the form. Left off, this is the ordinary
-                    one-room booking and nothing below changes. Ticked, the form asks
-                    the one follow-up that decides its shape — whether the rooms
-                    share dates — and then lets more than one room be chosen. */}
-                <div className={`booking-form__multi${bookingForm.multiRoom ? ' booking-form__multi--on' : ''}`}>
-                  {/* The whole row is the switch: an icon, what it does, and the
-                      control at the right. */}
-                  <label
-                    className="booking-form__multi-head"
-                    title={
-                      multiLocked
-                        ? 'Rooms that have already checked in or out stay on this booking.'
-                        : undefined
-                    }
-                  >
-                    <span className="booking-form__multi-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 19V6" />
-                        <path d="M3 14h18v5" />
-                        <path d="M21 14v-2.5A2.5 2.5 0 0 0 18.5 9H11v5" />
-                        <circle cx="7" cy="11" r="1.7" />
-                      </svg>
-                    </span>
-                    <span className="booking-form__multi-text">
-                      <strong>Book multiple rooms</strong>
-                      <small>Put more than one room on this booking — same guest, one bill.</small>
-                    </span>
-                    <input
-                      id="multiRoom"
-                      className="switch-input"
-                      type="checkbox"
-                      role="switch"
-                      checked={bookingForm.multiRoom}
-                      disabled={multiLocked}
-                      onChange={(e) => setMultiRoom(e.target.checked)}
-                    />
-                  </label>
-
-                  {bookingForm.multiRoom && (
-                    <div className="booking-form__dates-choice" role="radiogroup" aria-label="Check-in and check-out">
-                      <span className="booking-form__dates-choice-label">Check-in &amp; check-out</span>
-                      <div className="booking-form__dates-options">
-                        <button
-                          id="datesSame"
-                          type="button"
-                          role="radio"
-                          aria-checked={bookingForm.sameDates}
-                          disabled={!canEditStay}
-                          className={`booking-form__dates-option${bookingForm.sameDates ? ' booking-form__dates-option--on' : ''}`}
-                          onClick={() => setSameDates(true)}
-                        >
-                          <strong>Same for all rooms</strong>
-                          <small>Pick the dates once, then tick the rooms you want.</small>
-                        </button>
-                        <button
-                          id="datesDifferent"
-                          type="button"
-                          role="radio"
-                          aria-checked={!bookingForm.sameDates}
-                          disabled={!canEditStay}
-                          className={`booking-form__dates-option${!bookingForm.sameDates ? ' booking-form__dates-option--on' : ''}`}
-                          onClick={() => setSameDates(false)}
-                        >
-                          <strong>Different for each room</strong>
-                          <small>Set the dates room by room. Start with Room 1, then add more.</small>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 <div className="form-section">
                   <div className="form-section__title">
-                    <StepNum n={1} done={stepDone[1]} />Stay &amp; room{bookingForm.multiRoom ? 's' : ''}
+                    <StepNum n={1} done={stepDone[1]} />Stay &amp; room
                   </div>
-                  {bookingForm.multiRoom && !bookingForm.sameDates && (
+                  {bookingForm.extraRooms.length > 0 && (
                     <div className="booking-form__room-head">Room 1</div>
                   )}
                   <div className="field-row">
@@ -4613,7 +4532,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 {/* More rooms on the same booking. Each further room is a card
                     of its own; the switch says whether they all keep the dates
                     above or each brings its own. */}
-                {validRange && !availableRoomsError && bookingForm.multiRoom && bookingForm.roomId && (
+                {validRange && !availableRoomsError && bookingForm.roomId && (
                   <div className="booking-form__rooms">
                     {bookingForm.extraRooms.map((room, i) => (
                       <ExtraRoomCard
@@ -4637,7 +4556,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     ))}
                     {/* With shared dates rooms are added by ticking them in the
                         list above; with separate dates each is added here. */}
-                    {!bookingForm.sameDates && canEditStay && (
+                    {canEditStay && (
                       <div className="booking-form__rooms-bar">
                         <button type="button" className="bookings-panel__add-btn" onClick={addExtraRoom}>
                           + Add another room
@@ -4761,8 +4680,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
               <details className="form-section form-section--collapsible" open>
                 <summary>
                   <StepNum n={3} done={stepDone[3]} />
-                  {bookingForm.collectFull ? 'Payment' : 'Advance payment'}
-                  {bookingForm.collectFull ? (
+                  {paidInFull ? 'Payment' : 'Advance payment'}
+                  {paidInFull ? (
                     <span className="form-section__badge form-section__badge--full">
                       Paid in full · {formatPrice(Number(bookingForm.advanceAmount) || 0)}
                     </span>
@@ -4772,32 +4691,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     )
                   )}
                 </summary>
-                {/* One click for the guest who settles the whole stay on the
-                    spot. It fills the rows to the live total and keeps them
-                    there as the dates, extras and discount move; how the money
-                    arrived is still the desk's to say, split or not. Not on an
-                    edit, which sets an advance rather than taking one. */}
-                {!editing && (
-                  <label
-                    className="checkbox-chip booking-form__full-pay"
-                    title={quote ? undefined : 'Choose a room and dates first — the stay total is what this collects.'}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={bookingForm.collectFull}
-                      disabled={!quote}
-                      onChange={(e) => setCollectFull(e.target.checked)}
-                    />
-                    <span>
-                      Collect full payment now
-                      {quote ? (
-                        <span className="bookings-panel__muted"> · {formatPrice(quote.totalPrice)}</span>
-                      ) : (
-                        <span className="bookings-panel__muted"> · choose a room and dates first</span>
-                      )}
-                    </span>
-                  </label>
-                )}
                 {/* maxLines 1 on an edit, which hides the add button and
                     leaves the field exactly as it was. An edit SETS the advance
                     rather than adding to it, so only the difference is
@@ -4817,6 +4710,16 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   lockedTotal={bookingForm.collectFull && quote ? quote.totalPrice : null}
                   error={
                     <>
+                      {advanceOverTotal && (
+                        <p className="field__error">
+                          The amount entered exceeds the stay total of {formatPrice(quote.totalPrice)}. Please enter {formatPrice(quote.totalPrice)} or less.
+                        </p>
+                      )}
+                      {paidInFull && (
+                        <p className="bookings-panel__hint">
+                          Full payment of {formatPrice(quote.totalPrice)} is being collected at booking.
+                        </p>
+                      )}
                       {fieldErr(paymentFieldId('newBookingAdvance', 'Amount'))}
                       {fieldErr(paymentFieldId('newBookingAdvance', 'Method'))}
                       {fieldErr(paymentFieldId('newBookingAdvance', 'Reference'))}
@@ -5057,6 +4960,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     error={foodError}
                     onAdd={addFoodToRoomBill}
                   />
+                )}
+
+                {!showCheckInForm && bookingDetail.serviceUsages?.length > 0 && (
+                  <RoomServicesSection usages={bookingDetail.serviceUsages} />
                 )}
 
                 {idProofPreviewUrl && (
@@ -6613,6 +6520,53 @@ const FOOD_STATUS_LABEL = {
   READY: 'Ready',
   DELIVERED: 'Delivered',
 };
+
+// Other services used on the stay, in the same card style as the food list.
+function RoomServicesSection({ usages }) {
+  const total = usages.reduce((sum, u) => sum + u.amount, 0);
+  const onBill = usages.filter((u) => u.onRoomBill && !u.billed).reduce((sum, u) => sum + u.amount, 0);
+  return (
+    <section className="room-food">
+      <div className="room-food__title">
+        <div>
+          <h4>Services used</h4>
+          <p>
+            {usages.length} service{usages.length === 1 ? '' : 's'} · on the room bill only once added
+          </p>
+        </div>
+      </div>
+      <ul className="room-food__list">
+        {usages.map((u) => (
+          <li className="room-food__order" key={u.id}>
+            <div className="room-food__head">
+              <span className="room-food__num">{u.name}</span>
+              <span className="room-food__time">
+                {u.quantity} {u.unitLabel} ·{' '}
+                {new Date(u.startedAt).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+              </span>
+              <span className={`room-food__status room-food__status--${u.billed ? 'billed' : u.status === 'COMPLETED' ? 'delivered' : 'preparing'}`}>
+                {u.billed ? 'Billed' : u.status === 'COMPLETED' ? 'Completed' : 'In use'}
+              </span>
+              {!u.billed && (
+                <span className={`room-food__bill-tag${u.onRoomBill ? ' room-food__bill-tag--on' : ''}`}>
+                  {u.onRoomBill ? 'On room bill' : 'Not on room bill'}
+                </span>
+              )}
+              <span className="room-food__amount">{formatPrice(u.amount)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="room-food__total">
+        <span>Services total</span>
+        <strong>{formatPrice(total)}</strong>
+      </div>
+      <p className="room-food__note">
+        {formatPrice(onBill)} of this is on the room bill{onBill === total ? '' : ` · ${formatPrice(total - onBill)} is not`}.
+      </p>
+    </section>
+  );
+}
 
 function RoomFoodSection({ orders, canAdd = false, adding = false, error = '', onAdd }) {
   const total = orders.reduce((sum, o) => sum + o.subtotal, 0);

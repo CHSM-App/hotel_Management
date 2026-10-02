@@ -1,0 +1,1107 @@
+/* Housekeeping — compact and phone-first: one slim header, one row per room,
+   one clear button per row. Colours come from the app's own tokens so light and
+   dark both work. Each room state owns one tone (--hk-tone / --hk-tint) and
+   every part of the board reads from it. */
+
+.hk-board [class*='--dirty'] { --hk-tone: var(--accent-ink); --hk-tint: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.hk-board [class*='--cleaning'] { --hk-tone: var(--brand-ink); --hk-tint: var(--brand-wash); }
+.hk-board [class*='--ready'] { --hk-tone: var(--success); --hk-tint: var(--success-bg); }
+.hk-board [class*='--occupied'] { --hk-tone: var(--text); --hk-tint: var(--neu-sunken); }
+.hk-board [class*='--ooo'] { --hk-tone: var(--danger); --hk-tint: var(--danger-bg); }
+
+/* ------------------------------------------------------------- header */
+
+.hk-head {
+  margin-bottom: 14px;
+}
+
+.hk-head__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.hk-head__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+
+.hk-bar {
+  display: flex;
+  flex: 1 1 140px;
+  gap: 3px;
+  height: 6px;
+}
+
+.hk-bar__seg {
+  flex-basis: 0;
+  min-width: 6px;
+  border-radius: 999px;
+  background: var(--hk-tone);
+  opacity: 0.85;
+}
+
+/* A single row of tabs — the familiar way to say "show me these". */
+.hk-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.hk-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.hk-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 40px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.hk-tab:hover {
+  border-color: var(--field-border-hover);
+}
+
+.hk-tab[aria-selected='true'] {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--hk-tint, var(--brand-wash));
+  border-color: var(--hk-tone, var(--brand));
+}
+
+.hk-tab__n {
+  min-width: 22px;
+  padding: 1px 7px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--hk-tone, var(--brand-ink));
+  background: var(--neu-sunken);
+  border-radius: 999px;
+}
+
+.hk-tab[aria-selected='true'] .hk-tab__n {
+  background: var(--surface);
+}
+
+/* A status with nothing in it steps back, so the eye goes to where work is. */
+.hk-tab--zero:not([aria-selected='true']) {
+  color: var(--text-muted);
+}
+
+.hk-tab--zero .hk-tab__n {
+  color: var(--text-muted);
+}
+
+.hk-help {
+  margin: 10px 2px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hk-help strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------- rooms */
+
+.hk-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px;
+}
+
+.hk-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.hk-card__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--hk-tone);
+  background: var(--hk-tint);
+}
+
+.hk-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hk-card__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.hk-card__room {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.hk-card__cat {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.hk-arrival {
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border-radius: 999px;
+}
+
+.hk-card__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  font-size: 12.5px;
+}
+
+.hk-status {
+  padding: 2px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--hk-tone, var(--text));
+  background: var(--hk-tint, var(--neu-sunken));
+  border-radius: 999px;
+}
+
+.hk-card__detail {
+  color: var(--text);
+}
+
+.hk-card__side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.hk-btn {
+  min-height: 42px;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.hk-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The rarely-needed actions live behind one menu, so a row has one obvious
+   button and nothing to misread. */
+.hk-menu {
+  position: relative;
+}
+
+.hk-more {
+  width: 40px;
+  height: 42px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.hk-more:hover {
+  background: var(--neu-sunken);
+}
+
+.hk-menu__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.hk-menu__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-elevated);
+}
+
+.hk-menu__list button {
+  min-height: 42px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hk-menu__list button:hover {
+  background: var(--neu-sunken);
+}
+
+.hk-link {
+  border: none;
+  background: none;
+  color: var(--brand);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 8px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --------------------------------------------------------------- empty */
+
+.hk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 32px 20px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-card);
+}
+
+.hk-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.hk-empty__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-empty__text {
+  margin: 0;
+  max-width: 36ch;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- linen stock */
+
+.hk-board .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Two plain actions above a plain table. The table reads left to right as the
+   journey (dirty, at the laundry, clean); a total row closes it. */
+.hk-matrix-wrap {
+  max-width: 760px;
+}
+
+.hk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.hk-toolbar__hint {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Compact, flat and obviously a button: no gloss, no shadow. */
+.hk-action {
+  min-height: 38px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--brand);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.hk-action:hover:not(:disabled) {
+  background: var(--brand-ink);
+}
+
+.hk-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hk-matrix {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.hk-matrix th,
+.hk-matrix td {
+  padding: 0 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hk-matrix thead th {
+  height: 40px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  background: var(--neu-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--hk-tone);
+}
+
+th.hk-matrix__item {
+  padding-left: 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-matrix tbody tr {
+  height: 54px;
+}
+
+.hk-matrix tbody tr + tr > * {
+  border-top: 1px solid var(--border);
+}
+
+.hk-matrix tbody td,
+.hk-matrix tfoot td {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-matrix__name {
+  display: block;
+  font-family: var(--sans);
+  font-size: 14.5px;
+}
+
+.hk-matrix__owned {
+  display: block;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.hk-matrix__owned--warn {
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+td.hk-matrix__low {
+  color: var(--danger);
+}
+
+.hk-matrix tfoot tr {
+  height: 46px;
+}
+
+.hk-matrix tfoot th,
+.hk-matrix tfoot td {
+  background: var(--neu-sunken);
+  border-top: 1px solid var(--border);
+}
+
+.hk-matrix tfoot th {
+  font-size: 13px;
+}
+
+.hk-matrix__menu {
+  width: 48px;
+  padding-right: 6px;
+}
+
+.hk-matrix__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 6px 2px 0;
+}
+
+.hk-matrix-wrap .chart-list {
+  margin-top: 8px;
+}
+
+.hk-receive {
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-receive .hk-row {
+  border-bottom: none;
+}
+
+.hk-receive__missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.hk-starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0 14px;
+}
+
+.hk-sub--warn {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  .hk-toolbar__hint {
+    display: none;
+  }
+
+  .hk-action {
+    flex: 1 1 140px;
+  }
+
+  .hk-matrix th,
+  .hk-matrix td {
+    padding: 0 4px;
+  }
+
+  th.hk-matrix__item {
+    padding-left: 12px;
+  }
+
+  .hk-matrix__menu {
+    width: 40px;
+  }
+}
+
+/* ------------------------------------------- linen, laundry and dialogs */
+
+.hk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.hk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-row--wrap {
+  flex-wrap: wrap;
+}
+
+.hk-row__steppers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hk-row__steppers label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.hk-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.hk-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hk-stepper button {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hk-stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hk-stepper__value {
+  min-width: 34px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 12px;
+}
+
+.hk-tagno {
+  display: inline-block;
+  min-width: 40px;
+  margin-right: 6px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.hk-total {
+  margin-right: auto;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-status--laundry {
+  --hk-tone: var(--brand-ink);
+  --hk-tint: var(--brand-wash);
+}
+
+.hk-row--off {
+  opacity: 0.55;
+}
+
+.hk-row__links {
+  display: flex;
+  flex: none;
+  gap: 12px;
+}
+
+/* ------------------------------------- linen: add a type, recent activity */
+
+.hk-action--ghost {
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+}
+
+.hk-action--ghost:hover:not(:disabled) {
+  color: #fff;
+}
+
+.hk-matrix__foot {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 14px;
+  padding-top: 10px;
+}
+
+.hk-hint--inline {
+  margin: 0;
+}
+
+.hk-tab--small {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+.hk-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.hk-suggest__label {
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hk-activity {
+  margin-top: 26px;
+}
+
+.hk-activity .hk-section-head .hk-tabs {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.hk-events__day {
+  margin: 14px 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hk-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.hk-event + .hk-event {
+  border-top: 1px solid var(--border);
+}
+
+.hk-event .hk-dot {
+  flex: none;
+  margin-top: 7px;
+}
+
+.hk-event__body {
+  min-width: 0;
+}
+
+.hk-event__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-event__items {
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.hk-event__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------- guest laundry */
+
+.hk-search {
+  flex: 1 1 180px;
+  max-width: 280px;
+  min-height: 38px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+}
+
+.hk-board .hk-tabs {
+  margin-bottom: 14px;
+}
+
+.hk-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 820px;
+}
+
+.hk-order {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+/* The tag is what is written on the bag and said across the desk, so it is the
+   biggest thing on the row. */
+.hk-order__tag {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  height: 58px;
+  padding: 0 8px;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--hk-tone);
+  background: var(--hk-tint);
+  border-radius: 14px;
+}
+
+.hk-order__tag small {
+  margin-bottom: 3px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--hk-tone);
+  opacity: 0.8;
+}
+
+.hk-order__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hk-order__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  color: var(--ink);
+}
+
+.hk-order__room {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.hk-order__items {
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.hk-order__pieces {
+  color: var(--text-muted);
+}
+
+.hk-order__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.hk-order__price {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-order__note {
+  color: var(--accent-ink);
+}
+
+.hk-order__side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.hk-tagbig {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 0 8px;
+}
+
+.hk-tagbig small {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hk-tagbig strong {
+  font-family: var(--serif);
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--brand-ink);
+}
+
+.hk-hint--center {
+  text-align: center;
+}
+
+.hk-confirm {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.hk-confirm strong {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .hk-order {
+    flex-wrap: wrap;
+  }
+
+  .hk-order__side {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .hk-order__side .hk-action {
+    flex: 1;
+  }
+}
+
+/* ------------------------------------ guest laundry: garment rows */
+
+.hk-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+/* One garment per row: name, price per piece, how many, and what that comes to. */
+.hk-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px auto 78px 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-line input {
+  min-height: 42px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+}
+
+.hk-line__name {
+  min-width: 0;
+}
+
+.hk-line__price {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.hk-line__price input {
+  width: 100%;
+  min-width: 0;
+}
+
+.hk-line__total {
+  text-align: right;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.hk-line__x {
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hk-line__x:hover {
+  background: var(--neu-sunken);
+  color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  .hk-line {
+    grid-template-columns: auto minmax(0, 1fr) 32px;
+    row-gap: 8px;
+  }
+
+  .hk-line__name {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+
+  .hk-line__x {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .hk-line .hk-stepper {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .hk-line__price {
+    grid-column: 2 / 4;
+    grid-row: 2;
+  }
+
+  /* The footer already shows the running total; a per-row sum would not fit. */
+  .hk-line__total {
+    display: none;
+  }
+}
+/* ------------------------------------------------------ focus and motion */
+
+.hk-tab:focus-visible,
+.hk-more:focus-visible,
+.hk-menu__list button:focus-visible,
+.hk-link:focus-visible,
+.hk-stepper button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus) 45%, transparent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hk-tab {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .hk-list {
+    grid-template-columns: 1fr;
+  }
+
+  .hk-head__title {
+    font-size: 18px;
+  }
+
+  .hk-bar {
+    flex-basis: 100%;
+  }
+}
+
+/* Recent activity, spreadsheet view */
+.hk-sheet-wrap {
+  overflow: auto;
+  max-height: 460px;
+  border: 1px solid var(--border, #d9d9e6);
+  border-radius: 8px;
+}
+.hk-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.hk-sheet th,
+.hk-sheet td {
+  padding: 6px 10px;
+  border: 1px solid var(--border, #e3e3ee);
+  text-align: left;
+}
+.hk-sheet th {
+  position: sticky;
+  top: 0;
+  background: #e8e6f5;
+  color: #1f1b3a;
+  font-weight: 600;
+}
+.hk-sheet tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.025);
+}
+.hk-sheet__num {
+  text-align: right;
+}

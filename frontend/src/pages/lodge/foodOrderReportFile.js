@@ -156,6 +156,7 @@ function ordersSheet(report) {
     { label: 'Cancelled at', width: 20, value: (o) => (o.cancelledAt ? formatDateTime(o.cancelledAt) : '') },
     { label: 'Bill no.', width: 12, value: (o) => o.invoiceNumber || '' },
     { label: 'Document', width: 14, value: (o) => o.documentType || '' },
+    { label: 'Billed on', width: 12, value: (o) => ({ STAY: 'Room bill', EVENT: 'Event bill', FOOD: 'Food bill' }[o.billedOn] || '') },
     { label: 'Amount', width: 12, kind: 'money', value: (o) => o.subtotal },
   ];
   const rows = [headerRow(columns.map((c) => c.label))];

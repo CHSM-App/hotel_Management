@@ -53,6 +53,7 @@ const initialForm = {
   hasAssets: false,
   hasExpenses: false,
   hasOtherServices: false,
+  hasHousekeeping: false,
   isGstRegistered: false,
   gstin: '',
   isSpecifiedPremises: false,
@@ -126,8 +127,9 @@ export default function LodgeRegistration() {
       hasExpenses: form.hasExpenses,
       // Sold from the rooms side, so a restaurant can't carry it.
       hasOtherServices: form.hasOtherServices && baseCapabilities.hasRooms,
+      hasHousekeeping: form.hasHousekeeping && baseCapabilities.hasRooms,
     }),
-    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices]
+    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices, form.hasHousekeeping]
   );
 
   const includedFeatures = useMemo(() => featuresForCapabilities(capabilities), [capabilities]);
@@ -147,6 +149,7 @@ export default function LodgeRegistration() {
     { key: 'assets', formKey: 'hasAssets', feature: FEATURES.find((f) => f.key === 'assets') },
     { key: 'expenses', formKey: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
     { key: 'otherServices', formKey: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
+    { key: 'housekeeping', formKey: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true },
   ];
   const baseFeatures = FEATURES.filter((f) => !ADDONS.some((a) => a.key === f.key));
 
@@ -208,6 +211,7 @@ export default function LodgeRegistration() {
         hasExpenses: Boolean(rest.hasExpenses),
       };
       caps.hasOtherServices = Boolean(rest.hasOtherServices) && caps.hasRooms;
+      caps.hasHousekeeping = Boolean(rest.hasHousekeeping) && caps.hasRooms;
       const payload = {
         ...rest,
         ...caps,

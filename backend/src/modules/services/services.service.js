@@ -11,6 +11,7 @@ function mapService(row) {
     price: Number(row.price),
     gstRatePercent: Number(row.gst_rate_percent),
     isActive: !!row.is_active,
+    isLaundry: !!row.is_laundry,
   };
 }
 
@@ -20,7 +21,7 @@ async function listServices(lodgeId, { includeInactive = false } = {}) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, unit_label, price, gst_rate_percent, is_active
+      SELECT id, name, unit_label, price, gst_rate_percent, is_active, is_laundry
       FROM dbo.lodge_services
       WHERE lodge_id = @lodgeId ${includeInactive ? '' : 'AND is_active = 1'}
       ORDER BY name
@@ -37,10 +38,12 @@ async function createService(lodgeId, input) {
     .input('unit', sql.NVarChar, input.unitLabel)
     .input('price', sql.Decimal(10, 2), input.price)
     .input('gst', sql.Decimal(5, 2), input.gstRatePercent)
+    .input('isLaundry', sql.Bit, input.isLaundry ? 1 : 0)
     .query(`
-      INSERT INTO dbo.lodge_services (lodge_id, name, unit_label, price, gst_rate_percent)
-      OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent, inserted.is_active
-      VALUES (@lodgeId, @name, @unit, @price, @gst)
+      INSERT INTO dbo.lodge_services (lodge_id, name, unit_label, price, gst_rate_percent, is_laundry)
+      OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
+             inserted.is_active, inserted.is_laundry
+      VALUES (@lodgeId, @name, @unit, @price, @gst, @isLaundry)
     `);
   return mapService(result.recordset[0]);
 }
@@ -61,10 +64,12 @@ async function updateService(lodgeId, id, input) {
   add('price', 'price', sql.Decimal(10, 2), input.price);
   add('gst_rate_percent', 'gst', sql.Decimal(5, 2), input.gstRatePercent);
   add('is_active', 'active', sql.Bit, input.isActive);
+  add('is_laundry', 'isLaundry', sql.Bit, input.isLaundry === undefined ? undefined : input.isLaundry ? 1 : 0);
   if (sets.length === 0) throw new ApiError('Nothing to update.', 400);
   const result = await request.query(`
     UPDATE dbo.lodge_services SET ${sets.join(', ')}
-    OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent, inserted.is_active
+    OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
+           inserted.is_active, inserted.is_laundry
     WHERE id = @id AND lodge_id = @lodgeId
   `);
   if (result.recordset.length === 0) throw new ApiError('Service not found.', 404);

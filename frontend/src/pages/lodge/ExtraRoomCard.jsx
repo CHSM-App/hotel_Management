@@ -307,22 +307,6 @@ export default function ExtraRoomCard({
           </div>
         </div>
       )}
-
-      {selected && !selected.isDormitory && (
-        <div className="field">
-          <label htmlFor={`extraRate-${room.key}`}>Agreed rate per night (optional)</label>
-          <input
-            id={`extraRate-${room.key}`}
-            type="number"
-            min="0"
-            step="0.01"
-            inputMode="decimal"
-            placeholder={`${formatPrice(selected.categoryBasePrice)} (category rate)`}
-            value={room.basePriceOverride}
-            onChange={(e) => onChange({ basePriceOverride: e.target.value })}
-          />
-        </div>
-      )}
     </div>
   );
 }

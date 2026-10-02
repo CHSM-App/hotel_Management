@@ -5,9 +5,22 @@ const serviceSchema = z.object({
   unitLabel: z.string().trim().min(1).max(30).default('use'),
   price: z.coerce.number({ invalid_type_error: 'Enter a price.' }).min(0, 'Price cannot be negative.').max(9999999),
   gstRatePercent: z.coerce.number().min(0, 'GST cannot be negative.').max(28, 'GST cannot be above 28%.').default(18),
+  // A garment priced for guest laundry (shirt, saree ...) rather than a service
+  // started and completed on its own.
+  isLaundry: z.boolean().default(false),
 });
 
-const updateServiceSchema = serviceSchema.partial().extend({ isActive: z.boolean().optional() });
+// Written out rather than serviceSchema.partial(): partial() keeps the create
+// defaults, so toggling a service off would silently reset its unit, GST rate
+// and laundry flag. An update only changes what it names.
+const updateServiceSchema = z.object({
+  name: serviceSchema.shape.name.optional(),
+  unitLabel: z.string().trim().min(1).max(30).optional(),
+  price: serviceSchema.shape.price.optional(),
+  gstRatePercent: z.coerce.number().min(0, 'GST cannot be negative.').max(28, 'GST cannot be above 28%.').optional(),
+  isLaundry: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
 
 const startUsageSchema = z.object({
   serviceId: z.coerce.number().int().positive('Choose a service.'),

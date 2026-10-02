@@ -54,6 +54,9 @@ export default function StayDetails({
   // is added, from Food ordered below.
   const foodOrdersOpen = (booking.foodOrders || []).filter((o) => !o.billed && o.onRoomBill);
   const foodNotAdded = (booking.foodOrders || []).filter((o) => !o.billed && !o.onRoomBill);
+  // Completed services the desk put on this stay's room bill, not billed yet.
+  const servicesOpen = (booking.serviceUsages || []).filter((u) => !u.billed && u.onRoomBill && u.status === 'COMPLETED');
+  const servicesOpenTotal = Math.round(servicesOpen.reduce((sum, u) => sum + u.amount, 0) * 100) / 100;
   const foodOpenTotal = Math.round(foodOrdersOpen.reduce((sum, o) => sum + o.subtotal, 0) * 100) / 100;
   const paidInFull =
     booking.advanceAmount != null &&
@@ -440,8 +443,29 @@ export default function StayDetails({
             </>
           )}
 
+          {servicesOpen.length > 0 && (
+            <>
+              <div className="pb__group">Services</div>
+              {servicesOpen.map((u) => (
+                <div className="sim-result__line sim-result__line--part" key={u.id}>
+                  <span>
+                    {u.name}
+                    <span className="sim-result__part-nights">
+                      {u.quantity} {u.unitLabel}
+                    </span>
+                  </span>
+                  <span>{formatPrice(u.amount)}</span>
+                </div>
+              ))}
+              <div className="pb__sub">
+                <span>Services</span>
+                <span>{formatPrice(servicesOpenTotal)}</span>
+              </div>
+            </>
+          )}
+
           {/* PAYMENTS */}
-          {(booking.advanceAmount != null || foodOrdersOpen.length > 0) && <div className="pb__group">Payments</div>}
+          {(booking.advanceAmount != null || foodOrdersOpen.length > 0 || servicesOpen.length > 0) && <div className="pb__group">Payments</div>}
           {booking.advanceAmount != null && (
             <div className="sim-result__line">
               <span>
@@ -464,12 +488,10 @@ export default function StayDetails({
               <div>
                 <span>Still to collect</span>
                 <small>
-                  {foodOrdersOpen.length > 0
-                    ? 'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + ' + food − advance'
-                    : 'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + ' − advance'}
+                  {'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + (foodOrdersOpen.length > 0 ? ' + food' : '') + (servicesOpen.length > 0 ? ' + services' : '') + ' − advance'}
                 </small>
               </div>
-              <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal)}</strong>
+              <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal + servicesOpenTotal)}</strong>
             </div>
           )}
         </div>

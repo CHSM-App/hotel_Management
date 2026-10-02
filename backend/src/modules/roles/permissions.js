@@ -86,6 +86,12 @@ const PERMISSIONS = [
     capability: 'hasExpenses',
   },
   {
+    key: 'housekeeping.manage',
+    label: 'Housekeeping',
+    description: 'Clean rooms, track hotel linen and take guests’ laundry. No access to bills or payments.',
+    capability: 'hasHousekeeping',
+  },
+  {
     key: 'profitLoss.view',
     label: 'Profit & Loss',
     description: 'View the combined revenue, expense, other-income and depreciation figures behind Profit & Loss.',
@@ -97,7 +103,7 @@ const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 
 // Built-in role keys. These always exist (seeded with lodge_id NULL) and can be
 // re-scoped per lodge, but never renamed or deleted.
-const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'ACCOUNTANT'];
+const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'ACCOUNTANT', 'HOUSEKEEPING'];
 
 // What a property has to be for a built-in role to mean anything. A rooms-only
 // lodge has no kitchen, so a Kitchen role there is a login that can reach one
@@ -118,6 +124,7 @@ const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'ACCOUNTAN
 const SYSTEM_ROLE_CAPABILITY = {
   KITCHEN: 'servesFood',
   CAPTAIN: 'servesFood',
+  HOUSEKEEPING: 'hasHousekeeping',
 };
 
 function isValidPermission(key) {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { REPORT_SECTIONS } from '../../lib/reportSections';
+import { BillsReport } from './Billing';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import PageLoader from '../../components/PageLoader';
@@ -25,6 +26,7 @@ import {
   buildFoodOrdersReportPdf,
   downloadFoodOrdersReportPdf,
 } from './foodOrderReportFile';
+import { downloadGstReportPdf } from './gstReportFile';
 import AnalyticsOverview from './AnalyticsOverview';
 import RoomsAnalytics from './RoomsAnalytics';
 import FunctionsAnalytics from './FunctionsAnalytics';
@@ -53,6 +55,7 @@ const ALL_TABS = [
   { key: 'food', label: 'Restaurant', capability: 'servesFood' },
   // Laundry, pool, gaming ... sold from the rooms side.
   { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
+  { key: 'bills', label: 'Bills' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
   // figures expenses.manage individually gates elsewhere, so profitLoss.view
@@ -475,6 +478,21 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     }
   };
 
+  // GST tab: a straight PDF download, no preview — it is a filing document.
+  const [gstDownloadBusy, setGstDownloadBusy] = useState(false);
+  const [gstDownloadError, setGstDownloadError] = useState('');
+  const handleGstDownload = async () => {
+    setGstDownloadError('');
+    setGstDownloadBusy(true);
+    try {
+      await downloadGstReportPdf(gst);
+    } catch {
+      setGstDownloadError('Could not build the PDF file.');
+    } finally {
+      setGstDownloadBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!validRange) return;
     setOccupancy(null);
@@ -704,7 +722,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
 
       {/* Expenses/Assets report the full history, not a date range — the
           picker bar and every date-scoped tab below it don't apply. */}
-      {activeTab !== 'expenses' && activeTab !== 'income' && activeTab !== 'assets' && (
+      {activeTab !== 'expenses' && activeTab !== 'income' && activeTab !== 'assets' && activeTab !== 'bills' && (
       <div className="dash-card reports-panel__compact-filters">
         <div className="reports-panel__compact-row">
           <div className="reports-panel__compact-field">
@@ -794,6 +812,20 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
               >
                 {eventsDownloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
               </button>
+            </div>
+          )}
+          {activeTab === 'gst' && gst && (
+            <div className="reports-panel__compact-actions">
+              <button
+                type="button"
+                className="btn-secondary reports-panel__compact-btn"
+                disabled={gstDownloadBusy}
+                onClick={handleGstDownload}
+                title="GST register by bill date, for your accountant"
+              >
+                {gstDownloadBusy ? 'Preparing…' : 'PDF'}
+              </button>
+              {gstDownloadError && <span className="reports-panel__hint">{gstDownloadError}</span>}
             </div>
           )}
           {activeTab === 'food' && foodOrders && (
@@ -930,10 +962,15 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-value">{bookings.summary.roomNights}</span>
                 </div>
                 <div className="reports-panel__stat reports-panel__stat--accent">
-                  <span className="reports-panel__stat-label">Billed</span>
+                  <span className="reports-panel__stat-label">Room billed</span>
                   <span className="reports-panel__stat-value">
                     {formatPrice(bookings.summary.billedAmount)}
                   </span>
+                  {bookings.summary.foodBilledAmount > 0 && (
+                    <span className="reports-panel__muted">
+                      + {formatPrice(bookings.summary.foodBilledAmount)} food, in Restaurant
+                    </span>
+                  )}
                 </div>
                 <div className="reports-panel__stat reports-panel__stat--positive">
                   <span className="reports-panel__stat-label">Advance collected</span>
@@ -1013,7 +1050,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                               <SortTh label="Round off" sortKey="roundOff" sort={bookingSort} onSort={toggleBookingSort} />
                             </>
                           )}
-                          <SortTh label="Billed" sortKey="billedAmount" sort={bookingSort} onSort={toggleBookingSort} />
+                          <SortTh label="Room billed" sortKey="billedAmount" sort={bookingSort} onSort={toggleBookingSort} />
                           <SortTh label="Balance" sortKey="balanceCollected" sort={bookingSort} onSort={toggleBookingSort} />
                         </tr>
                       </thead>
@@ -1120,6 +1157,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
           )}
         </>
       )}
+
+      {activeTab === 'bills' && <BillsReport lodge={lodge} />}
 
       {activeTab === 'overview' && (
         <>
@@ -1800,6 +1839,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-value">{formatPrice(foodOrders.summary.billedValue)}</span>
                   <span className="reports-panel__muted">
                     {foodOrders.summary.billedCount} {foodOrders.summary.billedCount === 1 ? 'order' : 'orders'}
+                    {foodOrders.summary.onStayBillValue > 0 && ` · ${formatPrice(foodOrders.summary.onStayBillValue)} on room bills`}
                   </span>
                 </div>
               </div>

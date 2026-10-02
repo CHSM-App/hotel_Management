@@ -83,6 +83,7 @@ const createLodgeSchema = z
     hasAssets: z.boolean().default(false),
     hasExpenses: z.boolean().default(false),
     hasOtherServices: z.boolean().default(false),
+    hasHousekeeping: z.boolean().default(false),
     ownerName: z.string().trim().min(1, 'Owner name is required.'),
     ownerEmail: z.string().trim().email('Enter a valid email.').optional().or(z.literal('')).default(''),
     ownerPhone: z.string().trim().min(1, 'Owner phone is required.'),
@@ -100,6 +101,10 @@ const createLodgeSchema = z
   .refine((data) => !data.hasOtherServices || data.hasRooms, {
     message: 'Other services are sold from the rooms side — turn on rooms first.',
     path: ['hasOtherServices'],
+  })
+  .refine((data) => !data.hasHousekeeping || data.hasRooms, {
+    message: 'Housekeeping looks after rooms — turn on rooms first.',
+    path: ['hasHousekeeping'],
   })
   .refine((data) => !data.foodRoomService || data.hasRooms, {
     message: 'In-room ordering needs rooms — turn it off for a restaurant.',
@@ -155,6 +160,7 @@ const updateLodgeSchema = z.object({
   hasAssets: z.boolean().optional(),
   hasExpenses: z.boolean().optional(),
   hasOtherServices: z.boolean().optional(),
+  hasHousekeeping: z.boolean().optional(),
   isActive: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
 });

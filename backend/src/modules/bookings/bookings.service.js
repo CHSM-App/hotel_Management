@@ -1386,6 +1386,7 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     invoice: extra.invoice ?? null,
     // Food this stay has ordered (room service, plus table food added to the room bill).
     foodOrders: extra.foodOrders ?? [],
+    serviceUsages: extra.serviceUsages ?? [],
     availableSwitchableCharges: extra.availableSwitchableCharges || [],
   };
 }
@@ -1825,6 +1826,30 @@ async function getBooking(lodgeId, bookingId) {
       .map((i) => ({ name: i.item_name, quantity: i.quantity, lineTotal: Number(i.line_total) })),
   }));
 
+  // Other services (spa, laundry, ...) used on this stay, shown beside food so the
+  // desk sees what is about to land on the room bill. Cancelled uses are left out.
+  const serviceUsagesResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT id, service_name, unit_label, quantity, line_total, status, on_room_bill, invoice_id, started_at
+      FROM dbo.service_usages
+      WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND status <> 'CANCELLED'
+      ORDER BY started_at ASC
+    `);
+  const serviceUsages = serviceUsagesResult.recordset.map((u) => ({
+    id: u.id,
+    name: u.service_name,
+    unitLabel: u.unit_label,
+    quantity: Number(u.quantity),
+    amount: Number(u.line_total),
+    status: u.status,
+    billed: u.invoice_id != null,
+    onRoomBill: !!u.on_room_bill,
+    startedAt: u.started_at,
+  }));
+
   // How the advance on this stay actually arrived, one entry per method.
   //
   // Grouped, so an advance taken across two receipts by the same method reads
@@ -1859,6 +1884,7 @@ async function getBooking(lodgeId, bookingId) {
     hasIssuedInvoice: invoiceResult.recordset.length > 0,
     invoice,
     foodOrders,
+    serviceUsages,
     availableSwitchableCharges,
     foodOrderingLockedUntil: lockedUntilOf(row.room_number),
     extraBeds: extraBedsResult.recordset.map((r) => ({ id: r.bed_id, bedLabel: r.bed_label })),

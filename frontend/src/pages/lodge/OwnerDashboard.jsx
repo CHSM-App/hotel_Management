@@ -7,6 +7,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import ServicesPanel from './ServicesPanel';
+import HousekeepingPanel from './HousekeepingPanel';
 import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
@@ -639,6 +640,8 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'otherServices' && <ServicesPanel />}
 
+              {activeFeature && activeFeature.key === 'housekeeping' && <HousekeepingPanel lodge={me.lodge} />}
+
               {activeFeature && activeFeature.key === 'bookings' && (
                 <Bookings
                   // Opens billing OVER this tab instead of navigating to it.
@@ -782,7 +785,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

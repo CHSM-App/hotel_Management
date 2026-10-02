@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPostForm, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import BillNumberingPanel from './BillNumberingPanel';
@@ -481,7 +481,7 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
 // viewInvoiceId opens an already-issued bill's document straight away — a
 // settled function's "View bill" — rather than asking for a new preview the
 // server would rightly refuse.
-export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', hideTabs = false, forceTab = null, onClose }) {
+export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', hideTabs = false, forceTab = null, readOnly = false, onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -1107,6 +1107,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
   // Invoice detail / void modal
   const [detailInvoiceId, setDetailInvoiceId] = useState(null);
+  // Issuing a bill swaps the long "Issue bill" form for the finished document
+  // inside the same scrolling box, which kept the form's scroll position and
+  // opened the bill at its foot. Every time the document appears, or the form
+  // opens, the box goes back to the top. Before paint, so there is no flash.
+  const modalScrollRef = useRef(null);
+  useLayoutEffect(() => {
+    if (modalScrollRef.current) modalScrollRef.current.scrollTop = 0;
+  }, [detailInvoiceId, billTarget]);
   // The bill just written, held so it can be shown the instant it exists.
   // refreshAll() re-fetches the lists in the background, and the detail modal
   // reads from those — so without this the document would blink in a moment
@@ -2005,6 +2013,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           onClick={billTarget ? closeBilling : closeDetail}
         >
           <div
+            ref={modalScrollRef}
             className="glass-panel billing-panel__modal billing-steps"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2801,23 +2810,27 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   {/* One press: the bill is sent to the guest's WhatsApp
                       number by the server, link only — no chat to attach it
                       in. */}
-                  <ShareMenu
-                    onShare={handleShare}
-                    disabled={pdfBusy !== null}
-                    busy={pdfBusy === 'share'}
-                    guestPhone={detailInvoice.guestPhone}
-                    label="Send this bill to the guest on WhatsApp"
-                  />
+                  {!readOnly && (
+                    <ShareMenu
+                      onShare={handleShare}
+                      disabled={pdfBusy !== null}
+                      busy={pdfBusy === 'share'}
+                      guestPhone={detailInvoice.guestPhone}
+                      label="Send this bill to the guest on WhatsApp"
+                    />
+                  )}
                   {/* Last, and a link rather than a button: voiding is the one
                       irreversible thing on this screen and must not read as a
                       peer of Print. */}
-                  <button
-                    type="button"
-                    className="billing-panel__danger-link"
-                    onClick={() => setShowVoidForm(true)}
-                  >
-                    Void this bill
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="billing-panel__danger-link"
+                      onClick={() => setShowVoidForm(true)}
+                    >
+                      Void this bill
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -2996,4 +3009,168 @@ function shortDay(iso) {
 
 function nightsBetween(a, b) {
   return Math.max(1, Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000));
+}
+
+// The Bills report: every issued bill in a period as a spreadsheet, to look at and
+// print — nothing here issues, voids or sends a bill, and it reads through
+// reports.view, so an accountant can be given Reports alone. Clicking a row opens
+// the bill itself, read-only.
+const REPORT_TYPES = [
+  ['ALL', 'All bills'],
+  ['room', 'Room'],
+  ['restaurant', 'Restaurant'],
+  ['event', 'Events'],
+];
+const isoDay = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+export function BillsReport({ lodge }) {
+  const token = getSession()?.token;
+  const today = new Date();
+  const [from, setFrom] = useState(isoDay(new Date(today.getFullYear(), today.getMonth(), 1)));
+  const [to, setTo] = useState(isoDay(today));
+  const [type, setType] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [invoices, setInvoices] = useState(null);
+  const [error, setError] = useState('');
+  const [viewId, setViewId] = useState(null);
+
+  useEffect(() => {
+    let stale = false;
+    apiGet('/billing/invoices', { token })
+      .then((data) => !stale && setInvoices(data.invoices))
+      .catch((err) => !stale && setError(err instanceof ApiError ? err.message : 'Could not load bills.'));
+    return () => {
+      stale = true;
+    };
+  }, [token]);
+
+  const needle = search.trim().toLowerCase();
+  const inRange = (inv) => {
+    const day = billDateOf(inv);
+    return !day || ((!from || day >= from) && (!to || day <= to));
+  };
+  const rows = (invoices ?? [])
+    .filter((inv) => inRange(inv) && (type === 'ALL' || streamOf(inv) === type) && billMatchesSearch(inv, needle))
+    .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  const live = rows.filter((i) => i.status !== 'VOID');
+  const total = live.reduce((n, i) => n + Number(i.totalAmount || 0), 0);
+
+  const preset = (key) => {
+    const d = new Date();
+    if (key === 'month') {
+      setFrom(isoDay(new Date(d.getFullYear(), d.getMonth(), 1)));
+      setTo(isoDay(d));
+    } else if (key === 'prev') {
+      setFrom(isoDay(new Date(d.getFullYear(), d.getMonth() - 1, 1)));
+      setTo(isoDay(new Date(d.getFullYear(), d.getMonth(), 0)));
+    } else {
+      setFrom('');
+      setTo('');
+    }
+  };
+
+  return (
+    <div className="billing-report">
+      <div className="dash-card billing-report__bar">
+        <div className="field">
+          <label htmlFor="brFrom">From</label>
+          <input id="brFrom" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="brTo">To</label>
+          <input id="brTo" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <div className="billing-report__presets">
+          <button type="button" className="btn-secondary" onClick={() => preset('month')}>This month</button>
+          <button type="button" className="btn-secondary" onClick={() => preset('prev')}>Last month</button>
+          <button type="button" className="btn-secondary" onClick={() => preset('all')}>All time</button>
+        </div>
+        <div className="field billing-report__search">
+          <label htmlFor="brSearch">Find a bill</label>
+          <input id="brSearch" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Bill number, guest, room or table" />
+        </div>
+        <div className="billing-report__types" role="group" aria-label="Bill type">
+          {REPORT_TYPES.map(([key, label]) => (
+            <button key={key} type="button" className={`history-chip${type === key ? ' history-chip--on' : ''}`} aria-pressed={type === key} onClick={() => setType(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && <div className="form-banner form-banner--error">{error}</div>}
+      {!error && !invoices && <PageLoader inline label="Loading bills" />}
+      {!error && invoices && (
+        <section className="history-sheet billing-sheet">
+          <div className="history-table-wrap">
+            <table className="history-table">
+              <thead>
+                <tr>
+                  <th>Bill no.</th>
+                  <th>Date</th>
+                  <th>Billed for</th>
+                  <th>Guest / Table</th>
+                  <th>Room</th>
+                  <th>Document</th>
+                  <th>Status</th>
+                  <th className="history-table__num">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="history-table__none">No bills match.</td>
+                  </tr>
+                )}
+                {rows.map((inv) => {
+                  const source = billSource(inv);
+                  return (
+                    <tr
+                      key={inv.id}
+                      className={`history-table__row billing-sheet__row${inv.status === 'VOID' ? ' billing-sheet__row--void' : ''}`}
+                      onClick={() => setViewId(inv.id)}
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && setViewId(inv.id)}
+                    >
+                      <td className="history-table__strong">{inv.invoiceNumber}</td>
+                      <td>{inv.createdAt ? formatBillDate(inv.createdAt) : '—'}</td>
+                      <td>
+                        <span className={`bill-tag bill-tag--${tagClass(source)}`}>{sourceLabel(inv)}</span>
+                      </td>
+                      <td>
+                        {inv.kind === 'FOOD'
+                          ? inv.tableLabel || 'Counter'
+                          : inv.kind === 'EVENT'
+                            ? `${inv.guestName} · ${inv.venueName || 'Function'}`
+                            : inv.guestName}
+                      </td>
+                      <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '—' : inv.roomNumber || '—'}</td>
+                      <td>
+                        <span className={`bill-tag bill-tag--${DOCUMENT_TAG[inv.documentType]}`}>{DOCUMENT_LABEL[inv.documentType]}</span>
+                      </td>
+                      <td>
+                        {inv.status === 'VOID' ? <span className="bill-tag bill-tag--void">Void</span> : <span className="billing-sheet__ok">Issued</span>}
+                      </td>
+                      <td className="history-table__num history-table__strong">{formatPrice(inv.totalAmount)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={7}>
+                    {rows.length} bill{rows.length === 1 ? '' : 's'}
+                    {live.length !== rows.length ? ` (${rows.length - live.length} void, not counted)` : ''}
+                  </td>
+                  <td className="history-table__num">{formatPrice(total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {viewId != null && <Billing lodge={lodge} viewInvoiceId={viewId} modalOnly readOnly onClose={() => setViewId(null)} />}
+    </div>
+  );
 }

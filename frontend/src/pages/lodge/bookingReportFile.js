@@ -73,12 +73,12 @@ function billingSideOption(billingSide) {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // YYYY-MM-DD read as a calendar date, never shifted by the viewer's timezone.
-function formatDate(iso) {
+export function formatDate(iso) {
   const [y, m, d] = iso.split('-');
   return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
 }
 
-function formatAmount(n) {
+export function formatAmount(n) {
   if (n === null || n === undefined) return '—';
   return Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -87,29 +87,15 @@ function plural(n, one, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-// An actual arrival/departure stamp against the date it was booked for. Nearly
-// always the same day, so the time alone is enough; a late checkout that rolls
-// past midnight gets its date spelled out rather than silently reading as an
-// impossibly early departure. 24-hour clock — compact, and unambiguous on a
-// document someone may read months later.
-function formatActualStamp(value, plannedDateIso) {
-  if (!value) return '—';
-  const d = new Date(value);
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  const onDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  if (onDate === plannedDateIso) return time;
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${time}`;
-}
-
 // A real timestamp, unlike the plain calendar dates above — shown in the
 // viewer's own time so "generated at" means what they expect.
-function formatDateTime(value) {
+export function formatDateTime(value) {
   const d = new Date(value);
   const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${time}`;
 }
 
-function formatDateOfTimestamp(value) {
+export function formatDateOfTimestamp(value) {
   if (!value) return '';
   const d = new Date(value);
   return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
@@ -139,7 +125,7 @@ function reportFilename(report, extension) {
   return `Booking-report-${period}${side}.${extension}`;
 }
 
-function triggerDownload(blob, filename) {
+export function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -224,9 +210,9 @@ function detailColumns(servesFood) {
     { label: 'Booked value', width: 14, kind: 'money', value: money((b) => b.totalPrice) },
     { label: 'Advance held', width: 14, kind: 'money', value: money((b) => b.advanceAmount) },
     { label: 'Advance paid by', width: 24, value: (b) => (b.advanceAmount ? tendersLabel(b.advanceTenders) : '') },
-    { label: 'Gross amount', width: 14, kind: 'money', value: money((b) => b.grossAmount) },
+    { label: 'Room gross', width: 14, kind: 'money', value: money((b) => b.grossAmount) },
     { label: 'Discount', width: 12, kind: 'money', value: money((b) => b.discountAmount) },
-    { label: 'Net amount', width: 14, kind: 'money', value: money((b) => b.netAmount) },
+    { label: 'Room net', width: 14, kind: 'money', value: money((b) => b.netAmount) },
     ...(servesFood
       ? [
           { label: 'Taxable — rooms', width: 15, kind: 'money', value: money((b) => b.roomTaxable) },
@@ -237,7 +223,8 @@ function detailColumns(servesFood) {
     { label: 'CGST', width: 12, kind: 'money', value: money((b) => b.cgstAmount) },
     { label: 'SGST', width: 12, kind: 'money', value: money((b) => b.sgstAmount) },
     { label: 'Round off', width: 10, kind: 'money', value: money((b) => b.roundOff) },
-    { label: 'Billed total', width: 14, kind: 'money', value: money((b) => b.billedAmount) },
+    { label: 'Room billed total', width: 14, kind: 'money', value: money((b) => b.billedAmount) },
+    { label: 'Food on bill (in Restaurant report)', width: 18, kind: 'money', value: money((b) => b.foodBilledAmount) },
     { label: 'Advance deducted on bill', width: 16, kind: 'money', value: money((b) => b.advancePaid) },
     { label: 'Balance collected', width: 15, kind: 'money', value: money((b) => b.balanceCollected) },
     { label: 'Balance paid by', width: 24, value: (b) => (b.balanceCollected ? tendersLabel(b.balanceTenders) : '') },
@@ -552,14 +539,14 @@ export async function downloadBookingReportExcel(rawReport) {
 // Landscape A4 (842 x 595pt): the register carries nineteen columns once the
 // bill's figures are on it, and portrait would force either a wrapped row or
 // unreadable type.
-const MARGIN = 24;
-const CONTENT_WIDTH = 842 - MARGIN * 2;
+export const MARGIN = 24;
+export const CONTENT_WIDTH = 842 - MARGIN * 2;
 
 // Greys, not colours — this is a document that gets printed, often on a mono
 // laser, and a tint that survives that is worth more than a brand hue.
-const INK = 25;
-const MUTED = 115;
-const RULE = 170;
+export const INK = 25;
+export const MUTED = 115;
+export const RULE = 170;
 const BAND = 238;
 const ZEBRA = 247;
 
@@ -568,9 +555,10 @@ const ZEBRA = 247;
 // anywhere in the app, so it identifies nothing an owner could look up. A row
 // with no bill yet is identified by guest, room and dates instead.
 //
-// Widths are absolute points and must total CONTENT_WIDTH exactly. "In" and
-// "Out" carry the actual arrival/departure clock time beside the dates the
-// stay was booked for, so a late arrival or an overstay is visible on the row.
+// Widths are absolute points and must total CONTENT_WIDTH exactly. Bill date
+// sits beside the number because a return is filed by it, and the guest column
+// is wide enough to identify the party; the actual arrival/departure times are
+// in the Excel register.
 //
 // The money columns are the bill's own figures in the order they reconcile:
 // discount off the gross, the taxable value that leaves, the tax on it, the
@@ -582,12 +570,11 @@ const ZEBRA = 247;
 const REGISTER_COLUMNS = [
   { label: 'Bill no.', width: 44 },
   { label: 'Type', width: 32 },
-  { label: 'Guest', width: 52 },
+  { label: 'Bill date', width: 46 },
+  { label: 'Guest', width: 98 },
   { label: 'Rm', width: 22 },
   { label: 'Check-in', width: 44 },
-  { label: 'In', width: 46 },
   { label: 'Check-out', width: 44 },
-  { label: 'Out', width: 46 },
   { label: 'Nts', width: 18, align: 'right' },
   { label: 'Status', width: 38 },
   { label: 'Discount', width: 44, align: 'right' },
@@ -626,7 +613,7 @@ function registerTotals(summary) {
 
 // jsPDF's built-in fonts have no glyph fallback, so an over-long guest name
 // has to be clipped by measured width rather than character count.
-function clip(pdf, text, width) {
+export function clip(pdf, text, width) {
   const value = String(text ?? '');
   if (!value) return '';
   if (pdf.getTextWidth(value) <= width) return value;
@@ -638,7 +625,7 @@ function clip(pdf, text, width) {
 // A thin layout cursor over jsPDF: it owns the y position and the page breaks,
 // so each section below just says "draw a heading, draw a table" without
 // tracking where the previous one landed.
-function createLayout(pdf, runningHead) {
+export function createLayout(pdf, runningHead) {
   const pageHeight = pdf.internal.pageSize.getHeight();
   const right = MARGIN + CONTENT_WIDTH;
   const bottom = pageHeight - MARGIN - 16;
@@ -850,7 +837,8 @@ export async function buildBookingReportPdf(rawReport) {
       'issued for them, counted by check-in date. Part 3 is the register of those stays, one row each. Parts 1 ' +
       'and 2 are dated differently and are not expected to agree. Cancelled bookings are listed but excluded ' +
       'from every money figure, except the cancellation charges kept on them, which part 1 counts as income. ' +
-      'All amounts in rupees.'
+      'This is a room report: food is reported under Restaurant. For GST returns use the GST register, which ' +
+      'lists every bill by bill date. All amounts in rupees.'
   );
 
   // The headline figures, one line, before the detail.
@@ -1128,12 +1116,11 @@ export async function buildBookingReportPdf(rawReport) {
         return [
           b.invoiceNumber || '—',
           billed ? DOCUMENT_TYPE_SHORT[b.documentType] || b.documentType : '—',
+          billed ? formatDateOfTimestamp(b.invoiceDate) : '—',
           b.guestName,
           b.roomNumber,
           formatDate(b.checkInDate),
-          formatActualStamp(b.actualCheckInAt, b.checkInDate),
           formatDate(b.checkOutDate),
-          formatActualStamp(b.actualCheckOutAt, b.checkOutDate),
           isCancelled ? '—' : b.nights,
           BOOKING_STATUS_SHORT[b.status] || b.status,
           bill(b.discountAmount),

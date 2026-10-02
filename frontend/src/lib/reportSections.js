@@ -4,7 +4,7 @@
 export const REPORT_SECTIONS = {
   overview: ['overview'],
   sales: ['bookings', 'events', 'food', 'services'],
-  finance: ['profitLoss', 'expenses', 'income', 'gst'],
+  finance: ['bills', 'profitLoss', 'expenses', 'income', 'gst'],
   assets: ['assets'],
 };
 
