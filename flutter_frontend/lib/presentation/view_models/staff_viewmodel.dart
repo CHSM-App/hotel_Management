@@ -12,6 +12,12 @@ import '../../domain/usecase/staff_usecase.dart';
 class StaffState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about (e.g. "roleName" for
+  /// "A role with that name already exists."), from [apiErrorField] — lets a
+  /// form focus the exact field instead of leaving the user to guess from a
+  /// banner alone. Null when the error isn't about one field.
+  final String? errorField;
   final List<StaffMember> staff;
   final List<LodgeRole> roles;
   final List<PermissionInfo> permissions;
@@ -20,6 +26,7 @@ class StaffState {
   const StaffState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.staff = const [],
     this.roles = const [],
     this.permissions = const [],
@@ -29,6 +36,7 @@ class StaffState {
   StaffState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<StaffMember>? staff,
     List<LodgeRole>? roles,
@@ -37,6 +45,7 @@ class StaffState {
   }) => StaffState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     staff: staff ?? this.staff,
     roles: roles ?? this.roles,
     permissions: permissions ?? this.permissions,
@@ -73,7 +82,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
         permissions: catalog.permissions,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -91,7 +100,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -105,7 +114,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -117,7 +126,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
       state = state.copyWith(submitting: false);
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -136,7 +145,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -147,7 +156,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -158,7 +167,7 @@ class StaffViewModel extends StateNotifier<StaffState> {
       await loadAll();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }

@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../models/me.dart';
 import '../models/session.dart';
 import '../repository/auth_repo.dart';
@@ -44,4 +46,11 @@ class AuthUsecase {
   /// Owner-only: edit the property's own details.
   Future<Me> updateMyLodge(Map<String, dynamic> body) =>
       repository.updateMyLodge(body);
+
+  /// Owner-only: upload or replace the property's logo.
+  Future<Me> updateMyLodgeLogo(FormData form) =>
+      repository.updateMyLodgeLogo(form);
+
+  /// Owner-only: drop the property's logo, and turn off printing it.
+  Future<Me> removeMyLodgeLogo() => repository.removeMyLodgeLogo();
 }

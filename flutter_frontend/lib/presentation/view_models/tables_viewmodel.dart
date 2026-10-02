@@ -12,12 +12,19 @@ import '../../domain/usecase/food_setup_usecase.dart';
 class TablesState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about (e.g. "tableLabel"
+  /// for "A table with that name already exists."), from [apiErrorField] —
+  /// lets a form focus the exact field instead of leaving the user to guess
+  /// from a banner alone. Null when the error isn't about one field.
+  final String? errorField;
   final List<DiningTable> tables;
   final bool submitting;
 
   const TablesState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.tables = const [],
     this.submitting = false,
   });
@@ -25,12 +32,14 @@ class TablesState {
   TablesState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<DiningTable>? tables,
     bool? submitting,
   }) => TablesState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     tables: tables ?? this.tables,
     submitting: submitting ?? this.submitting,
   );
@@ -47,7 +56,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       final tables = await usecase.allTables();
       state = state.copyWith(isLoading: false, tables: tables);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -64,7 +73,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -88,7 +97,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -99,7 +108,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -110,7 +119,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -121,7 +130,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       await load();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }

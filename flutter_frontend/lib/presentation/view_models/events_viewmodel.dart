@@ -17,6 +17,12 @@ import '../../domain/usecase/events_usecase.dart';
 class EventsState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about, from
+  /// [apiErrorField] — lets a form focus the exact field instead of leaving
+  /// the user to guess from a banner alone. Null when the error isn't about
+  /// one field.
+  final String? errorField;
   final List<EventBooking> events;
   final List<EventVenue> venues;
   final List<EventAddon> addons;
@@ -27,6 +33,7 @@ class EventsState {
   const EventsState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.events = const [],
     this.venues = const [],
     this.addons = const [],
@@ -38,6 +45,7 @@ class EventsState {
   EventsState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<EventBooking>? events,
     List<EventVenue>? venues,
@@ -48,6 +56,7 @@ class EventsState {
   }) => EventsState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     events: events ?? this.events,
     venues: venues ?? this.venues,
     addons: addons ?? this.addons,
@@ -84,7 +93,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
         addons: results[1] as List<EventAddon>,
       );
     } catch (e) {
-      state = state.copyWith(catalogueLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(catalogueLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -94,8 +103,9 @@ class EventsViewModel extends StateNotifier<EventsState> {
     String? status,
     int? venueId,
     bool includeClosed = true,
+    bool silent = false,
   }) async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    if (!silent) state = state.copyWith(isLoading: true, clearError: true);
     try {
       final events = await usecase.events(
         fromDate: fromDate,
@@ -106,11 +116,21 @@ class EventsViewModel extends StateNotifier<EventsState> {
       );
       state = state.copyWith(isLoading: false, events: events);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
   void _bump() => state = state.copyWith(bumps: state.bumps + 1);
+
+  /// Splices [event] into [EventsState.events] by id so screens reading the
+  /// shared list (diary, event lists) see the new status immediately,
+  /// instead of relying on [EventsState.bumps] — which nothing watches.
+  void _applyEvent(EventBooking event) {
+    final events = state.events
+        .map((e) => e.id == event.id ? event : e)
+        .toList();
+    state = state.copyWith(events: events);
+  }
 
   // ── Setup: venues ──────────────────────────────────────────────────────
 
@@ -126,7 +146,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -137,7 +157,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -148,7 +168,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -167,7 +187,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -178,7 +198,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -215,7 +235,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
     try {
       return await usecase.event(id);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -228,7 +248,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       _bump();
       return event;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -241,7 +261,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       _bump();
       return event;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -249,10 +269,11 @@ class EventsViewModel extends StateNotifier<EventsState> {
   Future<EventBooking?> addExtra(int id, {required String label, int quantity = 1, num? agreedAmount}) async {
     try {
       final event = await usecase.addExtra(id, label: label, quantity: quantity, agreedAmount: agreedAmount);
+      _applyEvent(event);
       _bump();
       return event;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -260,10 +281,11 @@ class EventsViewModel extends StateNotifier<EventsState> {
   Future<EventBooking?> priceExtra(int id, int lineId, num agreedAmount) async {
     try {
       final event = await usecase.priceExtra(id, lineId, agreedAmount);
+      _applyEvent(event);
       _bump();
       return event;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -271,10 +293,11 @@ class EventsViewModel extends StateNotifier<EventsState> {
   Future<EventBooking?> removeExtra(int id, int lineId) async {
     try {
       final event = await usecase.removeExtra(id, lineId);
+      _applyEvent(event);
       _bump();
       return event;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -293,10 +316,11 @@ class EventsViewModel extends StateNotifier<EventsState> {
     try {
       final event = await run();
       state = state.copyWith(submitting: false);
+      _applyEvent(event);
       _bump();
       return event;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -315,7 +339,7 @@ class EventsViewModel extends StateNotifier<EventsState> {
       _bump();
       return receipt;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }

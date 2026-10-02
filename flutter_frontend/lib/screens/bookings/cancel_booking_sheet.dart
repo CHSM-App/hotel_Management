@@ -354,17 +354,25 @@ class _CancelBookingDialogState extends State<_CancelBookingDialog> {
 
               const SizedBox(height: AppTheme.s16),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  NeuButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Keep the booking'),
+                  Expanded(
+                    child: NeuButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text(
+                        'Keep the booking',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
-                  NeuButton(
-                    onPressed: _submit,
-                    child: const Text(
-                      'Cancel booking',
-                      style: TextStyle(color: AppTheme.danger),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: NeuButton(
+                      onPressed: _submit,
+                      child: const Text(
+                        'Cancel booking',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: AppTheme.danger),
+                      ),
                     ),
                   ),
                 ],

@@ -14,6 +14,12 @@ import '../../domain/usecase/expenses_usecase.dart';
 class ExpensesState {
   final bool isLoading;
   final String? error;
+
+  /// The backend's name for the field [error] is about (e.g. "name" for "A
+  /// vendor with that name already exists."), from [apiErrorField] — lets a
+  /// form focus the exact field instead of leaving the user to guess from
+  /// a banner alone. Null when the error isn't about one field.
+  final String? errorField;
   final List<Expense> expenses;
   final List<ExpenseCategory> categories;
   final List<Vendor> vendors;
@@ -26,6 +32,7 @@ class ExpensesState {
   const ExpensesState({
     this.isLoading = false,
     this.error,
+    this.errorField,
     this.expenses = const [],
     this.categories = const [],
     this.vendors = const [],
@@ -39,6 +46,7 @@ class ExpensesState {
   ExpensesState copyWith({
     bool? isLoading,
     String? error,
+    String? errorField,
     bool clearError = false,
     List<Expense>? expenses,
     List<ExpenseCategory>? categories,
@@ -51,6 +59,7 @@ class ExpensesState {
   }) => ExpensesState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
+    errorField: clearError ? null : (errorField ?? this.errorField),
     expenses: expenses ?? this.expenses,
     categories: categories ?? this.categories,
     vendors: vendors ?? this.vendors,
@@ -92,7 +101,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       );
       state = state.copyWith(isLoading: false, expenses: expenses);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -114,7 +123,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
         templates: results[2] as List<RecurringTemplate>,
       );
     } catch (e) {
-      state = state.copyWith(catalogueLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(catalogueLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -123,7 +132,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       final summary = await usecase.summary(year: year);
       state = state.copyWith(summary: summary);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
     }
   }
 
@@ -177,7 +186,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -188,7 +197,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -201,7 +210,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     try {
       return await usecase.categoryTagImpact(categoryId);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -215,7 +224,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -232,7 +241,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -243,7 +252,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     try {
       return await usecase.expense(id);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -261,7 +270,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadExpenses();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -273,7 +282,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadExpenses();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -288,7 +297,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     try {
       return await usecase.expensePayments(expenseId);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return const [];
     }
   }
@@ -302,7 +311,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await Future.wait([loadExpenses(), loadSummary()]);
       return expense;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -313,7 +322,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await Future.wait([loadExpenses(), loadSummary()]);
       return expense;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return null;
     }
   }
@@ -332,7 +341,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -343,7 +352,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await loadCatalogue();
       return true;
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -362,7 +371,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
       await Future.wait([loadExpenses(), loadCatalogue()]);
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
       return false;
     }
   }
@@ -374,7 +383,7 @@ class ExpensesViewModel extends StateNotifier<ExpensesState> {
     try {
       return await usecase.expenses(recurringTemplateId: templateId);
     } catch (e) {
-      state = state.copyWith(error: apiErrorMessage(e));
+      state = state.copyWith(error: apiErrorMessage(e), errorField: apiErrorField(e));
       return const [];
     }
   }

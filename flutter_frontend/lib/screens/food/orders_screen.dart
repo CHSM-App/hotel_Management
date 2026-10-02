@@ -216,9 +216,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         // ticket (including an old delivered-but-unbilled one still
         // waiting on "Issue bill") sits under one "Live orders" heading,
         // card view and spreadsheet alike.
-        final sorted = [...orders]..sort(
-          (a, b) => (a.placedAt ?? '').compareTo(b.placedAt ?? ''),
-        );
+        final sorted = [...orders]
+          ..sort((a, b) => (a.placedAt ?? '').compareTo(b.placedAt ?? ''));
         final pending = orders.where((o) => o.status == 'PENDING').length;
         final filtered = _queueSearchText.trim().isEmpty
             ? sorted
@@ -238,7 +237,9 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               const SizedBox(width: AppTheme.s8),
               OrdersViewToggle(
                 view: state.listView,
-                onChanged: ref.read(ordersViewModelProvider.notifier).setListView,
+                onChanged: ref
+                    .read(ordersViewModelProvider.notifier)
+                    .setListView,
               ),
             ],
           ),
@@ -254,10 +255,11 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s8),
-            child: Text(
-              'Live orders (${filtered.length})',
-              style: Theme.of(context).textTheme.titleSmall,
+            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            child: _SectionHeader(
+              label: 'Live orders',
+              count: filtered.length,
+              icon: Icons.soup_kitchen_rounded,
             ),
           ),
           if (filtered.isEmpty)
@@ -278,21 +280,22 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               isRealQueue: true,
             )
           else
-            for (final order in filtered)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.s12),
-                child: _OrderCard(
-                  order: order,
-                  now: state.now,
-                  live: true,
-                  canCook: canCook,
-                  canDeliver: canDeliver,
-                  canAccept: canAccept,
-                  canHandOver: canHandOver,
-                  canIssueBill: canIssueBill,
-                  isRealQueue: true,
-                ),
-              ),
+            _ResponsiveCards(
+              cards: [
+                for (final order in filtered)
+                  _OrderCard(
+                    order: order,
+                    now: state.now,
+                    live: true,
+                    canCook: canCook,
+                    canDeliver: canDeliver,
+                    canAccept: canAccept,
+                    canHandOver: canHandOver,
+                    canIssueBill: canIssueBill,
+                    isRealQueue: true,
+                  ),
+              ],
+            ),
         ];
       },
     );
@@ -421,26 +424,27 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ];
         }
         return [
-          for (final order in orders)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
-              child: _OrderCard(
-                order: order,
-                now: state.now,
-                live: false,
-                canBillFood: canBillFood,
-                canDeliver: canDeliver,
-                // Same as OrdersPanel.jsx's renderHistoryRow: Accept and
-                // Deliver both ride on orders.take here, not the Kitchen
-                // tab's own canWorkQueue-based canAccept — History has no
-                // separate front-of-house/kitchen split, just whoever holds
-                // orders.take.
-                canAccept: canDeliver && canHandOver,
-                canHandOver: canHandOver,
-                canIssueBill: canIssueBill,
-                canViewBill: canViewBill,
-              ),
-            ),
+          _ResponsiveCards(
+            cards: [
+              for (final order in orders)
+                _OrderCard(
+                  order: order,
+                  now: state.now,
+                  live: false,
+                  canBillFood: canBillFood,
+                  canDeliver: canDeliver,
+                  // Same as OrdersPanel.jsx's renderHistoryRow: Accept and
+                  // Deliver both ride on orders.take here, not the Kitchen
+                  // tab's own canWorkQueue-based canAccept — History has no
+                  // separate front-of-house/kitchen split, just whoever holds
+                  // orders.take.
+                  canAccept: canDeliver && canHandOver,
+                  canHandOver: canHandOver,
+                  canIssueBill: canIssueBill,
+                  canViewBill: canViewBill,
+                ),
+            ],
+          ),
         ];
       },
     );
@@ -514,7 +518,9 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ];
         }
 
-        final orders = all.where((o) => o.matchesSearch(state.historySearch)).toList();
+        final orders = all
+            .where((o) => o.matchesSearch(state.historySearch))
+            .toList();
         if (orders.isEmpty) {
           return [
             ...head,
@@ -545,26 +551,136 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         }
         return [
           ...head,
-          for (final order in orders)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
-              child: _OrderCard(
-                order: order,
-                now: state.now,
-                live: onQueueTab,
-                canCook: canCook,
-                canBillFood: canBillFood,
-                canDeliver: canDeliver,
-                // A captain accepts a guest's own order on their own
-                // orders.take, not the Kitchen tab's canWorkQueue-based
-                // canAccept — same as OrdersPanel.jsx's renderCaptainCard.
-                canAccept: canDeliver && canHandOver,
-                canHandOver: canHandOver,
-                canIssueBill: canIssueBill,
-                canViewBill: canViewBill,
-              ),
-            ),
+          _ResponsiveCards(
+            cards: [
+              for (final order in orders)
+                _OrderCard(
+                  order: order,
+                  now: state.now,
+                  live: onQueueTab,
+                  canCook: canCook,
+                  canBillFood: canBillFood,
+                  canDeliver: canDeliver,
+                  // A captain accepts a guest's own order on their own
+                  // orders.take, not the Kitchen tab's canWorkQueue-based
+                  // canAccept — same as OrdersPanel.jsx's renderCaptainCard.
+                  canAccept: canDeliver && canHandOver,
+                  canHandOver: canHandOver,
+                  canIssueBill: canIssueBill,
+                  canViewBill: canViewBill,
+                ),
+            ],
+          ),
         ];
+      },
+    );
+  }
+}
+
+// ── Section header ───────────────────────────────────────────────────────────
+
+/// A small icon badge, a label, and a pill count — replaces the old bare
+/// "Live orders (N)" text with something that reads as a stat rather than a
+/// caption, matching the richer card look below it.
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final int count;
+  final IconData icon;
+
+  const _SectionHeader({
+    required this.label,
+    required this.count,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.accent.withValues(alpha: 0.85),
+                AppTheme.sidebarBrand.withValues(alpha: 0.85),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, size: 15, color: Colors.white),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Text(label, style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(width: AppTheme.s8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppTheme.accent.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              color: AppTheme.accent,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Responsive card grid ─────────────────────────────────────────────────────
+
+/// Lays [cards] out in a single column on a phone, and wraps them into two or
+/// three even columns once there's room — the tablet/desktop width this app
+/// already defines in [AppTheme.bpMedium]/[AppTheme.bpExpanded] but which the
+/// order cards never used, leaving a wide screen as one long, half-empty
+/// column of full-width tickets.
+class _ResponsiveCards extends StatelessWidget {
+  final List<Widget> cards;
+
+  const _ResponsiveCards({required this.cards});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = width >= AppTheme.bpExpanded
+            ? 3
+            : width >= AppTheme.bpMedium
+            ? 2
+            : 1;
+
+        if (columns == 1) {
+          return Column(
+            children: [
+              for (final card in cards)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                  child: card,
+                ),
+            ],
+          );
+        }
+
+        const spacing = AppTheme.s12;
+        final itemWidth = (width - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final card in cards) SizedBox(width: itemWidth, child: card),
+          ],
+        );
       },
     );
   }
@@ -748,7 +864,9 @@ class _SearchFieldState extends State<_SearchField> {
                 end: Alignment.bottomRight,
                 colors: [
                   AppTheme.accent.withValues(alpha: focused ? 0.95 : 0.12),
-                  AppTheme.sidebarBrand.withValues(alpha: focused ? 0.95 : 0.08),
+                  AppTheme.sidebarBrand.withValues(
+                    alpha: focused ? 0.95 : 0.08,
+                  ),
                 ],
               ),
               shape: BoxShape.circle,
@@ -799,7 +917,11 @@ class _SearchFieldState extends State<_SearchField> {
                   color: AppTheme.danger.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.danger),
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 15,
+                  color: AppTheme.danger,
+                ),
               ),
             ),
         ],
@@ -821,7 +943,11 @@ class OrdersViewToggle extends StatelessWidget {
   final String view;
   final ValueChanged<String> onChanged;
 
-  const OrdersViewToggle({super.key, required this.view, required this.onChanged});
+  const OrdersViewToggle({
+    super.key,
+    required this.view,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -900,7 +1026,9 @@ class _PeriodChipsRow extends StatelessWidget {
               vertical: AppTheme.s8,
             ),
             decoration: BoxDecoration(
-              color: on ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.card,
+              color: on
+                  ? AppTheme.accent.withValues(alpha: 0.1)
+                  : AppTheme.card,
               border: Border.all(color: on ? AppTheme.accent : AppTheme.border),
               borderRadius: BorderRadius.circular(999),
             ),
@@ -1064,6 +1192,20 @@ class _OrderCard extends ConsumerWidget {
     }
   }
 
+  /// A colour to match [_sourceIcon] — room stays, table service and counter
+  /// walk-ins each get their own tint so the badge reads at a glance instead
+  /// of every ticket showing the same neutral circle.
+  static Color _sourceColour(FoodOrder order) {
+    switch (order.source) {
+      case 'ROOM':
+        return AppTheme.checkedIn;
+      case 'TABLE':
+        return AppTheme.sidebarBrand;
+      default:
+        return AppTheme.checkout;
+    }
+  }
+
   /// The ticket's dishes, grouped by menu section when it spans more than
   /// one — collapsed behind its own summary (name, count, how many are
   /// ready) same as OrdersPanel.jsx's own renderSections, so a long ticket
@@ -1110,401 +1252,411 @@ class _OrderCard extends ConsumerWidget {
     final overdue = waited != null && waited.inMinutes >= 20;
     final actions = _visibleStatuses;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppTheme.rMedium),
-      child: NeuCard(
-        radius: AppTheme.rMedium,
-        padding: EdgeInsets.zero,
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // A thin status-colour rail down the left edge — the ticket's
-              // state readable at a glance, before any text is parsed.
-              Container(width: 4, color: colour),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTheme.s12,
-                    AppTheme.s8,
-                    AppTheme.s12,
-                    AppTheme.s8,
-                  ),
-                  child: Column(
+    final itemCount = order.items.fold<int>(0, (n, i) => n + i.quantity);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        border: Border.all(
+          color: overdue
+              ? AppTheme.danger.withValues(alpha: 0.3)
+              : AppTheme.border,
+          width: overdue ? 1.4 : 1,
+        ),
+        boxShadow: AppTheme.elevated,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // A thin status-colour band across the top — the ticket's stage
+            // readable at a glance, before any text is parsed, without the
+            // heavier full-height rail competing with the content beside it.
+            Container(height: 4, color: colour),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s8,
+                AppTheme.s12,
+                AppTheme.s12,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colour.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '#${order.orderNumber}',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w800,
-                                color: colour,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.s8),
-                          Icon(
-                            _sourceIcon(order),
-                            size: 13,
-                            color: AppTheme.muted,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              order.target,
-                              style: Theme.of(
-                                context,
-                              ).textTheme.titleSmall?.copyWith(fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.s8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colour.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: colour.withValues(alpha: 0.35),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                      Container(
+                        width: 30,
+                        height: 30,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _sourceColour(order).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Icon(
+                          _sourceIcon(order),
+                          size: 15,
+                          color: _sourceColour(order),
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Icon(
-                                  _statusIcon(order),
-                                  size: 11,
-                                  color: colour,
-                                ),
-                                const SizedBox(width: 4),
                                 Text(
-                                  order.billed
-                                      ? 'Billed'
-                                      : order.readyToBill
-                                      ? 'Ready to bill'
-                                      : order.statusLabel,
-                                  style: TextStyle(
-                                    color: colour,
-                                    fontSize: 10.5,
+                                  '#${order.orderNumber}',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
                                     fontWeight: FontWeight.w700,
+                                    color: AppTheme.muted,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    order.target,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(fontSize: 15.5),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
                             ),
+                            if (order.customerLabel != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                order.customerLabel!,
+                                style: Theme.of(context).textTheme.labelSmall,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colour.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_statusIcon(order), size: 11, color: colour),
+                            const SizedBox(width: 4),
+                            Text(
+                              order.billed
+                                  ? 'Billed'
+                                  : order.readyToBill
+                                  ? 'Ready to bill'
+                                  : order.statusLabel,
+                              style: TextStyle(
+                                color: colour,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (live && waited != null) ...[
+                    const SizedBox(height: AppTheme.s4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: overdue
+                            ? AppTheme.danger.withValues(alpha: 0.1)
+                            : AppTheme.muted.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            overdue
+                                ? Icons.warning_rounded
+                                : Icons.access_time_filled_rounded,
+                            size: 12,
+                            color: overdue ? AppTheme.danger : AppTheme.muted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Waiting ${_elapsed(waited)}',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: overdue
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              // A ticket that has sat for twenty minutes
+                              // should read as a problem without anybody
+                              // having to do the subtraction.
+                              color: overdue ? AppTheme.danger : AppTheme.muted,
+                            ),
                           ),
                         ],
                       ),
-                      if ((live && waited != null) ||
-                          order.customerLabel != null) ...[
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            if (live && waited != null) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: (overdue
-                                          ? AppTheme.danger
-                                          : AppTheme.muted)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.access_time_filled_rounded,
-                                      size: 11,
-                                      color: overdue
-                                          ? AppTheme.danger
-                                          : AppTheme.muted,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      'Waiting ${_elapsed(waited)}',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: overdue
-                                            ? FontWeight.w700
-                                            : FontWeight.w600,
-                                        // A ticket that has sat for twenty
-                                        // minutes should read as a problem
-                                        // without anybody having to do the
-                                        // subtraction.
-                                        color: overdue
-                                            ? AppTheme.danger
-                                            : AppTheme.muted,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            if (order.customerLabel != null) ...[
-                              if (live && waited != null) ...[
-                                const SizedBox(width: AppTheme.s8),
-                              ],
-                              Expanded(
-                                child: Text(
-                                  order.customerLabel!,
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                    ),
+                  ],
+
+                  const SizedBox(height: AppTheme.s8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s8,
+                      vertical: AppTheme.s4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.bg,
+                      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final (i, child) in _itemRows().indexed) ...[
+                          if (i > 0)
+                            Divider(
+                              height: AppTheme.s8,
+                              thickness: 1,
+                              color: AppTheme.border.withValues(alpha: 0.9),
+                            ),
+                          child,
+                        ],
                       ],
+                    ),
+                  ),
 
-                      const SizedBox(height: AppTheme.s8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.s12,
-                          vertical: AppTheme.s8,
+                  if ((order.note ?? '').isNotEmpty) ...[
+                    const SizedBox(height: AppTheme.s4),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.sticky_note_2_rounded,
+                          size: 13,
+                          color: AppTheme.muted,
                         ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.bg,
-                          borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: _itemRows(),
-                        ),
-                      ),
-
-                      if ((order.note ?? '').isNotEmpty) ...[
-                        const SizedBox(height: AppTheme.s4),
-                        Text(
-                          'Note: ${order.note}',
-                          style: Theme.of(context).textTheme.labelSmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-
-                      const SizedBox(height: AppTheme.s8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.s12,
-                          vertical: AppTheme.s8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              'Total',
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                            const Spacer(),
-                            Text(
-                              formatPrice(order.subtotal),
-                              style: const TextStyle(
-                                color: AppTheme.accent,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      if (order.status == 'CANCELLED' &&
-                          (order.cancelReason ?? '').isNotEmpty) ...[
-                        const SizedBox(height: AppTheme.s4),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.s8,
-                            vertical: AppTheme.s4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.danger.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(
-                              AppTheme.rSmall,
-                            ),
-                          ),
+                        const SizedBox(width: 5),
+                        Expanded(
                           child: Text(
-                            'Cancelled: ${order.cancelReason}',
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(color: AppTheme.danger),
+                            order.note!,
+                            style: Theme.of(context).textTheme.labelSmall,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
+                    ),
+                  ],
 
-                      // Rendered only from what the server offered, filtered
-                      // the same way OrdersPanel.jsx filters visibleStatuses:
-                      // Accept (QUEUED) and Cancel are front-of-house,
-                      // everything else is the kitchen actually cooking the
-                      // order and needs orders.cook. A single action fills
-                      // the row; several share it evenly rather than
-                      // wrapping.
-                      // Not gated on [live]: [_visibleStatuses] already only
-                      // ever returns entries from the order's own
-                      // nextStatuses, which the server leaves empty once an
-                      // order is settled — so a History row still offers
-                      // Accept/Deliver/Cancel for an order still actually
-                      // open today, same as OrdersPanel.jsx's own
-                      // renderHistoryRow (distinct from the item ticks and
-                      // per-item Deliver below, which stay [live]-only: the
-                      // web's History table has no per-item button, only
-                      // the whole-order one).
-                      if (actions.isNotEmpty) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        Row(
-                          children: [
-                            for (var i = 0; i < actions.length; i++) ...[
-                              if (i > 0) const SizedBox(width: AppTheme.s8),
-                              Expanded(
-                                child: NeuButton(
-                                  primary: actions[i] != 'CANCELLED',
-                                  expand: true,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: AppTheme.s8 + 2,
-                                  ),
-                                  onPressed: () =>
-                                      _advance(context, ref, actions[i]),
-                                  child: Text(
-                                    kOrderActionLabels[actions[i]] ??
-                                        actions[i],
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                  const SizedBox(height: AppTheme.s8),
+                  Row(
+                    children: [
+                      Text(
+                        '$itemCount item${itemCount == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.muted,
                         ),
-                      ],
-
-                      // Still unbilled and not sent to billing: the captain
-                      // can correct what was rung in — same "Edit order" the
-                      // web offers alongside Accept/Cancel. Not on the real
-                      // Kitchen queue — OrdersPanel.jsx's renderOrder never
-                      // offers it there — but shown everywhere else,
-                      // including a captain's own "Kitchen" tab, same as
-                      // renderCaptainCard.
-                      if (!isRealQueue && canDeliver && order.isEditable) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(
-                          expand: true,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTheme.s8 + 2,
-                          ),
-                          onPressed: () => _editOrder(context),
-                          child: const Text(
-                            'Edit order',
-                            style: TextStyle(fontSize: 13),
-                          ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        formatPrice(order.subtotal),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
                         ),
-                      ],
-
-                      // Already billed: open what was issued. Not on the
-                      // real Kitchen queue, same as OrdersPanel.jsx's own
-                      // `viewBill`.
-                      if (!isRealQueue && canViewBill && order.invoiceId != null) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(
-                          expand: true,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTheme.s8 + 2,
-                          ),
-                          onPressed: () =>
-                              _viewOrderBill(context, ref, order.invoiceId!),
-                          child: const Text(
-                            'View bill',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-
-                      // Delivered and unbilled: either straight to a bill
-                      // (this login also holds billing.manage, same as
-                      // OrdersPanel.jsx's `readyToBill.issues`) or queued for
-                      // whoever does (`canBillFood` alone) — never both.
-                      if (canIssueBill &&
-                          order.isDeliveredUnbilled &&
-                          order.billableAsFoodTab) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(
-                          primary: true,
-                          expand: true,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTheme.s8 + 2,
-                          ),
-                          onPressed: () => _issueBillForOrder(context, ref, order),
-                          child: const Text(
-                            'Issue bill',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ] else if (canBillFood && order.canMarkReadyToBill) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(
-                          primary: true,
-                          expand: true,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTheme.s8 + 2,
-                          ),
-                          onPressed: () => _markReadyToBill(context, ref),
-                          child: const Text(
-                            'Ready to bill',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-
-                      // A table or takeaway can also go on a staying guest's
-                      // room bill instead of being paid for here — same
-                      // `canRoom` exception OrdersPanel.jsx carves out (rooms
-                      // only, never a room order itself).
-                      if ((canIssueBill || canBillFood) &&
-                          order.isDeliveredUnbilled &&
-                          order.source != 'ROOM' &&
-                          (ref.watch(authViewModelProvider).me?.lodge.hasRooms ??
-                              false)) ...[
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(
-                          expand: true,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTheme.s8 + 2,
-                          ),
-                          onPressed: () => _addOrderToRoom(context, ref, order),
-                          child: const Text(
-                            'Add to room',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
+                      ),
                     ],
                   ),
-                ),
+
+                  if (order.status == 'CANCELLED' &&
+                      (order.cancelReason ?? '').isNotEmpty) ...[
+                    const SizedBox(height: AppTheme.s4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.s8,
+                        vertical: AppTheme.s4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                      ),
+                      child: Text(
+                        'Cancelled: ${order.cancelReason}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppTheme.danger,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+
+                  // Rendered only from what the server offered, filtered
+                  // the same way OrdersPanel.jsx filters visibleStatuses:
+                  // Accept (QUEUED) and Cancel are front-of-house,
+                  // everything else is the kitchen actually cooking the
+                  // order and needs orders.cook. A single action fills
+                  // the row; several share it evenly rather than
+                  // wrapping.
+                  // Not gated on [live]: [_visibleStatuses] already only
+                  // ever returns entries from the order's own
+                  // nextStatuses, which the server leaves empty once an
+                  // order is settled — so a History row still offers
+                  // Accept/Deliver/Cancel for an order still actually
+                  // open today, same as OrdersPanel.jsx's own
+                  // renderHistoryRow (distinct from the item ticks and
+                  // per-item Deliver below, which stay [live]-only: the
+                  // web's History table has no per-item button, only
+                  // the whole-order one).
+                  if (actions.isNotEmpty) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    Row(
+                      children: [
+                        for (var i = 0; i < actions.length; i++) ...[
+                          if (i > 0) const SizedBox(width: AppTheme.s8),
+                          Expanded(
+                            child: _ActionPill(
+                              label:
+                                  kOrderActionLabels[actions[i]] ?? actions[i],
+                              danger: actions[i] == 'CANCELLED',
+                              onPressed: () =>
+                                  _advance(context, ref, actions[i]),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+
+                  // Still unbilled and not sent to billing: the captain
+                  // can correct what was rung in — same "Edit order" the
+                  // web offers alongside Accept/Cancel. Not on the real
+                  // Kitchen queue — OrdersPanel.jsx's renderOrder never
+                  // offers it there — but shown everywhere else,
+                  // including a captain's own "Kitchen" tab, same as
+                  // renderCaptainCard.
+                  if (!isRealQueue && canDeliver && order.isEditable) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    NeuButton(
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s8 + 2,
+                      ),
+                      onPressed: () => _editOrder(context),
+                      child: const Text(
+                        'Edit order',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+
+                  // Already billed: open what was issued. Not on the
+                  // real Kitchen queue, same as OrdersPanel.jsx's own
+                  // `viewBill`.
+                  if (!isRealQueue &&
+                      canViewBill &&
+                      order.invoiceId != null) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    NeuButton(
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s8 + 2,
+                      ),
+                      onPressed: () =>
+                          _viewOrderBill(context, ref, order.invoiceId!),
+                      child: const Text(
+                        'View bill',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+
+                  // Delivered and unbilled: either straight to a bill
+                  // (this login also holds billing.manage, same as
+                  // OrdersPanel.jsx's `readyToBill.issues`) or queued for
+                  // whoever does (`canBillFood` alone) — never both.
+                  if (canIssueBill &&
+                      order.isDeliveredUnbilled &&
+                      order.billableAsFoodTab) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    NeuButton(
+                      primary: true,
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s8 + 2,
+                      ),
+                      onPressed: () => _issueBillForOrder(context, ref, order),
+                      child: const Text(
+                        'Issue bill',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ] else if (canBillFood && order.canMarkReadyToBill) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    NeuButton(
+                      primary: true,
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s8 + 2,
+                      ),
+                      onPressed: () => _markReadyToBill(context, ref),
+                      child: const Text(
+                        'Ready to bill',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+
+                  // A table or takeaway can also go on a staying guest's
+                  // room bill instead of being paid for here — and so can
+                  // a room-QR order already tied to its own stay, same as
+                  // OrdersPanel.jsx's own `readyToBill.addToRoom` check
+                  // (`o.source !== 'ROOM' || o.bookingId`).
+                  if ((canIssueBill || canBillFood) &&
+                      order.isDeliveredUnbilled &&
+                      (order.source != 'ROOM' || order.bookingId != null) &&
+                      (ref.watch(authViewModelProvider).me?.lodge.hasRooms ??
+                          false)) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    NeuButton(
+                      expand: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s8 + 2,
+                      ),
+                      onPressed: () => _addOrderToRoom(context, ref, order),
+                      child: const Text(
+                        'Add to room',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1614,6 +1766,73 @@ class _OrderCard extends ConsumerWidget {
   }
 }
 
+/// A whole-order action button — filled accent for anything that moves the
+/// ticket forward, outlined danger for Cancel, so a card's row of actions
+/// reads at a glance instead of every button looking equally weighted.
+class _ActionPill extends StatefulWidget {
+  final String label;
+  final bool danger;
+  final VoidCallback onPressed;
+
+  const _ActionPill({
+    required this.label,
+    required this.onPressed,
+    this.danger = false,
+  });
+
+  @override
+  State<_ActionPill> createState() => _ActionPillState();
+}
+
+class _ActionPillState extends State<_ActionPill> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: _down ? 0.8 : 1,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _down = true),
+        onTapUp: (_) => setState(() => _down = false),
+        onTapCancel: () => setState(() => _down = false),
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          constraints: const BoxConstraints(minHeight: 34),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.danger ? Colors.transparent : AppTheme.accent,
+            borderRadius: BorderRadius.circular(999),
+            border: widget.danger
+                ? Border.all(color: AppTheme.danger.withValues(alpha: 0.4))
+                : null,
+            boxShadow: widget.danger
+                ? null
+                : [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.25),
+                      offset: const Offset(0, 4),
+                      blurRadius: 10,
+                    ),
+                  ],
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: widget.danger ? AppTheme.danger : Colors.white,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// One menu section's dishes on a ticket that spans more than one — folded
 /// shut behind its own name, count and ready tally, same as
 /// OrdersPanel.jsx's `<details>`/`<summary>` renderSections. Starts
@@ -1677,8 +1896,13 @@ class _ItemSectionState extends State<_ItemSection> {
                 ),
                 if (ready > 0)
                   Text(
-                    ready == total ? 'All $total ready' : '$ready of $total ready',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.accent),
+                    ready == total
+                        ? 'All $total ready'
+                        : '$ready of $total ready',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.accent,
+                    ),
                   ),
               ],
             ),
@@ -1754,12 +1978,22 @@ class _ItemLine extends ConsumerWidget {
                 color: done ? AppTheme.accent : AppTheme.muted,
               ),
             ),
-          Text(
-            '${item.quantity}×  ',
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.text,
+          Container(
+            margin: const EdgeInsets.only(right: AppTheme.s8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: delivered
+                  ? AppTheme.muted.withValues(alpha: 0.1)
+                  : AppTheme.accent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '${item.quantity}×',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: delivered ? AppTheme.muted : AppTheme.accent,
+              ),
             ),
           ),
           Expanded(
@@ -1891,10 +2125,30 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
   /// as OrdersPanel.jsx's own `renderQueueTable`. History adds Placed and
   /// Took (how long the ticket ran from placed to settled), same as its own
   /// history-table columns.
-  static const _liveWidths = [46.0, 118.0, 120.0, 190.0, 104.0, 72.0, 78.0, 132.0];
-  static const _historyWidths = [46.0, 70.0, 108.0, 120.0, 190.0, 104.0, 78.0, 70.0, 132.0];
+  static const _liveWidths = [
+    46.0,
+    118.0,
+    120.0,
+    190.0,
+    104.0,
+    72.0,
+    78.0,
+    132.0,
+  ];
+  static const _historyWidths = [
+    46.0,
+    70.0,
+    108.0,
+    120.0,
+    190.0,
+    104.0,
+    78.0,
+    70.0,
+    132.0,
+  ];
 
   List<double> get _widths => widget.live ? _liveWidths : _historyWidths;
+
   /// The status-coloured strip down the left of every data row — the same
   /// at-a-glance cue [_OrderCard]'s own rail gives, so a ticket's stage is
   /// readable before the eye even reaches the Status column.
@@ -2045,7 +2299,9 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isOpen ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
+            isOpen
+                ? Icons.keyboard_arrow_down_rounded
+                : Icons.keyboard_arrow_right_rounded,
             size: 16,
             color: AppTheme.muted,
           ),
@@ -2108,7 +2364,10 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                   ),
                   for (final item in g.value)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: item.isReady
                             ? AppTheme.accent.withValues(alpha: 0.12)
@@ -2123,7 +2382,9 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
-                          color: item.isReady ? AppTheme.accent : AppTheme.heading,
+                          color: item.isReady
+                              ? AppTheme.accent
+                              : AppTheme.heading,
                         ),
                       ),
                     ),
@@ -2133,7 +2394,11 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
           if (order.note != null && order.note!.isNotEmpty)
             Text(
               '"${order.note}"',
-              style: const TextStyle(fontSize: 11, color: AppTheme.muted, fontStyle: FontStyle.italic),
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppTheme.muted,
+                fontStyle: FontStyle.italic,
+              ),
             ),
         ],
       ),
@@ -2160,7 +2425,10 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
           children: [
             Text(
               order.target,
-              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -2201,7 +2469,10 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     final name = order.guestName ?? '';
     final phone = order.guestPhone ?? '';
     if (name.isEmpty && phone.isEmpty) {
-      return const Text('—', style: TextStyle(fontSize: 12, color: AppTheme.muted));
+      return const Text(
+        '—',
+        style: TextStyle(fontSize: 12, color: AppTheme.muted),
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2241,7 +2512,11 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
           ),
           child: Text(
             statusText,
-            style: TextStyle(color: colour, fontSize: 10, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: colour,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         // The bill this order settled on, once one exists — same as
@@ -2298,7 +2573,10 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     final took = order.took;
     return [
       numberCell,
-      Text(formatTimeOfDay(order.placedAt), style: const TextStyle(fontSize: 12)),
+      Text(
+        formatTimeOfDay(order.placedAt),
+        style: const TextStyle(fontSize: 12),
+      ),
       _whereCell(order),
       _customerCell(order),
       _dishesCell(order),
@@ -2363,7 +2641,9 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       );
     }
 
-    if (widget.canIssueBill && order.isDeliveredUnbilled && order.billableAsFoodTab) {
+    if (widget.canIssueBill &&
+        order.isDeliveredUnbilled &&
+        order.billableAsFoodTab) {
       buttons.add(
         _SheetActionButton(
           label: 'Issue bill',
@@ -2398,11 +2678,12 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     }
 
     // A table or takeaway can also go on a staying guest's room bill instead
-    // of being paid for here — same `canRoom` exception OrdersPanel.jsx
-    // carves out (rooms only, never a room order itself).
+    // of being paid for here — and so can a room-QR order already tied to
+    // its own stay, same as OrdersPanel.jsx's own `readyToBill.addToRoom`
+    // check (`o.source !== 'ROOM' || o.bookingId`).
     if ((widget.canIssueBill || widget.canBillFood) &&
         order.isDeliveredUnbilled &&
-        order.source != 'ROOM' &&
+        (order.source != 'ROOM' || order.bookingId != null) &&
         (ref.watch(authViewModelProvider).me?.lodge.hasRooms ?? false)) {
       buttons.add(
         _SheetActionButton(
@@ -2436,7 +2717,9 @@ class _SheetActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = danger ? AppTheme.danger : (primary ? Colors.white : AppTheme.accent);
+    final fg = danger
+        ? AppTheme.danger
+        : (primary ? Colors.white : AppTheme.accent);
     final bg = primary && !danger ? AppTheme.accent : Colors.transparent;
     final border = danger ? AppTheme.danger : AppTheme.accent;
 
@@ -2458,7 +2741,11 @@ class _SheetActionButton extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
           ),
         ),
       ),
@@ -2484,7 +2771,8 @@ Future<void> _issueBillForOrder(
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ref.read(ordersViewModelProvider).error ?? 'Could not open the bill.',
+            ref.read(ordersViewModelProvider).error ??
+                'Could not open the bill.',
           ),
           backgroundColor: AppTheme.heading,
         ),
@@ -2493,18 +2781,22 @@ Future<void> _issueBillForOrder(
     }
   }
 
-  await ref.read(billingViewModelProvider.notifier).openFood(
-    FoodTab(
-      tab: order.billingTabKey,
-      tableLabel: order.source == 'ROOM' ? 'Room ${order.roomNumber ?? ''}' : order.tableLabel,
-      guestName: order.guestName,
-      subtotal: order.subtotal,
-    ),
-  );
+  await ref
+      .read(billingViewModelProvider.notifier)
+      .openFood(
+        FoodTab(
+          tab: order.billingTabKey,
+          tableLabel: order.source == 'ROOM'
+              ? 'Room ${order.roomNumber ?? ''}'
+              : order.tableLabel,
+          guestName: order.guestName,
+          subtotal: order.subtotal,
+        ),
+      );
   if (!context.mounted) return;
-  await Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => const IssueFoodBillScreen()),
-  );
+  await Navigator.of(
+    context,
+  ).push(MaterialPageRoute(builder: (_) => const IssueFoodBillScreen()));
   if (!context.mounted) return;
   await ordersVm.loadQueue();
   await ordersVm.loadHistory();
@@ -2548,16 +2840,20 @@ class _AddToRoomDialogState extends ConsumerState<_AddToRoomDialog> {
   @override
   void initState() {
     super.initState();
-    ref.read(billingUsecaseProvider).inHouseGuests().then((guests) {
-      if (!mounted) return;
-      setState(() => _guests = guests);
-    }).catchError((_) {
-      if (!mounted) return;
-      setState(() {
-        _guests = const [];
-        _error = 'Could not load the guests who are staying.';
-      });
-    });
+    ref
+        .read(billingUsecaseProvider)
+        .inHouseGuests()
+        .then((guests) {
+          if (!mounted) return;
+          setState(() => _guests = guests);
+        })
+        .catchError((_) {
+          if (!mounted) return;
+          setState(() {
+            _guests = const [];
+            _error = 'Could not load the guests who are staying.';
+          });
+        });
   }
 
   Future<void> _confirm() async {
@@ -2619,7 +2915,10 @@ class _AddToRoomDialogState extends ConsumerState<_AddToRoomDialog> {
               const SizedBox(height: AppTheme.s8),
             ],
             if (_guests == null)
-              const Text('Loading guests…', style: TextStyle(color: AppTheme.muted))
+              const Text(
+                'Loading guests…',
+                style: TextStyle(color: AppTheme.muted),
+              )
             else if (_guests!.isEmpty)
               const Text(
                 'Nobody is checked in right now.',
@@ -2715,7 +3014,8 @@ Future<void> _advanceOrderStatus(
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ref.read(ordersViewModelProvider).error ?? 'Could not update that order.',
+          ref.read(ordersViewModelProvider).error ??
+              'Could not update that order.',
         ),
         backgroundColor: AppTheme.heading,
       ),
@@ -2742,7 +3042,11 @@ Future<String?> _askCancelReason(BuildContext context, FoodOrder order) {
             style: const TextStyle(color: AppTheme.text, fontSize: 13),
           ),
           const SizedBox(height: AppTheme.s16),
-          NeuField(controller: controller, label: 'Why (optional)', maxLength: 200),
+          NeuField(
+            controller: controller,
+            label: 'Why (optional)',
+            maxLength: 200,
+          ),
         ],
       ),
       actions: [

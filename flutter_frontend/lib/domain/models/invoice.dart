@@ -642,6 +642,10 @@ class Invoice {
   final String? gstin;
   final bool isGstRegistered;
 
+  /// Null unless the property has both a logo and turned it on for printed
+  /// documents — `/hotel-logos/<file>`, served without auth.
+  final String? lodgeLogoUrl;
+
   const Invoice({
     required this.id,
     this.bookingId,
@@ -706,6 +710,7 @@ class Invoice {
     this.lodgeState,
     this.gstin,
     this.isGstRegistered = false,
+    this.lodgeLogoUrl,
   });
 
   factory Invoice.fromJson(Map<String, dynamic> json) => Invoice(
@@ -784,6 +789,7 @@ class Invoice {
     lodgeState: asStringOrNull(json['lodgeState']),
     gstin: asStringOrNull(json['gstin']),
     isGstRegistered: asBool(json['isGstRegistered']),
+    lodgeLogoUrl: asStringOrNull(json['lodgeLogoUrl']),
   );
 
   /// The nights the stay ran for, from its own dates.
@@ -963,6 +969,7 @@ class AdvanceReceipt {
   final String? lodgeAddress;
   final String? lodgeCity;
   final String? lodgeState;
+  final String? lodgeLogoUrl;
 
   const AdvanceReceipt({
     required this.id,
@@ -1003,6 +1010,7 @@ class AdvanceReceipt {
     this.lodgeAddress,
     this.lodgeCity,
     this.lodgeState,
+    this.lodgeLogoUrl,
   });
 
   factory AdvanceReceipt.fromJson(Map<String, dynamic> json) => AdvanceReceipt(
@@ -1048,6 +1056,7 @@ class AdvanceReceipt {
     lodgeAddress: asStringOrNull(json['lodgeAddress']),
     lodgeCity: asStringOrNull(json['lodgeCity']),
     lodgeState: asStringOrNull(json['lodgeState']),
+    lodgeLogoUrl: asStringOrNull(json['lodgeLogoUrl']),
   );
 
   /// A function's advance — checked off [kind] where the server sent one;

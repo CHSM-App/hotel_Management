@@ -30,6 +30,7 @@ class FoodSetupUsecase {
   Future<void> deleteMenuItem(int id) => repository.deleteMenuItem(id);
   Future<void> setItemPortions(int itemId, List<Map<String, dynamic>> portions) =>
       repository.setItemPortions(itemId, portions);
+  Future<MenuImportResult> importMenu(List<Map<String, dynamic>> rows) => repository.importMenu(rows);
 
   // Settings
   Future<FoodSettings> foodSettings() => repository.foodSettings();

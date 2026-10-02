@@ -230,12 +230,14 @@ class FoodOrder {
   bool get billableAsFoodTab => source != 'ROOM' || bookingId == null;
 
   /// The opaque key Billing's own food queue addresses this ticket's tab by
-  /// — `table-5`, `counter-88`, `room-12` — so "Issue bill" can open the
-  /// right bill without first reading the queue itself.
+  /// — `table-5`, `counter-88`, `room-12`, `room-booking-7` — so "Issue bill"
+  /// and "Add to room" can open/move the right bill without first reading the
+  /// queue itself. A room order already tied to a stay keys on that booking
+  /// (see billing.service.js's own tabIdentity), not on the bare room.
   String get billingTabKey => switch (source) {
     'TABLE' => 'table-$tableId',
     'COUNTER' => 'counter-$id',
-    _ => 'room-$roomId',
+    _ => bookingId != null ? 'room-booking-$bookingId' : 'room-$roomId',
   };
 
   /// Unbilled, not sent to billing, not called off — the same rule

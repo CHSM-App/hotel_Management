@@ -86,6 +86,15 @@ class Lodge {
   final String? gstin;
   final bool isSpecifiedPremises;
 
+  /// Null when no logo has been uploaded — `/hotel-logos/<file>`, served
+  /// without auth, so it loads straight into an `Image.network`.
+  final String? logoUrl;
+
+  /// Whether [logoUrl] also prints on the bill masthead, not just the
+  /// dashboard brand mark — a separate switch so a logo can exist without
+  /// committing to it on every printed document.
+  final bool showLogoOnReceipt;
+
   // ── What this property is ────────────────────────────────────────────────
   final bool hasRooms;
   final bool servesFood;
@@ -112,6 +121,8 @@ class Lodge {
     this.isGstRegistered = false,
     this.gstin,
     this.isSpecifiedPremises = false,
+    this.logoUrl,
+    this.showLogoOnReceipt = false,
     this.hasRooms = false,
     this.servesFood = false,
     this.foodRoomService = false,
@@ -138,6 +149,8 @@ class Lodge {
     isGstRegistered: asBool(json['isGstRegistered']),
     gstin: asStringOrNull(json['gstin']),
     isSpecifiedPremises: asBool(json['isSpecifiedPremises']),
+    logoUrl: asStringOrNull(json['logoUrl']),
+    showLogoOnReceipt: asBool(json['showLogoOnReceipt']),
     hasRooms: asBool(json['hasRooms']),
     servesFood: asBool(json['servesFood']),
     foodRoomService: asBool(json['foodRoomService']),

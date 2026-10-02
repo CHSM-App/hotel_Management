@@ -50,6 +50,11 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// Set on the first "back" press while already on the home section —
+  /// a second press within [_exitWindow] actually exits the app.
+  DateTime? _lastBackPressedAt;
+  static const _exitWindow = Duration(seconds: 2);
+
   @override
   void initState() {
     super.initState();
@@ -75,37 +80,76 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         statusBarIconBrightness: Brightness.dark,
         statusBarBrightness: Brightness.light,
       ),
-      child: Scaffold(
-        key: _scaffoldKey,
-        drawer: (me != null && compact) ? _drawer(me) : null,
-        body: Column(
-          children: [
-            _TopBar(
-              title: me == null ? null : _activeTitle(_features(me)),
-              onMenuTap: (me != null && compact)
-                  ? () => _scaffoldKey.currentState?.openDrawer()
-                  : null,
-            ),
-            const _OfflineBanner(),
-            Expanded(
-              child: SafeArea(
-                top: false,
-                bottom: false,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (me != null && !compact) _rail(me),
-                    Expanded(
-                      child: _ResponsiveBody(
-                        child: _body(state.isLoading, state.error, me),
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          _handleBack(me);
+        },
+        child: Scaffold(
+          key: _scaffoldKey,
+          drawer: (me != null && compact) ? _drawer(me) : null,
+          body: Column(
+            children: [
+              _TopBar(
+                title: me == null ? null : _activeTitle(_features(me)),
+                onMenuTap: (me != null && compact)
+                    ? () => _scaffoldKey.currentState?.openDrawer()
+                    : null,
+              ),
+              const _OfflineBanner(),
+              Expanded(
+                child: SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (me != null && !compact) _rail(me),
+                      Expanded(
+                        child: _ResponsiveBody(
+                          child: _body(state.isLoading, state.error, me),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  /// Back always lands on the home section first instead of exiting
+  /// straight from whatever section the desk happened to be on — same
+  /// pattern as WhatsApp/Instagram's bottom-tab back behavior. Only a
+  /// second back press within [_exitWindow], while already on the home
+  /// section, actually exits the app.
+  void _handleBack(Me? me) {
+    if (me != null) {
+      final features = _features(me);
+      if (features.isNotEmpty) {
+        final homeKey = features.first.key;
+        if (_activeKey(features) != homeKey) {
+          _select(homeKey);
+          return;
+        }
+      }
+    }
+
+    final now = DateTime.now();
+    if (_lastBackPressedAt != null &&
+        now.difference(_lastBackPressedAt!) < _exitWindow) {
+      SystemNavigator.pop();
+      return;
+    }
+    _lastBackPressedAt = now;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Press back again to exit'),
+        duration: Duration(seconds: 2),
       ),
     );
   }
