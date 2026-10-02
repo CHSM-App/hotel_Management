@@ -14,6 +14,8 @@ const ADDONS = [
   { key: 'hasEvents', feature: FEATURES.find((f) => f.key === 'events') },
   { key: 'hasAssets', feature: FEATURES.find((f) => f.key === 'assets') },
   { key: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
+  // Sold from the rooms side, so only offered while the property has rooms.
+  { key: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
 ];
 
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -55,6 +57,7 @@ function formFromLodge(lodge) {
     hasEvents: !!lodge.has_events,
     hasAssets: !!lodge.has_assets,
     hasExpenses: !!lodge.has_expenses,
+    hasOtherServices: !!lodge.has_other_services,
     isActive: !!lodge.is_active,
     showLogoOnReceipt: !!lodge.show_logo_on_receipt,
   };
@@ -159,6 +162,7 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
         foodRoomService: form.servesFood && form.hasRooms ? form.foodRoomService : false,
         foodTableService: form.servesFood ? form.foodTableService : false,
         isSpecifiedPremises: form.hasRooms && form.servesFood ? form.isSpecifiedPremises : false,
+        hasOtherServices: form.hasRooms ? form.hasOtherServices : false,
         gstin: form.isGstRegistered ? form.gstin : '',
       };
       const detail = await apiPatch(`/internal/lodges/${lodge.id}`, payload, { token });
@@ -356,14 +360,22 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           </div>
           <div className="reg-access-group">
             <div className="reg-access-list">
-              {ADDONS.map(({ key, feature }) => (
+              {ADDONS.map(({ key, feature, needsRooms }) => (
                 <label key={key} className="reg-access-row reg-access-row--toggle">
                   <div className="reg-access-row__text">
                     <span className="reg-access-row__title">{feature.title}</span>
-                    <span className="reg-access-row__desc">{feature.description}</span>
+                    <span className="reg-access-row__desc">
+                      {feature.description}
+                      {needsRooms && !form.hasRooms && ' Needs rooms.'}
+                    </span>
                   </div>
                   <span className="reg-switch">
-                    <input type="checkbox" checked={form[key]} onChange={update(key)} />
+                    <input
+                      type="checkbox"
+                      checked={form[key] && (!needsRooms || form.hasRooms)}
+                      disabled={needsRooms && !form.hasRooms}
+                      onChange={update(key)}
+                    />
                     <span className="reg-switch__track"><span className="reg-switch__thumb" /></span>
                   </span>
                 </label>

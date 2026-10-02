@@ -215,6 +215,59 @@ async function issueFoodInvoiceHandler(req, res, next) {
   }
 }
 
+// Service bills: the chosen uses travel as ?ids=1,2 on the preview and as
+// usageIds in the issue/add-to-room body.
+function parseIds(raw) {
+  const list = Array.isArray(raw) ? raw : String(raw ?? '').split(',');
+  const ids = [...new Set(list.map(Number))];
+  if (ids.length === 0 || ids.length > 200 || !ids.every((n) => Number.isSafeInteger(n) && n > 0)) {
+    throw new ApiError('Select at least one service.', 400);
+  }
+  return ids;
+}
+
+async function previewServiceBillHandler(req, res, next) {
+  try {
+    res.json(
+      await billingService.previewServiceBill(req.user.lodgeId, parseIds(req.query.ids), {
+        discountAmount: parseDiscount(req.query.discountAmount),
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function issueServiceInvoiceHandler(req, res, next) {
+  try {
+    const parsed = issueInvoiceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const invoice = await billingService.issueServiceInvoice(
+      req.user.lodgeId,
+      req.user.sub,
+      parseIds(req.body?.usageIds),
+      parsed.data
+    );
+    res.status(201).json({ invoice });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function addServicesToRoomBillHandler(req, res, next) {
+  try {
+    const bookingId = Number(req.body?.bookingId);
+    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
+      throw new ApiError('Pick the guest to charge.', 400);
+    }
+    res.json(await billingService.addServicesToRoomBill(req.user.lodgeId, parseIds(req.body?.usageIds), bookingId));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listInvoicesHandler(req, res, next) {
   try {
     const invoices = await billingService.listInvoices(req.user.lodgeId);
@@ -428,6 +481,9 @@ module.exports = {
   addTabToRoomBillHandler,
   previewFoodBillHandler,
   issueFoodInvoiceHandler,
+  previewServiceBillHandler,
+  issueServiceInvoiceHandler,
+  addServicesToRoomBillHandler,
   previewBillHandler,
   issueInvoiceHandler,
   listInvoicesHandler,

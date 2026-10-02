@@ -132,6 +132,8 @@ function summarySheet(report) {
   rows.push([bold('Billed — value'), money(summary.billedValue)]);
   rows.push([bold('Delivered but not yet billed'), money(summary.unbilledDeliveredValue)]);
   rows.push([bold('Cancelled — count'), count(summary.cancelledCount)]);
+  rows.push([bold('Voided bills — count'), count(summary.voidedCount || 0)]);
+  rows.push([bold('Voided bills — value (not counted above)'), money(summary.voidedValue || 0)]);
 
   return {
     data: rows,
@@ -149,7 +151,7 @@ function ordersSheet(report) {
     { label: 'Guest', width: 20, value: (o) => o.guestName || '' },
     { label: 'Phone', width: 14, value: (o) => o.guestPhone || '' },
     { label: 'Items', width: 8, kind: 'count', value: (o) => o.itemCount },
-    { label: 'Status', width: 12, value: (o) => ORDER_STATUS_LABEL[o.status] || o.status },
+    { label: 'Status', width: 12, value: (o) => (o.voided ? 'Voided' : ORDER_STATUS_LABEL[o.status] || o.status) },
     { label: 'Delivered at', width: 20, value: (o) => (o.deliveredAt ? formatDateTime(o.deliveredAt) : '') },
     { label: 'Cancelled at', width: 20, value: (o) => (o.cancelledAt ? formatDateTime(o.cancelledAt) : '') },
     { label: 'Bill no.', width: 12, value: (o) => o.invoiceNumber || '' },
@@ -175,7 +177,7 @@ function ordersSheet(report) {
   const totals = {
     'Order no.': bold('Total'),
     Amount: money(
-      report.orders.reduce((sum, o) => (o.status === 'CANCELLED' ? sum : sum + Number(o.subtotal || 0)), 0)
+      report.orders.reduce((sum, o) => (o.status === 'CANCELLED' || o.voided ? sum : sum + Number(o.subtotal || 0)), 0)
     ),
   };
   rows.push(totalsRow(columns.map((c) => totals[c.label] ?? text(''))));
@@ -463,7 +465,7 @@ export async function buildFoodOrdersReportPdf(report) {
           placeOf(o),
           o.guestName || '—',
           String(o.itemCount),
-          ORDER_STATUS_LABEL[o.status] || o.status,
+          o.voided ? 'Voided' : ORDER_STATUS_LABEL[o.status] || o.status,
           o.invoiceNumber || '—',
           isCancelled ? '—' : formatAmount(o.subtotal),
         ];

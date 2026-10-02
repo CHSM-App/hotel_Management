@@ -52,6 +52,7 @@ const initialForm = {
   hasEvents: false,
   hasAssets: false,
   hasExpenses: false,
+  hasOtherServices: false,
   isGstRegistered: false,
   gstin: '',
   isSpecifiedPremises: false,
@@ -118,8 +119,15 @@ export default function LodgeRegistration() {
   // Base capabilities plus the three opt-in add-ons, for the summary rail and
   // the payload.
   const capabilities = useMemo(
-    () => ({ ...baseCapabilities, hasEvents: form.hasEvents, hasAssets: form.hasAssets, hasExpenses: form.hasExpenses }),
-    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses]
+    () => ({
+      ...baseCapabilities,
+      hasEvents: form.hasEvents,
+      hasAssets: form.hasAssets,
+      hasExpenses: form.hasExpenses,
+      // Sold from the rooms side, so a restaurant can't carry it.
+      hasOtherServices: form.hasOtherServices && baseCapabilities.hasRooms,
+    }),
+    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices]
   );
 
   const includedFeatures = useMemo(() => featuresForCapabilities(capabilities), [capabilities]);
@@ -138,6 +146,7 @@ export default function LodgeRegistration() {
     { key: 'events', formKey: 'hasEvents', feature: FEATURES.find((f) => f.key === 'events') },
     { key: 'assets', formKey: 'hasAssets', feature: FEATURES.find((f) => f.key === 'assets') },
     { key: 'expenses', formKey: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
+    { key: 'otherServices', formKey: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
   ];
   const baseFeatures = FEATURES.filter((f) => !ADDONS.some((a) => a.key === f.key));
 
@@ -198,6 +207,7 @@ export default function LodgeRegistration() {
         hasAssets: Boolean(rest.hasAssets),
         hasExpenses: Boolean(rest.hasExpenses),
       };
+      caps.hasOtherServices = Boolean(rest.hasOtherServices) && caps.hasRooms;
       const payload = {
         ...rest,
         ...caps,
@@ -466,14 +476,22 @@ export default function LodgeRegistration() {
               <div className="reg-access-group">
                 <div className="reg-access-group__label">Add-ons — switch on per property</div>
                 <div className="reg-access-list">
-                  {ADDONS.map(({ formKey, feature }) => (
+                  {ADDONS.map(({ formKey, feature, needsRooms }) => (
                     <label key={formKey} className="reg-access-row reg-access-row--toggle">
                       <div className="reg-access-row__text">
                         <span className="reg-access-row__title">{feature.title}</span>
-                        <span className="reg-access-row__desc">{feature.description}</span>
+                        <span className="reg-access-row__desc">
+                          {feature.description}
+                          {needsRooms && !baseCapabilities.hasRooms && ' Needs rooms.'}
+                        </span>
                       </div>
                       <span className="reg-switch">
-                        <input type="checkbox" checked={form[formKey]} onChange={update(formKey)} />
+                        <input
+                          type="checkbox"
+                          checked={form[formKey] && (!needsRooms || baseCapabilities.hasRooms)}
+                          disabled={needsRooms && !baseCapabilities.hasRooms}
+                          onChange={update(formKey)}
+                        />
                         <span className="reg-switch__track"><span className="reg-switch__thumb" /></span>
                       </span>
                     </label>

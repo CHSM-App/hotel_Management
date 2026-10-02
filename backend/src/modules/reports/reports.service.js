@@ -110,32 +110,41 @@ function billFigures(row) {
   const roomSgst = Number(row.sgst_amount ?? 0);
   const foodCgst = Number(row.food_cgst_amount ?? 0);
   const foodSgst = Number(row.food_sgst_amount ?? 0);
+  // Other services — a third supply (see billing.service buildBreakdown).
+  const serviceGross = Number(row.service_subtotal ?? 0);
+  const serviceCgst = Number(row.service_cgst_amount ?? 0);
+  const serviceSgst = Number(row.service_sgst_amount ?? 0);
   const discountAmount = Number(row.discount_amount ?? 0);
-  const grossAmount = round2(roomGross + foodGross);
-  const [roomNetOfDiscount, foodNetOfDiscount] = netOfDiscount(
-    [roomGross, foodGross],
+  const grossAmount = round2(roomGross + foodGross + serviceGross);
+  const [roomNetOfDiscount, foodNetOfDiscount, serviceNetOfDiscount] = netOfDiscount(
+    [roomGross, foodGross, serviceGross],
     discountAmount,
     grossAmount
   );
   const roomTaxable = round2(roomNetOfDiscount - roomCgst - roomSgst);
   const foodTaxable = round2(foodNetOfDiscount - foodCgst - foodSgst);
+  const serviceTaxable = round2(serviceNetOfDiscount - serviceCgst - serviceSgst);
   return {
     grossAmount,
     roomGross,
     foodGross,
+    serviceGross,
     discountAmount,
     netAmount: round2(grossAmount - discountAmount),
     lateCheckoutCharge: Number(row.late_checkout_charge ?? 0),
     roomTaxable,
     foodTaxable,
-    taxableValue: round2(roomTaxable + foodTaxable),
+    serviceTaxable,
+    taxableValue: round2(roomTaxable + foodTaxable + serviceTaxable),
     roomCgst,
     roomSgst,
     foodCgst,
     foodSgst,
-    cgstAmount: round2(roomCgst + foodCgst),
-    sgstAmount: round2(roomSgst + foodSgst),
-    totalTax: round2(roomCgst + foodCgst + roomSgst + foodSgst),
+    serviceCgst,
+    serviceSgst,
+    cgstAmount: round2(roomCgst + foodCgst + serviceCgst),
+    sgstAmount: round2(roomSgst + foodSgst + serviceSgst),
+    totalTax: round2(roomCgst + foodCgst + serviceCgst + roomSgst + foodSgst + serviceSgst),
     roundOff: Number(row.round_off ?? 0),
     billedAmount: Number(row.total_amount ?? 0),
   };
@@ -475,6 +484,7 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
              i.cgst_amount, i.sgst_amount, i.round_off, i.total_amount, i.created_at,
              i.event_booking_id, i.booking_id, i.discount_amount,
              i.food_subtotal, i.food_cgst_amount, i.food_sgst_amount,
+             i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
              COALESCE(b.guest_name, eb.organiser_name) AS guest_name
       FROM dbo.invoices i
       -- LEFT: a food bill has no stay and a function's bill has no booking row;
@@ -514,6 +524,9 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
       foodCgst: figures.foodCgst,
       foodSgst: figures.foodSgst,
       foodTaxable: figures.foodTaxable,
+      serviceCgst: figures.serviceCgst,
+      serviceSgst: figures.serviceSgst,
+      serviceTaxable: figures.serviceTaxable,
     };
   });
 
@@ -523,6 +536,7 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     ROOMS: { cgstAmount: 0, sgstAmount: 0 },
     FUNCTIONS: { cgstAmount: 0, sgstAmount: 0 },
     FOOD: { cgstAmount: 0, sgstAmount: 0 },
+    SERVICES: { cgstAmount: 0, sgstAmount: 0 },
   };
 
   for (const invoice of invoices) {
@@ -537,6 +551,8 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     byRevenueStream[primaryStream].sgstAmount = round2(byRevenueStream[primaryStream].sgstAmount + invoice.roomSgst);
     byRevenueStream.FOOD.cgstAmount = round2(byRevenueStream.FOOD.cgstAmount + invoice.foodCgst);
     byRevenueStream.FOOD.sgstAmount = round2(byRevenueStream.FOOD.sgstAmount + invoice.foodSgst);
+    byRevenueStream.SERVICES.cgstAmount = round2(byRevenueStream.SERVICES.cgstAmount + invoice.serviceCgst);
+    byRevenueStream.SERVICES.sgstAmount = round2(byRevenueStream.SERVICES.sgstAmount + invoice.serviceSgst);
   }
 
   return { fromDate, toDate, totals, byDocumentType, byRevenueStream, invoices };
@@ -615,6 +631,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
              c.name AS category_name,
              i.invoice_number, i.document_type, i.billing_side, i.created_at AS invoice_created_at,
              i.room_subtotal, i.food_subtotal,
+             i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
              i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
              i.late_checkout_charge, i.discount_amount,
              i.round_off, i.total_amount,
@@ -625,6 +642,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       OUTER APPLY (
         SELECT TOP 1 invoice_number, document_type, billing_side, created_at,
                room_subtotal, food_subtotal,
+               service_subtotal, service_cgst_amount, service_sgst_amount,
                cgst_amount, sgst_amount, food_cgst_amount, food_sgst_amount,
                late_checkout_charge, discount_amount, round_off,
                total_amount, advance_paid, balance_collected, balance_payment_method
@@ -967,6 +985,85 @@ async function getEventsReport(lodgeId, fromDate, toDate) {
 // Food orders
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Other services (laundry, pool, gaming ...)
+// ---------------------------------------------------------------------------
+
+// A use belongs to the period by the day it started. Cancelled uses are listed
+// but are not sales; a use whose bill was voided is reported as voided, neither
+// sold nor waiting to be billed.
+async function getServicesReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT u.id, u.service_name, u.unit_label, u.unit_price, u.quantity, u.line_total, u.gst_rate_percent,
+             u.guest_name, u.status, u.on_room_bill, u.started_at, u.completed_at,
+             r.room_number, i.invoice_number, i.status AS invoice_status
+      FROM dbo.service_usages u
+      LEFT JOIN dbo.rooms r ON r.id = u.room_id
+      -- The bill whatever its state, so a voided one is reported as voided.
+      LEFT JOIN dbo.invoices i ON i.id = COALESCE(u.invoice_id, u.voided_invoice_id)
+      WHERE u.lodge_id = @lodgeId AND CAST(u.started_at AS DATE) BETWEEN @fromDate AND @toDate
+      ORDER BY u.started_at ASC
+    `);
+
+  const usages = result.recordset.map((row) => ({
+    id: row.id,
+    serviceName: row.service_name,
+    unitLabel: row.unit_label,
+    unitPrice: Number(row.unit_price),
+    quantity: Number(row.quantity),
+    lineTotal: Number(row.line_total),
+    gstRatePercent: Number(row.gst_rate_percent),
+    guestName: row.guest_name || null,
+    roomNumber: row.room_number || null,
+    status: row.status,
+    startedAt: row.started_at,
+    completedAt: row.completed_at || null,
+    invoiceNumber: row.invoice_number || null,
+    billed: row.invoice_number != null && row.invoice_status === 'ISSUED',
+    voided: row.invoice_status === 'VOID',
+    // Charged to a stay's room bill rather than billed on its own invoice.
+    onRoomBill: !!row.on_room_bill,
+  }));
+
+  const byService = new Map();
+  const totals = { count: 0, cancelledCount: 0, voidedCount: 0, completedValue: 0, billedValue: 0, unbilledValue: 0 };
+  for (const u of usages) {
+    if (u.status === 'CANCELLED') {
+      totals.cancelledCount += 1;
+      continue;
+    }
+    if (u.voided) {
+      totals.voidedCount += 1;
+      continue;
+    }
+    totals.count += 1;
+    const row = byService.get(u.serviceName) ?? { serviceName: u.serviceName, uses: 0, quantity: 0, value: 0 };
+    row.uses += 1;
+    row.quantity = round2(row.quantity + u.quantity);
+    row.value = round2(row.value + u.lineTotal);
+    byService.set(u.serviceName, row);
+    if (u.status === 'COMPLETED') {
+      totals.completedValue = round2(totals.completedValue + u.lineTotal);
+      if (u.billed) totals.billedValue = round2(totals.billedValue + u.lineTotal);
+      else totals.unbilledValue = round2(totals.unbilledValue + u.lineTotal);
+    }
+  }
+
+  return {
+    fromDate,
+    toDate,
+    totals,
+    byService: [...byService.values()].sort((a, b) => b.value - a.value),
+    usages,
+  };
+}
+
 const ORDER_STATUSES = ['PENDING', 'QUEUED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'];
 const ORDER_SOURCES = ['ROOM', 'TABLE', 'COUNTER'];
 
@@ -991,11 +1088,12 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       SELECT o.id, o.order_number, o.order_date, o.source, o.guest_name, o.guest_phone,
              o.status, o.subtotal, o.placed_at, o.delivered_at, o.cancelled_at, o.cancel_reason,
              r.room_number, t.label AS table_label,
-             i.invoice_number, i.document_type
+             i.invoice_number, i.document_type, i.status AS invoice_status
       FROM dbo.food_orders o
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
-      LEFT JOIN dbo.invoices i ON i.id = o.invoice_id AND i.status = 'ISSUED'
+      -- The bill whatever its state: a voided one must still be reported, as voided.
+      LEFT JOIN dbo.invoices i ON i.id = o.invoice_id
       WHERE o.lodge_id = @lodgeId AND o.order_date BETWEEN @fromDate AND @toDate
       ORDER BY o.placed_at ASC
     `);
@@ -1032,7 +1130,9 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     cancelReason: row.cancel_reason || null,
     invoiceNumber: row.invoice_number || null,
     documentType: row.document_type || null,
-    billed: row.invoice_number != null,
+    billed: row.invoice_number != null && row.invoice_status === 'ISSUED',
+    // Its bill was voided: not sales, and not waiting to be billed either.
+    voided: row.invoice_status === 'VOID',
   }));
 
   const byStatus = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
@@ -1043,6 +1143,8 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
   let billedCount = 0;
   let billedValue = 0;
   let unbilledDeliveredValue = 0;
+  let voidedCount = 0;
+  let voidedValue = 0;
 
   for (const order of orders) {
     if (byStatus[order.status] === undefined) byStatus[order.status] = 0;
@@ -1052,6 +1154,11 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
 
     if (order.status === 'CANCELLED') {
       cancelledCount += 1;
+      continue;
+    }
+    if (order.voided) {
+      voidedCount += 1;
+      voidedValue = round2(voidedValue + order.subtotal);
       continue;
     }
     if (order.status === 'DELIVERED') {
@@ -1081,6 +1188,8 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       billedCount,
       billedValue,
       unbilledDeliveredValue,
+      voidedCount,
+      voidedValue,
     },
     orders,
   };
@@ -1105,7 +1214,8 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
 const STREAM_REVENUE_EXPR = `
   SUM(CASE WHEN i.event_booking_id IS NULL THEN i.room_subtotal + i.cgst_amount + i.sgst_amount ELSE 0 END) AS room_revenue,
   SUM(CASE WHEN i.event_booking_id IS NOT NULL THEN i.room_subtotal + i.cgst_amount + i.sgst_amount ELSE 0 END) AS function_revenue,
-  SUM(ISNULL(i.food_subtotal, 0) + ISNULL(i.food_cgst_amount, 0) + ISNULL(i.food_sgst_amount, 0)) AS food_revenue
+  SUM(ISNULL(i.food_subtotal, 0) + ISNULL(i.food_cgst_amount, 0) + ISNULL(i.food_sgst_amount, 0)) AS food_revenue,
+  SUM(ISNULL(i.service_subtotal, 0) + ISNULL(i.service_cgst_amount, 0) + ISNULL(i.service_sgst_amount, 0)) AS service_revenue
 `;
 
 // Revenue per calendar day, split by stream, dated by when the bill was
@@ -1132,6 +1242,7 @@ async function getDailyRevenueByStream(pool, lodgeId, fromDate, toDate) {
       roomRevenue: round2(Number(row.room_revenue)),
       functionRevenue: round2(Number(row.function_revenue)),
       foodRevenue: round2(Number(row.food_revenue)),
+      serviceRevenue: round2(Number(row.service_revenue)),
     });
   }
   return byDate;
@@ -1235,14 +1346,15 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
   ]);
 
   const dailyTrend = dates.map((date) => {
-    const rev = revenueByDate.get(date) || { roomRevenue: 0, functionRevenue: 0, foodRevenue: 0 };
+    const rev = revenueByDate.get(date) || { roomRevenue: 0, functionRevenue: 0, foodRevenue: 0, serviceRevenue: 0 };
     const occupiedRooms = occupiedByDate.get(date).size;
     return {
       date,
       roomRevenue: rev.roomRevenue,
       functionRevenue: rev.functionRevenue,
       foodRevenue: rev.foodRevenue,
-      totalRevenue: round2(rev.roomRevenue + rev.functionRevenue + rev.foodRevenue),
+      serviceRevenue: rev.serviceRevenue,
+      totalRevenue: round2(rev.roomRevenue + rev.functionRevenue + rev.foodRevenue + rev.serviceRevenue),
       occupiedRooms,
       totalRooms,
       occupancyPercent: totalRooms > 0 ? round2((occupiedRooms / totalRooms) * 100) : 0,
@@ -1254,10 +1366,10 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
     : shiftPriorPeriod(fromDate, toDate);
   const priorRevenueByDate = await getDailyRevenueByStream(pool, lodgeId, priorRange.fromDate, priorRange.toDate);
   const priorDailyTrend = datesInRange(priorRange.fromDate, priorRange.toDate).map((date) => {
-    const rev = priorRevenueByDate.get(date) || { roomRevenue: 0, functionRevenue: 0, foodRevenue: 0 };
+    const rev = priorRevenueByDate.get(date) || { roomRevenue: 0, functionRevenue: 0, foodRevenue: 0, serviceRevenue: 0 };
     return {
       date,
-      totalRevenue: round2(rev.roomRevenue + rev.functionRevenue + rev.foodRevenue),
+      totalRevenue: round2(rev.roomRevenue + rev.functionRevenue + rev.foodRevenue + rev.serviceRevenue),
     };
   });
 
@@ -1621,7 +1733,8 @@ async function getRevenueByStream(pool, lodgeId, fromDate, toDate) {
     .input('toDate', sql.Date, toDate)
     .query(`
       SELECT i.room_subtotal, i.food_subtotal, i.cgst_amount, i.sgst_amount,
-             i.food_cgst_amount, i.food_sgst_amount, i.discount_amount, i.event_booking_id
+             i.food_cgst_amount, i.food_sgst_amount, i.discount_amount, i.event_booking_id,
+             i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount
       FROM dbo.invoices i
       WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED'
         AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate
@@ -1630,6 +1743,7 @@ async function getRevenueByStream(pool, lodgeId, fromDate, toDate) {
   let roomRevenue = 0;
   let functionRevenue = 0;
   let foodRevenue = 0;
+  let serviceRevenue = 0;
   for (const row of result.recordset) {
     const figures = billFigures(row);
     if (row.event_booking_id != null) {
@@ -1638,12 +1752,14 @@ async function getRevenueByStream(pool, lodgeId, fromDate, toDate) {
       roomRevenue = round2(roomRevenue + figures.roomTaxable);
     }
     foodRevenue = round2(foodRevenue + figures.foodTaxable);
+    serviceRevenue = round2(serviceRevenue + figures.serviceTaxable);
   }
   return {
     roomRevenue,
     functionRevenue,
     foodRevenue,
-    totalRevenue: round2(roomRevenue + functionRevenue + foodRevenue),
+    serviceRevenue,
+    totalRevenue: round2(roomRevenue + functionRevenue + foodRevenue + serviceRevenue),
   };
 }
 
@@ -1977,6 +2093,7 @@ module.exports = {
   getBookingsReport,
   getEventsReport,
   getFoodOrdersReport,
+  getServicesReport,
   getAnalyticsOverview,
   getRoomsAnalytics,
   getProfitLossReport,

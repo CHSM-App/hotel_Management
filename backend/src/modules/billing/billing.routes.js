@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { authenticate, requirePermission } = require('../../middleware/authenticate');
+const { authenticate, requirePermission, requireCapability } = require('../../middleware/authenticate');
 const { billShareUpload } = require('../../middleware/billShareUpload');
 const { receiptShareUpload } = require('../../middleware/receiptShareUpload');
 const {
@@ -12,6 +12,9 @@ const {
   listOpenFoodTabsHandler,
   previewFoodBillHandler,
   issueFoodInvoiceHandler,
+  previewServiceBillHandler,
+  issueServiceInvoiceHandler,
+  addServicesToRoomBillHandler,
   listInHouseGuestsHandler,
   addTabToRoomBillHandler,
   previewBillHandler,
@@ -59,6 +62,13 @@ router.get('/food-tabs/in-house-guests', authenticate, staff, listInHouseGuestsH
 router.post('/food-tabs/:tab/add-to-room', authenticate, staff, addTabToRoomBillHandler);
 router.get('/food-tabs/:tab/preview', authenticate, staff, previewFoodBillHandler);
 router.post('/food-tabs/:tab/invoice', authenticate, staff, issueFoodInvoiceHandler);
+
+// Other services (laundry, pool, gaming ...): completed uses billed on their
+// own invoice, or charged to a guest's room bill.
+const servicesEnabled = requireCapability('hasOtherServices');
+router.get('/services/preview', authenticate, servicesEnabled, staff, previewServiceBillHandler);
+router.post('/services/invoice', authenticate, servicesEnabled, staff, issueServiceInvoiceHandler);
+router.post('/services/add-to-room', authenticate, servicesEnabled, staff, addServicesToRoomBillHandler);
 // Advance receipts. Taken at the desk when the booking is made, so these sit
 // under bookings/ like the stay bill does — same booking, different document.
 //

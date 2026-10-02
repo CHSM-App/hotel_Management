@@ -357,7 +357,10 @@ function mapOrder(row, items) {
     cancelledAt: row.cancelled_at,
     cancelReason: row.cancel_reason,
     // Once an invoice carries the order its lines are money — no more edits.
-    billed: row.invoice_id != null,
+    // A food bill that was voided keeps its link to the orders, but they are no
+    // longer billed: they read as Voided until someone deals with them.
+    billed: row.invoice_id != null && row.inv_status !== 'VOID',
+    voided: row.invoice_id != null && row.inv_status === 'VOID',
     invoiceId: row.invoice_id ?? null,
     invoiceNumber: row.inv_number ?? null,
     readyToBill: row.ready_to_bill_at != null,
@@ -370,7 +373,7 @@ function mapOrder(row, items) {
     roomId: row.room_id ?? null,
     // Paid or part-paid once a bill carries it; null while it is unbilled.
     payment:
-      row.invoice_id == null
+      row.invoice_id == null || row.inv_status === 'VOID'
         ? null
         : {
             status: Number(row.inv_paid) >= Number(row.inv_total) ? 'PAID' : Number(row.inv_paid) > 0 ? 'PART' : 'UNPAID',
@@ -437,6 +440,7 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
            o.table_id, o.room_id,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
+           (SELECT status FROM dbo.invoices WHERE id = o.invoice_id) AS inv_status,
            (SELECT COALESCE(SUM(amount), 0) FROM dbo.payment_lines WHERE invoice_id = o.invoice_id) AS inv_paid,
            (SELECT TOP 1 method FROM dbo.payment_lines WHERE invoice_id = o.invoice_id ORDER BY amount DESC) AS inv_method,
            r.room_number, t.label AS table_label
@@ -495,6 +499,7 @@ async function getOrder(lodgeId, orderId) {
            o.table_id, o.room_id,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
+           (SELECT status FROM dbo.invoices WHERE id = o.invoice_id) AS inv_status,
            (SELECT COALESCE(SUM(amount), 0) FROM dbo.payment_lines WHERE invoice_id = o.invoice_id) AS inv_paid,
            (SELECT TOP 1 method FROM dbo.payment_lines WHERE invoice_id = o.invoice_id ORDER BY amount DESC) AS inv_method,
              r.room_number, t.label AS table_label
@@ -781,6 +786,48 @@ async function listRunningTabs(lodgeId) {
   });
 }
 
+// The captain taking a whole ticket out at once: every dish the kitchen has ticked
+// is handed over together and the order becomes DELIVERED. Allowed only when every
+// dish is ready (the kitchen has done its part), whether or not the kitchen has
+// pressed Ready for the order itself yet.
+async function deliverAllItems(lodgeId, orderId) {
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const found = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('orderId', sql.BigInt, orderId)
+      .query('SELECT status, invoice_id FROM dbo.food_orders WITH (UPDLOCK) WHERE id = @orderId AND lodge_id = @lodgeId');
+    const order = found.recordset[0];
+    if (!order) throw new ApiError('Order not found.', 404);
+    if (!['PREPARING', 'READY'].includes(order.status)) {
+      throw new ApiError(`This order is already ${order.status.toLowerCase()} — it can’t be delivered from here.`, 409);
+    }
+    const open = await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .query('SELECT COUNT(*) AS n FROM dbo.food_order_items WHERE order_id = @orderId AND ready_at IS NULL');
+    if (open.recordset[0].n > 0) {
+      throw new ApiError('Some dishes are not ready yet, so the whole order can’t be delivered.', 409);
+    }
+    await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .query('UPDATE dbo.food_order_items SET delivered_at = COALESCE(delivered_at, SYSDATETIMEOFFSET()) WHERE order_id = @orderId');
+    await new sql.Request(transaction)
+      .input('orderId', sql.BigInt, orderId)
+      .query(`
+        UPDATE dbo.food_orders
+        SET status = 'DELIVERED', ready_at = COALESCE(ready_at, SYSDATETIMEOFFSET()), delivered_at = SYSDATETIMEOFFSET()
+        WHERE id = @orderId
+      `);
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+  return getOrder(lodgeId, orderId);
+}
+
 // Every move through the queue lands here. The transition table is enforced
 // server-side rather than trusted from the button that was clicked: two people
 // on two screens will tap the same order, and the second tap has to fail
@@ -921,6 +968,7 @@ module.exports = {
   setItemReady,
   setItemDelivered,
   cancelOrderItems,
+  deliverAllItems,
   listRunningTabs,
   markReadyToBill,
 };

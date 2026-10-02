@@ -71,21 +71,25 @@ const PERMISSIONS = [
     key: 'assets.manage',
     label: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and manage maintenance work orders.',
+    capability: 'hasAssets',
   },
   {
     key: 'expenses.manage',
     label: 'Expenses',
     description: 'Log and review property expenses, vendors and recurring bills.',
+    capability: 'hasExpenses',
   },
   {
     key: 'income.manage',
     label: 'Other Income',
     description: 'Log and review income outside room/food/function billing — interest, scrap sale, rent received, and the like.',
+    capability: 'hasExpenses',
   },
   {
     key: 'profitLoss.view',
     label: 'Profit & Loss',
     description: 'View the combined revenue, expense, other-income and depreciation figures behind Profit & Loss.',
+    capability: 'hasExpenses',
   },
 ];
 
@@ -102,14 +106,15 @@ const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'ACCOUNTAN
 //
 // The same idea as the `capability` field on FEATURES in the frontend's
 // propertyProfile.js, which is what already hides the food sections.
-// ACCOUNTANT isn't listed: billing.manage
-// and expenses.manage have no capability gate of their own — every property
-// type has assets and money — so those roles are offered everywhere. This is
-// about the role itself staying on the picker, not about every permission it
-// carries: ACCOUNTANT also carries events.manage, which *is* gated (hasEvents)
+// ACCOUNTANT isn't listed: billing.manage has no capability gate, so that role
+// is offered everywhere. This is about the role itself staying on the picker,
+// not about every permission it carries: ACCOUNTANT also carries events.manage,
+// expenses.manage and income.manage, which *are* gated (hasEvents, hasExpenses)
 // at the individual-permission level in PERMISSIONS/permissionsFor below, so a
-// non-event property's Accountant simply comes without it rather than the
-// whole role being hidden over one permission it can't use.
+// property without those add-ons has an Accountant that simply comes without
+// them rather than the whole role being hidden over a permission it can't use.
+// requirePermission applies the same gate on every request, so a permission a
+// property's add-ons don't cover grants nothing even if a role row still holds it.
 const SYSTEM_ROLE_CAPABILITY = {
   KITCHEN: 'servesFood',
   CAPTAIN: 'servesFood',

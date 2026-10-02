@@ -145,6 +145,40 @@ export const paperById = (id) => PAPER_SIZES.find((p) => p.id === id) ?? PAPER_S
 // which is what makes it an honest measurement, and what keeps the visible
 // document from being mutated mid-download. `shownWidth` is the width the user
 // is actually looking at, so the capture wraps its text identically.
+// The masthead face, as a self-contained @font-face the capture can carry.
+//
+// html-to-image rasterises inside an SVG, which cannot reach the page's web
+// fonts: whatever it cannot embed is drawn in the fallback serif, which is wider
+// — that is how a one-line hotel name became two lines and ran over the rows
+// around it in the downloaded and WhatsApp bills while the preview (real font)
+// looked right. So the font is fetched once and inlined as data: URIs.
+let baloo;
+function balooEmbedCss() {
+  baloo ??= (async () => {
+    const cssUrl = 'https://fonts.googleapis.com/css2?family=Baloo+2:wght@800&display=swap';
+    const css = await (await fetch(cssUrl)).text();
+    const urls = [...new Set([...css.matchAll(/url((https:[^)]+))/g)].map((m) => m[1]))];
+    let out = css;
+    await Promise.all(
+      urls.map(async (u) => {
+        const blob = await (await fetch(u)).blob();
+        const data = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(blob);
+        });
+        out = out.split(u).join(data);
+      })
+    );
+    return out;
+  })().catch(() => {
+    baloo = undefined; // try again next time; the capture still goes ahead without it
+    return '';
+  });
+  return baloo;
+}
+
 export async function buildDocumentPdfBlob(node, { paperSize, shownWidth }) {
   // html-to-image, not html2canvas — the difference is who paints the text.
   // html2canvas re-draws every glyph itself with its own baseline arithmetic,
@@ -153,13 +187,29 @@ export async function buildDocumentPdfBlob(node, { paperSize, shownWidth }) {
   // DOM into an SVG foreignObject and hands it back to the browser to
   // rasterise: the engine that painted the preview paints the file, so the PDF
   // cannot disagree with the screen about where a line of text sits.
-  const [{ jsPDF }, { toCanvas }] = await Promise.all([import('jspdf'), import('html-to-image')]);
+  const [{ jsPDF }, { toCanvas, getFontEmbedCSS }] = await Promise.all([import('jspdf'), import('html-to-image')]);
 
   node.parentElement.style.width = `${shownWidth || BILL_PDF_WIDTH}px`;
 
   // The webfonts must be resolved before capture: a capture raced against Inter
   // still loading would be laid out in one font and painted in another.
   await document.fonts.ready;
+  // The masthead's face is only fetched once something uses it, and the name's size
+  // is a container-query unit (cqw). Both are resolved here, in the same layout the
+  // visible bill uses, and pinned as plain pixels for the capture — so the rasterised
+  // name has the width and the font the preview showed, and cannot spill over the
+  // lines around it.
+  try {
+    await document.fonts.load('800 34px "Baloo 2"');
+  } catch {
+    /* the fallback face is used */
+  }
+  const pinned = [...node.querySelectorAll('.memo__name, .bill-doc__lodge-name')].map((el) => {
+    const before = { size: el.style.fontSize, wrap: el.style.whiteSpace };
+    el.style.fontSize = getComputedStyle(el).fontSize;
+    el.style.whiteSpace = 'nowrap';
+    return { el, before };
+  });
 
   // Stretched to the chosen sheet before rasterising, the same way the print
   // dialog and the thumbnails fill theirs — the stay block takes whatever
@@ -182,9 +232,18 @@ export async function buildDocumentPdfBlob(node, { paperSize, shownWidth }) {
     node.style.setProperty('--memo-stay-h', `${Math.round(stayHeight)}px`);
   }
 
+  // Every font the page already embeds on its own, plus the masthead face above.
+  let fontEmbedCSS;
+  try {
+    fontEmbedCSS = (await getFontEmbedCSS(node)) + (await balooEmbedCss());
+  } catch {
+    fontEmbedCSS = undefined;
+  }
+
   let canvas;
   try {
     canvas = await toCanvas(node, {
+      fontEmbedCSS,
       // Three device pixels per CSS pixel. The text is rasterised, not embedded,
       // so resolution is all that stands between the reader and visibly soft
       // 9px captions.
@@ -197,6 +256,10 @@ export async function buildDocumentPdfBlob(node, { paperSize, shownWidth }) {
     });
   } finally {
     node.style.removeProperty('--memo-stay-h');
+    for (const { el, before } of pinned) {
+      el.style.fontSize = before.size;
+      el.style.whiteSpace = before.wrap;
+    }
   }
   // JPEG, not PNG: the capture is text on a near-solid white ground, so lossy
   // compression at high quality is visually identical to the lossless encode

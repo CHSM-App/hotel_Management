@@ -62,10 +62,15 @@ function buildReceiptSample(receipt, link) {
     clean(receipt.guest_name || 'Guest'),
     clean(receipt.lodge_name),
     clean(receipt.receipt_number),
-    clean(amountForTemplate(receipt.amount_received)),
+    // The template already prints the ₹ sign ("Amount: ₹{{4}}"), so digits only.
+    clean(Number(receipt.amount_received ?? 0).toFixed(2)),
     clean(PAYMENT_METHOD_LABEL[receipt.payment_method] || receipt.payment_method),
     // Not cleaned: a URL has no commas and clean() would mangle one that did.
     link,
+    // The approved template uses {{2}} twice ("payment to {{2}}" and "Thank you
+    // for choosing {{2}}"); the provider counts occurrences, so it expects a
+    // seventh value, the hotel name again.
+    clean(receipt.lodge_name),
   ].join(',');
 }
 
