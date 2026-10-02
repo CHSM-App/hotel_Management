@@ -24,6 +24,7 @@ abstract class FoodSetupRepository {
   Future<void> setMenuItemActive(int id, bool isActive);
   Future<void> deleteMenuItem(int id);
   Future<void> setItemPortions(int itemId, List<Map<String, dynamic>> portions);
+  Future<MenuImportResult> importMenu(List<Map<String, dynamic>> rows);
 
   // Settings
   Future<FoodSettings> foodSettings();

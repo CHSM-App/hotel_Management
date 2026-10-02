@@ -816,6 +816,14 @@ class ApiService {
     await _dio.put('/menu/items/$itemId/portions', data: {'portions': portions});
   }
 
+  /// One spreadsheet's worth of dishes in a single call — a section or item
+  /// that already exists by name is updated, not duplicated, so re-uploading
+  /// after fixing a typo is safe. Mirrors MenuExcelImport.jsx's own POST.
+  Future<MenuImportResult> importMenu(List<Map<String, dynamic>> rows) async {
+    final res = await _dio.post('/menu/import', data: {'rows': rows});
+    return MenuImportResult.fromJson(_map(res.data));
+  }
+
   Future<FoodSettings> foodSettings() async {
     final res = await _dio.get('/menu/settings');
     return FoodSettings.fromJson(_map(res.data)['settings'] as Map<String, dynamic>);

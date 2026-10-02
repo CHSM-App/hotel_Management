@@ -190,6 +190,47 @@ class FoodSettings {
   };
 }
 
+/// One row's failure from POST /menu/import — named so the sheet can be
+/// fixed and re-uploaded without redoing the rows that already landed.
+class MenuImportRowError {
+  final int row;
+  final String? name;
+  final String message;
+
+  const MenuImportRowError({required this.row, this.name, required this.message});
+
+  factory MenuImportRowError.fromJson(Map<String, dynamic> json) => MenuImportRowError(
+    row: asInt(json['row']),
+    name: asStringOrNull(json['name']),
+    message: asStringOrNull(json['message']) ?? 'Could not import that row.',
+  );
+}
+
+/// The outcome of importing a menu spreadsheet — mirrors menu.controller.js's
+/// importMenuHandler response.
+class MenuImportResult {
+  final int created;
+  final int updated;
+  final int failed;
+  final List<MenuImportRowError> errors;
+
+  const MenuImportResult({
+    this.created = 0,
+    this.updated = 0,
+    this.failed = 0,
+    this.errors = const [],
+  });
+
+  factory MenuImportResult.fromJson(Map<String, dynamic> json) => MenuImportResult(
+    created: asInt(json['created']),
+    updated: asInt(json['updated']),
+    failed: asInt(json['failed']),
+    errors: (json['errors'] as List? ?? const [])
+        .map((e) => MenuImportRowError.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
 /// A line the desk is building on a counter order, before it is sent.
 class OrderLineDraft {
   final MenuItem item;

@@ -167,4 +167,17 @@ class MenuViewModel extends StateNotifier<MenuState> {
       return false;
     }
   }
+
+  /// Imports a parsed spreadsheet's rows, then reloads the menu if anything
+  /// landed — a sheet that's entirely bad rows leaves the menu untouched.
+  Future<MenuImportResult?> importMenu(List<Map<String, dynamic>> rows) async {
+    try {
+      final result = await usecase.importMenu(rows);
+      if (result.created + result.updated > 0) await load();
+      return result;
+    } catch (e) {
+      state = state.copyWith(error: apiErrorMessage(e));
+      return null;
+    }
+  }
 }

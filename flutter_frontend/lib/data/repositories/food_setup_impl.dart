@@ -53,6 +53,9 @@ class FoodSetupImpl implements FoodSetupRepository {
       api.setItemPortions(itemId, portions);
 
   @override
+  Future<MenuImportResult> importMenu(List<Map<String, dynamic>> rows) => api.importMenu(rows);
+
+  @override
   Future<FoodSettings> foodSettings() => api.foodSettings();
 
   @override
