@@ -95,6 +95,37 @@ class _TapeChartState extends ConsumerState<TapeChart>
   GlobalKey _keyFor(String category) =>
       _sectionKeys.putIfAbsent(category, () => GlobalKey());
 
+  /// Whichever category band sits just below the pinned header right now —
+  /// kept in step with [_vScroll] so the chip strip highlights the section
+  /// actually on screen while dragging, not only the one last tapped. Mirrors
+  /// [_DateHeaderState._onScroll]'s own sticky-month tracking, just reading
+  /// the vertical controller's position against each band's key instead of
+  /// the horizontal one's offset against a tile width.
+  String? _activeCategory;
+
+  void _updateActiveCategoryFromScroll() {
+    if (!mounted || !_vScroll.hasClients) return;
+    final sections = ref.read(bookingViewModelProvider).chartSections;
+    if (sections.isEmpty) return;
+    final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
+    if (viewportBox is! RenderBox || !viewportBox.attached) return;
+    final headerHeight = _DateHeaderDelegate.heightFor(sections.length > 1);
+    String? found;
+    for (final section in sections) {
+      final box = _sectionKeys[section.categoryName]?.currentContext
+          ?.findRenderObject();
+      if (box is! RenderBox || !box.attached) continue;
+      final top = box.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
+      if (top <= headerHeight + 1) {
+        found = section.categoryName;
+      } else {
+        break;
+      }
+    }
+    found ??= sections.first.categoryName;
+    if (found != _activeCategory) setState(() => _activeCategory = found);
+  }
+
   /// Anchors the vertical `CustomScrollView` so a chip jump can measure a
   /// section's actual painted position instead of asking `Scrollable.
   /// ensureVisible` to work it out — that call walks every ancestor
@@ -151,6 +182,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _vScroll.addListener(_updateActiveCategoryFromScroll);
     _snapToToday();
   }
 
@@ -278,6 +310,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     WidgetsBinding.instance.removeObserver(this);
     routeObserver.unsubscribe(this);
     _flashTimer?.cancel();
+    _vScroll.removeListener(_updateActiveCategoryFromScroll);
     _vScroll.dispose();
     _hSync.dispose();
     super.dispose();
@@ -388,6 +421,10 @@ class _TapeChartState extends ConsumerState<TapeChart>
     // suspects a booking has changed elsewhere (another device, the web
     // front desk) has a way to force a reload instead of waiting on the
     // usual triggers (opening a stay, taking a booking) to happen to refetch.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateActiveCategoryFromScroll();
+    });
+
     return RefreshIndicator(
       onRefresh: () => ref.read(bookingViewModelProvider.notifier).loadChart(),
       child: NotificationListener<ScrollNotification>(
@@ -411,6 +448,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
               pinned: true,
               delegate: _DateHeaderDelegate(
                 sections: sections.length > 1 ? sections : null,
+                activeCategory: _activeCategory,
                 onTapChip: _jumpTo,
                 onTapToday: _scrollToToday,
                 dates: dates,
@@ -774,11 +812,18 @@ class _SearchBarState extends State<_SearchBar> {
 class _CategoryChips extends StatefulWidget {
   final List<ChartSection> sections;
   final List<DateTime> dates;
+
+  /// Which band is currently on screen, as tracked by the chart's own
+  /// vertical scroll position — not just whichever chip was last tapped, so
+  /// dragging the room list past a category boundary highlights it too, the
+  /// same way a tab bar follows a scrolling page.
+  final String? activeCategory;
   final ValueChanged<String> onTap;
 
   const _CategoryChips({
     required this.sections,
     required this.dates,
+    required this.activeCategory,
     required this.onTap,
   });
 
@@ -787,8 +832,6 @@ class _CategoryChips extends StatefulWidget {
 }
 
 class _CategoryChipsState extends State<_CategoryChips> {
-  String? _active;
-
   /// One key per chip, so tapping one that's only half in view (the strip
   /// scrolls sideways on a property with more categories than it's wide)
   /// can bring the whole thing on screen instead of leaving it clipped at
@@ -870,6 +913,20 @@ class _CategoryChipsState extends State<_CategoryChips> {
   }
 
   @override
+  void didUpdateWidget(covariant _CategoryChips oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Scrolling the room list into a new band moves the active chip the same
+    // way tapping one does — keep it scrolled into view on this strip too,
+    // rather than leaving the highlight land off-screen.
+    final active = widget.activeCategory;
+    if (active != null && active != oldWidget.activeCategory) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _revealChip(active);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       controller: _hScroll,
@@ -882,9 +939,8 @@ class _CategoryChipsState extends State<_CategoryChips> {
               label: section.categoryName,
               count: section.rooms.length,
               percent: _percentSold(section),
-              active: _active == section.categoryName,
+              active: widget.activeCategory == section.categoryName,
               onTap: () {
-                setState(() => _active = section.categoryName);
                 widget.onTap(section.categoryName);
                 _revealChip(section.categoryName);
               },
@@ -1104,6 +1160,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   /// — the chip strip above the date header is skipped entirely rather than
   /// pinning an empty sliver of its own height.
   final List<ChartSection>? sections;
+  final String? activeCategory;
   final ValueChanged<String>? onTapChip;
   final VoidCallback onTapToday;
   final List<DateTime> dates;
@@ -1114,6 +1171,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   _DateHeaderDelegate({
     required this.sections,
+    required this.activeCategory,
     required this.onTapChip,
     required this.onTapToday,
     required this.dates,
@@ -1187,6 +1245,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
                     child: _CategoryChips(
                       sections: sections!,
                       dates: dates,
+                      activeCategory: activeCategory,
                       onTap: onTapChip!,
                     ),
                   ),
@@ -1234,6 +1293,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _DateHeaderDelegate oldDelegate) {
     return oldDelegate.sections != sections ||
+        oldDelegate.activeCategory != activeCategory ||
         oldDelegate.dates != dates ||
         oldDelegate.today != today ||
         oldDelegate.tile != tile ||

@@ -1919,28 +1919,75 @@ class _RoomPicker extends ConsumerWidget {
         }
         return NeuPressed(
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          radius: AppTheme.rMedium,
+          focused: state.room != null,
           child: DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               value: state.room?.id,
               isExpanded: true,
+              isDense: false,
+              itemHeight: 56,
+              menuMaxHeight: 360,
+              elevation: 4,
+              borderRadius: BorderRadius.circular(AppTheme.rMedium),
               dropdownColor: AppTheme.card,
-              hint: const Text(
-                'Choose a room',
-                style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+              hint: Row(
+                children: [
+                  Icon(Icons.bed_outlined, size: 18, color: AppTheme.muted),
+                  const SizedBox(width: AppTheme.s8),
+                  const Text(
+                    'Choose a room',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                  ),
+                ],
               ),
-              icon: const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: AppTheme.muted,
+              icon: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: AppTheme.accent,
+                  size: 18,
+                ),
               ),
+              // A compact single-line summary for the closed field — the
+              // full two-line layout only earns its space while open.
+              selectedItemBuilder: (context) => [
+                for (final room in list)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      children: [
+                        _RoomBadge(roomNumber: room.roomNumber),
+                        const SizedBox(width: AppTheme.s12),
+                        Expanded(
+                          child: Text(
+                            '${room.categoryName} · '
+                            '${formatPrice(room.categoryBasePrice)}/night',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
               items: [
                 for (final room in list)
                   DropdownMenuItem<int>(
                     value: room.id,
-                    child: Text(
-                      'Room ${room.roomNumber} · ${room.categoryName} · '
-                      '${formatPrice(room.categoryBasePrice)}/night',
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
+                    child: _RoomOption(
+                      roomNumber: room.roomNumber,
+                      categoryName: room.categoryName,
+                      price: room.categoryBasePrice,
+                      selected: state.room?.id == room.id,
                     ),
                   ),
               ],
@@ -1953,6 +2000,111 @@ class _RoomPicker extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The small rounded room-number chip used both in the closed field and in
+/// each open menu row, so the number reads as one consistent identity
+/// across the two states.
+class _RoomBadge extends StatelessWidget {
+  final String roomNumber;
+
+  const _RoomBadge({required this.roomNumber});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      ),
+      child: Text(
+        roomNumber,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppTheme.accent,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// One row of the open room menu — a numbered badge, the category name and
+/// a price pill, laid out so a long list of near-identical rooms still
+/// scans quickly rather than reading as a wall of text.
+class _RoomOption extends StatelessWidget {
+  final String roomNumber;
+  final String categoryName;
+  final num price;
+  final bool selected;
+
+  const _RoomOption({
+    required this.roomNumber,
+    required this.categoryName,
+    required this.price,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _RoomBadge(roomNumber: roomNumber),
+        const SizedBox(width: AppTheme.s12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Room $roomNumber',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                categoryName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.accent.withValues(alpha: 0.12)
+                : AppTheme.bg,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Text(
+            '${formatPrice(price)}/night',
+            style: TextStyle(
+              color: selected ? AppTheme.accent : AppTheme.text,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (selected) ...[
+          const SizedBox(width: AppTheme.s8),
+          const Icon(Icons.check_circle_rounded, color: AppTheme.accent, size: 18),
+        ],
+      ],
     );
   }
 }

@@ -50,20 +50,33 @@ class _PaymentRowState extends State<PaymentRow> {
         Row(
           children: [
             Expanded(
+              flex: 3,
               child: NeuPressed(
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: widget.line.method,
                     isExpanded: true,
+                    isDense: true,
                     dropdownColor: AppTheme.bg,
                     hint: const Text(
                       'Choose one',
-                      style: TextStyle(color: AppTheme.muted, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: AppTheme.muted, fontSize: 13),
                     ),
                     items: [
                       for (final e in kPaymentMethods.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
+                        DropdownMenuItem(
+                          value: e.key,
+                          child: Text(
+                            e.value,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
                     ],
                     onChanged: (m) {
                       setState(() => widget.line.method = m);
@@ -74,8 +87,8 @@ class _PaymentRowState extends State<PaymentRow> {
               ),
             ),
             const SizedBox(width: AppTheme.s8),
-            SizedBox(
-              width: 96,
+            Expanded(
+              flex: 2,
               child: NeuPressed(
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
                 child: TextField(
