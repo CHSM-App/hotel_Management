@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/invoice.dart';
@@ -35,8 +36,9 @@ class BillingScreen extends ConsumerStatefulWidget {
 }
 
 class _BillingScreenState extends ConsumerState<BillingScreen> {
-  late _BillingTab _tab =
-      widget.restaurantOnly ? _BillingTab.food : _BillingTab.toBill;
+  late _BillingTab _tab = widget.restaurantOnly
+      ? _BillingTab.food
+      : _BillingTab.toBill;
 
   final _search = TextEditingController();
 
@@ -122,52 +124,70 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppTheme.s12,
-          AppTheme.s8,
-          AppTheme.s12,
-          AppTheme.s24,
-        ),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          toggle,
-          const SizedBox(height: AppTheme.s12),
-          BillingSearchAndViewToggle(
-            controller: _search,
-            view: _view,
-            onViewChanged: (v) => setState(() => _view = v),
-            onSearchChanged: () => setState(() {}),
+    // The tab strip stays put above the list rather than scrolling away with
+    // it — same fixed Column/Expanded split FoodBillingScreen uses for its
+    // own Kitchen queue/History/Numbering strip (and this screen's own
+    // Numbering case above), so switching tabs never requires scrolling back
+    // up to find them first.
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.s12,
+            AppTheme.s8,
+            AppTheme.s12,
+            0,
           ),
-          const SizedBox(height: AppTheme.s12),
-          if (tab == _BillingTab.issued) ...[
-            BillingDateFilterRow(
-              filterKey: _dateFilterKey,
-              from: _customFrom,
-              to: _customTo,
-              onPresetSelected: _applyDatePreset,
-              onFromChanged: (v) => setState(() {
-                _customFrom = v;
-                _dateFilterKey = 'custom';
-              }),
-              onToChanged: (v) => setState(() {
-                _customTo = v;
-                _dateFilterKey = 'custom';
-              }),
+          child: toggle,
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            color: AppTheme.accent,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s24,
+              ),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                BillingSearchAndViewToggle(
+                  controller: _search,
+                  view: _view,
+                  onViewChanged: (v) => setState(() => _view = v),
+                  onSearchChanged: () => setState(() {}),
+                ),
+                const SizedBox(height: AppTheme.s12),
+                if (tab == _BillingTab.issued) ...[
+                  BillingDateFilterRow(
+                    filterKey: _dateFilterKey,
+                    from: _customFrom,
+                    to: _customTo,
+                    onPresetSelected: _applyDatePreset,
+                    onFromChanged: (v) => setState(() {
+                      _customFrom = v;
+                      _dateFilterKey = 'custom';
+                    }),
+                    onToChanged: (v) => setState(() {
+                      _customTo = v;
+                      _dateFilterKey = 'custom';
+                    }),
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                ],
+                if (tab == _BillingTab.food)
+                  ..._food(state)
+                else if (tab == _BillingTab.issued)
+                  ..._issued(state, restaurantOnly: widget.restaurantOnly)
+                else
+                  ..._queue(state),
+              ],
             ),
-            const SizedBox(height: AppTheme.s12),
-          ],
-          if (tab == _BillingTab.food)
-            ..._food(state)
-          else if (tab == _BillingTab.issued)
-            ..._issued(state, restaurantOnly: widget.restaurantOnly)
-          else
-            ..._queue(state),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -189,10 +209,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       final needle = _search.text.trim().toLowerCase();
       final rows = needle.isEmpty
           ? allRows
-          : allRows.where((tab) =>
-              (tab.tableLabel ?? '').toLowerCase().contains(needle) ||
-              (tab.guestName ?? '').toLowerCase().contains(needle) ||
-              (tab.customerPhone ?? '').toLowerCase().contains(needle)).toList();
+          : allRows
+                .where(
+                  (tab) =>
+                      (tab.tableLabel ?? '').toLowerCase().contains(needle) ||
+                      (tab.guestName ?? '').toLowerCase().contains(needle) ||
+                      (tab.customerPhone ?? '').toLowerCase().contains(needle),
+                )
+                .toList();
       if (rows.isEmpty) {
         return const [
           SizedBox(height: 80),
@@ -240,7 +264,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
             child: BillingRowCard(
-              onTap: row.onTap,
+              onBill: row.onTap,
               icon: row.icon,
               title: row.title,
               subtitle: row.subtitle,
@@ -269,10 +293,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       final needle = _search.text.trim().toLowerCase();
       final rows = needle.isEmpty
           ? allRows
-          : allRows.where((stay) =>
-              (stay.roomNumber ?? '').toLowerCase().contains(needle) ||
-              (stay.guestName ?? '').toLowerCase().contains(needle) ||
-              (stay.categoryName ?? '').toLowerCase().contains(needle)).toList();
+          : allRows
+                .where(
+                  (stay) =>
+                      (stay.roomNumber ?? '').toLowerCase().contains(needle) ||
+                      (stay.guestName ?? '').toLowerCase().contains(needle) ||
+                      (stay.categoryName ?? '').toLowerCase().contains(needle),
+                )
+                .toList();
       if (rows.isEmpty) {
         return const [
           SizedBox(height: 80),
@@ -286,23 +314,31 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       // rebuilt by the list around it, and checking the wrong one is
       // checking whether a context that has already been replaced is still
       // good.
+      Future<void> openStay(BillableStay stay) async {
+        await ref.read(billingViewModelProvider.notifier).open(stay);
+        if (!mounted) return;
+        await Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
+        if (!mounted) return;
+        await _load();
+      }
+
+      if (_view == 'table') {
+        return [ReadyToBillTable(stays: rows, onBill: openStay)];
+      }
+
       final queueRows = [
         for (final stay in rows)
           BillingQueueRow(
-            onTap: () async {
-              await ref.read(billingViewModelProvider.notifier).open(stay);
-              if (!mounted) return;
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const IssueBillScreen()),
-              );
-              if (!mounted) return;
-              await _load();
-            },
+            onTap: () => openStay(stay),
             roomLabel: stay.roomNumber,
             title: stay.guestName ?? 'Guest',
             subtitle: [
               if (stay.categoryName != null) stay.categoryName!,
               'Stay ${formatPrice(stay.totalPrice)}',
+              if ((stay.foodTotal ?? 0) > 0)
+                'Food ${formatPrice(stay.foodTotal)}',
               if ((stay.advanceAmount ?? 0) > 0)
                 'Adv ${formatPrice(stay.advanceAmount)}',
             ].join(' · '),
@@ -310,13 +346,12 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             amountLabel: 'To collect',
           ),
       ];
-      if (_view == 'table') return [BillingQueueTable(rows: queueRows)];
       return [
         for (final row in queueRows)
           Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
             child: BillingRowCard(
-              onTap: row.onTap,
+              onBill: row.onTap,
               roomLabel: row.roomLabel,
               title: row.title,
               subtitle: row.subtitle,
@@ -352,11 +387,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       ];
     }
     final allRows = [
-      for (final inv in invoices ?? const <Invoice>[]) BillDocument.ofInvoice(inv),
+      for (final inv in invoices ?? const <Invoice>[])
+        BillDocument.ofInvoice(inv),
       // A FOOD invoice has no receipt of its own (an advance is only ever
       // taken against a stay or a function), so merging receipts in plainly
       // never adds one to the restaurant stream below.
-      for (final r in receipts ?? const <AdvanceReceipt>[]) BillDocument.ofReceipt(r),
+      for (final r in receipts ?? const <AdvanceReceipt>[])
+        BillDocument.ofReceipt(r),
     ];
     // Same split as the web's own streamOf(): a FOOD-kind bill is a
     // restaurant document and an event bill (or a receipt taken against one)
@@ -369,14 +406,20 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final needle = _search.text.trim().toLowerCase();
     final searched = needle.isEmpty
         ? streamRows
-        : streamRows.where((d) =>
-            (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
-            (d.guestName ?? '').toLowerCase().contains(needle) ||
-            (d.roomNumber ?? '').toLowerCase().contains(needle) ||
-            (d.venueName ?? '').toLowerCase().contains(needle) ||
-            (d.tableLabel ?? '').toLowerCase().contains(needle)).toList();
+        : streamRows
+              .where(
+                (d) =>
+                    (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.guestName ?? '').toLowerCase().contains(needle) ||
+                    (d.roomNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.venueName ?? '').toLowerCase().contains(needle) ||
+                    (d.tableLabel ?? '').toLowerCase().contains(needle),
+              )
+              .toList();
     final rows = searched
-        .where((d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo))
+        .where(
+          (d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo),
+        )
         .toList();
     if (rows.isEmpty) {
       return const [
@@ -401,12 +444,12 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 // ── A queue row ──────────────────────────────────────────────────────────────
 
 /// The shared shape behind every "to bill" row — room, food, and (from
-/// event_billing_screen.dart) function: a colour spine down the left edge
-/// (the same device the register page's booking cards use to make status
-/// legible before the eye lands on any text), a two-line title block, and a
-/// trailing figure — with a real ink ripple on tap rather than [NeuCard]'s
-/// bare [GestureDetector], since a list a cashier taps through all shift is
-/// worth the tactile feedback.
+/// event_billing_screen.dart) function: a colour spine across the top (the
+/// same device the orders page's ticket cards use to make status legible
+/// before the eye lands on any text), a compact title block, and the amount
+/// due beside a dedicated "Bill" button. The card itself does nothing on
+/// tap — only the button opens billing — so a cashier scanning a long queue
+/// can't walk into a bill screen by brushing the wrong row.
 class BillingRowCard extends StatelessWidget {
   final IconData? icon;
   final String? roomLabel;
@@ -414,7 +457,7 @@ class BillingRowCard extends StatelessWidget {
   final String subtitle;
   final num? amount;
   final String? amountLabel;
-  final VoidCallback onTap;
+  final VoidCallback onBill;
 
   const BillingRowCard({
     super.key,
@@ -424,7 +467,7 @@ class BillingRowCard extends StatelessWidget {
     required this.subtitle,
     required this.amount,
     this.amountLabel,
-    required this.onTap,
+    required this.onBill,
   });
 
   @override
@@ -437,111 +480,129 @@ class BillingRowCard extends StatelessWidget {
         boxShadow: AppTheme.extruded,
       ),
       clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          highlightColor: AppTheme.accent.withValues(alpha: 0.04),
-          splashColor: AppTheme.accent.withValues(alpha: 0.08),
-          child: IntrinsicHeight(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Same thin status-colour band [_OrderCard] opens with on the
+          // orders page — a card reads as a live item before any text is
+          // parsed, rather than only the flat accent spine this row used to
+          // carry down its left edge.
+          Container(height: 3, color: AppTheme.accent),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s12,
+              AppTheme.s8 + 2,
+              AppTheme.s12,
+              AppTheme.s8,
+            ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Container(width: 4, color: AppTheme.accent),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppTheme.s12,
-                      AppTheme.s8,
-                      AppTheme.s12,
-                      AppTheme.s8,
-                    ),
-                    child: Row(
-                      children: [
-                        if (icon != null) ...[
-                          Icon(icon, color: AppTheme.accent, size: 19),
-                          const SizedBox(width: AppTheme.s8),
+                if (icon != null) ...[
+                  Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.accent.withValues(alpha: 0.85),
+                          AppTheme.sidebarBrand.withValues(alpha: 0.85),
                         ],
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      title,
-                                      style: Theme.of(context).textTheme.titleMedium,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (roomLabel != null) ...[
-                                    const SizedBox(width: AppTheme.s8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.accent.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Text(
-                                        'Room $roomLabel',
-                                        style: const TextStyle(
-                                          color: AppTheme.accent,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                subtitle,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                      ),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 15),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: Theme.of(context).textTheme.titleSmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: AppTheme.s8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (amountLabel != null)
-                              Text(
-                                amountLabel!,
-                                style: Theme.of(context).textTheme.bodySmall,
+                          if (roomLabel != null) ...[
+                            const SizedBox(width: AppTheme.s8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
                               ),
-                            Text(
-                              formatPrice(amount),
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
+                              decoration: BoxDecoration(
+                                color: AppTheme.sidebarBrandWash,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Room $roomLabel',
+                                style: const TextStyle(
+                                  color: AppTheme.sidebarBrandInk,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(width: AppTheme.s4),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: AppTheme.muted.withValues(alpha: 0.7),
-                          size: 20,
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        ),
+          Container(height: 1, color: AppTheme.border),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s12,
+              AppTheme.s8,
+              AppTheme.s8,
+              AppTheme.s8,
+            ),
+            child: Row(
+              children: [
+                if (amountLabel != null) ...[
+                  Text(
+                    amountLabel!,
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s4),
+                ],
+                Text(
+                  formatPrice(amount),
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const Spacer(),
+                _BillPillButton(onPressed: onBill),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -590,7 +651,9 @@ class _Toggle extends StatelessWidget {
       if (showFood)
         (
           tab: _BillingTab.food,
-          label: foodCount == null ? 'Food to bill' : 'Food to bill ($foodCount)',
+          label: foodCount == null
+              ? 'Food to bill'
+              : 'Food to bill ($foodCount)',
         ),
       (tab: _BillingTab.issued, label: 'Bills'),
       if (showNumbering) (tab: _BillingTab.numbering, label: 'Numbering'),
@@ -598,28 +661,27 @@ class _Toggle extends StatelessWidget {
     final index = segments.indexWhere((s) => s.tab == tab);
     final slot = index < 0 ? 0 : index;
 
-    Widget segment(String label, bool selected, VoidCallback onTap) =>
-        Expanded(
-          child: GestureDetector(
-            onTap: onTap,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              height: _height,
-              child: Center(
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  style: TextStyle(
-                    color: selected ? AppTheme.accent : AppTheme.muted,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    fontSize: 13,
-                  ),
-                  child: Text(label, overflow: TextOverflow.ellipsis),
-                ),
+    Widget segment(String label, bool selected, VoidCallback onTap) => Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          height: _height,
+          child: Center(
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              style: TextStyle(
+                color: selected ? Colors.white : AppTheme.heading,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                fontSize: 13,
               ),
+              child: Text(label, overflow: TextOverflow.ellipsis),
             ),
           ),
-        );
+        ),
+      ),
+    );
 
     return Container(
       height: _height,
@@ -637,15 +699,28 @@ class _Toggle extends StatelessWidget {
           AnimatedAlign(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 * slot) / (segments.length - 1).clamp(1, 999), 0),
+            alignment: Alignment(
+              -1 + (2 * slot) / (segments.length - 1).clamp(1, 999),
+              0,
+            ),
             child: FractionallySizedBox(
               widthFactor: 1 / segments.length,
               child: Container(
                 height: _height - 8,
                 decoration: BoxDecoration(
-                  color: AppTheme.card,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  ),
                   borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: AppTheme.extruded,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -695,155 +770,192 @@ class BillingInvoiceCard extends ConsumerWidget {
           // no matter how they were packed. The bill now opens on its own
           // page, where those actions have a full-width row to themselves.
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => InvoicePreviewScreen(invoice: invoice)),
+            MaterialPageRoute(
+              builder: (_) => InvoicePreviewScreen(invoice: invoice),
+            ),
           ),
-          // The same colour spine the queue rows use — accent for a live
-          // bill, danger for a voided one, so a void reads before the eye
-          // even reaches the chip.
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(width: 4, color: tint),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppTheme.s12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 34,
-                              height: 34,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    tint.withValues(alpha: 0.16),
-                                    tint.withValues(alpha: 0.06),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                              ),
-                              child: Icon(
-                                invoice.isEventBill
-                                    ? Icons.celebration_outlined
-                                    : invoice.tableLabel != null
-                                    ? Icons.restaurant_rounded
-                                    : Icons.receipt_long_rounded,
-                                size: 16,
-                                color: tint,
-                              ),
-                            ),
-                            const SizedBox(width: AppTheme.s8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
-                                    '${invoice.invoiceNumber ?? ''}',
-                                    style: Theme.of(context).textTheme.titleMedium,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Same thin status-colour band the queue cards use — accent for
+              // a live bill, danger for a voided one, readable before the eye
+              // even reaches the chip.
+              Container(height: 3, color: tint),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s8 + 2,
+                  AppTheme.s12,
+                  AppTheme.s8,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
+                            '${invoice.invoiceNumber ?? ''}',
+                            style: Theme.of(context).textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              if (invoice.guestName != null) ...[
+                                Flexible(
+                                  child: Text(
+                                    invoice.guestName!,
+                                    style: const TextStyle(
+                                      color: AppTheme.text,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    [
-                                      invoice.guestName,
-                                      if (invoice.isEventBill)
-                                        invoice.venueName ?? 'Function'
-                                      else if (invoice.roomNumber != null)
-                                        'Room ${invoice.roomNumber}'
-                                            '${invoice.isDormitory ? ' · Dormitory' : ''}'
-                                      else if (invoice.tableLabel != null)
-                                        invoice.tableLabel,
-                                      formatIsoDate(invoice.createdAt),
-                                    ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                    overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              if (invoice.isEventBill ||
+                                  invoice.roomNumber != null ||
+                                  invoice.tableLabel != null) ...[
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.sidebarBrandWash,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      invoice.isEventBill
+                                          ? (invoice.venueName ?? 'Function')
+                                          : invoice.roomNumber != null
+                                          ? 'Room ${invoice.roomNumber}'
+                                                '${invoice.isDormitory ? ' · Dorm' : ''}'
+                                          : invoice.tableLabel!,
+                                      style: const TextStyle(
+                                        color: AppTheme.sidebarBrandInk,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            if (invoice.isVoid)
-                              Container(
-                                margin: const EdgeInsets.only(left: AppTheme.s8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.danger.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  'Void',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.labelSmall?.copyWith(color: AppTheme.danger),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: AppTheme.s12),
-                        Container(height: 1, color: AppTheme.border),
-                        const SizedBox(height: AppTheme.s8),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: _Figure(label: 'Total', value: invoice.totalAmount),
-                            ),
-                            if (invoice.advancePaid > 0) ...[
-                              const SizedBox(width: AppTheme.s16),
-                              Flexible(
-                                child: _Figure(
-                                  label: 'Advance',
-                                  value: invoice.advancePaid,
+                                const SizedBox(width: 6),
+                              ],
+                              Text(
+                                formatIsoDate(invoice.createdAt),
+                                style: const TextStyle(
+                                  color: AppTheme.muted,
+                                  fontSize: 10.5,
                                 ),
                               ),
                             ],
-                            const Spacer(),
-                            _Figure(
-                              label: 'Collected',
-                              value: invoice.balanceCollected,
-                              strong: true,
-                            ),
-                          ],
-                        ),
-                        // How the balance was tendered, one row per method. A
-                        // bill paid part cash, part UPI says both — a single
-                        // method against a split is a statement the guest can
-                        // see is wrong.
-                        if (invoice.tenders.length > 1) ...[
-                          const SizedBox(height: AppTheme.s4),
-                          for (final t in invoice.tenders)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                '${t.method} ${formatPrice(t.amount)}'
-                                '${t.reference != null ? ' · ${t.reference}' : ''}',
-                                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                              ),
-                            ),
-                        ],
-                        if (invoice.isVoid && invoice.voidReason != null) ...[
-                          const SizedBox(height: AppTheme.s4),
-                          Text(
-                            'Voided: ${invoice.voidReason}',
-                            style: const TextStyle(color: AppTheme.danger, fontSize: 11),
                           ),
                         ],
+                      ),
+                    ),
+                    if (invoice.isVoid)
+                      Container(
+                        margin: const EdgeInsets.only(left: AppTheme.s8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.danger.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Void',
+                          style: TextStyle(
+                            color: AppTheme.danger,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(height: 1, color: AppTheme.border),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s8,
+                  AppTheme.s12,
+                  AppTheme.s8,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: _Figure(
+                            label: 'Total',
+                            value: invoice.totalAmount,
+                          ),
+                        ),
+                        if (invoice.advancePaid > 0) ...[
+                          const SizedBox(width: AppTheme.s16),
+                          Flexible(
+                            child: _Figure(
+                              label: 'Advance',
+                              value: invoice.advancePaid,
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        _Figure(
+                          label: 'Collected',
+                          value: invoice.balanceCollected,
+                          strong: true,
+                          color: AppTheme.accent,
+                        ),
                       ],
                     ),
-                  ),
+                    // How the balance was tendered, one row per method. A
+                    // bill paid part cash, part UPI says both — a single
+                    // method against a split is a statement the guest can
+                    // see is wrong.
+                    if (invoice.tenders.length > 1) ...[
+                      const SizedBox(height: AppTheme.s4),
+                      for (final t in invoice.tenders)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${t.method} ${formatPrice(t.amount)}'
+                            '${t.reference != null ? ' · ${t.reference}' : ''}',
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                    ],
+                    if (invoice.isVoid && invoice.voidReason != null) ...[
+                      const SizedBox(height: AppTheme.s4),
+                      Text(
+                        'Voided: ${invoice.voidReason}',
+                        style: const TextStyle(
+                          color: AppTheme.danger,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -877,125 +989,170 @@ class _AdvanceReceiptCard extends StatelessWidget {
           highlightColor: AppTheme.accent.withValues(alpha: 0.04),
           splashColor: AppTheme.accent.withValues(alpha: 0.08),
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => AdvanceReceiptScreen(receipt: receipt)),
+            MaterialPageRoute(
+              builder: (_) => AdvanceReceiptScreen(receipt: receipt),
+            ),
           ),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(width: 4, color: tint),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppTheme.s12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 34,
-                              height: 34,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    tint.withValues(alpha: 0.16),
-                                    tint.withValues(alpha: 0.06),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                              ),
-                              child: Icon(Icons.payments_outlined, size: 16, color: tint),
-                            ),
-                            const SizedBox(width: AppTheme.s8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${kDocumentLabels[receipt.documentType] ?? 'Receipt'} '
-                                    '${receipt.receiptNumber ?? ''}',
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    [
-                                      receipt.guestName,
-                                      if (receipt.isEventReceipt)
-                                        receipt.venueName ?? receipt.eventTitle ?? 'Function'
-                                      else if (receipt.roomNumber != null)
-                                        'Room ${receipt.roomNumber}'
-                                            '${receipt.isDormitory ? ' · Dormitory' : ''}',
-                                      formatIsoDate(receipt.createdAt),
-                                    ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (receipt.isVoid)
-                              Container(
-                                margin: const EdgeInsets.only(left: AppTheme.s8),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.danger.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  'Void',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(color: AppTheme.danger),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: AppTheme.s12),
-                        Container(height: 1, color: AppTheme.border),
-                        const SizedBox(height: AppTheme.s8),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: _Figure(label: 'Received', value: receipt.amountReceived),
-                            ),
-                            const Spacer(),
-                            if (!receipt.isVoid && receipt.balanceDue > 0)
-                              _Figure(
-                                label: 'Still due',
-                                value: receipt.balanceDue,
-                                strong: true,
-                              )
-                            else if (!receipt.isVoid)
-                              const Text(
-                                'Covers it in full',
-                                style: TextStyle(
-                                  color: AppTheme.vacant,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (receipt.isVoid && receipt.voidReason != null) ...[
-                          const SizedBox(height: AppTheme.s4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(height: 3, color: tint),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s8 + 2,
+                  AppTheme.s12,
+                  AppTheme.s8,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                           Text(
-                            'Voided: ${receipt.voidReason}',
-                            style: const TextStyle(color: AppTheme.danger, fontSize: 11),
+                            '${kDocumentLabels[receipt.documentType] ?? 'Receipt'} '
+                            '${receipt.receiptNumber ?? ''}',
+                            style: Theme.of(context).textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              if (receipt.guestName != null) ...[
+                                Flexible(
+                                  child: Text(
+                                    receipt.guestName!,
+                                    style: const TextStyle(
+                                      color: AppTheme.text,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              if (receipt.isEventReceipt ||
+                                  receipt.roomNumber != null) ...[
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.sidebarBrandWash,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      receipt.isEventReceipt
+                                          ? (receipt.venueName ??
+                                                receipt.eventTitle ??
+                                                'Function')
+                                          : 'Room ${receipt.roomNumber}'
+                                                '${receipt.isDormitory ? ' · Dorm' : ''}',
+                                      style: const TextStyle(
+                                        color: AppTheme.sidebarBrandInk,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Text(
+                                formatIsoDate(receipt.createdAt),
+                                style: const TextStyle(
+                                  color: AppTheme.muted,
+                                  fontSize: 10.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
+                      ),
+                    ),
+                    if (receipt.isVoid)
+                      Container(
+                        margin: const EdgeInsets.only(left: AppTheme.s8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.danger.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Void',
+                          style: TextStyle(
+                            color: AppTheme.danger,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(height: 1, color: AppTheme.border),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s8,
+                  AppTheme.s12,
+                  AppTheme.s8,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: _Figure(
+                            label: 'Received',
+                            value: receipt.amountReceived,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (!receipt.isVoid && receipt.balanceDue > 0)
+                          _Figure(
+                            label: 'Still due',
+                            value: receipt.balanceDue,
+                            strong: true,
+                            color: AppTheme.checkout,
+                          )
+                        else if (!receipt.isVoid)
+                          const Text(
+                            'Covers it in full',
+                            style: TextStyle(
+                              color: AppTheme.vacant,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                            ),
+                          ),
                       ],
                     ),
-                  ),
+                    if (receipt.isVoid && receipt.voidReason != null) ...[
+                      const SizedBox(height: AppTheme.s4),
+                      Text(
+                        'Voided: ${receipt.voidReason}',
+                        style: const TextStyle(
+                          color: AppTheme.danger,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1009,8 +1166,14 @@ class _Figure extends StatelessWidget {
   final String label;
   final num? value;
   final bool strong;
+  final Color? color;
 
-  const _Figure({required this.label, required this.value, this.strong = false});
+  const _Figure({
+    required this.label,
+    required this.value,
+    this.strong = false,
+    this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1020,18 +1183,28 @@ class _Figure extends StatelessWidget {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall,
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+          ),
           overflow: TextOverflow.ellipsis,
         ),
+        const SizedBox(height: 1),
         Text(
           formatPrice(value),
           style: strong
-              ? const TextStyle(
-                  color: AppTheme.heading,
-                  fontWeight: FontWeight.w700,
+              ? TextStyle(
+                  color: color ?? AppTheme.heading,
+                  fontWeight: FontWeight.w800,
                   fontSize: 15,
+                  letterSpacing: -0.2,
                 )
-              : Theme.of(context).textTheme.bodyMedium,
+              : const TextStyle(
+                  color: AppTheme.text,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
           overflow: TextOverflow.ellipsis,
         ),
       ],
@@ -1073,7 +1246,7 @@ class BillingSearchAndViewToggle extends StatelessWidget {
             decoration: BoxDecoration(
               color: AppTheme.card,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: AppTheme.shadowDark, width: 1.3),
               boxShadow: AppTheme.subtle,
             ),
             child: Row(
@@ -1086,17 +1259,27 @@ class BillingSearchAndViewToggle extends StatelessWidget {
                     color: AppTheme.accent.withValues(alpha: 0.10),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                  child: const Icon(
+                    Icons.search_rounded,
+                    size: 17,
+                    color: AppTheme.accent,
+                  ),
                 ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
                   child: TextField(
                     controller: controller,
                     onChanged: (_) => onSearchChanged(),
-                    style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontSize: 14,
+                    ),
                     decoration: InputDecoration(
                       hintText: hint,
-                      hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 14),
+                      hintStyle: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 14,
+                      ),
                       border: InputBorder.none,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 13),
@@ -1115,8 +1298,15 @@ class BillingSearchAndViewToggle extends StatelessWidget {
                       height: 30,
                       margin: const EdgeInsets.only(right: 2),
                       alignment: Alignment.center,
-                      decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
-                      child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.bg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        size: 15,
+                        color: AppTheme.muted,
+                      ),
                     ),
                   ),
               ],
@@ -1187,13 +1377,20 @@ class BillingDateFilterRow extends StatelessWidget {
     ('year', 'This year'),
   ];
 
+  static const _presetIcons = {
+    'all': Icons.all_inclusive_rounded,
+    'today': Icons.today_rounded,
+    'month': Icons.calendar_view_month_rounded,
+    'year': Icons.event_rounded,
+  };
+
   Future<void> _pick(
     BuildContext context,
     DateTime? initial,
     ValueChanged<DateTime?> onChanged,
   ) async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: initial ?? now,
       firstDate: DateTime(now.year - 5),
@@ -1227,33 +1424,55 @@ class BillingDateFilterRow extends StatelessWidget {
           tooltip: 'Date range',
           onSelected: onPresetSelected,
           padding: EdgeInsets.zero,
+          elevation: 10,
+          color: AppTheme.card,
+          shadowColor: AppTheme.heading.withValues(alpha: 0.25),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
             side: const BorderSide(color: AppTheme.border),
           ),
           itemBuilder: (context) => [
             for (final (key, label) in _presets)
-              CheckedPopupMenuItem(
+              PopupMenuItem(
                 value: key,
-                checked: filterKey == key,
-                child: Text(label),
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: _DateRangeMenuItem(
+                  icon: _presetIcons[key]!,
+                  label: label,
+                  selected: filterKey == key,
+                ),
               ),
           ],
           child: Container(
-            width: 44,
-            height: 44,
+            width: 46,
+            height: 46,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: filterKey == 'all' ? AppTheme.card : AppTheme.accent,
-              borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              border: Border.all(
-                color: filterKey == 'all' ? AppTheme.border : AppTheme.accent,
-              ),
+              gradient: filterKey == 'all'
+                  ? null
+                  : const LinearGradient(
+                      colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                    ),
+              color: filterKey == 'all' ? AppTheme.card : null,
+              shape: BoxShape.circle,
+              border: filterKey == 'all'
+                  ? Border.all(color: AppTheme.shadowDark, width: 1.3)
+                  : null,
+              boxShadow: filterKey == 'all'
+                  ? AppTheme.subtle
+                  : [
+                      BoxShadow(
+                        color: AppTheme.accent.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
             ),
             child: Icon(
               Icons.filter_list_rounded,
               size: 19,
-              color: filterKey == 'all' ? AppTheme.muted : Colors.white,
+              color: filterKey == 'all' ? AppTheme.accent : Colors.white,
             ),
           ),
         ),
@@ -1267,40 +1486,123 @@ class _DateField extends StatelessWidget {
   final DateTime? value;
   final VoidCallback onTap;
 
-  const _DateField({required this.label, required this.value, required this.onTap});
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final v = value;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: AppTheme.card,
-          borderRadius: BorderRadius.circular(AppTheme.rSmall),
-          border: Border.all(color: AppTheme.border),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_today_rounded, size: 14, color: AppTheme.muted),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                v != null ? formatIsoDate(v.toIso8601String()) : label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: v != null ? AppTheme.heading : AppTheme.muted,
-                  fontSize: 12.5,
-                  fontWeight: v != null ? FontWeight.w600 : FontWeight.w500,
+    final filled = v != null;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        highlightColor: AppTheme.accent.withValues(alpha: 0.05),
+        splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: filled
+                  ? AppTheme.accent.withValues(alpha: 0.4)
+                  : AppTheme.shadowDark,
+              width: 1.3,
+            ),
+            boxShadow: AppTheme.subtle,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(
+                    alpha: filled ? 0.14 : 0.08,
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.calendar_today_rounded,
+                  size: 14,
+                  color: AppTheme.accent,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  v != null ? formatIsoDate(v.toIso8601String()) : label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: filled ? AppTheme.heading : AppTheme.muted,
+                    fontSize: 12.5,
+                    fontWeight: filled ? FontWeight.w700 : FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s4),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// One row of the date-range dropdown — an icon, the label, and (only on the
+/// active preset) an accent check — replacing the default [CheckedPopupMenuItem]
+/// look with the same accent-tinted "selected" treatment the rest of this
+/// screen's pickers use.
+class _DateRangeMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+
+  const _DateRangeMenuItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 152,
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
+      decoration: BoxDecoration(
+        color: selected ? AppTheme.sidebarBrandWash : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: selected ? AppTheme.accent : AppTheme.muted,
+          ),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppTheme.sidebarBrandInk : AppTheme.heading,
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          if (selected)
+            const Icon(Icons.check_rounded, size: 15, color: AppTheme.accent),
+        ],
       ),
     );
   }
@@ -1327,7 +1629,11 @@ class _BillingViewToggleButton extends StatelessWidget {
             color: isSelected ? AppTheme.accent : Colors.transparent,
             borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
           ),
-          child: Icon(icon, size: 19, color: isSelected ? Colors.white : AppTheme.muted),
+          child: Icon(
+            icon,
+            size: 19,
+            color: isSelected ? Colors.white : AppTheme.muted,
+          ),
         ),
       );
     }
@@ -1342,8 +1648,8 @@ class _BillingViewToggleButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          seg('cards', Icons.view_agenda_outlined),
-          seg('table', Icons.table_rows_outlined),
+          seg('cards', Icons.view_agenda_rounded),
+          seg('table', Icons.table_rows_rounded),
         ],
       ),
     );
@@ -1400,7 +1706,10 @@ class BillingQueueTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _kQueueTableColumns.fold<double>(0, (sum, c) => sum + c.width);
+    final width = _kQueueTableColumns.fold<double>(
+      0,
+      (sum, c) => sum + c.width,
+    );
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -1418,7 +1727,9 @@ class BillingQueueTable extends StatelessWidget {
                 Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.bg,
-                    border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+                    border: Border(
+                      bottom: BorderSide(color: AppTheme.border, width: 0.8),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -1426,12 +1737,19 @@ class BillingQueueTable extends StatelessWidget {
                         SizedBox(
                           width: c.width,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s8,
+                              vertical: 10,
+                            ),
                             child: Text(
                               c.label.toUpperCase(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.3,
+                                  ),
                             ),
                           ),
                         ),
@@ -1440,10 +1758,78 @@ class BillingQueueTable extends StatelessWidget {
                 ),
                 for (var i = 0; i < rows.length; i++)
                   _QueueTableRow(row: rows[i], shaded: i.isOdd),
+                _QueueTableFooter(rows: rows),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "N waiting", and what they add up to — same closing summary
+/// [_InvoiceTableFooter] gives the Bills table, so the queue reads as a
+/// total due rather than a list to be added up by eye.
+class _QueueTableFooter extends StatelessWidget {
+  final List<BillingQueueRow> rows;
+
+  const _QueueTableFooter({required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = rows.fold<num>(0, (sum, r) => sum + (r.amount ?? 0));
+    final labelWidth = _kQueueTableColumns
+        .where((c) => c.key != 'amount')
+        .fold<double>(0, (sum, c) => sum + c.width);
+    final amountWidth = _kQueueTableColumns
+        .firstWhere((c) => c.key == 'amount')
+        .width;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        border: Border(top: BorderSide(color: AppTheme.border, width: 0.8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: labelWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                '${rows.length} waiting',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: amountWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                formatPrice(total),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1462,8 +1848,12 @@ class _QueueTableRow extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         decoration: BoxDecoration(
-          color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
-          border: const Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+          color: shaded
+              ? AppTheme.border.withValues(alpha: 0.25)
+              : AppTheme.card,
+          border: const Border(
+            bottom: BorderSide(color: AppTheme.border, width: 0.8),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1472,51 +1862,487 @@ class _QueueTableRow extends StatelessWidget {
               SizedBox(
                 width: c.width,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.s8,
+                    vertical: 10,
+                  ),
                   child: switch (c.key) {
-                    'label' => row.roomLabel != null
-                        ? Text(
-                            'Room ${row.roomLabel}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w700),
-                          )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (row.icon != null) Icon(row.icon, size: 15, color: AppTheme.accent),
-                            ],
-                          ),
+                    'label' =>
+                      row.roomLabel != null
+                          ? Text(
+                              'Room ${row.roomLabel}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.accent,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (row.icon != null)
+                                  Icon(
+                                    row.icon,
+                                    size: 15,
+                                    color: AppTheme.accent,
+                                  ),
+                              ],
+                            ),
                     'title' => Text(
-                        row.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w600),
+                      row.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
                     'subtitle' => Text(
-                        row.subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                      row.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 12,
                       ),
+                    ),
                     'amount' => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (row.amountLabel != null)
-                            Text(row.amountLabel!, style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (row.amountLabel != null)
                           Text(
-                            formatPrice(row.amount),
-                            style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13),
+                            row.amountLabel!,
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 10,
+                            ),
                           ),
-                        ],
-                      ),
+                        Text(
+                          formatPrice(row.amount),
+                          style: const TextStyle(
+                            color: AppTheme.heading,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
                     _ => const SizedBox.shrink(),
                   },
                 ),
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Ready to bill, as a spreadsheet ─────────────────────────────────────────
+
+/// A stay's own columns — mirrors the web's `billing-sheet__ready` table in
+/// Billing.jsx: Guest / Room / Stay / Room charge / Food / Subtotal /
+/// Advance paid / To collect, with a tinted header and a totals footer — not
+/// the generic four-column [BillingQueueTable] the Food-to-bill queue uses,
+/// which has nothing like a stay's own dates or its separate food total.
+class ReadyToBillTable extends StatelessWidget {
+  final List<BillableStay> stays;
+  final ValueChanged<BillableStay> onBill;
+
+  const ReadyToBillTable({
+    super.key,
+    required this.stays,
+    required this.onBill,
+  });
+
+  static const List<(String label, double width, bool numeric)> _columns = [
+    ('Guest', 130, false),
+    ('Room', 90, false),
+    ('Stay', 120, false),
+    ('Room charge', 100, true),
+    ('Food', 90, true),
+    ('Subtotal', 100, true),
+    ('Advance paid', 110, true),
+    ('To collect', 110, true),
+  ];
+
+  static const double _actionWidth = 76;
+
+  @override
+  Widget build(BuildContext context) {
+    final width =
+        _columns.fold<double>(0, (sum, c) => sum + c.$2) + _actionWidth;
+
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: AppTheme.sidebarBrandWash,
+                    border: Border(
+                      bottom: BorderSide(
+                        color: AppTheme.sidebarBrandWashEdge,
+                        width: 0.8,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      for (final c in _columns)
+                        SizedBox(
+                          width: c.$2,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s8,
+                              vertical: 10,
+                            ),
+                            child: Text(
+                              c.$1.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: c.$3
+                                  ? TextAlign.right
+                                  : TextAlign.left,
+                              style: const TextStyle(
+                                color: AppTheme.sidebarBrandInk,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ),
+                      SizedBox(width: _actionWidth),
+                    ],
+                  ),
+                ),
+                for (var i = 0; i < stays.length; i++)
+                  _ReadyToBillRow(
+                    stay: stays[i],
+                    shaded: i.isOdd,
+                    onBill: () => onBill(stays[i]),
+                  ),
+                _ReadyToBillFooter(stays: stays),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadyToBillRow extends StatelessWidget {
+  final BillableStay stay;
+  final bool shaded;
+  final VoidCallback onBill;
+
+  const _ReadyToBillRow({
+    required this.stay,
+    required this.shaded,
+    required this.onBill,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final nights = stay.nights;
+    return Container(
+      decoration: BoxDecoration(
+        color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
+        border: const Border(
+          bottom: BorderSide(color: AppTheme.border, width: 0.8),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                stay.guestName ?? 'Guest',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 90,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 8,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.sidebarBrandWash,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      stay.roomNumber ?? '—',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.sidebarBrandInk,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  if ((stay.categoryName ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      stay.categoryName!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 120,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.text,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                  Text(
+                    nightsLabel(nights),
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _numCell(100, formatPrice(stay.totalPrice)),
+          _numCell(
+            90,
+            (stay.foodTotal ?? 0) > 0 ? formatPrice(stay.foodTotal) : '—',
+          ),
+          _numCell(
+            100,
+            formatPrice(stay.subtotal),
+            bold: true,
+            color: AppTheme.heading,
+          ),
+          _numCell(
+            110,
+            (stay.advanceAmount ?? 0) > 0
+                ? '− ${formatPrice(stay.advanceAmount)}'
+                : '—',
+            color: AppTheme.muted,
+          ),
+          _numCell(
+            110,
+            formatPrice(stay.balanceDue),
+            bold: true,
+            color: AppTheme.accent,
+            fontSize: 13.5,
+          ),
+          SizedBox(
+            width: ReadyToBillTable._actionWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
+              child: _BillPillButton(onPressed: onBill),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _numCell(
+    double width,
+    String text, {
+    bool bold = false,
+    Color color = AppTheme.text,
+    double fontSize = 12.5,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s8,
+          vertical: 10,
+        ),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            color: color,
+            fontSize: fontSize,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small solid-gradient "Bill" pill each row ends on — same accent
+/// gradient the tab strips above now use, so the one actionable thing in
+/// this sheet reads as unmistakably a button rather than another data cell.
+class _BillPillButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _BillPillButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppTheme.accent, AppTheme.sidebarBrand],
+            ),
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.accent.withValues(alpha: 0.3),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Text(
+            'Bill',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "N stays to bill", and the same four sums as the web's own `<tfoot>` —
+/// room charge, food, subtotal, advance and the final total due.
+class _ReadyToBillFooter extends StatelessWidget {
+  final List<BillableStay> stays;
+
+  const _ReadyToBillFooter({required this.stays});
+
+  @override
+  Widget build(BuildContext context) {
+    num sumOf(num Function(BillableStay) f) =>
+        stays.fold<num>(0, (sum, s) => sum + f(s));
+    final advanceTotal = sumOf((s) => s.advanceAmount ?? 0);
+
+    Widget cell(double width, String text, {bool strong = false}) => SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s8,
+          vertical: 10,
+        ),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            color: AppTheme.heading,
+            fontSize: strong ? 13 : 12,
+            fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        border: Border(top: BorderSide(color: AppTheme.border, width: 0.8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 130 + 90 + 120,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                '${stays.length} stay${stays.length == 1 ? '' : 's'} to bill',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          cell(100, formatPrice(sumOf((s) => s.totalPrice ?? 0))),
+          cell(90, formatPrice(sumOf((s) => s.foodTotal ?? 0))),
+          cell(100, formatPrice(sumOf((s) => s.subtotal)), strong: true),
+          cell(110, advanceTotal > 0 ? '− ${formatPrice(advanceTotal)}' : '—'),
+          cell(110, formatPrice(sumOf((s) => s.balanceDue)), strong: true),
+          SizedBox(width: ReadyToBillTable._actionWidth),
+        ],
       ),
     );
   }
@@ -1581,10 +2407,10 @@ Color _billSourceColor(String source) => switch (source) {
 
 Color _documentTagColor(String? documentType) => switch (documentType) {
   'TAX_INVOICE' => AppTheme.vacant,
-  'BILL_OF_SUPPLY' => AppTheme.muted,
+  'BILL_OF_SUPPLY' => AppTheme.heading,
   'CASH_RECEIPT' => AppTheme.checkedIn,
   'RECEIPT_VOUCHER' || 'ADVANCE_RECEIPT' => AppTheme.edit,
-  _ => AppTheme.muted,
+  _ => AppTheme.heading,
 };
 
 /// The sheet-style view of the issued bills — same grid shape as
@@ -1596,7 +2422,10 @@ class BillingInvoiceTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _kInvoiceTableColumns.fold<double>(0, (sum, c) => sum + c.width);
+    final width = _kInvoiceTableColumns.fold<double>(
+      0,
+      (sum, c) => sum + c.width,
+    );
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -1613,8 +2442,13 @@ class BillingInvoiceTable extends StatelessWidget {
               children: [
                 Container(
                   decoration: const BoxDecoration(
-                    color: AppTheme.bg,
-                    border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+                    color: AppTheme.sidebarBrandWash,
+                    border: Border(
+                      bottom: BorderSide(
+                        color: AppTheme.sidebarBrandWashEdge,
+                        width: 0.8,
+                      ),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -1622,12 +2456,23 @@ class BillingInvoiceTable extends StatelessWidget {
                         SizedBox(
                           width: c.width,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s8,
+                              vertical: 10,
+                            ),
                             child: Text(
                               c.label.toUpperCase(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
+                              textAlign: c.key == 'amount'
+                                  ? TextAlign.right
+                                  : TextAlign.left,
+                              style: const TextStyle(
+                                color: AppTheme.sidebarBrandInk,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
                             ),
                           ),
                         ),
@@ -1678,7 +2523,10 @@ class _InvoiceTableFooter extends StatelessWidget {
           SizedBox(
             width: labelWidth,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
               child: Text(
                 '${documents.length} document${documents.length == 1 ? '' : 's'} '
                 '(void bills not counted)',
@@ -1691,13 +2539,20 @@ class _InvoiceTableFooter extends StatelessWidget {
           SizedBox(
             width: amountWidth,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
               child: Text(
                 formatPrice(total),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
-                style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
@@ -1721,11 +2576,11 @@ class _InvoiceTableRow extends StatelessWidget {
     final guestOrTable = document.kind == 'FOOD'
         ? (document.tableLabel ?? 'Counter')
         : document.kind == 'EVENT'
-            ? [document.guestName, document.venueName ?? 'Function']
-                .whereType<String>()
-                .where((s) => s.isNotEmpty)
-                .join(' · ')
-            : (document.guestName ?? '—');
+        ? [
+            document.guestName,
+            document.venueName ?? 'Function',
+          ].whereType<String>().where((s) => s.isNotEmpty).join(' · ')
+        : (document.guestName ?? '—');
     // Room — blank for a table or a function, same as the web's own column.
     final room = document.kind == 'FOOD' || document.kind == 'EVENT'
         ? '—'
@@ -1741,92 +2596,132 @@ class _InvoiceTableRow extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700),
+        style: const TextStyle(
+          color: AppTheme.heading,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => document.isReceipt
-              ? AdvanceReceiptScreen(receipt: document.receipt!)
-              : InvoicePreviewScreen(invoice: document.invoice!),
+    return Material(
+      color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => document.isReceipt
+                ? AdvanceReceiptScreen(receipt: document.receipt!)
+                : InvoicePreviewScreen(invoice: document.invoice!),
+          ),
         ),
-      ),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(
-          color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
-          border: const Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            for (final c in _kInvoiceTableColumns)
-              SizedBox(
-                width: c.width,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
-                  child: switch (c.key) {
-                    'no' => Text(
+        highlightColor: AppTheme.accent.withValues(alpha: 0.05),
+        splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        child: Container(
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: AppTheme.border, width: 0.8),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              for (final c in _kInvoiceTableColumns)
+                SizedBox(
+                  width: c.width,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s8,
+                      vertical: 10,
+                    ),
+                    child: switch (c.key) {
+                      'no' => Text(
                         document.invoiceNumber ?? '—',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    'date' => Text(
+                      'date' => Text(
                         formatIsoDate(document.createdAt),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    'billedFor' => Align(
+                      'billedFor' => Align(
                         alignment: Alignment.centerLeft,
-                        child: tag(_billSourceLabel(document), _billSourceColor(source)),
+                        child: tag(
+                          _billSourceLabel(document),
+                          _billSourceColor(source),
+                        ),
                       ),
-                    'guest' => Text(
+                      'guest' => Text(
                         guestOrTable,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    'room' => Text(
+                      'room' => Text(
                         room,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    'document' => Align(
+                      'document' => Align(
                         alignment: Alignment.centerLeft,
                         child: tag(
                           kDocumentLabels[document.documentType] ?? 'Bill',
                           _documentTagColor(document.documentType),
                         ),
                       ),
-                    // Only a receipt ever carries a balance still due — an
-                    // issued invoice is itself the document that settles one.
-                    'status' => document.isVoid
-                        ? tag('Void', AppTheme.danger)
-                        : (document.dueAfter > 0
-                            ? Text(
-                                '${formatPrice(document.dueAfter)} due',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: AppTheme.checkout, fontSize: 12, fontWeight: FontWeight.w700),
-                              )
-                            : tag('Issued', AppTheme.vacant)),
-                    'amount' => Text(
+                      // Only a receipt ever carries a balance still due — an
+                      // issued invoice is itself the document that settles one.
+                      'status' =>
+                        document.isVoid
+                            ? tag('Void', AppTheme.danger)
+                            : (document.dueAfter > 0
+                                  ? Text(
+                                      '${formatPrice(document.dueAfter)} due',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppTheme.checkout,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    )
+                                  : tag('Issued', AppTheme.vacant)),
+                      'amount' => Text(
                         formatPrice(document.totalAmount),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.right,
-                        style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    _ => const SizedBox.shrink(),
-                  },
+                      _ => const SizedBox.shrink(),
+                    },
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

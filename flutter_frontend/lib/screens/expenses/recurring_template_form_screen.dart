@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/expense.dart';
@@ -93,7 +94,7 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: now.subtract(const Duration(days: 365)),
       lastDate: DateTime(now.year + 3),

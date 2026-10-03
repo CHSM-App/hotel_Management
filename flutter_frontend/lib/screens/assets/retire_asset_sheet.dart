@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/asset.dart';
@@ -61,7 +62,7 @@ class _RetireAssetSheetState extends ConsumerState<RetireAssetSheet> {
   Future<void> _pickDeadDate() async {
     final now = DateTime.now();
     final initial = DateTime.tryParse(_deadDate.text) ?? now;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: DateTime(now.year - 15),
       lastDate: now,

@@ -223,6 +223,18 @@ class AppTheme {
       ),
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
+      dialogTheme: const DialogThemeData(
+        backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(rLarge)),
+        ),
+        elevation: 8,
+      ),
+      // Every screen's date field now opens `showAppDatePicker` (see
+      // widgets/compact_date_picker.dart) — a small custom calendar card
+      // instead of Material's big banner dialog — so `datePickerTheme` has
+      // no call sites left to style and was removed.
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -1631,7 +1632,7 @@ class _DatesRow extends ConsumerWidget {
         ? (state.checkIn ?? today)
         : (state.checkOut ?? (state.checkIn ?? today).add(const Duration(days: 1)));
 
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       // A stay taken on paper over the weekend has to be enterable against
       // the nights it actually happened on, so the past is open for check-in.
@@ -2345,7 +2346,7 @@ class _ExtraRoomCard extends ConsumerWidget {
         ? (draft.checkIn ?? today)
         : (draft.checkOut ?? (draft.checkIn ?? today).add(const Duration(days: 1)));
 
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: isCheckIn
           ? today.subtract(const Duration(days: 365))

@@ -359,12 +359,19 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     return DateTime(now.year, now.month, 1);
   }
 
+  static DateTime _yearStart() {
+    final now = DateTime.now();
+    return DateTime(now.year, 1, 1);
+  }
+
   /// The (from, to) pair the picked [OrdersState.historyPeriod] resolves
   /// to — same three the web's period control offers.
   (DateTime, DateTime) _historyRange() {
     switch (state.historyPeriod) {
       case 'month':
         return (_monthStart(), _today());
+      case 'year':
+        return (_yearStart(), _today());
       case 'custom':
         return (state.historyCustomFrom, state.historyCustomTo);
       default:
