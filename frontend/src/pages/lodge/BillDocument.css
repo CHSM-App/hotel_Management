@@ -1225,3 +1225,82 @@
     print-color-adjust: exact;
   }
 }
+
+/* One block per room on a several-room bill: the room and its days, then its own
+   rate and extras, set off from the next by a rule. */
+.memo__room {
+  padding: 4px 0 6px;
+  border-top: 1px solid #c3ccd3;
+}
+
+.memo__room-head {
+  font-weight: 700;
+  color: #101820;
+  margin-bottom: 2px;
+}
+
+.memo__extra--total .memo__extra-name,
+.memo__extra--total .memo__extra-amt {
+  font-weight: 700;
+}
+
+.memo__room-dates {
+  margin-bottom: 2px;
+  color: #55636f;
+  font-size: 0.92em;
+}
+
+/* A several-room breakdown line reaches across into the Rs. / Ps. columns, so
+   each amount sits in the money column, rupees and paise ruled apart. The
+   negative margin is the two columns plus the stay cell's own padding. */
+.memo__extra--cols {
+  margin-right: calc(-1 * (var(--memo-rs) + var(--memo-ps) + 10px));
+}
+
+.memo__extra--cols .memo__extra-name {
+  flex: 1;
+}
+
+.memo__extra-rs,
+.memo__extra-ps {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0 8px;
+  font-weight: 600;
+  color: #101820;
+  font-variant-numeric: tabular-nums;
+}
+
+.memo__extra-rs {
+  width: var(--memo-rs);
+  text-align: right;
+}
+
+.memo__extra-ps {
+  width: var(--memo-ps);
+  text-align: center;
+}
+
+.memo__extra--total .memo__extra-rs,
+.memo__extra--total .memo__extra-ps {
+  font-weight: 700;
+}
+
+/* TOTAL AMOUNT, picked out from the tax lines under it. */
+.memo__money--total td {
+  background: var(--bill-tint);
+}
+
+/* A single room needs no rule above its breakdown. */
+.memo__room--single {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Under the breakdown of a GST bill: the figures above carry the tax. */
+.memo__incl-note {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  font-style: italic;
+  color: #55636f;
+}

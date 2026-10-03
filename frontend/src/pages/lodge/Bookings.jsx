@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PageLoader from '../../components/PageLoader';
 import {
   apiGet,
@@ -647,6 +647,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // The tile that's under the pointer right now, with the screen position to
   // float its card at. Guest names live only in here — never on the tiles.
   const [hoverTile, setHoverTile] = useState(null);
+  // A several-room booking's card is something to move the pointer onto — its
+  // rooms are links — so leaving a tile closes it after a beat rather than at
+  // once, and the card itself cancels that while the pointer is over it.
+  const hideTimer = useRef(null);
+  const [flash, setFlash] = useState(null); // { bookingId, roomId }
   // A partial dormitory tile has more than one thing a click could mean —
   // book a free bed, or open one already taken — so a click there opens
   // this small chooser instead of guessing. null when closed.
@@ -1981,24 +1986,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       });
     }
   };
-  // A shared extra (AC on two rooms) is one box. What is typed is the total for
-  // all the rooms, split evenly back onto each room's own line, the last taking
-  // the remainder so the shares add up to what was typed.
-  const [groupTotals, setGroupTotals] = useState({});
-  const setGroupTotal = (charge, value) => {
-    setGroupTotals((t) => ({ ...t, [charge.groupKey]: value }));
-    const total = Number(value);
-    const blank = String(value).trim() === '' || !Number.isFinite(total) || total < 0;
-    const n = charge.members.length;
-    let left = total;
-    charge.members.forEach((m, i) => {
-      const share = i === n - 1 ? left : Math.round((total / n) * 100) / 100;
-      left = Math.round((left - share) * 100) / 100;
-      const text = blank ? '' : String(share);
-      if (m.roomIndex) setExtraRoomLine(m, text);
-      else setChargeTotal(m, text);
-    });
-  };
   const extraLineValue = (charge) => {
     const room = pickedExtraRooms(bookingForm)[charge.roomIndex - 1];
     const typed = room ? extraLineTotals[`${room.key}:${charge.isBase ? 'base' : charge.chargeId}`] : undefined;
@@ -3107,6 +3094,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // tile, because the grid scrolls sideways under its own overflow and would
   // otherwise clip a tooltip belonging to a tile near either edge.
   const showTileHover = (event, tile) => {
+    clearTimeout(hideTimer.current);
     const rect = event.currentTarget.getBoundingClientRect();
     const HALF_WIDTH = 116;
     // The card is roughly this tall at its longest — a stay with a name, a
@@ -3126,6 +3114,47 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       y: below ? rect.bottom + 8 : rect.top - 8,
     });
   };
+
+  const hideTileHoverSoon = () => {
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setHoverTile(null), 200);
+  };
+  const keepTileHover = () => clearTimeout(hideTimer.current);
+
+  // The same guest's other stays that haven't started — matched on phone, or on
+  // name where no phone was taken — one per booking, soonest first. Only what
+  // the chart has loaded, so a stay in a month not yet paged to isn't here.
+  const futureStaysOf = (booking) => {
+    const same = (b) =>
+      booking.guestPhone ? b.guestPhone === booking.guestPhone : b.guestName === booking.guestName;
+    const byId = new Map();
+    for (const b of tapeData?.bookings ?? []) {
+      if (b.id !== booking.id && b.checkInDate > today && b.status !== 'CANCELLED' && same(b) && !byId.has(b.id)) {
+        byId.set(b.id, b);
+      }
+    }
+    return [...byId.values()].sort((a, b) => (a.checkInDate < b.checkInDate ? -1 : 1));
+  };
+
+  // Takes the chart to one room of a booking: its boxes (and only those) are
+  // highlighted and scrolled into view — the page and that category's own
+  // sideways scroller both. Nothing opens; the desk is finding it, not editing.
+  const jumpToStay = (bookingId, roomId) => {
+    clearTimeout(hideTimer.current);
+    setHoverTile(null);
+    setFlash({ bookingId, roomId: String(roomId) });
+    setTimeout(() => setFlash((f) => (f && f.bookingId === bookingId && f.roomId === String(roomId) ? null : f)), 2500);
+  };
+  useEffect(() => {
+    if (!flash) return undefined;
+    // After paint: the class that marks the tile is what gets scrolled to.
+    const frame = requestAnimationFrame(() => {
+      document
+        .querySelector('.tape-tile--flash')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [flash]);
 
   const viewLabel = formatViewLabel(month);
 
@@ -3397,6 +3426,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           // Pointing at any night of a stay lifts the whole stay, so its real
           // extent is obvious even where it runs off the edge of the month.
           if (hoverTile?.booking?.id === booking.id) classes.push('tape-tile--active');
+          if (flash && flash.bookingId === booking.id && flash.roomId === String(room.id)) classes.push('tape-tile--flash');
           // A draft sitting on a night that is already let. The booking keeps
           // the tile — it is the real thing — and the draft shows as a corner
           // flag, which is the desk's cue that somebody is drafting against a
@@ -3444,7 +3474,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
               onClick={() => openDetail(booking.id)}
               onMouseEnter={(e) => showTileHover(e, { room, date: d, booking, draft, past, cancelled: cancelledStay })}
               onFocus={(e) => showTileHover(e, { room, date: d, booking, draft, past, cancelled: cancelledStay })}
-              onMouseLeave={() => setHoverTile(null)}
+              onMouseLeave={booking.roomCount > 1 ? hideTileHoverSoon : () => setHoverTile(null)}
               onBlur={() => setHoverTile(null)}
               aria-label={`${room.roomNumber} ${STATUS_LABEL[booking.status]} on ${formatDateLong(d)}`}
             />
@@ -3833,7 +3863,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
       {hoverTile && (
         <div
-          className={`tape-tooltip${hoverTile.below ? ' tape-tooltip--below' : ''}`}
+          className={`tape-tooltip${hoverTile.below ? ' tape-tooltip--below' : ''}${
+            hoverTile.booking?.roomCount > 1 ? ' tape-tooltip--sticky' : ''
+          }`}
+          onMouseEnter={keepTileHover}
+          onMouseLeave={hideTileHoverSoon}
           role="tooltip"
           style={{ left: `${hoverTile.x}px`, top: `${hoverTile.y}px` }}
         >
@@ -3885,8 +3919,62 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 {hoverTile.booking.guestPhone ? ` · ${hoverTile.booking.guestPhone}` : ''}
               </span>
               {hoverTile.booking.roomCount > 1 && (
-                <span className="tape-tooltip__meta">One of {hoverTile.booking.roomCount} rooms on this booking</span>
+                <>
+                  <span className="tape-tooltip__meta">
+                    {hoverTile.booking.roomCount} rooms on this booking — click one to go to it
+                  </span>
+                  <span className="tape-tooltip__rooms">
+                    {[...new Map(
+                      tapeData.bookings
+                        .filter((b) => b.id === hoverTile.booking.id)
+                        .map((b) => [b.roomId, b])
+                    ).values()].map((b) => {
+                      const r = tapeData.rooms.find((x) => x.id === b.roomId);
+                      return (
+                        <button
+                          key={b.roomId}
+                          type="button"
+                          className={`tape-tooltip__room${String(b.roomId) === String(hoverTile.room.id) ? ' tape-tooltip__room--here' : ''}`}
+                          onClick={() => jumpToStay(b.id, b.roomId)}
+                        >
+                          <strong>Room {r?.roomNumber ?? b.roomId}</strong>
+                          <span>
+                            {r?.categoryName ? `${r.categoryName} · ` : ''}
+                            {formatDateLong(b.checkInDate)} → {formatDateLong(b.checkOutDate)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </span>
+                </>
               )}
+              {(() => {
+                const upcoming = futureStaysOf(hoverTile.booking);
+                if (upcoming.length === 0) return null;
+                const sticky = hoverTile.booking.roomCount > 1;
+                return (
+                  <>
+                    <span className="tape-tooltip__meta">Upcoming bookings for this guest</span>
+                    <span className="tape-tooltip__rooms">
+                      {upcoming.slice(0, 4).map((b) => {
+                        const label = `${formatDateLong(b.checkInDate)} → ${formatDateLong(b.checkOutDate)}`;
+                        const r = tapeData.rooms.find((x) => x.id === b.roomId);
+                        return sticky ? (
+                          <button key={b.id} type="button" className="tape-tooltip__room" onClick={() => jumpToStay(b.id, b.roomId)}>
+                            <strong>Room {r?.roomNumber ?? b.roomId}</strong>
+                            <span>{label}</span>
+                          </button>
+                        ) : (
+                          <span className="tape-tooltip__meta" key={b.id}>
+                            Room {r?.roomNumber ?? b.roomId} · {label}
+                          </span>
+                        );
+                      })}
+                      {upcoming.length > 4 && <span className="tape-tooltip__meta">+{upcoming.length - 4} more</span>}
+                    </span>
+                  </>
+                );
+              })()}
               {/* Said on a past night because the tile is otherwise inert-
                   looking there: this is the one thing on a month that has
                   happened that still opens. */}
@@ -4605,9 +4693,21 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       Amounts in boxes can be changed — tap to edit
                     </p>
                     {quote.charges.map((charge, i) => (
-                      <div className="sim-result__line" key={i}>
+                      <Fragment key={i}>
+                      {/* Several rooms: each room's lines sit under its own
+                          heading, as the bill and the booking's details print
+                          them. */}
+                      {quote.rooms?.length > 1 && (i === 0 || charge.roomIndex !== quote.charges[i - 1].roomIndex) && (
+                        <div className="pb__room-head">
+                          <strong>
+                            {/^Room (.+?) · /.exec(charge.label)?.[0].replace(' · ', '') ?? 'Room'} · {charge.nights}{' '}
+                            {charge.nights === 1 ? 'night' : 'nights'}
+                          </strong>
+                        </div>
+                      )}
+                      <div className="sim-result__line">
                         <span>
-                          {charge.label}
+                          {quote.rooms?.length > 1 ? charge.label.replace(/^Room .+? · /, '') : charge.label}
                           {(charge.nights ?? quote.nights.length) > 1 ? ` (${charge.nights ?? quote.nights.length} nights)` : ''}
                         </span>
                         {/* Editable where the money is read, because reception
@@ -4619,13 +4719,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                             A season uplift stays fixed — it is a percentage of
                             the rate above it, so it follows on its own. */}
-                        {charge.members ? (
-                          <EditableAmount
-                            label={charge.label}
-                            value={groupTotals[charge.groupKey] ?? String(charge.amount)}
-                            onChange={(v) => setGroupTotal(charge, v)}
-                          />
-                        ) : charge.roomIndex && (charge.isBase || charge.chargeId) ? (
+                        {charge.roomIndex && (charge.isBase || charge.chargeId) ? (
                           <EditableAmount
                             label={charge.label}
                             value={extraLineValue(charge)}
@@ -4647,6 +4741,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                           <span>{formatPrice(charge.amount)}</span>
                         )}
                       </div>
+                      </Fragment>
                     ))}
                     <div className="sim-result__total">
                       <span>

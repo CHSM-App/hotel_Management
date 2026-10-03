@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import { amountInWords } from './numberToWords';
 import { API_BASE } from '../../lib/api';
+import { roomSections } from './multiRoom';
 import './BillDocument.css';
 
 const DOCUMENT_LABEL = {
@@ -59,6 +60,10 @@ const STRINGS_EN = {
   catering: 'Catering',
   lessDiscount: 'Less: Discount',
   totalAmount: 'TOTAL AMOUNT',
+  // On a GST bill the rates above are tax-inclusive, so the first line of the
+  // money column is the value before tax, not a total of those rates.
+  taxableValue: 'TAXABLE VALUE (excl. GST)',
+  inclusiveNote: 'Rates above include GST',
   miscTag: 'Misc',
   roundOff: 'Round off',
   grandTotal: 'GRAND TOTAL',
@@ -144,6 +149,13 @@ function clockLabel(hhmm) {
   const suffix = h < 12 ? 'AM' : 'PM';
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${hour12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+// The night after a room's last night is the day it checks out.
+function addOneDay(dateKey) {
+  const d = new Date(`${String(dateKey).slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 function round2(n) {
@@ -704,6 +716,17 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
 // the taxable value: the two lines below it are the tax already inside the
 // grand total, and the column adds up without anybody being charged more.
 
+// An amount split into the Rs. and Ps. cells it is ruled into.
+function RsPs({ value }) {
+  const paiseTotal = Math.round(Math.abs(Number(value) || 0) * 100);
+  return (
+    <>
+      <span className="memo__extra-rs">{`${value < 0 ? '-' : ''}${Math.floor(paiseTotal / 100).toLocaleString('en-IN')}`}</span>
+      <span className="memo__extra-ps">{String(paiseTotal % 100).padStart(2, '0')}</span>
+    </>
+  );
+}
+
 // One row of the money column. The memo rules Rs. and Ps. apart, so the paise
 // land under each other however wide the rupees run — a column of "3809.52"
 // and "95.24" set as plain text does not do that.
@@ -711,7 +734,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
 // Declared outside the component: a component defined in a render body is a
 // new type on every render, and React unmounts and remounts the whole column
 // each time rather than updating it.
-function Money({ label, value, strong, rule }) {
+function Money({ label, value, strong, rule, total }) {
   const n = Number(value) || 0;
   const sign = n < 0 ? '-' : '';
   const abs = Math.abs(n);
@@ -722,7 +745,7 @@ function Money({ label, value, strong, rule }) {
   const whole = Math.floor(paiseTotal / 100);
   const paise = paiseTotal % 100;
   return (
-    <tr className={`memo__money${strong ? ' memo__money--strong' : ''}${rule ? ' memo__money--rule' : ''}`}>
+    <tr className={`memo__money${strong ? ' memo__money--strong' : ''}${rule ? ' memo__money--rule' : ''}${total ? ' memo__money--total' : ''}`}>
       <td className="memo__money-label">{label}</td>
       <td className="memo__rs">{`${sign}${whole.toLocaleString('en-IN')}`}</td>
       <td className="memo__ps">{String(paise).padStart(2, '0')}</td>
@@ -772,6 +795,14 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   // is for. They are one list on the payload because they were one calculation;
   // they are two rules on the form because a guest reads them as two questions.
   const [baseCharge, ...extraCharges] = invoice.roomCharges ?? [];
+  const sections = roomSections(invoice.roomCharges);
+  // What the breakdown prints: one block per room, or for a single room one
+  // block with no room heading. Older bills with no charge lines have none.
+  const blocks =
+    sections ?? (invoice.roomCharges?.length > 0 ? [{ room: null, base: baseCharge, extras: extraCharges }] : null);
+  // Rooms booked on their own dates each say so; rooms sharing the stay's dates
+  // don't repeat what the header already prints.
+  const datesDiffer = Boolean(sections) && new Set(sections.map((r) => `${r.base.firstDate}|${r.base.lastDate}`)).size > 1;
 
   // What the memo writes on the "Rs. ......... Per day" rule.
   //
@@ -830,22 +861,6 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
     invoice.checkinMode === 'HOUR_24'
       ? T.checkout24
       : T.checkoutBy(clockLabel(invoice.checkOutTime) || '11:00 AM');
-
-  // The figure at the head of the Rs./Ps. column, against the stay block.
-  //
-  // The taxable value, NOT the grand total. It is the first entry in a column
-  // that then adds CGST and SGST to reach GRAND TOTAL, so putting the inclusive
-  // figure here made the column contradict itself: it read 1,300 at the top,
-  // 1,238.10 against its own TOTAL AMOUNT two rules below, and 1,300 again at
-  // the bottom — the tax appearing to be added to a number that already held it.
-  //
-  // Deliberately the same expression the TOTAL AMOUNT line uses, so the two can
-  // never drift: this is that line, written once at the top of the column where
-  // the printed memo puts it.
-  const leadAmount = round2(roomTaxable + foodTaxable + serviceTaxable);
-  const grossWhole = Math.floor(Math.round(leadAmount * 100) / 100);
-  const grossPaise = Math.round(leadAmount * 100) % 100;
-
   // Same void mark as the tax bill above, for the same reason and in the same
   // place. The memo said nothing about being voided either.
   return (
@@ -1060,48 +1075,119 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
 
               {!isFoodBill && !isEventBill && (
                 <>
-                  <div className="memo__stay-line">
-                    <span className="memo__label">{T.forStay}</span>
-                    <Filled narrow>{nights}</Filled>
-                    <span className="memo__label">{T.days}</span>
-                  </div>
-                  <div className="memo__stay-line">
-                    <span className="memo__label">{T.from}</span>
-                    <Filled narrow>{stayFrom[0]}</Filled>
-                    <span className="memo__label">{T.at}</span>
-                    <Filled narrow>{stayFrom[1]}</Filled>
-                  </div>
-                  <div className="memo__stay-line">
-                    <span className="memo__label">{T.to}</span>
-                    <Filled narrow>{stayTo[0]}</Filled>
-                    <span className="memo__label">{T.at}</span>
-                    <Filled narrow>{stayTo[1]}</Filled>
-                  </div>
-                  <div className="memo__stay-line">
-                    <span className="memo__label">{T.rs}</span>
-                    <Filled narrow>{perDay != null ? amt(perDay) : null}</Filled>
-                    <span className="memo__label">{T.perDay}</span>
-                  </div>
+                  {/* Rooms on their own dates carry For / From / To in their own
+                      block below; otherwise it is said once for the whole stay. */}
+                  {!(sections && datesDiffer) && (
+                    <>
+                      <div className="memo__stay-line">
+                        <span className="memo__label">{T.forStay}</span>
+                        <Filled narrow>{nights}</Filled>
+                        <span className="memo__label">{T.days}</span>
+                      </div>
+                      <div className="memo__stay-line">
+                        <span className="memo__label">{T.from}</span>
+                        <Filled narrow>{stayFrom[0]}</Filled>
+                        <span className="memo__label">{T.at}</span>
+                        <Filled narrow>{stayFrom[1]}</Filled>
+                      </div>
+                      <div className="memo__stay-line">
+                        <span className="memo__label">{T.to}</span>
+                        <Filled narrow>{stayTo[0]}</Filled>
+                        <span className="memo__label">{T.at}</span>
+                        <Filled narrow>{stayTo[1]}</Filled>
+                      </div>
+                    </>
+                  )}
+                  {blocks ? (
+                    blocks.map(({ room, base, extras: roomExtras }) => (
+                      <div className={room == null ? 'memo__room memo__room--single' : 'memo__room'} key={room ?? 'stay'}>
+                        {room != null && (
+                          <div className="memo__room-head">
+                            Room {room} · {base.nights} {base.nights === 1 ? 'day' : 'days'}
+                          </div>
+                        )}
+                        {datesDiffer && room != null && base.firstDate && (
+                          <>
+                            <div className="memo__stay-line">
+                              <span className="memo__label">{T.forStay}</span>
+                              <Filled narrow>{base.nights}</Filled>
+                              <span className="memo__label">{T.days}</span>
+                            </div>
+                            <div className="memo__stay-line">
+                              <span className="memo__label">{T.from}</span>
+                              <Filled narrow>{formatDate(base.firstDate)}</Filled>
+                              <span className="memo__label">{T.at}</span>
+                              <Filled narrow>{stayFrom[1]}</Filled>
+                            </div>
+                            <div className="memo__stay-line">
+                              <span className="memo__label">{T.to}</span>
+                              <Filled narrow>{formatDate(addOneDay(base.lastDate))}</Filled>
+                              <span className="memo__label">{T.at}</span>
+                              <Filled narrow>{stayTo[1]}</Filled>
+                            </div>
+                          </>
+                        )}
+                        {/* Every line says what it is, what it was multiplied
+                            by and what it came to, then the room's own total —
+                            so each room can be checked without the others. */}
+                        <span className="memo__extras">
+                          {[
+                            {
+                              label: `Room rent ₹${amt(round2(base.amount / Math.max(1, base.nights)))} × ${base.nights} ${base.nights === 1 ? 'day' : 'days'}`,
+                              amount: base.amount,
+                            },
+                            ...roomExtras.map((extra) => ({
+                              label:
+                                extra.nights > 1 && !/season|%/i.test(extra.label)
+                                  ? `${extra.label} × ${extra.nights} days`
+                                  : extra.label,
+                              amount: extra.amount,
+                            })),
+                          ].map((row) => (
+                            <span className="memo__extra memo__extra--cols" key={row.label}>
+                              <span className="memo__extra-name">{row.label}</span>
+                              <RsPs value={row.amount} />
+                            </span>
+                          ))}
+                          {room != null && roomExtras.length > 0 && (
+                            <span className="memo__extra memo__extra--cols memo__extra--total">
+                              <span className="memo__extra-name">Room {room} total</span>
+                              <RsPs value={round2(base.amount + roomExtras.reduce((sum, e) => sum + e.amount, 0))} />
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="memo__stay-line">
+                      <span className="memo__label">{T.rs}</span>
+                      <Filled narrow>{perDay != null ? amt(perDay) : null}</Filled>
+                      <span className="memo__label">{T.perDay}</span>
+                    </div>
+                  )}
                   {/* What the day count doesn't cover — extra bed, AC, an
                       overstay. Named rather than folded into the total and
                       left to be argued about, each against what it came to.
                       The rule prints whether or not anything was added, the
                       way the form does: a blank rule is part of the shape. */}
-                  <div className="memo__stay-line memo__stay-line--extras">
-                    <span className="memo__label">{T.extraCharges}</span>
-                    {extras.length > 0 ? (
-                      <span className="memo__extras">
-                        {extras.map((extra) => (
-                          <span className="memo__extra" key={extra.key}>
-                            <span className="memo__extra-name">{extra.label}</span>
-                            <span className="memo__extra-amt">{amt(extra.amount)}</span>
-                          </span>
-                        ))}
-                      </span>
-                    ) : (
-                      <Filled>{null}</Filled>
-                    )}
-                  </div>
+                  {isGst && blocks && <div className="memo__incl-note">{T.inclusiveNote}</div>}
+                  {(!blocks || invoice.lateCheckoutCharge > 0) && (
+                    <div className="memo__stay-line memo__stay-line--extras">
+                      <span className="memo__label">{T.extraCharges}</span>
+                      {(blocks ? extras.filter((e) => e.key === 'late') : extras).length > 0 ? (
+                        <span className="memo__extras">
+                          {(blocks ? extras.filter((e) => e.key === 'late') : extras).map((extra) => (
+                            <span className="memo__extra" key={extra.key}>
+                              <span className="memo__extra-name">{extra.label}</span>
+                              <span className="memo__extra-amt">{amt(extra.amount)}</span>
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <Filled>{null}</Filled>
+                      )}
+                    </div>
+                  )}
                   {/* Both required on a tax invoice, and both constant for this
                       business — but a bill that omits them is defective whether
                       or not the answer was ever in doubt. */}
@@ -1165,10 +1251,10 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                 </div>
               )}
             </td>
-            {/* The gross the stay came to, against the top of the stay block —
-                where the memo writes it. */}
-            <td className="memo__rs memo__rs--lead">{grossWhole.toLocaleString('en-IN')}</td>
-            <td className="memo__ps memo__ps--lead">{String(grossPaise).padStart(2, '0')}</td>
+            {/* The money cells stay for the column's rules; the figure that
+                used to head them is gone — TOTAL AMOUNT below says it. */}
+            <td className="memo__rs memo__rs--lead" />
+            <td className="memo__ps memo__ps--lead" />
           </tr>
         </tbody>
       </table>
@@ -1189,7 +1275,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
               value={-invoice.discountAmount}
             />
           )}
-          <Money label={T.totalAmount} value={round2(roomTaxable + foodTaxable + serviceTaxable)} rule />
+          <Money label={isGst ? T.taxableValue : T.totalAmount} value={round2(roomTaxable + foodTaxable + serviceTaxable)} rule strong total />
           {invoice.cgstAmount > 0 && <Money label={`CGST ${invoice.cgstRatePercent} %`} value={invoice.cgstAmount} />}
           {invoice.sgstAmount > 0 && <Money label={`SGST ${invoice.sgstRatePercent} %`} value={invoice.sgstAmount} />}
           {invoice.foodCgstAmount > 0 && (
