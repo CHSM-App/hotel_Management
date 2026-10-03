@@ -90,12 +90,7 @@ class EventsUsecase {
 
   Future<EventBooking> removeExtra(int id, int lineId) => repository.removeExtra(id, lineId);
 
-  Future<EventBooking> hold(int id, {int holdHours = 48}) =>
-      repository.hold(id, holdHours: holdHours);
-
   Future<EventBooking> confirm(int id) => repository.confirm(id);
-
-  Future<EventBooking> release(int id) => repository.release(id);
 
   Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>
       repository.cancel(id, reason: reason, refundAmount: refundAmount, refundPaymentMethod: refundPaymentMethod);

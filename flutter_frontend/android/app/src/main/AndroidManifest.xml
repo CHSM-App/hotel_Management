@@ -13,9 +13,9 @@
     <uses-permission android:name="android.permission.CAMERA"/>
 
     <application
-        android:label="My Hotel"
+        android:label="hotel_manager"
         android:name="${applicationName}"
-        android:icon="@mipmap/my_hotel"
+        android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"

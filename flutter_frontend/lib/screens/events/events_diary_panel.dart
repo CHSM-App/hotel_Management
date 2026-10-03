@@ -40,9 +40,12 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   static const _maxDaysBefore = 1000;
   static const _maxDaysAfter = 1000;
 
-  static const _tile = 32.0;
+  // Square and responsive, computed in build() from the available width —
+  // the same wide-breakpoint rule [TapeChart] scales its own room tiles by,
+  // so a function's day box lands at the exact size a room's night tile does.
+  double _tile = 32.0;
   static const _venueCol = 72.0;
-  static const _rowHeight = 40.0;
+  double _rowHeight = 32.0;
   static const _dateHeadHeight = 32.0;
 
   final _hScroll = ScrollController();
@@ -245,20 +248,26 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   /// reserved/checkedIn/stayed, since a function has no equivalent theme
   /// token of its own yet.
   Color _statusColor(String status) => switch (status) {
-    'ENQUIRY' => const Color(0xFF5A8FD0),
-    'TENTATIVE' => AppTheme.draft,
+    'DRAFT' => AppTheme.draft,
     'CONFIRMED' => AppTheme.reserved,
     'SETTLED' => AppTheme.stayed,
     _ => AppTheme.border,
   };
 
-  bool _isClosed(String status) => status == 'CANCELLED' || status == 'EXPIRED';
+  bool _isClosed(String status) => status == 'CANCELLED';
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(eventsViewModelProvider);
     final venues = state.venues.where((v) => v.isActive).toList();
     final today = _today();
+
+    // Compact on a phone, roomier on a tablet — the same breakpoint
+    // [TapeChart] scales its own room tiles by, so a function's day box
+    // comes out the same size as a room's night tile at every width.
+    final wide = MediaQuery.sizeOf(context).width >= 700;
+    _rowHeight = wide ? 41.6 : 32.0;
+    _tile = _rowHeight;
 
     // venueId → dateKey → functions touching it, in start order.
     final cells = <int, Map<String, List<EventBooking>>>{};
@@ -444,8 +453,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                           WrapCrossAlignment.center,
                                       children: [
                                         for (final status in const [
-                                          'ENQUIRY',
-                                          'TENTATIVE',
+                                          'DRAFT',
                                           'CONFIRMED',
                                           'SETTLED',
                                         ])
@@ -697,6 +705,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                                                   d,
                                                                 )] ??
                                                                 const [],
+                                                            cells[rows[i].id],
                                                           ),
                                                       ],
                                                     ),
@@ -753,6 +762,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     DateTime d,
     bool isToday,
     List<EventBooking> events,
+    Map<String, List<EventBooking>>? venueDays,
   ) {
     if (events.isEmpty) {
       return GestureDetector(
@@ -788,6 +798,16 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     }
     final ev = events.first;
     final color = _statusColor(ev.status);
+
+    // A function's own nights are never rounded or gapped except at the two
+    // ends of its run, so a multi-day function reads as one continuous bar
+    // across the days it spans — the same rule [TapeChart]'s own [_Tile]
+    // applies to a stay's nights.
+    bool sameEvent(List<EventBooking>? day) =>
+        day != null && day.any((e) => e.id == ev.id);
+    final isRunStart = !sameEvent(venueDays?[_dateKey(d.subtract(const Duration(days: 1)))]);
+    final isRunEnd = !sameEvent(venueDays?[_dateKey(d.add(const Duration(days: 1)))]);
+
     // Same flat-fill vocabulary as TapeChart's own [_Tile]: one solid colour,
     // an initial when there's room, no gradient or shadow doing the work
     // colour and shape already do.
@@ -801,22 +821,32 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
       child: Container(
         width: _tile,
         height: _rowHeight,
-        padding: const EdgeInsets.all(3),
+        padding: EdgeInsets.only(
+          top: 3,
+          bottom: 3,
+          left: isRunStart ? 3 : 0,
+          right: isRunEnd ? 3 : 0,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.horizontal(
+              left: isRunStart ? const Radius.circular(6) : Radius.zero,
+              right: isRunEnd ? const Radius.circular(6) : Radius.zero,
+            ),
           ),
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Text(
-            ev.title.isEmpty ? '' : ev.title[0].toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: isRunStart
+              ? Text(
+                  ev.title.isEmpty ? '' : ev.title[0].toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              : null,
         ),
       ),
     );

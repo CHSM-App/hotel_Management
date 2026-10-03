@@ -369,97 +369,123 @@ class _RangeAndSearch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.extruded,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _DateField(
-                  label: 'From',
-                  value: fromDate,
-                  onPick: (v) => onFromTo(v, toDate),
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _DateField(
+                label: 'From',
+                value: fromDate,
+                onPick: (v) => onFromTo(v, toDate),
               ),
-              const SizedBox(width: AppTheme.s8),
-              Expanded(
-                child: _DateField(
-                  label: 'To',
-                  value: toDate,
-                  minDate: fromDate,
-                  onPick: (v) => onFromTo(fromDate, v),
-                ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: _DateField(
+                label: 'To',
+                value: toDate,
+                minDate: fromDate,
+                onPick: (v) => onFromTo(fromDate, v),
               ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s12),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: NeuPressed(
-                    radius: AppTheme.rMedium,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s12,
-                      vertical: 4,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+                  boxShadow: AppTheme.subtle,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.search_rounded,
+                        size: 17,
+                        color: AppTheme.accent,
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
-                        const SizedBox(width: AppTheme.s8),
-                        Expanded(
-                          child: TextField(
-                            onChanged: onSearch,
-                            controller: searchController,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: 'Name, room, phone or bill number',
-                              hintStyle: TextStyle(color: AppTheme.muted, fontSize: 13),
-                            ),
-                            style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: TextField(
+                        onChanged: onSearch,
+                        controller: searchController,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 14,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: 'Name, room, phone or bill number',
+                          hintStyle: TextStyle(
+                            color: AppTheme.muted,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 13),
+                        ),
+                      ),
+                    ),
+                    if (searchNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          searchController.clear();
+                          onSearch('');
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          margin: const EdgeInsets.only(right: 2),
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.bg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: AppTheme.muted,
                           ),
                         ),
-                        if (searchNotEmpty)
-                          InkResponse(
-                            onTap: () {
-                              searchController.clear();
-                              onSearch('');
-                            },
-                            radius: 18,
-                            child: const Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: AppTheme.muted,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: AppTheme.s8),
-                CompositedTransformTarget(
-                  link: filterLink,
-                  child: OverlayPortal(
-                    controller: filterPortalController,
-                    overlayChildBuilder: filterOverlayBuilder,
-                    child: _FilterButton(
-                      count: activeFilterCount,
-                      open: filterOpen,
-                      onTap: onToggleFilter,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
-      ),
+            const SizedBox(width: AppTheme.s8),
+            CompositedTransformTarget(
+              link: filterLink,
+              child: OverlayPortal(
+                controller: filterPortalController,
+                overlayChildBuilder: filterOverlayBuilder,
+                child: _FilterButton(
+                  count: activeFilterCount,
+                  open: filterOpen,
+                  onTap: onToggleFilter,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -485,44 +511,64 @@ class _FilterButton extends StatelessWidget {
     final on = count > 0 || open;
     return GestureDetector(
       onTap: onTap,
-      child: NeuPressed(
-        radius: AppTheme.rMedium,
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-        child: SizedBox(
-          width: 18,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                Icons.filter_alt_rounded,
-                size: 18,
-                color: on ? AppTheme.accent : AppTheme.muted,
-              ),
-              if (count > 0)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: const BoxDecoration(
+      child: Container(
+        width: 48,
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: on
+              ? const LinearGradient(
+                  colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                )
+              : null,
+          color: on ? null : AppTheme.card,
+          shape: BoxShape.circle,
+          border: on
+              ? null
+              : Border.all(color: AppTheme.shadowDark, width: 1.3),
+          boxShadow: on
+              ? [
+                  BoxShadow(
+                    color: AppTheme.accent.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : AppTheme.subtle,
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.filter_alt_rounded,
+              size: 19,
+              color: on ? Colors.white : AppTheme.accent,
+            ),
+            if (count > 0)
+              Positioned(
+                top: -4,
+                right: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.accent, width: 1.2),
+                  ),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  child: Text(
+                    '$count',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
                       color: AppTheme.accent,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
-                    child: Text(
-                      '$count',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -551,44 +597,85 @@ class _DateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parsed = DateTime.tryParse(value);
-    return GestureDetector(
-      onTap: () async {
-        final now = DateTime.now();
-        final min = minDate != null ? DateTime.tryParse(minDate!) : null;
-        final picked = await showAppDatePicker(
-          context: context,
-          initialDate: parsed ?? now,
-          firstDate: min ?? DateTime(now.year - 5),
-          lastDate: DateTime(now.year + 1),
-        );
-        if (picked == null) return;
-        onPick(_RegisterScreenState._iso(picked));
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
-          const SizedBox(height: 2),
-          NeuPressed(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s8,
-              vertical: 6,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          final now = DateTime.now();
+          final min = minDate != null ? DateTime.tryParse(minDate!) : null;
+          final picked = await showAppDatePicker(
+            context: context,
+            initialDate: parsed ?? now,
+            firstDate: min ?? DateTime(now.year - 5),
+            lastDate: DateTime(now.year + 1),
+          );
+          if (picked == null) return;
+          onPick(_RegisterScreenState._iso(picked));
+        },
+        borderRadius: BorderRadius.circular(999),
+        highlightColor: AppTheme.accent.withValues(alpha: 0.05),
+        splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: AppTheme.accent.withValues(alpha: 0.4),
+              width: 1.3,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.event_rounded, size: 13, color: AppTheme.muted),
-                const SizedBox(width: 6),
-                Text(
-                  parsed == null
-                      ? value
-                      : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 12),
-                ),
-              ],
-            ),
+            boxShadow: AppTheme.subtle,
           ),
-        ],
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.calendar_today_rounded,
+                  size: 14,
+                  color: AppTheme.accent,
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      parsed == null
+                          ? value
+                          : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.s4),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -795,19 +882,6 @@ class _RegisterCard extends StatelessWidget {
           child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // A colour bar down the left edge — the status reads at a glance
-            // even before the eye lands on the chip, the same way a coloured
-            // spine helps a stack of folders sort itself without reading
-            // every label.
-            Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: statusColor,
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(AppTheme.rMedium),
-                ),
-              ),
-            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(

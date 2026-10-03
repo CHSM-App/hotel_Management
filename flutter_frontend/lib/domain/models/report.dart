@@ -953,12 +953,10 @@ const kEventTypeLabel = <String, String>{
 };
 
 const kEventStatusLabel = <String, String>{
-  'ENQUIRY': 'Enquiry',
-  'TENTATIVE': 'Tentative',
+  'DRAFT': 'Draft',
   'CONFIRMED': 'Confirmed',
   'SETTLED': 'Settled',
   'CANCELLED': 'Cancelled',
-  'EXPIRED': 'Expired',
 };
 
 class ReportEventRow {
@@ -1009,7 +1007,7 @@ class ReportEventRow {
     this.advanceAmount = 0,
     this.advancePaymentMethod,
     this.balanceDue = 0,
-    this.status = 'ENQUIRY',
+    this.status = 'DRAFT',
     this.cancelReason,
     this.refundAmount,
     this.cancellationCharge,
@@ -1042,7 +1040,7 @@ class ReportEventRow {
     advanceAmount: asNum(json['advanceAmount']),
     advancePaymentMethod: asStringOrNull(json['advancePaymentMethod']),
     balanceDue: asNum(json['balanceDue']),
-    status: json['status']?.toString() ?? 'ENQUIRY',
+    status: json['status']?.toString() ?? 'DRAFT',
     cancelReason: asStringOrNull(json['cancelReason']),
     refundAmount: asNumOrNull(json['refundAmount']),
     cancellationCharge: asNumOrNull(json['cancellationCharge']),

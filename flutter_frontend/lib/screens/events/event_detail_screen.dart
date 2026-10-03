@@ -14,11 +14,11 @@ import '../billing/issue_event_bill_screen.dart';
 import '../theme.dart';
 import 'event_form_screen.dart';
 
-const _timeline = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+const _timeline = ['DRAFT', 'CONFIRMED', 'SETTLED'];
 
 /// A function's own page — mirrors EventDetail.jsx: the quote, head count,
 /// extras noted on the day, the function sheet's notes, advances taken, and
-/// the actions that move it through hold / confirm / settle / cancel.
+/// the actions that move it through confirm / settle / cancel.
 class EventDetailScreen extends ConsumerStatefulWidget {
   final int eventId;
 
@@ -38,7 +38,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   final _cancelReason = TextEditingController();
   final _refundAmount = TextEditingController();
   String? _refundMethod;
-  final _holdHours = TextEditingController(text: '48');
 
   @override
   void initState() {
@@ -50,7 +49,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   void dispose() {
     _cancelReason.dispose();
     _refundAmount.dispose();
-    _holdHours.dispose();
     super.dispose();
   }
 
@@ -102,9 +100,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       _Timeline(status: ev.status),
                     ],
                     if (ev.status == 'CANCELLED') _ClosedBanner(text: 'Cancelled${ev.cancelReason != null ? ': ${ev.cancelReason}' : ''}${(ev.refundAmount ?? 0) > 0 ? ' · Refunded ${formatPrice(ev.refundAmount)}${ev.refundPaymentMethod != null ? ' via ${kPaymentMethods[ev.refundPaymentMethod] ?? ev.refundPaymentMethod}' : ''}' : ''}'),
-                    if (ev.status == 'EXPIRED') const _ClosedBanner(text: 'The hold on this date lapsed.'),
-                    if (ev.status == 'TENTATIVE' && ev.holdExpiresAt != null)
-                      _ClosedBanner(text: 'Hold expires ${formatDateTime(ev.holdExpiresAt)}', color: AppTheme.draft),
                     if (_actionError != null) ...[
                       const SizedBox(height: AppTheme.s8),
                       Text(_actionError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
@@ -126,7 +121,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     _AdvancesCard(
                       event: ev,
                       receipts: _receipts,
-                      canTake: ['ENQUIRY', 'TENTATIVE', 'CONFIRMED'].contains(ev.status),
+                      canTake: ['DRAFT', 'CONFIRMED'].contains(ev.status),
                       onTaken: _load,
                     ),
                     const SizedBox(height: AppTheme.s16),
@@ -169,9 +164,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     else
                       _Actions(
                         event: ev,
-                        holdHours: _holdHours,
-                        onHold: () => _run(() => ref.read(eventsViewModelProvider.notifier).hold(ev.id, holdHours: int.tryParse(_holdHours.text.trim()) ?? 48)),
-                        onRelease: () => _run(() => ref.read(eventsViewModelProvider.notifier).release(ev.id)),
                         onConfirm: () => _run(() => ref.read(eventsViewModelProvider.notifier).confirm(ev.id)),
                         onEdit: () async {
                           final updated = await Navigator.of(context).push<EventBooking>(
@@ -216,8 +208,7 @@ class _Header extends StatelessWidget {
   const _Header({required this.event});
 
   Color get _statusColor => switch (event.status) {
-    'ENQUIRY' => const Color(0xFF5A8FD0),
-    'TENTATIVE' => AppTheme.draft,
+    'DRAFT' => AppTheme.draft,
     'CONFIRMED' => const Color(0xFFC0392B),
     'SETTLED' => AppTheme.muted,
     _ => AppTheme.border,
@@ -890,9 +881,6 @@ class _CancelCard extends StatelessWidget {
 
 class _Actions extends StatelessWidget {
   final EventBooking event;
-  final TextEditingController holdHours;
-  final VoidCallback onHold;
-  final VoidCallback onRelease;
   final VoidCallback onConfirm;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
@@ -901,9 +889,6 @@ class _Actions extends StatelessWidget {
 
   const _Actions({
     required this.event,
-    required this.holdHours,
-    required this.onHold,
-    required this.onRelease,
     required this.onConfirm,
     required this.onEdit,
     required this.onCancel,
@@ -915,24 +900,16 @@ class _Actions extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = event.status;
     final closed = event.isClosed;
-    final canEdit = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'].contains(status);
+    final canEdit = ['DRAFT', 'CONFIRMED'].contains(status);
 
     return Wrap(
       spacing: AppTheme.s8,
       runSpacing: AppTheme.s8,
       children: [
-        if (status == 'ENQUIRY' || status == 'EXPIRED') ...[
-          SizedBox(
-            width: 70,
-            child: NeuField(controller: holdHours, label: '', keyboardType: TextInputType.number),
-          ),
-          NeuButton(onPressed: onHold, child: Text(status == 'EXPIRED' ? 'Hold again' : 'Hold date')),
-        ],
-        if (status == 'TENTATIVE') NeuButton(onPressed: onRelease, child: const Text('Release hold')),
-        if (['ENQUIRY', 'TENTATIVE', 'EXPIRED'].contains(status)) NeuButton(primary: true, onPressed: onConfirm, child: const Text('Confirm')),
+        if (status == 'DRAFT') NeuButton(primary: true, onPressed: onConfirm, child: const Text('Confirm')),
         if (status == 'CONFIRMED') NeuButton(primary: true, onPressed: onSettle, child: const Text('Settle & bill')),
         if (status == 'SETTLED') NeuButton(primary: true, onPressed: onViewBill, child: const Text('View bill')),
-        if (canEdit && status != 'EXPIRED') NeuButton(onPressed: onEdit, child: const Text('Edit')),
+        if (canEdit) NeuButton(onPressed: onEdit, child: const Text('Edit')),
         if (!closed && status != 'SETTLED') NeuButton(color: AppTheme.danger, primary: true, onPressed: onCancel, child: const Text('Cancel event')),
       ],
     );

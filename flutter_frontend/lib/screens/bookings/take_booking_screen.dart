@@ -1183,31 +1183,28 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(width: AppTheme.s12),
-                Expanded(
-                  flex: 2,
-                  child: _PrimaryCta(
-                    // Held shut while the request is in flight, and until
-                    // there is a room to save against. The server holds a
-                    // lock that stops two devices booking one room; nothing
-                    // stops one device asking twice.
-                    onPressed: (state.submitting || state.room == null)
-                        ? null
-                        : _submit,
-                    loading: state.submitting,
-                    icon: _editing
-                        ? Icons.save_rounded
-                        : state.isWalkIn
-                        ? Icons.how_to_reg_rounded
-                        : Icons.event_available_rounded,
-                    label: _editing
-                        ? 'Save changes'
-                        : state.isWalkIn
-                        ? 'Add and check in'
-                        : 'Create reservation',
-                  ),
-                ),
               ],
+            ),
+            const SizedBox(height: AppTheme.s12),
+            _PrimaryCta(
+              // Held shut while the request is in flight, and until
+              // there is a room to save against. The server holds a
+              // lock that stops two devices booking one room; nothing
+              // stops one device asking twice.
+              onPressed: (state.submitting || state.room == null)
+                  ? null
+                  : _submit,
+              loading: state.submitting,
+              icon: _editing
+                  ? Icons.save_rounded
+                  : state.isWalkIn
+                  ? Icons.how_to_reg_rounded
+                  : Icons.event_available_rounded,
+              label: _editing
+                  ? 'Save changes'
+                  : state.isWalkIn
+                  ? 'Add and check in'
+                  : 'Create reservation',
             ),
           ],
         ),

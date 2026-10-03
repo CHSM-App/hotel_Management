@@ -15,10 +15,10 @@ import '../theme.dart';
 
 const _debounce = Duration(milliseconds: 400);
 
-/// New enquiry / edit — mirrors EventForm.jsx: function details, organiser,
+/// New function / edit — mirrors EventForm.jsx: function details, organiser,
 /// guests & pricing (with a live quote), catering, rooms wanted, add-ons, a
 /// concession, the function sheet's own notes, and — new functions only —
-/// money taken with the enquiry.
+/// money taken with the draft.
 class EventFormScreen extends ConsumerStatefulWidget {
   final EventBooking? event;
   final String? initialDate;
@@ -62,7 +62,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   late final _scheduleNotes = TextEditingController(text: widget.event?.scheduleNotes ?? '');
   late final _oneOffLabel = TextEditingController();
   late final _oneOffAmount = TextEditingController();
-  late final _holdHours = TextEditingController(text: '48');
 
   /// One line per catalogue add-on plus any one-off already saved on the
   /// booking — mirrors initialLines in EventForm.jsx.
@@ -187,7 +186,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     _scheduleNotes.dispose();
     _oneOffLabel.dispose();
     _oneOffAmount.dispose();
-    _holdHours.dispose();
     super.dispose();
   }
 
@@ -479,8 +477,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
     final body = _body();
     if (!_isEdit) {
-      body['status'] = status ?? 'ENQUIRY';
-      if (status == 'TENTATIVE') body['holdHours'] = int.tryParse(_holdHours.text.trim()) ?? 48;
+      body['status'] = status ?? 'DRAFT';
       final amount = _advanceAmount;
       if (amount > 0) {
         body['advanceAmount'] = amount;
@@ -517,7 +514,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final submitting = state.submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit "${widget.event!.title}"' : 'New function enquiry')),
+      appBar: AppBar(title: Text(_isEdit ? 'Edit "${widget.event!.title}"' : 'New function')),
       body: !_catalogueReady
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -841,23 +838,14 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                       alignment: Alignment.centerRight,
                       child: NeuButton(primary: true, onPressed: submitting ? null : () => _save(), child: Text(submitting ? 'Saving…' : 'Save changes')),
                     )
-                  else ...[
-                    Row(
-                      children: [
-                        Expanded(child: NeuField(controller: _holdHours, label: 'Hold hours', keyboardType: TextInputType.number)),
-                      ],
-                    ),
-                    const SizedBox(height: AppTheme.s8),
+                  else
                     Column(
                       children: [
-                        NeuButton(expand: true, onPressed: submitting ? null : () => _save(status: 'ENQUIRY'), child: Text(submitting ? 'Saving…' : 'Save as enquiry')),
-                        const SizedBox(height: AppTheme.s8),
-                        NeuButton(expand: true, onPressed: submitting ? null : () => _save(status: 'TENTATIVE'), child: Text('Hold the date (${_holdHours.text.trim().isEmpty ? '48' : _holdHours.text.trim()} h)')),
+                        NeuButton(expand: true, onPressed: submitting ? null : () => _save(status: 'DRAFT'), child: Text(submitting ? 'Saving…' : 'Save as draft')),
                         const SizedBox(height: AppTheme.s8),
                         NeuButton(expand: true, primary: true, onPressed: submitting ? null : () => _save(status: 'CONFIRMED'), child: Text(submitting ? 'Saving…' : 'Confirm now')),
                       ],
                     ),
-                  ],
                 ],
               ),
             ),

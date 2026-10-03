@@ -189,6 +189,6 @@ class EventReportExcel {
   }
 }
 
-const _kEventStatuses = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED'];
+const _kEventStatuses = ['DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED'];
 
-bool _excluded(String status) => status == 'CANCELLED' || status == 'EXPIRED';
+bool _excluded(String status) => status == 'CANCELLED';

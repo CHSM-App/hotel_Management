@@ -109,14 +109,7 @@ class EventsImpl implements EventsRepository {
   Future<EventBooking> removeExtra(int id, int lineId) => api.removeEventExtra(id, lineId);
 
   @override
-  Future<EventBooking> hold(int id, {int holdHours = 48}) =>
-      api.holdEvent(id, holdHours: holdHours);
-
-  @override
   Future<EventBooking> confirm(int id) => api.confirmEvent(id);
-
-  @override
-  Future<EventBooking> release(int id) => api.releaseEvent(id);
 
   @override
   Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>

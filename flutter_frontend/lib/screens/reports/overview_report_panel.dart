@@ -70,7 +70,7 @@ class OverviewReportPanel extends ConsumerWidget {
     num eventsUnbilled = 0;
     if (hasEvents && events != null) {
       for (final ev in events.events) {
-        if (ev.status == 'CANCELLED' || ev.status == 'EXPIRED') continue;
+        if (ev.status == 'CANCELLED') continue;
         if (ev.invoiceNumber != null) {
           eventsBilled += ev.totalAmount;
         } else {

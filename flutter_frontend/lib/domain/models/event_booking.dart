@@ -254,7 +254,6 @@ class EventBooking {
   final String? roomsTo;
   final String? roomsNotes;
   final String status;
-  final String? holdExpiresAt;
   final String? cancelReason;
   final num? refundAmount;
   final String? refundPaymentMethod;
@@ -295,8 +294,7 @@ class EventBooking {
     this.roomsFrom,
     this.roomsTo,
     this.roomsNotes,
-    this.status = 'ENQUIRY',
-    this.holdExpiresAt,
+    this.status = 'DRAFT',
     this.cancelReason,
     this.refundAmount,
     this.refundPaymentMethod,
@@ -340,8 +338,7 @@ class EventBooking {
     roomsFrom: asStringOrNull(json['roomsFrom']),
     roomsTo: asStringOrNull(json['roomsTo']),
     roomsNotes: asStringOrNull(json['roomsNotes']),
-    status: json['status']?.toString() ?? 'ENQUIRY',
-    holdExpiresAt: asStringOrNull(json['holdExpiresAt']),
+    status: json['status']?.toString() ?? 'DRAFT',
     cancelReason: asStringOrNull(json['cancelReason']),
     refundAmount: asNumOrNull(json['refundAmount']),
     refundPaymentMethod: asStringOrNull(json['refundPaymentMethod']),
@@ -358,7 +355,7 @@ class EventBooking {
   /// same rule EventDetail.jsx's hasCatering uses.
   bool get hasCatering => perPlateRate > 0;
 
-  bool get isClosed => status == 'CANCELLED' || status == 'EXPIRED';
+  bool get isClosed => status == 'CANCELLED';
 }
 
 /// GET /events/availability — whether a venue is free over a window, and
@@ -405,12 +402,10 @@ const kEventTypeLabel = <String, String>{
 };
 
 const kEventStatusLabel = <String, String>{
-  'ENQUIRY': 'Enquiry',
-  'TENTATIVE': 'On hold',
+  'DRAFT': 'Draft',
   'CONFIRMED': 'Confirmed',
   'SETTLED': 'Settled',
   'CANCELLED': 'Cancelled',
-  'EXPIRED': 'Expired',
 };
 
 const kSlotLabel = <String, String>{

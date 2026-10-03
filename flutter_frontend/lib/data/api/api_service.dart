@@ -1507,21 +1507,8 @@ class ApiService {
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
   }
 
-  Future<EventBooking> holdEvent(int id, {int holdHours = 48}) async {
-    final res = await _dio.patch(
-      '/events/$id/hold',
-      data: {'holdHours': holdHours},
-    );
-    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
-  }
-
   Future<EventBooking> confirmEvent(int id) async {
     final res = await _dio.patch('/events/$id/confirm');
-    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
-  }
-
-  Future<EventBooking> releaseEvent(int id) async {
-    final res = await _dio.patch('/events/$id/release');
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
   }
 

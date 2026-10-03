@@ -65,11 +65,7 @@ abstract class EventsRepository {
 
   Future<EventBooking> removeExtra(int id, int lineId);
 
-  Future<EventBooking> hold(int id, {int holdHours = 48});
-
   Future<EventBooking> confirm(int id);
-
-  Future<EventBooking> release(int id);
 
   Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod});
 
