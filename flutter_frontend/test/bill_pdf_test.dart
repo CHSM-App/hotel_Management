@@ -140,7 +140,6 @@ void main() {
       'AC/Heater ₹200',
       'Extra bed 2 × ₹300',
     ]);
-    expect(inv.gross, 1600);
   });
 
   test('every caption the memo states is actually in the file', () async {
@@ -173,12 +172,11 @@ void main() {
       'Days',
       'From',
       'at',
-      'Per day',
-      'Extra Charges',
+      'Rates above include GST',
       'Place of Supply',
       'Reverse Charge',
       'SAC',
-      'TOTAL AMOUNT',
+      'TAXABLE VALUE',
       'CGST',
       'SGST',
       'GRAND TOTAL',

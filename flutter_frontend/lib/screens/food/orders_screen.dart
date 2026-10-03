@@ -1283,10 +1283,6 @@ class _OrderCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // A thin status-colour band across the top — the ticket's stage
-            // readable at a glance, before any text is parsed, without the
-            // heavier full-height rail competing with the content beside it.
-            Container(height: 4, color: colour),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppTheme.s12,

@@ -291,9 +291,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
           child: Column(
             children: [
+              if (tabs.length > 1) ...[
+                _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
+                const SizedBox(height: AppTheme.s12),
+              ],
               if (showRange) ...[
                 _RangePicker(state: state),
-                const SizedBox(height: AppTheme.s12),
               ] else if (showLocalRange) ...[
                 ReportDateRangeFilter(
                   fromDate: _localFromDate,
@@ -301,10 +304,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   onFromChanged: (v) => setState(() => _localFromDate = v),
                   onToChanged: (v) => setState(() => _localToDate = v),
                 ),
-                const SizedBox(height: AppTheme.s12),
               ],
-              if (tabs.length > 1)
-                _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
             ],
           ),
         ),

@@ -133,14 +133,75 @@ class BillLine {
   final String label;
   final num amount;
   final int nights;
+  final String? firstDate;
+  final String? lastDate;
 
-  const BillLine({required this.label, required this.amount, this.nights = 0});
+  const BillLine({
+    required this.label,
+    required this.amount,
+    this.nights = 0,
+    this.firstDate,
+    this.lastDate,
+  });
 
   factory BillLine.fromJson(Map<String, dynamic> json) => BillLine(
     label: json['label']?.toString() ?? '',
     amount: asNum(json['amount']),
     nights: asInt(json['nights']),
+    firstDate: asStringOrNull(json['firstDate']),
+    lastDate: asStringOrNull(json['lastDate']),
   );
+}
+
+/// A multi-room bill's lines come back as one flat [BillLine] list whose
+/// labels the backend already prefixes "Room 101 · Room rent" when a booking
+/// spans several rooms (see `combineQuote`/`mergeRoomNights` on the web side —
+/// this app shares that same backend). Splitting them back into one block per
+/// room, mirroring the web's `roomSections` in `multiRoom.js`, so the preview
+/// and PDF can show each room's own rate, extras and total.
+class RoomBillSection {
+  final String room;
+  final BillLine base;
+  final List<BillLine> extras;
+
+  const RoomBillSection({
+    required this.room,
+    required this.base,
+    required this.extras,
+  });
+
+  num get total =>
+      extras.fold<num>(base.amount, (sum, e) => sum + e.amount);
+}
+
+final RegExp _roomLineLabel = RegExp(r'^Room (.+?) · (.*)$');
+
+/// Null for a single-room bill, or an older one whose lines carry no room
+/// prefix — the caller falls back to the plain flat list in that case.
+List<RoomBillSection>? roomBillSections(List<BillLine> roomCharges) {
+  final rooms = <String, List<BillLine>>{};
+  for (final line in roomCharges) {
+    final m = _roomLineLabel.firstMatch(line.label);
+    if (m == null) return null;
+    final room = m.group(1)!;
+    final rest = BillLine(
+      label: m.group(2)!,
+      amount: line.amount,
+      nights: line.nights,
+      firstDate: line.firstDate,
+      lastDate: line.lastDate,
+    );
+    rooms.putIfAbsent(room, () => []).add(rest);
+  }
+  if (rooms.length <= 1) return null;
+  return [
+    for (final entry in rooms.entries)
+      RoomBillSection(
+        room: entry.key,
+        base: entry.value.first,
+        extras: entry.value.skip(1).toList(),
+      ),
+  ];
 }
 
 /// A CYCLE guest who left before the nights they booked ran out.
@@ -835,11 +896,6 @@ class Invoice {
     if (lateCheckoutCharge > 0)
       BillLine(label: 'Late checkout', amount: lateCheckoutCharge),
   ];
-
-  /// What the stay came to before tax was taken out and before anything was
-  /// knocked off — the figure the memo writes against the top of the stay
-  /// block.
-  num get gross => roomSubtotal + foodSubtotal;
 
   bool get isVoid => status == 'VOID';
 

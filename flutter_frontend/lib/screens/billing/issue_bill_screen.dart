@@ -162,8 +162,12 @@ class _Body extends ConsumerWidget {
               ],
               const Divider(height: AppTheme.s24),
 
-              for (final line in preview.roomCharges)
-                _Row(label: line.label, value: line.amount),
+              if (roomBillSections(preview.roomCharges) case final sections?)
+                for (final section in sections)
+                  _RoomSectionRows(section: section)
+              else
+                for (final line in preview.roomCharges)
+                  _Row(label: line.label, value: line.amount),
 
               if (preview.lateCheckoutCharge > 0)
                 _Row(
@@ -485,6 +489,46 @@ class _Body extends ConsumerWidget {
 }
 
 // ── One line of the document ────────────────────────────────────────────────
+
+/// One room of a multi-room bill: a heading naming the room, then its own
+/// rate line and extras, then its own total — the same per-room cut the web
+/// bill prints (see `roomSections` in `multiRoom.js`), so each room can be
+/// checked without the others.
+class _RoomSectionRows extends StatelessWidget {
+  final RoomBillSection section;
+
+  const _RoomSectionRows({required this.section});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Room ${section.room} · ${nightsLabel(section.base.nights)}',
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          _Row(label: section.base.label, value: section.base.amount),
+          for (final extra in section.extras)
+            _Row(label: extra.label, value: extra.amount),
+          if (section.extras.isNotEmpty)
+            _Row(
+              label: 'Room ${section.room} total',
+              value: section.total,
+              strong: true,
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 class _Row extends StatelessWidget {
   final String label;

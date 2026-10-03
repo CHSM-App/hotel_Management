@@ -36,6 +36,16 @@ class BillPdf {
   static const _rs = 'Rs.';
   static const _ps = 'Ps.';
 
+  // The printed memo's own ruling, same three colours BillDocument.css draws
+  // it in: a dark slate for every rule that actually divides the form into
+  // its boxes, a lighter hairline for the one rule inside the money column
+  // itself (Rs. from Ps.), and a pale tint behind the column headings.
+  static const _lineColor = PdfColor.fromInt(0xFF2C3742); // --bill-line
+  static const _hairColor = PdfColor.fromInt(0xFFB8C1C9); // --bill-hair
+  static const _tintColor = PdfColor.fromInt(0xFFF4F6F8); // --bill-tint
+  static const _roomRuleColor = PdfColor.fromInt(0xFFC3CCD3); // .memo__room
+  static const _dotColor = PdfColor.fromInt(0xFF8D99A4); // .bill-doc__filled
+
   /// Hand the finished file to the real OS share sheet — see
   /// `receipt_share.dart` for why this is not simply `Printing.sharePdf`:
   /// on the web that never attempts the browser's own share API at all and
@@ -142,12 +152,20 @@ class BillPdf {
     final netPayment = inv.totalAmount - inv.advancePaid;
 
     return pw.Container(
-      decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8)),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(width: 0.8, color: _lineColor),
+      ),
       padding: const pw.EdgeInsets.all(6),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           // ── Masthead ────────────────────────────────────────────────────
+          //
+          // "Cash Memo" (the document kind) sits centred above the house
+          // name, with the phone numbers stacked in the top-right corner
+          // beside it and the logo in the top-left — the same three-corner
+          // layout `.memo__head`/`.memo__phones`/`.memo__logo` draw on the
+          // web, rather than the phone printing as its own centred line.
           pw.Stack(
             children: [
               pw.Column(
@@ -168,9 +186,6 @@ class BillPdf {
                   ),
                 ],
               ),
-              // Corner mark, the same spot the printed pad's "Mob." rule sits
-              // in the opposite corner — kept off the centered name/kind so a
-              // tall logo can't crowd them.
               if (logo != null)
                 pw.Positioned(
                   left: 0,
@@ -180,6 +195,27 @@ class BillPdf {
                     width: 26,
                     alignment: pw.Alignment.center,
                     child: pw.Image(pw.MemoryImage(logo), fit: pw.BoxFit.contain),
+                  ),
+                ),
+              if (inv.lodgePhone != null)
+                pw.Positioned(
+                  right: 0,
+                  top: 0,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      for (final p in inv.lodgePhone!
+                          .split(RegExp('[,/]'))
+                          .map((p) => p.trim())
+                          .where((p) => p.isNotEmpty))
+                        pw.Text(
+                          ascii('Mob. $p'),
+                          style: pw.TextStyle(
+                            fontSize: 7,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
             ],
@@ -192,13 +228,6 @@ class BillPdf {
                   fontSize: 8,
                   fontWeight: pw.FontWeight.bold,
                 ),
-              ),
-            ),
-          if (inv.lodgePhone != null)
-            pw.Center(
-              child: pw.Text(
-                ascii('Mob. ${inv.lodgePhone}'),
-                style: const pw.TextStyle(fontSize: 8),
               ),
             ),
           // Required on a tax invoice, and constant for this business — but a
@@ -299,106 +328,156 @@ class BillPdf {
           ],
 
           // ── The body: the stay to the left, the money column to the right ─
-          pw.Table(
-            border: pw.TableBorder.symmetric(
-              inside: const pw.BorderSide(width: 0.5),
-            ),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(),
-              1: pw.FixedColumnWidth(52),
-              2: pw.FixedColumnWidth(26),
-            },
-            children: [
-              pw.TableRow(
-                children: [
-                  pw.SizedBox(),
-                  _cell(_rs, bold: true, align: pw.TextAlign.right),
-                  _cell(_ps, bold: true, align: pw.TextAlign.right),
-                ],
-              ),
-              pw.TableRow(
-                children: [
-                  _stayBlock(inv, isGst),
-                  // The gross the stay came to, against the top of the stay
-                  // block — where the memo writes it.
-                  _rsCell(inv.gross, lead: true),
-                  _psCell(inv.gross, lead: true),
-                ],
-              ),
-            ],
-          ),
-
-          // ── The money column proper ──────────────────────────────────────
           //
-          // TOTAL AMOUNT is the taxable value, not the gross: the tax sits
-          // inside every price here, so it is taken out before the two GST
-          // lines state it and added back by GRAND TOTAL.
-          //
-          // The vertical rules carry on from the item table above — same
-          // column boundaries, same 0.5pt weight — so the Rs./Ps. columns
-          // read as one continuous ruled strip down the page, the way the
-          // web memo's own CSS borders do.
-          pw.Table(
-            border: const pw.TableBorder(
-              verticalInside: pw.BorderSide(width: 0.5),
-            ),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(),
-              1: pw.FixedColumnWidth(52),
-              2: pw.FixedColumnWidth(26),
-            },
+          // The dark rule that splits the stay from Rs. and the lighter
+          // hairline that splits Rs. from Ps. are painted ONCE here, as two
+          // Positioned verticals behind both tables, rather than repeated as
+          // a `left: BorderSide` on every one of the forty-odd rows below.
+          // Stacking that many independent border segments end-to-end is what
+          // read as the line being "cut" every few rows — a PDF viewer does
+          // not always lay two abutting hairlines down flush, and a row with
+          // no border at all (a bare blank cell) broke it outright. One
+          // continuous rule behind everything can't come apart like that.
+          pw.Stack(
             children: [
-              if (inv.discountAmount > 0)
-                _moneyRow(
-                  'Less: Discount${_discountQualifier(inv)}',
-                  -inv.discountAmount,
-                ),
-              _moneyRow(
-                'TOTAL AMOUNT',
-                _round2(inv.roomTaxable + inv.foodTaxable),
-                rule: true,
-              ),
-              if (inv.cgstAmount > 0)
-                _moneyRow('CGST ${inv.cgstRatePercent} %', inv.cgstAmount),
-              if (inv.sgstAmount > 0)
-                _moneyRow('SGST ${inv.sgstRatePercent} %', inv.sgstAmount),
-              if (inv.foodCgstAmount > 0)
-                _moneyRow(
-                  'CGST ${inv.foodCgstRatePercent} % (Misc)',
-                  inv.foodCgstAmount,
-                ),
-              if (inv.foodSgstAmount > 0)
-                _moneyRow(
-                  'SGST ${inv.foodSgstRatePercent} % (Misc)',
-                  inv.foodSgstAmount,
-                ),
-              if (inv.roundOff != 0) _moneyRow('Round off', inv.roundOff),
-              _moneyRow('GRAND TOTAL', inv.totalAmount, strong: true, rule: true),
-              if (inv.advancePaid > 0)
-                _moneyRow(
-                  inv.advanceReceiptNumbers == null
-                      ? 'Less Advance if any'
-                      : 'Less Advance if any (Rec. No. ${inv.advanceReceiptNumbers})',
-                  inv.advancePaid,
-                ),
-              _moneyRow(
-                'Net Payment',
-                netPayment,
-                strong: true,
-                rule: true,
-                // With one tender the method is said beneath the label, the
-                // way the web decorates it. With a split it is dropped here
-                // and each method gets its own row below, or the first would
-                // be named twice.
-                sub: tenders.length == 1 ? _tenderLine(tenders.single) : null,
-              ),
-              if (tenders.length > 1)
-                for (final t in tenders)
-                  _moneyRow(
-                    kPayLabels[t.method] ?? t.method,
-                    t.amount,
-                    sub: t.reference == null ? null : 'Txn No. ${t.reference}',
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Table(
+                    columnWidths: const {
+                      0: pw.FlexColumnWidth(),
+                      1: pw.FixedColumnWidth(52),
+                      2: pw.FixedColumnWidth(26),
+                    },
+                    children: [
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(
+                          color: _tintColor,
+                          border: pw.Border(
+                            top: pw.BorderSide(width: 0.6, color: _lineColor),
+                            bottom: pw.BorderSide(width: 0.6, color: _lineColor),
+                          ),
+                        ),
+                        children: [
+                          pw.SizedBox(),
+                          _cell(_rs, bold: true, align: pw.TextAlign.right),
+                          _cell(_ps, bold: true, align: pw.TextAlign.right),
+                        ],
+                      ),
+                      pw.TableRow(
+                        children: [
+                          _stayBlock(inv, isGst),
+                          // The money cells stay for the column's rules; the
+                          // figure that used to head them is gone — TOTAL
+                          // AMOUNT below says it, same as the web memo
+                          // (BillDocument.jsx) now leaves these two cells
+                          // empty rather than repeating the gross.
+                          _rsCell(null),
+                          _psCell(null),
+                        ],
+                      ),
+                      ..._chargeRows(inv, isGst),
+                    ],
                   ),
+
+                  // ── The money column proper ────────────────────────────
+                  //
+                  // TOTAL AMOUNT is the taxable value, not the gross: the tax
+                  // sits inside every price here, so it is taken out before
+                  // the two GST lines state it and added back by GRAND TOTAL.
+                  pw.Table(
+                    columnWidths: const {
+                      0: pw.FlexColumnWidth(),
+                      1: pw.FixedColumnWidth(52),
+                      2: pw.FixedColumnWidth(26),
+                    },
+                    children: [
+                      if (inv.discountAmount > 0)
+                        _moneyRow(
+                          'Less: Discount${_discountQualifier(inv)}',
+                          -inv.discountAmount,
+                        ),
+                      _moneyRow(
+                        // The rates printed above are tax-inclusive on a GST
+                        // bill, so this first money-column figure is the
+                        // value before tax, not a total of those rates —
+                        // same relabelling BillDocument.jsx does
+                        // (`T.taxableValue`), so the column doesn't read as
+                        // double-charging the two GST lines right under it.
+                        isGst ? 'TAXABLE VALUE (excl. GST)' : 'TOTAL AMOUNT',
+                        _round2(inv.roomTaxable + inv.foodTaxable),
+                        rule: true,
+                      ),
+                      if (inv.cgstAmount > 0)
+                        _moneyRow('CGST ${inv.cgstRatePercent} %', inv.cgstAmount),
+                      if (inv.sgstAmount > 0)
+                        _moneyRow('SGST ${inv.sgstRatePercent} %', inv.sgstAmount),
+                      if (inv.foodCgstAmount > 0)
+                        _moneyRow(
+                          'CGST ${inv.foodCgstRatePercent} % (Misc)',
+                          inv.foodCgstAmount,
+                        ),
+                      if (inv.foodSgstAmount > 0)
+                        _moneyRow(
+                          'SGST ${inv.foodSgstRatePercent} % (Misc)',
+                          inv.foodSgstAmount,
+                        ),
+                      if (inv.roundOff != 0) _moneyRow('Round off', inv.roundOff),
+                      _moneyRow(
+                        'GRAND TOTAL',
+                        inv.totalAmount,
+                        strong: true,
+                        rule: true,
+                      ),
+                      if (inv.advancePaid > 0)
+                        _moneyRow(
+                          inv.advanceReceiptNumbers == null
+                              ? 'Less Advance if any'
+                              : 'Less Advance if any (Rec. No. ${inv.advanceReceiptNumbers})',
+                          inv.advancePaid,
+                        ),
+                      _moneyRow(
+                        'Net Payment',
+                        netPayment,
+                        strong: true,
+                        rule: true,
+                        last: tenders.length <= 1,
+                        // With one tender the method is said beneath the
+                        // label, the way the web decorates it. With a split
+                        // it is dropped here and each method gets its own
+                        // row below, or the first would be named twice.
+                        sub: tenders.length == 1 ? _tenderLine(tenders.single) : null,
+                      ),
+                      if (tenders.length > 1)
+                        for (final (i, t) in tenders.indexed)
+                          _moneyRow(
+                            kPayLabels[t.method] ?? t.method,
+                            t.amount,
+                            last: i == tenders.length - 1,
+                            sub: t.reference == null ? null : 'Txn No. ${t.reference}',
+                          ),
+                    ],
+                  ),
+                ],
+              ),
+
+              // The dark rule, at the boundary between the stay/particulars
+              // column and the Rs. column — 52 + 26 in from the right, the
+              // width of the two fixed money columns together.
+              pw.Positioned(
+                top: 0,
+                bottom: 0,
+                right: 78,
+                child: pw.Container(width: 0.6, color: _lineColor),
+              ),
+              // The lighter hairline, between Rs. and Ps. — 26 in from the
+              // right, the width of the Ps. column alone.
+              pw.Positioned(
+                top: 0,
+                bottom: 0,
+                right: 26,
+                child: pw.Container(width: 0.6, color: _hairColor),
+              ),
             ],
           ),
 
@@ -412,7 +491,9 @@ class BillPdf {
                 child: pw.Container(
                   margin: const pw.EdgeInsets.symmetric(horizontal: 3),
                   decoration: const pw.BoxDecoration(
-                    border: pw.Border(bottom: pw.BorderSide(width: 0.4)),
+                    border: pw.Border(
+                      bottom: pw.BorderSide(width: 0.4, color: _dotColor),
+                    ),
                   ),
                   child: pw.Text(
                     ascii(_inWords(inv.totalAmount)),
@@ -550,7 +631,19 @@ class BillPdf {
           // checked in, or a takeaway — so none of the days/dates/rate rules
           // apply, same as BillDocument.jsx's `!isFoodBill && !isEventBill`
           // branch.
-          if (!inv.isFoodBill && !inv.isEventBill) ...[
+          //
+          // The rate itself, its extras, the inclusive-GST note, late
+          // checkout and the compliance lines all used to print right here,
+          // folded into this one wide cell with their amounts as plain text.
+          // They now print as their own ruled rows after this one (see
+          // [_chargeRows]) so every rupee on the bill — not just the
+          // gross at the top — sits inside the same ruled Rs./Ps. columns
+          // the web memo's `.memo__extra--cols` reaches into, same as
+          // BillDocument.jsx's own `blocks.map(...)`. Only the header that
+          // every block shares stays here.
+          if (!inv.isFoodBill &&
+              !inv.isEventBill &&
+              !_chargeBlocksDatesDiffer(inv)) ...[
             _strip([
               _label('For'),
               _filled('${inv.nights}', width: 30),
@@ -568,28 +661,6 @@ class BillPdf {
               _label('at'),
               _filled(to.$2, width: 60),
             ]),
-            _strip([
-              _label(_rs),
-              _filled(inv.perDay == null ? '' : _amt(inv.perDay!), width: 66),
-              _label('Per day'),
-            ]),
-            // What the day count doesn't cover — an extra bed, AC, an
-            // overstay. Named rather than folded into the total, each against
-            // what it came to. The rule prints whether or not anything was
-            // added: a blank rule is part of the shape.
-            _extraChargesStrip(inv.extras),
-            if (inv.placeOfSupply != null)
-              _strip([
-                _label('Place of Supply'),
-                _filled(inv.placeOfSupply!, width: 70, fine: true),
-                _label('Reverse Charge'),
-                _filled('No', width: 26, fine: true),
-              ]),
-            if (isGst && inv.roomSubtotal > 0)
-              _strip([
-                _label('SAC'),
-                _filled(_sacAccommodation, width: 60, fine: true),
-              ]),
           ],
 
           // Food keeps its items, on a room stay or on its own — a different
@@ -605,43 +676,284 @@ class BillPdf {
   static const _sacFood = '996331';
   static const _sacVenue = '997212';
 
+  /// One line item to print as its own ruled row: `room` is null outside a
+  /// multi-room booking (nothing to head the block with), non-null for each
+  /// room of one. Mirrors BillDocument.jsx's own `blocks`: the backend
+  /// already prefixes a multi-room booking's charge lines "Room 101 · ...",
+  /// and [roomBillSections] is what splits them back apart; a single-room
+  /// bill's flat [Invoice.roomCharges] becomes the one `room: null` block.
+  static List<({String? room, BillLine base, List<BillLine> extras})>
+  _chargeBlocks(Invoice inv) {
+    final sections = roomBillSections(inv.roomCharges);
+    if (sections != null) {
+      return [
+        for (final s in sections) (room: s.room, base: s.base, extras: s.extras),
+      ];
+    }
+    if (inv.roomCharges.isEmpty) return const [];
+    return [
+      (
+        room: null,
+        base: inv.roomCharges.first,
+        extras: inv.roomCharges.skip(1).toList(),
+      ),
+    ];
+  }
+
+  /// Whether the rooms of this stay ran different dates from each other —
+  /// mirrors BillDocument.jsx's own `datesDiffer` check. Always false
+  /// outside a stay bill or a multi-room one, since there is then only ever
+  /// the one block to compare against itself.
+  static bool _chargeBlocksDatesDiffer(Invoice inv) {
+    if (inv.isFoodBill || inv.isEventBill) return false;
+    final blocks = _chargeBlocks(inv);
+    return {for (final b in blocks) '${b.base.firstDate}|${b.base.lastDate}'}
+            .length >
+        1;
+  }
+
+  /// The night after a room's last night is the day it checks out — same as
+  /// BillDocument.jsx's `addOneDay`.
+  static String? _addOneDay(String? dateKey) {
+    if (dateKey == null) return null;
+    final d = DateTime.tryParse(dateKey);
+    if (d == null) return null;
+    return _splitDateTime(d.add(const Duration(days: 1)).toIso8601String()).$1;
+  }
+
+  /// Every rupee the stay came to, each on its own ruled row — the room's
+  /// own rate, every extra, a room's own total on a multi-room booking, the
+  /// inclusive-GST note, late checkout, then the compliance lines. All of it
+  /// used to sit as plain text inside the one wide cell [_stayBlock] prints;
+  /// it is now appended here as siblings of that row in the same table, so
+  /// every line's own amount sits inside the ruled Rs./Ps. columns and the
+  /// vertical rule between them runs the full height of the body — the same
+  /// shape `.memo__extra--cols`'s negative margin fakes on the web, drawn
+  /// here for real with [_rsCell]/[_psCell].
+  static List<pw.TableRow> _chargeRows(Invoice inv, bool isGst) {
+    if (inv.isFoodBill || inv.isEventBill) return const [];
+    final blocks = _chargeBlocks(inv);
+    final datesDiffer = _chargeBlocksDatesDiffer(inv);
+    final from = _splitDateTime(inv.actualCheckInAt ?? inv.checkInDate);
+    final to = _splitDateTime(inv.actualCheckOutAt ?? inv.checkOutDate);
+    final rows = <pw.TableRow>[];
+
+    // The Rs./Ps. cells still carry [_rsCell]/[_psCell]'s own border even
+    // with nothing to print — a bare `pw.SizedBox()` here drew no border at
+    // all, which is what broke the vertical rule into dashes at every room
+    // heading, "Rates above include GST", Place of Supply and SAC row.
+    pw.TableRow blankRow(pw.Widget left, {pw.BoxDecoration? decoration}) =>
+        pw.TableRow(
+          decoration: decoration,
+          children: [left, _rsCell(null), _psCell(null)],
+        );
+
+    for (final block in blocks) {
+      if (block.room != null) {
+        rows.add(
+          blankRow(
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 2, top: 3),
+              child: pw.Text(
+                ascii(
+                  'Room ${block.room} · ${block.base.nights} '
+                  '${block.base.nights == 1 ? 'day' : 'days'}',
+                ),
+                style: pw.TextStyle(
+                  fontSize: 7,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                top: pw.BorderSide(width: 0.5, color: _roomRuleColor),
+              ),
+            ),
+          ),
+        );
+        if (datesDiffer && block.base.firstDate != null) {
+          rows.add(
+            blankRow(
+              _strip([
+                _label('From'),
+                _filled(_splitDateTime(block.base.firstDate).$1, width: 76),
+                _label('at'),
+                _filled(from.$2, width: 60),
+              ]),
+            ),
+          );
+          rows.add(
+            blankRow(
+              _strip([
+                _label('To'),
+                _filled(_addOneDay(block.base.lastDate) ?? '', width: 76),
+                _label('at'),
+                _filled(to.$2, width: 60),
+              ]),
+            ),
+          );
+        }
+      }
+      for (final line in [block.base, ...block.extras]) {
+        rows.add(
+          pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: pw.EdgeInsets.only(
+                  left: block.room != null ? 6 : 3,
+                  top: 1.5,
+                  bottom: 1.5,
+                ),
+                child: pw.Text(
+                  ascii(line.label),
+                  style: const pw.TextStyle(fontSize: 7),
+                ),
+              ),
+              _rsCell(line.amount),
+              _psCell(line.amount),
+            ],
+          ),
+        );
+      }
+      if (block.room != null && block.extras.isNotEmpty) {
+        final total = block.extras.fold<num>(
+          block.base.amount,
+          (sum, e) => sum + e.amount,
+        );
+        rows.add(
+          pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(left: 6, top: 1.5, bottom: 2),
+                child: pw.Text(
+                  ascii('Room ${block.room} total'),
+                  style: pw.TextStyle(
+                    fontSize: 7,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              _rsCell(total, strong: false),
+              _psCell(total, strong: false),
+            ],
+          ),
+        );
+      }
+    }
+
+    // On a GST bill the rates just printed are tax-inclusive — said once
+    // here so the figures below (which pull the tax back out) don't read as
+    // double-charging it, same as BillDocument.jsx's own `T.inclusiveNote`.
+    if (isGst && blocks.isNotEmpty) {
+      rows.add(
+        blankRow(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(left: 2, top: 2),
+            child: pw.Text(
+              ascii('Rates above include GST'),
+              style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Overstay money, on its own ruled line same as every other charge —
+    // dropped silently by the old per-block loop above when there was more
+    // than one room, since nothing there ever reached [Invoice.extras].
+    if (inv.lateCheckoutCharge > 0) {
+      rows.add(
+        pw.TableRow(
+          children: [
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 3, top: 1.5, bottom: 1.5),
+              child: pw.Text(
+                ascii('Late checkout'),
+                style: const pw.TextStyle(fontSize: 7),
+              ),
+            ),
+            _rsCell(inv.lateCheckoutCharge),
+            _psCell(inv.lateCheckoutCharge),
+          ],
+        ),
+      );
+    }
+
+    if (inv.placeOfSupply != null) {
+      rows.add(
+        blankRow(
+          _strip([
+            _label('Place of Supply'),
+            _filled(inv.placeOfSupply!, width: 70, fine: true),
+            _label('Reverse Charge'),
+            _filled('No', width: 26, fine: true),
+          ]),
+        ),
+      );
+    }
+    if (isGst && inv.roomSubtotal > 0) {
+      rows.add(
+        blankRow(
+          _strip([_label('SAC'), _filled(_sacAccommodation, width: 60, fine: true)]),
+        ),
+      );
+    }
+
+    return rows;
+  }
+
   /// "Extra Charges" and whatever rides under it — an extra bed, AC, an
   /// overstay on a stay bill, or an add-on beyond the base hire on a
   /// function bill. Shared between [_stayBlock]'s two branches: the rule
   /// prints whether or not anything was added, same as BillDocument.jsx.
-  static pw.Widget _extraChargesStrip(List<BillLine> extras) => _strip([
-    _label('Extra Charges'),
-    pw.Expanded(
-      child: extras.isEmpty
-          ? _underline('')
-          : pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: [
-                for (final e in extras)
-                  pw.Row(
-                    children: [
-                      pw.Expanded(
-                        child: pw.Text(
-                          ascii(e.label),
-                          style: pw.TextStyle(
-                            fontSize: 7,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
+  static pw.Widget _extraChargesStrip(List<BillLine> extras) => pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+    child: pw.Row(
+      // Top-aligned, not [_strip]'s usual baseline-at-the-bottom: a label
+      // one line tall sitting beside a column of two or more extras has to
+      // anchor to the column's first line, not its last — `.end` pulled
+      // "Extra Charges" down to sit level with (and print over) the final
+      // extra instead of beside the row it actually labels.
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        _label('Extra Charges'),
+        pw.Expanded(
+          child: extras.isEmpty
+              ? _underline('')
+              : pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    for (final e in extras)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(left: 3),
+                        child: pw.Row(
+                          children: [
+                            pw.Expanded(
+                              child: pw.Text(
+                                ascii(e.label),
+                                style: pw.TextStyle(
+                                  fontSize: 7,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            pw.Text(
+                              ascii(_amt(e.amount)),
+                              style: pw.TextStyle(
+                                fontSize: 7,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      pw.Text(
-                        ascii(_amt(e.amount)),
-                        style: pw.TextStyle(
-                          fontSize: 7,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
+                  ],
+                ),
+        ),
+      ],
     ),
-  ]);
+  );
 
   static pw.Widget _miscChargesBlock(Invoice inv, bool isGst) => pw.Padding(
     padding: const pw.EdgeInsets.only(top: 2),
@@ -708,7 +1020,7 @@ class BillPdf {
   static pw.Widget _rule() => pw.Container(
     height: 0.5,
     margin: const pw.EdgeInsets.symmetric(vertical: 2),
-    color: PdfColors.black,
+    color: _lineColor,
   );
 
   static pw.Widget _strip(List<pw.Widget> children) => pw.Padding(
@@ -739,9 +1051,14 @@ class BillPdf {
   static pw.Widget _underline(String value, {bool fine = false}) =>
       pw.Container(
         margin: const pw.EdgeInsets.symmetric(horizontal: 3),
-        padding: const pw.EdgeInsets.only(bottom: 1),
+        // Clear of the text's own descenders (g, p, y, j, Rs figures in
+        // Devanagari) — at bottom: 1 the rule sat close enough to read as
+        // cutting through them rather than running under the word.
+        padding: const pw.EdgeInsets.only(bottom: 2.5),
         decoration: const pw.BoxDecoration(
-          border: pw.Border(bottom: pw.BorderSide(width: 0.4)),
+          border: pw.Border(
+            bottom: pw.BorderSide(width: 0.4, color: _dotColor),
+          ),
         ),
         child: pw.Text(
           ascii(value),
@@ -756,7 +1073,7 @@ class BillPdf {
     String text, {
     bool bold = false,
     pw.TextAlign align = pw.TextAlign.left,
-  }) => pw.Padding(
+  }) => pw.Container(
     padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
     child: pw.Text(
       ascii(text),
@@ -785,44 +1102,36 @@ class BillPdf {
     );
   }
 
-  static pw.Widget _rsCell(
-    num value, {
-    bool lead = false,
-    bool strong = false,
-  }) => pw.Padding(
-    padding: pw.EdgeInsets.only(
-      left: 3,
-      right: 3,
-      top: lead ? 3 : 1.5,
-      bottom: 1.5,
-    ),
+  /// The money cell itself — no border of its own. The vertical that used to
+  /// be drawn per-cell (a `left: BorderSide` on every single row) is now one
+  /// continuous line painted once over the whole body+totals block (see the
+  /// `pw.Stack` in [_memo]): a hairline border repeated on forty-odd stacked
+  /// table rows does not lay down as one straight rule in every PDF viewer —
+  /// each row's segment can land a fraction of a point off its neighbours,
+  /// which is what read as the line being "cut" every few rows.
+  ///
+  /// `null` prints no figure — a row with nothing to put in the money column
+  /// (a room heading, "Rates above include GST", Place of Supply).
+  static pw.Widget _rsCell(num? value, {bool strong = false}) => pw.Container(
+    padding: const pw.EdgeInsets.only(left: 3, right: 3, top: 1.5, bottom: 1.5),
     child: pw.Text(
-      ascii(_split(value).$1),
+      value == null ? '' : ascii(_split(value).$1),
       textAlign: pw.TextAlign.right,
       style: pw.TextStyle(
         fontSize: strong ? 10 : 8,
-        fontWeight: strong || lead ? pw.FontWeight.bold : pw.FontWeight.normal,
+        fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
       ),
     ),
   );
 
-  static pw.Widget _psCell(
-    num value, {
-    bool lead = false,
-    bool strong = false,
-  }) => pw.Padding(
-    padding: pw.EdgeInsets.only(
-      left: 3,
-      right: 3,
-      top: lead ? 3 : 1.5,
-      bottom: 1.5,
-    ),
+  static pw.Widget _psCell(num? value, {bool strong = false}) => pw.Container(
+    padding: const pw.EdgeInsets.only(left: 3, right: 3, top: 1.5, bottom: 1.5),
     child: pw.Text(
-      ascii(_split(value).$2),
+      value == null ? '' : ascii(_split(value).$2),
       textAlign: pw.TextAlign.right,
       style: pw.TextStyle(
         fontSize: strong ? 10 : 8,
-        fontWeight: strong || lead ? pw.FontWeight.bold : pw.FontWeight.normal,
+        fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
       ),
     ),
   );
@@ -832,11 +1141,19 @@ class BillPdf {
     num value, {
     bool strong = false,
     bool rule = false,
+    bool last = false,
     String? sub,
   }) => pw.TableRow(
-    decoration: rule
-        ? const pw.BoxDecoration(
-            border: pw.Border(top: pw.BorderSide(width: 0.5)),
+    decoration: (rule || last)
+        ? pw.BoxDecoration(
+            border: pw.Border(
+              top: rule
+                  ? const pw.BorderSide(width: 0.6, color: _lineColor)
+                  : pw.BorderSide.none,
+              bottom: last
+                  ? const pw.BorderSide(width: 0.6, color: _lineColor)
+                  : pw.BorderSide.none,
+            ),
           )
         : null,
     children: [
@@ -878,7 +1195,7 @@ class BillPdf {
     width: 88,
     child: pw.Column(
       children: [
-        pw.Container(height: 0.5, color: PdfColors.black),
+        pw.Container(height: 0.5, color: _lineColor),
         pw.SizedBox(height: 1),
         pw.Text(ascii(caption), style: const pw.TextStyle(fontSize: 6)),
       ],

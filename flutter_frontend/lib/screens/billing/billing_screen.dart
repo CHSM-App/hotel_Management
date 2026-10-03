@@ -483,11 +483,6 @@ class BillingRowCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Same thin status-colour band [_OrderCard] opens with on the
-          // orders page — a card reads as a live item before any text is
-          // parsed, rather than only the flat accent spine this row used to
-          // carry down its left edge.
-          Container(height: 3, color: AppTheme.accent),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppTheme.s12,
@@ -750,7 +745,6 @@ class BillingInvoiceCard extends ConsumerWidget {
       return _AdvanceReceiptCard(receipt: document.receipt!);
     }
     final invoice = document.invoice!;
-    final tint = invoice.isVoid ? AppTheme.danger : AppTheme.accent;
 
     return Container(
       decoration: BoxDecoration(
@@ -777,10 +771,6 @@ class BillingInvoiceCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Same thin status-colour band the queue cards use — accent for
-              // a live bill, danger for a voided one, readable before the eye
-              // even reaches the chip.
-              Container(height: 3, color: tint),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppTheme.s12,

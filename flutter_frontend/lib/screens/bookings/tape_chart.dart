@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,7 @@ import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../theme.dart';
 import 'booking_detail_screen.dart';
+import 'tape_quick_peek_sheet.dart';
 import 'take_booking_screen.dart';
 
 /// The tape chart: every room down the side, the chosen nights across the
@@ -66,6 +69,13 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// brackets exactly that one dispatch.
   bool _jumpingToToday = false;
 
+  /// The one tile a quick-peek pick is currently pointing at — the app's
+  /// equivalent of the web tape chart's own `flash` state (`Bookings.jsx`'s
+  /// `jumpToStay`). Both null outside the ~3s a pick stays lit.
+  int? _flashBookingId;
+  int? _flashRoomId;
+  Timer? _flashTimer;
+
   /// The current-month start [initState] asked [resetChartToCurrentMonth]
   /// for. The provider is shared app-wide rather than recreated with this
   /// widget, so the very first build after a remount can still land on
@@ -98,10 +108,19 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// the declared number, not whatever the header's content box measures.
   final _scrollViewKey = GlobalKey();
 
-  void _jumpTo(String category) {
+  /// One key per room row, so a quick-peek pick can scroll straight to it —
+  /// the same jump a category chip tap does, just landing on a row instead
+  /// of a whole band.
+  final Map<int, GlobalKey> _roomKeys = {};
+
+  GlobalKey _roomKeyFor(int roomId) =>
+      _roomKeys.putIfAbsent(roomId, () => GlobalKey());
+
+  void _jumpTo(String category) => _jumpToKey(_sectionKeys[category]);
+
+  void _jumpToKey(GlobalKey? key) {
     if (!_vScroll.hasClients) return;
-    final targetBox = _sectionKeys[category]?.currentContext
-        ?.findRenderObject();
+    final targetBox = key?.currentContext?.findRenderObject();
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (targetBox is! RenderBox || !targetBox.attached) return;
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
@@ -158,10 +177,25 @@ class _TapeChartState extends ConsumerState<TapeChart>
     });
   }
 
+  /// Set right before the quick-peek dialog opens so the `didPopNext` its own
+  /// close fires below doesn't re-snap the chart to today — that dialog is a
+  /// route too, and [RouteObserver] can't tell its close apart from a real
+  /// page (booking a room, opening a stay) returning. Picking a room or an
+  /// upcoming stay from it deliberately scrolls the chart elsewhere
+  /// ([_flashRoom]); a same-frame reset back to today would just outrace
+  /// that jump and strand the chart on today's date instead of the one
+  /// picked.
+  bool _suppressSnapToToday = false;
+
   /// Called when a screen pushed on top of this one (booking a room, opening
-  /// a stay) is popped and the tape chart is visible again.
+  /// a stay, or the quick-peek dialog) is popped and the tape chart is
+  /// visible again.
   @override
   void didPopNext() {
+    if (_suppressSnapToToday) {
+      _suppressSnapToToday = false;
+      return;
+    }
     if (mounted) setState(_snapToToday);
   }
 
@@ -243,6 +277,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     routeObserver.unsubscribe(this);
+    _flashTimer?.cancel();
     _vScroll.dispose();
     _hSync.dispose();
     super.dispose();
@@ -425,6 +460,8 @@ class _TapeChartState extends ConsumerState<TapeChart>
                           hSync: _hSync,
                           onTapStay: (b, room) =>
                               _openBookingDetail(context, b),
+                          onLongPressStay: (b, room) =>
+                              _showStayQuickPeek(context, b),
                           onTapVacant: (roomId, day) => _takeBooking(
                             context,
                             roomId: roomId,
@@ -433,6 +470,9 @@ class _TapeChartState extends ConsumerState<TapeChart>
                           onTapDraft: (d) => _openDraft(context, d.id),
                           hitIds: hitIds,
                           activeHitId: activeHitId,
+                          roomKeyFor: _roomKeyFor,
+                          flashBookingId: _flashBookingId,
+                          flashRoomId: _flashRoomId,
                         ),
                       ),
                       const SizedBox(height: AppTheme.s12),
@@ -461,6 +501,132 @@ class _TapeChartState extends ConsumerState<TapeChart>
         builder: (_) => BookingDetailScreen(bookingId: booking.id),
       ),
     );
+  }
+
+  /// A long press's quick peek, the touch equivalent of the web tape
+  /// chart's own hover tooltip. Every room of a multi-room booking, and
+  /// every other booking this guest has coming up, is already sitting in
+  /// the loaded chart — a filter over what is on screen, nothing fetched.
+  Future<void> _showStayQuickPeek(
+    BuildContext context,
+    TapeChartBooking booking,
+  ) async {
+    final data = ref.read(bookingViewModelProvider).chart.valueOrNull;
+    final allBookings = data?.bookings ?? const <TapeChartBooking>[];
+    final siblings = allBookings.where((b) => b.id == booking.id).toList();
+    final roomsById = {for (final r in data?.rooms ?? const []) r.id: r};
+
+    // The same guest's other stays that haven't started yet — matched on
+    // phone, or on name where no phone was taken — one per booking, soonest
+    // first. Mirrors the web tape chart's own `futureStaysOf`.
+    final today = DateTime.now();
+    final todayKey = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).toIso8601String();
+    bool sameGuest(TapeChartBooking b) =>
+        (booking.guestPhone != null && booking.guestPhone!.isNotEmpty)
+        ? b.guestPhone == booking.guestPhone
+        : booking.guestName != null && b.guestName == booking.guestName;
+    final seenBookingIds = <int>{};
+    final upcoming = <TapeChartBooking>[];
+    for (final b in allBookings) {
+      if (b.id == booking.id) continue;
+      if (b.status == 'CANCELLED') continue;
+      if ((b.checkInDate ?? '').compareTo(todayKey) <= 0) continue;
+      if (!sameGuest(b)) continue;
+      if (!seenBookingIds.add(b.id)) continue;
+      upcoming.add(b);
+    }
+    upcoming.sort(
+      (a, b) => (a.checkInDate ?? '').compareTo(b.checkInDate ?? ''),
+    );
+
+    _suppressSnapToToday = true;
+    final picked = await showTapeQuickPeekSheet(
+      context,
+      tapped: booking,
+      siblings: siblings.isEmpty ? [booking] : siblings,
+      upcoming: upcoming,
+      roomOf: (roomId) => roomsById[roomId],
+    );
+    if (picked != null && mounted) _flashRoom(picked);
+  }
+
+  /// Takes the chart to one room of a booking: its tile is highlighted and
+  /// scrolled into view — the page and the row's own sideways scroller
+  /// both. Nothing opens; the desk is finding the room, not editing it —
+  /// mirrors the web tape chart's own `jumpToStay`. A future booking picked
+  /// from the quick-peek sheet often sits in a month the chart hasn't loaded
+  /// yet, so this slides the window to it first (the same refetch paging
+  /// the month chips already does) rather than silently flashing nothing.
+  Future<void> _flashRoom(TapeChartBooking target) async {
+    final day = DateTime.tryParse(target.checkInDate ?? '');
+    if (day != null) {
+      final state = ref.read(bookingViewModelProvider);
+      final inWindow =
+          !day.isBefore(state.chartFrom) && day.isBefore(state.chartTo);
+      if (!inWindow) {
+        final from = DateTime(day.year, day.month, 1);
+        await ref
+            .read(bookingViewModelProvider.notifier)
+            .setChartRange(
+              from,
+              DateTime(from.year, from.month + 1, 1),
+              silent: true,
+            );
+        if (!mounted) return;
+      }
+    }
+    _flashTimer?.cancel();
+    setState(() {
+      _flashBookingId = target.id;
+      _flashRoomId = target.roomId;
+    });
+    // Waits for the frame after the setState above — when `_flashRoom` just
+    // reloaded a whole month because the picked date wasn't in the window
+    // already on screen, the provider's own `chartDates` already reflects
+    // that wider month, but the row widgets haven't rebuilt to match until
+    // this next frame. Jumping the horizontal scroll synchronously, against
+    // the still-narrow row from the last frame, clamps short of a date past
+    // the old window's edge and never gets corrected once the wider row
+    // actually mounts — leaving the flashed tile highlighted but scrolled
+    // out of view.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToDate(target.checkInDate);
+      _jumpToKey(_roomKeyFor(target.roomId));
+    });
+    _flashTimer = Timer(const Duration(milliseconds: 3200), () {
+      if (!mounted) return;
+      if (_flashBookingId == target.id && _flashRoomId == target.roomId) {
+        setState(() {
+          _flashBookingId = null;
+          _flashRoomId = null;
+        });
+      }
+    });
+  }
+
+  /// Scrolls every strip to the night [iso] falls on, same landing math as
+  /// [_scrollToToday]. A silent no-op if that night isn't in the window
+  /// currently loaded — [_flashRoom] has already made sure it is before
+  /// calling this, so this only ever no-ops on a malformed date.
+  void _scrollToDate(String? iso) {
+    final day = DateTime.tryParse(iso ?? '');
+    if (day == null) return;
+    final target = DateTime(day.year, day.month, day.day);
+    final dates = ref.read(bookingViewModelProvider).chartDates;
+    final index = dates.indexWhere(
+      (d) =>
+          d.year == target.year &&
+          d.month == target.month &&
+          d.day == target.day,
+    );
+    if (index == -1) return;
+    final offset = (index - 1).clamp(0, dates.length - 1) * _tile;
+    _hSync.jumpAllTo(offset);
   }
 
   Future<void> _takeBooking(
@@ -1419,10 +1585,15 @@ class _CategoryBand extends StatelessWidget {
   final double rowHeight;
   final _HorizontalSync hSync;
   final void Function(TapeChartBooking booking, ChartRoom room) onTapStay;
+  final void Function(TapeChartBooking booking, ChartRoom room)
+  onLongPressStay;
   final void Function(int roomId, DateTime day) onTapVacant;
   final ValueChanged<TapeChartDraft> onTapDraft;
   final Set<int> hitIds;
   final int? activeHitId;
+  final GlobalKey Function(int roomId) roomKeyFor;
+  final int? flashBookingId;
+  final int? flashRoomId;
 
   const _CategoryBand({
     required this.section,
@@ -1435,8 +1606,12 @@ class _CategoryBand extends StatelessWidget {
     required this.hitIds,
     required this.activeHitId,
     required this.onTapStay,
+    required this.onLongPressStay,
     required this.onTapVacant,
     required this.onTapDraft,
+    required this.roomKeyFor,
+    required this.flashBookingId,
+    required this.flashRoomId,
   });
 
   @override
@@ -1491,6 +1666,7 @@ class _CategoryBand extends StatelessWidget {
           // already-rasterised layers instead of repainting every row's
           // tiles again each frame.
           RepaintBoundary(
+            key: roomKeyFor(room.room.id),
             child: _RoomRow(
               room: room,
               dates: dates,
@@ -1500,10 +1676,13 @@ class _CategoryBand extends StatelessWidget {
               rowHeight: rowHeight,
               hSync: hSync,
               onTapStay: onTapStay,
+              onLongPressStay: onLongPressStay,
               onTapVacant: onTapVacant,
               onTapDraft: onTapDraft,
               hitIds: hitIds,
               activeHitId: activeHitId,
+              isFlashRoom: flashRoomId != null && room.room.id == flashRoomId,
+              flashBookingId: flashBookingId,
             ),
           ),
         // The web tape chart's own scroller is a plain `overflow-x: auto`
@@ -1565,10 +1744,18 @@ class _RoomRow extends StatelessWidget {
   final double rowHeight;
   final _HorizontalSync hSync;
   final void Function(TapeChartBooking booking, ChartRoom room) onTapStay;
+  final void Function(TapeChartBooking booking, ChartRoom room)
+  onLongPressStay;
   final void Function(int roomId, DateTime day) onTapVacant;
   final ValueChanged<TapeChartDraft> onTapDraft;
   final Set<int> hitIds;
   final int? activeHitId;
+
+  /// True when this row is the one room a quick-peek pick is pointing at —
+  /// [flashBookingId] then narrows it down to the one tile on that room's
+  /// own stay, same as [isHit]/[activeHitId] narrow a search hit.
+  final bool isFlashRoom;
+  final int? flashBookingId;
 
   const _RoomRow({
     required this.room,
@@ -1579,10 +1766,13 @@ class _RoomRow extends StatelessWidget {
     required this.rowHeight,
     required this.hSync,
     required this.onTapStay,
+    required this.onLongPressStay,
     required this.onTapVacant,
     required this.onTapDraft,
     required this.hitIds,
     required this.activeHitId,
+    required this.isFlashRoom,
+    required this.flashBookingId,
   });
 
   @override
@@ -1690,9 +1880,14 @@ class _RoomRow extends StatelessWidget {
                           isActiveHit:
                               activeHitId != null &&
                               room.stayOn(d)?.id == activeHitId,
+                          isFlash:
+                              isFlashRoom &&
+                              flashBookingId != null &&
+                              room.stayOn(d)?.id == flashBookingId,
                           size: tile,
                           height: rowHeight,
                           onTapStay: (b) => onTapStay(b, room),
+                          onLongPressStay: (b) => onLongPressStay(b, room),
                           onTapVacant: () => onTapVacant(room.room.id, d),
                           onTapDraft: onTapDraft,
                         ),
@@ -1733,8 +1928,16 @@ class _Tile extends StatelessWidget {
   final double size;
   final double height;
   final ValueChanged<TapeChartBooking> onTapStay;
+  final ValueChanged<TapeChartBooking> onLongPressStay;
   final VoidCallback onTapVacant;
   final ValueChanged<TapeChartDraft> onTapDraft;
+
+  /// The one tile a quick-peek pick just sent the chart to — filled a flat
+  /// amber for a few seconds, same moment the web tape chart's own
+  /// `.tape-tile--flash` marks, then fades back to its usual fill.
+  final bool isFlash;
+
+  static const _flashColor = Color(0xFFFFA726);
 
   const _Tile({
     required this.stay,
@@ -1749,9 +1952,11 @@ class _Tile extends StatelessWidget {
     required this.isWeekend,
     required this.isHit,
     required this.isActiveHit,
+    required this.isFlash,
     required this.size,
     required this.height,
     required this.onTapStay,
+    required this.onLongPressStay,
     required this.onTapVacant,
     required this.onTapDraft,
   });
@@ -1825,6 +2030,9 @@ class _Tile extends StatelessWidget {
           : d != null
           ? () => onTapDraft(d)
           : onTapVacant,
+      // Only a real stay has a tooltip-style peek worth showing — a vacant
+      // night or a draft already says everything it has on the tile itself.
+      onLongPress: !isPartial && s != null ? () => onLongPressStay(s) : null,
       child: Container(
         width: size,
         height: height,
@@ -1836,8 +2044,22 @@ class _Tile extends StatelessWidget {
         ),
         child: Container(
           decoration: BoxDecoration(
-            color: isPartial ? null : _fill,
-            gradient: isPartial
+            // A quick-peek pick lights the tile up a flat, unmistakable
+            // amber — distinct from every other colour the chart already
+            // uses for status, search or today — rather than only ringing
+            // it, so it still reads clearly against a tile already its own
+            // bright fill (checked-in green, reserved orange-brown, …).
+            color: isFlash ? _flashColor : (isPartial ? null : _fill),
+            boxShadow: isFlash
+                ? [
+                    BoxShadow(
+                      color: _flashColor.withValues(alpha: 0.65),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+            gradient: isPartial && !isFlash
                 ? LinearGradient(
                     colors: [
                       AppTheme.reserved,
@@ -1864,7 +2086,9 @@ class _Tile extends StatelessWidget {
             // night: the fill colour already says the room is taken (or
             // parked), and a ring drawn on just one night of a run would cut
             // a notch into an otherwise unbroken bar.
-            border: isActiveHit
+            border: isFlash
+                ? Border.all(color: const Color(0xFFB8540A), width: 2.5)
+                : isActiveHit
                 ? Border.all(color: const Color(0xFF7C3AED), width: 2.2)
                 : isHit
                 ? Border.all(
