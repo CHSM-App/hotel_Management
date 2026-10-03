@@ -1,4 +1,5 @@
 import BillDocument from './BillDocument';
+import { roomSections } from './multiRoom';
 import IconButton from '../../components/IconButton';
 import { EyeIcon } from '../../components/ActionIcons';
 import './stayDetails.css';
@@ -29,6 +30,16 @@ const ROOM_STATUS_LABEL = {
 // The ID-proof "View" links only appear when the caller supplies a handler.
 // Billing staff read this to decide what to charge, not to inspect a guest's
 // documents, and the routes behind those links want a different permission.
+const formatNightDate = (key) =>
+  new Date(`${String(key).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// The night after a room's last night is the day it checks out.
+const addOneNight = (key) => {
+  const d = new Date(`${String(key).slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
+
 export default function StayDetails({
   booking,
   idProofError = '',
@@ -395,17 +406,44 @@ export default function StayDetails({
               one applied to. Read from the booking's own snapshot, so it says what
               was charged even if a season or an extra has been re-priced since. */}
           <div className="pb__group">Room</div>
-          {booking.roomCharges?.map((line) => (
-            <div className="sim-result__line sim-result__line--part" key={line.label}>
-              <span>
-                {line.label}
-                {line.nights > 1 && line.amount > 0 && (
-                  <span className="sim-result__part-nights">× {line.nights} nights</span>
-                )}
-              </span>
-              <span>{formatPrice(line.amount)}</span>
-            </div>
-          ))}
+          {(() => {
+            const row = (line, label = line.label) => (
+              <div className="sim-result__line sim-result__line--part" key={label}>
+                <span>
+                  {label}
+                  {line.nights > 1 && line.amount > 0 && (
+                    <span className="sim-result__part-nights">× {line.nights} nights</span>
+                  )}
+                </span>
+                <span>{formatPrice(line.amount)}</span>
+              </div>
+            );
+            const rooms = roomSections(booking.roomCharges);
+            // Rooms on their own dates say so; rooms sharing the stay don't repeat it.
+            const datesDiffer = rooms && new Set(rooms.map((r) => `${r.base.firstDate}|${r.base.lastDate}`)).size > 1;
+            if (!rooms) return booking.roomCharges?.map((line) => row(line));
+            // One block per room, as the bill prints it: the room and its nights,
+            // then its own rate and extras, then what that room came to.
+            return rooms.map(({ room, base, extras }) => (
+              <div className="pb__room" key={room}>
+                <div className="pb__room-head">
+                  <strong>
+                    Room {room} · {base.nights} {base.nights === 1 ? 'night' : 'nights'}
+                  </strong>
+                  {datesDiffer && base.firstDate && (
+                    <span>
+                      {formatNightDate(base.firstDate)} → {formatNightDate(addOneNight(base.lastDate))}
+                    </span>
+                  )}
+                </div>
+                {[base, ...extras].map((line) => row(line))}
+                <div className="sim-result__line pb__room-total">
+                  <span>Room {room} total</span>
+                  <span>{formatPrice([base, ...extras].reduce((sum, l) => sum + l.amount, 0))}</span>
+                </div>
+              </div>
+            ));
+          })()}
           <div className="pb__sub">
             <span>Room charge for {booking.nights?.length === 1 ? 'the night' : 'all nights'}</span>
             <span>{formatPrice(booking.totalPrice)}</span>

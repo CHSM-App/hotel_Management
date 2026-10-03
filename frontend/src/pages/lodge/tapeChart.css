@@ -1882,3 +1882,84 @@
     opacity: 0.85;
   }
 }
+
+/* A several-room booking's card: the pointer can move onto it, and its rooms are
+   buttons. The pseudo-element bridges the gap to the tile so crossing it does
+   not count as leaving. */
+.tape-tooltip--sticky {
+  pointer-events: auto;
+  max-width: 280px;
+}
+
+.tape-tooltip--sticky::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -12px;
+  height: 12px;
+}
+
+.tape-tooltip--sticky.tape-tooltip--below::after {
+  bottom: auto;
+  top: -12px;
+}
+
+.tape-tooltip__rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tape-tooltip__room {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tape-tooltip__room:hover,
+.tape-tooltip__room:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tape-tooltip__room span {
+  opacity: 0.8;
+  font-size: 11px;
+}
+
+.tape-tooltip__room--here {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* The stay a click on the card just took the chart to: one outline round the
+   whole run of boxes — top and bottom on every box, a side only on the first
+   and last — rather than a ring round each box with seams between them. */
+.tape-tile--flash {
+  --flash: var(--brand, #5b3fd0);
+  position: relative;
+  z-index: 2;
+  box-shadow: inset 0 3px 0 var(--flash), inset 0 -3px 0 var(--flash);
+}
+
+.tape-tile--flash.tape-tile--start {
+  box-shadow: inset 0 3px 0 var(--flash), inset 0 -3px 0 var(--flash), inset 3px 0 0 var(--flash);
+}
+
+.tape-tile--flash.tape-tile--end {
+  box-shadow: inset 0 3px 0 var(--flash), inset 0 -3px 0 var(--flash), inset -3px 0 0 var(--flash);
+}
+
+.tape-tile--flash.tape-tile--start.tape-tile--end {
+  box-shadow: inset 0 0 0 3px var(--flash);
+}

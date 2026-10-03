@@ -86,39 +86,6 @@ export function roomsPayload(form) {
 // totals. The several-room quote comes back per room, so it is folded into that
 // shape: the first room's lines stay editable as they always were, and each
 // further room's lines are labelled with its room number and read-only.
-// The same extra on several rooms is one line with a room count and the summed
-// amount, editable as one total, which is shared out evenly across the rooms. An extra on
-// one room only stays as it was, editable.
-function groupSharedExtras(charges) {
-  const keyOf = (c) => (c.chargeId != null && !c.isBase ? `${c.chargeId}|${c.rawLabel}|${c.nights}` : null);
-  const groups = new Map();
-  for (const c of charges) {
-    const key = keyOf(c);
-    if (key) groups.set(key, [...(groups.get(key) ?? []), c]);
-  }
-  const done = new Set();
-  const out = [];
-  for (const c of charges) {
-    const key = keyOf(c);
-    const group = key && groups.get(key);
-    if (!group || group.length < 2) {
-      out.push(c);
-    } else if (!done.has(key)) {
-      done.add(key);
-      out.push({
-        label: `${c.rawLabel} × ${group.length} rooms`,
-        amount: group.reduce((sum, g) => Math.round((sum + g.amount) * 100) / 100, 0),
-        isBase: false,
-        nights: c.nights,
-        // The lines it stands for, so a typed total can be shared back out.
-        members: group,
-        groupKey: key,
-      });
-    }
-  }
-  return out.map(({ rawLabel, ...c }) => c);
-}
-
 export function combineQuote(response, roomNumbers) {
   const [first, ...rest] = response.rooms;
   const nightDates = new Set();
@@ -128,7 +95,6 @@ export function combineQuote(response, roomNumbers) {
       // different lengths, so the stay's night count is wrong for most of them.
       ...first.charges.map((c) => ({
         ...c,
-        rawLabel: c.label,
         label: `Room ${roomNumbers[0] ?? ''} · ${c.label}`.replace('Room  ·', 'Room ·'),
         nights: first.nights.length,
       })),
@@ -137,8 +103,7 @@ export function combineQuote(response, roomNumbers) {
       ...rest.flatMap((room, i) =>
         room.charges.map((c) => ({
           label: `Room ${roomNumbers[i + 1] ?? ''} · ${c.label}`.replace('Room  ·', 'Room ·'),
-          rawLabel: c.label,
-          amount: c.amount,
+            amount: c.amount,
           isBase: Boolean(c.isBase),
           chargeId: c.chargeId,
           quantity: c.quantity,
@@ -148,7 +113,7 @@ export function combineQuote(response, roomNumbers) {
       ),
   ];
   return {
-    charges: groupSharedExtras(charges),
+    charges,
     nights: Array.from(nightDates).map((date) => ({ date })),
     grossTotal: response.grossTotal,
     discountAmount: response.discountAmount,
@@ -236,3 +201,19 @@ export function toggleRoomChoice(form, room) {
 export function pickedRoomIds(form) {
   return [form.roomId, ...(form.extraRooms ?? []).map((r) => r.roomId)].filter(Boolean).map(String);
 }
+
+// A booking of several rooms stores each room's lines as "Room 101 · Standard
+// ₹1,200" (see mergeRoomNights). Split back into one block per room — the first
+// line of a room is its nightly rate, the rest are its extras. Null for a
+// single-room bill, or an older one whose lines carry no room.
+export function roomSections(roomCharges = []) {
+  const rooms = new Map();
+  for (const line of roomCharges) {
+    const m = /^Room (.+?) · (.*)$/.exec(line.label);
+    if (!m) return null;
+    if (!rooms.has(m[1])) rooms.set(m[1], []);
+    rooms.get(m[1]).push({ ...line, label: m[2] });
+  }
+  return rooms.size > 1 ? Array.from(rooms, ([room, lines]) => ({ room, base: lines[0], extras: lines.slice(1) })) : null;
+}
+
