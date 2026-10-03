@@ -1053,6 +1053,24 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
 
 // ── Where it goes ───────────────────────────────────────────────────────────
 
+/// What the picker sheet hands back when the desk taps a row — a kind and,
+/// for a room or table, which one. Resolved against the live [rooms] /
+/// [tables] lists by [_TargetField._open] rather than carrying the object
+/// itself, so the sheet only ever needs an id.
+enum _TargetKind { counter, room, table }
+
+class _TargetChoice {
+  final _TargetKind kind;
+  final int? id;
+  const _TargetChoice(this.kind, this.id);
+}
+
+/// Opens a styled dropdown panel anchored right under the field — not a
+/// sheet taking over the screen — with Counter, then every room, then every
+/// table as grouped rows behind icons, instead of the plain system dropdown
+/// this replaces. The field itself shows the current choice as an icon +
+/// name, same shape as the rest of this screen's fields, so it doesn't look
+/// like a different kind of control.
 class _TargetField extends StatelessWidget {
   final List<DiningTable> tables;
   final List<RoomListing> rooms;
@@ -1070,65 +1088,226 @@ class _TargetField extends StatelessWidget {
     required this.onSelectRoom,
   });
 
-  // Same shape the web's own <select> keys its options with —
-  // "${kind}:${id}" — so a room and a table can never collide even though
-  // both count up from 1 in their own tables.
-  static const _counterKey = 'C';
+  bool get _isCounter => selectedRoom == null && selectedTable == null;
+
+  IconData get _icon => selectedRoom != null
+      ? Icons.bed_rounded
+      : selectedTable != null
+      ? Icons.table_restaurant_rounded
+      : Icons.point_of_sale_rounded;
+
+  String get _label => selectedRoom != null
+      ? 'Room ${selectedRoom!.roomNumber}'
+      : selectedTable != null
+      ? selectedTable!.label
+      : 'Counter / takeaway';
+
+  PopupMenuEntry<_TargetChoice> _groupLabel(String label) {
+    return PopupMenuItem<_TargetChoice>(
+      enabled: false,
+      height: 28,
+      padding: const EdgeInsets.fromLTRB(AppTheme.s8, AppTheme.s12, AppTheme.s8, 0),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppTheme.muted,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+
+  // Each row is its own bordered tile with a gap under it, rather than a
+  // packed list where one row's text sits flush against the next — on a
+  // phone a thumb covers several cramped rows at once, and nothing short of
+  // guessing says which one actually got the tap. A boxed tile with daylight
+  // around it is an unambiguous target, and the selected one keeps its
+  // accent border and check after the menu closes and reopens, so the field
+  // above and the list agree at a glance on what's chosen.
+  PopupMenuEntry<_TargetChoice> _row({
+    required _TargetChoice choice,
+    required IconData icon,
+    required String label,
+    required bool selected,
+  }) {
+    return PopupMenuItem<_TargetChoice>(
+      value: choice,
+      height: 54,
+      padding: const EdgeInsets.fromLTRB(AppTheme.s8, 4, AppTheme.s8, 4),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: AppTheme.s8,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.accent.withValues(alpha: 0.08) : AppTheme.bg,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(
+            color: selected ? AppTheme.accent : AppTheme.border,
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: selected ? AppTheme.accent : AppTheme.muted,
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? AppTheme.accent : AppTheme.heading,
+                  fontSize: 14.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+            if (selected)
+              const Icon(
+                Icons.check_circle_rounded,
+                size: 19,
+                color: AppTheme.accent,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    final choice = await showMenu<_TargetChoice>(
+      context: context,
+      position: position,
+      color: AppTheme.card,
+      elevation: 6,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      constraints: BoxConstraints(
+        minWidth: button.size.width,
+        maxWidth: button.size.width,
+        maxHeight: 400,
+      ),
+      items: [
+        _row(
+          choice: const _TargetChoice(_TargetKind.counter, null),
+          icon: Icons.point_of_sale_rounded,
+          label: 'Counter / takeaway',
+          selected: _isCounter,
+        ),
+        if (rooms.isNotEmpty) ...[
+          _groupLabel('ROOMS'),
+          for (final room in rooms)
+            _row(
+              choice: _TargetChoice(_TargetKind.room, room.id),
+              icon: Icons.bed_rounded,
+              label: 'Room ${room.roomNumber}',
+              selected: selectedRoom?.id == room.id,
+            ),
+        ],
+        if (tables.isNotEmpty) ...[
+          _groupLabel('TABLES'),
+          for (final table in tables)
+            _row(
+              choice: _TargetChoice(_TargetKind.table, table.id),
+              icon: Icons.table_restaurant_rounded,
+              label: table.label,
+              selected: selectedTable?.id == table.id,
+            ),
+        ],
+      ],
+    );
+    if (choice == null) return;
+    switch (choice.kind) {
+      case _TargetKind.counter:
+        onSelectRoom(null);
+        onSelectTable(null);
+        break;
+      case _TargetKind.room:
+        onSelectTable(null);
+        onSelectRoom(rooms.firstWhere((r) => r.id == choice.id));
+        break;
+      case _TargetKind.table:
+        onSelectRoom(null);
+        onSelectTable(tables.firstWhere((t) => t.id == choice.id));
+        break;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final value = selectedRoom != null
-        ? 'R:${selectedRoom!.id}'
-        : selectedTable != null
-        ? 'T:${selectedTable!.id}'
-        : _counterKey;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          isDense: false,
-          icon: const Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: AppTheme.muted,
-            size: 20,
-          ),
-          dropdownColor: AppTheme.card,
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      onTap: () => _open(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: AppTheme.s12,
+        ),
+        decoration: BoxDecoration(
+          color: AppTheme.bg,
           borderRadius: BorderRadius.circular(AppTheme.rMedium),
-          style: const TextStyle(color: AppTheme.heading, fontSize: 15),
-          items: [
-            const DropdownMenuItem(
-              value: _counterKey,
-              child: Text('Counter / takeaway'),
-            ),
-            for (final room in rooms)
-              DropdownMenuItem(
-                value: 'R:${room.id}',
-                child: Text('Room ${room.roomNumber}'),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: _isCounter
+                    ? null
+                    : const LinearGradient(
+                        colors: [AppTheme.accent, Color(0xFF434FC1)],
+                      ),
+                color: _isCounter ? AppTheme.card : null,
+                border: _isCounter ? Border.all(color: AppTheme.border) : null,
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
               ),
-            for (final table in tables)
-              DropdownMenuItem(value: 'T:${table.id}', child: Text(table.label)),
+              child: Icon(
+                _icon,
+                color: _isCounter ? AppTheme.muted : Colors.white,
+                size: 17,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _label,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(
+              Icons.unfold_more_rounded,
+              color: AppTheme.muted,
+              size: 20,
+            ),
           ],
-          onChanged: (key) {
-            if (key == null || key == _counterKey) {
-              onSelectRoom(null);
-              onSelectTable(null);
-              return;
-            }
-            final id = int.parse(key.substring(2));
-            if (key.startsWith('R:')) {
-              onSelectRoom(rooms.firstWhere((r) => r.id == id));
-            } else {
-              onSelectTable(tables.firstWhere((t) => t.id == id));
-            }
-          },
         ),
       ),
     );
