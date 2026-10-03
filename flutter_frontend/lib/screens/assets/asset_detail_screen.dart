@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -657,7 +658,7 @@ class _PurchasePaymentsSectionState extends ConsumerState<_PurchasePaymentsSecti
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 1),
@@ -1000,7 +1001,7 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
 
   Future<void> _pickDate(TextEditingController controller) async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 15),

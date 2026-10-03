@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart' as dio;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -196,7 +197,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   Future<void> _pickDate(TextEditingController controller, {bool allowFuture = true}) async {
     final now = DateTime.now();
     final initial = DateTime.tryParse(controller.text) ?? now;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: DateTime(now.year - 15),
       lastDate: allowFuture ? DateTime(now.year + 15) : now,

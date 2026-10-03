@@ -11,6 +11,8 @@ class BillableStay {
   final String? checkInDate;
   final String? checkOutDate;
   final num? totalPrice;
+  final num? foodTotal;
+  final num? lateCheckoutCharge;
   final num? advanceAmount;
   final String? actualCheckOutAt;
 
@@ -23,6 +25,8 @@ class BillableStay {
     this.checkInDate,
     this.checkOutDate,
     this.totalPrice,
+    this.foodTotal,
+    this.lateCheckoutCharge,
     this.advanceAmount,
     this.actualCheckOutAt,
   });
@@ -36,11 +40,26 @@ class BillableStay {
     checkInDate: asStringOrNull(json['checkInDate']),
     checkOutDate: asStringOrNull(json['checkOutDate']),
     totalPrice: asNumOrNull(json['totalPrice']),
+    foodTotal: asNumOrNull(json['foodTotal']),
+    lateCheckoutCharge: asNumOrNull(json['lateCheckoutCharge']),
     advanceAmount: asNumOrNull(json['advanceAmount']),
     actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
   );
 
-  num get balanceDue => (totalPrice ?? 0) - (advanceAmount ?? 0);
+  /// Room charge + late checkout + any open food tab, same as the web's own
+  /// `b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0)`.
+  num get subtotal =>
+      (totalPrice ?? 0) + (lateCheckoutCharge ?? 0) + (foodTotal ?? 0);
+
+  num get balanceDue => subtotal - (advanceAmount ?? 0);
+
+  int get nights {
+    if (checkInDate == null || checkOutDate == null) return 0;
+    final inD = DateTime.tryParse(checkInDate!);
+    final outD = DateTime.tryParse(checkOutDate!);
+    if (inD == null || outD == null) return 0;
+    return outD.difference(inD).inDays;
+  }
 }
 
 /// One side of a bill — the GST reading or the non-GST one.

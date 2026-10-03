@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 
 import '../../domain/models/report.dart';
 import '../../widgets/neu.dart';
@@ -742,7 +743,7 @@ class _DateFilterField extends StatelessWidget {
       onTap: () async {
         final now = DateTime.now();
         final min = minDate != null ? DateTime.tryParse(minDate!) : null;
-        final picked = await showDatePicker(
+        final picked = await showAppDatePicker(
           context: context,
           initialDate: parsed ?? now,
           firstDate: min ?? DateTime(now.year - 10),

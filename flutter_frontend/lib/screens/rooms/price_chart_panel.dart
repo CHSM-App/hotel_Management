@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
@@ -672,7 +673,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
     final firstDate = start ? earliest : _startDate;
     var initialDate = start ? _startDate : _endDate;
     if (initialDate.isBefore(firstDate)) initialDate = firstDate;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: initialDate,
       firstDate: firstDate,

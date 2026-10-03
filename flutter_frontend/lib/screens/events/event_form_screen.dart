@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/draft.dart';
@@ -284,7 +285,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   Future<void> _pickDate({required bool isStart}) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       // An event can't end before it starts, so the end calendar starts there.
       firstDate: isStart
@@ -345,7 +346,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         : (_roomsFrom ?? today.subtract(const Duration(days: 365)));
     var initialDate = (isFrom ? _roomsFrom : _roomsTo) ?? _startDate;
     if (initialDate.isBefore(firstDate)) initialDate = firstDate;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: firstDate,
       lastDate: today.add(const Duration(days: 730)),

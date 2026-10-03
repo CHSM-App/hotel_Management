@@ -6,6 +6,7 @@ import '../../domain/models/invoice.dart';
 import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
+import '../../widgets/compact_date_picker.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../billing/invoice_preview_screen.dart';
@@ -361,7 +362,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             return;
           }
           final now = DateTime.now();
-          final range = await showDateRangePicker(
+          final range = await showAppDateRangePicker(
             context: context,
             initialDateRange: DateTimeRange(
               start: state.historyCustomFrom,
@@ -730,7 +731,7 @@ class _TabRow extends StatelessWidget {
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
                   style: TextStyle(
-                    color: isSelected ? AppTheme.accent : AppTheme.text,
+                    color: isSelected ? Colors.white : AppTheme.heading,
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                     fontSize: 13,
                   ),
@@ -762,9 +763,19 @@ class _TabRow extends StatelessWidget {
               child: Container(
                 height: _height - 8,
                 decoration: BoxDecoration(
-                  color: AppTheme.card,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  ),
                   borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: AppTheme.extruded,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -992,8 +1003,8 @@ class OrdersViewToggle extends StatelessWidget {
   }
 }
 
-/// History's own period picker — Today, This month, or a custom range, as
-/// three always-visible chips, same as OrdersPanel.jsx's own
+/// History's own period picker — Today, This month, This year, or a custom
+/// range, as always-visible chips, same as OrdersPanel.jsx's own
 /// `order-history__filters` period row — not folded behind a funnel icon.
 class _PeriodChipsRow extends StatelessWidget {
   final String period;
@@ -1051,6 +1062,7 @@ class _PeriodChipsRow extends StatelessWidget {
         children: [
           chip('today', 'Today'),
           chip('month', 'This month'),
+          chip('year', 'This year'),
           chip('custom', period == 'custom' ? _customLabel : 'Custom'),
         ],
       ),
@@ -2218,10 +2230,79 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                   if (_open.contains(widget.orders[i].id))
                     _dishesExpanded(widget.orders[i], shaded: i.isOdd),
                 ],
+                _sheetFooter(),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// "N orders", and the total they add up to — same closing summary the
+  /// billing screen's own invoice table ends on (`_InvoiceTableFooter`), so
+  /// a spreadsheet full of tickets doesn't leave the day's total to be
+  /// added up by eye.
+  Widget _sheetFooter() {
+    final total = widget.orders.fold<num>(0, (sum, o) => sum + o.subtotal);
+    // "Total" sits at the same column index (6) in both the live and
+    // history layouts — what trails it differs (Actions alone vs. Took then
+    // Actions), so the spacer after the amount sums whatever's left rather
+    // than assuming a fixed final column.
+    const totalIndex = 6;
+    final labelWidth =
+        _widths.sublist(0, totalIndex).reduce((a, b) => a + b) + _railWidth;
+    final amountWidth = _widths[totalIndex];
+    final trailingWidth = _widths
+        .sublist(totalIndex + 1)
+        .fold<double>(0, (a, b) => a + b);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        border: Border(top: BorderSide(color: AppTheme.border, width: 0.8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: labelWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                '${widget.orders.length} order'
+                '${widget.orders.length == 1 ? '' : 's'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: amountWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                formatPrice(total),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: trailingWidth),
+        ],
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/expense.dart';
@@ -53,7 +54,7 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
     final firstDate = isFrom ? earliest : (DateTime.tryParse(_fromDate ?? '') ?? earliest);
     var initialDate = current != null ? (DateTime.tryParse(current) ?? now) : now;
     if (initialDate.isBefore(firstDate)) initialDate = firstDate;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: firstDate,
       lastDate: DateTime(now.year + 1),
