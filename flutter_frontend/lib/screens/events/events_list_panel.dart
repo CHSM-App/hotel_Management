@@ -239,7 +239,7 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
               else
                 for (final ev in shown)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                    padding: const EdgeInsets.only(bottom: AppTheme.s8 - 2),
                     child: _EventCard(
                       event: ev,
                       onTap: () async {
@@ -553,6 +553,27 @@ class _EventStatusChip extends StatelessWidget {
   }
 }
 
+/// One icon-and-colour pair per function type — gives each card a glance-able
+/// identity beyond its title, the same way [_kEventStatusIcon] does for
+/// status.
+const _kEventTypeIcon = <String, IconData>{
+  'BIRTHDAY': Icons.cake_rounded,
+  'WEDDING': Icons.favorite_rounded,
+  'RECEPTION': Icons.celebration_rounded,
+  'ENGAGEMENT': Icons.diamond_rounded,
+  'CORPORATE': Icons.business_center_rounded,
+  'OTHER': Icons.event_rounded,
+};
+
+const _kEventTypeColor = <String, Color>{
+  'BIRTHDAY': Color(0xFFE0A72E),
+  'WEDDING': Color(0xFFC0392B),
+  'RECEPTION': Color(0xFF9B59B6),
+  'ENGAGEMENT': Color(0xFFD63384),
+  'CORPORATE': Color(0xFF2F7FE4),
+  'OTHER': AppTheme.accent,
+};
+
 class _EventCard extends StatelessWidget {
   final EventBooking event;
   final VoidCallback onTap;
@@ -566,81 +587,117 @@ class _EventCard extends StatelessWidget {
     _ => AppTheme.border,
   };
 
+  Color get _typeColor => _kEventTypeColor[event.eventType] ?? AppTheme.accent;
+
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    final cancelled = event.status == 'CANCELLED';
+
+    final card = NeuCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(width: 4, height: 40, decoration: BoxDecoration(color: _statusColor, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        event.title,
-                        style: Theme.of(context).textTheme.titleSmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      radius: AppTheme.rMedium,
+      padding: const EdgeInsets.fromLTRB(AppTheme.s8, AppTheme.s8, AppTheme.s12, AppTheme.s8),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              margin: const EdgeInsets.only(top: 2),
+              decoration: BoxDecoration(color: _typeColor.withValues(alpha: 0.12), shape: BoxShape.circle),
+              child: Icon(_kEventTypeIcon[event.eventType] ?? Icons.event_rounded, size: 17, color: _typeColor),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          event.title,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 13.5),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
-                      child: Text(
-                        kEventStatusLabel[event.status] ?? event.status,
-                        style: TextStyle(color: _statusColor, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                        decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                        child: Text(
+                          kEventStatusLabel[event.status] ?? event.status,
+                          style: TextStyle(color: _statusColor, fontSize: 9.5, fontWeight: FontWeight.w700),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${kEventTypeLabel[event.eventType] ?? event.eventType} · ${event.venueName}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${formatDateTime(event.startAt)} · ${event.organiserName}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.text),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        formatPrice(event.totalAmount),
-                        style: Theme.of(context).textTheme.titleSmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (event.balanceDue > 0) ...[
-                      const SizedBox(width: 8),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${kEventTypeLabel[event.eventType] ?? event.eventType} · ${event.venueName}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(Icons.schedule_rounded, size: 11, color: AppTheme.muted),
+                      const SizedBox(width: 3),
                       Flexible(
                         child: Text(
-                          'Balance ${formatPrice(event.balanceDue)}',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.danger),
+                          '${formatDateTime(event.startAt)} · ${event.organiserName}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.text, fontSize: 11),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        formatPrice(event.totalAmount),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 13),
+                      ),
+                      const Spacer(),
+                      if (event.balanceDue > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            'Due ${formatPrice(event.balanceDue)}',
+                            style: const TextStyle(color: AppTheme.danger, fontSize: 10, fontWeight: FontWeight.w700),
+                          ),
+                        )
+                      else
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.check_circle_rounded, size: 12, color: AppTheme.vacant),
+                            SizedBox(width: 3),
+                            Text('Paid', style: TextStyle(color: AppTheme.vacant, fontSize: 10, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+
+    if (!cancelled) return card;
+    return Opacity(opacity: 0.8, child: card);
   }
 }

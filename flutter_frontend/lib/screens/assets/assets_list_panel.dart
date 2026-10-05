@@ -108,7 +108,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                       decoration: BoxDecoration(
                         color: AppTheme.card,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.border),
+                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(

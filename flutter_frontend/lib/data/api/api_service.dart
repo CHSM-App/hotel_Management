@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import '../../domain/models/asset.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
+import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/event_booking.dart';
 import '../../domain/models/expense.dart';
@@ -1207,6 +1208,35 @@ class ApiService {
 
   Future<void> deleteSeason(int id) async {
     await _dio.delete('/seasons/$id');
+  }
+
+  // ===== CHECKOUT POLICY =====
+
+  Future<CheckoutPolicy> checkoutPolicy() async {
+    final res = await _dio.get('/rooms/checkout-policy');
+    return CheckoutPolicy.fromJson(_map(res.data)['policy'] as Map<String, dynamic>);
+  }
+
+  Future<CheckoutPolicy> updateCheckoutPolicy({
+    required String checkOutTime,
+    String? checkInTime,
+    required int lateGraceMinutes,
+    required num lateHalfDayPercent,
+    required int lateFullDayAfterMinutes,
+    required num lateFullDayPercent,
+  }) async {
+    final res = await _dio.patch(
+      '/rooms/checkout-policy',
+      data: {
+        'checkOutTime': checkOutTime,
+        if (checkInTime != null) 'checkInTime': checkInTime,
+        'lateGraceMinutes': lateGraceMinutes,
+        'lateHalfDayPercent': lateHalfDayPercent,
+        'lateFullDayAfterMinutes': lateFullDayAfterMinutes,
+        'lateFullDayPercent': lateFullDayPercent,
+      },
+    );
+    return CheckoutPolicy.fromJson(_map(res.data)['policy'] as Map<String, dynamic>);
   }
 
   // ===== REPORTS (reports.view) =====

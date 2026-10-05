@@ -54,59 +54,76 @@ class _NumberingScreenState extends ConsumerState<NumberingScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppTheme.s16,
-          AppTheme.s8,
-          AppTheme.s16,
-          AppTheme.s24,
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+        child: RefreshIndicator(
+          onRefresh: _load,
+          color: AppTheme.accent,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              NeuCard(
+                radius: AppTheme.rLarge,
+                padding: const EdgeInsets.all(AppTheme.s12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Bill numbering',
+                      style: TextStyle(
+                        color: AppTheme.heading,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Bills and advance receipts are numbered separately, each '
+                      'counting up on its own. Numbers already printed are never '
+                      'changed — this only sets where the next one continues from.',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 11.5, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              _SeriesCard(
+                key: ValueKey('final-${series['final']!.nextNumber}'),
+                icon: Icons.receipt_long_rounded,
+                title: 'Bills',
+                note: 'The bill a guest is given at checkout.',
+                series: series['final']!,
+                onSaved: (updated) =>
+                    setState(() => _series = {...series, 'final': updated}),
+                save: (next) =>
+                    ref.read(billingUsecaseProvider).updateBillingSeries('FINAL', next),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              _SeriesCard(
+                key: ValueKey('advance-${series['advance']!.nextNumber}'),
+                icon: Icons.payments_rounded,
+                title: 'Advance receipts',
+                note: 'The receipt for money taken when a booking is made.',
+                series: series['advance']!,
+                onSaved: (updated) =>
+                    setState(() => _series = {...series, 'advance': updated}),
+                save: (next) => ref
+                    .read(billingUsecaseProvider)
+                    .updateBillingSeries('ADVANCE', next),
+              ),
+            ],
+          ),
         ),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          Text(
-            'Bill numbering',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: AppTheme.s4),
-          Text(
-            'Bills and advance receipts are numbered separately, each '
-            'counting up on its own. Numbers already printed are never '
-            'changed — this only sets where the next one continues from.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppTheme.s16),
-          _SeriesCard(
-            key: ValueKey('final-${series['final']!.nextNumber}'),
-            title: 'Bills',
-            note: 'The bill a guest is given at checkout.',
-            series: series['final']!,
-            onSaved: (updated) =>
-                setState(() => _series = {...series, 'final': updated}),
-            save: (next) =>
-                ref.read(billingUsecaseProvider).updateBillingSeries('FINAL', next),
-          ),
-          const SizedBox(height: AppTheme.s12),
-          _SeriesCard(
-            key: ValueKey('advance-${series['advance']!.nextNumber}'),
-            title: 'Advance receipts',
-            note: 'The receipt for money taken when a booking is made.',
-            series: series['advance']!,
-            onSaved: (updated) =>
-                setState(() => _series = {...series, 'advance': updated}),
-            save: (next) => ref
-                .read(billingUsecaseProvider)
-                .updateBillingSeries('ADVANCE', next),
-          ),
-        ],
       ),
     );
   }
 }
 
 class _SeriesCard extends StatefulWidget {
+  final IconData icon;
   final String title;
   final String note;
   final BillSeries series;
@@ -115,6 +132,7 @@ class _SeriesCard extends StatefulWidget {
 
   const _SeriesCard({
     super.key,
+    required this.icon,
     required this.title,
     required this.note,
     required this.series,
@@ -186,43 +204,86 @@ class _SeriesCardState extends State<_SeriesCard> {
     final unchanged = isWhole && parsed == widget.series.nextNumber;
 
     return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.subtle,
+      radius: AppTheme.rLarge,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.title, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 2),
-          Text(widget.note, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: AppTheme.s12),
           Row(
             children: [
-              Text(
-                'Next one will be',
-                style: Theme.of(context).textTheme.bodySmall,
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  ),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x2A5A67D8), offset: Offset(0, 2), blurRadius: 5),
+                  ],
+                ),
+                child: Icon(widget.icon, size: 14, color: Colors.white),
               ),
               const SizedBox(width: AppTheme.s8),
-              Text(
-                widget.series.nextDocumentNumber,
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Text(widget.note, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, height: 1.4)),
+          const SizedBox(height: AppTheme.s12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.sidebarBrandWash,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              border: Border.all(color: AppTheme.sidebarBrandWashEdge),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'NEXT ONE WILL BE',
+                  style: TextStyle(
+                    color: AppTheme.sidebarBrandInk,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.series.nextDocumentNumber,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15.5,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppTheme.s12),
           NeuField(
             controller: _controller,
             label: 'Start numbering from',
             keyboardType: TextInputType.number,
+            dense: true,
             onChanged: (_) => setState(() {
               _saved = false;
               _error = null;
             }),
           ),
           const SizedBox(height: AppTheme.s4),
-          Text(_hint, style: Theme.of(context).textTheme.labelSmall),
+          Text(_hint, style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, height: 1.3)),
           if (tooLow) ...[
             const SizedBox(height: AppTheme.s4),
             Text(
@@ -236,18 +297,29 @@ class _SeriesCardState extends State<_SeriesCard> {
             const SizedBox(height: AppTheme.s4),
             Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
           ],
-          if (_saved && _error == null) ...[
-            const SizedBox(height: AppTheme.s4),
-            const Text(
-              'Saved.',
-              style: TextStyle(color: AppTheme.accent, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ],
           const SizedBox(height: AppTheme.s12),
-          NeuButton(
-            primary: true,
-            onPressed: (_saving || !isWhole || tooLow || unchanged) ? null : _save,
-            child: Text(_saving ? 'Saving…' : 'Save'),
+          Row(
+            children: [
+              if (_saved && _error == null) ...[
+                const Icon(Icons.check_circle_rounded, color: AppTheme.vacant, size: 16),
+                const SizedBox(width: 4),
+                const Text(
+                  'Saved',
+                  style: TextStyle(color: AppTheme.vacant, fontWeight: FontWeight.w600, fontSize: 12.5),
+                ),
+                const Spacer(),
+              ] else
+                const Spacer(),
+              SizedBox(
+                width: 140,
+                child: NeuButton(
+                  primary: true,
+                  onPressed: (_saving || !isWhole || tooLow || unchanged) ? null : _save,
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  child: Text(_saving ? 'Saving…' : 'Save'),
+                ),
+              ),
+            ],
           ),
         ],
       ),

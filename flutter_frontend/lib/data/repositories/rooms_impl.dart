@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../domain/models/category.dart';
+import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/switchable_charge_listing.dart';
@@ -114,4 +115,24 @@ class RoomsImpl implements RoomsRepository {
 
   @override
   Future<void> deleteSeason(int id) => api.deleteSeason(id);
+
+  @override
+  Future<CheckoutPolicy> checkoutPolicy() => api.checkoutPolicy();
+
+  @override
+  Future<CheckoutPolicy> updateCheckoutPolicy({
+    required String checkOutTime,
+    String? checkInTime,
+    required int lateGraceMinutes,
+    required num lateHalfDayPercent,
+    required int lateFullDayAfterMinutes,
+    required num lateFullDayPercent,
+  }) => api.updateCheckoutPolicy(
+    checkOutTime: checkOutTime,
+    checkInTime: checkInTime,
+    lateGraceMinutes: lateGraceMinutes,
+    lateHalfDayPercent: lateHalfDayPercent,
+    lateFullDayAfterMinutes: lateFullDayAfterMinutes,
+    lateFullDayPercent: lateFullDayPercent,
+  );
 }

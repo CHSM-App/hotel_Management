@@ -5,6 +5,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/rooms_viewmodel.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'checkout_policy_panel.dart';
 import 'price_chart_panel.dart';
 import 'rooms_panel.dart';
 
@@ -70,7 +71,11 @@ class _RoomsRatesScreenState extends ConsumerState<RoomsRatesScreen> {
         ),
       );
     }
-    return _tab == 'rooms' ? const RoomsPanel() : const PriceChartPanel();
+    return switch (_tab) {
+      'rooms' => const RoomsPanel(),
+      'chart' => const PriceChartPanel(),
+      _ => const CheckoutPolicyPanel(),
+    };
   }
 }
 
@@ -83,7 +88,11 @@ class _SubTabs extends StatelessWidget {
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {'rooms': 'Rooms', 'chart': 'Price chart'};
+  static const _tabs = {
+    'rooms': 'Rooms',
+    'chart': 'Price chart',
+    'checkout': 'Checkout policy',
+  };
 
   static const double _height = 44;
 
@@ -105,9 +114,9 @@ class _SubTabs extends StatelessWidget {
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
                 style: TextStyle(
-                  color: isSelected ? AppTheme.accent : AppTheme.muted,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 14,
+                  color: isSelected ? Colors.white : AppTheme.heading,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  fontSize: 13,
                 ),
                 child: Text(label, overflow: TextOverflow.ellipsis),
               ),
@@ -127,6 +136,10 @@ class _SubTabs extends StatelessWidget {
       ),
       child: Stack(
         children: [
+          // Same gradient "glow" pill the billing screen's To-bill/Issued
+          // switch uses, rather than a flat card — a selected tab should
+          // read as the clear active one at a glance, not just slightly
+          // lighter than the rest.
           AnimatedAlign(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
@@ -139,9 +152,19 @@ class _SubTabs extends StatelessWidget {
               child: Container(
                 height: _height - 8,
                 decoration: BoxDecoration(
-                  color: AppTheme.card,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  ),
                   borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: AppTheme.extruded,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
               ),
             ),

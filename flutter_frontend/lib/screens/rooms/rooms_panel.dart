@@ -79,11 +79,12 @@ class _RoomsPanelState extends ConsumerState<RoomsPanel> {
                       ),
                     ),
                   Container(
+                    height: 48,
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                     decoration: BoxDecoration(
                       color: AppTheme.card,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: AppTheme.border),
+                      border: Border.all(color: AppTheme.shadowDark, width: 1.3),
                       boxShadow: AppTheme.subtle,
                     ),
                     child: Row(
@@ -378,30 +379,106 @@ class _RoomCardState extends ConsumerState<_RoomCard> {
   /// the fuller delete sheet which also offers a permanent delete.
   Future<void> _confirmToggleActive(BuildContext context, WidgetRef ref) async {
     final activating = !room.isActive;
+    final tint = activating ? AppTheme.vacant : AppTheme.danger;
     final sure = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: Text(
-          '${activating ? 'Activate' : 'Deactivate'} room ${room.roomNumber}?',
-          style: const TextStyle(color: AppTheme.heading),
+      builder: (context) => Dialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
         ),
-        content: Text(
-          activating
-              ? 'Make it available for new bookings again.'
-              : 'Hide it from new bookings, but keep its history.',
-          style: const TextStyle(color: AppTheme.text, fontSize: 13),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.s24,
+            AppTheme.s24,
+            AppTheme.s24,
+            AppTheme.s16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: tint.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  activating
+                      ? Icons.power_settings_new_rounded
+                      : Icons.visibility_off_rounded,
+                  color: tint,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: AppTheme.s16),
+              Text(
+                '${activating ? 'Activate' : 'Deactivate'} room ${room.roomNumber}?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              Text(
+                activating
+                    ? 'Make it available for new bookings again.'
+                    : 'Hide it from new bookings, but keep its history.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: AppTheme.s24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.text,
+                        side: const BorderSide(color: AppTheme.shadowDark),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tint,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      child: Text(
+                        activating ? 'Activate' : 'Deactivate',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(activating ? 'Activate' : 'Deactivate'),
-          ),
-        ],
       ),
     );
     if (sure != true || !context.mounted) return;

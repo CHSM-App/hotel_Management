@@ -1460,7 +1460,7 @@ class BillingDateFilterRow extends StatelessWidget {
                     ],
             ),
             child: Icon(
-              Icons.filter_list_rounded,
+              Icons.filter_alt_rounded,
               size: 19,
               color: filterKey == 'all' ? AppTheme.accent : Colors.white,
             ),

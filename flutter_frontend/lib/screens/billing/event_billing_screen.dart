@@ -235,8 +235,8 @@ class _Toggle extends StatelessWidget {
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
                   style: TextStyle(
-                    color: selected ? AppTheme.accent : AppTheme.muted,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: selected ? Colors.white : AppTheme.heading,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     fontSize: 13,
                   ),
                   child: Text(label, overflow: TextOverflow.ellipsis),
@@ -265,9 +265,19 @@ class _Toggle extends StatelessWidget {
               child: Container(
                 height: _height - 8,
                 decoration: BoxDecoration(
-                  color: AppTheme.card,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  ),
                   borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: AppTheme.extruded,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
               ),
             ),

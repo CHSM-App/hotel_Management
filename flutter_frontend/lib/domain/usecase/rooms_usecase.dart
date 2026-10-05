@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/category.dart';
+import '../models/checkout_policy.dart';
 import '../models/room.dart';
 import '../models/season.dart';
 import '../models/switchable_charge_listing.dart';
@@ -72,4 +73,21 @@ class RoomsUsecase {
     adjustmentPercent: adjustmentPercent,
   );
   Future<void> deleteSeason(int id) => repository.deleteSeason(id);
+
+  Future<CheckoutPolicy> checkoutPolicy() => repository.checkoutPolicy();
+  Future<CheckoutPolicy> updateCheckoutPolicy({
+    required String checkOutTime,
+    String? checkInTime,
+    required int lateGraceMinutes,
+    required num lateHalfDayPercent,
+    required int lateFullDayAfterMinutes,
+    required num lateFullDayPercent,
+  }) => repository.updateCheckoutPolicy(
+    checkOutTime: checkOutTime,
+    checkInTime: checkInTime,
+    lateGraceMinutes: lateGraceMinutes,
+    lateHalfDayPercent: lateHalfDayPercent,
+    lateFullDayAfterMinutes: lateFullDayAfterMinutes,
+    lateFullDayPercent: lateFullDayPercent,
+  );
 }

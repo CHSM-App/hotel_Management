@@ -55,22 +55,44 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
             _SectionCard(
               title: 'Venues',
               hint: 'Halls and lawns that can be booked for a function.',
+              icon: Icons.villa_rounded,
               addLabel: 'Add a venue',
               onAdd: () => _editVenue(context, ref),
               children: [
                 if (state.venues.isEmpty) const _Empty('Nothing set up yet.'),
-                for (final v in state.venues) _VenueRow(venue: v, onEdit: () => _editVenue(context, ref, venue: v)),
+                for (final v in state.venues)
+                  _VenueRow(
+                    venue: v,
+                    onEdit: () => _editVenue(context, ref, venue: v),
+                    onToggle: () => _confirmToggle(
+                      context,
+                      name: v.name,
+                      active: v.isActive,
+                      onConfirm: () => ref.read(eventsViewModelProvider.notifier).toggleVenue(v),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: AppTheme.s12),
             _SectionCard(
               title: 'Add-ons',
               hint: 'Extras quoted on top of venue and plates — DJ, decor, mandap.',
+              icon: Icons.extension_rounded,
               addLabel: 'Add an add-on',
               onAdd: () => _editAddon(context, ref),
               children: [
                 if (state.addons.isEmpty) const _Empty('Nothing set up yet.'),
-                for (final a in state.addons) _AddonRow(addon: a, onEdit: () => _editAddon(context, ref, addon: a)),
+                for (final a in state.addons)
+                  _AddonRow(
+                    addon: a,
+                    onEdit: () => _editAddon(context, ref, addon: a),
+                    onToggle: () => _confirmToggle(
+                      context,
+                      name: a.name,
+                      active: a.isActive,
+                      onConfirm: () => ref.read(eventsViewModelProvider.notifier).toggleAddon(a),
+                    ),
+                  ),
               ],
             ),
           ],
@@ -92,11 +114,67 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
       builder: (_) => _AddonDialog(addon: addon),
     );
   }
+
+  /// Asks before flipping a venue/add-on's own availability — a slip of the
+  /// thumb here pulls something out of (or back into) every future quote, so
+  /// it gets the same "are you sure" the menu's own delete actions use.
+  Future<void> _confirmToggle(
+    BuildContext context, {
+    required String name,
+    required bool active,
+    required VoidCallback onConfirm,
+  }) async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+        icon: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: (active ? AppTheme.danger : AppTheme.vacant).withValues(alpha: 0.10),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            active ? Icons.power_settings_new_rounded : Icons.check_circle_outline_rounded,
+            color: active ? AppTheme.danger : AppTheme.vacant,
+          ),
+        ),
+        title: Text(
+          active ? 'Deactivate "$name"?' : 'Activate "$name"?',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppTheme.heading, fontSize: 15.5, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          active
+              ? 'It will stop showing up as a pick for new functions, until it is activated again.'
+              : 'It will be available as a pick for new functions again.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              active ? 'Deactivate' : 'Activate',
+              style: TextStyle(color: active ? AppTheme.danger : AppTheme.vacant, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (sure == true) onConfirm();
+  }
 }
 
 class _SectionCard extends StatelessWidget {
   final String title;
   final String hint;
+  final IconData icon;
   final String addLabel;
   final VoidCallback onAdd;
   final List<Widget> children;
@@ -104,6 +182,7 @@ class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.title,
     required this.hint,
+    required this.icon,
     required this.addLabel,
     required this.onAdd,
     required this.children,
@@ -112,28 +191,49 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NeuCard(
+      radius: AppTheme.rLarge,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.10), shape: BoxShape.circle),
+                child: Icon(icon, size: 18, color: AppTheme.accent),
+              ),
+              const SizedBox(width: AppTheme.s12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
+                    Text(title, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15.5)),
+                    const SizedBox(height: 1),
                     Text(hint, style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.accent),
-                tooltip: addLabel,
-                onPressed: onAdd,
+              const SizedBox(width: AppTheme.s8),
+              GestureDetector(
+                onTap: onAdd,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: [AppTheme.accent, AppTheme.sidebarBrand]),
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Color(0x335A67D8), blurRadius: 8, offset: Offset(0, 2))],
+                  ),
+                  child: const Icon(Icons.add_rounded, size: 19, color: Colors.white),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s12),
           ...children,
         ],
       ),
@@ -147,32 +247,83 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-    child: Text(message, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted)),
+    padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
+    child: Center(
+      child: Text(message, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted)),
+    ),
   );
 }
 
-class _VenueRow extends ConsumerWidget {
-  final EventVenue venue;
+/// The small, round pencil / power-toggle pair every catalogue row ends
+/// with — icon-only so a row stays compact on a phone-width screen instead
+/// of two spelled-out [TextButton]s crowding the edge.
+class _RowActions extends StatelessWidget {
+  final bool active;
   final VoidCallback onEdit;
+  final VoidCallback onToggle;
 
-  const _VenueRow({required this.venue, required this.onEdit});
+  const _RowActions({required this.active, required this.onEdit, required this.onToggle});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+  Widget build(BuildContext context) {
+    Widget button(IconData icon, Color color, VoidCallback onTap, String tooltip) {
+      return Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.10), shape: BoxShape.circle),
+            child: Icon(icon, size: 15, color: color),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        button(Icons.edit_outlined, AppTheme.accent, onEdit, 'Edit'),
+        const SizedBox(width: 6),
+        button(
+          active ? Icons.power_settings_new_rounded : Icons.check_circle_outline_rounded,
+          active ? AppTheme.danger : AppTheme.vacant,
+          onToggle,
+          active ? 'Deactivate' : 'Activate',
+        ),
+      ],
+    );
+  }
+}
+
+class _VenueRow extends StatelessWidget {
+  final EventVenue venue;
+  final VoidCallback onEdit;
+  final VoidCallback onToggle;
+
+  const _VenueRow({required this.venue, required this.onEdit, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final inactive = !venue.isActive;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.all(AppTheme.s8),
+      decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rMedium)),
       child: Row(
         children: [
           if (venue.images.isNotEmpty) ...[
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
                   child: Image.network(
                     '$baseUrl/venue-images/${venue.images.first.filename}',
-                    width: 36,
-                    height: 36,
+                    width: 44,
+                    height: 44,
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -188,59 +339,69 @@ class _VenueRow extends ConsumerWidget {
                   ),
               ],
             ),
-            const SizedBox(width: AppTheme.s8),
+            const SizedBox(width: AppTheme.s12),
           ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        venue.name,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w500, fontSize: 13.5),
-                        overflow: TextOverflow.ellipsis,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          venue.name,
+                          style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    if (!venue.isActive) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(6)),
-                        child: const Text('inactive', style: TextStyle(color: AppTheme.muted, fontSize: 10)),
+                      if (inactive) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(6)),
+                          child: const Text('inactive', style: TextStyle(color: AppTheme.muted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      if (venue.capacityPax != null) ...[
+                        Text('${venue.capacityPax} pax', style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        formatPrice(venue.baseCharge),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading, fontWeight: FontWeight.w600),
                       ),
                     ],
-                  ],
-                ),
-                Text(
-                  '${venue.capacityPax != null ? '${venue.capacityPax} pax · ' : ''}${formatPrice(venue.baseCharge)}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          TextButton(onPressed: onEdit, child: const Text('Edit')),
-          TextButton(
-            onPressed: () => ref.read(eventsViewModelProvider.notifier).toggleVenue(venue),
-            child: Text(venue.isActive ? 'Deactivate' : 'Activate'),
-          ),
+          const SizedBox(width: AppTheme.s8),
+          _RowActions(active: venue.isActive, onEdit: onEdit, onToggle: onToggle),
         ],
       ),
     );
   }
 }
 
-class _AddonRow extends ConsumerWidget {
+class _AddonRow extends StatelessWidget {
   final EventAddon addon;
   final VoidCallback onEdit;
+  final VoidCallback onToggle;
 
-  const _AddonRow({required this.addon, required this.onEdit});
+  const _AddonRow({required this.addon, required this.onEdit, required this.onToggle});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+  Widget build(BuildContext context) {
+    final inactive = !addon.isActive;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.all(AppTheme.s8),
+      decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rMedium)),
       child: Row(
         children: [
           Expanded(
@@ -252,32 +413,30 @@ class _AddonRow extends ConsumerWidget {
                     Flexible(
                       child: Text(
                         addon.name,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w500, fontSize: 13.5),
+                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (!addon.isActive) ...[
+                    if (inactive) ...[
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(6)),
-                        child: const Text('inactive', style: TextStyle(color: AppTheme.muted, fontSize: 10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(6)),
+                        child: const Text('inactive', style: TextStyle(color: AppTheme.muted, fontSize: 9.5, fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ],
                 ),
+                const SizedBox(height: 2),
                 Text(
                   '${formatPrice(addon.defaultAmount)}${addon.isPerUnit ? ' each' : ''}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
-          TextButton(onPressed: onEdit, child: const Text('Edit')),
-          TextButton(
-            onPressed: () => ref.read(eventsViewModelProvider.notifier).toggleAddon(addon),
-            child: Text(addon.isActive ? 'Deactivate' : 'Activate'),
-          ),
+          const SizedBox(width: AppTheme.s8),
+          _RowActions(active: addon.isActive, onEdit: onEdit, onToggle: onToggle),
         ],
       ),
     );
@@ -285,6 +444,140 @@ class _AddonRow extends ConsumerWidget {
 }
 
 // ── Add / edit dialogs ──────────────────────────────────────────────────────
+//
+// A shared card shell — icon header with a close button, scrollable body,
+// and a full-width Cancel/Save footer — so the venue and add-on dialogs read
+// as one system instead of Material's plain [AlertDialog] banner.
+
+class _DialogShell extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? error;
+  final bool submitting;
+  final String saveLabel;
+  final VoidCallback onSave;
+  final Widget child;
+
+  const _DialogShell({
+    required this.icon,
+    required this.title,
+    required this.error,
+    required this.submitting,
+    required this.saveLabel,
+    required this.onSave,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(AppTheme.rLarge),
+            boxShadow: AppTheme.elevated,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s8, 0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(colors: [AppTheme.accent, AppTheme.sidebarBrand]),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, size: 17, color: Colors.white),
+                    ),
+                    const SizedBox(width: AppTheme.s12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 16),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: submitting ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded, size: 19, color: AppTheme.muted),
+                      splashRadius: 18,
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (error != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(AppTheme.s8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline_rounded, size: 15, color: AppTheme.danger),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.s12),
+                      ],
+                      child,
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s16),
+                decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppTheme.border))),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: NeuButton(
+                        onPressed: submitting ? null : () => Navigator.pop(context),
+                        expand: true,
+                        padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: NeuButton(
+                        onPressed: submitting ? null : onSave,
+                        primary: true,
+                        expand: true,
+                        padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                        child: Text(submitting ? 'Saving…' : saveLabel),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _VenueDialog extends ConsumerStatefulWidget {
   final EventVenue? venue;
@@ -375,52 +668,43 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
   @override
   Widget build(BuildContext context) {
     final submitting = ref.watch(eventsViewModelProvider).submitting;
-    return AlertDialog(
-      backgroundColor: AppTheme.bg,
-      title: Text(widget.venue == null ? 'Add a venue' : 'Edit venue', style: const TextStyle(color: AppTheme.heading)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_error != null) ...[
-              Text(_error!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger)),
-              const SizedBox(height: AppTheme.s8),
+    return _DialogShell(
+      icon: Icons.villa_rounded,
+      title: widget.venue == null ? 'Add a venue' : 'Edit venue',
+      error: _error,
+      submitting: submitting,
+      saveLabel: 'Save',
+      onSave: _save,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          NeuField(controller: _name, label: 'Name', hint: 'Lotus Lawn', required: true, forceCapitalizeWords: true),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(controller: _charge, label: 'Hire charge', hint: '25000', keyboardType: TextInputType.number),
+          const SizedBox(height: AppTheme.s12),
+          Text('Photos (up to $maxVenueImages)', style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: AppTheme.s8),
+          Wrap(
+            spacing: AppTheme.s8,
+            runSpacing: AppTheme.s8,
+            children: [
+              for (final img in _existingPhotos)
+                PhotoThumb(
+                  imageProvider: NetworkImage('$baseUrl/venue-images/${img.filename}'),
+                  onRemove: () => _removeExistingPhoto(img),
+                ),
+              for (final file in _newPhotos)
+                PhotoThumb(
+                  imageProvider: FileImage(File(file.path)),
+                  onRemove: () => setState(() => _newPhotos.remove(file)),
+                ),
+              if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
             ],
-            NeuField(controller: _name, label: 'Name', hint: 'Lotus Lawn', required: true, forceCapitalizeWords: true),
-            const SizedBox(height: AppTheme.s8),
-            NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number),
-            const SizedBox(height: AppTheme.s8),
-            NeuField(controller: _charge, label: 'Hire charge', hint: '25000', keyboardType: TextInputType.number),
-            const SizedBox(height: AppTheme.s12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Photos (up to $maxVenueImages)', style: Theme.of(context).textTheme.bodySmall),
-            ),
-            const SizedBox(height: AppTheme.s8),
-            Wrap(
-              spacing: AppTheme.s8,
-              runSpacing: AppTheme.s8,
-              children: [
-                for (final img in _existingPhotos)
-                  PhotoThumb(
-                    imageProvider: NetworkImage('$baseUrl/venue-images/${img.filename}'),
-                    onRemove: () => _removeExistingPhoto(img),
-                  ),
-                for (final file in _newPhotos)
-                  PhotoThumb(
-                    imageProvider: FileImage(File(file.path)),
-                    onRemove: () => setState(() => _newPhotos.remove(file)),
-                  ),
-                if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: submitting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: submitting ? null : _save, child: Text(submitting ? 'Saving…' : 'Save')),
-      ],
     );
   }
 }
@@ -468,35 +752,29 @@ class _AddonDialogState extends ConsumerState<_AddonDialog> {
   @override
   Widget build(BuildContext context) {
     final submitting = ref.watch(eventsViewModelProvider).submitting;
-    return AlertDialog(
-      backgroundColor: AppTheme.bg,
-      title: Text(widget.addon == null ? 'Add an add-on' : 'Edit add-on', style: const TextStyle(color: AppTheme.heading)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_error != null) ...[
-              Text(_error!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger)),
-              const SizedBox(height: AppTheme.s8),
-            ],
-            NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true, forceCapitalizeWords: true),
-            const SizedBox(height: AppTheme.s8),
-            NeuField(controller: _amount, label: 'Price', hint: '5000', keyboardType: TextInputType.number),
-            const SizedBox(height: AppTheme.s8),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              value: _perUnit,
-              onChanged: (v) => setState(() => _perUnit = v ?? false),
-              title: const Text('Per unit', style: TextStyle(color: AppTheme.text, fontSize: 13)),
-            ),
-          ],
-        ),
+    return _DialogShell(
+      icon: Icons.extension_rounded,
+      title: widget.addon == null ? 'Add an add-on' : 'Edit add-on',
+      error: _error,
+      submitting: submitting,
+      saveLabel: 'Save',
+      onSave: _save,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true, forceCapitalizeWords: true),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(controller: _amount, label: 'Price', hint: '5000', keyboardType: TextInputType.number),
+          const SizedBox(height: AppTheme.s4),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _perUnit,
+            onChanged: (v) => setState(() => _perUnit = v ?? false),
+            title: const Text('Per unit', style: TextStyle(color: AppTheme.text, fontSize: 13)),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: submitting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: submitting ? null : _save, child: Text(submitting ? 'Saving…' : 'Save')),
-      ],
     );
   }
 }

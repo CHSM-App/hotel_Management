@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
+import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/switchable_charge_listing.dart';
@@ -27,6 +28,7 @@ class RoomsState {
   final List<RoomCategory> categories;
   final List<SwitchableChargeListing> switchableCharges;
   final List<Season> seasons;
+  final CheckoutPolicy? checkoutPolicy;
   final bool submitting;
 
   const RoomsState({
@@ -37,6 +39,7 @@ class RoomsState {
     this.categories = const [],
     this.switchableCharges = const [],
     this.seasons = const [],
+    this.checkoutPolicy,
     this.submitting = false,
   });
 
@@ -49,6 +52,7 @@ class RoomsState {
     List<RoomCategory>? categories,
     List<SwitchableChargeListing>? switchableCharges,
     List<Season>? seasons,
+    CheckoutPolicy? checkoutPolicy,
     bool? submitting,
   }) => RoomsState(
     isLoading: isLoading ?? this.isLoading,
@@ -58,6 +62,7 @@ class RoomsState {
     categories: categories ?? this.categories,
     switchableCharges: switchableCharges ?? this.switchableCharges,
     seasons: seasons ?? this.seasons,
+    checkoutPolicy: checkoutPolicy ?? this.checkoutPolicy,
     submitting: submitting ?? this.submitting,
   );
 }
@@ -76,12 +81,14 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
         usecase.switchableCharges(),
         usecase.seasons(),
       ]);
+      final policy = await usecase.checkoutPolicy();
       state = state.copyWith(
         isLoading: false,
         rooms: results[0] as List<RoomListing>,
         categories: results[1] as List<RoomCategory>,
         switchableCharges: results[2] as List<SwitchableChargeListing>,
         seasons: results[3] as List<Season>,
+        checkoutPolicy: policy,
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: messageFor(e), errorField: apiErrorField(e));
@@ -295,6 +302,35 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       return true;
     } catch (e) {
       state = state.copyWith(error: messageFor(e), errorField: apiErrorField(e));
+      return false;
+    }
+  }
+
+  // ── Checkout policy ───────────────────────────────────────────────────────
+
+  Future<bool> saveCheckoutPolicy({
+    required String checkOutTime,
+    String? checkInTime,
+    required int lateGraceMinutes,
+    required num lateHalfDayPercent,
+    required int lateFullDayAfterMinutes,
+    required num lateFullDayPercent,
+  }) async {
+    if (state.submitting) return false;
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final policy = await usecase.updateCheckoutPolicy(
+        checkOutTime: checkOutTime,
+        checkInTime: checkInTime,
+        lateGraceMinutes: lateGraceMinutes,
+        lateHalfDayPercent: lateHalfDayPercent,
+        lateFullDayAfterMinutes: lateFullDayAfterMinutes,
+        lateFullDayPercent: lateFullDayPercent,
+      );
+      state = state.copyWith(submitting: false, checkoutPolicy: policy);
+      return true;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: messageFor(e), errorField: apiErrorField(e));
       return false;
     }
   }

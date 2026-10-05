@@ -337,6 +337,11 @@ class NeuField extends StatefulWidget {
   /// uppercase (e.g. room numbers like "ABC001").
   final bool forceUppercase;
 
+  /// Shrinks the well's padding and text size for tight inline forms (e.g.
+  /// a price-chart row's add/edit fields) where the full-height field used
+  /// by onboarding and detail screens would waste space.
+  final bool dense;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -356,6 +361,7 @@ class NeuField extends StatefulWidget {
     this.textCapitalization,
     this.forceCapitalizeWords = false,
     this.forceUppercase = false,
+    this.dense = false,
   });
 
   @override
@@ -439,8 +445,10 @@ class _NeuFieldState extends State<NeuField> {
           focused: _focused,
           hasError: widget.errorText != null,
           padding: EdgeInsets.only(
-            left: AppTheme.s16,
-            right: widget.suffix == null ? AppTheme.s16 : AppTheme.s4,
+            left: widget.dense ? AppTheme.s12 : AppTheme.s16,
+            right: widget.suffix == null
+                ? (widget.dense ? AppTheme.s12 : AppTheme.s16)
+                : AppTheme.s4,
           ),
           child: Row(
             children: [
@@ -463,15 +471,23 @@ class _NeuFieldState extends State<NeuField> {
                   readOnly: widget.readOnly,
                   onTap: widget.onTap,
                   onChanged: widget.onChanged,
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 16),
+                  style: TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: widget.dense ? 14 : 16,
+                  ),
                   cursorColor: AppTheme.accent,
                   decoration: InputDecoration(
                     hintText: widget.hint,
-                    hintStyle: const TextStyle(color: AppTheme.muted),
+                    hintStyle: TextStyle(
+                      color: AppTheme.heading,
+                      fontSize: widget.dense ? 13 : null,
+                    ),
                     border: InputBorder.none,
                     counterText: '',
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: widget.dense ? 8 : 14,
+                    ),
                   ),
                 ),
               ),
