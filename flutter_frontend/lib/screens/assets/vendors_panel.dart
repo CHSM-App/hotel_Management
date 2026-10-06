@@ -186,12 +186,45 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
   @override
   Widget build(BuildContext context) {
     final submitting = ref.watch(assetsViewModelProvider).submitting;
+    final vendor = widget.vendor;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.vendor == null ? 'Add vendor' : 'Edit vendor')),
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(
+        title: Text(
+          vendor == null ? 'Add vendor' : 'Edit vendor',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
           children: [
+            if (vendor != null) ...[
+              NeuCard(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s12),
+                child: Row(
+                  children: [
+                    VendorInitialBadge(name: vendor.name, active: vendor.isActive, size: 40),
+                    const SizedBox(width: AppTheme.s12),
+                    Expanded(
+                      child: Text(
+                        vendor.name,
+                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.2),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (!vendor.isActive)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(999)),
+                        child: const Text('Inactive', style: TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+            ],
             if (_error != null) ...[
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
               const SizedBox(height: AppTheme.s12),
@@ -214,9 +247,14 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
                   const SizedBox(height: AppTheme.s12),
                   NeuField(controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _phone, label: 'Phone', keyboardType: TextInputType.phone),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: NeuField(controller: _phone, label: 'Phone', keyboardType: TextInputType.phone)),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(flex: 2, child: NeuField(controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress)),
+                    ],
+                  ),
                 ],
               ),
             ),

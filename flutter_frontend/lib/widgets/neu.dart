@@ -479,7 +479,7 @@ class _NeuFieldState extends State<NeuField> {
                   decoration: InputDecoration(
                     hintText: widget.hint,
                     hintStyle: TextStyle(
-                      color: AppTheme.heading,
+                      color: AppTheme.muted,
                       fontSize: widget.dense ? 13 : null,
                     ),
                     border: InputBorder.none,

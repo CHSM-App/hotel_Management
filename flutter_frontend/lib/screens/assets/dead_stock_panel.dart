@@ -7,7 +7,6 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
-import 'asset_icons.dart';
 
 /// Assets > Dead Stock — mirrors the Dead Stock tab in AssetsPanel.jsx:
 /// every retired asset with when it died, why, how it was disposed of, and
@@ -63,56 +62,73 @@ class _DeadStockCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final chips = <Widget>[
+      if ((asset.deadReason ?? '').isNotEmpty) _chip('Reason', asset.deadReason!),
+      if ((asset.disposalNote ?? '').isNotEmpty) _chip('Disposal', asset.disposalNote!),
+      if (asset.recoveryCost != null && asset.recoveryCost! > 0)
+        _chip('Recovered', formatPrice(asset.recoveryCost), accent: true),
+      if ((asset.disposedBy ?? '').isNotEmpty) _chip('By', asset.disposedBy!),
+    ];
+
     return NeuCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconBadge(icon: categoryIcon(asset.categoryName), color: AppTheme.muted, size: 42),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        asset.name,
-                        style: Theme.of(context).textTheme.titleSmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (asset.assetTag != null) ...[
-                      const SizedBox(width: 6),
-                      Text(asset.assetTag!, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: asset.name, style: Theme.of(context).textTheme.titleSmall),
+                      if (asset.assetTag != null)
+                        TextSpan(
+                          text: '   ${asset.assetTag}',
+                          style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w500),
+                        ),
                     ],
-                  ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                _row('Dead since', asset.deadDate != null ? formatIsoDate(asset.deadDate!) : '—'),
-                _row('Reason', (asset.deadReason ?? '').isEmpty ? '—' : asset.deadReason!),
-                _row('Disposal', (asset.disposalNote ?? '').isEmpty ? '—' : asset.disposalNote!),
-                _row('Recovery', asset.recoveryCost != null ? formatPrice(asset.recoveryCost) : '—'),
-                _row('Handled by', (asset.disposedBy ?? '').isEmpty ? '—' : asset.disposedBy!),
-              ],
-            ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Text(
+                asset.deadDate != null ? formatIsoDate(asset.deadDate!) : '—',
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: chips),
+          ],
         ],
       ),
     );
   }
 
-  Widget _row(String label, String value) => Padding(
-    padding: const EdgeInsets.only(top: 2),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 78, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5))),
-        Expanded(child: Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 12.5), maxLines: 2, overflow: TextOverflow.ellipsis)),
-      ],
+  Widget _chip(String label, String value, {bool accent = false}) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 220),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: accent ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$label · $value',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: accent ? AppTheme.accent : AppTheme.text,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     ),
   );
 }

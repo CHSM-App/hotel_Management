@@ -16,10 +16,9 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../bookings/id_proof_viewer_screen.dart';
 import '../bookings/receipt_download.dart';
-import '../rooms/room_form_pieces.dart' show OptionDropdown, SectionLabel;
+import '../rooms/room_form_pieces.dart' show ModeToggle, OptionDropdown, SectionLabel;
 import '../theme.dart';
 import 'asset_form_sheet.dart';
-import 'asset_icons.dart';
 import 'retire_asset_sheet.dart';
 import 'work_orders_panel.dart';
 
@@ -240,10 +239,9 @@ class _HeaderCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final color = _assetStatusColor(asset.status);
     return NeuCard(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s12),
       child: Row(
         children: [
-          IconBadge(icon: categoryIcon(asset.categoryName), color: color, size: 46),
-          const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,7 +326,7 @@ class _FactsCard extends ConsumerWidget {
         ? 'Room ${asset.roomNumber}'
         : [if (asset.floor.isNotEmpty) 'Floor ${asset.floor}', asset.department].where((s) => s.isNotEmpty).join(' · ');
 
-    final rows = [
+    final facts = [
       _fact(Icons.location_on_outlined, 'Location', location.isEmpty ? 'Not set' : location),
       if (asset.brand.isNotEmpty || asset.model.isNotEmpty)
         _fact(Icons.precision_manufacturing_outlined, 'Brand / model', [asset.brand, asset.model].where((s) => s.isNotEmpty).join(' ')),
@@ -360,9 +358,9 @@ class _FactsCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-                child: const Text('View bill', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
+                child: const Text('View bill', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w700)),
               )
-            : const Text('Not uploaded', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+            : const Text('Not uploaded', style: TextStyle(color: AppTheme.muted, fontSize: 13, fontWeight: FontWeight.w600)),
       ),
       if (asset.status == 'RETIRED') ...[
         _fact(Icons.event_busy_outlined, 'Dead since', asset.deadDate != null ? formatIsoDate(asset.deadDate!) : 'Not set'),
@@ -374,28 +372,51 @@ class _FactsCard extends ConsumerWidget {
     ];
 
     return NeuCard(
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4, horizontal: AppTheme.s16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const Divider(height: 1, color: AppTheme.border),
-            rows[i],
-          ],
-        ],
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const gap = AppTheme.s8;
+          final cols = (constraints.maxWidth / 170).floor().clamp(2, 3);
+          final width = (constraints.maxWidth - gap * (cols - 1)) / cols;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [for (final f in facts) SizedBox(width: width, child: f)],
+          );
+        },
       ),
     );
   }
 
-  Widget _fact(IconData icon, String label, String? value, {Widget? valueWidget}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-    child: Row(
+  Widget _fact(IconData icon, String label, String? value, {Widget? valueWidget}) => Container(
+    padding: const EdgeInsets.all(AppTheme.s8 + 2),
+    decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 17, color: AppTheme.muted),
-        const SizedBox(width: AppTheme.s12),
-        SizedBox(width: 92, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-        Expanded(child: valueWidget ?? Text(value ?? '', style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w500))),
+        Row(
+          children: [
+            Icon(icon, size: 13, color: AppTheme.muted),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        valueWidget ??
+            Text(
+              value ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
       ],
     ),
   );
@@ -406,9 +427,18 @@ class _FactsCard extends ConsumerWidget {
 /// device via saveBytesToDevice — the same real-download path bill_pdf.dart
 /// uses, not Printing.layoutPdf's print/share preview, which made "Download
 /// QR" feel like it never actually downloaded anything.
-class _QrCard extends StatelessWidget {
+class _QrCard extends StatefulWidget {
   final Asset asset;
   const _QrCard({required this.asset});
+
+  @override
+  State<_QrCard> createState() => _QrCardState();
+}
+
+class _QrCardState extends State<_QrCard> {
+  bool _expanded = false;
+
+  Asset get asset => widget.asset;
 
   Future<String> _download() async {
     final url = _assetUrl(asset.qrToken!);
@@ -438,55 +468,77 @@ class _QrCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final url = _assetUrl(asset.qrToken!);
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(AppTheme.s12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: QrImageView(data: url, size: 128, backgroundColor: Colors.white),
-          ),
-          const SizedBox(height: AppTheme.s12),
-          Text('Scan to open this asset', style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
-          const SizedBox(height: AppTheme.s8),
-          GestureDetector(
-            onTap: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                final where = await _download();
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: const Text('PDF saved.'),
-                    backgroundColor: AppTheme.heading,
-                    action: canOpenSavedFile
-                        ? SnackBarAction(
-                            label: 'Open',
-                            textColor: Colors.white,
-                            onPressed: () => openSavedFile(where, 'qr.pdf'),
-                          )
-                        : null,
-                  ),
-                );
-              } catch (_) {
-                messenger.showSnackBar(const SnackBar(content: Text('Could not save the QR code.')));
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-              decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(999)),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+          InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+              child: Row(
                 children: [
-                  Icon(Icons.download_rounded, size: 15, color: AppTheme.accent),
-                  SizedBox(width: 5),
-                  Text('Download QR', style: TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  const Icon(Icons.qr_code_2_rounded, size: 18, color: AppTheme.muted),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: Text(
+                      _expanded ? 'Scan to open this asset' : 'Show QR code',
+                      style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
                 ],
               ),
             ),
           ),
+          if (_expanded) ...[
+            const SizedBox(height: AppTheme.s8),
+            Container(
+              padding: const EdgeInsets.all(AppTheme.s8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: QrImageView(data: url, size: 110, backgroundColor: Colors.white),
+            ),
+            const SizedBox(height: AppTheme.s8),
+            GestureDetector(
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  final where = await _download();
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: const Text('PDF saved.'),
+                      backgroundColor: AppTheme.heading,
+                      action: canOpenSavedFile
+                          ? SnackBarAction(
+                              label: 'Open',
+                              textColor: Colors.white,
+                              onPressed: () => openSavedFile(where, 'qr.pdf'),
+                            )
+                          : null,
+                    ),
+                  );
+                } catch (_) {
+                  messenger.showSnackBar(const SnackBar(content: Text('Could not save the QR code.')));
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+                decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(999)),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.download_rounded, size: 15, color: AppTheme.accent),
+                    SizedBox(width: 5),
+                    Text('Download QR', style: TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1056,12 +1108,55 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
+    final asset = state.assets.where((a) => a.id == widget.assetId).firstOrNull;
+    final renewing = widget.renewFrom != null;
+
     return Scaffold(
-      appBar: AppBar(title: Text(widget.renewFrom != null ? 'Renew coverage' : 'Add coverage')),
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(
+        title: Text(
+          renewing ? 'Renew coverage' : 'Add coverage',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        bottom: asset != null
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(22),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                  child: Text(
+                    [asset.name, asset.assetTag].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                  ),
+                ),
+              )
+            : null,
+      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
           children: [
+            if (renewing) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.autorenew_rounded, size: 16, color: AppTheme.accent),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: Text(
+                        'Renewing the record that covered through ${formatIsoDate(widget.renewFrom!.endDate)}.',
+                        style: const TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+            ],
             if (_error != null) ...[
               Container(
                 padding: const EdgeInsets.all(AppTheme.s12),
@@ -1074,7 +1169,7 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
             ],
 
             NeuCard(
@@ -1084,24 +1179,13 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                   const SectionLabel('Coverage', number: 1),
                   const SizedBox(height: AppTheme.s12),
                   Text('Type', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  NeuPressed(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: _type,
-                        dropdownColor: AppTheme.card,
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
-                        items: const [
-                          DropdownMenuItem(value: 'WARRANTY', child: Text('Warranty', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5))),
-                          DropdownMenuItem(value: 'AMC', child: Text('AMC', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5))),
-                        ],
-                        onChanged: (v) => setState(() => _type = v!),
-                      ),
-                    ),
+                  const SizedBox(height: 6),
+                  ModeToggle(
+                    options: const {'WARRANTY': 'Warranty', 'AMC': 'AMC'},
+                    selected: _type,
+                    onSelect: (v) => setState(() => _type = v),
                   ),
-                  const SizedBox(height: AppTheme.s12),
+                  const SizedBox(height: AppTheme.s16),
                   Text('Vendor (optional)', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   NeuPressed(
@@ -1117,6 +1201,17 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                           const DropdownMenuItem(value: null, child: Text('No vendor', style: TextStyle(fontSize: 13.5))),
                           for (final v in state.activeVendors)
                             DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5))),
+                          // The vendor this coverage period was last filed against may have
+                          // since gone inactive — still offer it so renewing one doesn't crash
+                          // the dropdown on a value absent from its item list.
+                          if (_vendorId != null && state.activeVendors.every((v) => v.id != _vendorId))
+                            DropdownMenuItem(
+                              value: _vendorId,
+                              child: Text(
+                                state.vendors.where((v) => v.id == _vendorId).map((v) => v.name).firstOrNull ?? 'Inactive vendor',
+                                style: const TextStyle(color: AppTheme.muted, fontWeight: FontWeight.w600, fontSize: 13.5),
+                              ),
+                            ),
                         ],
                         onChanged: (v) => setState(() => _vendorId = v),
                       ),

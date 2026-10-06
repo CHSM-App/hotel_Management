@@ -113,7 +113,7 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
                       decoration: BoxDecoration(
                         color: AppTheme.card,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.border),
+                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(
@@ -204,11 +204,7 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
                     onDelete: (e) => _confirmDelete(context, ref, e),
                   )
                 else
-                  for (final e in shown)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                      child: _ExpenseCard(expense: e),
-                    ),
+                  _ExpenseCardsGrid(expenses: shown),
               ],
             ],
           ),
@@ -278,101 +274,97 @@ class _DateRangeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.border),
-        boxShadow: AppTheme.subtle,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _DateSegment(
-              label: fromLabel,
-              active: fromActive,
-              onTap: onTapFrom,
-              onClear: onClearFrom,
-              leftRounded: true,
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _DateSegment(
+            label: fromLabel,
+            active: fromActive,
+            onTap: onTapFrom,
+            onClear: onClearFrom,
           ),
-          Container(width: 1, height: 26, color: AppTheme.border),
-          Expanded(
-            child: _DateSegment(
-              label: toLabel,
-              active: toActive,
-              onTap: onTapTo,
-              onClear: onClearTo,
-              leftRounded: false,
-            ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: _DateSegment(
+            label: toLabel,
+            active: toActive,
+            onTap: onTapTo,
+            onClear: onClearTo,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
+/// A standalone rounded pill — one per side, each with its own border and
+/// shadow (rather than two halves of one bar split by a divider), matching
+/// the separated "From" / "To" chip look used elsewhere in the app.
 class _DateSegment extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback onTap;
   final VoidCallback? onClear;
-  final bool leftRounded;
 
   const _DateSegment({
     required this.label,
     required this.active,
     required this.onTap,
-    required this.leftRounded,
     this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.horizontal(
-        left: leftRounded ? const Radius.circular(999) : Radius.zero,
-        right: leftRounded ? Radius.zero : const Radius.circular(999),
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: active ? AppTheme.accent.withValues(alpha: 0.4) : AppTheme.shadowDark, width: 1.3),
+        boxShadow: AppTheme.subtle,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-        child: Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.event_rounded, size: 13, color: active ? Colors.white : AppTheme.accent),
               ),
-              child: Icon(Icons.event_rounded, size: 13, color: active ? Colors.white : AppTheme.accent),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: active ? AppTheme.heading : AppTheme.muted,
-                  fontSize: 13,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: active ? AppTheme.heading : AppTheme.muted,
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-            if (onClear != null)
-              GestureDetector(
-                onTap: onClear,
-                behavior: HitTestBehavior.opaque,
-                child: const Padding(
-                  padding: EdgeInsets.only(left: 4),
-                  child: Icon(Icons.close_rounded, size: 14, color: AppTheme.muted),
+              if (onClear != null)
+                GestureDetector(
+                  onTap: onClear,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(Icons.close_rounded, size: 14, color: AppTheme.muted),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -446,24 +438,6 @@ class _SummaryStrip extends StatelessWidget {
   }
 }
 
-/// "Partially paid" / "Pending" — mirrors PAYMENT_STATUS_LABEL's tags in
-/// ExpensesPanel.jsx. PAID is the common case and gets no tag at all.
-class _StatusTag extends StatelessWidget {
-  final String label;
-  final Color color;
-
-  const _StatusTag({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
-      child: Text(label, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
 /// A stable, category-name-derived color — gives each category a recognizable
 /// tint across the list without needing per-category color data from the API.
 const _kCategoryPalette = [
@@ -497,10 +471,11 @@ const _kExpenseTableColumns = [
 ];
 
 /// The sheet-style view — every expense's date/title/category/vendor/amount/
-/// paid/status in one scrollable, sortable grid, mirroring the asset
-/// register's own table: clickable column headers and a per-row ⋮ menu for
-/// the same actions the card view offers.
-class _ExpenseTable extends StatefulWidget {
+/// paid/status in one scrollable grid, mirroring the asset register's own
+/// table: a tinted header row (no clickable sort — the list is already
+/// date-sorted above) and a per-row ⋮ menu for the same actions the card
+/// view offers.
+class _ExpenseTable extends StatelessWidget {
   final List<Expense> expenses;
   final ValueChanged<Expense> onEdit;
   final ValueChanged<Expense> onView;
@@ -514,60 +489,7 @@ class _ExpenseTable extends StatefulWidget {
   });
 
   @override
-  State<_ExpenseTable> createState() => _ExpenseTableState();
-}
-
-class _ExpenseTableState extends State<_ExpenseTable> {
-  String? _sortKey;
-  bool _sortDesc = false;
-
-  Comparable? _sortValue(Expense e, String key) => switch (key) {
-    'date' => e.expenseDate,
-    'title' => e.title,
-    'category' => e.categoryName,
-    'vendor' => e.vendorName,
-    'amount' => e.amount,
-    'paid' => e.amountPaid,
-    'status' => kPaymentStatusLabel[e.paymentStatus] ?? 'Paid',
-    _ => null,
-  };
-
-  List<Expense> get _sorted {
-    final key = _sortKey;
-    if (key == null) return widget.expenses;
-    final dir = _sortDesc ? -1 : 1;
-    final sorted = [...widget.expenses];
-    sorted.sort((a, b) {
-      final av = _sortValue(a, key);
-      final bv = _sortValue(b, key);
-      final aEmpty = av == null || av == '';
-      final bEmpty = bv == null || bv == '';
-      if (aEmpty && bEmpty) return 0;
-      if (aEmpty) return 1;
-      if (bEmpty) return -1;
-      if (av is num && bv is num) return (av - bv).sign.toInt() * dir;
-      return av.toString().toLowerCase().compareTo(bv.toString().toLowerCase()) * dir;
-    });
-    return sorted;
-  }
-
-  void _toggleSort(String key) {
-    setState(() {
-      if (_sortKey != key) {
-        _sortKey = key;
-        _sortDesc = false;
-      } else if (!_sortDesc) {
-        _sortDesc = true;
-      } else {
-        _sortKey = null;
-        _sortDesc = false;
-      }
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final rows = _sorted;
     final width = _kExpenseTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
 
     return NeuCard(
@@ -585,39 +507,26 @@ class _ExpenseTableState extends State<_ExpenseTable> {
               children: [
                 Container(
                   decoration: const BoxDecoration(
-                    color: AppTheme.bg,
-                    border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+                    color: AppTheme.sidebarBrandWash,
+                    border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
                   ),
                   child: Row(
                     children: [
                       for (final c in _kExpenseTableColumns)
                         SizedBox(
                           width: c.width,
-                          child: GestureDetector(
-                            onTap: () => _toggleSort(c.key),
-                            behavior: HitTestBehavior.opaque,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
-                              child: Row(
-                                mainAxisAlignment: c.align == TextAlign.right ? MainAxisAlignment.end : MainAxisAlignment.start,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      c.label.toUpperCase(),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    _sortKey != c.key
-                                        ? Icons.unfold_more_rounded
-                                        : (_sortDesc ? Icons.arrow_drop_down_rounded : Icons.arrow_drop_up_rounded),
-                                    size: 14,
-                                    color: _sortKey == c.key ? AppTheme.accent : AppTheme.muted,
-                                  ),
-                                ],
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                            child: Text(
+                              c.label.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: c.align,
+                              style: const TextStyle(
+                                color: AppTheme.sidebarBrandInk,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
                               ),
                             ),
                           ),
@@ -626,7 +535,7 @@ class _ExpenseTableState extends State<_ExpenseTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rows.length; i++) _ExpenseTableRow(expense: rows[i], shaded: i.isOdd, parent: widget),
+                for (var i = 0; i < expenses.length; i++) _ExpenseTableRow(expense: expenses[i], shaded: i.isOdd, parent: this),
               ],
             ),
           ),
@@ -717,10 +626,31 @@ class _ExpenseTableRow extends StatelessWidget {
                   'delete' => parent.onDelete(expense),
                   _ => null,
                 },
+                elevation: 10,
+                color: AppTheme.card,
+                shadowColor: AppTheme.heading.withValues(alpha: 0.25),
+                offset: const Offset(0, 6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
                 itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'view', child: Text('View details')),
-                  PopupMenuItem(value: 'edit', child: Text('Edit expense')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete expense', style: TextStyle(color: AppTheme.danger))),
+                  PopupMenuItem(
+                    value: 'view',
+                    height: 40,
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: _ExpenseMenuRow(icon: Icons.visibility_outlined, label: 'View details'),
+                  ),
+                  PopupMenuItem(
+                    value: 'edit',
+                    height: 40,
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: _ExpenseMenuRow(icon: Icons.edit_outlined, label: 'Edit expense'),
+                  ),
+                  PopupMenuDivider(height: 8),
+                  PopupMenuItem(
+                    value: 'delete',
+                    height: 40,
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: _ExpenseMenuRow(icon: Icons.delete_outline_rounded, label: 'Delete expense', danger: true),
+                  ),
                 ],
               ),
             ),
@@ -731,6 +661,37 @@ class _ExpenseTableRow extends StatelessWidget {
   }
 }
 
+/// Responsive card grid — one column on a phone-width screen, two on a
+/// wider phone/tablet, three past that. Same measure-once-with-LayoutBuilder
+/// approach as [_AssetCardsGrid] in assets_list_panel.dart, so both
+/// registers lay their cards out identically.
+class _ExpenseCardsGrid extends StatelessWidget {
+  final List<Expense> expenses;
+  const _ExpenseCardsGrid({required this.expenses});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = AppTheme.s8;
+        final cols = constraints.maxWidth >= 920 ? 3 : (constraints.maxWidth >= 520 ? 2 : 1);
+        final width = cols == 1 ? constraints.maxWidth : (constraints.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final e in expenses) SizedBox(width: width, child: _ExpenseCard(expense: e)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A compact, modern card: title + tinted category pill + vendor, the
+/// amount as a bold badge, a thin divider, then a tight date/payment row —
+/// same construction as [_AssetCard] in assets_list_panel.dart, so Assets
+/// and Expenses share one card language across the app.
 class _ExpenseCard extends ConsumerWidget {
   final Expense expense;
   const _ExpenseCard({required this.expense});
@@ -738,87 +699,134 @@ class _ExpenseCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final color = _categoryColor(expense.categoryName);
-    return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s12),
-      // A tap opens read-only first, not the editable form — mirrors a row
-      // click in ExpensesPanel.jsx; "Edit details" inside switches it over.
-      onTap: () async {
-        await showExpenseFormSheet(context, expense: expense, viewMode: true);
-        ref.read(expensesViewModelProvider.notifier).loadExpenses();
-      },
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
-            child: Icon(Icons.receipt_long_rounded, size: 19, color: color),
-          ),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
+    final statusLabel = kPaymentStatusLabel[expense.paymentStatus];
+    final statusColor = expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.extruded,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          highlightColor: AppTheme.accent.withValues(alpha: 0.04),
+          splashColor: AppTheme.accent.withValues(alpha: 0.08),
+          // A tap opens read-only first, not the editable form — mirrors a row
+          // click in ExpensesPanel.jsx; "Edit details" inside switches it over.
+          onTap: () async {
+            await showExpenseFormSheet(context, expense: expense, viewMode: true);
+            ref.read(expensesViewModelProvider.notifier).loadExpenses();
+          },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s4, AppTheme.s8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(expense.title, style: Theme.of(context).textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Text(
-                  [expense.categoryName, if (expense.vendorName != null) expense.vendorName!].join(' · '),
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Flexible(
-                      child: Text(
-                        expense.paymentStatus == 'PENDING'
-                            ? formatIsoDate(expense.expenseDate)
-                            : '${formatIsoDate(expense.expenseDate)} · ${kPaymentMethodLabel[expense.paymentMethod] ?? expense.paymentMethod}',
-                        style: const TextStyle(color: AppTheme.text, fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(expense.title, style: Theme.of(context).textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                                  child: Text(
+                                    expense.categoryName,
+                                    style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              if (expense.vendorName != null) ...[
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    expense.vendorName!,
+                                    style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    if (kPaymentStatusLabel[expense.paymentStatus] != null) ...[
-                      const SizedBox(width: 6),
-                      _StatusTag(
-                        label: kPaymentStatusLabel[expense.paymentStatus]!,
-                        color: expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout,
+                    Container(
+                      margin: const EdgeInsets.only(left: AppTheme.s8),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+                      child: Text(
+                        formatPrice(expense.amount),
+                        style: const TextStyle(color: AppTheme.accent, fontSize: 11.5, fontWeight: FontWeight.w800),
                       ),
-                    ],
+                    ),
+                    _ExpenseRowMenu(
+                      showViewReceipt: expense.hasBillDocument,
+                      onEdit: () async {
+                        await showExpenseFormSheet(context, expense: expense);
+                        ref.read(expensesViewModelProvider.notifier).loadExpenses();
+                      },
+                      onViewReceipt: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => IdProofViewerScreen(
+                            title: 'Receipt · ${expense.title}',
+                            load: () async {
+                              final res = await ref.read(expensesViewModelProvider.notifier).usecase.expenseBill(expense.id);
+                              return (Uint8List.fromList(res.data!), res.headers.value('content-type'));
+                            },
+                          ),
+                        ),
+                      ),
+                      onDelete: () => _confirmDelete(context, ref),
+                    ),
                   ],
+                ),
+                const SizedBox(height: AppTheme.s8),
+                Container(height: 1, color: AppTheme.border),
+                const SizedBox(height: AppTheme.s8),
+                Padding(
+                  padding: const EdgeInsets.only(right: AppTheme.s8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        flex: 3,
+                        child: _Field(
+                          label: 'Date',
+                          value: expense.paymentStatus == 'PENDING'
+                              ? formatIsoDate(expense.expenseDate)
+                              : '${formatIsoDate(expense.expenseDate)} · ${kPaymentMethodLabel[expense.paymentMethod] ?? expense.paymentMethod}',
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.s16),
+                      if (statusLabel != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+                          child: Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: AppTheme.s8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(formatPrice(expense.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14.5)),
-              _ExpenseRowMenu(
-                showViewReceipt: expense.hasBillDocument,
-                onEdit: () async {
-                  await showExpenseFormSheet(context, expense: expense);
-                  ref.read(expensesViewModelProvider.notifier).loadExpenses();
-                },
-                onViewReceipt: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => IdProofViewerScreen(
-                      title: 'Receipt · ${expense.title}',
-                      load: () async {
-                        final res = await ref.read(expensesViewModelProvider.notifier).usecase.expenseBill(expense.id);
-                        return (Uint8List.fromList(res.data!), res.headers.value('content-type'));
-                      },
-                    ),
-                  ),
-                ),
-                onDelete: () => _confirmDelete(context, ref),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -842,8 +850,35 @@ class _ExpenseCard extends ConsumerWidget {
   }
 }
 
+/// A labelled fact, same construction as _Field in assets_list_panel.dart.
+class _Field extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _Field({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 1),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
 /// The ⋮ row menu — mirrors RowMenu in ExpensesPanel.jsx: "Edit expense",
 /// "View receipt" (only when a bill is attached), and "Delete expense".
+/// Same elevated, icon-led look as [_AssetRowMenu].
 class _ExpenseRowMenu extends StatelessWidget {
   final bool showViewReceipt;
   final VoidCallback onEdit;
@@ -864,14 +899,54 @@ class _ExpenseRowMenu extends StatelessWidget {
       padding: EdgeInsets.zero,
       icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
       onSelected: (action) => action(),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
+      elevation: 10,
+      color: AppTheme.card,
+      shadowColor: AppTheme.heading.withValues(alpha: 0.25),
+      offset: const Offset(0, 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
       itemBuilder: (context) => [
-        PopupMenuItem(value: onEdit, child: const Text('Edit expense')),
-        if (showViewReceipt) PopupMenuItem(value: onViewReceipt, child: const Text('View receipt')),
+        PopupMenuItem(
+          value: onEdit,
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: const _ExpenseMenuRow(icon: Icons.edit_outlined, label: 'Edit expense'),
+        ),
+        if (showViewReceipt)
+          PopupMenuItem(
+            value: onViewReceipt,
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: const _ExpenseMenuRow(icon: Icons.receipt_outlined, label: 'View receipt'),
+          ),
+        const PopupMenuDivider(height: 8),
         PopupMenuItem(
           value: onDelete,
-          child: const Text('Delete expense', style: TextStyle(color: AppTheme.danger)),
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: const _ExpenseMenuRow(icon: Icons.delete_outline_rounded, label: 'Delete expense', danger: true),
         ),
+      ],
+    );
+  }
+}
+
+/// One row of an expense's ⋮ menu — an icon, the label, and danger tinting
+/// for the destructive action. Same construction as [_AssetMenuRow].
+class _ExpenseMenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool danger;
+
+  const _ExpenseMenuRow({required this.icon, required this.label, this.danger = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? AppTheme.danger : AppTheme.heading;
+    return Row(
+      children: [
+        Icon(icon, size: 17, color: danger ? AppTheme.danger : AppTheme.muted),
+        const SizedBox(width: AppTheme.s8),
+        Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
       ],
     );
   }
