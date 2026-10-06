@@ -22,15 +22,26 @@ class DepreciationPanel extends ConsumerWidget {
       onRefresh: () => ref.read(assetsViewModelProvider.notifier).loadCatalogue(),
       color: AppTheme.accent,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 32),
+        padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, 32),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(AppTheme.s4, 0, AppTheme.s4, AppTheme.s8),
-            child: Text(
-              'Every category needs a depreciation rate before its assets can appear on the Profit & Loss '
-              'report — the method and rate on a category apply to every unit filed under it.',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
+            margin: const EdgeInsets.only(bottom: AppTheme.s12),
+            decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, size: 16, color: AppTheme.accent),
+                SizedBox(width: AppTheme.s8),
+                Expanded(
+                  child: Text(
+                    'Every category needs a depreciation rate before its assets can appear on the Profit & Loss '
+                    'report — the method and rate on a category apply to every unit filed under it.',
+                    style: TextStyle(color: AppTheme.accent, fontSize: 12, fontWeight: FontWeight.w600, height: 1.35),
+                  ),
+                ),
+              ],
             ),
           ),
           if (state.catalogueLoading && categories.isEmpty)
@@ -64,14 +75,25 @@ class _CategoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rate = category.depreciationRatePercent;
-    final meta = rate != null
-        ? '${category.depreciationBlock != null ? '${category.depreciationBlock} · ' : ''}$rate% ${category.depreciationMethod == 'SLM' ? 'straight-line' : 'WDV'}'
-        : null;
+    final isSet = rate != null;
+    final meta = isSet
+        ? [if (category.depreciationBlock != null) category.depreciationBlock!, category.depreciationMethod == 'SLM' ? 'Straight-line' : 'WDV'].join(' · ')
+        : 'No rate set';
+    final color = isSet ? AppTheme.vacant : AppTheme.draft;
+
     return NeuCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(AppTheme.s12),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
       child: Row(
         children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Icon(isSet ? Icons.check_rounded : Icons.priority_high_rounded, size: 17, color: color),
+          ),
+          const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,13 +101,23 @@ class _CategoryCard extends StatelessWidget {
                 Text(category.name, style: Theme.of(context).textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
                 Text(
-                  meta ?? 'No rate set',
-                  style: TextStyle(color: meta != null ? AppTheme.text : AppTheme.muted, fontSize: 12.5),
+                  meta,
+                  style: TextStyle(color: isSet ? AppTheme.muted : color, fontSize: 12, fontWeight: isSet ? FontWeight.w500 : FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded, color: AppTheme.muted),
+          if (isSet) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+              child: Text('$rate%', style: const TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(width: 6),
+          ],
+          const Icon(Icons.chevron_right_rounded, color: AppTheme.muted, size: 20),
         ],
       ),
     );
@@ -133,10 +165,20 @@ class _DepreciationFormScreenState extends ConsumerState<DepreciationFormScreen>
   Widget build(BuildContext context) {
     final submitting = ref.watch(assetsViewModelProvider).submitting;
     return Scaffold(
-      appBar: AppBar(title: const Text('Depreciation rate')),
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(
+        title: const Text('Depreciation rate', style: TextStyle(fontWeight: FontWeight.w700)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(22),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
+            child: Text(widget.category.name, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
           children: [
             if (_error != null) ...[
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
@@ -146,8 +188,6 @@ class _DepreciationFormScreenState extends ConsumerState<DepreciationFormScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.category.name, style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: AppTheme.s16),
                   const Text('IT Act block', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
                   const SizedBox(height: AppTheme.s4),
                   OptionDropdown(

@@ -244,7 +244,7 @@ class SectionDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
+      padding: EdgeInsets.symmetric(vertical: AppTheme.s12),
       child: Divider(height: 1, color: AppTheme.border),
     );
   }

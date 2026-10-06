@@ -26,6 +26,8 @@ class WorkOrdersPanel extends ConsumerStatefulWidget {
 }
 
 class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
+  final _search = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +35,12 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
       ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
       ref.read(assetsViewModelProvider.notifier).loadCatalogue();
     });
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   List<AssetStat> _summaryStats(List<WorkOrder> workOrders) {
@@ -49,7 +57,16 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(assetsViewModelProvider);
-    final shown = [...state.workOrders]..sort((a, b) => b.openedAt.compareTo(a.openedAt));
+    final needle = _search.text.trim().toLowerCase();
+    final shown = [...state.workOrders]
+      ..removeWhere((w) =>
+          needle.isNotEmpty &&
+          !w.assetName.toLowerCase().contains(needle) &&
+          !(kIssueTypeLabel[w.issueType] ?? w.issueType).toLowerCase().contains(needle) &&
+          !w.description.toLowerCase().contains(needle) &&
+          !w.assignedToName.toLowerCase().contains(needle) &&
+          !(w.vendorName ?? '').toLowerCase().contains(needle))
+      ..sort((a, b) => b.openedAt.compareTo(a.openedAt));
 
     return Stack(
       fit: StackFit.expand,
@@ -61,16 +78,73 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
+              Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.subtle,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: TextField(
+                        controller: _search,
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                        decoration: const InputDecoration(
+                          hintText: 'Search work orders…',
+                          hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 13),
+                        ),
+                      ),
+                    ),
+                    if (_search.text.isNotEmpty)
+                      GestureDetector(
+                        onTap: () => setState(() => _search.clear()),
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          margin: const EdgeInsets.only(right: 2),
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
+                          child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
               if (state.workOrders.isNotEmpty) ...[
                 AssetStatGrid(items: _summaryStats(state.workOrders)),
                 const SizedBox(height: AppTheme.s12),
               ],
               if (state.catalogueLoading && state.workOrders.isEmpty)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+              else if (state.error != null && state.workOrders.isEmpty)
+                NeuNotice(icon: Icons.cloud_off_rounded, message: state.error!)
               else if (shown.isEmpty)
-                const NeuNotice(
+                NeuNotice(
                   icon: Icons.build_outlined,
-                  message: 'No work orders match. Tap + to report an issue.',
+                  message: state.workOrders.isEmpty
+                      ? 'No work orders match. Tap + to report an issue.'
+                      : 'No work order matches this search.',
                 )
               else
                 for (final w in shown)
@@ -99,17 +173,19 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
   }
 }
 
+Color _workOrderStatusColor(String status) => switch (status) {
+  'OPEN' => AppTheme.danger,
+  'IN_PROGRESS' => AppTheme.draft,
+  _ => AppTheme.vacant,
+};
+
 class _WorkOrderCard extends StatelessWidget {
   final WorkOrder workOrder;
   final VoidCallback onTap;
 
   const _WorkOrderCard({required this.workOrder, required this.onTap});
 
-  Color get _statusColor => switch (workOrder.status) {
-    'OPEN' => AppTheme.danger,
-    'IN_PROGRESS' => AppTheme.draft,
-    _ => AppTheme.vacant,
-  };
+  Color get _statusColor => _workOrderStatusColor(workOrder.status);
 
   @override
   Widget build(BuildContext context) {
@@ -172,6 +248,44 @@ class _WorkOrderCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A colored status pill for the work order form's status picker — same
+/// red/amber/green language as the list card's status chip, so picking a
+/// status previews the color it'll show as once saved.
+class _StatusOption extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _StatusOption({required this.label, required this.color, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.12) : AppTheme.bg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? color : AppTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              Icon(Icons.circle, size: 8, color: color),
+              const SizedBox(width: 6),
+            ],
+            Text(label, style: TextStyle(color: selected ? color : AppTheme.text, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }
@@ -365,8 +479,24 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
     final issueTypes = _bulk ? ['ROUTINE_SERVICE', 'BREAKDOWN'] : kIssueTypeLabel.keys.toList();
 
     return Scaffold(
+      backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: Text(_isEdit ? 'Work order · ${widget.workOrder!.assetName}' : (_bulk ? 'Bulk work order' : 'Report an issue')),
+        title: Text(
+          _isEdit ? 'Work order' : (_bulk ? 'Bulk work order' : 'Report an issue'),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        bottom: _isEdit
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(22),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                  child: Text(
+                    widget.workOrder!.assetName,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                  ),
+                ),
+              )
+            : null,
       ),
       body: SafeArea(
         child: ListView(
@@ -467,23 +597,13 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                   SectionLabel('Issue', number: _bulk || !_isEdit ? 2 : 1),
                   const SizedBox(height: AppTheme.s12),
                   Text('Type', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  NeuPressed(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: _issueType,
-                        dropdownColor: AppTheme.card,
-                        items: [
-                          for (final t in issueTypes)
-                            DropdownMenuItem(value: t, child: Text(kIssueTypeLabel[t] ?? t, style: const TextStyle(fontSize: 13.5))),
-                        ],
-                        onChanged: (v) => setState(() => _issueType = v!),
-                      ),
-                    ),
+                  const SizedBox(height: 6),
+                  ModeToggle(
+                    options: {for (final t in issueTypes) t: kIssueTypeLabel[t] ?? t},
+                    selected: _issueType,
+                    onSelect: (v) => setState(() => _issueType = v),
                   ),
-                  const SizedBox(height: AppTheme.s12),
+                  const SizedBox(height: AppTheme.s16),
                   NeuField(
                     key: _descriptionFieldKey,
                     controller: _description,
@@ -498,15 +618,17 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                   if (_isEdit) ...[
                     const SizedBox(height: AppTheme.s12),
                     Text('Status', style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: AppTheme.s8,
+                      runSpacing: AppTheme.s8,
                       children: [
                         for (final s in kWorkOrderStatuses)
-                          ChoiceChip(
-                            label: Text(kWorkOrderStatusLabel[s]!),
+                          _StatusOption(
+                            label: kWorkOrderStatusLabel[s]!,
+                            color: _workOrderStatusColor(s),
                             selected: _status == s,
-                            onSelected: (_) => setState(() => _status = s),
+                            onTap: () => setState(() => _status = s),
                           ),
                       ],
                     ),

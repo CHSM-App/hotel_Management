@@ -91,178 +91,232 @@ class _Body extends ConsumerWidget {
       children: [
         // ── The document ────────────────────────────────────────────────────
         NeuCard(
+          padding: EdgeInsets.zero,
           radius: AppTheme.rMedium,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppTheme.accent.withValues(alpha: 0.16),
-                          AppTheme.accent.withValues(alpha: 0.06),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                    ),
-                    child: const Icon(
-                      Icons.receipt_long_rounded,
-                      color: AppTheme.accent,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: AppTheme.s8),
-                  Expanded(
-                    child: Text(
-                      kDocumentLabels[amounts?.documentType] ?? 'Bill',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  // Which document is issued is the property's business, not
-                  // the desk's: a registered lodge issues on the GST side, and
-                  // an unregistered one has nothing else to issue.
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppTheme.accent.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      preview.isGstRegistered ? 'GST' : 'Non-GST',
-                      style: const TextStyle(
-                        color: AppTheme.accent,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.s8),
-              Text(
-                'Room ${preview.roomNumber ?? '—'} · '
-                '${nightsLabel(preview.nights)}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (preview.isDormitory) ...[
-                const SizedBox(height: 2),
-                Text(
-                  preview.bedLabel != null
-                      ? 'Dormitory bed — ${preview.bedLabel}'
-                      : 'Dormitory (whole room)',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-              const Divider(height: AppTheme.s24),
-
-              if (roomBillSections(preview.roomCharges) case final sections?)
-                for (final section in sections)
-                  _RoomSectionRows(section: section)
-              else
-                for (final line in preview.roomCharges)
-                  _Row(label: line.label, value: line.amount),
-
-              if (preview.lateCheckoutCharge > 0)
-                _Row(
-                  label: 'Late checkout'
-                      '${preview.lateCheckoutMinutes > 0 ? ' (${preview.lateCheckoutMinutes} min)' : ''}',
-                  value: preview.lateCheckoutCharge,
-                ),
-
-              if ((amounts?.foodSubtotal ?? 0) > 0)
-                _Row(label: 'Food', value: amounts!.foodSubtotal),
-
-              if ((amounts?.discountAmount ?? 0) > 0)
-                _Row(
-                  label: 'Discount (${amounts!.discountPercent}%)',
-                  value: -amounts.discountAmount,
-                ),
-
-              const Divider(height: AppTheme.s24),
-
-              // The tax is inside the total, not added to it. Shown so the
-              // guest can see what was charged, and so the figures reconcile
-              // with what is filed.
-              //
-              // Room and food taxed separately — different SACs at different
-              // rates, which is the split GSTR-1 reports on — so each prints
-              // its own CGST/SGST pair rather than one merged figure, same as
-              // the web bill.
-              if ((amounts?.cgstAmount ?? 0) > 0 || (amounts?.sgstAmount ?? 0) > 0) ...[
-                _Row(
-                  label: 'CGST (${amounts?.cgstRatePercent ?? 0}%)',
-                  value: amounts?.cgstAmount ?? 0,
-                  muted: true,
-                ),
-                _Row(
-                  label: 'SGST (${amounts?.sgstRatePercent ?? 0}%)',
-                  value: amounts?.sgstAmount ?? 0,
-                  muted: true,
-                ),
-              ],
-              if ((amounts?.foodCgstAmount ?? 0) > 0 || (amounts?.foodSgstAmount ?? 0) > 0) ...[
-                _Row(
-                  label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
-                  value: amounts?.foodCgstAmount ?? 0,
-                  muted: true,
-                ),
-                _Row(
-                  label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
-                  value: amounts?.foodSgstAmount ?? 0,
-                  muted: true,
-                ),
-              ],
-              if ((amounts?.roundOff ?? 0) != 0)
-                _Row(
-                  label: 'Round off',
-                  value: amounts!.roundOff,
-                  muted: true,
-                ),
-
-              _Row(
-                label: 'Grand total',
-                value: amounts?.totalAmount ?? 0,
-                strong: true,
-              ),
-
-              if (preview.advancePaid > 0)
-                _Row(
-                  label: preview.advanceReceiptNumbers == null
-                      ? 'Less advance'
-                      : 'Less advance (Rec. ${preview.advanceReceiptNumbers})',
-                  value: -preview.advancePaid,
-                ),
-
-              const SizedBox(height: AppTheme.s4),
+              // A slim brand-gradient cap on the document — the one visual
+              // cue that this card is the bill itself, not just another
+              // panel on the page.
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s12,
-                  vertical: AppTheme.s8,
+                height: 4,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  ),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(AppTheme.rMedium),
+                  ),
                 ),
-                decoration: BoxDecoration(
-                  color: AppTheme.accent.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  AppTheme.s12,
+                  AppTheme.s12,
+                  AppTheme.s8,
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Balance due',
-                      style: Theme.of(context).textTheme.titleSmall,
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                AppTheme.accent.withValues(alpha: 0.16),
+                                AppTheme.accent.withValues(alpha: 0.06),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                          ),
+                          child: const Icon(
+                            Icons.receipt_long_rounded,
+                            color: AppTheme.accent,
+                            size: 17,
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(
+                          child: Text(
+                            kDocumentLabels[amounts?.documentType] ?? 'Bill',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.s8),
+                        // Which document is issued is the property's business,
+                        // not the desk's: a registered lodge issues on the GST
+                        // side, and an unregistered one has nothing else to
+                        // issue.
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accent.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            preview.isGstRegistered ? 'GST' : 'Non-GST',
+                            style: const TextStyle(
+                              color: AppTheme.accent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 6),
                     Text(
-                      formatPrice(preview.balanceDue),
-                      style: const TextStyle(
-                        color: AppTheme.accent,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 17,
+                      'Room ${preview.roomNumber ?? '—'} · '
+                      '${nightsLabel(preview.nights)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (preview.isDormitory) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        preview.bedLabel != null
+                            ? 'Dormitory bed — ${preview.bedLabel}'
+                            : 'Dormitory (whole room)',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.s12,
+                  0,
+                  AppTheme.s12,
+                  AppTheme.s12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Divider(height: AppTheme.s16),
+
+                    if (roomBillSections(preview.roomCharges) case final sections?)
+                      for (final section in sections)
+                        _RoomSectionRows(section: section)
+                    else
+                      for (final line in preview.roomCharges)
+                        _Row(label: line.label, value: line.amount),
+
+                    if (preview.lateCheckoutCharge > 0)
+                      _Row(
+                        label: 'Late checkout'
+                            '${preview.lateCheckoutMinutes > 0 ? ' (${preview.lateCheckoutMinutes} min)' : ''}',
+                        value: preview.lateCheckoutCharge,
+                      ),
+
+                    if ((amounts?.foodSubtotal ?? 0) > 0)
+                      _Row(label: 'Food', value: amounts!.foodSubtotal),
+
+                    if ((amounts?.discountAmount ?? 0) > 0)
+                      _Row(
+                        label: 'Discount (${amounts!.discountPercent}%)',
+                        value: -amounts.discountAmount,
+                      ),
+
+                    const Divider(height: AppTheme.s16),
+
+                    // The tax is inside the total, not added to it. Shown so
+                    // the guest can see what was charged, and so the figures
+                    // reconcile with what is filed.
+                    //
+                    // Room and food taxed separately — different SACs at
+                    // different rates, which is the split GSTR-1 reports on —
+                    // so each prints its own CGST/SGST pair rather than one
+                    // merged figure, same as the web bill.
+                    if ((amounts?.cgstAmount ?? 0) > 0 || (amounts?.sgstAmount ?? 0) > 0) ...[
+                      _Row(
+                        label: 'CGST (${amounts?.cgstRatePercent ?? 0}%)',
+                        value: amounts?.cgstAmount ?? 0,
+                        muted: true,
+                      ),
+                      _Row(
+                        label: 'SGST (${amounts?.sgstRatePercent ?? 0}%)',
+                        value: amounts?.sgstAmount ?? 0,
+                        muted: true,
+                      ),
+                    ],
+                    if ((amounts?.foodCgstAmount ?? 0) > 0 || (amounts?.foodSgstAmount ?? 0) > 0) ...[
+                      _Row(
+                        label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
+                        value: amounts?.foodCgstAmount ?? 0,
+                        muted: true,
+                      ),
+                      _Row(
+                        label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
+                        value: amounts?.foodSgstAmount ?? 0,
+                        muted: true,
+                      ),
+                    ],
+                    if ((amounts?.roundOff ?? 0) != 0)
+                      _Row(
+                        label: 'Round off',
+                        value: amounts!.roundOff,
+                        muted: true,
+                      ),
+
+                    _Row(
+                      label: 'Grand total',
+                      value: amounts?.totalAmount ?? 0,
+                      strong: true,
+                    ),
+
+                    if (preview.advancePaid > 0)
+                      _Row(
+                        label: preview.advanceReceiptNumbers == null
+                            ? 'Less advance'
+                            : 'Less advance (Rec. ${preview.advanceReceiptNumbers})',
+                        value: -preview.advancePaid,
+                      ),
+
+                    const SizedBox(height: 2),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.s12,
+                        vertical: AppTheme.s12,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppTheme.accent.withValues(alpha: 0.10),
+                            AppTheme.sidebarBrand.withValues(alpha: 0.08),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Balance due',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const Spacer(),
+                          Text(
+                            formatPrice(preview.balanceDue),
+                            style: const TextStyle(
+                              color: AppTheme.accent,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 19,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -324,25 +378,39 @@ class _Body extends ConsumerWidget {
         ],
 
         // ── How it was paid ─────────────────────────────────────────────────
-        const SizedBox(height: AppTheme.s16),
+        const SizedBox(height: AppTheme.s12),
         Row(
           children: [
-            const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 18),
+            Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 15),
+            ),
             const SizedBox(width: AppTheme.s8),
-            Text(
-              'Record how the guest paid',
-              style: Theme.of(context).textTheme.titleMedium,
+            Expanded(
+              child: Text(
+                'Record how the guest paid',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
           ],
         ),
         const SizedBox(height: AppTheme.s4),
-        Text(
-          state.nothingDue
-              ? 'The advance already covers this bill. Nothing is left to '
-                    'collect — issue it as it stands.'
-              : '${formatPrice(state.balanceDue)} is due. Choose the payment '
-                    'type for each amount taken.',
-          style: Theme.of(context).textTheme.bodySmall,
+        Padding(
+          padding: const EdgeInsets.only(left: 38),
+          child: Text(
+            state.nothingDue
+                ? 'The advance already covers this bill. Nothing is left to '
+                      'collect — issue it as it stands.'
+                : '${formatPrice(state.balanceDue)} is due. Choose the payment '
+                      'type for each amount taken.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ),
         const SizedBox(height: AppTheme.s12),
         // No rows at all when nothing is due — the desk has nothing to
@@ -352,9 +420,25 @@ class _Body extends ConsumerWidget {
 
         const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
-          Text(
-            state.error!,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+            decoration: BoxDecoration(
+              color: AppTheme.danger.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 16),
+                const SizedBox(width: AppTheme.s8),
+                Expanded(
+                  child: Text(
+                    state.error!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppTheme.s12),
         ],
@@ -481,7 +565,14 @@ class _Body extends ConsumerWidget {
                     color: Colors.white,
                   ),
                 )
-              : const Text('Issue bill'),
+              : const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.receipt_long_rounded, size: 18, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('Issue bill'),
+                  ],
+                ),
         ),
       ],
     );
@@ -501,20 +592,39 @@ class _RoomSectionRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s8, AppTheme.s8, AppTheme.s8, 2),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Room ${section.room} · ${nightsLabel(section.base.nights)}',
-            style: const TextStyle(
-              color: AppTheme.muted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              Container(
+                width: 3,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Room ${section.room} · ${nightsLabel(section.base.nights)}',
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           _Row(label: section.base.label, value: section.base.amount),
           for (final extra in section.extras)
             _Row(label: extra.label, value: extra.amount),
@@ -551,7 +661,7 @@ class _Row extends StatelessWidget {
         ? AppTheme.muted
         : AppTheme.text;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
       child: Row(
         children: [
           Expanded(
@@ -559,8 +669,8 @@ class _Row extends StatelessWidget {
               label,
               style: TextStyle(
                 color: colour,
-                fontSize: strong ? 15 : 13,
-                fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
+                fontSize: strong ? 14.5 : 13,
+                fontWeight: strong ? FontWeight.w700 : FontWeight.w400,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -570,8 +680,8 @@ class _Row extends StatelessWidget {
             formatPrice(value),
             style: TextStyle(
               color: colour,
-              fontSize: strong ? 16 : 13,
-              fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
+              fontSize: strong ? 15 : 13,
+              fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
         ],
@@ -838,7 +948,7 @@ class _PaymentRows extends ConsumerWidget {
         children: [
           for (var i = 0; i < state.payment.length; i++)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8 + 2),
               child: _PaymentRow(
                 key: ValueKey(i),
                 line: state.payment[i],

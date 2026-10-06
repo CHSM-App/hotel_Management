@@ -16,7 +16,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _identifier = TextEditingController();
   final _password = TextEditingController();
-  bool _showPassword = false;
 
   // Swaps in for the sign-in form itself, the same way the web login's
   // "Forgot password?" link swaps its card — one form on screen at a time,
@@ -194,7 +193,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         NeuField(
           controller: _password,
           label: 'Password',
-          obscure: !_showPassword,
+          obscure: true,
           labelAction: TextButton(
             onPressed: _openForgot,
             style: TextButton.styleFrom(
@@ -206,10 +205,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               'Forgot password?',
               style: TextStyle(color: AppTheme.accent, fontSize: 12.5),
             ),
-          ),
-          suffix: _EyeToggle(
-            shown: _showPassword,
-            onTap: () => setState(() => _showPassword = !_showPassword),
           ),
         ),
 

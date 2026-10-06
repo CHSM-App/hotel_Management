@@ -307,7 +307,16 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(expensesViewModelProvider);
     return Scaffold(
+      backgroundColor: AppTheme.bg,
       appBar: AppBar(
+        backgroundColor: AppTheme.bg,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: AppTheme.border),
+        ),
         title: !_viewMode
             ? Text(_isEdit ? 'Edit expense' : (_isLogging ? 'Log this month' : 'Log an expense'))
             : Column(
@@ -323,9 +332,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
-          children: [
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s16, AppTheme.s32),
+              children: [
             if (_viewMode) ...[
               // Read-only summary — a row tap lands here first, not in the
               // editable form. "Edit details" below switches this same
@@ -366,15 +378,17 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                   ],
                 ),
               ),
-            ] else
+            ] else ...[
+              if (_error != null) ...[
+                _ErrorBanner(_error!),
+                const SizedBox(height: AppTheme.s12),
+              ],
               NeuCard(
+                radius: AppTheme.rMedium,
+                shadow: AppTheme.subtle,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_error != null) ...[
-                      _ErrorBanner(_error!),
-                      const SizedBox(height: AppTheme.s16),
-                    ],
                     const SectionLabel('What was this for', number: 1),
                     const SizedBox(height: AppTheme.s12),
                     NeuField(
@@ -402,16 +416,21 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                       ),
                     const SizedBox(height: AppTheme.s12),
                     VendorComboField(controller: _vendor, vendors: state.vendors, label: 'Vendor'),
-
-                    const SectionDivider(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              NeuCard(
+                radius: AppTheme.rMedium,
+                shadow: AppTheme.subtle,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     const SectionLabel('Amount & payment', number: 2),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
-                      key: _amountFieldKey,
+                    _AmountField(
+                      fieldKey: _amountFieldKey,
                       controller: _amount,
-                      label: 'Amount',
-                      keyboardType: TextInputType.number,
-                      required: true,
                       errorText: _amountError,
                       focusNode: _amountFocus,
                       onChanged: (_) => setState(() {}),
@@ -462,35 +481,29 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                       required: true,
                       errorText: _dateError,
                     ),
-
-                    const SectionDivider(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              NeuCard(
+                radius: AppTheme.rMedium,
+                shadow: AppTheme.subtle,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     const SectionLabel('Notes & receipt', number: 3),
                     const SizedBox(height: AppTheme.s12),
                     NeuField(controller: _description, label: 'Notes', maxLength: 400),
                     const SizedBox(height: AppTheme.s16),
-                    Text('Receipt / bill (image or PDF)', style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: AppTheme.s8),
-                    Row(
-                      children: [
-                        if (_billPhoto != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                            child: Image.file(File(_billPhoto!.path), width: 56, height: 56, fit: BoxFit.cover),
-                          )
-                        else if (_isEdit && widget.expense!.hasBillDocument)
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rSmall), border: Border.all(color: AppTheme.border)),
-                            child: const Icon(Icons.receipt_long_rounded, color: AppTheme.muted),
-                          ),
-                        const SizedBox(width: AppTheme.s8),
-                        NeuButton(onPressed: _pickBillPhoto, child: Text(_billPhoto == null ? 'Add photo' : 'Replace photo')),
-                      ],
+                    _ReceiptPicker(
+                      billPhoto: _billPhoto,
+                      hasExistingBill: _isEdit && widget.expense!.hasBillDocument,
+                      onPick: _pickBillPhoto,
                     ),
                   ],
                 ),
               ),
+            ],
             if (_isEdit) ...[
               const SizedBox(height: AppTheme.s16),
               _PaymentsSection(
@@ -542,7 +555,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                     ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : Text(_isEdit ? 'Save changes' : (_isLogging ? 'Log this occurrence' : 'Log expense')),
               ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -596,6 +611,127 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     } else {
       setState(() => _error = ref.read(expensesViewModelProvider).error ?? 'Could not save the expense.');
     }
+  }
+}
+
+/// The Amount field, given a bit more visual weight than a plain [NeuField]
+/// since it's the one number everything else on this form is justifying —
+/// same field well, with a ₹ badge standing in for a currency prefix
+/// [NeuField] itself doesn't support.
+class _AmountField extends StatelessWidget {
+  final Key fieldKey;
+  final TextEditingController controller;
+  final String? errorText;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+
+  const _AmountField({
+    required this.fieldKey,
+    required this.controller,
+    required this.errorText,
+    required this.focusNode,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.accent.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          ),
+          child: const Text('₹', style: TextStyle(color: AppTheme.accent, fontSize: 20, fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: NeuField(
+            key: fieldKey,
+            controller: controller,
+            label: 'Amount',
+            keyboardType: TextInputType.number,
+            required: true,
+            errorText: errorText,
+            focusNode: focusNode,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The receipt/bill upload zone — a dashed-feel drop target instead of a
+/// bare thumbnail-and-button row, so the one optional attachment on this
+/// form reads as its own inviting target rather than an afterthought beside
+/// a small button.
+class _ReceiptPicker extends StatelessWidget {
+  final XFile? billPhoto;
+  final bool hasExistingBill;
+  final VoidCallback onPick;
+
+  const _ReceiptPicker({required this.billPhoto, required this.hasExistingBill, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPreview = billPhoto != null || hasExistingBill;
+    return InkWell(
+      onTap: onPick,
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      child: Container(
+        padding: const EdgeInsets.all(AppTheme.s12),
+        decoration: BoxDecoration(
+          color: AppTheme.accent.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            if (billPhoto != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                child: Image.file(File(billPhoto!.path), width: 44, height: 44, fit: BoxFit.cover),
+              )
+            else
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: Icon(
+                  hasExistingBill ? Icons.receipt_long_rounded : Icons.add_a_photo_outlined,
+                  color: AppTheme.accent,
+                  size: 20,
+                ),
+              ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    hasPreview ? (billPhoto != null ? 'Receipt attached' : 'Receipt on file') : 'Add the receipt / bill',
+                    style: const TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasPreview ? 'Tap to replace it' : 'Photo or PDF, tap to choose',
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppTheme.muted, size: 20),
+          ],
+        ),
+      ),
+    );
   }
 }
 

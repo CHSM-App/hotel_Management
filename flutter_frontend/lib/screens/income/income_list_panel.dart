@@ -113,7 +113,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                       decoration: BoxDecoration(
                         color: AppTheme.card,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.border),
+                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(
@@ -250,11 +250,10 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
   }
 }
 
-/// A single pill spanning From → To, styled to match the search bar right
-/// above it (same height, rounded-999 card, border and soft shadow) instead
-/// of looking like a bolted-on filter — a small accent-tinted calendar badge
-/// per side, a divider down the middle, and an inline clear "x" once a side
-/// is picked.
+/// From and To as two independent pills, styled to match the search bar
+/// right above them (same height, rounded-999 card, border and soft shadow)
+/// — a small accent-tinted calendar badge, the label or picked date, and an
+/// inline clear "x" once a side is picked.
 class _DateRangeBar extends StatelessWidget {
   final String fromLabel;
   final String toLabel;
@@ -278,37 +277,26 @@ class _DateRangeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.border),
-        boxShadow: AppTheme.subtle,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _DateSegment(
-              label: fromLabel,
-              active: fromActive,
-              onTap: onTapFrom,
-              onClear: onClearFrom,
-              leftRounded: true,
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _DateSegment(
+            label: fromLabel,
+            active: fromActive,
+            onTap: onTapFrom,
+            onClear: onClearFrom,
           ),
-          Container(width: 1, height: 26, color: AppTheme.border),
-          Expanded(
-            child: _DateSegment(
-              label: toLabel,
-              active: toActive,
-              onTap: onTapTo,
-              onClear: onClearTo,
-              leftRounded: false,
-            ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: _DateSegment(
+            label: toLabel,
+            active: toActive,
+            onTap: onTapTo,
+            onClear: onClearTo,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -318,61 +306,71 @@ class _DateSegment extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
   final VoidCallback? onClear;
-  final bool leftRounded;
 
   const _DateSegment({
     required this.label,
     required this.active,
     required this.onTap,
-    required this.leftRounded,
     this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.horizontal(
-        left: leftRounded ? const Radius.circular(999) : Radius.zero,
-        right: leftRounded ? Radius.zero : const Radius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-        child: Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.event_rounded, size: 13, color: active ? Colors.white : AppTheme.accent),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        highlightColor: AppTheme.accent.withValues(alpha: 0.05),
+        splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        child: Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: active ? AppTheme.accent.withValues(alpha: 0.4) : AppTheme.shadowDark,
+              width: 1.3,
             ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: active ? AppTheme.heading : AppTheme.muted,
-                  fontSize: 13,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            boxShadow: AppTheme.subtle,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.event_rounded, size: 13, color: active ? Colors.white : AppTheme.accent),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: active ? AppTheme.heading : AppTheme.muted,
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-            if (onClear != null)
-              GestureDetector(
-                onTap: onClear,
-                behavior: HitTestBehavior.opaque,
-                child: const Padding(
-                  padding: EdgeInsets.only(left: 4),
-                  child: Icon(Icons.close_rounded, size: 14, color: AppTheme.muted),
+              if (onClear != null)
+                GestureDetector(
+                  onTap: onClear,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(Icons.close_rounded, size: 14, color: AppTheme.muted),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

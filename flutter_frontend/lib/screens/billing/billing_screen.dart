@@ -1716,9 +1716,9 @@ class BillingQueueTable extends StatelessWidget {
               children: [
                 Container(
                   decoration: const BoxDecoration(
-                    color: AppTheme.bg,
+                    color: AppTheme.sidebarBrandWash,
                     border: Border(
-                      bottom: BorderSide(color: AppTheme.border, width: 0.8),
+                      bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8),
                     ),
                   ),
                   child: Row(
@@ -1735,11 +1735,12 @@ class BillingQueueTable extends StatelessWidget {
                               c.label.toUpperCase(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.3,
-                                  ),
+                              style: const TextStyle(
+                                color: AppTheme.sidebarBrandInk,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
                             ),
                           ),
                         ),

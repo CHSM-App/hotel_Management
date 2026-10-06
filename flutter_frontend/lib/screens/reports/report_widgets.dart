@@ -699,26 +699,21 @@ class ReportDateRangeFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Row(
-        children: [
-          Expanded(
-            child: _DateFilterField(label: 'From', value: fromDate, onPick: onFromChanged),
+    return Row(
+      children: [
+        Expanded(
+          child: _DateFilterField(label: 'From', value: fromDate, onPick: onFromChanged),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: _DateFilterField(
+            label: 'To',
+            value: toDate,
+            minDate: fromDate,
+            onPick: onToChanged,
           ),
-          const SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: _DateFilterField(
-              label: 'To',
-              value: toDate,
-              minDate: fromDate,
-              onPick: onToChanged,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -754,29 +749,40 @@ class _DateFilterField extends StatelessWidget {
             '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
         onPick(iso);
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400)),
-          const SizedBox(height: 2),
-          NeuPressed(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.event_rounded, size: 14, color: AppTheme.muted),
-                const SizedBox(width: AppTheme.s8),
-                Flexible(
-                  child: Text(
-                    parsed == null ? value : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
-                    style: const TextStyle(color: AppTheme.heading, fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: AppTheme.subtle,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: AppTheme.accent,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.white),
             ),
-          ),
-        ],
+            const SizedBox(width: AppTheme.s8),
+            Flexible(
+              child: Text(
+                parsed == null ? label : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
+                style: TextStyle(
+                  color: parsed == null ? AppTheme.muted : AppTheme.heading,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

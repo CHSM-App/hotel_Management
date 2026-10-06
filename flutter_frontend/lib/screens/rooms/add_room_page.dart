@@ -256,7 +256,11 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
         ),
       ),
       body: SafeArea(
-        child: ListView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s12,
@@ -321,6 +325,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             keyboardType: TextInputType.text,
                             onChanged: (_) => setState(() {}),
                             forceUppercase: true,
+                            dense: true,
                           )
                         else
                           KeyedSubtree(
@@ -338,6 +343,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                         required: true,
                                         keyboardType: TextInputType.number,
                                         onChanged: (_) => setState(() {}),
+                                        dense: true,
                                       ),
                                     ),
                                     const SizedBox(width: AppTheme.s12),
@@ -349,6 +355,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                         required: true,
                                         keyboardType: TextInputType.number,
                                         onChanged: (_) => setState(() {}),
+                                        dense: true,
                                       ),
                                     ),
                                   ],
@@ -412,7 +419,9 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                 hint: '1',
                                 required: true,
                                 errorText: _floorError,
+                                keyboardType: TextInputType.number,
                                 onChanged: (_) => setState(() {}),
+                                dense: true,
                               ),
                             ),
                             const SizedBox(width: AppTheme.s12),
@@ -444,27 +453,68 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppTheme.s16),
+                        const SizedBox(height: AppTheme.s12),
 
                         KeyedSubtree(
                           key: _dormitoryKey,
-                          child: Row(
-                            children: [
-                              Switch(
-                                value: _isDormitory,
-                                onChanged: (v) => setState(() {
-                                  _isDormitory = v;
-                                  if (v) _bulkMode = false;
-                                }),
-                                activeThumbColor: AppTheme.accent,
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              _isDormitory = !_isDormitory;
+                              if (_isDormitory) _bulkMode = false;
+                            }),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppTheme.s12,
+                                vertical: AppTheme.s8,
                               ),
-                              Expanded(
-                                child: Text(
-                                  'This is a dormitory (sold bed-by-bed)',
-                                  style: Theme.of(context).textTheme.bodyMedium,
+                              decoration: BoxDecoration(
+                                color: _isDormitory
+                                    ? AppTheme.accent.withValues(alpha: 0.07)
+                                    : AppTheme.bg,
+                                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                                border: Border.all(
+                                  color: _isDormitory
+                                      ? AppTheme.accent.withValues(alpha: 0.35)
+                                      : AppTheme.border,
                                 ),
                               ),
-                            ],
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 30,
+                                    height: 30,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: _isDormitory
+                                          ? AppTheme.accent.withValues(alpha: 0.12)
+                                          : AppTheme.card,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.bed_rounded,
+                                      size: 16,
+                                      color: _isDormitory ? AppTheme.accent : AppTheme.muted,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppTheme.s12),
+                                  Expanded(
+                                    child: Text(
+                                      'This is a dormitory (sold bed-by-bed)',
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: _isDormitory,
+                                    onChanged: (v) => setState(() {
+                                      _isDormitory = v;
+                                      if (v) _bulkMode = false;
+                                    }),
+                                    activeThumbColor: AppTheme.accent,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                         if (_isDormitory) ...[
@@ -486,6 +536,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             required: true,
                             keyboardType: TextInputType.number,
                             onChanged: (_) => setState(() {}),
+                            dense: true,
                           ),
                           const SizedBox(height: AppTheme.s12),
                           const RequiredLabel('AC'),
@@ -505,40 +556,50 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             style: TextStyle(color: AppTheme.muted, fontSize: 11),
                           ),
                           const SizedBox(height: AppTheme.s8),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline_rounded),
-                                color: AppTheme.muted,
-                                onPressed: _dormitoryBedCount <= 1
-                                    ? null
-                                    : () => setState(() => _dormitoryBedCount--),
-                              ),
-                              SizedBox(
-                                width: 40,
-                                child: Text(
-                                  '$_dormitoryBedCount',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: AppTheme.heading,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.bg,
+                              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                              border: Border.all(color: AppTheme.border),
+                            ),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline_rounded),
+                                  color: AppTheme.muted,
+                                  onPressed: _dormitoryBedCount <= 1
+                                      ? null
+                                      : () => setState(() => _dormitoryBedCount--),
+                                ),
+                                SizedBox(
+                                  width: 32,
+                                  child: Text(
+                                    '$_dormitoryBedCount',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: AppTheme.heading,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline_rounded),
-                                color: AppTheme.accent,
-                                onPressed: _dormitoryBedCount >= 60
-                                    ? null
-                                    : () => setState(() => _dormitoryBedCount++),
-                              ),
-                              const SizedBox(width: AppTheme.s4),
-                              Text(
-                                'bed${_dormitoryBedCount == 1 ? '' : 's'} in this room',
-                                style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
-                              ),
-                            ],
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline_rounded),
+                                  color: AppTheme.accent,
+                                  onPressed: _dormitoryBedCount >= 60
+                                      ? null
+                                      : () => setState(() => _dormitoryBedCount++),
+                                ),
+                                const SizedBox(width: AppTheme.s4),
+                                Expanded(
+                                  child: Text(
+                                    'bed${_dormitoryBedCount == 1 ? '' : 's'} in this room',
+                                    style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           if (_dormitoryError != null) ...[
                             const SizedBox(height: AppTheme.s4),
@@ -560,8 +621,14 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           child: Column(
                             children: [
                         for (var i = 0; i < _beds.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                          Container(
+                            margin: const EdgeInsets.only(bottom: AppTheme.s8),
+                            padding: const EdgeInsets.all(AppTheme.s8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.bg,
+                              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                              border: Border.all(color: AppTheme.border),
+                            ),
                             child: Row(
                               children: [
                                 Expanded(
@@ -581,6 +648,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                     label: '',
                                     keyboardType: TextInputType.number,
                                     onChanged: (v) => _beds[i].count = int.tryParse(v) ?? 1,
+                                    dense: true,
                                   ),
                                 ),
                                 if (_beds.length > 1)
@@ -595,20 +663,32 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                               ],
                             ),
                           ),
-                        // A plain link, the same weight the website's own
-                        // "+ Add another bed" carries — a bordered button here
-                        // would outweigh a line this optional.
                         GestureDetector(
                           onTap: () => setState(() => _beds.add(BedDraft())),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: AppTheme.s4),
-                            child: Text(
-                              '+ Add another bed',
-                              style: TextStyle(
-                                color: AppTheme.accent,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s12,
+                              vertical: AppTheme.s8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add_rounded, color: AppTheme.accent, size: 16),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Add another bed',
+                                  style: TextStyle(
+                                    color: AppTheme.accent,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -633,15 +713,17 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           errorText: _occupancyError,
                           keyboardType: TextInputType.number,
                           onChanged: (_) => setState(() {}),
+                          dense: true,
                         ),
                         ],
-                        const SizedBox(height: AppTheme.s16),
+                        const SizedBox(height: AppTheme.s12),
 
                         NeuField(
                           controller: _description,
                           label: 'Description (optional)',
                           hint: 'Corner room, quiet side, good morning light',
                           maxLength: 200,
+                          dense: true,
                         ),
                         if (!_bulkMode) ...[
                           const SectionDivider(),
@@ -682,6 +764,8 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     onSubmit: _submit,
                   ),
                 ],
+            ),
+          ),
         ),
       ),
     );
@@ -876,10 +960,22 @@ class _Footer extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
                 ),
                 child: Row(
                   children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.meeting_room_rounded, color: AppTheme.accent, size: 14),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
                     Expanded(
                       child: Text(
                         '$roomCountLabel · ${category!.name}',

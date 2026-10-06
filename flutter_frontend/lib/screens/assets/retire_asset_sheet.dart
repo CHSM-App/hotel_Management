@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/asset.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../rooms/room_form_pieces.dart' show SectionLabel;
 import '../theme.dart';
 
 /// Retire an asset / correct its dead stock record — mirrors the retire
@@ -111,11 +112,46 @@ class _RetireAssetSheetState extends ConsumerState<RetireAssetSheet> {
     final submitting = ref.watch(assetsViewModelProvider).submitting;
     final alreadyRetired = widget.asset.status == 'RETIRED';
     return Scaffold(
-      appBar: AppBar(title: Text(alreadyRetired ? 'Edit dead stock details' : 'Retire asset')),
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(
+        title: Text(
+          alreadyRetired ? 'Edit dead stock details' : 'Retire asset',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(22),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
+            child: Text(
+              [widget.asset.name, widget.asset.assetTag].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
           children: [
+            if (!alreadyRetired) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
+                decoration: BoxDecoration(color: AppTheme.danger.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.inventory_2_outlined, size: 16, color: AppTheme.danger),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: Text(
+                        'This moves the asset out of the active register and into Dead Stock.',
+                        style: const TextStyle(color: AppTheme.danger, fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+            ],
             if (_error != null) ...[
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
               const SizedBox(height: AppTheme.s12),
@@ -124,11 +160,29 @@ class _RetireAssetSheetState extends ConsumerState<RetireAssetSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  NeuField(
-                    controller: _deadDate,
-                    label: 'Dead since',
-                    readOnly: true,
-                    onTap: _pickDeadDate,
+                  const SectionLabel('When & why', number: 1),
+                  const SizedBox(height: AppTheme.s12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: NeuField(
+                          controller: _deadDate,
+                          label: 'Dead since',
+                          readOnly: true,
+                          onTap: _pickDeadDate,
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: NeuField(
+                          controller: _recoveryCost,
+                          label: 'Recovery amount',
+                          hint: '0',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(
@@ -140,18 +194,20 @@ class _RetireAssetSheetState extends ConsumerState<RetireAssetSheet> {
                     hint: 'Beyond repair, obsolete, damaged, lost…',
                     onChanged: (_) => setState(() {}),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppTheme.s16),
+            NeuCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('Disposal', number: 2),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(
                     controller: _disposalNote,
                     label: 'Disposal',
                     hint: 'Scrapped, sold, donated, discarded…',
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _recoveryCost,
-                    label: 'Recovery amount',
-                    hint: 'Anything recovered from scrap/sale',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                   const SizedBox(height: AppTheme.s12),
                   NeuField(
