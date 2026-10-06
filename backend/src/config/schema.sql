@@ -2926,3 +2926,70 @@ IF COL_LENGTH('dbo.service_usages', 'laundry_order_id') IS NULL
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'HOUSEKEEPING')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'HOUSEKEEPING', 'Housekeeping', 'Cleans rooms, tracks linen and takes guest laundry.', 1, '["housekeeping.manage"]');
+
+-- Laundry add-on (migration 119): hotel linen and guest laundry, switched on
+-- separately from Housekeeping. Properties and roles that had Housekeeping keep
+-- laundry, once, together with the column.
+IF COL_LENGTH('dbo.lodges', 'has_laundry') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.lodges ADD has_laundry BIT NOT NULL CONSTRAINT df_lodges_has_laundry DEFAULT 0');
+    EXEC('UPDATE dbo.lodges SET has_laundry = 1 WHERE has_housekeeping = 1');
+    UPDATE dbo.roles
+    SET permissions = REPLACE(permissions, '"housekeeping.manage"', '"housekeeping.manage","laundry.manage"')
+    WHERE permissions LIKE '%"housekeeping.manage"%' AND permissions NOT LIKE '%"laundry.manage"%';
+END
+
+IF COL_LENGTH('dbo.linen_movements', 'washed_by') IS NULL
+    EXEC('ALTER TABLE dbo.linen_movements ADD washed_by NVARCHAR(100) NULL');
+
+-- Guest laundry comes back from the wash before it is handed over (migration 124).
+IF COL_LENGTH('dbo.laundry_orders', 'vendor_phone') IS NULL
+    EXEC('ALTER TABLE dbo.laundry_orders ADD
+            vendor_phone    NVARCHAR(20) NULL,
+            washed_back_at  DATETIMEOFFSET NULL');
+
+-- Who washes a guest laundry order and what a vendor charges for it (migration 123).
+IF COL_LENGTH('dbo.laundry_orders', 'washed_by') IS NULL
+    EXEC('ALTER TABLE dbo.laundry_orders ADD
+            washed_by   NVARCHAR(100) NULL,
+            wash_charge DECIMAL(10,2) NULL
+              CONSTRAINT ck_laundry_orders_wash_charge CHECK (wash_charge IS NULL OR wash_charge >= 0)');
+
+-- What an outside laundry charged for a batch (migration 122). Written on the
+-- batch's first movement row only; sum it, never average it.
+IF COL_LENGTH('dbo.linen_movements', 'wash_charge') IS NULL
+    EXEC('ALTER TABLE dbo.linen_movements ADD wash_charge DECIMAL(10,2) NULL
+            CONSTRAINT ck_linen_movements_wash_charge CHECK (wash_charge IS NULL OR wash_charge >= 0)');
+
+-- Linen handover (migration 121): linen changed in a room waits until the
+-- laundry marks it received.
+IF COL_LENGTH('dbo.linen_movements', 'handover_at') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.linen_movements ADD
+            handover_at DATETIMEOFFSET NULL,
+            handover_by BIGINT NULL REFERENCES dbo.users(id),
+            log_id      BIGINT NULL REFERENCES dbo.housekeeping_log(id)');
+    EXEC('UPDATE dbo.linen_movements SET handover_at = created_at WHERE kind = ''CHANGED''');
+END
+
+-- Housekeeping issues (migration 120): a problem or found item reported when a
+-- room is finished stays open until the desk closes it.
+IF COL_LENGTH('dbo.housekeeping_log', 'issue_resolved_at') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.housekeeping_log ADD
+            issue_resolved_at DATETIMEOFFSET NULL,
+            issue_resolved_by BIGINT NULL REFERENCES dbo.users(id),
+            issue_resolution  NVARCHAR(300) NULL,
+            found_closed_at   DATETIMEOFFSET NULL,
+            found_closed_by   BIGINT NULL REFERENCES dbo.users(id),
+            found_resolution  NVARCHAR(300) NULL,
+            blocked_room      BIT NOT NULL CONSTRAINT df_housekeeping_log_blocked DEFAULT 0');
+    EXEC('UPDATE dbo.housekeeping_log SET issue_resolved_at = done_at
+          WHERE issues IS NOT NULL AND done_at < DATEADD(DAY, -7, SYSDATETIMEOFFSET())');
+    EXEC('UPDATE dbo.housekeeping_log SET found_closed_at = done_at
+          WHERE lost_found IS NOT NULL AND done_at < DATEADD(DAY, -7, SYSDATETIMEOFFSET())');
+END
+
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'LAUNDRY')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'LAUNDRY', 'Laundry', 'Sends hotel linen for washing, receives it back and takes guest laundry.', 1, '["laundry.manage"]');

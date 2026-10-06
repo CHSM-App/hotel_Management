@@ -762,7 +762,7 @@ export default function EventForm({
               />
             </Field>
             <Field
-              label="Venue hire charge (per day)"
+              label="Venue rent (per day)"
               name="venueCharge"
               error={errFor('venueCharge')}
               hint={

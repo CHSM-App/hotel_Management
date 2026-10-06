@@ -26,9 +26,9 @@
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 10px 4px;
-  margin-right: 20px;
-  font-size: 14px;
+  padding: 8px 2px;
+  margin-right: 18px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
@@ -746,43 +746,6 @@
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   padding: 18px 20px;
-}
-
-/* --- the tab strip ------------------------------------------------------ */
-
-/* No underline rule: the tabs are controls, and a pressed one says which is
-   current more plainly than a 2px line under it. */
-.billing-panel__subtabs {
-  gap: 6px;
-  margin-bottom: 2px;
-  border-bottom: none;
-}
-
-.billing-panel__subtabs-item {
-  border-bottom: none;
-  margin-right: 0;
-  padding: 8px 14px;
-  border-radius: var(--radius-tile);
-  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
-}
-
-.billing-panel__subtabs-item:hover {
-  background: var(--surface);
-  box-shadow: var(--shadow-raised);
-  color: var(--ink);
-}
-
-.billing-panel__subtabs-item[aria-current='page'] {
-  background: var(--paper);
-  box-shadow: var(--shadow-pressed);
-  color: var(--brand-ink);
-}
-
-/* Already where a press would put it — lifting under the pointer would read
-   as it being deselected. */
-.billing-panel__subtabs-item[aria-current='page']:hover {
-  background: var(--paper);
-  box-shadow: var(--shadow-pressed);
 }
 
 /* --- the bill-type filters ---------------------------------------------- */
@@ -1663,12 +1626,59 @@
   background: var(--paper);
 }
 
+/* A column heading that sorts the bills table. It looks like the heading it
+   replaces; the arrow says which column is sorted and which way. */
+.billing-sheet__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.billing-sheet__sort:hover {
+  color: var(--brand-ink);
+}
+
+.billing-sheet__sort:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.billing-sheet__sort-icon {
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+th[aria-sort] .billing-sheet__sort-icon {
+  opacity: 1;
+}
+
+/* The bills filter: one row of controls that share a baseline (dates, quick
+   ranges, search), then the bill-type chips on a ruled row of their own. */
 .billing-report__bar {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 12px 16px;
+  gap: 12px 14px;
   margin-bottom: 14px;
+  padding: 16px 18px;
+}
+
+/* The field's own bottom margin would lift the inputs off the row's baseline. */
+.billing-report__bar .field {
+  margin-bottom: 0;
+}
+
+.billing-report__bar .field input[type='date'] {
+  width: 160px;
 }
 
 .billing-report__presets,
@@ -1678,7 +1688,71 @@
   gap: 6px;
 }
 
+/* Quick ranges are small flat buttons the height of the inputs beside them,
+   not three raised buttons competing with the search box. */
+.billing-report__presets .btn-secondary {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.billing-report__presets .btn-secondary:hover {
+  color: var(--brand-ink);
+  border-color: var(--brand);
+}
+
 .billing-report__search {
-  flex: 1 1 220px;
+  flex: 1 1 240px;
   min-width: 200px;
+}
+
+.billing-report__types {
+  flex-basis: 100%;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Flat chips here: inside a card, the raised ones read as a second set of buttons. */
+.billing-report__types .history-chip {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.billing-report__types .history-chip:hover {
+  border-color: var(--brand);
+  box-shadow: none;
+}
+
+.billing-report__types .history-chip--on,
+.billing-report__types .history-chip--on:hover {
+  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .billing-report__bar {
+    padding: 14px;
+  }
+
+  .billing-report__bar .field {
+    flex: 1 1 140px;
+  }
+
+  .billing-report__bar .field input[type='date'] {
+    width: 100%;
+  }
+
+  .billing-report__presets {
+    flex-basis: 100%;
+  }
 }

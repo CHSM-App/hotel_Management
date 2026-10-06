@@ -5,14 +5,17 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import IconButton from '../../components/IconButton';
 import { EditIcon, TrashIcon } from '../../components/ActionIcons';
+import Req from '../../components/RequiredMark';
+import { Modal } from './HousekeepingParts';
 import './forms.css';
 import './chartSections.css';
+import './MenuPanel.css';
 import PageLoader from '../../components/PageLoader';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const emptyCategoryForm = { name: '', basePrice: '', tapeOrder: '' };
-const emptyChargeForm = { name: '', chargePerNight: '' };
+const emptyChargeForm = { name: '', chargePerNight: '', isCounter: false };
 const emptySeasonForm = () => ({ name: '', startDate: todayIso(), endDate: todayIso(), adjustmentPercent: '' });
 
 function ChartSection({ title, hint, children }) {
@@ -117,6 +120,8 @@ export default function PriceChartPanel() {
   const [categoryErrorRef, categoryErrors] = useSectionErrors(setCategoryError);
   const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState(null);
+  // The category popup, for adding one and for editing one.
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [deleteModalCategory, setDeleteModalCategory] = useState(null);
   const [deleteModalCategoryError, setDeleteModalCategoryError] = useState('');
   const [deleteModalCategoryBusy, setDeleteModalCategoryBusy] = useState(false);
@@ -126,6 +131,7 @@ export default function PriceChartPanel() {
   const [chargeErrorRef, chargeErrors] = useSectionErrors(setChargeError);
   const [chargeSubmitting, setChargeSubmitting] = useState(false);
   const [editingChargeId, setEditingChargeId] = useState(null);
+  const [chargeModalOpen, setChargeModalOpen] = useState(false);
   const [deleteModalCharge, setDeleteModalCharge] = useState(null);
   const [deleteModalChargeError, setDeleteModalChargeError] = useState('');
   const [deleteModalChargeBusy, setDeleteModalChargeBusy] = useState(false);
@@ -135,6 +141,7 @@ export default function PriceChartPanel() {
   const [seasonErrorRef, seasonErrors] = useSectionErrors(setSeasonError);
   const [seasonSubmitting, setSeasonSubmitting] = useState(false);
   const [editingSeasonId, setEditingSeasonId] = useState(null);
+  const [seasonModalOpen, setSeasonModalOpen] = useState(false);
   const [seasonDeletingId, setSeasonDeletingId] = useState(null);
   const [confirmDeleteSeasonId, setConfirmDeleteSeasonId] = useState(null);
 
@@ -161,14 +168,25 @@ export default function PriceChartPanel() {
   }, []);
 
   // Categories
+  const openAddCategory = () => {
+    setEditingCategoryId(null);
+    setCategoryForm(emptyCategoryForm);
+    setCategoryError('');
+    categoryErrors.clear();
+    setCategoryModalOpen(true);
+  };
+
   const openEditCategory = (c) => {
     setEditingCategoryId(c.id);
     setCategoryForm({ name: c.name, basePrice: String(c.basePrice), tapeOrder: c.tapeOrder ? String(c.tapeOrder) : '' });
     setCategoryError('');
     categoryErrors.clear();
+    setCategoryModalOpen(true);
   };
 
-  const cancelEditCategory = () => {
+  const closeCategoryModal = () => {
+    if (categorySubmitting) return;
+    setCategoryModalOpen(false);
     setEditingCategoryId(null);
     setCategoryForm(emptyCategoryForm);
     setCategoryError('');
@@ -199,6 +217,7 @@ export default function PriceChartPanel() {
       } else {
         await apiPost('/categories', body, { token: session?.token });
       }
+      setCategoryModalOpen(false);
       setEditingCategoryId(null);
       setCategoryForm(emptyCategoryForm);
       loadAll();
@@ -253,14 +272,25 @@ export default function PriceChartPanel() {
   };
 
   // Booking extras (switchable charges)
-  const openEditCharge = (c) => {
-    setEditingChargeId(c.id);
-    setChargeForm({ name: c.name, chargePerNight: String(c.chargePerNight) });
+  const openAddCharge = () => {
+    setEditingChargeId(null);
+    setChargeForm(emptyChargeForm);
     setChargeError('');
     chargeErrors.clear();
+    setChargeModalOpen(true);
   };
 
-  const cancelEditCharge = () => {
+  const openEditCharge = (c) => {
+    setEditingChargeId(c.id);
+    setChargeForm({ name: c.name, chargePerNight: String(c.chargePerNight), isCounter: Boolean(c.isCounter) });
+    setChargeError('');
+    chargeErrors.clear();
+    setChargeModalOpen(true);
+  };
+
+  const closeChargeModal = () => {
+    if (chargeSubmitting) return;
+    setChargeModalOpen(false);
     setEditingChargeId(null);
     setChargeForm(emptyChargeForm);
     setChargeError('');
@@ -281,12 +311,13 @@ export default function PriceChartPanel() {
     }
     setChargeSubmitting(true);
     try {
-      const body = { name: chargeForm.name.trim(), chargePerNight: Number(chargeForm.chargePerNight) };
+      const body = { name: chargeForm.name.trim(), chargePerNight: Number(chargeForm.chargePerNight), isCounter: chargeForm.isCounter };
       if (editingChargeId) {
         await apiPatch(`/switchable-charges/${editingChargeId}`, body, { token: session?.token });
       } else {
         await apiPost('/switchable-charges', body, { token: session?.token });
       }
+      setChargeModalOpen(false);
       setEditingChargeId(null);
       setChargeForm(emptyChargeForm);
       loadAll();
@@ -352,9 +383,20 @@ export default function PriceChartPanel() {
     });
     setSeasonError('');
     seasonErrors.clear();
+    setSeasonModalOpen(true);
   };
 
-  const cancelEditSeason = () => {
+  const openAddSeason = () => {
+    setEditingSeasonId(null);
+    setSeasonForm(emptySeasonForm());
+    setSeasonError('');
+    seasonErrors.clear();
+    setSeasonModalOpen(true);
+  };
+
+  const closeSeasonModal = () => {
+    if (seasonSubmitting) return;
+    setSeasonModalOpen(false);
     setEditingSeasonId(null);
     setSeasonForm(emptySeasonForm());
     setSeasonError('');
@@ -390,6 +432,7 @@ export default function PriceChartPanel() {
       } else {
         await apiPost('/seasons', body, { token: session?.token });
       }
+      setSeasonModalOpen(false);
       setEditingSeasonId(null);
       setSeasonForm(emptySeasonForm());
       loadAll();
@@ -451,6 +494,7 @@ export default function PriceChartPanel() {
                 </span>
                 <span className="chart-row__value">
                   {formatPrice(c.basePrice)}
+                  {c.isDormitory ? '/bed/night' : '/night'}
                   <span className="chart-row__actions">
                     <IconButton
                       label={`Edit ${c.name}`}
@@ -472,30 +516,56 @@ export default function PriceChartPanel() {
             ))}
           </div>
         )}
-        <form className="inline-add-form" onSubmit={handleSubmitCategory}>
-          {categoryError && (
-            <div ref={categoryErrorRef} className="form-banner form-banner--error form-banner--flash">
-              {categoryError}
-            </div>
-          )}
-          <div className="inline-add-form__row">
-            {/* These add-rows have no room for a label, so the asterisk rides
-                the placeholder and the accessible name carries the word — the
-                same two readings the marked labels elsewhere give, in the only
-                place this layout has to put them. Both boxes are refused when
-                blank, so both are marked. */}
-            <div>
+        <div className="chart-section__add">
+          <button type="button" className="btn-accent" onClick={openAddCategory}>
+            + Add New Category
+          </button>
+        </div>
+      </ChartSection>
+
+      {categoryModalOpen && (
+        <Modal
+          title={editingCategoryId ? 'Edit category' : 'Add new category'}
+          sub="Base price is the cheapest version of that room, per night."
+          busy={categorySubmitting}
+          onClose={closeCategoryModal}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={closeCategoryModal} disabled={categorySubmitting}>
+                Cancel
+              </button>
+              <button type="submit" form="categoryForm" className="btn-accent" disabled={categorySubmitting}>
+                {categorySubmitting ? 'Saving…' : editingCategoryId ? 'Save changes' : 'Add category'}
+              </button>
+            </>
+          }
+        >
+          <form id="categoryForm" onSubmit={handleSubmitCategory}>
+            {categoryError && (
+              <div ref={categoryErrorRef} className="form-banner form-banner--error form-banner--flash">
+                {categoryError}
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor="categoryName">
+                Category name
+                <Req />
+              </label>
               <input
                 id="categoryName"
                 aria-invalid={categoryErrors.invalid('categoryName')}
                 value={categoryForm.name}
                 onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Deluxe *"
-                aria-label="Category name (required)"
+                placeholder="e.g. Deluxe"
+                autoFocus
               />
               {categoryErrors.fieldErr('categoryName')}
             </div>
-            <div>
+            <div className="field">
+              <label htmlFor="categoryBasePrice">
+                {categories.find((c) => c.id === editingCategoryId)?.isDormitory ? 'Base price per bed, per night (₹)' : 'Base price per night (₹)'}
+                <Req />
+              </label>
               <input
                 id="categoryBasePrice"
                 type="number"
@@ -503,42 +573,25 @@ export default function PriceChartPanel() {
                 aria-invalid={categoryErrors.invalid('categoryBasePrice')}
                 value={categoryForm.basePrice}
                 onChange={(e) => setCategoryForm((f) => ({ ...f, basePrice: e.target.value }))}
-                placeholder="Base price ₹ *"
-                aria-label="Base price in rupees (required)"
+                placeholder="e.g. 1500"
               />
               {categoryErrors.fieldErr('categoryBasePrice')}
             </div>
-            <div>
+            <div className="field">
+              <label htmlFor="categoryTapeOrder">Position on the room chart (optional)</label>
               <input
                 id="categoryTapeOrder"
                 type="number"
                 min="1"
                 value={categoryForm.tapeOrder}
                 onChange={(e) => setCategoryForm((f) => ({ ...f, tapeOrder: e.target.value }))}
-                placeholder="Tape chart order"
-                aria-label="Tape chart order (optional)"
-                title="Where this category's section appears on the tape chart. Leave blank to add it after the others, in the order categories are created."
+                placeholder="e.g. 1 for first"
               />
+              <small className="chart-section__field-hint">Leave blank to place it after the other categories.</small>
             </div>
-            <div className="inline-add-form__actions">
-              <button className="btn-accent" type="submit" disabled={categorySubmitting}>
-                {editingCategoryId
-                  ? categorySubmitting
-                    ? 'Saving…'
-                    : 'Save'
-                  : categorySubmitting
-                    ? 'Adding…'
-                    : 'Add'}
-              </button>
-              {editingCategoryId && (
-                <button type="button" className="btn-secondary" onClick={cancelEditCategory} disabled={categorySubmitting}>
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        </form>
-      </ChartSection>
+          </form>
+        </Modal>
+      )}
 
       <ChartSection title="Booking extras" hint="Optional add-ons staff can check off for a guest at booking time">
         {switchableCharges.length > 0 && (
@@ -550,7 +603,8 @@ export default function PriceChartPanel() {
                   {!c.isActive && <span className="badge badge--off chart-row__badge">Inactive</span>}
                 </span>
                 <span className="chart-row__value">
-                  {formatPrice(c.chargePerNight)}/night
+                  {formatPrice(c.chargePerNight)}
+                  {c.isCounter ? ' per unit/night' : '/night'}
                   <span className="chart-row__actions">
                     <IconButton
                       label={`Edit ${c.name}`}
@@ -572,55 +626,11 @@ export default function PriceChartPanel() {
             ))}
           </div>
         )}
-        <form className="inline-add-form" onSubmit={handleSubmitCharge}>
-          {chargeError && (
-            <div ref={chargeErrorRef} className="form-banner form-banner--error form-banner--flash">
-              {chargeError}
-            </div>
-          )}
-          <div className="inline-add-form__row">
-            <div>
-              <input
-                id="chargeName"
-                aria-invalid={chargeErrors.invalid('chargeName')}
-                value={chargeForm.name}
-                onChange={(e) => setChargeForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="AC *"
-                aria-label="Charge name (required)"
-              />
-              {chargeErrors.fieldErr('chargeName')}
-            </div>
-            <div>
-              <input
-                id="chargeAmount"
-                type="number"
-                min="1"
-                aria-invalid={chargeErrors.invalid('chargeAmount')}
-                value={chargeForm.chargePerNight}
-                onChange={(e) => setChargeForm((f) => ({ ...f, chargePerNight: e.target.value }))}
-                placeholder="Amount ₹/night *"
-                aria-label="Amount per night in rupees (required)"
-              />
-              {chargeErrors.fieldErr('chargeAmount')}
-            </div>
-            <div className="inline-add-form__actions">
-              <button className="btn-accent" type="submit" disabled={chargeSubmitting}>
-                {editingChargeId
-                  ? chargeSubmitting
-                    ? 'Saving…'
-                    : 'Save'
-                  : chargeSubmitting
-                    ? 'Adding…'
-                    : 'Add'}
-              </button>
-              {editingChargeId && (
-                <button type="button" className="btn-secondary" onClick={cancelEditCharge} disabled={chargeSubmitting}>
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        </form>
+        <div className="chart-section__add">
+          <button type="button" className="btn-accent" onClick={openAddCharge}>
+            + Add New Extra
+          </button>
+        </div>
       </ChartSection>
 
       <ChartSection title="Seasons" hint="Paint festivals and weekends onto the calendar">
@@ -679,75 +689,163 @@ export default function PriceChartPanel() {
             ))}
           </div>
         )}
-        <form className="inline-add-form" onSubmit={handleSubmitSeason}>
-          {seasonError && (
-            <div ref={seasonErrorRef} className="form-banner form-banner--error form-banner--flash">
-              {seasonError}
+        <div className="chart-section__add">
+          <button type="button" className="btn-accent" onClick={openAddSeason}>
+            + Add New Season
+          </button>
+        </div>
+      </ChartSection>
+
+      {chargeModalOpen && (
+        <Modal
+          title={editingChargeId ? 'Edit booking extra' : 'Add new booking extra'}
+          sub="An optional add-on staff can tick for a guest at booking time."
+          busy={chargeSubmitting}
+          onClose={closeChargeModal}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={closeChargeModal} disabled={chargeSubmitting}>
+                Cancel
+              </button>
+              <button type="submit" form="chargeForm" className="btn-accent" disabled={chargeSubmitting}>
+                {chargeSubmitting ? 'Saving…' : editingChargeId ? 'Save changes' : 'Add extra'}
+              </button>
+            </>
+          }
+        >
+          <form id="chargeForm" onSubmit={handleSubmitCharge}>
+            {chargeError && (
+              <div ref={chargeErrorRef} className="form-banner form-banner--error form-banner--flash">
+                {chargeError}
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor="chargeName">
+                Name
+                <Req />
+              </label>
+              <input
+                id="chargeName"
+                aria-invalid={chargeErrors.invalid('chargeName')}
+                value={chargeForm.name}
+                onChange={(e) => setChargeForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. AC, Extra bed"
+                autoFocus
+              />
+              {chargeErrors.fieldErr('chargeName')}
             </div>
-          )}
-          <div className="inline-add-form__row inline-add-form__row--seasons">
-            {/* Name and the percentage are the two the submit stops on; the
-                dates come prefilled and are only checked against each other,
-                so they are named but not marked. */}
-            <div>
+            <div className="field">
+              <label htmlFor="chargeAmount">
+                {chargeForm.isCounter ? 'Amount per unit, per night (₹)' : 'Amount per night (₹)'}
+                <Req />
+              </label>
+              <input
+                id="chargeAmount"
+                type="number"
+                min="1"
+                aria-invalid={chargeErrors.invalid('chargeAmount')}
+                value={chargeForm.chargePerNight}
+                onChange={(e) => setChargeForm((f) => ({ ...f, chargePerNight: e.target.value }))}
+                placeholder="e.g. 200"
+              />
+              {chargeErrors.fieldErr('chargeAmount')}
+            </div>
+            {/* For an extra a guest can take more than one of. Booking then asks
+                how many, and the amount is multiplied by that count. */}
+            <label className="inline-add-form__check">
+              <input
+                type="checkbox"
+                checked={chargeForm.isCounter}
+                onChange={(e) => setChargeForm((f) => ({ ...f, isCounter: e.target.checked }))}
+              />
+              <span>
+                Charge per unit
+                <small>Tick if a guest can take more than one (like extra beds); the amount is multiplied by the quantity entered at booking.</small>
+              </span>
+            </label>
+          </form>
+        </Modal>
+      )}
+
+      {seasonModalOpen && (
+        <Modal
+          title={editingSeasonId ? 'Edit season' : 'Add new season'}
+          sub="Raise or lower every room rate for a festival, a weekend or an off-season."
+          busy={seasonSubmitting}
+          onClose={closeSeasonModal}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={closeSeasonModal} disabled={seasonSubmitting}>
+                Cancel
+              </button>
+              <button type="submit" form="seasonForm" className="btn-accent" disabled={seasonSubmitting}>
+                {seasonSubmitting ? 'Saving…' : editingSeasonId ? 'Save changes' : 'Add season'}
+              </button>
+            </>
+          }
+        >
+          <form id="seasonForm" onSubmit={handleSubmitSeason}>
+            {seasonError && (
+              <div ref={seasonErrorRef} className="form-banner form-banner--error form-banner--flash">
+                {seasonError}
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor="seasonName">
+                Season name
+                <Req />
+              </label>
               <input
                 id="seasonName"
                 aria-invalid={seasonErrors.invalid('seasonName')}
                 value={seasonForm.name}
                 onChange={(e) => setSeasonForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Diwali *"
-                aria-label="Season name (required)"
+                placeholder="e.g. Diwali"
+                autoFocus
               />
               {seasonErrors.fieldErr('seasonName')}
             </div>
-            <input
-              type="date"
-              value={seasonForm.startDate}
-              onChange={(e) => setSeasonForm((f) => ({ ...f, startDate: e.target.value }))}
-              aria-label="Season start date"
-            />
-            <div>
-              <input
-                id="seasonEndDate"
-                type="date"
-                aria-invalid={seasonErrors.invalid('seasonEndDate')}
-                value={seasonForm.endDate}
-                onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))}
-                aria-label="Season end date"
-              />
-              {seasonErrors.fieldErr('seasonEndDate')}
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="seasonStartDate">From</label>
+                <input
+                  id="seasonStartDate"
+                  type="date"
+                  value={seasonForm.startDate}
+                  onChange={(e) => setSeasonForm((f) => ({ ...f, startDate: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="seasonEndDate">To</label>
+                <input
+                  id="seasonEndDate"
+                  type="date"
+                  aria-invalid={seasonErrors.invalid('seasonEndDate')}
+                  value={seasonForm.endDate}
+                  onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))}
+                />
+                {seasonErrors.fieldErr('seasonEndDate')}
+              </div>
             </div>
-            <div>
+            <div className="field">
+              <label htmlFor="seasonAdjustment">
+                Price change (%)
+                <Req />
+              </label>
               <input
                 id="seasonAdjustment"
                 type="number"
                 aria-invalid={seasonErrors.invalid('seasonAdjustment')}
                 value={seasonForm.adjustmentPercent}
                 onChange={(e) => setSeasonForm((f) => ({ ...f, adjustmentPercent: e.target.value }))}
-                placeholder="+% *"
-                aria-label="Price adjustment percentage (required)"
+                placeholder="e.g. 20"
               />
               {seasonErrors.fieldErr('seasonAdjustment')}
+              <small className="chart-section__field-hint">20 raises rates by 20%. Use a minus, like -10, to lower them.</small>
             </div>
-            <div className="inline-add-form__actions">
-              <button className="btn-accent" type="submit" disabled={seasonSubmitting}>
-                {editingSeasonId
-                  ? seasonSubmitting
-                    ? 'Saving…'
-                    : 'Save'
-                  : seasonSubmitting
-                    ? 'Adding…'
-                    : 'Add'}
-              </button>
-              {editingSeasonId && (
-                <button type="button" className="btn-secondary" onClick={cancelEditSeason} disabled={seasonSubmitting}>
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        </form>
-      </ChartSection>
+          </form>
+        </Modal>
+      )}
 
       {deleteModalCategory && (
         <DeleteOptionsModal

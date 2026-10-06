@@ -8,13 +8,16 @@ import './forms.css';
 import './chartSections.css';
 import './MenuPanel.css';
 import './RoomsPanel.css';
+import './RoomsAndRates.css';
 
 const emptyService = { name: '', unitLabel: 'use', price: '', gstRatePercent: '18' };
+// What a service is usually charged per. Anything else is typed under "Other".
+const UNIT_SUGGESTIONS = ['use', 'hour', 'day', 'person', 'session', 'game', 'trip', 'km'];
 const emptyUse = { serviceId: '', quantity: '1', bookingId: '', guestName: '', guestPhone: '', note: '' };
 
 const STATUS_LABEL = { IN_USE: 'In use', COMPLETED: 'Completed', CANCELLED: 'Cancelled' };
 
-// Other services a lodge sells per use — laundry, a private pool, a gaming
+// Other services a lodge sells per use — a private pool, a gaming
 // area. Two views: the catalogue (what is offered and at what price) and the
 // usage list (who is using what, through to "ready to bill"). Billing itself
 // happens in Billing > Services to bill, the way food does.
@@ -111,15 +114,16 @@ export default function ServicesPanel() {
 
   return (
     <div className="tables-panel">
-      <div className="rooms-panel__toolbar">
-        <div className="toggle-group">
-          <button type="button" aria-pressed={view === 'usage'} onClick={() => setView('usage')}>
-            Service use
-          </button>
-          <button type="button" aria-pressed={view === 'catalogue'} onClick={() => setView('catalogue')}>
-            Services &amp; prices
-          </button>
-        </div>
+      {/* The same underlined strip as every other section, with the view's one
+          action at its right-hand end. */}
+      <div className="subtabs">
+        <button type="button" className="subtabs__item" aria-current={view === 'usage' ? 'page' : undefined} onClick={() => setView('usage')}>
+          Service use
+        </button>
+        <button type="button" className="subtabs__item" aria-current={view === 'catalogue' ? 'page' : undefined} onClick={() => setView('catalogue')}>
+          Services &amp; prices
+        </button>
+        <div className="subtabs__tools">
         {view === 'usage' ? (
           <button
             type="button"
@@ -143,6 +147,7 @@ export default function ServicesPanel() {
             + Add service
           </button>
         )}
+        </div>
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -152,7 +157,7 @@ export default function ServicesPanel() {
           {!services && <PageLoader inline label="Loading" />}
           {services && services.length === 0 && (
             <div className="dash-state">
-              No services yet. Add what the lodge offers — laundry, private pool, gaming — with a price per use.
+              No services yet. Add what the lodge offers — private pool, gaming, spa — with a price per use.
             </div>
           )}
           {services && services.length > 0 && (
@@ -265,7 +270,7 @@ export default function ServicesPanel() {
                     id="svcName"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Laundry"
+                    placeholder="Private pool"
                     autoFocus
                   />
                 </div>
@@ -286,12 +291,37 @@ export default function ServicesPanel() {
                   </div>
                   <div className="field">
                     <label htmlFor="svcUnit">Per</label>
-                    <input
+                    {/* A unit saved earlier that is not in the list opens as "Other",
+                        with its own words in the box. */}
+                    <select
                       id="svcUnit"
-                      value={form.unitLabel}
-                      onChange={(e) => setForm({ ...form, unitLabel: e.target.value })}
-                      placeholder="use, hour, kg"
-                    />
+                      value={form.unitOther || !UNIT_SUGGESTIONS.includes(form.unitLabel) ? '__other' : form.unitLabel}
+                      onChange={(e) =>
+                        setForm(
+                          e.target.value === '__other'
+                            ? { ...form, unitOther: true, unitLabel: '' }
+                            : { ...form, unitOther: false, unitLabel: e.target.value }
+                        )
+                      }
+                    >
+                      {UNIT_SUGGESTIONS.map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                      <option value="__other">Other…</option>
+                    </select>
+                    {(form.unitOther || !UNIT_SUGGESTIONS.includes(form.unitLabel)) && (
+                      <input
+                        className="svc-unit-other"
+                        aria-label="Your own unit"
+                        maxLength={30}
+                        value={form.unitLabel}
+                        onChange={(e) => setForm({ ...form, unitOther: true, unitLabel: e.target.value })}
+                        placeholder="Type your own"
+                        autoFocus
+                      />
+                    )}
                   </div>
                   <div className="field">
                     <label htmlFor="svcGst">GST %</label>

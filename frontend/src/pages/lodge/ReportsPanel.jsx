@@ -27,6 +27,7 @@ import {
   downloadFoodOrdersReportPdf,
 } from './foodOrderReportFile';
 import { downloadGstReportPdf } from './gstReportFile';
+import { downloadLaundryReportExcel, LAUNDRY_ORDER_STATUS_LABEL } from './laundryReportFile';
 import AnalyticsOverview from './AnalyticsOverview';
 import RoomsAnalytics from './RoomsAnalytics';
 import FunctionsAnalytics from './FunctionsAnalytics';
@@ -53,8 +54,10 @@ const ALL_TABS = [
   { key: 'bookings', label: 'Room Bookings', capability: 'hasRooms' },
   { key: 'events', label: 'Events & Functions', capability: 'hasEvents' },
   { key: 'food', label: 'Restaurant', capability: 'servesFood' },
-  // Laundry, pool, gaming ... sold from the rooms side.
+  // Pool, gaming ... sold from the rooms side. Guest laundry bills through here too.
   { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
+  // Counts, not sales: linen through the wash, and guest laundry orders.
+  { key: 'laundry', label: 'Laundry', capability: 'hasLaundry' },
   { key: 'bills', label: 'Bills' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
@@ -269,6 +272,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const [foodOrdersError, setFoodOrdersError] = useState('');
   const [servicesReport, setServicesReport] = useState(null);
   const [servicesReportError, setServicesReportError] = useState('');
+  const [laundryReport, setLaundryReport] = useState(null);
+  const [laundryReportError, setLaundryReportError] = useState('');
   const [profitLoss, setProfitLoss] = useState(null);
   const [profitLossError, setProfitLossError] = useState('');
   // The Screener-style multi-year table — full history, not the date-range
@@ -564,6 +569,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     apiGet(`/reports/services?fromDate=${fromDate}&toDate=${toDate}`, { token })
       .then((data) => setServicesReport(data))
       .catch((err) => setServicesReportError(err instanceof ApiError ? err.message : 'Could not load the services report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab]);
+
+  useEffect(() => {
+    if (!validRange || activeTab !== 'laundry') return;
+    setLaundryReport(null);
+    setLaundryReportError('');
+    apiGet(`/reports/laundry?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setLaundryReport(data))
+      .catch((err) => setLaundryReportError(err instanceof ApiError ? err.message : 'Could not load the laundry report.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, activeTab]);
 
@@ -1791,6 +1806,212 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     </table>
                   </div>
                 </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {activeTab === 'laundry' && (
+        <>
+          {laundryReportError && (
+            <div className="dash-card">
+              <div className="dash-state">{laundryReportError}</div>
+            </div>
+          )}
+          {!laundryReportError && validRange && !laundryReport && (
+            <div className="dash-card">
+              <PageLoader inline label="Loading" />
+            </div>
+          )}
+          {!laundryReportError && laundryReport && (
+            <>
+              <div className="reports-panel__table-bar">
+                <p className="reports-panel__section-label">Hotel linen in this period</p>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => downloadLaundryReportExcel(laundryReport, { guestLaundry: Boolean(lodge?.hasOtherServices) })}
+                >
+                  Download Excel
+                </button>
+              </div>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Sent for washing</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.sent}</span>
+                </div>
+                <div className="reports-panel__stat reports-panel__stat--positive">
+                  <span className="reports-panel__stat-label">Received washed</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.received}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Lost</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.lost}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Damaged</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.damaged}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">In wash now</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.inWashNow}</span>
+                  <span className="reports-panel__muted">today, not the period</span>
+                </div>
+              </div>
+
+              <p className="reports-panel__section-label">By linen item</p>
+              <div className="dash-card">
+                {laundryReport.linen.byItem.length === 0 ? (
+                  <div className="dash-state">No linen items yet. Add them under Laundry → Hotel linen.</div>
+                ) : (
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>Changed in rooms</th>
+                          <th>Sent</th>
+                          <th>Received</th>
+                          <th>Lost</th>
+                          <th>Damaged</th>
+                          <th>Owned now</th>
+                          <th>In wash now</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laundryReport.linen.byItem.map((i) => (
+                          <tr key={i.name}>
+                            <td>{i.name}</td>
+                            <td>{i.changed}</td>
+                            <td>{i.sent}</td>
+                            <td>{i.received}</td>
+                            <td>{i.lost}</td>
+                            <td>{i.damaged}</td>
+                            <td>{i.owned}</td>
+                            <td>{i.inWashNow}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <p className="reports-panel__section-label">By who washed it</p>
+              <div className="dash-card">
+                {laundryReport.linen.byWasher.length === 0 ? (
+                  <div className="dash-state">Nothing was sent for washing in this period.</div>
+                ) : (
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Washed by</th>
+                          <th>Sent</th>
+                          <th>Received</th>
+                          <th>Lost</th>
+                          <th>Damaged</th>
+                          <th>Not back</th>
+                          <th>Charged</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laundryReport.linen.byWasher.map((w) => (
+                          <tr key={w.washedBy || '-'}>
+                            <td>{w.washedBy || <span className="reports-panel__muted">Not recorded</span>}</td>
+                            <td>{w.sent}</td>
+                            <td>{w.received}</td>
+                            <td>{w.lost}</td>
+                            <td>{w.damaged}</td>
+                            <td>{w.notBack}</td>
+                            <td>{w.charge > 0 ? formatPrice(w.charge) : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {lodge?.hasOtherServices && (
+                <>
+                  <p className="reports-panel__section-label">Guest laundry taken in this period</p>
+                  <div className="reports-panel__stat-grid">
+                    <div className="reports-panel__stat">
+                      <span className="reports-panel__stat-label">Orders taken in</span>
+                      <span className="reports-panel__stat-value">{laundryReport.guest.totals.takenIn}</span>
+                      {laundryReport.guest.totals.cancelled > 0 && (
+                        <span className="reports-panel__muted">{laundryReport.guest.totals.cancelled} cancelled</span>
+                      )}
+                    </div>
+                    <div className="reports-panel__stat">
+                      <span className="reports-panel__stat-label">Pieces</span>
+                      <span className="reports-panel__stat-value">{laundryReport.guest.totals.pieces}</span>
+                    </div>
+                    <div className="reports-panel__stat reports-panel__stat--positive">
+                      <span className="reports-panel__stat-label">Handed over</span>
+                      <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.handedOverValue)}</span>
+                      <span className="reports-panel__muted">{laundryReport.guest.totals.handedOver} orders</span>
+                    </div>
+                    <div className="reports-panel__stat">
+                      <span className="reports-panel__stat-label">Still open</span>
+                      <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.openValue)}</span>
+                      <span className="reports-panel__muted">{laundryReport.guest.totals.open} orders</span>
+                    </div>
+                    {laundryReport.guest.totals.vendorCharge > 0 && (
+                      <div className="reports-panel__stat">
+                        <span className="reports-panel__stat-label">Vendor prices</span>
+                        <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.vendorCharge)}</span>
+                        <span className="reports-panel__muted">what vendors charged the lodge</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="reports-panel__muted">
+                    These amounts are already counted in Other services and on the bills. They are shown here for information only.
+                  </p>
+
+                  {laundryReport.guest.orders.length > 0 && (
+                    <div className="dash-card">
+                      <div className="dash-table-scroll">
+                        <table className="dash-table">
+                          <thead>
+                            <tr>
+                              <th>Tag</th>
+                              <th>Guest</th>
+                              <th>Pieces</th>
+                              <th>Status</th>
+                              <th>Taken in</th>
+                              <th>Handed over</th>
+                              <th>Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {laundryReport.guest.orders.map((o) => (
+                              <tr key={o.id}>
+                                <td>{o.tagNumber}</td>
+                                <td>
+                                  {o.guestName || '—'}
+                                  <br />
+                                  <span className="reports-panel__muted">{o.roomNumber ? `Room ${o.roomNumber}` : 'Walk-in'}</span>
+                                </td>
+                                <td>{o.pieces}</td>
+                                <td>
+                                  <span className={`badge ${o.status === 'CANCELLED' ? 'badge--off' : 'badge--on'}`}>
+                                    {LAUNDRY_ORDER_STATUS_LABEL[o.status] || o.status}
+                                  </span>
+                                </td>
+                                <td>{formatTimestamp(o.receivedAt)}</td>
+                                <td>{o.deliveredAt ? formatTimestamp(o.deliveredAt) : '—'}</td>
+                                <td>{formatPrice(o.total)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}

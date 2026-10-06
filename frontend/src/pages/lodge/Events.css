@@ -1238,3 +1238,65 @@
   font-weight: 800;
   white-space: nowrap;
 }
+
+/* Venue cards reuse the room card (RoomsPanel.css). Two things differ: the
+   photoless band holds a name, not a room number, and it says so. */
+.venue-card .room-card__cover-placeholder {
+  padding: 0 12px;
+  font-size: 19px;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.venue-card .room-card__cover-placeholder::before {
+  content: 'Venue';
+}
+
+/* Not a zoom target here, unlike the room photo. */
+.venue-card .room-card__cover-img {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+/* Field errors in the Event setup popups (venue, add-on): a plain red edge
+   with a soft ring, and a short quiet line under the box. Scoped under the
+   popup so nothing loaded later can out-rank it. */
+.modal-form .events-setup-form .field input[aria-invalid='true'],
+.modal-form .events-setup-form .field input[aria-invalid='true']:hover,
+.modal-form .events-setup-form .field input[aria-invalid='true']:focus-visible {
+  border-color: var(--danger);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent);
+  outline: none;
+}
+
+.modal-form .events-setup-form .field__error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 5px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--danger);
+}
+
+/* A small "!" so the line reads as a warning before it is read as words. */
+.modal-form .events-setup-form .field__error::before {
+  content: '!';
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 50%;
+}
+
+/* Room for two messages side by side without their words touching. */
+.modal-form .events-setup-form .field-row {
+  gap: 14px;
+}

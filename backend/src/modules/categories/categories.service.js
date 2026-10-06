@@ -8,10 +8,15 @@ async function listCategories(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, base_price, is_active, tape_order, created_at
-      FROM dbo.room_categories
-      WHERE lodge_id = @lodgeId
-      ORDER BY CASE WHEN tape_order IS NULL THEN 1 ELSE 0 END, tape_order ASC, id ASC
+      SELECT c.id, c.name, c.base_price, c.is_active, c.tape_order, c.created_at,
+             -- Sold by the bed: the category has rooms, and every one is a dormitory.
+             -- Dormitory is set on the room, so the category takes it from them.
+             CASE WHEN EXISTS (SELECT 1 FROM dbo.rooms r WHERE r.category_id = c.id AND r.is_dormitory = 1)
+                   AND NOT EXISTS (SELECT 1 FROM dbo.rooms r WHERE r.category_id = c.id AND r.is_dormitory = 0)
+                  THEN 1 ELSE 0 END AS is_dormitory
+      FROM dbo.room_categories c
+      WHERE c.lodge_id = @lodgeId
+      ORDER BY CASE WHEN c.tape_order IS NULL THEN 1 ELSE 0 END, c.tape_order ASC, c.id ASC
     `);
 
   return result.recordset.map((row) => ({
@@ -20,6 +25,7 @@ async function listCategories(lodgeId) {
     basePrice: Number(row.base_price),
     isActive: !!row.is_active,
     tapeOrder: row.tape_order,
+    isDormitory: !!row.is_dormitory,
     createdAt: row.created_at,
   }));
 }

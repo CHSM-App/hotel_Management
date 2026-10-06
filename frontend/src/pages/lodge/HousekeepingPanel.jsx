@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
+import { createPortal } from 'react-dom';
+import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
-import { formatPrice } from './priceFormat';
-import { triggerDownload } from './bookingReportFile';
 import PageLoader from '../../components/PageLoader';
-import Req from '../../components/RequiredMark';
+import { Modal, Stepper, StatusIcon, ViewSwitch } from './HousekeepingParts';
+import HousekeepingIssues from './HousekeepingIssues';
+import { ago, ISSUES_CHANGED, readView, saveView } from './housekeepingFormat';
 import './forms.css';
 import './chartSections.css';
 import './MenuPanel.css';
@@ -22,89 +23,48 @@ const ROOM_STATUS = {
 
 const errorText = (err, fallback) => (err instanceof ApiError ? err.message : fallback);
 
-// "12 min", "2 h 5 min", "3 days" — how long something has been going on.
-function ago(timestamp, now) {
-  const minutes = Math.max(0, Math.floor((now - new Date(timestamp).getTime()) / 60000));
-  if (minutes < 1) return 'under a minute';
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return minutes % 60 ? `${hours} h ${minutes % 60} min` : `${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'}`;
-}
-
-// One small glyph per state, so a room reads at a glance without relying on
-// colour alone.
-const ICON_PATHS = {
-  ready: ['M20 6 9 17l-5-5'],
-  occupied: ['M3 18v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7', 'M3 14h18', 'M3 18v2', 'M21 18v2', 'M7 11h3'],
-  dirty: ['M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z', 'M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z'],
-  cleaning: ['M21 12a9 9 0 1 1-3-6.7', 'M21 4v5h-5'],
-  ooo: ['M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z'],
+// "Ground" stays "Ground"; a bare number becomes "Floor 2".
+const floorLabel = (floor) => {
+  const f = String(floor ?? '').trim();
+  return !f ? '' : /^\d+$/.test(f) ? `Floor ${f}` : f;
 };
 
-function StatusIcon({ tone, size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {(ICON_PATHS[tone] ?? ICON_PATHS.ready).map((d) => (
-        <path key={d} d={d} />
-      ))}
-    </svg>
-  );
-}
+// The rooms table's sortable columns, and what each sorts on. Status sorts in
+// working order (to clean first), not by its spelling; a room with no guest or
+// no logged clean sorts as empty.
+const STATUS_RANK = { DIRTY: 0, CLEANING: 1, READY: 2, OCCUPIED: 3, OUT_OF_ORDER: 4 };
+const ROOM_COLUMNS = [
+  { key: 'room', label: 'Room', value: ({ r }) => String(r.roomNumber) },
+  { key: 'type', label: 'Type', wide: true, value: ({ r }) => `${r.categoryName} ${r.floor ?? ''}` },
+  { key: 'status', label: 'Status', value: ({ r }) => STATUS_RANK[r.status] ?? 9 },
+  { key: 'guest', label: 'Guest', wide: true, value: ({ guest }) => guest },
+  { key: 'cleaned', label: 'Last cleaned', wide: true, value: ({ r }) => (r.cleanedAt ? new Date(r.cleanedAt).getTime() : 0) },
+  { key: 'notes', label: 'Notes', wide: true, value: ({ detail, issues }) => [detail, issues].filter(Boolean).join(' ') },
+];
 
-// + / − counter: counts are tapped, never typed, so a phone in a wet hand works.
-function Stepper({ value, onChange, label, max = Infinity }) {
-  return (
-    <span className="hk-stepper" role="group" aria-label={label}>
-      <button type="button" onClick={() => onChange(Math.max(0, value - 1))} aria-label={`Less ${label}`}>
-        −
-      </button>
-      <span className="hk-stepper__value">{value}</span>
-      <button type="button" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max} aria-label={`More ${label}`}>
-        +
-      </button>
-    </span>
-  );
-}
-
-function Modal({ title, sub, onClose, busy, children, footer }) {
-  return (
-    <div className="glass-backdrop menu-panel__backdrop" onClick={() => !busy && onClose()}>
-      <div className="glass-panel menu-panel__modal modal-form__panel" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-form">
-          <div className="modal-form__head">
-            <div className="modal-form__head-row">
-              <h3>{title}</h3>
-              <button type="button" className="modal-form__close" onClick={onClose} aria-label="Close">
-                ×
-              </button>
-            </div>
-            {sub && <p className="modal-form__sub">{sub}</p>}
-          </div>
-          <div className="modal-form__body">{children}</div>
-          <div className="modal-form__foot">
-            <div className="modal-form__foot-actions">{footer}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// A calendar day from the server (YYYY-MM-DD) as "08 Oct".
+const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
 // ---------------------------------------------------------------------------
 // Rooms
 // ---------------------------------------------------------------------------
 
-function RoomsTab({ token }) {
+function RoomsTab({ token, hasLaundry, view, toolsHost }) {
   const [rooms, setRooms] = useState(null);
   const [linen, setLinen] = useState([]);
+  // Opens on the work to do; the rest is one choice away under Show.
   const [filter, setFilter] = useState('TODO');
   const [error, setError] = useState('');
   const [finish, setFinish] = useState(null); // { room, counts: {itemId: n}, issues, lostFound }
   const [ooo, setOoo] = useState(null); // { room, note }
   const [busy, setBusy] = useState(false);
   const [menuId, setMenuId] = useState(null); // the room whose "⋯" menu is open
+  // Which table column is sorted, and which way. None to begin with: the list
+  // arrives in working order, rooms to clean first. A heading goes ascending,
+  // then descending, then back to that order.
+  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const toggleSort = (key) =>
+    setSort((cur) => (cur.key !== key ? { key, dir: 1 } : cur.dir === 1 ? { key, dir: -1 } : { key: null, dir: 1 }));
   // "Waiting 2 h" needs a clock, and reading the time while rendering is not
   // allowed, so it ticks in state instead.
   const [now, setNow] = useState(() => Date.now());
@@ -119,9 +79,12 @@ function RoomsTab({ token }) {
 
   useEffect(() => {
     load();
-    apiGet('/housekeeping/linen', { token })
-      .then((d) => setLinen(d.items.filter((i) => i.isActive)))
-      .catch(() => {});
+    // Linen is counted only where the Laundry section is on.
+    if (hasLaundry) {
+      apiGet('/housekeeping/linen', { token })
+        .then((d) => setLinen(d.items.filter((i) => i.isActive)))
+        .catch(() => {});
+    }
     // Kept fresh without a refresh button: a checkout at the desk shows up here.
     const timer = setInterval(() => {
       load();
@@ -149,10 +112,16 @@ function RoomsTab({ token }) {
     const linenLines = Object.entries(finish.counts)
       .filter(([, n]) => n > 0)
       .map(([linenItemId, quantity]) => ({ linenItemId: Number(linenItemId), quantity }));
-    if (await act(finish.room, 'done', { linen: linenLines, issues: finish.issues, lostFound: finish.lostFound })) {
+    const issues = finish.issues.trim();
+    const reported = Boolean(issues || finish.lostFound.trim());
+    if (await act(finish.room, 'done', { linen: linenLines, issues, lostFound: finish.lostFound.trim(), blockRoom: Boolean(issues) && finish.blockRoom })) {
       setFinish(null);
+      // The desk's count and alert should not wait for their next poll.
+      if (reported) window.dispatchEvent(new Event(ISSUES_CHANGED));
     }
   };
+
+  const finishPieces = Object.values(finish?.counts ?? {}).reduce((n, v) => n + v, 0);
 
   const counts = { DIRTY: 0, CLEANING: 0, READY: 0, OCCUPIED: 0, OUT_OF_ORDER: 0 };
   (rooms ?? []).forEach((r) => (counts[r.status] += 1));
@@ -162,59 +131,141 @@ function RoomsTab({ token }) {
   );
 
   // One row of tabs: the working view first, then everything else.
-  const tabs = [
-    { key: 'TODO', label: 'To clean', n: counts.DIRTY + counts.CLEANING, tone: 'dirty' },
-    { key: 'READY', label: 'Ready', n: counts.READY, tone: 'ready' },
-    { key: 'OCCUPIED', label: 'Occupied', n: counts.OCCUPIED, tone: 'occupied' },
-    { key: 'OUT_OF_ORDER', label: 'Out of order', n: counts.OUT_OF_ORDER, tone: 'ooo' },
-    { key: 'ALL', label: 'All', n: total, tone: 'all' },
+  // What the "Show" menu offers, each with how many rooms it would leave.
+  const filters = [
+    { key: 'TODO', label: 'To clean', n: counts.DIRTY + counts.CLEANING },
+    { key: 'READY', label: 'Ready', n: counts.READY },
+    { key: 'OCCUPIED', label: 'Occupied', n: counts.OCCUPIED },
+    { key: 'OUT_OF_ORDER', label: 'Under repair', n: counts.OUT_OF_ORDER },
+    { key: 'ALL', label: 'All', n: total },
   ];
-  const bar = [
-    { tone: 'ready', n: counts.READY },
-    { tone: 'cleaning', n: counts.CLEANING },
-    { tone: 'dirty', n: counts.DIRTY },
-    { tone: 'occupied', n: counts.OCCUPIED },
-    { tone: 'ooo', n: counts.OUT_OF_ORDER },
-  ];
+
+  // Worked out once per room, so the cards and the table show the same thing.
+  const rows = shown.map((r) => {
+    const detail =
+      r.status === 'DIRTY'
+        ? r.dirtySince
+          ? `Waiting ${ago(r.dirtySince, now)}`
+          : 'Marked for cleaning'
+        : r.status === 'CLEANING'
+          ? `${r.cleaningStartedAt ? `${ago(r.cleaningStartedAt, now)}` : 'In progress'}${r.cleaningBy ? ` · ${r.cleaningBy}` : ''}`
+          : r.status === 'OUT_OF_ORDER'
+            ? r.outOfOrderNote || ''
+            : '';
+    const menu = [
+      r.status === 'CLEANING' && { label: 'Stop without finishing', run: () => act(r, 'release') },
+      r.status === 'READY' && { label: 'Needs cleaning', run: () => act(r, 'dirty') },
+      r.status === 'OCCUPIED' && { label: 'Service this room', run: () => act(r, 'start') },
+      (r.status === 'DIRTY' || r.status === 'READY') && { label: 'Close for repair', run: () => setOoo({ room: r, note: '' }) },
+    ].filter(Boolean);
+    // Who is in the room, and when it comes free: what a cleaner plans the day by.
+    const guest = r.guestName ? `${r.guestName}${r.guestsIn > 1 ? ` +${r.guestsIn - 1} more` : ''}` : '';
+    const leaves = r.guestName && r.guestCheckOut ? (r.leavingToday ? 'Leaves today' : `Leaves ${dayLabel(r.guestCheckOut)}`) : '';
+    // Only a clean somebody actually logged; a room never cleaned says nothing.
+    const cleaned = r.cleanedAt ? `${ago(r.cleanedAt, now)} ago${r.cleanedBy ? ` · ${r.cleanedBy}` : ''}` : '';
+    const issues = r.openIssues > 0 ? `${r.openIssues} open ${r.openIssues === 1 ? 'issue' : 'issues'}` : '';
+    return {
+      r,
+      s: ROOM_STATUS[r.status],
+      detail,
+      menu,
+      arriving: r.arrivingToday && r.status !== 'OCCUPIED',
+      guest,
+      leaves,
+      cleaned,
+      issues,
+    };
+  });
+  // The table is what has headings to click, so only it is re-sorted.
+  const sortColumn = view === 'table' ? ROOM_COLUMNS.find((c) => c.key === sort.key) : null;
+  const tableRows = sortColumn
+    ? [...rows].sort((a, b) => {
+        const x = sortColumn.value(a);
+        const y = sortColumn.value(b);
+        const order = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+        return order * sort.dir;
+      })
+    : rows;
+
+  // The one button a room needs, and the "⋯" menu for the rest.
+  const actionsFor = ({ r, menu }) => (
+    <>
+      {r.status === 'DIRTY' && (
+        <button type="button" className="hk-action" disabled={busy} onClick={() => act(r, 'start')}>
+          Start cleaning
+        </button>
+      )}
+      {r.status === 'CLEANING' && (
+        <button
+          type="button"
+          className="hk-action"
+          disabled={busy}
+          onClick={() => setFinish({ room: r, counts: {}, issues: '', lostFound: '', blockRoom: false })}
+        >
+          Finish
+        </button>
+      )}
+      {r.status === 'OUT_OF_ORDER' && (
+        <button type="button" className="btn-secondary hk-btn" disabled={busy} onClick={() => act(r, 'out-of-order', { outOfOrder: false })}>
+          Back in service
+        </button>
+      )}
+      {menu.length > 0 && (
+        <span className="hk-menu">
+          <button
+            type="button"
+            className="hk-more"
+            aria-label={`More actions for room ${r.roomNumber}`}
+            aria-expanded={menuId === r.id}
+            onClick={() => setMenuId(menuId === r.id ? null : r.id)}
+          >
+            ⋯
+          </button>
+          {menuId === r.id && (
+            <>
+              <button type="button" className="hk-menu__backdrop" aria-label="Close menu" onClick={() => setMenuId(null)} />
+              <span className="hk-menu__list" role="menu">
+                {menu.map((m) => (
+                  <button
+                    key={m.label}
+                    type="button"
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => {
+                      setMenuId(null);
+                      m.run();
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </span>
+            </>
+          )}
+        </span>
+      )}
+    </>
+  );
 
   return (
     <div className="chart-section hk-board">
-      {rooms && (
-        <div className="hk-head">
-          <div className="hk-head__top">
-            <h3 className="hk-head__title">
-              {counts.READY} of {total} rooms ready
-            </h3>
-            <div
-              className="hk-bar"
-              role="img"
-              aria-label={`${counts.READY} ready, ${counts.DIRTY + counts.CLEANING} to clean, ${counts.OCCUPIED} occupied, ${counts.OUT_OF_ORDER} out of order`}
-            >
-              {bar.filter((b) => b.n > 0).map((b) => (
-                <span key={b.tone} className={`hk-bar__seg hk-bar__seg--${b.tone}`} style={{ flexGrow: b.n }} />
+      {/* The status filter sits on the section's tab strip, beside the cards /
+          table switch, rather than as a second row of tabs under it. */}
+      {rooms &&
+        toolsHost &&
+        createPortal(
+          <label className="hk-show">
+            <span>Show:</span>
+            <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Show rooms by status">
+              {filters.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label} ({f.n})
+                </option>
               ))}
-            </div>
-          </div>
-          <div className="hk-tabs" role="tablist" aria-label="Show rooms">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={filter === t.key}
-                className={`hk-tab hk-tab--${t.tone}${t.n === 0 ? ' hk-tab--zero' : ''}`}
-                onClick={() => setFilter(t.key)}
-              >
-                {t.label}
-                <span className="hk-tab__n">{t.n}</span>
-              </button>
-            ))}
-          </div>
-          {filter === 'TODO' && counts.DIRTY + counts.CLEANING > 0 && (
-            <p className="hk-help">Tap <strong>Start cleaning</strong> when you begin a room, then <strong>Finish</strong> when it is done.</p>
-          )}
-        </div>
-      )}
+            </select>
+          </label>,
+          toolsHost
+        )}
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
       {!rooms && !error && <PageLoader inline label="Loading rooms" />}
@@ -227,113 +278,128 @@ function RoomsTab({ token }) {
           <p className="hk-empty__text">
             {filter === 'TODO'
               ? 'New check-outs appear here on their own.'
-              : 'Pick another tab above to see the rest.'}
+              : filter === 'ALL'
+                ? 'Add rooms under Rooms & rates to see them here.'
+                : 'Choose another option under Show to see the rest.'}
           </p>
         </div>
       )}
 
-      <div className="hk-list">
-        {shown.map((r) => {
-          const s = ROOM_STATUS[r.status];
-          const detail =
-            r.status === 'DIRTY'
-              ? r.dirtySince
-                ? `Waiting ${ago(r.dirtySince, now)}`
-                : 'Marked for cleaning'
-              : r.status === 'CLEANING'
-                ? `${r.cleaningStartedAt ? `${ago(r.cleaningStartedAt, now)}` : 'In progress'}${r.cleaningBy ? ` · ${r.cleaningBy}` : ''}`
-                : r.status === 'OUT_OF_ORDER'
-                  ? r.outOfOrderNote || ''
-                  : r.status === 'OCCUPIED'
-                    ? 'Guest staying'
-                    : 'Ready for guests';
-          const menu = [
-            r.status === 'CLEANING' && { label: 'Stop without finishing', run: () => act(r, 'release') },
-            r.status === 'READY' && { label: 'Needs cleaning', run: () => act(r, 'dirty') },
-            r.status === 'OCCUPIED' && { label: 'Service this room', run: () => act(r, 'start') },
-            (r.status === 'DIRTY' || r.status === 'READY') && { label: 'Mark out of order', run: () => setOoo({ room: r, note: '' }) },
-          ].filter(Boolean);
-          return (
-            <article className={`hk-card hk-card--${s.tone}`} key={r.id}>
-              <span className={`hk-card__icon hk-card__icon--${s.tone}`}>
-                <StatusIcon tone={s.tone} />
-              </span>
-              <div className="hk-card__body">
-                <div className="hk-card__line">
-                  <span className="hk-card__room">{r.roomNumber}</span>
-                  <span className="hk-card__cat">{r.categoryName}</span>
-                  {r.arrivingToday && r.status !== 'OCCUPIED' && <span className="hk-arrival">Guest arriving today</span>}
+      {view === 'cards' && (
+        <div className="hk-list">
+          {rows.map((row) => {
+            const { r, s, detail, arriving, guest, leaves, cleaned, issues } = row;
+            // One quiet line of whatever applies: the guest and when they go, or
+            // when the room was last cleaned.
+            const extra = guest ? [guest, r.leavingToday ? '' : leaves].filter(Boolean).join(' · ') : r.status === 'READY' && cleaned ? `Cleaned ${cleaned}` : '';
+            return (
+              <article className={`hk-card hk-card--${s.tone}`} key={r.id}>
+                <span className="hk-card__room">{r.roomNumber}</span>
+                <div className="hk-card__body">
+                  <div className="hk-card__line">
+                    <span className="hk-card__cat">{r.categoryName}</span>
+                    {floorLabel(r.floor) && <span className="hk-card__floor">{floorLabel(r.floor)}</span>}
+                    {arriving && <span className="hk-arrival">Guest arriving today</span>}
+                    {guest && r.leavingToday && <span className="hk-arrival">Leaves today</span>}
+                    {issues && <span className="hk-arrival hk-arrival--ooo">{issues}</span>}
+                  </div>
+                  <div className="hk-card__state">
+                    <span className={`hk-status hk-status--${s.tone}`}>{s.label}</span>
+                    {detail && <span className="hk-card__detail">{detail}</span>}
+                  </div>
+                  {extra && <div className="hk-card__detail hk-card__extra">{extra}</div>}
                 </div>
-                <div className="hk-card__state">
-                  <span className={`hk-status hk-status--${s.tone}`}>{s.label}</span>
-                  {detail && <span className="hk-card__detail">{detail}</span>}
-                </div>
-              </div>
-              <div className="hk-card__side">
-                {r.status === 'DIRTY' && (
-                  <button type="button" className="btn-accent hk-btn" disabled={busy} onClick={() => act(r, 'start')}>
-                    Start cleaning
+                <div className="hk-card__side">{actionsFor(row)}</div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {view === 'table' && rows.length > 0 && (
+        <table className="hk-rooms">
+          <thead>
+            <tr>
+              {ROOM_COLUMNS.map((column) => (
+                <th
+                  key={column.key}
+                  scope="col"
+                  className={column.wide ? 'hk-rooms__wide' : undefined}
+                  aria-sort={sort.key === column.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                >
+                  <button type="button" className="hk-sort" onClick={() => toggleSort(column.key)} title={`Sort by ${column.label}`}>
+                    {column.label}
+                    <span className="hk-sort__icon" aria-hidden="true">
+                      {sort.key === column.key ? (sort.dir === 1 ? '▲' : '▼') : '⇅'}
+                    </span>
                   </button>
-                )}
-                {r.status === 'CLEANING' && (
-                  <button
-                    type="button"
-                    className="btn-accent hk-btn"
-                    disabled={busy}
-                    onClick={() => setFinish({ room: r, counts: {}, issues: '', lostFound: '' })}
-                  >
-                    Finish
-                  </button>
-                )}
-                {r.status === 'OUT_OF_ORDER' && (
-                  <button type="button" className="btn-secondary hk-btn" disabled={busy} onClick={() => act(r, 'out-of-order', { outOfOrder: false })}>
-                    Back in service
-                  </button>
-                )}
-                {menu.length > 0 && (
-                  <span className="hk-menu">
-                    <button
-                      type="button"
-                      className="hk-more"
-                      aria-label={`More actions for room ${r.roomNumber}`}
-                      aria-expanded={menuId === r.id}
-                      onClick={() => setMenuId(menuId === r.id ? null : r.id)}
-                    >
-                      ⋯
-                    </button>
-                    {menuId === r.id && (
+                </th>
+              ))}
+              <th scope="col" className="hk-rooms__actions">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {tableRows.map((row) => {
+              const { r, s, detail, arriving, guest, leaves, cleaned, issues } = row;
+              // On a phone the wide columns go, so what matters most sits under the status.
+              const sub = [detail, guest, leaves, arriving && 'Guest arriving today', issues].filter(Boolean).join(' · ');
+              const none = <span className="hk-rooms__none">—</span>;
+              return (
+                <tr key={r.id}>
+                  <th scope="row" className="hk-rooms__room">
+                    {r.roomNumber}
+                  </th>
+                  <td className="hk-rooms__wide">
+                    {r.categoryName}
+                    {floorLabel(r.floor) && <span className="hk-rooms__under">{floorLabel(r.floor)}</span>}
+                  </td>
+                  <td>
+                    <span className={`hk-status hk-status--${s.tone}`}>{s.label}</span>
+                    {sub && <span className="hk-rooms__sub">{sub}</span>}
+                  </td>
+                  <td className="hk-rooms__wide">
+                    {guest ? (
                       <>
-                        <button type="button" className="hk-menu__backdrop" aria-label="Close menu" onClick={() => setMenuId(null)} />
-                        <span className="hk-menu__list" role="menu">
-                          {menu.map((m) => (
-                            <button
-                              key={m.label}
-                              type="button"
-                              role="menuitem"
-                              disabled={busy}
-                              onClick={() => {
-                                setMenuId(null);
-                                m.run();
-                              }}
-                            >
-                              {m.label}
-                            </button>
-                          ))}
-                        </span>
+                        <span className="hk-rooms__guest">{guest}</span>
+                        {r.leavingToday ? (
+                          <span className="hk-arrival hk-rooms__tag">Leaves today</span>
+                        ) : (
+                          leaves && <span className="hk-rooms__under">{leaves}</span>
+                        )}
                       </>
+                    ) : arriving ? (
+                      <span className="hk-arrival">Guest arriving today</span>
+                    ) : (
+                      none
                     )}
-                  </span>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </div>
+                  </td>
+                  <td className="hk-rooms__wide">{cleaned || none}</td>
+                  <td className="hk-rooms__wide">
+                    {detail || issues ? (
+                      <span className="hk-rooms__detail">
+                        {detail && <span>{detail}</span>}
+                        {issues && <span className="hk-arrival hk-arrival--ooo">{issues}</span>}
+                      </span>
+                    ) : (
+                      none
+                    )}
+                  </td>
+                  <td className="hk-rooms__actions">
+                    <div className="hk-card__side">{actionsFor(row)}</div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
 
       {finish && (
         <Modal
-          title={`Room ${finish.room.roomNumber} — done`}
-          sub="Tap the linen you changed. Anything found, note it."
+          title={`Finish cleaning · Room ${finish.room.roomNumber}`}
+          sub={hasLaundry ? 'Count the linen you replaced, then mark the room clean.' : 'Note anything wrong, then mark the room clean.'}
           busy={busy}
           onClose={() => setFinish(null)}
           footer={
@@ -342,33 +408,72 @@ function RoomsTab({ token }) {
                 Cancel
               </button>
               <button type="button" className="btn-accent" onClick={submitFinish} disabled={busy}>
-                {busy ? 'Saving…' : 'Room is clean'}
+                {busy ? 'Saving…' : 'Mark room clean'}
               </button>
             </>
           }
         >
-          {linen.length === 0 ? (
-            <p className="hk-hint">Add linen types under Hotel laundry to count what you change in each room.</p>
-          ) : (
-            linen.map((i) => (
-              <div className="hk-row" key={i.id}>
-                <span>{i.name}</span>
-                <Stepper
-                  label={i.name}
-                  value={finish.counts[i.id] ?? 0}
-                  onChange={(n) => setFinish({ ...finish, counts: { ...finish.counts, [i.id]: n } })}
-                />
+          {hasLaundry && (
+            <section className="hk-finish__section">
+              <div className="hk-finish__head">
+                <h4 className="hk-finish__title">Linen changed</h4>
+                <span className={`hk-finish__meta${finishPieces > 0 ? ' hk-finish__meta--on' : ''}`}>
+                  {finishPieces > 0 ? `${finishPieces} ${finishPieces === 1 ? 'piece' : 'pieces'}` : 'Tap + for each piece'}
+                </span>
               </div>
-            ))
+              {linen.length === 0 ? (
+                <p className="hk-hint hk-hint--inline">Add linen items under Laundry → Hotel linen to count what you change in each room.</p>
+              ) : (
+                <div className="hk-finish__list">
+                  {linen.map((i) => (
+                    <div className="hk-row" key={i.id}>
+                      <span className={finish.counts[i.id] > 0 ? 'hk-finish__name--on' : undefined}>{i.name}</span>
+                      <Stepper
+                        label={i.name}
+                        value={finish.counts[i.id] ?? 0}
+                        onChange={(n) => setFinish({ ...finish, counts: { ...finish.counts, [i.id]: n } })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           )}
-          <div className="field">
-            <label htmlFor="hkIssues">Problems (broken, stained, missing)</label>
-            <input id="hkIssues" value={finish.issues} onChange={(e) => setFinish({ ...finish, issues: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="hkLost">Lost &amp; found</label>
-            <input id="hkLost" value={finish.lostFound} onChange={(e) => setFinish({ ...finish, lostFound: e.target.value })} />
-          </div>
+
+          <section className="hk-finish__section">
+            <div className="hk-finish__head">
+              <h4 className="hk-finish__title">Anything to report?</h4>
+              <span className="hk-finish__meta">Optional · reception is told</span>
+            </div>
+            <div className="field">
+              <label htmlFor="hkIssues">Problem in the room</label>
+              <input
+                id="hkIssues"
+                placeholder="e.g. tap leaking, bulb not working, stained sheet"
+                value={finish.issues}
+                onChange={(e) => setFinish({ ...finish, issues: e.target.value })}
+              />
+              {/* Only once there is a problem to hold the room for. */}
+              {finish.issues.trim() && (
+                <label className="hk-check">
+                  <input type="checkbox" checked={finish.blockRoom} onChange={(e) => setFinish({ ...finish, blockRoom: e.target.checked })} />
+                  <span>
+                    Room cannot be given to guests
+                    <small>It stays under repair until the problem is marked fixed.</small>
+                  </span>
+                </label>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="hkLost">Guest left something behind</label>
+              <input
+                id="hkLost"
+                placeholder="e.g. phone charger, watch"
+                value={finish.lostFound}
+                onChange={(e) => setFinish({ ...finish, lostFound: e.target.value })}
+              />
+            </div>
+          </section>
         </Modal>
       )}
 
@@ -389,7 +494,7 @@ function RoomsTab({ token }) {
                 disabled={busy}
                 onClick={async () => (await act(ooo.room, 'out-of-order', { outOfOrder: true, note: ooo.note })) && setOoo(null)}
               >
-                Mark out of order
+                Close for repair
               </button>
             </>
           }
@@ -405,1023 +510,41 @@ function RoomsTab({ token }) {
 }
 
 // ---------------------------------------------------------------------------
-// Hotel laundry
-// ---------------------------------------------------------------------------
 
-const MOVE_LABEL = {
-  CHANGED: 'Changed in a room',
-  SENT: 'Sent to laundry',
-  RECEIVED: 'Received back',
-  LOST: 'Marked lost',
-  DAMAGED: 'Marked damaged',
-};
-const MOVE_FILTERS = [
-  { key: 'ALL', label: 'All', kinds: null },
-  { key: 'SENT', label: 'Sent', kinds: ['SENT'] },
-  { key: 'RECEIVED', label: 'Received', kinds: ['RECEIVED'] },
-  { key: 'ROOMS', label: 'Rooms', kinds: ['CHANGED'] },
-  { key: 'LOSS', label: 'Lost or damaged', kinds: ['LOST', 'DAMAGED'] },
-];
-
-// The filtered history as a spreadsheet: one row per item moved, newest first.
-// Cells are plain values; numbers (qty, amounts) are right-aligned as numbers.
-async function downloadSheet(sheet, filename, headings, rows, widths) {
-  const { default: writeXlsxFile } = await import('write-excel-file/browser');
-  const head = headings.map((value) => ({ value, fontWeight: 'bold', backgroundColor: '#e8e6f5' }));
-  const data = rows.map((r) =>
-    r.map((v) => (typeof v === 'number' ? { value: v, type: Number, align: 'right' } : { value: v === '' ? null : v }))
-  );
-  const workbook = await writeXlsxFile(
-    [{ data: [head, ...data], sheet, stickyRowsCount: 1, columns: widths.map((width) => ({ width })) }],
-    { fontFamily: 'Calibri', fontSize: 11 }
-  );
-  triggerDownload(await workbook.toBlob(), `${filename}-${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-const sheetDate = (value) =>
-  value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-const sheetTime = (value) =>
-  value ? new Date(value).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '';
-
-const LINEN_COLS = ['Date', 'Time', 'Action', 'Room', 'Item', 'Qty', 'By', 'Note'];
-const linenRow = (m) => [
-  sheetDate(m.createdAt), sheetTime(m.createdAt), MOVE_LABEL[m.kind], m.roomNumber || '', m.itemName,
-  m.quantity, m.userName || '', m.note || '',
-];
-
-const GUEST_COLS = ['Tag', 'Guest', 'Room', 'Items', 'Pieces', 'Status', 'Received', 'Handed over', 'Amount', 'Note'];
-const GUEST_STATUS = { RECEIVED: 'Received', WASHING: 'Washing', READY: 'Ready', DELIVERED: 'Handed over', CANCELLED: 'Cancelled' };
-const guestRow = (o) => [
-  o.tagNumber, o.guestName || '', o.roomNumber || 'Walk-in',
-  o.items.map((i) => `${i.name} ×${i.quantity}`).join(', '), o.pieces, GUEST_STATUS[o.status] || o.status,
-  `${sheetDate(o.receivedAt)} ${sheetTime(o.receivedAt)}`.trim(),
-  `${sheetDate(o.deliveredAt)} ${sheetTime(o.deliveredAt)}`.trim(), Number(o.total), o.note || '',
-];
-
-// A spreadsheet-style grid, shared by the linen and guest laundry views.
-function SheetTable({ columns, rows, numericCols = [], actions }) {
-  return (
-    <div className="hk-sheet-wrap">
-      <table className="hk-sheet">
-        <thead>
-          <tr>
-            {columns.map((h) => <th key={h}>{h}</th>)}
-            {actions && <th>Actions</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((v, c) => (
-                <td key={c} className={numericCols.includes(c) ? 'hk-sheet__num' : undefined}>{v}</td>
-              ))}
-              {actions && <td className="hk-sheet__actions">{actions(i)}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// What happened to the linen, newest first, one row per item moved. Filterable
-// and downloadable.
-function LinenActivity({ movements }) {
-  const [filter, setFilter] = useState('ALL');
-  const kinds = MOVE_FILTERS.find((f) => f.key === filter).kinds;
-  const filtered = (movements ?? []).filter((m) => !kinds || kinds.includes(m.kind));
-
-  return (
-    <section className="hk-activity" aria-label="Recent linen activity">
-      <div className="hk-section-head">
-        <h4>Recent activity</h4>
-        <div className="hk-tabs" role="tablist" aria-label="Filter activity">
-          {MOVE_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              role="tab"
-              aria-selected={filter === f.key}
-              className="hk-tab hk-tab--small"
-              onClick={() => setFilter(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="hk-tab hk-tab--small hk-tab--end"
-            disabled={filtered.length === 0}
-            onClick={() => downloadSheet('Linen activity', 'linen-activity', LINEN_COLS, filtered.map(linenRow), [14, 10, 20, 8, 22, 8, 20, 30])}
-          >
-            Download Excel
-          </button>
-        </div>
-      </div>
-
-      {filtered.length > 0 ? (
-        <SheetTable columns={LINEN_COLS} rows={filtered.map(linenRow)} numericCols={[5]} />
-      ) : (
-        <p className="hk-hint">
-          {(movements ?? []).length === 0
-            ? 'Nothing yet. When linen is changed in a room, sent out or received, it shows here.'
-            : 'Nothing of this kind yet.'}
-        </p>
-      )}
-    </section>
-  );
-}
-
-function LinenTab({ token }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const [modal, setModal] = useState(null); // { kind: 'item'|'send'|'receive'|'loss', ... }
-  const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [menuId, setMenuId] = useState(null); // the item whose "⋯" menu is open
-
-  const load = () =>
-    apiGet('/housekeeping/linen', { token })
-      .then((d) => {
-        setData(d);
-        setError('');
-      })
-      .catch((err) => setError(errorText(err, 'Could not load linen.')));
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const items = (data?.items ?? []).filter((i) => i.isActive);
-  // Hidden types keep their history and can be brought back; they just stop
-  // taking up a row.
-  const hidden = (data?.items ?? []).filter((i) => !i.isActive);
-  const atLaundry = items.filter((i) => i.inLaundry > 0);
-  const total = (key) => items.reduce((n, i) => n + Math.max(0, i[key]), 0);
-  const totals = { dirty: total('dirty'), inLaundry: total('inLaundry'), clean: total('clean') };
-
-  const open = (m) => {
-    setFormError('');
-    setModal(m);
-  };
-
-  // Send and Receive open already filled in with what the stock says is dirty or
-  // out, so the usual batch is one tap and only a difference needs fixing.
-  const openSend = () =>
-    open({ kind: 'send', lines: Object.fromEntries(items.map((i) => [i.id, { quantity: Math.max(0, i.dirty) }])), note: '' });
-  const openReceive = () =>
-    open({
-      kind: 'receive',
-      lines: Object.fromEntries(atLaundry.map((i) => [i.id, { received: i.inLaundry, lost: 0, damaged: 0 }])),
-      note: '',
-    });
-  const openLoss = (item) => open({ kind: 'loss', linenItemId: String(item.id), lossKind: 'LOST', quantity: 1, note: '' });
-
-  const setActive = async (item, isActive) => {
-    setBusy(true);
-    setFormError('');
-    try {
-      await apiPatch(`/housekeeping/linen/items/${item.id}`, { isActive }, { token });
-      setModal(null);
-      await load();
-    } catch (err) {
-      const message = errorText(err, 'Could not update the linen type.');
-      setFormError(message);
-      setError(message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  // Hiding removes a row, not its history. Linen still out would vanish from the
-  // board while it is away, so that has to come back first.
-  const hideItem = (item) => {
-    const away = item.dirty + item.inLaundry;
-    if (away > 0) {
-      setError(`${item.name} still has ${away} dirty or at the laundry. Receive or send those first, then hide it.`);
-      return;
-    }
-    if (window.confirm(`Hide ${item.name}? Its history is kept, and you can bring it back from “Add a linen type”.`)) setActive(item, false);
-  };
-
-  const save = async (path, body, method = apiPost) => {
-    setBusy(true);
-    setFormError('');
-    try {
-      await method(path, body, { token });
-      setModal(null);
-      load();
-    } catch (err) {
-      setFormError(errorText(err, 'Could not save.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const setLine = (id, patch) => setModal({ ...modal, lines: { ...modal.lines, [id]: { ...(modal.lines[id] ?? {}), ...patch } } });
-
-  const submitModal = () => {
-    if (modal.kind === 'item') {
-      if (!modal.name.trim()) return setFormError('Enter a name.');
-      const body = { name: modal.name.trim(), totalOwned: Number(modal.owned) || 0 };
-      return modal.id ? save(`/housekeeping/linen/items/${modal.id}`, body, apiPatch) : save('/housekeeping/linen/items', body);
-    }
-    if (modal.kind === 'send') {
-      const rows = items
-        .map((i) => ({ linenItemId: i.id, quantity: modal.lines[i.id]?.quantity ?? 0 }))
-        .filter((l) => l.quantity > 0);
-      if (rows.length === 0) return setFormError('Tap the counts you are sending.');
-      return save('/housekeeping/linen/send', { lines: rows, note: modal.note });
-    }
-    if (modal.kind === 'receive') {
-      const rows = atLaundry
-        .map((i) => {
-          const l = modal.lines[i.id] ?? {};
-          return { linenItemId: i.id, received: l.received ?? 0, lost: l.lost ?? 0, damaged: l.damaged ?? 0 };
-        })
-        .filter((l) => l.received + l.lost + l.damaged > 0);
-      if (rows.length === 0) return setFormError('Tap the counts that came back.');
-      return save('/housekeeping/linen/receive', { lines: rows, note: modal.note });
-    }
-    if (!modal.linenItemId) return setFormError('Choose the item.');
-    return save('/housekeeping/linen/loss', {
-      linenItemId: Number(modal.linenItemId),
-      kind: modal.lossKind,
-      quantity: modal.quantity,
-      note: modal.note,
-    });
-  };
-
-  const TITLES = {
-    item: modal?.id ? 'Edit linen item' : 'Add linen item',
-    send: 'Send to laundry',
-    receive: 'Receive from laundry',
-    loss: 'Lost or damaged linen',
-  };
-  const STARTERS = ['Bedsheet', 'Pillow cover', 'Towel', 'Bath towel', 'Blanket'];
-
-  return (
-    <div className="chart-section hk-board">
-      {error && <div className="form-banner form-banner--error">{error}</div>}
-      {!data && !error && <PageLoader inline label="Loading" />}
-
-      {data && items.length === 0 && (
-        <div className="hk-empty">
-          <span className="hk-empty__icon">
-            <StatusIcon tone="dirty" size={22} />
-          </span>
-          <p className="hk-empty__title">Add the linen you count</p>
-          <p className="hk-empty__text">Add each type once, with how many you own. Then track it through the laundry.</p>
-          <div className="hk-starters">
-            {STARTERS.map((name) => (
-              <button key={name} type="button" className="hk-tab" onClick={() => open({ kind: 'item', name, owned: '' })}>
-                + {name}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="btn-secondary" onClick={() => open({ kind: 'item', name: '', owned: '' })}>
-            Add another type
-          </button>
-        </div>
-      )}
-
-      {items.length > 0 && (
-        <div className="hk-matrix-wrap">
-          <div className="hk-toolbar">
-            <button type="button" className="hk-action" onClick={openSend}>
-              Send to laundry
-            </button>
-            <button type="button" className="hk-action" onClick={openReceive} disabled={atLaundry.length === 0}>
-              Receive from laundry
-            </button>
-            <span className="hk-toolbar__hint">Linen moves left to right in the table.</span>
-          </div>
-          <table className="hk-matrix">
-            <caption className="sr-only">Linen count by stage</caption>
-            <thead>
-              <tr>
-                <th scope="col" className="hk-matrix__item">
-                  Linen
-                </th>
-                <th scope="col">
-                  <span className="hk-dot hk-dot--dirty" aria-hidden="true" />
-                  Dirty
-                </th>
-                <th scope="col">
-                  <span className="hk-dot hk-dot--cleaning" aria-hidden="true" />
-                  At laundry
-                </th>
-                <th scope="col">
-                  <span className="hk-dot hk-dot--ready" aria-hidden="true" />
-                  Clean
-                </th>
-                <th scope="col" className="hk-matrix__menu">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.id}>
-                  <th scope="row" className="hk-matrix__item">
-                    <span className="hk-matrix__name">{i.name}</span>
-                    {i.short ? (
-                      <span className="hk-matrix__owned hk-matrix__owned--warn">More is out than you own. Check the count.</span>
-                    ) : (
-                      <span className="hk-matrix__owned">{i.owned} owned</span>
-                    )}
-                  </th>
-                  <td>{i.dirty}</td>
-                  <td>{i.inLaundry}</td>
-                  <td className={i.clean <= 0 ? 'hk-matrix__low' : undefined}>{i.clean}</td>
-                  <td className="hk-matrix__menu">
-                    <span className="hk-menu">
-                      <button
-                        type="button"
-                        className="hk-more"
-                        aria-label={`More actions for ${i.name}`}
-                        aria-expanded={menuId === i.id}
-                        onClick={() => setMenuId(menuId === i.id ? null : i.id)}
-                      >
-                        ⋯
-                      </button>
-                      {menuId === i.id && (
-                        <>
-                          <button type="button" className="hk-menu__backdrop" aria-label="Close menu" onClick={() => setMenuId(null)} />
-                          <span className="hk-menu__list" role="menu">
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                setMenuId(null);
-                                open({ kind: 'item', id: i.id, name: i.name, owned: String(i.totalOwned) });
-                              }}
-                            >
-                              Edit name or count
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                setMenuId(null);
-                                openLoss(i);
-                              }}
-                            >
-                              Lost or damaged
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                setMenuId(null);
-                                hideItem(i);
-                              }}
-                            >
-                              Hide from list
-                            </button>
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row" className="hk-matrix__item">
-                  All linen
-                </th>
-                <td>{totals.dirty}</td>
-                <td>{totals.inLaundry}</td>
-                <td>{totals.clean}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-          <div className="hk-matrix__foot">
-            <button type="button" className="hk-action hk-action--ghost" onClick={() => open({ kind: 'item', name: '', owned: '' })}>
-              + Add a linen type
-            </button>
-            {hidden.length > 0 && <span className="hk-hint hk-hint--inline">{hidden.length} hidden. Bring back from Add a linen type.</span>}
-          </div>
-
-          <LinenActivity movements={data.movements} />
-        </div>
-      )}
-
-      {modal && (
-        <Modal
-          title={TITLES[modal.kind]}
-          sub={
-            modal.kind === 'send'
-              ? 'Already filled in with what is dirty. Change a count if you send less.'
-              : modal.kind === 'receive'
-                ? 'Already filled in with what is out. Lower a count if something has not come back.'
-                : undefined
-          }
-          busy={busy}
-          onClose={() => setModal(null)}
-          footer={
-            <>
-              <button type="button" className="btn-secondary" onClick={() => setModal(null)} disabled={busy}>
-                Cancel
-              </button>
-              <button type="button" className="btn-accent" onClick={submitModal} disabled={busy}>
-                {busy ? 'Saving…' : modal.kind === 'send' ? 'Send out' : modal.kind === 'receive' ? 'Receive' : 'Save'}
-              </button>
-            </>
-          }
-        >
-          {formError && <div className="form-banner form-banner--error">{formError}</div>}
-
-          {modal.kind === 'item' && (
-            <>
-              {/* Adding is mostly the same few things, so offer them. Types that were
-                  hidden come back with their history instead of starting again. */}
-              {!modal.id && hidden.length > 0 && (
-                <div className="hk-suggest">
-                  <span className="hk-suggest__label">Bring back</span>
-                  {hidden.map((h) => (
-                    <button key={h.id} type="button" className="hk-tab hk-tab--small" disabled={busy} onClick={() => setActive(h, true)}>
-                      {h.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {!modal.id &&
-                STARTERS.filter((s) => !(data?.items ?? []).some((i) => i.name.toLowerCase() === s.toLowerCase())).length > 0 && (
-                  <div className="hk-suggest">
-                    <span className="hk-suggest__label">Common types</span>
-                    {STARTERS.filter((s) => !(data?.items ?? []).some((i) => i.name.toLowerCase() === s.toLowerCase())).map((s) => (
-                      <button key={s} type="button" className="hk-tab hk-tab--small" onClick={() => setModal({ ...modal, name: s })}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              <div className="field">
-                <label htmlFor="liName">
-                  Name
-                  <Req />
-                </label>
-                <input id="liName" value={modal.name} onChange={(e) => setModal({ ...modal, name: e.target.value })} placeholder="Bedsheet" autoFocus />
-              </div>
-              <div className="field">
-                <label htmlFor="liOwned">How many do you own in total?</label>
-                <input id="liOwned" type="number" min="0" value={modal.owned} onChange={(e) => setModal({ ...modal, owned: e.target.value })} />
-                <small className="hk-sub">Count everything: in rooms, in the store and at the laundry.</small>
-              </div>
-            </>
-          )}
-
-          {modal.kind === 'send' &&
-            items.map((i) => (
-              <div className="hk-row" key={i.id}>
-                <span>
-                  {i.name}
-                  <small className="hk-sub"> {i.dirty} dirty</small>
-                </span>
-                <Stepper label={i.name} max={i.dirty + i.clean} value={modal.lines[i.id]?.quantity ?? 0} onChange={(n) => setLine(i.id, { quantity: n })} />
-              </div>
-            ))}
-
-          {modal.kind === 'receive' &&
-            (atLaundry.length === 0 ? (
-              <p className="hk-hint">Nothing is at the laundry right now.</p>
-            ) : (
-              atLaundry.map((i) => {
-                const l = modal.lines[i.id] ?? {};
-                const missing = i.inLaundry - (l.received ?? 0);
-                const accounted = (l.lost ?? 0) + (l.damaged ?? 0);
-                return (
-                  <div className="hk-receive" key={i.id}>
-                    <div className="hk-row">
-                      <span>
-                        {i.name}
-                        <small className="hk-sub"> {i.inLaundry} out</small>
-                      </span>
-                      <Stepper label={`${i.name} came back`} max={i.inLaundry} value={l.received ?? 0} onChange={(n) => setLine(i.id, { received: n })} />
-                    </div>
-                    {/* Only when something is short: the common case stays one stepper. */}
-                    {(missing > 0 || accounted > 0) && (
-                      <div className="hk-receive__missing">
-                        <span className="hk-sub hk-sub--warn">
-                          {Math.max(0, missing - accounted)} not back yet. Mark any that are gone:
-                        </span>
-                        <span className="hk-row__steppers">
-                          <label>
-                            Lost <Stepper label={`${i.name} lost`} max={i.inLaundry} value={l.lost ?? 0} onChange={(n) => setLine(i.id, { lost: n })} />
-                          </label>
-                          <label>
-                            Damaged <Stepper label={`${i.name} damaged`} max={i.inLaundry} value={l.damaged ?? 0} onChange={(n) => setLine(i.id, { damaged: n })} />
-                          </label>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            ))}
-
-          {modal.kind === 'loss' && (
-            <>
-              <div className="field">
-                <label htmlFor="lossItem">Item</label>
-                <select id="lossItem" value={modal.linenItemId} onChange={(e) => setModal({ ...modal, linenItemId: e.target.value })}>
-                  <option value="">Choose…</option>
-                  {items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="toggle-group">
-                <button type="button" aria-pressed={modal.lossKind === 'LOST'} onClick={() => setModal({ ...modal, lossKind: 'LOST' })}>
-                  Lost
-                </button>
-                <button type="button" aria-pressed={modal.lossKind === 'DAMAGED'} onClick={() => setModal({ ...modal, lossKind: 'DAMAGED' })}>
-                  Damaged
-                </button>
-              </div>
-              <div className="hk-row">
-                <span>How many</span>
-                <Stepper label="quantity" value={modal.quantity} onChange={(n) => setModal({ ...modal, quantity: Math.max(1, n) })} />
-              </div>
-            </>
-          )}
-
-          {modal.kind !== 'item' && (
-            <div className="field">
-              <label htmlFor="hkNote">Note (optional)</label>
-              <input id="hkNote" value={modal.note} onChange={(e) => setModal({ ...modal, note: e.target.value })} placeholder="e.g. laundry name, bag number" />
-            </div>
-          )}
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Guest laundry
-// ---------------------------------------------------------------------------
-
-const LAUNDRY_TABS = [
-  { key: 'RECEIVED', label: 'To wash', tone: 'dirty' },
-  { key: 'WASHING', label: 'Washing', tone: 'cleaning' },
-  { key: 'READY', label: 'Ready', tone: 'ready' },
-  { key: 'DONE', label: 'Done', tone: 'occupied' },
-];
-
-// What the single button on a row does, named by the job rather than the status.
-const LAUNDRY_NEXT = {
-  RECEIVED: { to: 'WASHING', action: 'Start washing' },
-  WASHING: { to: 'READY', action: 'Mark ready' },
-  READY: { to: 'DELIVERED', action: 'Hand over' },
-};
-
-// Shown as one-tap starters when a garment has not been used before. Never a price
-// list: the price is typed on every entry.
-const COMMON_GARMENTS = ['Shirt', 'T-shirt', 'Trousers', 'Jeans', 'Saree', 'Kurta', 'Towel', 'Bedsheet'];
-
-function GuestLaundryTab({ token }) {
-  const [orders, setOrders] = useState(null);
-  const [recent, setRecent] = useState([]); // garments and prices used on earlier orders
-  const [guests, setGuests] = useState([]);
-  const [tabChoice, setTabChoice] = useState(null);
-  const [search, setSearch] = useState('');
-  const [error, setError] = useState('');
-  const [form, setForm] = useState(null); // new order
-  const [formError, setFormError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState(null); // the order just taken in
-  const [confirm, setConfirm] = useState(null); // { order, kind: 'deliver' | 'cancel' }
-
-  const load = () =>
-    apiGet('/housekeeping/laundry/orders?scope=all', { token })
-      .then((d) => {
-        setOrders(d.orders);
-        setError('');
-      })
-      .catch((err) => setError(errorText(err, 'Could not load laundry.')));
-
-  const loadRecent = () =>
-    apiGet('/housekeeping/laundry/garments', { token })
-      .then((d) => setRecent(d.garments))
-      .catch(() => {});
-
-  useEffect(() => {
-    load();
-    loadRecent();
-    apiGet('/housekeeping/laundry/in-house', { token })
-      .then((d) => setGuests(d.guests))
-      .catch(() => {});
-    // A hand-over at the desk shows up here without a refresh.
-    const timer = setInterval(() => {
-      load();
-    }, 30000);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const stageOf = (o) => (o.status === 'DELIVERED' || o.status === 'CANCELLED' ? 'DONE' : o.status);
-  const counts = { RECEIVED: 0, WASHING: 0, READY: 0, DONE: 0 };
-  (orders ?? []).forEach((o) => (counts[stageOf(o)] += 1));
-  // Opens on the first stage that has work in it, so the screen starts useful.
-  const firstBusy = LAUNDRY_TABS.find((t) => t.key !== 'DONE' && counts[t.key] > 0)?.key ?? 'RECEIVED';
-  const tab = tabChoice ?? firstBusy;
-
-  const query = search.trim().toLowerCase();
-  const shown = (orders ?? []).filter(
-    (o) =>
-      stageOf(o) === tab &&
-      (!query || String(o.tagNumber).includes(query.replace('#', '')) || (o.guestName ?? '').toLowerCase().includes(query))
-  );
-
-  const move = async (order, status) => {
-    setBusy(true);
-    try {
-      await apiPost(`/housekeeping/laundry/orders/${order.id}/status`, { status }, { token });
-      setConfirm(null);
-      await load();
-    } catch (err) {
-      setConfirm(null);
-      setError(errorText(err, 'Could not update the order.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---- the entry form: every garment is a row with its own price -----------
-
-  const priceOf = new Map(recent.map((g) => [g.name.toLowerCase(), g.price]));
-  const starters = [...new Set([...recent.map((g) => g.name), ...COMMON_GARMENTS])].slice(0, 10);
-
-  const lines = form?.lines ?? [];
-  const pieces = lines.reduce((n, l) => n + l.qty, 0);
-  const total = lines.reduce((n, l) => n + (Number(l.price) || 0) * l.qty, 0);
-
-  const openForm = () => {
-    setFormError('');
-    setForm({ mode: guests.length > 0 ? 'stay' : 'walkin', stay: '', guestName: '', guestPhone: '', note: '', lines: [], nextKey: 1 });
-  };
-
-  // Tapping a garment adds a row at the price it was last charged. Tapping the
-  // same one again adds a piece instead of a second row.
-  const addLine = (name = '') =>
-    setForm((f) => {
-      const same = name && f.lines.find((l) => l.name.toLowerCase() === name.toLowerCase());
-      if (same) return { ...f, lines: f.lines.map((l) => (l === same ? { ...l, qty: l.qty + 1 } : l)) };
-      const price = name && priceOf.has(name.toLowerCase()) ? String(priceOf.get(name.toLowerCase())) : '';
-      return { ...f, nextKey: f.nextKey + 1, lines: [...f.lines, { key: f.nextKey, name, price, qty: 1 }] };
-    });
-  const patchLine = (key, patch) => setForm((f) => ({ ...f, lines: f.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
-  const removeLine = (key) => setForm((f) => ({ ...f, lines: f.lines.filter((l) => l.key !== key) }));
-  // Typing a name that was used before offers its last price, only if none is set.
-  const renameLine = (line, name) =>
-    patchLine(line.key, { name, ...(line.price === '' && priceOf.has(name.trim().toLowerCase()) ? { price: String(priceOf.get(name.trim().toLowerCase())) } : {}) });
-
-  const create = async () => {
-    setFormError('');
-    // A row with nothing typed in it is just a row someone added and left.
-    const used = lines.filter((l) => l.name.trim() || l.price !== '');
-    if (used.length === 0) return setFormError('Add the garments being handed in.');
-    for (const l of used) {
-      if (!l.name.trim()) return setFormError('Enter the garment name on every row.');
-      if (l.price === '' || !(Number(l.price) >= 0)) return setFormError(`Enter the price for ${l.name.trim()}.`);
-    }
-    const stay = form.mode === 'stay' ? guests.find((g) => `${g.bookingId}:${g.roomId}` === form.stay) : null;
-    if (form.mode === 'stay' && !stay) return setFormError('Choose the guest.');
-    if (form.mode === 'walkin' && !form.guestName.trim()) return setFormError('Enter the customer’s name.');
-    setBusy(true);
-    try {
-      const d = await apiPost(
-        '/housekeeping/laundry/orders',
-        {
-          bookingId: stay?.bookingId ?? null,
-          roomId: stay?.roomId ?? null,
-          guestName: stay ? '' : form.guestName,
-          guestPhone: stay ? '' : form.guestPhone,
-          note: form.note,
-          items: used.map((l) => ({ name: l.name.trim(), price: Number(l.price), quantity: l.qty })),
-        },
-        { token }
-      );
-      setForm(null);
-      setCreated(d.order);
-      setTabChoice('RECEIVED');
-      load();
-      loadRecent();
-    } catch (err) {
-      setFormError(errorText(err, 'Could not save the order.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="chart-section hk-board">
-      <div className="hk-toolbar">
-        <button type="button" className="hk-action" onClick={openForm}>
-          + New laundry
-        </button>
-        {(orders ?? []).length > 5 && (
-          <input
-            type="search"
-            className="hk-search"
-            placeholder="Find by tag or name"
-            aria-label="Find laundry by tag number or name"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        )}
-      </div>
-
-      {error && <div className="form-banner form-banner--error">{error}</div>}
-      {!orders && !error && <PageLoader inline label="Loading" />}
-
-      {orders && (
-        <div className="hk-tabs" role="tablist" aria-label="Laundry stage">
-          {LAUNDRY_TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.key}
-              className={`hk-tab hk-tab--${t.tone}${counts[t.key] === 0 ? ' hk-tab--zero' : ''}`}
-              onClick={() => setTabChoice(t.key)}
-            >
-              {t.label}
-              <span className="hk-tab__n">{counts[t.key]}</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            className="hk-tab hk-tab--small hk-tab--end"
-            disabled={shown.length === 0}
-            onClick={() => downloadSheet('Guest laundry', 'guest-laundry', GUEST_COLS, shown.map(guestRow), [8, 20, 10, 40, 8, 14, 20, 20, 12, 24])}
-          >
-            Download Excel
-          </button>
-        </div>
-      )}
-
-      {orders && shown.length > 0 && (
-        <SheetTable
-          columns={GUEST_COLS}
-          rows={shown.map(guestRow)}
-          numericCols={[0, 4, 8]}
-          actions={(i) => {
-            const o = shown[i];
-            const step = LAUNDRY_NEXT[o.status];
-            if (!step) return null;
-            return (
-              <>
-                <button
-                  type="button"
-                  className="hk-action"
-                  disabled={busy}
-                  onClick={() => (step.to === 'DELIVERED' ? setConfirm({ order: o, kind: 'deliver' }) : move(o, step.to))}
-                >
-                  {step.action}
-                </button>
-                <button type="button" className="hk-link" onClick={() => setConfirm({ order: o, kind: 'cancel' })}>
-                  Cancel
-                </button>
-              </>
-            );
-          }}
-        />
-      )}
-
-      {orders && shown.length === 0 && (
-        <div className="hk-empty">
-          <p className="hk-empty__title">
-            {query ? 'No match' : tab === 'DONE' ? 'Nothing handed over yet' : `Nothing ${tab === 'RECEIVED' ? 'waiting to be washed' : tab === 'WASHING' ? 'in the wash' : 'ready to hand over'}`}
-          </p>
-          <p className="hk-empty__text">
-            {query ? 'Check the tag number or the name.' : tab === 'RECEIVED' ? 'Tap + New laundry when a guest hands in clothes.' : 'Orders move here as you work through them.'}
-          </p>
-        </div>
-      )}
-
-      {tab === 'READY' && shown.length > 0 && (
-        <p className="hk-hint">Handing over adds the charge to Room billing → Services to bill.</p>
-      )}
-
-      {created && (
-        <Modal
-          title="Laundry taken in"
-          busy={false}
-          onClose={() => setCreated(null)}
-          footer={
-            <>
-              <button type="button" className="btn-secondary" onClick={() => { setCreated(null); openForm(); }}>
-                Take in more
-              </button>
-              <button type="button" className="hk-action" onClick={() => setCreated(null)}>
-                Done
-              </button>
-            </>
-          }
-        >
-          <div className="hk-tagbig">
-            <small>Write this tag on the bag</small>
-            <strong>{created.tagNumber}</strong>
-          </div>
-          <p className="hk-hint hk-hint--center">
-            {created.guestName}, {created.pieces} {created.pieces === 1 ? 'piece' : 'pieces'}, {formatPrice(created.total)}
-          </p>
-        </Modal>
-      )}
-
-      {confirm && (
-        <Modal
-          title={confirm.kind === 'deliver' ? `Hand over tag ${confirm.order.tagNumber}?` : `Cancel tag ${confirm.order.tagNumber}?`}
-          busy={busy}
-          onClose={() => setConfirm(null)}
-          footer={
-            <>
-              <button type="button" className="btn-secondary" onClick={() => setConfirm(null)} disabled={busy}>
-                {confirm.kind === 'deliver' ? 'Not yet' : 'Keep order'}
-              </button>
-              <button
-                type="button"
-                className="hk-action"
-                disabled={busy}
-                onClick={() => move(confirm.order, confirm.kind === 'deliver' ? 'DELIVERED' : 'CANCELLED')}
-              >
-                {busy ? 'Saving…' : confirm.kind === 'deliver' ? 'Hand over' : 'Cancel order'}
-              </button>
-            </>
-          }
-        >
-          <p className="hk-confirm">
-            {confirm.kind === 'deliver' ? (
-              <>
-                <strong>{confirm.order.guestName}</strong>
-                {confirm.order.roomNumber ? `, room ${confirm.order.roomNumber}` : ''}. {confirm.order.pieces}{' '}
-                {confirm.order.pieces === 1 ? 'piece' : 'pieces'}. <strong>{formatPrice(confirm.order.total)}</strong> will be added to Services to
-                bill, so it can go on the room bill or be billed on its own.
-              </>
-            ) : (
-              <>The clothes are not charged. This cannot be undone.</>
-            )}
-          </p>
-        </Modal>
-      )}
-
-      {form && (
-        <Modal
-          title="New laundry"
-          sub="Add each garment with its price per piece. Prices include GST."
-          busy={busy}
-          onClose={() => setForm(null)}
-          footer={
-            <>
-              <span className="hk-total">
-                {pieces} {pieces === 1 ? 'piece' : 'pieces'}, {formatPrice(total)}
-              </span>
-              <button type="button" className="btn-secondary" onClick={() => setForm(null)} disabled={busy}>
-                Cancel
-              </button>
-              <button type="button" className="hk-action" onClick={create} disabled={busy}>
-                {busy ? 'Saving…' : 'Take in'}
-              </button>
-            </>
-          }
-        >
-          {formError && <div className="form-banner form-banner--error">{formError}</div>}
-
-          {guests.length > 0 && (
-            <div className="toggle-group">
-              <button type="button" aria-pressed={form.mode === 'stay'} onClick={() => setForm({ ...form, mode: 'stay' })}>
-                Staying guest
-              </button>
-              <button type="button" aria-pressed={form.mode === 'walkin'} onClick={() => setForm({ ...form, mode: 'walkin' })}>
-                Walk-in
-              </button>
-            </div>
-          )}
-          {form.mode === 'stay' ? (
-            <div className="field">
-              <label htmlFor="lgGuest">Guest</label>
-              <select id="lgGuest" value={form.stay} onChange={(e) => setForm({ ...form, stay: e.target.value })}>
-                <option value="">Choose…</option>
-                {guests.map((g) => (
-                  <option key={`${g.bookingId}:${g.roomId}`} value={`${g.bookingId}:${g.roomId}`}>
-                    Room {g.roomNumber}, {g.guestName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="lgName">Name</label>
-                <input id="lgName" value={form.guestName} onChange={(e) => setForm({ ...form, guestName: e.target.value })} />
-              </div>
-              <div className="field">
-                <label htmlFor="lgPhone">Phone</label>
-                <input id="lgPhone" value={form.guestPhone} onChange={(e) => setForm({ ...form, guestPhone: e.target.value })} />
-              </div>
-            </div>
-          )}
-
-          <div className="hk-suggest">
-            <span className="hk-suggest__label">Tap to add</span>
-            {starters.map((n) => (
-              <button key={n} type="button" className="hk-tab hk-tab--small" onClick={() => addLine(n)}>
-                + {n}
-              </button>
-            ))}
-            <button type="button" className="hk-tab hk-tab--small" onClick={() => addLine('')}>
-              + Other
-            </button>
-          </div>
-
-          <datalist id="hk-garment-names">
-            {recent.map((g) => (
-              <option key={g.name} value={g.name} />
-            ))}
-          </datalist>
-
-          {lines.length === 0 ? (
-            <p className="hk-hint">Tap a garment above, or choose Other to type its name.</p>
-          ) : (
-            <div className="hk-lines">
-              {lines.map((l) => (
-                <div className="hk-line" key={l.key}>
-                  <input
-                    className="hk-line__name"
-                    list="hk-garment-names"
-                    placeholder="Garment"
-                    aria-label="Garment name"
-                    value={l.name}
-                    onChange={(e) => renameLine(l, e.target.value)}
-                  />
-                  <label className="hk-line__price">
-                    <span aria-hidden="true">₹</span>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.5"
-                      placeholder="Price"
-                      aria-label={`Price per piece for ${l.name || 'garment'}`}
-                      value={l.price}
-                      onChange={(e) => patchLine(l.key, { price: e.target.value })}
-                    />
-                  </label>
-                  <Stepper
-                    label={l.name || 'garment'}
-                    value={l.qty}
-                    onChange={(n) => (n <= 0 ? removeLine(l.key) : patchLine(l.key, { qty: n }))}
-                  />
-                  <span className="hk-line__total">{formatPrice((Number(l.price) || 0) * l.qty)}</span>
-                  <button type="button" className="hk-line__x" aria-label={`Remove ${l.name || 'row'}`} onClick={() => removeLine(l.key)}>
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="field">
-            <label htmlFor="lgNote">Note (stains, fragile …)</label>
-            <input id="lgNote" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-export default function HousekeepingPanel({ lodge }) {
+// The room cleaning board, and the problems and found items cleaners report
+// from it. Linen and guest laundry live in LaundryPanel; all this keeps of them
+// is the count of linen changed, where Laundry is on.
+export default function HousekeepingPanel({ lodge, issueCount = 0 }) {
   const token = getSession()?.token;
-  const guestLaundry = Boolean(lodge?.hasOtherServices);
-  const tabs = [
-    { key: 'rooms', label: 'Rooms' },
-    { key: 'linen', label: 'Hotel laundry' },
-    ...(guestLaundry ? [{ key: 'laundry', label: 'Guest laundry' }] : []),
-  ];
   const [tab, setTab] = useState('rooms');
+  // Where the Rooms tab puts its "Show" menu: on this strip, the way the
+  // Kitchen queue hands its controls to the strip above it.
+  const [toolsHost, setToolsHost] = useState(null);
+  // Cards or table, one choice for both tabs, so the switch lives on the strip
+  // above them — where the Kitchen queue keeps its own.
+  const [view, setView] = useState(readView);
+  const chooseView = (next) => {
+    setView(next);
+    saveView(next);
+  };
 
   return (
     <div>
       <div className="subtabs">
-        {tabs.map((t) => (
-          <button key={t.key} type="button" className="subtabs__item" aria-current={tab === t.key ? 'page' : undefined} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+        <button type="button" className="subtabs__item" aria-current={tab === 'rooms' ? 'page' : undefined} onClick={() => setTab('rooms')}>
+          Rooms
+        </button>
+        <button type="button" className="subtabs__item" aria-current={tab === 'issues' ? 'page' : undefined} onClick={() => setTab('issues')}>
+          Issues
+          {issueCount > 0 && <span className="hk-count">{issueCount}</span>}
+        </button>
+        <div className="subtabs__tools">
+          <span className="hk-tools-host" ref={setToolsHost} />
+          <ViewSwitch view={view} onChange={chooseView} label="Show as" />
+        </div>
       </div>
-      {tab === 'rooms' && <RoomsTab token={token} />}
-      {tab === 'linen' && <LinenTab token={token} />}
-      {tab === 'laundry' && guestLaundry && <GuestLaundryTab token={token} />}
+      {tab === 'rooms' && <RoomsTab token={token} hasLaundry={Boolean(lodge?.hasLaundry)} view={view} toolsHost={toolsHost} />}
+      {tab === 'issues' && <HousekeepingIssues token={token} view={view} toolsHost={toolsHost} />}
     </div>
   );
 }

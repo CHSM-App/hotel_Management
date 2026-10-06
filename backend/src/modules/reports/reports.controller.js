@@ -89,6 +89,15 @@ async function getServicesReportHandler(req, res, next) {
   }
 }
 
+async function getLaundryReportHandler(req, res, next) {
+  try {
+    const { fromDate, toDate } = parseDateRange(req.query);
+    res.json(await reportsService.getLaundryReport(req.user.lodgeId, fromDate, toDate));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getAnalyticsOverviewHandler(req, res, next) {
   try {
     const { fromDate, toDate } = parseDateRange(req.query);
@@ -143,6 +152,7 @@ module.exports = {
   getEventsReportHandler,
   getFoodOrdersReportHandler,
   getServicesReportHandler,
+  getLaundryReportHandler,
   getAnalyticsOverviewHandler,
   getRoomsAnalyticsHandler,
   getProfitLossHandler,

@@ -168,9 +168,9 @@ export const FEATURES = [
   {
     key: 'housekeeping',
     title: 'Housekeeping',
-    description: 'Room cleaning status, hotel laundry and guests’ laundry.',
-    // Reception and the owner already hold the first two; the Housekeeping role
-    // holds only housekeeping.manage and sees nothing else.
+    description: 'The room cleaning board: which rooms to clean, which are ready.',
+    // Reception and the owner already hold the last two; the Housekeeping role
+    // holds housekeeping.manage.
     permission: ['housekeeping.manage', 'bookings.manage', 'rooms.manage'],
     // An add-on, switched on per property. (Needs rooms too, which the admin
     // forms and the server both enforce.)
@@ -179,9 +179,21 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
+    key: 'laundry',
+    title: 'Laundry',
+    description: 'Hotel linen sent for washing and received back, and guests’ laundry.',
+    // The Laundry role holds only laundry.manage and sees nothing else.
+    permission: ['laundry.manage', 'bookings.manage', 'rooms.manage'],
+    // Its own add-on, separate from Housekeeping: a property can have either
+    // without the other. (Needs rooms too.)
+    capability: 'hasLaundry',
+    icon: 'wrench',
+    group: 'Rooms',
+  },
+  {
     key: 'otherServices',
     title: 'Other services',
-    description: 'Laundry, private pool, gaming and other services sold per use, billed like food.',
+    description: 'Private pool, gaming and other services sold per use, billed like food.',
     // Front desk runs the uses; the owner prices them.
     permission: ['rooms.manage', 'bookings.manage', 'billing.manage'],
     // An add-on, switched on per property like events, assets and expenses.

@@ -488,15 +488,20 @@ export default function StayDetails({
                 <div className="sim-result__line sim-result__line--part" key={u.id}>
                   <span>
                     {u.name}
+                    {/* Rate × quantity, as the room lines say rate × nights. The
+                        rate is the one snapshotted when the service was used. */}
                     <span className="sim-result__part-nights">
-                      {u.quantity} {u.unitLabel}
+                      {formatPrice(u.unitPrice ?? u.amount / u.quantity)} per {u.unitLabel} × {u.quantity}
+                      {u.gstRatePercent > 0 ? ` · incl. ${u.gstRatePercent}% GST` : ''}
                     </span>
                   </span>
                   <span>{formatPrice(u.amount)}</span>
                 </div>
               ))}
               <div className="pb__sub">
-                <span>Services</span>
+                <span>
+                  Services used · {servicesOpen.length} {servicesOpen.length === 1 ? 'item' : 'items'}
+                </span>
                 <span>{formatPrice(servicesOpenTotal)}</span>
               </div>
             </>

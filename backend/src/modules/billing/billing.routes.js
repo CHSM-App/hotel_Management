@@ -4,6 +4,7 @@ const { billShareUpload } = require('../../middleware/billShareUpload');
 const { receiptShareUpload } = require('../../middleware/receiptShareUpload');
 const {
   listBillableBookingsHandler,
+  listBillableEventsHandler,
   previewEventBillHandler,
   issueEventInvoiceHandler,
   previewEventAdvanceReceiptHandler,
@@ -46,6 +47,8 @@ const staff = requirePermission('billing.manage');
 const canRead = requirePermission('billing.manage', 'reports.view');
 
 router.get('/queue', authenticate, staff, listBillableBookingsHandler);
+// The same queue for functions: confirmed and not yet billed.
+router.get('/event-queue', authenticate, requireCapability('hasEvents'), staff, listBillableEventsHandler);
 router.get('/bookings/:bookingId/preview', authenticate, staff, previewBillHandler);
 router.post('/bookings/:bookingId/invoice', authenticate, staff, issueInvoiceHandler);
 

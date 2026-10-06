@@ -53,20 +53,21 @@ async function createLodgeWithOwner(input) {
       .input('hasExpenses', sql.Bit, input.hasExpenses)
       .input('hasOtherServices', sql.Bit, input.hasOtherServices)
       .input('hasHousekeeping', sql.Bit, input.hasHousekeeping)
+      .input('hasLaundry', sql.Bit, input.hasLaundry)
       .query(`
         INSERT INTO dbo.lodges
           (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
            latitude, longitude, checkin_mode,
            is_gst_registered, gstin, is_specified_premises,
            has_rooms, serves_food, food_room_service, food_table_service, has_events,
-           has_assets, has_expenses, has_other_services, has_housekeeping)
+           has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry)
         OUTPUT inserted.id
         VALUES
           (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state,
            @latitude, @longitude, @checkinMode,
            @isGstRegistered, @gstin, @isSpecifiedPremises,
            @hasRooms, @servesFood, @foodRoomService, @foodTableService, @hasEvents,
-           @hasAssets, @hasExpenses, @hasOtherServices, @hasHousekeeping)
+           @hasAssets, @hasExpenses, @hasOtherServices, @hasHousekeeping, @hasLaundry)
       `);
 
     const lodgeId = lodgeResult.recordset[0].id;
@@ -116,7 +117,7 @@ async function listLodges() {
       l.id, l.name, l.slug, l.city, l.state, l.latitude, l.longitude, l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
-      l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping,
+      l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
       l.logo_path, l.show_logo_on_receipt,
       u.name AS owner_name, u.phone AS owner_phone
     FROM dbo.lodges l
@@ -148,7 +149,7 @@ async function getLodgeDetail(id) {
       latitude, longitude,
       checkin_mode, is_gst_registered, gstin, is_specified_premises,
       has_rooms, serves_food, food_room_service, food_table_service, has_events,
-      has_assets, has_expenses, has_other_services, has_housekeeping,
+      has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry,
       check_out_time, check_in_time, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
       logo_path, show_logo_on_receipt,
@@ -219,6 +220,9 @@ function assertProfileConsistent(row) {
   if (row.has_housekeeping && !row.has_rooms) {
     throw new ApiError('Housekeeping looks after rooms - turn on rooms first.', 400);
   }
+  if (row.has_laundry && !row.has_rooms) {
+    throw new ApiError('Laundry looks after room linen - turn on rooms first.', 400);
+  }
   if (row.has_other_services && !row.has_rooms) {
     throw new ApiError('Other services are sold from the rooms side - turn on rooms first.', 400);
   }
@@ -277,10 +281,28 @@ async function updateLodge(id, input) {
     has_expenses: flag('hasExpenses', 'has_expenses'),
     has_other_services: flag('hasOtherServices', 'has_other_services'),
     has_housekeeping: flag('hasHousekeeping', 'has_housekeeping'),
+    has_laundry: flag('hasLaundry', 'has_laundry'),
     is_active: flag('isActive', 'is_active'),
     show_logo_on_receipt: flag('showLogoOnReceipt', 'show_logo_on_receipt'),
   };
   assertProfileConsistent(next);
+
+  // Guest laundry is billed when it is handed over. Switching the section off
+  // with orders still open would strand them: taken in, never billed.
+  if (current.has_laundry && !next.has_laundry) {
+    const open = (
+      await pool
+        .request()
+        .input('id', sql.BigInt, id)
+        .query("SELECT COUNT(*) AS n FROM dbo.laundry_orders WHERE lodge_id = @id AND status IN ('RECEIVED', 'WASHING', 'READY')")
+    ).recordset[0].n;
+    if (open > 0) {
+      throw new ApiError(
+        `${open} guest laundry ${open === 1 ? 'order is' : 'orders are'} still open. Hand over or cancel ${open === 1 ? 'it' : 'them'} first, then switch Laundry off.`,
+        409
+      );
+    }
+  }
 
   if (next.slug !== current.slug) {
     const taken = await pool
@@ -318,6 +340,7 @@ async function updateLodge(id, input) {
     .input('hasExpenses', sql.Bit, next.has_expenses)
     .input('hasOtherServices', sql.Bit, next.has_other_services)
     .input('hasHousekeeping', sql.Bit, next.has_housekeeping)
+    .input('hasLaundry', sql.Bit, next.has_laundry)
     .input('isActive', sql.Bit, next.is_active)
     .input('showLogoOnReceipt', sql.Bit, next.show_logo_on_receipt)
     .query(`
@@ -330,7 +353,7 @@ async function updateLodge(id, input) {
           has_rooms = @hasRooms, serves_food = @servesFood, food_room_service = @foodRoomService,
           food_table_service = @foodTableService, has_events = @hasEvents,
           has_assets = @hasAssets, has_expenses = @hasExpenses, has_other_services = @hasOtherServices,
-          has_housekeeping = @hasHousekeeping, is_active = @isActive,
+          has_housekeeping = @hasHousekeeping, has_laundry = @hasLaundry, is_active = @isActive,
           show_logo_on_receipt = @showLogoOnReceipt
       WHERE id = @id
     `);

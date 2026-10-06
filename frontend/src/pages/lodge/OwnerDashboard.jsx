@@ -8,6 +8,8 @@ import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import ServicesPanel from './ServicesPanel';
 import HousekeepingPanel from './HousekeepingPanel';
+import LaundryPanel from './LaundryPanel';
+import { useOpenIssues } from './useOpenIssues';
 import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
@@ -400,6 +402,10 @@ export default function OwnerDashboard() {
     features: visibleFeatures.filter((f) => f.group === group),
   })).filter((g) => g.features.length > 0);
 
+  // Problems housekeeping has reported and nobody has closed: a count on the
+  // sidebar, and an alert at the desk when a new one comes in.
+  const issueCount = useOpenIssues(session?.token, visibleFeatures.some((f) => f.key === 'housekeeping'));
+
   return (
     <div className="dash-shell">
       {splash && <LoginSplash lodge={me?.lodge} onDone={endSplash} />}
@@ -568,6 +574,11 @@ export default function OwnerDashboard() {
                         <Icon name={feature.icon} />
                         {feature.title}
                         {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
+                        {feature.key === 'housekeeping' && issueCount > 0 && (
+                          <span className="dash-sidebar__count" aria-label={`${issueCount} open ${issueCount === 1 ? 'issue' : 'issues'}`}>
+                            {issueCount}
+                          </span>
+                        )}
                       </button>
                     </li>
                   ))}
@@ -633,7 +644,9 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'otherServices' && <ServicesPanel />}
 
-              {activeFeature && activeFeature.key === 'housekeeping' && <HousekeepingPanel lodge={me.lodge} />}
+              {activeFeature && activeFeature.key === 'housekeeping' && <HousekeepingPanel lodge={me.lodge} issueCount={issueCount} />}
+
+              {activeFeature && activeFeature.key === 'laundry' && <LaundryPanel lodge={me.lodge} />}
 
               {activeFeature && activeFeature.key === 'bookings' && (
                 <Bookings
@@ -778,7 +791,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

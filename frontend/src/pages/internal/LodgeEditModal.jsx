@@ -17,6 +17,7 @@ const ADDONS = [
   // Sold from the rooms side, so only offered while the property has rooms.
   { key: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
   { key: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true },
+  { key: 'hasLaundry', feature: FEATURES.find((f) => f.key === 'laundry'), needsRooms: true },
 ];
 
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -60,6 +61,7 @@ function formFromLodge(lodge) {
     hasExpenses: !!lodge.has_expenses,
     hasOtherServices: !!lodge.has_other_services,
     hasHousekeeping: !!lodge.has_housekeeping,
+    hasLaundry: !!lodge.has_laundry,
     isActive: !!lodge.is_active,
     showLogoOnReceipt: !!lodge.show_logo_on_receipt,
   };
@@ -166,6 +168,7 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
         isSpecifiedPremises: form.hasRooms && form.servesFood ? form.isSpecifiedPremises : false,
         hasOtherServices: form.hasRooms ? form.hasOtherServices : false,
         hasHousekeeping: form.hasRooms ? form.hasHousekeeping : false,
+        hasLaundry: form.hasRooms ? form.hasLaundry : false,
         gstin: form.isGstRegistered ? form.gstin : '',
       };
       const detail = await apiPatch(`/internal/lodges/${lodge.id}`, payload, { token });

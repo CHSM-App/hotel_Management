@@ -117,6 +117,47 @@
   grid-template-columns: 1.4fr 1fr 1fr 0.8fr auto;
 }
 
+/* The button under a list that opens its add popup. */
+.chart-section__add {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.chart-section__field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* A yes/no that qualifies the row above it. */
+.inline-add-form__check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.inline-add-form__check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+}
+
+.inline-add-form__check small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .inline-add-form__row input,
 .inline-add-form__row select {
   width: 100%;
@@ -379,4 +420,9 @@
   .sim-result__total {
     font-size: 15px;
   }
+}
+
+/* Other services: the box for a unit of the owner's own, under the "Per" list. */
+.field .svc-unit-other {
+  margin-top: 6px;
 }

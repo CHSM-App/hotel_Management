@@ -21,6 +21,20 @@ async function listBillableBookingsHandler(req, res, next) {
   }
 }
 
+// Functions waiting for their bill: confirmed, not yet settled. Served from
+// billing rather than from /events so the billing desk needs billing.manage
+// and nothing else — the events list itself is behind events.manage.
+async function listBillableEventsHandler(req, res, next) {
+  try {
+    // Required here, not at the top: events.service reaches back into billing.
+    const eventsService = require('../events/events.service');
+    const events = await eventsService.listEventBookings(req.user.lodgeId, { status: 'CONFIRMED' });
+    res.json({ events });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // A preview is re-fetched on every keystroke in the discount box, so a
 // half-typed or nonsense figure prices the bill at full price rather than
 // erroring under the cursor. The service caps it at what is on the bill.
@@ -471,6 +485,7 @@ module.exports = {
   shareReceiptWhatsAppHandler,
   listReceiptSharesHandler,
   listBillableBookingsHandler,
+  listBillableEventsHandler,
   previewEventBillHandler,
   issueEventInvoiceHandler,
   previewEventAdvanceReceiptHandler,

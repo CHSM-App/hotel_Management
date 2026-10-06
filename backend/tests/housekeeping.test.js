@@ -29,11 +29,19 @@ test('status precedence: out of order > occupied > cleaning > dirty', () => {
 test('linen stock: changed-in-rooms is dirty, sent is in laundry, losses leave the lodge', () => {
   // 100 owned; 30 changed in rooms; 20 of those sent; 15 came back, 2 lost and 1 damaged at the laundry; 3 lost from store.
   const stock = linenStockOf({ total_owned: 100, changed: 30, sent: 20, received: 15, lost_laundry: 3, lost_all: 6 });
-  assert.deepEqual(stock, { owned: 94, dirty: 10, inLaundry: 2, clean: 82, short: false, lostTotal: 6 });
+  assert.deepEqual(stock, { owned: 94, withHousekeeping: 0, dirty: 10, inLaundry: 2, clean: 82, short: false, lostTotal: 6 });
 });
 
 test('linen stock of an item with no movements is all clean', () => {
-  assert.deepEqual(linenStockOf({ total_owned: 40 }), { owned: 40, dirty: 0, inLaundry: 0, clean: 40, short: false, lostTotal: 0 });
+  assert.deepEqual(linenStockOf({ total_owned: 40 }), { owned: 40, withHousekeeping: 0, dirty: 0, inLaundry: 0, clean: 40, short: false, lostTotal: 0 });
+});
+
+test('linen changed in a room is with housekeeping, not dirty, until the laundry receives it', () => {
+  // 40 owned; 6 changed and still on the trolley; 4 changed earlier and received.
+  const stock = linenStockOf({ total_owned: 40, pending: 6, changed: 4 });
+  assert.equal(stock.withHousekeeping, 6);
+  assert.equal(stock.dirty, 4);
+  assert.equal(stock.clean, 30);
 });
 
 test('sending more than was recorded dirty never shows a negative, and flags impossible counts', () => {

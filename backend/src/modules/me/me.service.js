@@ -25,7 +25,7 @@ async function getMe(userId) {
         l.name_mr, l.address_mr, l.latitude, l.longitude,
         l.is_gst_registered, l.gstin, l.is_specified_premises,
         l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
-        l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping,
+        l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
         l.logo_path, l.show_logo_on_receipt
       FROM dbo.users u
       JOIN dbo.lodges l ON l.id = u.lodge_id
@@ -81,6 +81,7 @@ async function getMe(userId) {
       hasExpenses: !!row.has_expenses,
       hasOtherServices: !!row.has_other_services,
       hasHousekeeping: !!row.has_housekeeping,
+      hasLaundry: !!row.has_laundry,
       logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,
       showLogoOnReceipt: !!row.show_logo_on_receipt,
     },

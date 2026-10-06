@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { netOfDiscount } = require('../billing/billing.service');
 const assetsService = require('../assets/assets.service');
+const housekeepingService = require('../housekeeping/housekeeping.service');
 const { depreciationForAssets, fyStart, fyEnd } = require('../assets/depreciation');
 
 function round2(n) {
@@ -1122,6 +1123,117 @@ async function getServicesReport(lodgeId, fromDate, toDate) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Laundry — hotel linen through the wash, and guests' laundry orders
+// ---------------------------------------------------------------------------
+
+// Counts, not money. A linen movement belongs to the period by the day it was
+// recorded; a guest order by the day the clothes were taken in. What a guest
+// order earned is already in the Other services report and on its bill, so the
+// value here is for information and must not be added to any sales total.
+async function getLaundryReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+  const request = () =>
+    pool.request().input('lodgeId', sql.BigInt, lodgeId).input('fromDate', sql.Date, fromDate).input('toDate', sql.Date, toDate);
+
+  const [moves, orderRows, stock] = await Promise.all([
+    request().query(`
+      SELECT m.linen_item_id, m.kind, m.source, LTRIM(RTRIM(ISNULL(m.washed_by, ''))) AS washed_by, SUM(m.quantity) AS quantity,
+             SUM(ISNULL(m.wash_charge, 0)) AS charge
+      FROM dbo.linen_movements m
+      WHERE m.lodge_id = @lodgeId AND CAST(m.created_at AS DATE) BETWEEN @fromDate AND @toDate
+      GROUP BY m.linen_item_id, m.kind, m.source, LTRIM(RTRIM(ISNULL(m.washed_by, '')))
+    `),
+    request().query(`
+      SELECT o.id, o.tag_number, o.status, o.guest_name, o.received_at, o.delivered_at, o.washed_by, o.wash_charge, r.room_number,
+             ISNULL(SUM(i.quantity), 0) AS pieces, ISNULL(SUM(i.unit_price * i.quantity), 0) AS total
+      FROM dbo.laundry_orders o
+      LEFT JOIN dbo.laundry_order_items i ON i.order_id = o.id
+      LEFT JOIN dbo.rooms r ON r.id = o.room_id
+      WHERE o.lodge_id = @lodgeId AND CAST(o.received_at AS DATE) BETWEEN @fromDate AND @toDate
+      GROUP BY o.id, o.tag_number, o.status, o.guest_name, o.received_at, o.delivered_at, o.washed_by, o.wash_charge, r.room_number
+      ORDER BY o.received_at ASC
+    `),
+    housekeepingService.listLinen(lodgeId),
+  ]);
+
+  const blank = () => ({ changed: 0, sent: 0, received: 0, lost: 0, damaged: 0 });
+  const FIELD = { CHANGED: 'changed', SENT: 'sent', RECEIVED: 'received', LOST: 'lost', DAMAGED: 'damaged' };
+  const itemCounts = new Map();
+  const washers = new Map();
+  const totals = blank();
+  for (const row of moves.recordset) {
+    const field = FIELD[row.kind];
+    const quantity = Number(row.quantity);
+    const item = itemCounts.get(String(row.linen_item_id)) ?? blank();
+    item[field] += quantity;
+    itemCounts.set(String(row.linen_item_id), item);
+    totals[field] += quantity;
+
+    // Only what went through the wash belongs to a washer: a towel lost from a
+    // room is nobody's shortfall but the lodge's.
+    const washed = row.kind === 'SENT' || row.kind === 'RECEIVED' || row.source === 'LAUNDRY';
+    if (!washed) continue;
+    const key = row.washed_by.toLowerCase();
+    const washer = washers.get(key) ?? { washedBy: row.washed_by, sent: 0, received: 0, lost: 0, damaged: 0, charge: 0 };
+    washer[field] += quantity;
+    // What the washer charged, where it was entered. Money, not a count.
+    washer.charge = round2(washer.charge + Number(row.charge ?? 0));
+    washers.set(key, washer);
+  }
+
+  const byItem = stock
+    .filter((i) => i.isActive || itemCounts.has(String(i.id)))
+    .map((i) => ({ name: i.name, ...(itemCounts.get(String(i.id)) ?? blank()), owned: i.owned, inWashNow: i.inLaundry }));
+
+  const byWasher = [...washers.values()]
+    .map((w) => ({ ...w, notBack: Math.max(0, w.sent - w.received - w.lost - w.damaged) }))
+    .sort((a, b) => b.sent - a.sent);
+
+  const orders = orderRows.recordset.map((row) => ({
+    id: row.id,
+    tagNumber: row.tag_number,
+    status: row.status,
+    guestName: row.guest_name || null,
+    roomNumber: row.room_number || null,
+    receivedAt: row.received_at,
+    deliveredAt: row.delivered_at || null,
+    pieces: Number(row.pieces),
+    total: round2(Number(row.total)),
+    washedBy: row.washed_by || null,
+    washCharge: row.wash_charge == null ? null : Number(row.wash_charge),
+  }));
+  // vendorCharge is what outside laundries charged the lodge for these orders:
+  // a cost, never part of what guests were billed.
+  const guest = { takenIn: orders.length, handedOver: 0, cancelled: 0, open: 0, pieces: 0, handedOverValue: 0, openValue: 0, vendorCharge: 0 };
+  for (const o of orders) {
+    if (o.status === 'CANCELLED') {
+      guest.cancelled += 1;
+      continue;
+    }
+    guest.pieces += o.pieces;
+    guest.vendorCharge = round2(guest.vendorCharge + (o.washCharge ?? 0));
+    if (o.status === 'DELIVERED') {
+      guest.handedOver += 1;
+      guest.handedOverValue = round2(guest.handedOverValue + o.total);
+    } else {
+      guest.open += 1;
+      guest.openValue = round2(guest.openValue + o.total);
+    }
+  }
+
+  return {
+    fromDate,
+    toDate,
+    linen: {
+      totals: { ...totals, inWashNow: stock.reduce((n, i) => n + i.inLaundry, 0) },
+      byItem,
+      byWasher,
+    },
+    guest: { totals: guest, orders },
+  };
+}
+
 const ORDER_STATUSES = ['PENDING', 'QUEUED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'];
 const ORDER_SOURCES = ['ROOM', 'TABLE', 'COUNTER'];
 
@@ -2165,6 +2277,7 @@ module.exports = {
   getEventsReport,
   getFoodOrdersReport,
   getServicesReport,
+  getLaundryReport,
   getAnalyticsOverview,
   getRoomsAnalytics,
   getProfitLossReport,

@@ -53,6 +53,7 @@ import {
 } from './chargeSelections';
 import ExtraRoomCard from './ExtraRoomCard';
 import RoomChooser from './RoomChooser';
+import CheckInRoomStatus from './CheckInRoomStatus';
 import {
   blankExtraRoom,
   bookingWindow,
@@ -245,7 +246,10 @@ function bedSummary(room) {
         ? [{ size: room.bedSize, count: 1 }]
         : [];
   if (beds.length === 0) return null;
-  return beds.map((b) => `${b.count} ${BED_SIZE_LABEL[b.size] || b.size}`).join(' + ');
+  // "1 Queen + 2 Single Beds": the word once, at the end, agreeing with the
+  // last count, so a bare "1 Queen + 2 Single" does not read as people.
+  const list = beds.map((b) => `${b.count} ${BED_SIZE_LABEL[b.size] || b.size}`).join(' + ');
+  return `${list} ${Number(beds.at(-1).count) === 1 ? 'Bed' : 'Beds'}`;
 }
 const BATHROOM_TYPE_LABEL = { ATTACHED: 'Attached bathroom', COMMON: 'Common bathroom' };
 const DORMITORY_GENDER_LABEL = { MALE: 'Male', FEMALE: 'Female', BOTH: 'Both' };
@@ -4472,6 +4476,17 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   </div>
                 )}
 
+                {/* Only for a stay starting today: what housekeeping says now
+                    tells the desk nothing about a room reserved for next week. */}
+                {validRange && bookingForm.checkInDate === today && (
+                  <CheckInRoomStatus
+                    token={token}
+                    rooms={pickedRoomIds(bookingForm)
+                      .filter(Boolean)
+                      .map((id) => ({ roomId: id, roomNumber: availableRooms?.find((r) => String(r.id) === String(id))?.roomNumber }))}
+                  />
+                )}
+
                 {/* With several rooms ticked, each one's details sit in a card of
                     its own, this first room's included, so they read as a set. */}
                 <div className={bookingForm.multiRoom && bookingForm.sameDates && selectedRoom ? 'booking-form__extra-room' : undefined}>
@@ -5136,6 +5151,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                 {hasRoomAwaiting && showCheckInForm && (
                   <form onSubmit={handleCheckIn} className="form-section">
+                    <CheckInRoomStatus
+                      token={token}
+                      rooms={
+                        roomsAwaiting.length > 0
+                          ? roomsAwaiting.filter((r) => (checkInRoomId ? String(r.roomId) === String(checkInRoomId) : r.checkInDate <= todayIso()))
+                          : [{ roomId: bookingDetail.roomId, roomNumber: bookingDetail.roomNumber }]
+                      }
+                    />
                     {needsIdProofAtCheckIn && (
                       <>
                         <div className="form-section__title">Guest ID proof</div>

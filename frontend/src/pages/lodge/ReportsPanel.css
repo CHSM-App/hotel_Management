@@ -253,14 +253,11 @@
   font-weight: 600;
 }
 
+/* The same underlined strip as .subtabs in RoomsAndRates.css. */
 .reports-panel__subtabs {
   display: flex;
-  gap: 2px;
-  padding: 4px;
-  background: var(--neu-sunken);
-  border-radius: 12px;
-  width: fit-content;
-  max-width: 100%;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
   /* Slides at every width, not just below a breakpoint — see the note on
      .subtabs in RoomsAndRates.css. */
   overflow-x: auto;
@@ -276,16 +273,16 @@
 .reports-panel__subtabs-item {
   background: transparent;
   border: none;
-  border-radius: 9px;
-  padding: 8px 16px;
-  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  padding: 8px 2px;
+  margin-right: 18px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
   flex: 0 0 auto;
   white-space: nowrap;
   scroll-snap-align: start;
-  transition: var(--neu-transition);
 }
 
 .reports-panel__subtabs-item:hover {
@@ -294,8 +291,7 @@
 
 .reports-panel__subtabs-item[aria-current='page'] {
   color: var(--brand-ink);
-  background: var(--surface);
-  box-shadow: var(--shadow-raised);
+  border-bottom-color: var(--brand);
 }
 
 .reports-panel__download {

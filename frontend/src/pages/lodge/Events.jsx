@@ -7,6 +7,10 @@ import { formatPrice } from './priceFormat';
 import EventForm from './EventForm';
 import EventDetail from './EventDetail';
 import PageLoader from '../../components/PageLoader';
+import IconButton from '../../components/IconButton';
+import { EditIcon } from '../../components/ActionIcons';
+import Req from '../../components/RequiredMark';
+import { Modal } from './HousekeepingParts';
 import {
   EVENT_STATUS_COLOR,
   EVENT_STATUS_LABEL,
@@ -31,6 +35,8 @@ import './tapeChart.css';
 import '../internal/LodgesDashboard.css';
 import './GuestRegister.css';
 import './InventoryPanel.css';
+import './MenuPanel.css';
+import './RoomsPanel.css';
 import './Events.css';
 
 const TABS = [
@@ -919,27 +925,63 @@ function PhotoStrip({ existing = [], files = [], urlFor, onRemoveFile, onDeleteE
   );
 }
 
-// One card for venues and one for add-ons: same list, same add row, same
-// edit-in-place — only the columns differ, so the shape is shared. `photos`
-// is what the venue card has and the add-on card does not: when given, the
-// draft and the edit carry an imageFiles queue, the rows show a thumbnail,
-// and onAdd/onSave receive the files with the fields.
-function CatalogueCard({ title, hint, items, columns, onAdd, onSave, onToggle, rowClass, photos = null }) {
-  const blank = () => ({
-    ...Object.fromEntries(columns.map((c) => [c.key, c.type === 'checkbox' ? false : ''])),
-    ...(photos ? { imageFiles: [] } : {}),
-  });
-  const [draft, setDraft] = useState(blank);
-  const [editingId, setEditingId] = useState(null);
-  const [edit, setEdit] = useState({});
+// Add-ons, in the price chart's shape: the list, then a button that opens a
+// popup. The same popup edits one.
+function AddonsTab({ addons, reloadCatalogue }) {
+  const token = getSession()?.token;
+  const [form, setForm] = useState(null); // { id, name, defaultAmount, isPerUnit }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const setField = (key, value) => {
+    setForm((d) => ({ ...d, [key]: value }));
+    setFieldErrors((errs) => (errs[key] ? { ...errs, [key]: '' } : errs));
+  };
 
-  const run = async (fn) => {
+  const open = (a) => {
+    setFormError('');
+    setFieldErrors({});
+    setForm(
+      a
+        ? { id: a.id, name: a.name, defaultAmount: a.defaultAmount ?? '', isPerUnit: Boolean(a.isPerUnit) }
+        : { id: null, name: '', defaultAmount: '', isPerUnit: false }
+    );
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!String(form.name).trim()) errs.name = 'Add-on name is required';
+    if (!(Number(form.defaultAmount) > 0)) errs.defaultAmount = 'Price is required';
+    setFieldErrors(errs);
+    const first = ['name', 'defaultAmount'].find((key) => errs[key]);
+    if (first) {
+      setFormError('');
+      document.getElementById({ name: 'addonName', defaultAmount: 'addonPrice' }[first])?.focus();
+      return;
+    }
+    const body = { name: String(form.name).trim(), defaultAmount: Number(form.defaultAmount) || 0, isPerUnit: Boolean(form.isPerUnit) };
+    setBusy(true);
+    setFormError('');
+    try {
+      if (form.id) await apiPatch(`/events/addons/${form.id}`, body, { token });
+      else await apiPost('/events/addons', body, { token });
+      await reloadCatalogue();
+      setForm(null);
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (a) => {
     setBusy(true);
     setError('');
     try {
-      await fn();
+      await apiPatch(`/events/addons/${a.id}`, { isActive: !a.isActive }, { token });
+      await reloadCatalogue();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -947,169 +989,146 @@ function CatalogueCard({ title, hint, items, columns, onAdd, onSave, onToggle, r
     }
   };
 
-  // Adds to a queue without going past the cap, counting what the venue
-  // already has when this is an edit.
-  const queueFiles = (setState, savedCount) => (fileList) => {
-    setState((d) => {
-      const room = photos.max - savedCount - (d.imageFiles || []).length;
-      if (room <= 0) return d;
-      return { ...d, imageFiles: [...(d.imageFiles || []), ...fileList.slice(0, room)] };
-    });
-  };
-  const dropFile = (setState) => (index) =>
-    setState((d) => ({ ...d, imageFiles: (d.imageFiles || []).filter((_, i) => i !== index) }));
-
-  const input = (col, value, set) =>
-    col.type === 'checkbox' ? (
-      <label className="events__toggle" key={col.key}>
-        <input type="checkbox" checked={Boolean(value)} onChange={(e) => set(col.key, e.target.checked)} />
-        {col.label}
-      </label>
-    ) : (
-      <input
-        key={col.key}
-        type={col.type || 'text'}
-        min={col.type === 'number' ? 0 : undefined}
-        placeholder={col.label}
-        value={value ?? ''}
-        onChange={(e) => set(col.key, e.target.value)}
-      />
-    );
-
   return (
-    <div className="dash-card chart-section">
-      <div className="chart-section__header">
-        <h3>{title}</h3>
-        <span className="chart-section__hint">{hint}</span>
-      </div>
-      {error && <div className="form-banner form-banner--error">{error}</div>}
-      <div className="chart-list">
-        {items.length === 0 && <div className="events-detail__empty">Nothing set up yet.</div>}
-        {items.map((it) => (
-          <div key={it.id} className="chart-row">
-            {editingId === it.id ? (
-              <div className="events-setup__edit-row">
-                {columns.map((c) => input(c, edit[c.key], (k, v) => setEdit((d) => ({ ...d, [k]: v }))))}
-                {photos && (
-                  <PhotoButton
-                    total={(it.images || []).length + (edit.imageFiles || []).length}
-                    max={photos.max}
-                    accept={photos.accept}
-                    disabled={busy}
-                    onAddFiles={queueFiles(setEdit, (it.images || []).length)}
-                  />
-                )}
+    <div className="events-setup">
+      <div className="dash-card chart-section">
+        <div className="chart-section__header">
+          <h3>Add-ons</h3>
+          <span className="chart-section__hint">Extras quoted on top of venue and plates — DJ, decor, mandap. Priced per day.</span>
+        </div>
+        {error && <div className="form-banner form-banner--error">{error}</div>}
+        <div className="chart-list">
+          {addons.length === 0 && <div className="events-detail__empty">Nothing set up yet.</div>}
+          {addons.map((a) => (
+            <div key={a.id} className="chart-row">
+              <span className="chart-row__name">
+                {a.name}
+                {!a.isActive && <span className="badge badge--off chart-row__badge">Inactive</span>}
+              </span>
+              <span className="chart-row__value">
+                {formatPrice(a.defaultAmount)}
+                {a.isPerUnit ? ' per unit/day' : '/day'}
                 <span className="chart-row__actions">
-                  <button
-                    type="button"
-                    className="chart-row__link-btn"
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await onSave(it.id, edit);
-                        setEditingId(null);
-                      })
-                    }
-                  >
-                    Save
-                  </button>
-                  <button type="button" className="chart-row__link-btn" onClick={() => setEditingId(null)} disabled={busy}>
-                    Cancel
+                  <IconButton label={`Edit ${a.name}`} icon={<EditIcon />} onClick={() => open(a)} />
+                  <button type="button" className="chart-row__link-btn" disabled={busy} onClick={() => toggleActive(a)}>
+                    {a.isActive ? 'Deactivate' : 'Activate'}
                   </button>
                 </span>
-                {photos && (
-                  <PhotoStrip
-                    existing={it.images || []}
-                    files={edit.imageFiles || []}
-                    urlFor={photos.urlFor}
-                    disabled={busy}
-                    onRemoveFile={dropFile(setEdit)}
-                    onDeleteExisting={(imageId) => run(() => photos.onDelete(it.id, imageId))}
-                  />
-                )}
-              </div>
-            ) : (
-              <>
-                <span className="chart-row__name">
-                  {photos && it.images?.length > 0 && (
-                    <span className="events-setup__thumb">
-                      <img src={photos.urlFor(it.images[0].filename)} alt="" />
-                      {it.images.length > 1 && <span className="events-setup__thumb-count">+{it.images.length - 1}</span>}
-                    </span>
-                  )}
-                  {it.name}
-                  {!it.isActive && <span className="badge badge--off chart-row__badge">inactive</span>}
-                </span>
-                <span className="chart-row__value">
-                  {rowClass(it)}
-                  <span className="chart-row__actions">
-                    <button
-                      type="button"
-                      className="chart-row__link-btn"
-                      onClick={() => {
-                        setEdit({
-                          ...Object.fromEntries(columns.map((c) => [c.key, it[c.key] ?? (c.type === 'checkbox' ? false : '')])),
-                          ...(photos ? { imageFiles: [] } : {}),
-                        });
-                        setEditingId(it.id);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button type="button" className="chart-row__link-btn" disabled={busy} onClick={() => run(() => onToggle(it))}>
-                      {it.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </span>
-                </span>
-              </>
-            )}
-          </div>
-        ))}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="chart-section__add">
+          <button type="button" className="btn-accent" onClick={() => open(null)}>
+            + Add New Add-on
+          </button>
+        </div>
       </div>
-      <div
-        className={`inline-add-form__row${columns.some((c) => c.type === 'checkbox') ? ' inline-add-form__row--addons' : ''}${
-          photos ? ' inline-add-form__row--photos' : ''
-        }`}
-      >
-        {columns.map((c) => input(c, draft[c.key], (k, v) => setDraft((d) => ({ ...d, [k]: v }))))}
-        {photos && (
-          <PhotoButton
-            total={(draft.imageFiles || []).length}
-            max={photos.max}
-            accept={photos.accept}
-            disabled={busy}
-            onAddFiles={queueFiles(setDraft, 0)}
-          />
-        )}
-        <button
-          type="button"
-          className="btn-accent"
-          disabled={busy || !String(draft.name || '').trim()}
-          onClick={() =>
-            run(async () => {
-              await onAdd(draft);
-              setDraft(blank());
-            })
+
+      {form && (
+        <Modal
+          title={form.id ? 'Edit add-on' : 'Add new add-on'}
+          sub="An extra quoted on top of the venue, such as DJ, decor or mandap."
+          busy={busy}
+          onClose={() => setForm(null)}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setForm(null)} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" form="addonForm" className="btn-accent" disabled={busy}>
+                {busy ? 'Saving…' : form.id ? 'Save changes' : 'Add add-on'}
+              </button>
+            </>
           }
         >
-          Add
-        </button>
-      </div>
-      {photos && (
-        <PhotoStrip
-          files={draft.imageFiles || []}
-          urlFor={photos.urlFor}
-          disabled={busy}
-          onRemoveFile={dropFile(setDraft)}
-          onDeleteExisting={() => {}}
-        />
+          <form id="addonForm" className="events-setup-form" onSubmit={submit} noValidate>
+            {formError && <div className="form-banner form-banner--error">{formError}</div>}
+            <div className="field">
+              <label htmlFor="addonName">
+                Add-on name
+                <Req />
+              </label>
+              <input
+                id="addonName"
+                value={form.name}
+                aria-invalid={Boolean(fieldErrors.name) || undefined}
+                // The first letter of each word goes up as it is typed.
+                onChange={(e) => setField('name', e.target.value.replace(/(^|\s)\S/g, (c) => c.toUpperCase()))}
+                placeholder="e.g. DJ, Stage Decor"
+                autoFocus
+              />
+              {fieldErrors.name && <p className="field__error">{fieldErrors.name}</p>}
+            </div>
+            <div className="field">
+              <label htmlFor="addonPrice">
+                {form.isPerUnit ? 'Price per unit, per day (₹)' : 'Price per day (₹)'}
+                <Req />
+              </label>
+              <input
+                id="addonPrice"
+                type="number"
+                min="1"
+                value={form.defaultAmount}
+                aria-invalid={Boolean(fieldErrors.defaultAmount) || undefined}
+                onChange={(e) => setField('defaultAmount', e.target.value)}
+                placeholder="e.g. 5000"
+              />
+              {fieldErrors.defaultAmount && <p className="field__error">{fieldErrors.defaultAmount}</p>}
+            </div>
+            <label className="inline-add-form__check">
+              <input type="checkbox" checked={form.isPerUnit} onChange={(e) => setField('isPerUnit', e.target.checked)} />
+              <span>
+                Charge per unit
+                <small>Tick if a function can take more than one (like chairs); the price is multiplied by the quantity quoted.</small>
+              </span>
+            </label>
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
 
-function Setup({ venues, addons, reloadCatalogue }) {
+// Venues, laid out like the Rooms tab in Rooms & rates: a toolbar, a grid of
+// cards (photo, status, rent, capacity) and one popup that both adds a
+// venue and edits one. The cards borrow the room card's own classes so the two
+// screens cannot drift apart.
+function VenuesTab({ venues, reloadCatalogue }) {
   const token = getSession()?.token;
+  const [search, setSearch] = useState('');
+  const [form, setForm] = useState(null); // { id, name, capacityPax, baseCharge, imageFiles }
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  // What is wrong with each field, shown under it. A field's message goes as
+  // soon as that field is typed in again.
+  const [fieldErrors, setFieldErrors] = useState({});
+  const setField = (key, value) => {
+    setForm((d) => ({ ...d, [key]: value }));
+    setFieldErrors((errs) => (errs[key] ? { ...errs, [key]: '' } : errs));
+  };
+
+  const urlFor = (filename) => `${API_BASE}/venue-images/${filename}`;
+
+  const needle = search.trim().toLowerCase();
+  const shown = venues.filter(
+    (v) => !needle || v.name.toLowerCase().includes(needle) || (v.isActive ? 'active' : 'inactive').startsWith(needle)
+  );
+
+  const openAdd = () => {
+    setFormError('');
+    setFieldErrors({});
+    setForm({ id: null, name: '', capacityPax: '', baseCharge: '', imageFiles: [] });
+  };
+  const openEdit = (v) => {
+    setFormError('');
+    setFieldErrors({});
+    setForm({ id: v.id, name: v.name, capacityPax: v.capacityPax ?? '', baseCharge: v.baseCharge ?? '', imageFiles: [] });
+  };
+  // Read from the list rather than copied into the form, so a photo removed
+  // while the popup is open is gone from it as soon as the list reloads.
+  const savedImages = (form?.id && venues.find((v) => v.id === form.id)?.images) || [];
 
   // Multipart rather than JSON, because the photos travel with the fields —
   // the same request shape the room form sends. A blank capacity is sent
@@ -1122,79 +1141,267 @@ function Setup({ venues, addons, reloadCatalogue }) {
     (d.imageFiles || []).forEach((file) => fd.append('images', file));
     return fd;
   };
-  const addonBody = (d) => ({
-    name: String(d.name).trim(),
-    defaultAmount: Number(d.defaultAmount) || 0,
-    isPerUnit: Boolean(d.isPerUnit),
-  });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    // Every field is checked, so one press shows everything that needs fixing.
+    const errs = {};
+    if (!String(form.name).trim()) errs.name = 'Venue name is required';
+    if (!(Number(form.capacityPax) > 0)) errs.capacityPax = 'Capacity is required';
+    if (!(Number(form.baseCharge) > 0)) errs.baseCharge = 'Rent is required';
+    setFieldErrors(errs);
+    const first = ['name', 'capacityPax', 'baseCharge'].find((key) => errs[key]);
+    if (first) {
+      setFormError('');
+      document.getElementById({ name: 'venueName', capacityPax: 'venueCapacity', baseCharge: 'venueCharge' }[first])?.focus();
+      return;
+    }
+    setBusy(true);
+    setFormError('');
+    try {
+      if (form.id) await apiPatchForm(`/events/venues/${form.id}`, venueForm(form), { token });
+      else await apiPostForm('/events/venues', venueForm(form), { token });
+      await reloadCatalogue();
+      setForm(null);
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (v) => {
+    if (!window.confirm(v.isActive ? `Deactivate ${v.name}? It can no longer be booked for new functions.` : `Activate ${v.name}?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await apiPatch(`/events/venues/${v.id}`, { isActive: !v.isActive }, { token });
+      await reloadCatalogue();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteImage = async (imageId) => {
+    setBusy(true);
+    setFormError('');
+    try {
+      await apiDelete(`/events/venues/${form.id}/images/${imageId}`, { token });
+      await reloadCatalogue();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Adds to the queue without going past the cap, counting the saved photos.
+  const queueFiles = (fileList) =>
+    setForm((d) => {
+      const room = MAX_VENUE_IMAGES - savedImages.length - d.imageFiles.length;
+      return room <= 0 ? d : { ...d, imageFiles: [...d.imageFiles, ...fileList.slice(0, room)] };
+    });
 
   return (
-    <div className="events-setup">
-      <CatalogueCard
-        title="Venues"
-        hint="Halls and lawns that can be booked for a function."
-        items={venues}
-        columns={[
-          { key: 'name', label: 'Name' },
-          { key: 'capacityPax', label: 'Capacity', type: 'number' },
-          { key: 'baseCharge', label: 'Hire charge (per day)', type: 'number' },
-        ]}
-        rowClass={(v) => (
-          <span>
-            {v.capacityPax ? `${v.capacityPax} pax · ` : ''}
-            {formatPrice(v.baseCharge)}
-          </span>
-        )}
-        photos={{
-          max: MAX_VENUE_IMAGES,
-          accept: VENUE_IMAGE_ACCEPT,
-          urlFor: (filename) => `${API_BASE}/venue-images/${filename}`,
-          onDelete: async (venueId, imageId) => {
-            await apiDelete(`/events/venues/${venueId}/images/${imageId}`, { token });
-            await reloadCatalogue();
-          },
-        }}
-        onAdd={async (d) => {
-          await apiPostForm('/events/venues', venueForm(d), { token });
-          await reloadCatalogue();
-        }}
-        onSave={async (id, d) => {
-          await apiPatchForm(`/events/venues/${id}`, venueForm(d), { token });
-          await reloadCatalogue();
-        }}
-        onToggle={async (v) => {
-          await apiPatch(`/events/venues/${v.id}`, { isActive: !v.isActive }, { token });
-          await reloadCatalogue();
-        }}
-      />
-      <CatalogueCard
-        title="Add-ons"
-        hint="Extras quoted on top of venue and plates — DJ, decor, mandap. Priced per day."
-        items={addons}
-        columns={[
-          { key: 'name', label: 'Name' },
-          { key: 'defaultAmount', label: 'Price (per day)', type: 'number' },
-          { key: 'isPerUnit', label: 'Per unit', type: 'checkbox' },
-        ]}
-        rowClass={(a) => (
-          <span>
-            {formatPrice(a.defaultAmount)}
-            {a.isPerUnit ? ' each' : ''}
-          </span>
-        )}
-        onAdd={async (d) => {
-          await apiPost('/events/addons', addonBody(d), { token });
-          await reloadCatalogue();
-        }}
-        onSave={async (id, d) => {
-          await apiPatch(`/events/addons/${id}`, addonBody(d), { token });
-          await reloadCatalogue();
-        }}
-        onToggle={async (a) => {
-          await apiPatch(`/events/addons/${a.id}`, { isActive: !a.isActive }, { token });
-          await reloadCatalogue();
-        }}
-      />
+    <div className="rooms-panel">
+      <div className="rooms-panel__toolbar">
+        <span className="rooms-panel__count">
+          {needle
+            ? `${shown.length} of ${venues.length} venue${venues.length === 1 ? '' : 's'}`
+            : `${venues.length} venue${venues.length === 1 ? '' : 's'}`}
+        </span>
+        <input
+          type="search"
+          className="rooms-panel__search"
+          placeholder="Search venues, status…"
+          aria-label="Search venues, status"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button type="button" className="btn-accent" onClick={openAdd}>
+          + Add venue
+        </button>
+      </div>
+
+      {error && <div className="form-banner form-banner--error">{error}</div>}
+
+      {venues.length === 0 && (
+        <div className="dash-card">
+          <div className="dash-state">No venues yet. Add your first hall or lawn to start taking function bookings.</div>
+        </div>
+      )}
+      {venues.length > 0 && shown.length === 0 && (
+        <div className="dash-card">
+          <div className="dash-state">No venues match "{search.trim()}".</div>
+        </div>
+      )}
+
+      {shown.length > 0 && (
+        <div className="room-grid">
+          {shown.map((v) => {
+            const cover = v.images?.[0];
+            return (
+              <div className="room-card venue-card" key={v.id}>
+                <div className={`room-card__cover${cover ? '' : ' room-card__cover--empty'}`}>
+                  {cover ? (
+                    <img src={urlFor(cover.filename)} alt={v.name} className="room-card__cover-img" />
+                  ) : (
+                    <div className="room-card__cover-placeholder">{v.name}</div>
+                  )}
+                  <button
+                    type="button"
+                    className={`room-card__status badge ${v.isActive ? 'badge--on' : 'badge--off'}`}
+                    disabled={busy}
+                    onClick={() => toggleActive(v)}
+                    title={`Click to ${v.isActive ? 'deactivate' : 'activate'} ${v.name}`}
+                    aria-label={`${v.name} is ${v.isActive ? 'active' : 'inactive'}. Click to ${v.isActive ? 'deactivate' : 'activate'}.`}
+                  >
+                    {v.isActive ? 'Active' : 'Inactive'}
+                  </button>
+                  {v.images?.length > 1 && <span className="room-card__photo-count">+{v.images.length - 1}</span>}
+                </div>
+
+                <div className="room-card__body">
+                  <div className="room-card__top">
+                    {/* The photoless band above already carries the name. */}
+                    {cover && <span className="room-card__number">{v.name}</span>}
+                    <span className="room-card__rate">
+                      {formatPrice(v.baseCharge)}
+                      <span className="room-card__rate-unit"> /day</span>
+                    </span>
+                  </div>
+                  <div className="room-card__category">Venue rent</div>
+                  {v.capacityPax ? (
+                    <div className="room-card__chips">
+                      <span className="room-card__chip room-card__chip--occupancy">Up to {v.capacityPax} guests</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="room-card__actions">
+                  <IconButton label={`Edit ${v.name}`} icon={<EditIcon />} onClick={() => openEdit(v)} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {form && (
+        <Modal
+          title={form.id ? `Edit venue · ${form.name}` : 'Add venue'}
+          sub="A hall or lawn that can be booked for a function."
+          busy={busy}
+          onClose={() => setForm(null)}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setForm(null)} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" form="venueForm" className="btn-accent" disabled={busy}>
+                {busy ? 'Saving…' : form.id ? 'Save changes' : 'Add venue'}
+              </button>
+            </>
+          }
+        >
+          <form id="venueForm" className="events-setup-form" onSubmit={submit} noValidate>
+            {formError && <div className="form-banner form-banner--error">{formError}</div>}
+            <div className="field">
+              <label htmlFor="venueName">
+                Venue name
+                <Req />
+              </label>
+              <input
+                id="venueName"
+                value={form.name}
+                aria-invalid={Boolean(fieldErrors.name) || undefined}
+                // The first letter of each word goes up as it is typed.
+                onChange={(e) => setField('name', e.target.value.replace(/(^|\s)\S/g, (c) => c.toUpperCase()))}
+                placeholder="e.g. Banquet Hall, Garden Lawn"
+                autoFocus
+              />
+              {fieldErrors.name && <p className="field__error">{fieldErrors.name}</p>}
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="venueCapacity">
+                  Capacity (guests)
+                  <Req />
+                </label>
+                <input
+                  id="venueCapacity"
+                  type="number"
+                  min="1"
+                  value={form.capacityPax}
+                  aria-invalid={Boolean(fieldErrors.capacityPax) || undefined}
+                  onChange={(e) => setField('capacityPax', e.target.value)}
+                  placeholder="e.g. 300"
+                />
+                {fieldErrors.capacityPax && <p className="field__error">{fieldErrors.capacityPax}</p>}
+              </div>
+              <div className="field">
+                <label htmlFor="venueCharge">
+                  Rent per day (₹)
+                  <Req />
+                </label>
+                <input
+                  id="venueCharge"
+                  type="number"
+                  min="1"
+                  value={form.baseCharge}
+                  aria-invalid={Boolean(fieldErrors.baseCharge) || undefined}
+                  onChange={(e) => setField('baseCharge', e.target.value)}
+                  placeholder="e.g. 25000"
+                />
+                {fieldErrors.baseCharge && <p className="field__error">{fieldErrors.baseCharge}</p>}
+              </div>
+            </div>
+            <div className="field">
+              <label>Photos</label>
+              <PhotoButton
+                total={savedImages.length + form.imageFiles.length}
+                max={MAX_VENUE_IMAGES}
+                accept={VENUE_IMAGE_ACCEPT}
+                disabled={busy}
+                onAddFiles={queueFiles}
+              />
+              <PhotoStrip
+                existing={savedImages}
+                files={form.imageFiles}
+                urlFor={urlFor}
+                disabled={busy}
+                onRemoveFile={(index) => setForm((d) => ({ ...d, imageFiles: d.imageFiles.filter((_, i) => i !== index) }))}
+                onDeleteExisting={deleteImage}
+              />
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Venues and add-ons each get a tab of their own: a venue is a place with
+// photos and a capacity, an add-on is a line on a quote, and one long page of
+// both made each harder to find.
+function Setup({ venues, addons, reloadCatalogue }) {
+  const [tab, setTab] = useState('venues');
+
+  return (
+    <div>
+      <div className="subtabs">
+        <button type="button" className="subtabs__item" aria-current={tab === 'venues' ? 'page' : undefined} onClick={() => setTab('venues')}>
+          Venues
+        </button>
+        <button type="button" className="subtabs__item" aria-current={tab === 'addons' ? 'page' : undefined} onClick={() => setTab('addons')}>
+          Add-ons
+        </button>
+      </div>
+
+      {tab === 'venues' && <VenuesTab venues={venues} reloadCatalogue={reloadCatalogue} />}
+      {tab === 'addons' && <AddonsTab addons={addons} reloadCatalogue={reloadCatalogue} />}
     </div>
   );
 }

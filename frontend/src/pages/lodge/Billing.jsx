@@ -499,9 +499,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const canAddToRoom = restaurant && lodge?.hasRooms !== false;
   // Other services is a per-property add-on, shown with the room billing.
   const billsServices = billsStays && Boolean(lodge?.hasOtherServices);
+  // Event billing has the same first tab room billing has: what is waiting.
+  const billsEvents = stream === 'event';
 
   const tabs = [
     ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
+    ...(billsEvents ? [{ key: 'functions', label: 'Ready to bill' }] : []),
     ...(billsServices ? [{ key: 'services', label: 'Services to bill' }] : []),
     ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
     { key: 'bills', label: 'Bills' },
@@ -513,7 +516,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // The landing tab depends on what this login can bill, so it is worked out
   // first and handed to the hook as the fallback — a URL with no tab lands
   // exactly where it did before.
-  const defaultTab = billsTables ? 'tables' : billsStays ? 'ready' : 'bills';
+  const defaultTab = billsTables ? 'tables' : billsStays ? 'ready' : billsEvents ? 'functions' : 'bills';
   const [tab, setTab] = useUrlState('tab', defaultTab);
   // A ?tab= this screen doesn't own falls back to the landing tab rather than
   // matching nothing and rendering an empty page under an unselected strip.
@@ -553,6 +556,19 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         setQueueError('');
       })
       .catch((err) => setQueueError(err instanceof ApiError ? err.message : 'Could not load bookings ready to bill.'));
+  };
+
+  // Confirmed functions that have not been billed yet.
+  const [eventQueue, setEventQueue] = useState(() => readCache('/billing/event-queue'));
+  const [eventQueueError, setEventQueueError] = useState('');
+  const loadEventQueue = () => {
+    if (!billsEvents) return;
+    apiGet('/billing/event-queue', { token })
+      .then((data) => {
+        setEventQueue(writeCache('/billing/event-queue', data.events));
+        setEventQueueError('');
+      })
+      .catch((err) => setEventQueueError(err instanceof ApiError ? err.message : 'Could not load functions ready to bill.'));
   };
 
   const loadFoodTabs = () => {
@@ -661,6 +677,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
   useEffect(() => {
     loadQueue();
+    loadEventQueue();
     loadFoodTabs();
     loadServices();
     loadInvoices();
@@ -671,6 +688,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
   const refreshAll = () => {
     loadQueue();
+    loadEventQueue();
     loadFoodTabs();
     loadServices();
     loadInvoices();
@@ -1384,6 +1402,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             {t.key === 'ready' && queue && queue.length > 0 && (
               <span className="billing-panel__subtabs-count">{queue.length}</span>
             )}
+            {t.key === 'functions' && eventQueue && eventQueue.length > 0 && (
+              <span className="billing-panel__subtabs-count">{eventQueue.length}</span>
+            )}
             {t.key === 'services' && serviceUsages && serviceUsages.length > 0 && (
               <span className="billing-panel__subtabs-count">{serviceUsages.length}</span>
             )}
@@ -1686,6 +1707,115 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   <span className="billing-panel__queue-actions">
                     <span className="chart-row__value">{formatPrice(b.totalPrice + (b.foodTotal || 0))}</span>
                     <button type="button" className="btn-accent" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
+                      Bill
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'functions' && (
+        <div className="chart-section">
+          <div className="chart-section__header">
+            <h3>Ready to bill</h3>
+            <span className="chart-section__hint">Confirmed functions waiting for a bill.</span>
+            <ListViewToggle view={listView} onChange={setListView} />
+          </div>
+
+          {eventQueueError && <div className="form-banner form-banner--error">{eventQueueError}</div>}
+          {!eventQueueError && !eventQueue && <PageLoader inline label="Loading" />}
+          {!eventQueueError && eventQueue && eventQueue.length === 0 && (
+            <div className="dash-state">Nothing waiting — every confirmed function has a bill.</div>
+          )}
+          {!eventQueueError && eventQueue && eventQueue.length > 0 && listView === 'sheet' && (
+            <section className="history-sheet billing-sheet">
+              <div className="history-table-wrap">
+                <table className="history-table billing-sheet__ready">
+                  <thead>
+                    <tr>
+                      <th>Function</th>
+                      <th>Organiser</th>
+                      <th>Venue</th>
+                      <th>Date</th>
+                      <th className="history-table__num">Guests</th>
+                      <th className="history-table__num">Total</th>
+                      <th className="history-table__num">Advance paid</th>
+                      <th className="history-table__num">To collect</th>
+                      <th aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eventQueue.map((ev) => (
+                      <tr key={ev.id} className="history-table__row">
+                        <td>
+                          <span className="history-table__strong">{ev.title}</span>
+                          {/* The bill will not issue while an extra has no price. */}
+                          {ev.unpricedExtras > 0 && (
+                            <span className="history-table__note">
+                              {ev.unpricedExtras} extra{ev.unpricedExtras === 1 ? '' : 's'} still to price
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {ev.organiserName}
+                          {ev.organiserPhone && <span className="history-table__note">{ev.organiserPhone}</span>}
+                        </td>
+                        <td>{ev.venueName}</td>
+                        <td>{formatBillDate(ev.startAt)}</td>
+                        <td className="history-table__num">{ev.billablePax || '—'}</td>
+                        <td className="history-table__num history-table__strong">{formatPrice(ev.totalAmount)}</td>
+                        <td className="history-table__num">{ev.advanceAmount ? `− ${formatPrice(ev.advanceAmount)}` : '—'}</td>
+                        <td className="history-table__num billing-sheet__due-cell">{formatPrice(ev.balanceDue)}</td>
+                        <td className="history-table__actions">
+                          <div className="history-table__actions-inner">
+                            <button
+                              type="button"
+                              className="history-table__btn history-table__btn--primary"
+                              onClick={() => openBilling({ kind: 'EVENT', eventBookingId: ev.id })}
+                            >
+                              Bill
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={5}>
+                        {eventQueue.length} function{eventQueue.length === 1 ? '' : 's'} to bill
+                      </td>
+                      <td className="history-table__num">{formatPrice(eventQueue.reduce((n, ev) => n + ev.totalAmount, 0))}</td>
+                      <td className="history-table__num">
+                        {eventQueue.some((ev) => ev.advanceAmount) ? `− ${formatPrice(eventQueue.reduce((n, ev) => n + (ev.advanceAmount || 0), 0))}` : '—'}
+                      </td>
+                      <td className="history-table__num">{formatPrice(eventQueue.reduce((n, ev) => n + ev.balanceDue, 0))}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className="billing-sheet__note">
+                To collect = the quoted total − advance already paid. The final figure is worked out on the bill when it is issued.
+              </p>
+            </section>
+          )}
+          {!eventQueueError && eventQueue && eventQueue.length > 0 && listView === 'cards' && (
+            <div className="chart-list">
+              {eventQueue.map((ev) => (
+                <div className="chart-row billing-panel__queue-row" key={ev.id}>
+                  <span className="chart-row__name">
+                    {ev.title}
+                    <span className="chart-row__dates">
+                      {ev.organiserName} · {ev.venueName} · {formatBillDate(ev.startAt)}
+                    </span>
+                  </span>
+                  <span className="billing-panel__queue-actions">
+                    <span className="chart-row__value">{formatPrice(ev.balanceDue)}</span>
+                    <button type="button" className="btn-accent" onClick={() => openBilling({ kind: 'EVENT', eventBookingId: ev.id })}>
                       Bill
                     </button>
                   </span>
@@ -3023,6 +3153,28 @@ const REPORT_TYPES = [
 ];
 const isoDay = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
+// Who a bill is for, as the Guest / Table column shows it — and sorts by it.
+const billParty = (inv) =>
+  inv.kind === 'FOOD'
+    ? inv.tableLabel || 'Counter'
+    : inv.kind === 'EVENT'
+      ? `${inv.guestName} · ${inv.venueName || 'Function'}`
+      : inv.guestName;
+
+// The bills table's columns, and what each one sorts on. A number sorts as a
+// number; everything else as text, with digits read as numbers so bill 9 comes
+// before bill 10 and room 2 before room 12.
+const REPORT_COLUMNS = [
+  { key: 'number', label: 'Bill no.', value: (inv) => inv.invoiceNumber ?? '' },
+  { key: 'date', label: 'Date', value: (inv) => String(inv.createdAt ?? '') },
+  { key: 'source', label: 'Billed for', value: (inv) => sourceLabel(inv) },
+  { key: 'party', label: 'Guest / Table', value: (inv) => billParty(inv) ?? '' },
+  { key: 'room', label: 'Room', value: (inv) => (inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '' : inv.roomNumber || '') },
+  { key: 'document', label: 'Document', value: (inv) => DOCUMENT_LABEL[inv.documentType] ?? '' },
+  { key: 'status', label: 'Status', value: (inv) => (inv.status === 'VOID' ? 'Void' : 'Issued') },
+  { key: 'amount', label: 'Amount', value: (inv) => Number(inv.totalAmount || 0), className: 'history-table__num' },
+];
+
 export function BillsReport({ lodge }) {
   const token = getSession()?.token;
   const today = new Date();
@@ -3033,6 +3185,10 @@ export function BillsReport({ lodge }) {
   const [invoices, setInvoices] = useState(null);
   const [error, setError] = useState('');
   const [viewId, setViewId] = useState(null);
+  // Newest first until a heading is clicked. Clicking the sorted heading again
+  // turns it round.
+  const [sort, setSort] = useState({ key: 'date', dir: -1 });
+  const toggleSort = (key) => setSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: 1 }));
 
   useEffect(() => {
     let stale = false;
@@ -3051,7 +3207,14 @@ export function BillsReport({ lodge }) {
   };
   const rows = (invoices ?? [])
     .filter((inv) => inRange(inv) && (type === 'ALL' || streamOf(inv) === type) && billMatchesSearch(inv, needle))
-    .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+    .sort((a, b) => {
+      const column = REPORT_COLUMNS.find((c) => c.key === sort.key);
+      const x = column.value(a);
+      const y = column.value(b);
+      const order = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+      // Bills that tie stay newest first, whichever way the column runs.
+      return order * sort.dir || String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''));
+    });
   const live = rows.filter((i) => i.status !== 'VOID');
   const total = live.reduce((n, i) => n + Number(i.totalAmount || 0), 0);
 
@@ -3106,14 +3269,25 @@ export function BillsReport({ lodge }) {
             <table className="history-table">
               <thead>
                 <tr>
-                  <th>Bill no.</th>
-                  <th>Date</th>
-                  <th>Billed for</th>
-                  <th>Guest / Table</th>
-                  <th>Room</th>
-                  <th>Document</th>
-                  <th>Status</th>
-                  <th className="history-table__num">Amount</th>
+                  {REPORT_COLUMNS.map((column) => (
+                    <th
+                      key={column.key}
+                      className={column.className}
+                      aria-sort={sort.key === column.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                    >
+                      <button
+                        type="button"
+                        className="billing-sheet__sort"
+                        onClick={() => toggleSort(column.key)}
+                        title={`Sort by ${column.label}`}
+                      >
+                        {column.label}
+                        <span className="billing-sheet__sort-icon" aria-hidden="true">
+                          {sort.key === column.key ? (sort.dir === 1 ? '▲' : '▼') : '⇅'}
+                        </span>
+                      </button>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -3137,13 +3311,7 @@ export function BillsReport({ lodge }) {
                       <td>
                         <span className={`bill-tag bill-tag--${tagClass(source)}`}>{sourceLabel(inv)}</span>
                       </td>
-                      <td>
-                        {inv.kind === 'FOOD'
-                          ? inv.tableLabel || 'Counter'
-                          : inv.kind === 'EVENT'
-                            ? `${inv.guestName} · ${inv.venueName || 'Function'}`
-                            : inv.guestName}
-                      </td>
+                      <td>{billParty(inv)}</td>
                       <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '—' : inv.roomNumber || '—'}</td>
                       <td>
                         <span className={`bill-tag bill-tag--${DOCUMENT_TAG[inv.documentType]}`}>{DOCUMENT_LABEL[inv.documentType]}</span>
