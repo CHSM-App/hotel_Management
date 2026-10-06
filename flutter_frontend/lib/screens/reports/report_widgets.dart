@@ -1244,14 +1244,14 @@ class ReportDataTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: header
-            ? AppTheme.bg
+            ? AppTheme.sidebarBrandWash
             : shaded
-            ? AppTheme.border.withValues(alpha: 0.4)
+            ? AppTheme.bg
             : AppTheme.card,
         border: Border(
           bottom: BorderSide(
-            color: AppTheme.border,
-            width: border ? 1.4 : 0.8,
+            color: header ? AppTheme.sidebarBrandWashEdge : AppTheme.border,
+            width: header || border ? 1.4 : 0.8,
           ),
         ),
       ),
@@ -1262,7 +1262,10 @@ class ReportDataTable extends StatelessWidget {
             SizedBox(
               width: columns[i].width,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                padding: EdgeInsets.symmetric(
+                  horizontal: AppTheme.s8,
+                  vertical: header ? 12 : 11,
+                ),
                 child: Text(
                   i < cells.length ? cells[i] : '',
                   textAlign: aligns[i],
@@ -1270,11 +1273,13 @@ class ReportDataTable extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: header
                       ? Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          fontSize: 11.5,
                         )
                       : Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.text,
+                          color: bold ? AppTheme.heading : AppTheme.text,
                           fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
                           fontSize: 12.5,
                         ),

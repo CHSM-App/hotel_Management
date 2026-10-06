@@ -106,7 +106,7 @@ class _SubTabs extends StatelessWidget {
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
                 style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.text,
+                  color: isSelected ? Colors.white : AppTheme.heading,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                   fontSize: 13,
                 ),
@@ -224,30 +224,50 @@ class _StaffRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final contact = [
+      if (member.email != null && member.email!.isNotEmpty) member.email!,
+      member.phone,
+    ].join(' · ');
+
     return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
       padding: const EdgeInsets.all(AppTheme.s12),
+      onTap: () => showStaffFormScreen(context, member: member),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             alignment: Alignment.center,
             decoration: const BoxDecoration(color: AppTheme.sidebarBrandWash, shape: BoxShape.circle),
             child: Text(
               member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
-              style: const TextStyle(color: AppTheme.sidebarBrandInk, fontWeight: FontWeight.w700),
+              style: const TextStyle(color: AppTheme.sidebarBrandInk, fontWeight: FontWeight.w700, fontSize: 15),
             ),
           ),
           const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(member.name, style: Theme.of(context).textTheme.titleSmall),
-                if (member.email != null && member.email!.isNotEmpty)
-                  Text(member.email!, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
-                Text(member.phone, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                Text(
+                  member.name,
+                  style: Theme.of(context).textTheme.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (contact.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    contact,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
                 const SizedBox(height: AppTheme.s8),
                 Wrap(
                   spacing: AppTheme.s8,
@@ -265,40 +285,92 @@ class _StaffRow extends ConsumerWidget {
               ],
             ),
           ),
-          PopupMenuButton<String>(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
-            color: AppTheme.card,
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.rMedium),
-              side: const BorderSide(color: AppTheme.border),
-            ),
-            onSelected: (v) {
-              switch (v) {
-                case 'edit':
-                  showStaffFormScreen(context, member: member);
-                case 'reset':
-                  _resetPassword(context, ref);
-                case 'toggle':
-                  _toggleActive(context, ref);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              const PopupMenuItem(value: 'reset', child: Text('Reset password')),
-              // The backend refuses the last active owner anyway; hiding the
-              // control here means the only owner never sees a button that
-              // can only ever answer with an error.
-              if (member.roleKey != 'OWNER')
-                PopupMenuItem(
-                  value: 'toggle',
-                  child: Text(member.isActive ? 'Disable' : 'Enable'),
-                ),
-            ],
+          const SizedBox(width: AppTheme.s4),
+          _StaffRowMenu(
+            showEnable: member.roleKey != 'OWNER',
+            isActive: member.isActive,
+            onResetPassword: () => _resetPassword(context, ref),
+            onToggleActive: () => _toggleActive(context, ref),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The staff row's own overflow menu — icon-chip items on a raised
+/// rounded surface, same language as [NeuRowMenu], sized for the two
+/// actions a staff row needs instead of the fixed edit/delete pair.
+class _StaffRowMenu extends StatelessWidget {
+  final bool showEnable;
+  final bool isActive;
+  final VoidCallback onResetPassword;
+  final VoidCallback onToggleActive;
+
+  const _StaffRowMenu({
+    required this.showEnable,
+    required this.isActive,
+    required this.onResetPassword,
+    required this.onToggleActive,
+  });
+
+  Widget _item(IconData icon, String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.10), shape: BoxShape.circle),
+          child: Icon(icon, size: 15, color: color),
+        ),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      splashRadius: 18,
+      icon: const Icon(Icons.more_vert_rounded, size: 19, color: AppTheme.muted),
+      elevation: 6,
+      color: AppTheme.card,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: const Color(0x33101828),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      constraints: const BoxConstraints(minWidth: 180),
+      onSelected: (v) => v == 'reset' ? onResetPassword() : onToggleActive(),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'reset',
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          child: _item(Icons.lock_reset_rounded, 'Reset password', AppTheme.heading),
+        ),
+        // The backend refuses the last active owner anyway; hiding the
+        // control here means the only owner never sees a button that can
+        // only ever answer with an error.
+        if (showEnable) ...[
+          const PopupMenuDivider(height: 1),
+          PopupMenuItem(
+            value: 'toggle',
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+            child: _item(
+              isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
+              isActive ? 'Disable' : 'Enable',
+              isActive ? AppTheme.danger : AppTheme.vacant,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -433,18 +505,45 @@ class _RoleCard extends ConsumerWidget {
     }
   }
 
+  Widget _iconAction({
+    required String tooltip,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, size: 16, color: color),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Wrap(
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: AppTheme.s8,
+                  runSpacing: AppTheme.s4,
                   children: [
                     Text(role.name, style: Theme.of(context).textTheme.titleSmall),
                     _Badge(
@@ -455,28 +554,46 @@ class _RoleCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Edit access for ${role.name}',
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                onPressed: () => showRoleFormScreen(context, role: role),
+              const SizedBox(width: AppTheme.s8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _iconAction(
+                    tooltip: 'Edit access for ${role.name}',
+                    icon: Icons.edit_outlined,
+                    color: AppTheme.heading,
+                    onPressed: () => showRoleFormScreen(context, role: role),
+                  ),
+                  if (role.isOverridden) ...[
+                    const SizedBox(width: 6),
+                    _iconAction(
+                      tooltip: 'Reset to default',
+                      icon: Icons.restore_rounded,
+                      color: AppTheme.accent,
+                      onPressed: () => _resetToDefault(context, ref),
+                    ),
+                  ],
+                  if (role.isCustom) ...[
+                    const SizedBox(width: 6),
+                    _iconAction(
+                      tooltip: 'Delete ${role.name}',
+                      icon: Icons.delete_outline_rounded,
+                      color: AppTheme.danger,
+                      onPressed: () => _delete(context, ref),
+                    ),
+                  ],
+                ],
               ),
-              if (role.isOverridden)
-                IconButton(
-                  tooltip: 'Reset to default',
-                  icon: const Icon(Icons.restore_rounded, size: 18),
-                  onPressed: () => _resetToDefault(context, ref),
-                ),
-              if (role.isCustom)
-                IconButton(
-                  tooltip: 'Delete ${role.name}',
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.danger),
-                  onPressed: () => _delete(context, ref),
-                ),
             ],
           ),
           if (role.description != null && role.description!.isNotEmpty) ...[
             const SizedBox(height: AppTheme.s4),
-            Text(role.description!, style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+            Text(
+              role.description!,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
           const SizedBox(height: AppTheme.s12),
           if (role.permissions.isEmpty)
@@ -525,13 +642,28 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s4),
+      padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
       decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        border: Border.all(color: AppTheme.border),
+        color: AppTheme.vacant.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(text, style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(color: AppTheme.vacant, shape: BoxShape.circle),
+            child: const Icon(Icons.check_rounded, size: 10, color: Colors.white),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }

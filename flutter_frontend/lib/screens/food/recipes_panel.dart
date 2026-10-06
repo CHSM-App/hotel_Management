@@ -18,6 +18,15 @@ String _recipeUnitLabel(String unit) => switch (unit) {
   _ => _kUnitLabel[unit] ?? unit,
 };
 
+/// One category's dishes, in display order — see
+/// [_RecipesPanelState._group].
+class _CategoryGroup {
+  final int categoryId;
+  final String categoryName;
+  final List<RecipeDishSummary> dishes;
+  _CategoryGroup({required this.categoryId, required this.categoryName, required this.dishes});
+}
+
 /// Menu & QR codes > Recipes — mirrors RecipesPanel.jsx: which dishes have a
 /// recipe and which don't, and what each takes out of the store cupboard.
 class RecipesPanel extends ConsumerStatefulWidget {
@@ -53,11 +62,29 @@ class _RecipesPanelState extends ConsumerState<RecipesPanel> {
     }).toList();
   }
 
+  /// Groups consecutive same-category dishes under one heading — mirrors
+  /// RecipesPanel.jsx's own `grouped`, which relies on the backend already
+  /// sorting dishes by category rather than re-sorting on the client.
+  List<_CategoryGroup> _group(List<RecipeDishSummary> dishes) {
+    final out = <_CategoryGroup>[];
+    for (final dish in dishes) {
+      if (out.isNotEmpty && out.last.categoryId == dish.categoryId) {
+        out.last.dishes.add(dish);
+      } else {
+        out.add(_CategoryGroup(categoryId: dish.categoryId, categoryName: dish.categoryName, dishes: [dish]));
+      }
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(inventoryViewModelProvider);
     final dishes = _filter(state.dishes);
-    final missing = state.dishes.where((d) => d.isActive && d.lineCount == 0).length;
+    final groups = _group(dishes);
+    final activeDishes = state.dishes.where((d) => d.isActive).toList();
+    final missing = activeDishes.where((d) => d.lineCount == 0).length;
+    final withRecipe = activeDishes.length - missing;
 
     if (state.isLoading && state.dishes.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -73,62 +100,217 @@ class _RecipesPanelState extends ConsumerState<RecipesPanel> {
     return RefreshIndicator(
       onRefresh: () => ref.read(inventoryViewModelProvider.notifier).load(),
       color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          NeuPressed(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-            child: Row(
-              children: [
-                const Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
-                const SizedBox(width: AppTheme.s8),
-                Expanded(
-                  child: TextField(
-                    controller: _search,
-                    onChanged: (v) => setState(() => _query = v),
-                    decoration: const InputDecoration(
-                      hintText: 'Search dishes',
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // One column per ~300px of width, so columns grow smoothly with
+          // the pane instead of jumping only at the two device breakpoints.
+          final columns = (constraints.maxWidth / 300).floor().clamp(1, 4);
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, AppTheme.s24),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+                  boxShadow: AppTheme.subtle,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.search_rounded,
+                        size: 15,
+                        color: AppTheme.accent,
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: TextField(
+                        controller: _search,
+                        onChanged: (v) => setState(() => _query = v),
+                        style: const TextStyle(color: AppTheme.heading, fontSize: 13.5),
+                        decoration: const InputDecoration(
+                          hintText: 'Search dishes',
+                          hintStyle: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    if (_query.isNotEmpty)
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _search.clear();
+                          _query = '';
+                        }),
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          margin: const EdgeInsets.only(right: 2),
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.bg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 14,
+                            color: AppTheme.muted,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _StatTile(
+                      label: 'Dishes',
+                      value: '${state.dishes.length}',
+                      color: AppTheme.accent,
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppTheme.s12),
-          Wrap(
-            spacing: AppTheme.s8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text('${state.dishes.length} dishes', style: Theme.of(context).textTheme.bodySmall),
-              FilterChip(
-                label: Text('$missing with no recipe'),
-                selected: _missingOnly,
-                onSelected: (v) => setState(() => _missingOnly = v),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: _StatTile(
+                      label: 'With recipe',
+                      value: '$withRecipe',
+                      color: AppTheme.vacant,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: _StatTile(
+                      label: 'Missing',
+                      value: '$missing',
+                      color: AppTheme.draft,
+                      selected: _missingOnly,
+                      onTap: () => setState(() => _missingOnly = !_missingOnly),
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(height: AppTheme.s8),
+              Text(
+                'A dish with no recipe still sells — it just doesn\'t take anything '
+                'out of the store cupboard when it\'s cooked.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11.5),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              if (dishes.isEmpty)
+                const NeuNotice(icon: Icons.search_off_rounded, message: 'No dish matches that.')
+              else
+                for (final group in groups)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppTheme.s16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppTheme.s8, left: 2),
+                          child: Text(
+                            group.categoryName.isEmpty ? 'Other' : group.categoryName,
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                        if (columns == 1)
+                          for (final dish in group.dishes)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                              child: _DishCard(dish: dish),
+                            )
+                        else
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: group.dishes.length,
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: columns,
+                              crossAxisSpacing: AppTheme.s8,
+                              mainAxisSpacing: AppTheme.s8,
+                              mainAxisExtent: 88,
+                            ),
+                            itemBuilder: (context, i) => _DishCard(dish: group.dishes[i]),
+                          ),
+                      ],
+                    ),
+                  ),
             ],
-          ),
-          const SizedBox(height: AppTheme.s8),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A tappable summary pill used in the stats row — a filled icon badge, a
+/// count, and a label underneath, with a toggled-selected outline so the
+/// "Missing" tile doubles as the no-recipe filter.
+class _StatTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.selected = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final body = AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s8),
+      decoration: BoxDecoration(
+        color: selected ? color.withValues(alpha: 0.06) : AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: Border.all(color: selected ? color : AppTheme.border, width: selected ? 1.4 : 1),
+        boxShadow: AppTheme.subtle,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Text(
-            'A dish with no recipe still sells — it just doesn\'t take anything '
-            'out of the store cupboard when it\'s cooked.',
-            style: Theme.of(context).textTheme.bodySmall,
+            value,
+            style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15, height: 1.1),
           ),
-          const SizedBox(height: AppTheme.s12),
-          if (dishes.isEmpty)
-            const NeuNotice(icon: Icons.search_off_rounded, message: 'No dish matches that.')
-          else
-            for (final dish in dishes)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.s12),
-                child: _DishCard(dish: dish),
-              ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: selected ? color : AppTheme.muted, fontSize: 10.5, height: 1.2),
+          ),
         ],
       ),
     );
+    if (onTap == null) return body;
+    return GestureDetector(onTap: onTap, child: body);
   }
 }
 
@@ -136,44 +318,87 @@ class _DishCard extends ConsumerWidget {
   final RecipeDishSummary dish;
   const _DishCard({required this.dish});
 
+  bool get _missing => dish.lineCount == 0;
+  bool get _warn => dish.partialSizes;
+
+  Color get _statusColor {
+    if (_missing) return AppTheme.draft;
+    if (_warn) return AppTheme.danger;
+    return AppTheme.vacant;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final statusColor = _statusColor;
     return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s12),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+      radius: AppTheme.rSmall,
+      shadow: AppTheme.subtle,
+      onTap: () => _openEditor(context, ref),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  dish.name,
-                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    if (dish.foodType != null) ...[
+                      _FoodTypeMark(type: dish.foodType!),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        dish.name,
+                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  dish.lineCount == 0
-                      ? 'No recipe — nothing is deducted'
-                      : '${dish.lineCount} ingredient${dish.lineCount == 1 ? '' : 's'}'
-                          '${dish.portionCount > 0 ? ' · ${dish.portionCount} sizes' : ''}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: dish.lineCount == 0 ? AppTheme.draft : null,
-                  ),
+                const SizedBox(height: 3),
+                Wrap(
+                  spacing: AppTheme.s4,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _Badge(
+                      color: statusColor,
+                      text: _missing
+                          ? 'No recipe'
+                          : '${dish.lineCount} ingredient${dish.lineCount == 1 ? '' : 's'}',
+                    ),
+                    if (dish.portionCount > 0)
+                      Text(
+                        '${dish.portionCount} sizes',
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
+                      ),
+                    if (_warn)
+                      const _Badge(color: AppTheme.danger, text: 'Sizes missing'),
+                  ],
                 ),
-                if (dish.partialSizes)
-                  const Text(
-                    'Some sizes have no recipe',
-                    style: TextStyle(color: AppTheme.danger, fontSize: 11),
-                  ),
               ],
             ),
           ),
+          const SizedBox(width: AppTheme.s8),
           NeuButton(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s8),
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s4),
             onPressed: () => _openEditor(context, ref),
-            child: Text(dish.lineCount == 0 ? 'Add recipe' : 'Edit recipe'),
+            primary: _missing,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _missing ? Icons.add_rounded : Icons.edit_rounded,
+                  size: 13,
+                  color: _missing ? Colors.white : AppTheme.heading,
+                ),
+                const SizedBox(width: 3),
+                Text(_missing ? 'Add' : 'Edit', style: const TextStyle(fontSize: 12.5)),
+              ],
+            ),
           ),
         ],
       ),
@@ -186,6 +411,60 @@ class _DishCard extends ConsumerWidget {
     if (recipe == null || !context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => _RecipeEditorScreen(recipe: recipe)),
+    );
+  }
+}
+
+/// The veg/non-veg mark — a square outline with a dot of the same colour,
+/// matching the web menu editor's `.food-mark` (green for VEG, red for
+/// NON_VEG) so a dish reads the same way on both clients.
+class _FoodTypeMark extends StatelessWidget {
+  final String type;
+  const _FoodTypeMark({required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    final nonVeg = type.toUpperCase() == 'NON_VEG';
+    final color = nonVeg ? AppTheme.danger : AppTheme.vacant;
+    return Tooltip(
+      message: nonVeg ? 'Non-veg' : 'Veg',
+      child: Container(
+        width: 12,
+        height: 12,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: color, width: 1.3),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: Container(
+          width: 5,
+          height: 5,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small colored pill for a dish card's status line — "No recipe", an
+/// ingredient count, or the partial-sizes warning.
+class _Badge extends StatelessWidget {
+  final Color color;
+  final String text;
+  const _Badge({required this.color, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }
