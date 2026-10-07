@@ -96,6 +96,12 @@ const assetSchema = z.object({
   // condition when it was bought, not something to revise later.
   usefulLifeYears: z.coerce.number().int().min(0).max(99, 'Enter a realistic number of years.').optional().nullable(),
   usefulLifeMonths: z.coerce.number().int().min(0).max(11, 'Months must be 0–11.').optional().nullable(),
+  // How many the property owns. Only for the linen category, where one
+  // asset stands for a stock of pieces; blank for everything else.
+  quantity: z.preprocess(
+    (v) => (v === '' || v == null ? null : v),
+    z.coerce.number({ invalid_type_error: 'Enter how many you own.' }).int('Enter a whole number.').min(0, 'Quantity can’t be negative.').max(1000000).nullable().optional()
+  ),
 });
 
 // A single purchase — one category, one vendor, one bill, one purchase

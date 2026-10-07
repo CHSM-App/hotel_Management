@@ -26,6 +26,17 @@ router.post('/rooms/:id/done', authenticate, enabled, desk, c.finishCleaning);
 router.post('/rooms/:id/dirty', authenticate, enabled, desk, c.markDirty);
 router.post('/rooms/:id/out-of-order', authenticate, enabled, desk, c.setOutOfOrder);
 
+// Event venues on the same board. Reading the list is also open to the events
+// desk, which shows a venue's state when a function is being booked; changing
+// anything stays with housekeeping and the front desk.
+const venueReader = requirePermission('housekeeping.manage', 'bookings.manage', 'rooms.manage', 'events.manage');
+router.get('/venues', authenticate, enabled, venueReader, c.listVenues);
+router.post('/venues/:id/start', authenticate, enabled, desk, c.startVenueCleaning);
+router.post('/venues/:id/release', authenticate, enabled, desk, c.releaseVenue);
+router.post('/venues/:id/done', authenticate, enabled, desk, c.finishVenueCleaning);
+router.post('/venues/:id/dirty', authenticate, enabled, desk, c.markVenueDirty);
+router.post('/venues/:id/out-of-order', authenticate, enabled, desk, c.setVenueOutOfOrder);
+
 // What cleaners reported when finishing a room: problems and found items. The
 // desk sees them here and closes them; /count feeds its badge and alert.
 router.get('/issues', authenticate, enabled, desk, c.listIssues);

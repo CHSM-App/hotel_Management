@@ -1949,6 +1949,14 @@ IF COL_LENGTH('dbo.event_bookings', 'cancellation_charge') IS NULL
 IF COL_LENGTH('dbo.event_bookings', 'cancelled_at') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD cancelled_at DATETIMEOFFSET NULL');
 
+-- "Mark as Completed" (128): the desk says the function is over, which hands
+-- the venue to housekeeping at once rather than at the booked end time. Not a
+-- status — NULL just means the booked end_at decides, as before.
+IF COL_LENGTH('dbo.event_bookings', 'completed_at') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD completed_at DATETIMEOFFSET NULL');
+IF COL_LENGTH('dbo.event_bookings', 'completed_by') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD completed_by BIGINT NULL REFERENCES dbo.users(id)');
+
 -- How the refund went back (091) — the same gap 056 closed for bookings.
 IF COL_LENGTH('dbo.event_bookings', 'refund_payment_method') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD refund_payment_method NVARCHAR(20) NULL
@@ -2941,6 +2949,51 @@ END
 
 IF COL_LENGTH('dbo.linen_movements', 'washed_by') IS NULL
     EXEC('ALTER TABLE dbo.linen_movements ADD washed_by NVARCHAR(100) NULL');
+
+-- Hotel linen is registered in Asset Inventory and read from there by Laundry
+-- (migration 125): a flagged category, a count on the asset, and the asset a
+-- laundry linen row stands for.
+IF COL_LENGTH('dbo.asset_categories', 'is_linen') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.asset_categories ADD is_linen BIT NOT NULL CONSTRAINT df_asset_categories_is_linen DEFAULT 0');
+    EXEC('UPDATE dbo.asset_categories SET is_linen = 1 WHERE LOWER(LTRIM(RTRIM(name))) = ''hotel linen''');
+END
+
+IF COL_LENGTH('dbo.assets', 'quantity') IS NULL
+    EXEC('ALTER TABLE dbo.assets ADD quantity INT NULL CONSTRAINT ck_assets_quantity CHECK (quantity IS NULL OR quantity >= 0)');
+
+IF COL_LENGTH('dbo.linen_items', 'asset_id') IS NULL
+    EXEC('ALTER TABLE dbo.linen_items ADD asset_id BIGINT NULL REFERENCES dbo.assets(id)');
+
+-- Event venues on the Housekeeping board (migration 127): the same state a
+-- room has, and a clean or a linen change that can be for a venue.
+IF OBJECT_ID('dbo.housekeeping_venues', 'U') IS NULL
+CREATE TABLE dbo.housekeeping_venues (
+    venue_id            BIGINT NOT NULL PRIMARY KEY REFERENCES dbo.event_venues(id),
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    last_cleaned_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    needs_cleaning      BIT NOT NULL DEFAULT 0,
+    cleaning_started_at DATETIMEOFFSET NULL,
+    cleaning_by         BIGINT NULL REFERENCES dbo.users(id),
+    out_of_order        BIT NOT NULL DEFAULT 0,
+    out_of_order_note   NVARCHAR(300) NULL
+);
+
+IF COL_LENGTH('dbo.housekeeping_log', 'venue_id') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.housekeeping_log ADD venue_id BIGINT NULL REFERENCES dbo.event_venues(id)');
+    EXEC('ALTER TABLE dbo.housekeeping_log ALTER COLUMN room_id BIGINT NULL');
+END
+
+IF COL_LENGTH('dbo.linen_movements', 'venue_id') IS NULL
+    EXEC('ALTER TABLE dbo.linen_movements ADD venue_id BIGINT NULL REFERENCES dbo.event_venues(id)');
+
+-- The linen category is called by a word staff use (migration 126).
+UPDATE c
+SET c.name = N'Bedsheets & Towels'
+FROM dbo.asset_categories c
+WHERE c.is_linen = 1 AND LOWER(LTRIM(RTRIM(c.name))) = 'hotel linen'
+  AND NOT EXISTS (SELECT 1 FROM dbo.asset_categories o WHERE o.lodge_id = c.lodge_id AND o.name = N'Bedsheets & Towels');
 
 -- Guest laundry comes back from the wash before it is handed over (migration 124).
 IF COL_LENGTH('dbo.laundry_orders', 'vendor_phone') IS NULL

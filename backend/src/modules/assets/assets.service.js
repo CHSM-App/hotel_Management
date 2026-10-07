@@ -24,9 +24,18 @@ function mapCategory(row) {
     depreciationBlock: row.depreciation_block,
     depreciationRatePercent: row.depreciation_rate_percent == null ? null : Number(row.depreciation_rate_percent),
     depreciationMethod: row.depreciation_method || 'WDV',
+    // The linen category: its assets carry a quantity and feed Laundry.
+    isLinen: !!row.is_linen,
     isActive: !!row.is_active,
   };
 }
+
+// The one category whose assets are linen. Recognised by this name when it is
+// created, and by its flag ever after. "Hotel linen" is what it was first
+// called, and still marks a category typed that way.
+const LINEN_CATEGORY = 'Bedsheets & Towels';
+const LINEN_NAMES = [LINEN_CATEGORY.toLowerCase(), 'hotel linen'];
+const isLinenName = (name) => LINEN_NAMES.includes(String(name ?? '').trim().toLowerCase());
 
 async function listCategories(lodgeId) {
   const pool = await getPool();
@@ -34,7 +43,7 @@ async function listCategories(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, depreciation_block, depreciation_rate_percent, depreciation_method, is_active
+      SELECT id, name, depreciation_block, depreciation_rate_percent, depreciation_method, is_linen, is_active
       FROM dbo.asset_categories
       WHERE lodge_id = @lodgeId AND is_active = 1
       ORDER BY name ASC
@@ -61,10 +70,11 @@ async function createCategory(lodgeId, input) {
     .input('depreciationBlock', sql.NVarChar, toNullable(input.depreciationBlock))
     .input('depreciationRatePercent', sql.Decimal(5, 2), input.depreciationRatePercent ?? null)
     .input('depreciationMethod', sql.NVarChar(3), input.depreciationMethod || 'WDV')
+    .input('isLinen', sql.Bit, isLinenName(input.name) ? 1 : 0)
     .query(`
-      INSERT INTO dbo.asset_categories (lodge_id, name, depreciation_block, depreciation_rate_percent, depreciation_method)
+      INSERT INTO dbo.asset_categories (lodge_id, name, depreciation_block, depreciation_rate_percent, depreciation_method, is_linen)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @depreciationBlock, @depreciationRatePercent, @depreciationMethod)
+      VALUES (@lodgeId, @name, @depreciationBlock, @depreciationRatePercent, @depreciationMethod, @isLinen)
     `);
 
   return {
@@ -73,6 +83,7 @@ async function createCategory(lodgeId, input) {
     depreciationBlock: toNullable(input.depreciationBlock),
     depreciationRatePercent: input.depreciationRatePercent ?? null,
     depreciationMethod: input.depreciationMethod || 'WDV',
+    isLinen: isLinenName(input.name),
     isActive: true,
   };
 }
@@ -114,6 +125,9 @@ function mapAsset(row) {
     name: row.name,
     categoryId: row.category_id,
     categoryName: row.category_name,
+    // Linen is a stock, not a unit: the asset says how many are owned.
+    isLinen: !!row.is_linen,
+    quantity: row.quantity == null ? null : Number(row.quantity),
     depreciationRatePercent: row.depreciation_rate_percent == null ? null : Number(row.depreciation_rate_percent),
     depreciationMethod: row.depreciation_method || 'WDV',
     assetTag: row.asset_tag,
@@ -157,7 +171,7 @@ function mapAsset(row) {
 
 const ASSET_SELECT = `
   SELECT a.id, a.lodge_id, a.name, a.category_id, c.name AS category_name, c.depreciation_rate_percent,
-         c.depreciation_method,
+         c.depreciation_method, c.is_linen, a.quantity,
          a.asset_tag, a.brand, a.model,
          a.serial_number, a.purchase_date, a.purchase_cost, a.useful_life_years, a.useful_life_months,
          a.room_id, r.room_number, a.floor,
@@ -276,6 +290,52 @@ async function allocateAssetTag(request, lodgeId) {
 // warranty, add the first AMC, renew it) goes through the Coverage history
 // "Add/Renew" action on the asset detail view — one place to manage it,
 // not this form and that view both claiming the same data.
+// For Laundry, inside its transaction: the property's linen category
+// (made if it has none yet), and a linen asset registered under it. Linen that
+// was added in Laundry before Asset Inventory took it over is carried across
+// this way, so each still gets a proper tag from the property's own sequence.
+async function ensureLinenCategory(transaction, lodgeId) {
+  const found = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, LINEN_CATEGORY)
+    .query(`
+      SELECT TOP 1 id, is_linen FROM dbo.asset_categories
+      WHERE lodge_id = @lodgeId AND (is_linen = 1 OR LOWER(name) = LOWER(@name))
+      ORDER BY is_linen DESC, id ASC
+    `);
+  if (found.recordset.length > 0) {
+    const { id, is_linen: flagged } = found.recordset[0];
+    if (!flagged) {
+      await new sql.Request(transaction)
+        .input('id', sql.BigInt, id)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .query('UPDATE dbo.asset_categories SET is_linen = 1, is_active = 1 WHERE id = @id AND lodge_id = @lodgeId');
+    }
+    return id;
+  }
+  const created = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, LINEN_CATEGORY)
+    .query('INSERT INTO dbo.asset_categories (lodge_id, name, is_linen) OUTPUT inserted.id VALUES (@lodgeId, @name, 1)');
+  return created.recordset[0].id;
+}
+
+async function registerLinenAsset(transaction, lodgeId, categoryId, { name, quantity }) {
+  const assetTag = await allocateAssetTag(new sql.Request(transaction).input('lodgeId', sql.BigInt, lodgeId), lodgeId);
+  const result = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .input('name', sql.NVarChar, String(name).slice(0, 120))
+    .input('assetTag', sql.NVarChar, assetTag)
+    .input('quantity', sql.Int, quantity)
+    .query(`
+      INSERT INTO dbo.assets (lodge_id, category_id, name, asset_tag, quantity)
+      OUTPUT inserted.id
+      VALUES (@lodgeId, @categoryId, @name, @assetTag, @quantity)
+    `);
+  return result.recordset[0].id;
+}
+
 async function seedWarrantyCoverage(request, lodgeId, assetId, input) {
   if (!input.warrantyExpiry) return;
   await request
@@ -292,6 +352,14 @@ async function seedWarrantyCoverage(request, lodgeId, assetId, input) {
     `);
 }
 
+// A linen asset has to say how many there are — Laundry's stock is built on
+// it. Every other asset is one unit and carries no quantity at all.
+function quantityFor(categoryRow, input) {
+  if (!categoryRow.is_linen) return null;
+  if (input.quantity == null) throw new ApiError('Enter how many you own.', 400, 'quantity');
+  return input.quantity;
+}
+
 async function createAsset(lodgeId, input, billFilename) {
   const pool = await getPool();
 
@@ -299,10 +367,11 @@ async function createAsset(lodgeId, input, billFilename) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('categoryId', sql.BigInt, input.categoryId)
-    .query('SELECT id FROM dbo.asset_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
+    .query('SELECT id, is_linen FROM dbo.asset_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
   if (category.recordset.length === 0) {
     throw new ApiError('Choose a valid category.', 400, 'categoryId');
   }
+  const quantity = quantityFor(category.recordset[0], input);
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -331,17 +400,18 @@ async function createAsset(lodgeId, input, billFilename) {
       .input('vendorId', sql.BigInt, input.vendorId ?? null)
       .input('warrantyExpiry', sql.Date, toNullable(input.warrantyExpiry))
       .input('billDocument', sql.NVarChar, billFilename ?? null)
+      .input('quantity', sql.Int, quantity)
       .query(`
         INSERT INTO dbo.assets
           (lodge_id, category_id, name, asset_tag, brand, model, serial_number, purchase_date,
            purchase_cost, useful_life_years, useful_life_months, room_id, floor, department,
-           location_note, vendor_id, warranty_expiry, bill_document)
+           location_note, vendor_id, warranty_expiry, bill_document, quantity)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @categoryId, @name, @assetTag, @brand, @model, @serialNumber, @purchaseDate,
            @purchaseCost, @usefulLifeYears, @usefulLifeMonths, @roomId, @floor, @department,
            @locationNote, @vendorId, @warrantyExpiry,
-           @billDocument)
+           @billDocument, @quantity)
       `);
 
     const assetId = result.recordset[0].id;
@@ -474,10 +544,11 @@ async function updateAsset(lodgeId, assetId, input, billFilename) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('categoryId', sql.BigInt, input.categoryId)
-    .query('SELECT id FROM dbo.asset_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
+    .query('SELECT id, is_linen FROM dbo.asset_categories WHERE id = @categoryId AND lodge_id = @lodgeId');
   if (category.recordset.length === 0) {
     throw new ApiError('Choose a valid category.', 400, 'categoryId');
   }
+  const quantity = quantityFor(category.recordset[0], input);
 
   // A new bill replaces the old one — the previous file is deleted once the
   // row commits to the new filename, so a crash between the two never loses
@@ -516,7 +587,8 @@ async function updateAsset(lodgeId, assetId, input, billFilename) {
     .input('floor', sql.NVarChar, toNullable(input.floor))
     .input('department', sql.NVarChar, toNullable(input.department))
     .input('locationNote', sql.NVarChar, toNullable(input.locationNote))
-    .input('vendorId', sql.BigInt, input.vendorId ?? null);
+    .input('vendorId', sql.BigInt, input.vendorId ?? null)
+    .input('quantity', sql.Int, quantity);
 
   // Only touched when a new file actually arrived — an edit that doesn't
   // re-upload a bill must not wipe the one already on file.
@@ -528,7 +600,8 @@ async function updateAsset(lodgeId, assetId, input, billFilename) {
       SET category_id = @categoryId, name = @name, brand = @brand,
           model = @model, serial_number = @serialNumber, purchase_date = @purchaseDate,
           purchase_cost = @purchaseCost, room_id = @roomId, floor = @floor,
-          department = @department, location_note = @locationNote, vendor_id = @vendorId
+          department = @department, location_note = @locationNote, vendor_id = @vendorId,
+          quantity = @quantity
           ${setBillDocument}, updated_at = SYSDATETIMEOFFSET()
       OUTPUT inserted.id
       WHERE id = @assetId AND lodge_id = @lodgeId
@@ -1118,6 +1191,8 @@ async function updateWorkOrder(lodgeId, workOrderId, input) {
 }
 
 module.exports = {
+  ensureLinenCategory,
+  registerLinenAsset,
   listCategories,
   createCategory,
   updateCategoryDepreciation,

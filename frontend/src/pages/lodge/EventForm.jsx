@@ -4,6 +4,7 @@ import { getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { formatPrice } from './priceFormat';
 import PaymentLines from './PaymentLines';
+import CheckInRoomStatus from './CheckInRoomStatus';
 import { emptyPaymentLine, needsPaymentReference, paymentFieldId, paymentLinesError, sumLines, toPaymentLines } from './paymentSplit';
 import {
   EVENT_TYPE_LABEL,
@@ -65,6 +66,8 @@ function catalogueLine(addon) {
     addonId: addon.id,
     label: addon.name,
     quantity: 1,
+    // Charged per unit (chairs, plates): the only kind that is asked how many.
+    isPerUnit: Boolean(addon.isPerUnit),
     unitAmount: addon.defaultAmount,
     // The catalogue's own price, pre-filled as a real value — same as the
     // venue charge defaults to the venue's base charge — not left as a greyed
@@ -73,6 +76,11 @@ function catalogueLine(addon) {
     selected: false,
   };
 }
+
+// A quantity is asked only where it means something: an add-on charged per
+// unit. One saved earlier with more than one keeps its box, so the count that
+// was agreed stays visible and editable.
+const wantsQty = (line) => Boolean(line.isPerUnit) || Number(line.quantity) > 1;
 
 function initialForm(event, initialDate, venues, initialVenueId = null) {
   if (event) {
@@ -661,6 +669,9 @@ export default function EventForm({
               </select>
             </Field>
           </div>
+          {/* What housekeeping says about the hall right now. It informs and does
+              not block: a venue under repair today may be fine by the function's date. */}
+          {form.venueId && <CheckInRoomStatus key={form.venueId} token={token} venues rooms={[{ roomId: form.venueId }]} />}
           <div className="field-row">
             <Field label="Starts" name="startDate" error={errFor('startDate') || errFor('startAt')} required>
               <div className="field-row">
@@ -860,42 +871,52 @@ export default function EventForm({
           <div className="field">
             <label>Add-ons (per day)</label>
             <div className="events-addons">
+              {/* One card per add-on, the same shape ticked or not: the name on
+                  top, and under it either the catalogue rate or, once ticked,
+                  the two things the desk fills in — each under its own label. */}
               {lines.map((l) => (
-                <label key={l.key} className="checkbox-chip">
-                  <input type="checkbox" checked={l.selected} onChange={(e) => setLine(l.key, { selected: e.target.checked })} />
-                  <span>{l.label}</span>
-                  {l.selected && (
-                    <>
-                      <input
-                        className="checkbox-chip__qty"
-                        type="number"
-                        min="1"
-                        value={l.quantity}
-                        title="Quantity"
-                        onChange={(e) => setLine(l.key, { quantity: e.target.value })}
-                      />
-                      <span className="checkbox-chip__price-wrap" title="Agreed amount — editable">
+                <div key={l.key} className={`ev-addon${l.selected ? ' ev-addon--on' : ''}`}>
+                  <label className="ev-addon__head">
+                    <input type="checkbox" checked={l.selected} onChange={(e) => setLine(l.key, { selected: e.target.checked })} />
+                    <span className="ev-addon__name">{l.label}</span>
+                  </label>
+                  {l.selected ? (
+                    <div className="ev-addon__fields">
+                      {wantsQty(l) && (
+                        <label className="ev-addon__field">
+                          <span>Qty</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={l.quantity}
+                            aria-label={`Quantity of ${l.label}`}
+                            onChange={(e) => setLine(l.key, { quantity: e.target.value })}
+                          />
+                        </label>
+                      )}
+                      <label className="ev-addon__field ev-addon__field--amount">
+                        <span className="ev-addon__cur" aria-hidden="true">
+                          ₹
+                        </span>
                         <input
-                          className="checkbox-chip__price"
                           type="number"
                           min="0"
                           value={l.agreedAmount}
-                          placeholder={l.unitAmount != null ? String(l.unitAmount) : '₹'}
+                          aria-label={`Agreed amount for ${l.label}`}
+                          placeholder={l.unitAmount != null ? String(l.unitAmount) : '0'}
                           onChange={(e) => setLine(l.key, { agreedAmount: e.target.value })}
                         />
-                        <svg className="checkbox-chip__price-pencil" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-                          <path
-                            fill="currentColor"
-                            d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                          />
-                        </svg>
+                      </label>
+                    </div>
+                  ) : (
+                    l.unitAmount != null && (
+                      <span className="ev-addon__rate">
+                        {formatPrice(l.unitAmount)}
+                        {l.isPerUnit ? ' per unit/day' : '/day'}
                       </span>
-                    </>
+                    )
                   )}
-                  {!l.selected && l.unitAmount != null && (
-                    <span className="checkbox-chip__price-preview">{formatPrice(l.unitAmount)}/day</span>
-                  )}
-                </label>
+                </div>
               ))}
               {lines.length === 0 && <span className="events-detail__empty">No add-ons in the catalogue yet.</span>}
             </div>

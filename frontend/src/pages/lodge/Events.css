@@ -128,6 +128,114 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
 }
 
+/* The two marks a function's tile can carry, in white on its status colour.
+   The colour is left at full strength — washing a finished function back
+   turned the red into a pink that was no status at all — and the mark says
+   the rest: a tick on the last day of one that is over, a dot on today's day
+   of the one in the hall now. */
+.events-tape__seg--over,
+.events-tape__seg--live {
+  position: relative;
+}
+
+.events-tape__seg--over::after,
+.events-legend__mark--over::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 8px;
+  margin: -6px 0 0 -3px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.events-tape__seg--live::after,
+.events-legend__mark--live::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* A slow ring breathing out from the dot. The dot itself does not blink: a
+   blinking chart reads as an alarm, and this is only "on now". */
+.events-tape__seg--live::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+  animation: events-live-ring 2.4s ease-out infinite;
+}
+
+@keyframes events-live-ring {
+  0% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .events-tape__seg--live::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* The legend's key for each mark: the mark on a neutral slate chip, a little
+   larger than a colour swatch so a tick is still a tick at that size. */
+.tape-legend__swatch.events-legend__mark {
+  position: relative;
+  width: 16px;
+  height: 14px;
+  border-radius: 4px;
+  background: #5b6875;
+}
+
+.events-legend__mark--over::after {
+  width: 3px;
+  height: 6px;
+  margin: -5px 0 0 -2px;
+  border-width: 0 1.5px 1.5px 0;
+}
+
+.events-legend__mark--live::after {
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+}
+
+/* The function a venue is waiting to be cleaned after: its tile is the
+   not-ready colour, whole, until housekeeping is done, and then goes back to
+   its status colour. It was a strip along the foot of the status colour, and
+   two colours and a tick in a tile this size read as a smudge. Whether the
+   function is confirmed or settled is still the first line of its hover card. */
+.events-tape__seg.events-tape__seg--notready {
+  background-color: var(--tape-notready);
+}
+
+/* No tick while it is brown: the colour already says the function is over. */
+.events-tape__seg.events-tape__seg--notready::after {
+  content: none;
+}
+
 /* Cancelled and lapsed, when the desk asks to see them: hatched, so they read
    as a record and not as a booking. */
 .events-tape__seg--cancelled,
@@ -163,7 +271,229 @@
   color: var(--danger);
 }
 
+/* Where the function is in time, beside the badge that says where it is in
+   money. Plain text behind a small dot rather than a second pill: two pills
+   side by side read as two statuses competing, and this one is the quieter
+   fact. */
+.events-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.events-phase::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #b3bcc6;
+}
+
+.events-phase--in-progress {
+  color: var(--ink);
+}
+
+.events-phase--in-progress::before {
+  background: #2aa55b;
+  box-shadow: 0 0 0 3px rgba(42, 165, 91, 0.18);
+}
+
+.events-phase--upcoming::before {
+  background: #4f83cc;
+}
+
+/* What is on now and what is next today: one quiet bar above the chart, read
+   left to right like a line of a day sheet. */
+.events-today {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.events-today__label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--paper, #f6f7f9);
+  border-right: 1px solid var(--border);
+}
+
+.events-today__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.events-today__item:last-child {
+  border-right: none;
+}
+
+.events-today__item:hover {
+  background: rgba(30, 58, 95, 0.04);
+}
+
+.events-today__item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.events-today__item strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.events-today__meta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The same dot-and-text the phase label uses, so the bar and the list speak
+   one language. */
+.events-today__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.events-today__tag::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4f83cc;
+}
+
+.events-today__tag--live {
+  color: #1f7a45;
+}
+
+.events-today__tag--live::before {
+  background: #2aa55b;
+  box-shadow: 0 0 0 3px rgba(42, 165, 91, 0.18);
+}
+
+@media (max-width: 640px) {
+  .events-today__label {
+    display: none;
+  }
+
+  .events-today__item {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .events-today__item:last-child {
+    border-bottom: none;
+  }
+}
+
 /* ------------------------------------------------------------------- list */
+
+/* The list's filter row: date shortcuts, status chips, Clear filters. Left to
+   wrap as it liked, it was a few pixels wider than its card, so which of the
+   three fell to a second line depended on which chip was pressed.
+
+   Now it has two fixed arrangements, chosen by the width of the card itself
+   (not the window — the sidebar opening and closing changes one and not the
+   other):
+
+     wide     one line: shortcuts, chips, Clear filters at the far end.
+     narrower two lines: shortcuts with Clear filters at the far end, and the
+              chips on a line of their own, free to wrap.
+
+   A phone keeps GuestRegister.css's own layout, below 641px. */
+.events .guest-register__toolbar {
+  container-type: inline-size;
+}
+
+@media (min-width: 641px) {
+  .events .guest-register__toolbar-bottom {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'presets clear'
+      'chips chips';
+    align-items: center;
+    gap: 10px 12px;
+  }
+
+  .events .guest-register__presets {
+    grid-area: presets;
+    justify-self: start;
+    max-width: 100%;
+  }
+
+  .events .guest-register__status-filters {
+    grid-area: chips;
+  }
+
+  .events .guest-register__clear-filters {
+    grid-area: clear;
+    white-space: nowrap;
+  }
+}
+
+/* Wide enough for everything: one line. The controls are drawn a little
+   tighter here so that "wide enough" starts at a laptop's width. */
+@container (min-width: 1010px) {
+  .events .guest-register__toolbar-bottom {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'presets chips clear';
+    gap: 8px;
+  }
+
+  .events .guest-register__presets {
+    flex-wrap: nowrap;
+  }
+
+  .events .guest-register__preset {
+    padding: 6px 9px;
+  }
+
+  .events .guest-register__status-filters {
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .events .guest-register__status-chip {
+    padding: 5px 9px;
+    gap: 5px;
+  }
+}
 
 .events-list__row {
   cursor: pointer;
@@ -730,79 +1060,144 @@
   color: var(--text-muted);
 }
 
-/* An add-on chip is a checkbox chip with a count and an agreed amount tucked
-   on its right — same shape as extras on a booking. */
+/* The add-ons on a function. One card each, the same shape ticked or not: the
+   tick and the name on top, and at the foot either the catalogue rate or, once
+   ticked, what the desk fills in. Cards in a row are the same height, with the
+   foot of each on one line, so a ticked card beside an unticked one still reads
+   as a row. Its own classes rather than the booking form's checkbox chip: that
+   chip is one line, and a long name beside two boxes does not fit one. */
+/* Packed tight: as many to a row as will fit at 180px each, so a long
+   catalogue takes a few rows rather than a screen of scrolling. */
 .events-addons {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
 }
 
-/* An add-on's name can be three words long, and the stay-extras chip lays
-   everything on one line — name, count and price fighting for 200px. Here the
-   chip is two rows: the box and the name on top, and once ticked the count
-   and the agreed amount underneath, indented under the name. Matched with the
-   element so it outranks `.field label.checkbox-chip`. */
-.events-addons label.checkbox-chip {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  grid-template-areas:
-    'box name name'
-    '. qty price';
-  align-items: center;
-  column-gap: 8px;
-  row-gap: 0;
+.ev-addon {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 150ms ease, background 150ms ease;
 }
 
-.events-addons .checkbox-chip > input[type='checkbox'] {
-  grid-area: box;
+.ev-addon:hover {
+  border-color: var(--field-border-hover, var(--brand));
 }
 
-.events-addons .checkbox-chip > span:not(.checkbox-chip__price-preview) {
-  grid-area: name;
-  min-width: 0;
+.ev-addon--on {
+  background: var(--brand-wash);
+  border-color: var(--brand);
+}
+
+/* Written with the container so they out-rank `.field label`. */
+.events-addons .ev-addon__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.3;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.events-addons .ev-addon__head input[type='checkbox'] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+}
+
+.ev-addon__name {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-/* The catalogue's per-day price, shown before the chip is ticked — once
-   ticked it is replaced by the editable price box in the same grid slot. */
-.events-addons .checkbox-chip .checkbox-chip__price-preview {
-  grid-area: price;
-  justify-self: end;
+/* The foot of the card, pushed down so every card in a row ends on one line. */
+.ev-addon__rate,
+.ev-addon__fields {
+  margin-top: auto;
+}
+
+/* Under the name, not under the tick. */
+.ev-addon__rate {
+  padding-left: 24px;
+  font-size: 12px;
   color: var(--text-muted);
-  font-size: 0.85em;
 }
 
-.events-addons .checkbox-chip input.checkbox-chip__qty {
-  grid-area: qty;
-  justify-self: start;
-  width: 64px;
-  margin: 6px 0 0;
+/* One line: quantity on the left where there is one, the amount on the right. */
+.ev-addon__fields {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--brand) 18%, transparent);
 }
 
-.events-addons .checkbox-chip .checkbox-chip__price-wrap {
-  grid-area: price;
-  justify-self: end;
-  position: relative;
-  margin: 6px 0 0;
-}
-
-.events-addons .checkbox-chip input.checkbox-chip__price {
-  width: 104px;
-  padding-right: 22px;
+.events-addons .ev-addon .ev-addon__field {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text);
 }
 
-/* A small pencil sitting inside the price box, so the price reads as
-   something to edit rather than a fixed label copied from the catalogue. */
-.events-addons .checkbox-chip__price-pencil {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+.events-addons .ev-addon .ev-addon__field--amount {
+  margin-left: auto;
+}
+
+.ev-addon__cur {
   color: var(--text-muted);
-  pointer-events: none;
+}
+
+/* !important, and only here: index.css styles every text input through a
+   selector five :not()s long, which no class chain of sensible length
+   out-ranks. Without it these boxes keep the form's tall, shadowed field. */
+.events-addons .ev-addon .ev-addon__field input {
+  width: 44px !important;
+  min-width: 0;
+  height: 28px !important;
+  min-height: 0 !important;
+  padding: 0 6px !important;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+  background: var(--surface) !important;
+  border: 1px solid var(--field-border) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+.events-addons .ev-addon .ev-addon__field--amount input {
+  width: 76px !important;
+}
+
+.events-addons .ev-addon .ev-addon__field input:hover,
+.events-addons .ev-addon .ev-addon__field input:focus,
+.events-addons .ev-addon .ev-addon__field input:focus-visible {
+  border-color: var(--brand) !important;
+  outline: none;
+}
+
+.events-addons .ev-addon .ev-addon__field input:focus,
+.events-addons .ev-addon .ev-addon__field input:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--brand) !important;
 }
 
 .events-oneoff {
@@ -1028,6 +1423,18 @@
   font-style: italic;
 }
 
+
+/* Said once the desk has marked the function over. Quiet: it is a fact about
+   the day, not a warning. */
+.events-detail__completed {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--paper, #f4f1ea);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
 
 .events-detail__cancelled {
   padding: 10px 12px;

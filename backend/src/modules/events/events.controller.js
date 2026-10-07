@@ -286,6 +286,15 @@ async function confirmEventHandler(req, res, next) {
   }
 }
 
+async function completeEventHandler(req, res, next) {
+  try {
+    const event = await eventsService.completeEventBooking(req.user.lodgeId, req.user.sub, idParam(req.params.id));
+    res.json({ event });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function cancelEventHandler(req, res, next) {
   try {
     const event = await eventsService.cancelEventBooking(
@@ -317,5 +326,6 @@ module.exports = {
   priceExtraHandler,
   removeExtraHandler,
   confirmEventHandler,
+  completeEventHandler,
   cancelEventHandler,
 };

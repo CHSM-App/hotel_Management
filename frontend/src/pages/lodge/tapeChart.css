@@ -20,6 +20,10 @@
      old #e4f0e8, which carried enough yellow to read as grubby beige once a
      whole month of them was on screen at once — this is the same idea in a
      fresher green, so an empty chart looks calm rather than dusty. */
+  /* A room housekeeping says is not ready: needs cleaning, being cleaned or
+     under repair. Coffee brown, the one hue the statuses had not used, so it
+     cannot be read as booked red, draft yellow or vacant green. */
+  --tape-notready: #8b5e3c;
   --tape-vacant: #e8f5ec;
   --tape-vacant-edge: #9fcfb2;
   --tape-vacant-well: #bfd8c7;
@@ -252,6 +256,10 @@
   background: var(--tape-vacant);
   border: 1px solid var(--tape-vacant-edge);
   box-shadow: inset 1px 1px 2px var(--tape-vacant-well);
+}
+
+.tape-legend__swatch--notready {
+  background: var(--tape-notready);
 }
 
 .tape-legend__swatch--booked {
@@ -706,6 +714,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Not ready, by housekeeping's word: the name alone takes the colour. On the
+   pinned column so it shows whatever dates are scrolled to, and whether or not
+   tonight is already sold. */
+.tape-month__room--notready strong {
+  color: var(--tape-notready);
+}
+
 .tape-month__room span {
   font-size: 10px;
   font-weight: 400;
@@ -768,6 +783,20 @@
 
 .tape-tile--vacant.tape-tile--weekend {
   background: var(--tape-weekend);
+}
+
+/* Tonight in a room that is not ready: still for sale, so still a vacant tile
+   to click, but in the not-ready colour. After the weekend rule so a Saturday
+   takes it too. */
+.tape-tile--vacant.tape-tile--notready,
+.tape-tile--vacant.tape-tile--notready:hover {
+  background: var(--tape-notready);
+  border-color: var(--tape-notready);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+.tape-tile--vacant.tape-tile--notready:hover {
+  background: #7a5133;
 }
 
 /* A dormitory night with some but not all beds sold. Kept as a distinct grey
@@ -1089,6 +1118,14 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.tape-tooltip__dot--notready {
+  background: #c79a74;
+}
+
+.tape-tooltip__hint--notready {
+  color: #e2bc9a;
 }
 
 .tape-tooltip__dot--booked {

@@ -12,7 +12,11 @@ import {
   EVENT_TYPE_LABEL,
   SLOT_LABEL,
   formatEventDate,
+  formatEventTime,
   formatEventWhen,
+  eventPhase,
+  eventPhaseLabel,
+  phaseTagClass,
   statusBadgeClass,
 } from './eventFormat';
 import './forms.css';
@@ -353,6 +357,8 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   const [editing, setEditing] = useState(false);
   const [takingAdvance, setTakingAdvance] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // "Mark as Completed" asks once before it sends the venue to housekeeping.
+  const [completing, setCompleting] = useState(false);
   const [cancelForm, setCancelForm] = useState({ reason: '', refundAmount: '', refundPaymentMethod: '' });
 
   const reload = useCallback(async () => {
@@ -484,6 +490,10 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   const pricingLines = event.pricing?.lines || [];
   const closed = status === 'CANCELLED';
   const currentIdx = TIMELINE.indexOf(status);
+  // Offered once the function has begun, on one that holds the venue, until it
+  // is used. Billing does not come into it: a function can be over and unbilled.
+  const canComplete =
+    ['CONFIRMED', 'SETTLED'].includes(status) && !event.completedAt && new Date(event.startAt) <= new Date();
   const canEdit = ['DRAFT', 'CONFIRMED'].includes(status);
   const canTakeAdvance = ['DRAFT', 'CONFIRMED'].includes(status);
 
@@ -498,6 +508,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 <span className="events-modal__badges">
                   <span className="badge badge--accent">{EVENT_TYPE_LABEL[event.eventType] || event.eventType}</span>
                   <span className={statusBadgeClass(status)}>{EVENT_STATUS_LABEL[status] || status}</span>
+                  {eventPhase(event) && <span className={phaseTagClass(eventPhase(event))}>{eventPhaseLabel(event)}</span>}
                 </span>
               </h3>
               <div className="events-modal__sub">
@@ -531,6 +542,12 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                   {EVENT_STATUS_LABEL[s]}
                 </div>
               ))}
+            </div>
+          )}
+
+          {event.completedAt && !closed && (
+            <div className="events-detail__completed">
+              Completed · {formatEventDate(event.completedAt)}, {formatEventTime(event.completedAt)}
             </div>
           )}
 
@@ -726,6 +743,27 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             </div>
           )}
 
+          {completing && (
+            <div className="events-cancel">
+              <p className="events-cancel__hint">
+                Mark this function as completed? The venue will be sent to housekeeping for cleaning.
+              </p>
+              <div className="events-cancel__actions">
+                <button type="button" className="btn-secondary" onClick={() => setCompleting(false)} disabled={busy}>
+                  Not yet
+                </button>
+                <button
+                  type="button"
+                  className="btn-accent"
+                  disabled={busy}
+                  onClick={async () => (await transition('complete')) && setCompleting(false)}
+                >
+                  {busy ? 'Saving…' : 'Mark as Completed'}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="events-modal__actions">
             <button type="button" className="btn-secondary" onClick={() => printFunctionSheet(event)}>
               Print function sheet
@@ -751,6 +789,11 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 onClick={() => (event.invoice?.id && onViewInvoice ? onViewInvoice(event.invoice.id) : onBillEvent?.(event.id))}
               >
                 View bill
+              </button>
+            )}
+            {canComplete && !completing && !cancelling && (
+              <button type="button" className="btn-secondary" disabled={busy} onClick={() => setCompleting(true)}>
+                Mark as Completed
               </button>
             )}
             {canEdit && (

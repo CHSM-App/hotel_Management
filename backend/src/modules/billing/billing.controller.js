@@ -21,14 +21,18 @@ async function listBillableBookingsHandler(req, res, next) {
   }
 }
 
-// Functions waiting for their bill: confirmed, not yet settled. Served from
+// Functions waiting for their bill: confirmed, not yet settled, and over — by
+// the desk marking them completed or by their booked end passing. One booked
+// for next month is not "ready to bill" the day it is taken. Served from
 // billing rather than from /events so the billing desk needs billing.manage
 // and nothing else — the events list itself is behind events.manage.
 async function listBillableEventsHandler(req, res, next) {
   try {
     // Required here, not at the top: events.service reaches back into billing.
     const eventsService = require('../events/events.service');
-    const events = await eventsService.listEventBookings(req.user.lodgeId, { status: 'CONFIRMED' });
+    const confirmed = await eventsService.listEventBookings(req.user.lodgeId, { status: 'CONFIRMED' });
+    const now = Date.now();
+    const events = confirmed.filter((e) => e.completedAt || new Date(e.endAt).getTime() <= now);
     res.json({ events });
   } catch (err) {
     next(err);

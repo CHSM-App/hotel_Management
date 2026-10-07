@@ -524,6 +524,16 @@ export default function OwnerDashboard() {
                   onClick={() => toggleGroup(group)}
                 >
                   {group}
+                  {/* A closed group hides the count on its Housekeeping row, so the
+                      heading carries it until the group is opened again. */}
+                  {!groupOpen(group) && issueCount > 0 && features.some((f) => f.key === 'housekeeping') && (
+                    <span
+                      className="dash-sidebar__count dash-sidebar__count--group"
+                      aria-label={`${issueCount} open ${issueCount === 1 ? 'issue' : 'issues'}`}
+                    >
+                      {issueCount}
+                    </span>
+                  )}
                   <span className="dash-sidebar__chevron" aria-hidden="true">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path

@@ -25,12 +25,19 @@ const KIND = {
   },
 };
 
+// "Room 12", or a venue by its own name.
+const isVenue = (i) => i.space === 'VENUE';
+const spaceName = (i) => (isVenue(i) ? i.roomNumber : `Room ${i.roomNumber}`);
+// A found item goes back to a guest from a room, to the host from a hall.
+const closeHint = (i) => (i.kind === 'FOUND' && isVenue(i) ? 'e.g. returned to the host, kept at reception' : KIND[i.kind].hint);
+
 const day = (value) => new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
-// Problems and found items cleaners reported when finishing a room. Until this
-// list existed they were saved and never shown to anyone.
-export default function HousekeepingIssues({ token, view, toolsHost }) {
+// Problems and found items cleaners reported when finishing a room or a venue.
+// Until this list existed they were saved and never shown to anyone.
+export default function HousekeepingIssues({ token, view, toolsHost, hasEvents = false, hasRooms = true }) {
   const [issues, setIssues] = useState(null);
+  const [spaces, setSpaces] = useState('BOTH'); // ROOMS | VENUES | BOTH
   const [filter, setFilter] = useState('OPEN');
   const [error, setError] = useState('');
   const [closing, setClosing] = useState(null); // { issue, note }
@@ -71,8 +78,13 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
     }
   };
 
-  const open = (issues ?? []).filter((i) => !i.closedAt);
-  const closed = (issues ?? []).filter((i) => i.closedAt);
+  // Only where there is a choice to make: a property with rooms and venues.
+  const bothKinds = hasEvents && hasRooms;
+  const inSpaces = (issues ?? []).filter((i) => !bothKinds || spaces === 'BOTH' || (spaces === 'VENUES') === isVenue(i));
+  const open = inSpaces.filter((i) => !i.closedAt);
+  const closed = inSpaces.filter((i) => i.closedAt);
+  const placeHead = bothKinds ? 'Room / Venue' : hasEvents ? 'Venue' : 'Room';
+  const place = bothKinds ? 'a room or a venue' : hasEvents ? 'a venue' : 'a room';
   // "All" keeps what is still waiting on top.
   const shown = filter === 'OPEN' ? open : filter === 'CLOSED' ? closed : [...open, ...closed];
   const filters = [
@@ -91,16 +103,26 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
       {issues &&
         toolsHost &&
         createPortal(
-          <label className="hk-show">
-            <span>Show:</span>
-            <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Show issues">
-              {filters.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.label} ({f.n})
-                </option>
-              ))}
-            </select>
-          </label>,
+          <>
+            {bothKinds && (
+              <label className="hk-show">
+                <select value={spaces} onChange={(e) => setSpaces(e.target.value)} aria-label="Show rooms, venues or both">
+                  <option value="BOTH">Rooms and venues</option>
+                  <option value="ROOMS">Rooms only</option>
+                  <option value="VENUES">Venues only</option>
+                </select>
+              </label>
+            )}
+            <label className="hk-show">
+              <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Show issues">
+                {filters.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label} ({f.n})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>,
           toolsHost
         )}
 
@@ -116,7 +138,7 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
           <p className="hk-empty__text">
             {filter === 'CLOSED'
               ? 'Problems you mark fixed and items you hand over move here.'
-              : 'When a cleaner reports a problem or a found item while finishing a room, it appears here.'}
+              : `When a cleaner reports a problem or a found item while finishing ${place}, it appears here.`}
           </p>
         </div>
       )}
@@ -125,7 +147,7 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
         <table className="hk-rooms">
           <thead>
             <tr>
-              <th scope="col">Room</th>
+              <th scope="col">{placeHead}</th>
               <th scope="col">Reported</th>
               <th scope="col" className="hk-rooms__wide">
                 Type
@@ -159,7 +181,7 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
                   </th>
                   <td>
                     <span className="hk-issue__text">{i.text}</span>
-                    {i.roomBlocked && <span className="hk-arrival hk-arrival--ooo hk-issue__tag">Room held under repair</span>}
+                    {i.roomBlocked && <span className="hk-arrival hk-arrival--ooo hk-issue__tag">Held under repair</span>}
                     {/* On a phone the other columns go, so they sit under the text. */}
                     <span className="hk-rooms__sub">
                       {[kind.label, i.reportedBy, when].filter(Boolean).join(' · ')}
@@ -193,9 +215,16 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
           const kind = KIND[i.kind];
           return (
             <article className={`hk-card hk-card--${i.closedAt ? 'occupied' : kind.tone}`} key={`${i.logId}:${i.kind}`}>
-              <span className="hk-card__room">{i.roomNumber}</span>
+              {/* A venue's name is too long for the tile, as on the cleaning board:
+                  the tile says what it is and the name sits over the report. */}
+              {isVenue(i) ? (
+                <span className="hk-card__room hk-card__room--venue">Venue</span>
+              ) : (
+                <span className="hk-card__room">{i.roomNumber}</span>
+              )}
               <div className="hk-card__body">
                 <div className="hk-card__line">
+                  {isVenue(i) && <span className="hk-card__floor">{i.roomNumber}</span>}
                   <span className="hk-card__cat hk-issue__text">{i.text}</span>
                 </div>
                 <div className="hk-card__state">
@@ -205,7 +234,7 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
                       ? `${kind.closed} ${day(i.closedAt)}${i.closedBy ? ` · ${i.closedBy}` : ''}`
                       : `${ago(i.reportedAt, now)} ago${i.reportedBy ? ` · ${i.reportedBy}` : ''}`}
                   </span>
-                  {i.roomBlocked && <span className="hk-arrival hk-arrival--ooo">Room held under repair</span>}
+                  {i.roomBlocked && <span className="hk-arrival hk-arrival--ooo">Held under repair</span>}
                 </div>
                 {i.resolution && <div className="hk-card__detail">{i.resolution}</div>}
               </div>
@@ -224,7 +253,7 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
 
       {closing && (
         <Modal
-          title={`Room ${closing.issue.roomNumber} · ${KIND[closing.issue.kind].close.toLowerCase()}?`}
+          title={`${spaceName(closing.issue)} · ${KIND[closing.issue.kind].close.toLowerCase()}?`}
           sub={closing.issue.text}
           busy={busy}
           onClose={() => setClosing(null)}
@@ -244,14 +273,14 @@ export default function HousekeepingIssues({ token, view, toolsHost }) {
             <input
               id="hkCloseNote"
               maxLength={300}
-              placeholder={KIND[closing.issue.kind].hint}
+              placeholder={closeHint(closing.issue)}
               value={closing.note}
               onChange={(e) => setClosing({ ...closing, note: e.target.value })}
               autoFocus
             />
           </div>
           {closing.issue.roomBlocked && (
-            <p className="hk-hint">Room {closing.issue.roomNumber} is held under repair for this. Marking it fixed sends the room to the cleaning list.</p>
+            <p className="hk-hint">{spaceName(closing.issue)} is held under repair for this. Marking it fixed sends it to the cleaning list.</p>
           )}
         </Modal>
       )}

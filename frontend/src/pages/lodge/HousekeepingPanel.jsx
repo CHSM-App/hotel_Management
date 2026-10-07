@@ -42,6 +42,38 @@ const ROOM_COLUMNS = [
   { key: 'notes', label: 'Notes', wide: true, value: ({ detail, issues }) => [detail, issues].filter(Boolean).join(' ') },
 ];
 
+// "6:00 PM", for when a function starts or ends.
+const timeLabel = (value) => new Date(value).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+
+// A room and a venue can share an id, so anything keyed per row uses both.
+const keyOf = (r) => `${r.kind}-${r.id}`;
+const isVenue = (r) => r.kind === 'VENUE';
+// How a space is named in a sentence: "Room 12", or the venue by its own name.
+const spaceName = (r) => (isVenue(r) ? r.roomNumber : `Room ${r.roomNumber}`);
+
+// The Finish form's words, which differ between a room and a hall: a hall has
+// no guest to give it to and no bed sheets, and what is left behind is left
+// after a function.
+const FINISH_WORDS = {
+  ROOM: {
+    place: 'room',
+    problem: 'Problem in the room',
+    problemHint: 'e.g. tap leaking, bulb not working, stained sheet',
+    block: 'Room cannot be given to guests',
+    found: 'Guest left something behind',
+    foundHint: 'e.g. phone charger, watch',
+  },
+  VENUE: {
+    place: 'venue',
+    problem: 'Problem in the venue',
+    problemHint: 'e.g. AC not cooling, broken chair, stained table cloth',
+    block: 'Venue cannot be used for functions',
+    found: 'Something left behind after the function',
+    foundHint: 'e.g. gift box, bag, phone charger',
+  },
+};
+const finishWords = (r) => (isVenue(r) ? FINISH_WORDS.VENUE : FINISH_WORDS.ROOM);
+
 // A calendar day from the server (YYYY-MM-DD) as "08 Oct".
 const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
@@ -49,8 +81,11 @@ const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN'
 // Rooms
 // ---------------------------------------------------------------------------
 
-function RoomsTab({ token, hasLaundry, view, toolsHost }) {
+function RoomsTab({ token, hasLaundry, hasEvents, view, toolsHost }) {
   const [rooms, setRooms] = useState(null);
+  // Event venues sit on the same board. Empty where the property has no Events.
+  const [venues, setVenues] = useState([]);
+  const [spaces, setSpaces] = useState('BOTH'); // ROOMS | VENUES | BOTH
   const [linen, setLinen] = useState([]);
   // Opens on the work to do; the rest is one choice away under Show.
   const [filter, setFilter] = useState('TODO');
@@ -70,12 +105,17 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
   const [now, setNow] = useState(() => Date.now());
 
   const load = () =>
-    apiGet('/housekeeping/rooms', { token })
-      .then((d) => {
-        setRooms(d.rooms);
+    Promise.all([
+      apiGet('/housekeeping/rooms', { token }),
+      // A venue list that fails must not take the rooms down with it.
+      hasEvents ? apiGet('/housekeeping/venues', { token }).catch(() => ({ venues: [] })) : Promise.resolve({ venues: [] }),
+    ])
+      .then(([r, v]) => {
+        setRooms(r.rooms);
+        setVenues(v.venues);
         setError('');
       })
-      .catch((err) => setError(errorText(err, 'Could not load rooms.')));
+      .catch((err) => setError(errorText(err, 'Could not load the board.')));
 
   useEffect(() => {
     load();
@@ -97,11 +137,11 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
   const act = async (room, action, body = {}) => {
     setBusy(true);
     try {
-      await apiPost(`/housekeeping/rooms/${room.id}/${action}`, body, { token });
+      await apiPost(`/housekeeping/${isVenue(room) ? 'venues' : 'rooms'}/${room.id}/${action}`, body, { token });
       await load();
       return true;
     } catch (err) {
-      setError(errorText(err, 'Could not update the room.'));
+      setError(errorText(err, isVenue(room) ? 'Could not update the venue.' : 'Could not update the room.'));
       return false;
     } finally {
       setBusy(false);
@@ -123,10 +163,21 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
 
   const finishPieces = Object.values(finish?.counts ?? {}).reduce((n, v) => n + v, 0);
 
+  // Rooms and venues as one list in working order: what needs cleaning first,
+  // and within that whatever someone is arriving into today.
+  const hasVenues = venues.length > 0;
+  const hasRooms = (rooms ?? []).length > 0;
+  const pool = [...(spaces === 'VENUES' ? [] : (rooms ?? [])), ...(spaces === 'ROOMS' ? [] : venues)].sort(
+    (a, b) =>
+      (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9) ||
+      Number(b.arrivingToday) - Number(a.arrivingToday) ||
+      Number(isVenue(a)) - Number(isVenue(b)) ||
+      String(a.roomNumber).localeCompare(String(b.roomNumber), undefined, { numeric: true })
+  );
   const counts = { DIRTY: 0, CLEANING: 0, READY: 0, OCCUPIED: 0, OUT_OF_ORDER: 0 };
-  (rooms ?? []).forEach((r) => (counts[r.status] += 1));
-  const total = (rooms ?? []).length;
-  const shown = (rooms ?? []).filter((r) =>
+  pool.forEach((r) => (counts[r.status] += 1));
+  const total = pool.length;
+  const shown = pool.filter((r) =>
     filter === 'ALL' ? true : filter === 'TODO' ? r.status === 'DIRTY' || r.status === 'CLEANING' : r.status === filter
   );
 
@@ -135,7 +186,7 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
   const filters = [
     { key: 'TODO', label: 'To clean', n: counts.DIRTY + counts.CLEANING },
     { key: 'READY', label: 'Ready', n: counts.READY },
-    { key: 'OCCUPIED', label: 'Occupied', n: counts.OCCUPIED },
+    { key: 'OCCUPIED', label: hasVenues ? 'Occupied / in use' : 'Occupied', n: counts.OCCUPIED },
     { key: 'OUT_OF_ORDER', label: 'Under repair', n: counts.OUT_OF_ORDER },
     { key: 'ALL', label: 'All', n: total },
   ];
@@ -155,21 +206,34 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
     const menu = [
       r.status === 'CLEANING' && { label: 'Stop without finishing', run: () => act(r, 'release') },
       r.status === 'READY' && { label: 'Needs cleaning', run: () => act(r, 'dirty') },
-      r.status === 'OCCUPIED' && { label: 'Service this room', run: () => act(r, 'start') },
+      r.status === 'OCCUPIED' && { label: isVenue(r) ? 'Service this venue' : 'Service this room', run: () => act(r, 'start') },
       (r.status === 'DIRTY' || r.status === 'READY') && { label: 'Close for repair', run: () => setOoo({ room: r, note: '' }) },
     ].filter(Boolean);
     // Who is in the room, and when it comes free: what a cleaner plans the day by.
-    const guest = r.guestName ? `${r.guestName}${r.guestsIn > 1 ? ` +${r.guestsIn - 1} more` : ''}` : '';
-    const leaves = r.guestName && r.guestCheckOut ? (r.leavingToday ? 'Leaves today' : `Leaves ${dayLabel(r.guestCheckOut)}`) : '';
+    // For a venue the "guest" is the function in it, and it "leaves" when that ends.
+    const guest = isVenue(r) ? r.eventTitle || '' : r.guestName ? `${r.guestName}${r.guestsIn > 1 ? ` +${r.guestsIn - 1} more` : ''}` : '';
+    const leaves = isVenue(r)
+      ? r.eventTitle && r.eventEndsAt
+        ? `Ends ${timeLabel(r.eventEndsAt)}`
+        : ''
+      : r.guestName && r.guestCheckOut
+        ? r.leavingToday
+          ? 'Leaves today'
+          : `Leaves ${dayLabel(r.guestCheckOut)}`
+        : '';
+    // What is coming today: a guest into a room, a function into a venue.
+    const arrivingLabel = isVenue(r) ? `Function today${r.nextEventAt ? ` ${timeLabel(r.nextEventAt)}` : ''}` : 'Guest arriving today';
     // Only a clean somebody actually logged; a room never cleaned says nothing.
     const cleaned = r.cleanedAt ? `${ago(r.cleanedAt, now)} ago${r.cleanedBy ? ` · ${r.cleanedBy}` : ''}` : '';
     const issues = r.openIssues > 0 ? `${r.openIssues} open ${r.openIssues === 1 ? 'issue' : 'issues'}` : '';
     return {
       r,
-      s: ROOM_STATUS[r.status],
+      // A venue with a function in it is "In use"; "Occupied" is a room's word.
+      s: isVenue(r) && r.status === 'OCCUPIED' ? { ...ROOM_STATUS.OCCUPIED, label: 'In use' } : ROOM_STATUS[r.status],
       detail,
       menu,
       arriving: r.arrivingToday && r.status !== 'OCCUPIED',
+      arrivingLabel,
       guest,
       leaves,
       cleaned,
@@ -215,13 +279,13 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
           <button
             type="button"
             className="hk-more"
-            aria-label={`More actions for room ${r.roomNumber}`}
-            aria-expanded={menuId === r.id}
-            onClick={() => setMenuId(menuId === r.id ? null : r.id)}
+            aria-label={`More actions for ${spaceName(r)}`}
+            aria-expanded={menuId === keyOf(r)}
+            onClick={() => setMenuId(menuId === keyOf(r) ? null : keyOf(r))}
           >
             ⋯
           </button>
-          {menuId === r.id && (
+          {menuId === keyOf(r) && (
             <>
               <button type="button" className="hk-menu__backdrop" aria-label="Close menu" onClick={() => setMenuId(null)} />
               <span className="hk-menu__list" role="menu">
@@ -254,16 +318,27 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
       {rooms &&
         toolsHost &&
         createPortal(
-          <label className="hk-show">
-            <span>Show:</span>
-            <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Show rooms by status">
-              {filters.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.label} ({f.n})
-                </option>
-              ))}
-            </select>
-          </label>,
+          <>
+            {/* Only where there is a choice to make: a property with rooms and venues. */}
+            {hasVenues && hasRooms && (
+              <label className="hk-show">
+                <select value={spaces} onChange={(e) => setSpaces(e.target.value)} aria-label="Show rooms, venues or both">
+                  <option value="BOTH">Rooms and venues</option>
+                  <option value="ROOMS">Rooms only</option>
+                  <option value="VENUES">Venues only</option>
+                </select>
+              </label>
+            )}
+            <label className="hk-show">
+              <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Show by status">
+                {filters.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label} ({f.n})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>,
           toolsHost
         )}
 
@@ -274,13 +349,15 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
           <span className="hk-empty__icon">
             <StatusIcon tone="ready" size={22} />
           </span>
-          <p className="hk-empty__title">{filter === 'TODO' ? 'Every room is clean' : 'No rooms in this view'}</p>
+          <p className="hk-empty__title">{filter === 'TODO' ? (hasVenues ? 'Everything is clean' : 'Every room is clean') : 'Nothing in this view'}</p>
           <p className="hk-empty__text">
             {filter === 'TODO'
-              ? 'New check-outs appear here on their own.'
+              ? hasVenues
+                ? 'Check-outs and finished functions appear here on their own.'
+                : 'New check-outs appear here on their own.'
               : filter === 'ALL'
-                ? 'Add rooms under Rooms & rates to see them here.'
-                : 'Choose another option under Show to see the rest.'}
+                ? 'Add rooms under Rooms & rates, or venues under Event setup, to see them here.'
+                : 'Choose another option from the menu above to see the rest.'}
           </p>
         </div>
       )}
@@ -288,18 +365,26 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
       {view === 'cards' && (
         <div className="hk-list">
           {rows.map((row) => {
-            const { r, s, detail, arriving, guest, leaves, cleaned, issues } = row;
+            const { r, s, detail, arriving, arrivingLabel, guest, leaves, cleaned, issues } = row;
             // One quiet line of whatever applies: the guest and when they go, or
             // when the room was last cleaned.
             const extra = guest ? [guest, r.leavingToday ? '' : leaves].filter(Boolean).join(' · ') : r.status === 'READY' && cleaned ? `Cleaned ${cleaned}` : '';
             return (
-              <article className={`hk-card hk-card--${s.tone}`} key={r.id}>
-                <span className="hk-card__room">{r.roomNumber}</span>
+              <article className={`hk-card hk-card--${s.tone}`} key={keyOf(r)}>
+                {/* A room is known by its number, so that is the tile. A venue's
+                    name is too long for one: the tile says what it is and the
+                    name leads the line beside it. */}
+                {isVenue(r) ? (
+                  <span className="hk-card__room hk-card__room--venue">Venue</span>
+                ) : (
+                  <span className="hk-card__room">{r.roomNumber}</span>
+                )}
                 <div className="hk-card__body">
                   <div className="hk-card__line">
-                    <span className="hk-card__cat">{r.categoryName}</span>
+                    <span className="hk-card__cat">{isVenue(r) ? r.roomNumber : r.categoryName}</span>
+                    {isVenue(r) && r.categoryName !== 'Venue' && <span className="hk-card__floor">{r.categoryName.replace('Venue · ', '')}</span>}
                     {floorLabel(r.floor) && <span className="hk-card__floor">{floorLabel(r.floor)}</span>}
-                    {arriving && <span className="hk-arrival">Guest arriving today</span>}
+                    {arriving && <span className="hk-arrival">{arrivingLabel}</span>}
                     {guest && r.leavingToday && <span className="hk-arrival">Leaves today</span>}
                     {issues && <span className="hk-arrival hk-arrival--ooo">{issues}</span>}
                   </div>
@@ -328,7 +413,7 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
                   aria-sort={sort.key === column.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
                 >
                   <button type="button" className="hk-sort" onClick={() => toggleSort(column.key)} title={`Sort by ${column.label}`}>
-                    {column.label}
+                    {hasVenues && column.key === 'room' ? 'Room / venue' : hasVenues && column.key === 'guest' ? 'Guest / function' : column.label}
                     <span className="hk-sort__icon" aria-hidden="true">
                       {sort.key === column.key ? (sort.dir === 1 ? '▲' : '▼') : '⇅'}
                     </span>
@@ -342,12 +427,12 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
           </thead>
           <tbody>
             {tableRows.map((row) => {
-              const { r, s, detail, arriving, guest, leaves, cleaned, issues } = row;
+              const { r, s, detail, arriving, arrivingLabel, guest, leaves, cleaned, issues } = row;
               // On a phone the wide columns go, so what matters most sits under the status.
-              const sub = [detail, guest, leaves, arriving && 'Guest arriving today', issues].filter(Boolean).join(' · ');
+              const sub = [detail, guest, leaves, arriving && arrivingLabel, issues].filter(Boolean).join(' · ');
               const none = <span className="hk-rooms__none">—</span>;
               return (
-                <tr key={r.id}>
+                <tr key={keyOf(r)}>
                   <th scope="row" className="hk-rooms__room">
                     {r.roomNumber}
                   </th>
@@ -370,7 +455,7 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
                         )}
                       </>
                     ) : arriving ? (
-                      <span className="hk-arrival">Guest arriving today</span>
+                      <span className="hk-arrival">{arrivingLabel}</span>
                     ) : (
                       none
                     )}
@@ -398,8 +483,12 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
 
       {finish && (
         <Modal
-          title={`Finish cleaning · Room ${finish.room.roomNumber}`}
-          sub={hasLaundry ? 'Count the linen you replaced, then mark the room clean.' : 'Note anything wrong, then mark the room clean.'}
+          title={`Finish cleaning · ${spaceName(finish.room)}`}
+          sub={
+            hasLaundry
+              ? `Count the linen you replaced, then mark the ${finishWords(finish.room).place} clean.`
+              : `Note anything wrong, then mark the ${finishWords(finish.room).place} clean.`
+          }
           busy={busy}
           onClose={() => setFinish(null)}
           footer={
@@ -408,7 +497,7 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
                 Cancel
               </button>
               <button type="button" className="btn-accent" onClick={submitFinish} disabled={busy}>
-                {busy ? 'Saving…' : 'Mark room clean'}
+                {busy ? 'Saving…' : `Mark ${finishWords(finish.room).place} clean`}
               </button>
             </>
           }
@@ -422,7 +511,7 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
                 </span>
               </div>
               {linen.length === 0 ? (
-                <p className="hk-hint hk-hint--inline">Add linen items under Laundry → Hotel linen to count what you change in each room.</p>
+                <p className="hk-hint hk-hint--inline">Add linen items under Laundry → Hotel Laundry to count what you change here.</p>
               ) : (
                 <div className="hk-finish__list">
                   {linen.map((i) => (
@@ -446,10 +535,10 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
               <span className="hk-finish__meta">Optional · reception is told</span>
             </div>
             <div className="field">
-              <label htmlFor="hkIssues">Problem in the room</label>
+              <label htmlFor="hkIssues">{finishWords(finish.room).problem}</label>
               <input
                 id="hkIssues"
-                placeholder="e.g. tap leaking, bulb not working, stained sheet"
+                placeholder={finishWords(finish.room).problemHint}
                 value={finish.issues}
                 onChange={(e) => setFinish({ ...finish, issues: e.target.value })}
               />
@@ -458,17 +547,17 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
                 <label className="hk-check">
                   <input type="checkbox" checked={finish.blockRoom} onChange={(e) => setFinish({ ...finish, blockRoom: e.target.checked })} />
                   <span>
-                    Room cannot be given to guests
+                    {finishWords(finish.room).block}
                     <small>It stays under repair until the problem is marked fixed.</small>
                   </span>
                 </label>
               )}
             </div>
             <div className="field">
-              <label htmlFor="hkLost">Guest left something behind</label>
+              <label htmlFor="hkLost">{finishWords(finish.room).found}</label>
               <input
                 id="hkLost"
-                placeholder="e.g. phone charger, watch"
+                placeholder={finishWords(finish.room).foundHint}
                 value={finish.lostFound}
                 onChange={(e) => setFinish({ ...finish, lostFound: e.target.value })}
               />
@@ -479,7 +568,7 @@ function RoomsTab({ token, hasLaundry, view, toolsHost }) {
 
       {ooo && (
         <Modal
-          title={`Room ${ooo.room.roomNumber} — out of order`}
+          title={`${spaceName(ooo.room)} · close for repair`}
           sub="It stays off the cleaning list until it is back in service."
           busy={busy}
           onClose={() => setOoo(null)}
@@ -532,7 +621,8 @@ export default function HousekeepingPanel({ lodge, issueCount = 0 }) {
     <div>
       <div className="subtabs">
         <button type="button" className="subtabs__item" aria-current={tab === 'rooms' ? 'page' : undefined} onClick={() => setTab('rooms')}>
-          Rooms
+          {/* Named for what the property has: venues are on this board too. */}
+          {lodge?.hasEvents ? (lodge?.hasRooms === false ? 'Venues' : 'Rooms & Venues') : 'Rooms'}
         </button>
         <button type="button" className="subtabs__item" aria-current={tab === 'issues' ? 'page' : undefined} onClick={() => setTab('issues')}>
           Issues
@@ -543,8 +633,10 @@ export default function HousekeepingPanel({ lodge, issueCount = 0 }) {
           <ViewSwitch view={view} onChange={chooseView} label="Show as" />
         </div>
       </div>
-      {tab === 'rooms' && <RoomsTab token={token} hasLaundry={Boolean(lodge?.hasLaundry)} view={view} toolsHost={toolsHost} />}
-      {tab === 'issues' && <HousekeepingIssues token={token} view={view} toolsHost={toolsHost} />}
+      {tab === 'rooms' && (
+        <RoomsTab token={token} hasLaundry={Boolean(lodge?.hasLaundry)} hasEvents={Boolean(lodge?.hasEvents)} view={view} toolsHost={toolsHost} />
+      )}
+      {tab === 'issues' && <HousekeepingIssues token={token} view={view} toolsHost={toolsHost} hasEvents={Boolean(lodge?.hasEvents)} hasRooms={lodge?.hasRooms !== false} />}
     </div>
   );
 }

@@ -16,34 +16,38 @@ const STATUS = {
 // the check-in form. It informs and never blocks: the desk may know something
 // the board does not. Shows nothing for a property without Housekeeping, where
 // the request is simply refused.
-export default function CheckInRoomStatus({ token, rooms }) {
+//
+// `venues` turns it to event venues instead, for the function booking form:
+// the same list (ids under roomId), read from the venue half of the board.
+export default function CheckInRoomStatus({ token, rooms, venues = false }) {
   const [byId, setById] = useState(null);
 
   useEffect(() => {
     let ignore = false;
-    apiGet('/housekeeping/rooms', { token })
+    apiGet(venues ? '/housekeeping/venues' : '/housekeeping/rooms', { token })
       .then((d) => {
-        if (!ignore) setById(new Map(d.rooms.map((r) => [String(r.id), r])));
+        if (!ignore) setById(new Map((venues ? d.venues : d.rooms).map((r) => [String(r.id), r])));
       })
       .catch(() => {});
     return () => {
       ignore = true;
     };
-  }, [token]);
+  }, [token, venues]);
 
   const rows = (rooms ?? []).map((room) => ({ room, hk: byId?.get(String(room.roomId)) })).filter((r) => r.hk);
   if (rows.length === 0) return null;
 
   return (
     <div className="hk-board hk-ci" role="status">
-      <div className="hk-ci__title">Room status</div>
+      <div className="hk-ci__title">{venues ? 'Venue status' : 'Room status'}</div>
       {rows.map(({ room, hk }) => {
-        const s = STATUS[hk.status] ?? STATUS.READY;
+        // A venue with a function in it is "In use"; "Occupied" is a room's word.
+        const s = venues && hk.status === 'OCCUPIED' ? { ...STATUS.OCCUPIED, label: 'In use now' } : (STATUS[hk.status] ?? STATUS.READY);
         // Only what housekeeping wrote about a repair; the label says the rest.
         const reason = hk.status === 'OUT_OF_ORDER' ? hk.outOfOrderNote : '';
         return (
           <div className="hk-ci__row" key={room.roomId}>
-            <span className="hk-ci__room">Room {room.roomNumber ?? hk.roomNumber}</span>
+            <span className="hk-ci__room">{venues ? hk.roomNumber : `Room ${room.roomNumber ?? hk.roomNumber}`}</span>
             <span className={`hk-status hk-status--${s.tone}`}>{s.label}</span>
             {reason && <span className="hk-ci__note">{reason}</span>}
           </div>

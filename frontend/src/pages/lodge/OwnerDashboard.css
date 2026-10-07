@@ -202,6 +202,13 @@
   border-radius: 999px;
 }
 
+/* On a group heading: beside the label, with the chevron kept at the far end. */
+.dash-sidebar__count--group {
+  margin-left: 0;
+  margin-right: auto;
+  letter-spacing: 0;
+}
+
 /* Rises to meet the pointer — the same extrusion every other control in the
    app uses to say it can be pressed. */
 .dash-sidebar__item:hover {
