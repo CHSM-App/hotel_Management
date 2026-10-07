@@ -2947,6 +2947,15 @@ BEGIN
     WHERE permissions LIKE '%"housekeeping.manage"%' AND permissions NOT LIKE '%"laundry.manage"%';
 END
 
+-- Migration 129: Laundry is a deliberate add per property now, not handed to
+-- Housekeeping by default. Only the shared default (lodge_id IS NULL) is
+-- touched — a lodge with its own saved Housekeeping permissions is untouched.
+UPDATE dbo.roles
+SET permissions = REPLACE(permissions, '"housekeeping.manage","laundry.manage"', '"housekeeping.manage"')
+WHERE lodge_id IS NULL
+  AND role_key = 'HOUSEKEEPING'
+  AND permissions LIKE '%"housekeeping.manage","laundry.manage"%';
+
 IF COL_LENGTH('dbo.linen_movements', 'washed_by') IS NULL
     EXEC('ALTER TABLE dbo.linen_movements ADD washed_by NVARCHAR(100) NULL');
 
