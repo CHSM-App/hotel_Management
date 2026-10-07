@@ -245,48 +245,298 @@ class BookingActions {
     final controller = TextEditingController(text: '${late.suggestedCharge}');
     return showDialog<num>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text(
-          'Late checkout',
-          style: TextStyle(color: AppTheme.heading),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This guest is ${late.lateLabel ?? 'late'}. '
-              'The policy suggests ${late.bandLabel.toLowerCase()} at '
-              '${late.percent}% of ${formatPrice(late.lastNightRate)}.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: AppTheme.s16),
-            NeuField(
-              controller: controller,
-              label: 'Charge',
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 0),
-            child: const Text('Waive it'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(
-              context,
-              num.tryParse(controller.text.trim()) ?? 0,
-            ),
-            child: const Text('Check out'),
-          ),
-        ],
-      ),
+      barrierColor: const Color(0x73151E2E),
+      builder: (context) => _LateCheckoutDialog(late: late, controller: controller),
     );
   }
 
   void _say(String message) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(content: Text(message), backgroundColor: AppTheme.heading),
   );
+}
+
+/// The late-checkout question, redesigned to match the web register's own
+/// `.late-modal` card: the due time and the policy's arithmetic shown up
+/// front, then Back/Waive as plain options beside a brand-gradient primary
+/// action — rather than the three flat [TextButton]s an [AlertDialog] gives
+/// by default.
+class _LateCheckoutDialog extends StatefulWidget {
+  final LateCheckout late;
+  final TextEditingController controller;
+
+  const _LateCheckoutDialog({required this.late, required this.controller});
+
+  @override
+  State<_LateCheckoutDialog> createState() => _LateCheckoutDialogState();
+}
+
+class _LateCheckoutDialogState extends State<_LateCheckoutDialog> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChange);
+    super.dispose();
+  }
+
+  void _onChange() => setState(() {});
+
+  String _basisLine(LateCheckout late) {
+    if (late.band == 'EXTRA_NIGHTS') {
+      return 'Stayed ${late.actualNights} night${late.actualNights == 1 ? '' : 's'}, '
+          'booked for ${late.plannedNights} · ${late.extraNights} extra × '
+          '${formatPrice(late.lastNightRate)}';
+    }
+    return '${late.bandLabel} · ${late.percent}% of ${formatPrice(late.lastNightRate)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final late = widget.late;
+    final text = widget.controller.text.trim();
+    final parsed = num.tryParse(text);
+    final valid = text.isNotEmpty && parsed != null && parsed >= 0;
+    final dueAt = late.deadline == null
+        ? null
+        : formatDateTime(late.deadline!.toIso8601String());
+
+    return Dialog(
+      backgroundColor: AppTheme.card,
+      insetPadding: const EdgeInsets.all(20),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(28, 30, 28, 26),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Late checkout',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 19),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                text: TextSpan(
+                  style: const TextStyle(fontSize: 14.5, height: 1.5, color: AppTheme.text),
+                  children: [
+                    const TextSpan(text: 'This stay was due out at '),
+                    if (dueAt != null)
+                      TextSpan(
+                        text: dueAt,
+                        style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.heading),
+                      ),
+                    const TextSpan(text: ' — the guest is '),
+                    TextSpan(
+                      text: late.lateLabel ?? 'late',
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.heading),
+                    ),
+                    const TextSpan(text: '.'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _basisLine(late),
+                      style: const TextStyle(fontSize: 13, height: 1.45, color: AppTheme.muted),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'suggests ${formatPrice(late.suggestedCharge)}',
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.heading,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              NeuField(
+                controller: widget.controller,
+                label: 'Charge the guest',
+                keyboardType: const TextInputType.numberWithOptions(decimal: false),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Goes on the bill as its own line, taxed with the room. Set it to 0 to waive it.',
+                  style: TextStyle(fontSize: 12.5, height: 1.4, color: AppTheme.muted),
+                ),
+              ),
+              const SizedBox(height: 20),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _LateCheckoutGhostButton(
+                        label: 'Back',
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _LateCheckoutGhostButton(
+                        label: 'Waive & check out',
+                        onPressed: () => Navigator.pop(context, 0),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              _LateCheckoutPrimaryButton(
+                label: valid ? 'Charge ${formatPrice(parsed)} & check out' : 'Charge & check out',
+                onPressed: valid ? () => Navigator.pop(context, parsed) : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The brand-gradient CTA, matching the web dialog's `.late-modal__btn--primary`
+/// (`linear-gradient(135deg, --brand-lift, --brand)`) — the one fill in this
+/// dialog saturated enough to say "this is the button to press".
+class _LateCheckoutPrimaryButton extends StatefulWidget {
+  final String label;
+  final VoidCallback? onPressed;
+
+  const _LateCheckoutPrimaryButton({required this.label, required this.onPressed});
+
+  @override
+  State<_LateCheckoutPrimaryButton> createState() => _LateCheckoutPrimaryButtonState();
+}
+
+class _LateCheckoutPrimaryButtonState extends State<_LateCheckoutPrimaryButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: GestureDetector(
+        onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+        onTapCancel: enabled ? () => setState(() => _down = false) : null,
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 50),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: _down
+                  ? const [AppTheme.sidebarBrand, AppTheme.sidebarBrandInk]
+                  : const [Color(0xFF7C5CE8), AppTheme.sidebarBrand],
+            ),
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            boxShadow: _down
+                ? null
+                : const [
+                    BoxShadow(color: Color(0x4A5B3FD9), offset: Offset(0, 10), blurRadius: 22),
+                  ],
+          ),
+          child: Center(
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The plain "Back" / "Waive & check out" options beside the primary button.
+///
+/// Built rather than reusing [NeuButton]: that widget's label is pinned to a
+/// single ellipsized line, which clips "Waive & check out" at phone width —
+/// this lets the label wrap onto a second line instead, matching the web
+/// button's own natural wrap.
+class _LateCheckoutGhostButton extends StatefulWidget {
+  final String label;
+  final VoidCallback? onPressed;
+
+  const _LateCheckoutGhostButton({required this.label, required this.onPressed});
+
+  @override
+  State<_LateCheckoutGhostButton> createState() => _LateCheckoutGhostButtonState();
+}
+
+class _LateCheckoutGhostButtonState extends State<_LateCheckoutGhostButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    return Opacity(
+      opacity: enabled ? (_down ? 0.85 : 1) : 0.5,
+      child: GestureDetector(
+        onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+        onTapCancel: enabled ? () => setState(() => _down = false) : null,
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            border: Border.all(color: AppTheme.border),
+            boxShadow: _down ? null : AppTheme.subtle,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            widget.label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -534,78 +534,61 @@ class _RecipeEditorScreenState extends ConsumerState<_RecipeEditorScreen> {
       appBar: AppBar(title: Text(widget.recipe.name)),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s16, AppTheme.s32),
+          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s24),
           children: [
-            Text(
-              'What one serving takes out of the store cupboard.',
-              style: Theme.of(context).textTheme.bodySmall,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 14, color: AppTheme.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'What one serving takes out of the store cupboard.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11.5, height: 1.3),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.s16),
+            const SizedBox(height: AppTheme.s12),
             if (_error != null) ...[
               _ErrorBanner(_error!),
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
             ],
             if (widget.recipe.portions.isNotEmpty) ...[
               NeuCard(
+                padding: const EdgeInsets.all(AppTheme.s12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SectionLabel('Portion size', number: 1),
                     const SizedBox(height: AppTheme.s12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: NeuButton(
-                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12),
-                            onPressed: () => setState(() {
-                              _perSize = false;
-                              _scope = null;
-                            }),
-                            primary: !_perSize,
-                            child: const Text(
-                              'Same for every size',
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              softWrap: true,
-                              overflow: TextOverflow.visible,
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppTheme.s8),
-                        Expanded(
-                          child: NeuButton(
-                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12),
-                            onPressed: () => setState(() {
-                              _perSize = true;
-                              _scope = widget.recipe.portions.first.id;
-                              for (final p in widget.recipe.portions) {
-                                _rowsByScope.putIfAbsent(p.id, () => [_Row()]);
-                              }
-                            }),
-                            primary: _perSize,
-                            child: const Text(
-                              'Different per size',
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              softWrap: true,
-                              overflow: TextOverflow.visible,
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ),
-                      ],
+                    _SegmentedToggle(
+                      value: _perSize,
+                      leftLabel: 'Same for every size',
+                      rightLabel: 'Different per size',
+                      onChanged: (perSize) => setState(() {
+                        _perSize = perSize;
+                        if (perSize) {
+                          _scope = widget.recipe.portions.first.id;
+                          for (final p in widget.recipe.portions) {
+                            _rowsByScope.putIfAbsent(p.id, () => [_Row()]);
+                          }
+                        } else {
+                          _scope = null;
+                        }
+                      }),
                     ),
                     if (_perSize) ...[
                       const SizedBox(height: AppTheme.s12),
                       Wrap(
                         spacing: AppTheme.s8,
+                        runSpacing: AppTheme.s8,
                         children: [
                           for (final p in widget.recipe.portions)
-                            ChoiceChip(
-                              label: Text(p.label),
+                            _SizeChip(
+                              label: p.label,
                               selected: _scope == p.id,
-                              onSelected: (_) => setState(() => _scope = p.id),
+                              onTap: () => setState(() => _scope = p.id),
                             ),
                         ],
                       ),
@@ -613,9 +596,10 @@ class _RecipeEditorScreenState extends ConsumerState<_RecipeEditorScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
             ],
             NeuCard(
+              padding: const EdgeInsets.all(AppTheme.s12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -626,22 +610,26 @@ class _RecipeEditorScreenState extends ConsumerState<_RecipeEditorScreen> {
                       padding: const EdgeInsets.only(bottom: AppTheme.s8),
                       child: _ingredientRow(i, materials),
                     ),
-                  TextButton.icon(
-                    onPressed: () => setState(() => _rows.add(_Row())),
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('Add an ingredient'),
-                  ),
+                  _AddIngredientButton(onTap: () => setState(() => _rows.add(_Row()))),
                 ],
               ),
             ),
-            const SizedBox(height: AppTheme.s24),
+            const SizedBox(height: AppTheme.s16),
             NeuButton(
               primary: true,
               expand: true,
               onPressed: submitting ? null : _save,
               child: submitting
                   ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save recipe'),
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.check_rounded, size: 17, color: Colors.white),
+                        SizedBox(width: 6),
+                        Text('Save recipe'),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -658,50 +646,82 @@ class _RecipeEditorScreenState extends ConsumerState<_RecipeEditorScreen> {
         break;
       }
     }
-    return Row(
-      children: [
-        Expanded(
-          flex: 3,
-          child: NeuPressed(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                isExpanded: true,
-                value: row.materialId,
-                hint: const Text('Choose a material…', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
-                dropdownColor: AppTheme.card,
-                items: [
-                  for (final m in materials)
-                    DropdownMenuItem(value: m.id, child: Text(m.name)),
-                ],
-                onChanged: (v) => setState(() => row.materialId = v),
-              ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(AppTheme.s8, AppTheme.s4, AppTheme.s4, AppTheme.s4),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.subtle,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '${index + 1}',
+              style: const TextStyle(color: AppTheme.accent, fontSize: 10.5, fontWeight: FontWeight.w700),
             ),
           ),
-        ),
-        const SizedBox(width: AppTheme.s8),
-        Expanded(
-          flex: 2,
-          child: NeuPressed(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            flex: 3,
+            child: _MaterialField(
+              materials: materials,
+              value: row.materialId,
+              onChanged: (v) => setState(() => row.materialId = v),
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 22,
+            margin: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
+            color: AppTheme.border,
+          ),
+          SizedBox(
+            width: 48,
             child: TextField(
               controller: TextEditingController(text: row.quantity)
                 ..selection = TextSelection.collapsed(offset: row.quantity.length),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600),
+              decoration: const InputDecoration(
                 border: InputBorder.none,
                 isDense: true,
-                hintText: material != null ? _recipeUnitLabel(material.unit) : '0',
+                hintText: '0',
+                contentPadding: EdgeInsets.zero,
               ),
               onChanged: (v) => row.quantity = v,
             ),
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.muted),
-          onPressed: () => setState(() => _rows.removeAt(index)),
-        ),
-      ],
+          if (material != null) ...[
+            const SizedBox(width: 3),
+            Text(_recipeUnitLabel(material.unit), style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+          ],
+          const SizedBox(width: AppTheme.s4),
+          GestureDetector(
+            onTap: () => setState(() => _rows.removeAt(index)),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.danger.withValues(alpha: 0.07),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close_rounded, size: 14, color: AppTheme.danger),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -740,6 +760,273 @@ class _RecipeEditorScreenState extends ConsumerState<_RecipeEditorScreen> {
     } else {
       setState(() => _error = ref.read(inventoryViewModelProvider).error ?? 'Could not save that recipe.');
     }
+  }
+}
+
+/// A two-way pill toggle for "Same for every size" vs "Different per size" —
+/// a single capsule with a sliding fill rather than two separate buttons, so
+/// the choice reads as one control instead of a pair of options.
+class _SegmentedToggle extends StatelessWidget {
+  final bool value;
+  final String leftLabel;
+  final String rightLabel;
+  final ValueChanged<bool> onChanged;
+
+  const _SegmentedToggle({
+    required this.value,
+    required this.leftLabel,
+    required this.rightLabel,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _segment(leftLabel, !value, () => onChanged(false))),
+          Expanded(child: _segment(rightLabel, value, () => onChanged(true))),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          boxShadow: selected ? AppTheme.subtle : null,
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          softWrap: true,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.15,
+            color: selected ? Colors.white : AppTheme.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact pill chip for picking which portion size is being edited —
+/// matches the status [_Badge] look elsewhere on this panel, with a check
+/// mark standing in for the selected outline.
+class _SizeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SizeChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.accent.withValues(alpha: 0.10) : AppTheme.card,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border, width: selected ? 1.4 : 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              const Icon(Icons.check_rounded, size: 13, color: AppTheme.accent),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: selected ? AppTheme.accent : AppTheme.text,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A dashed-style call-to-action for appending an ingredient row — reads as
+/// an inline "add" affordance that belongs to the card, rather than a loose
+/// [TextButton] floating under the list.
+class _AddIngredientButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AddIngredientButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.accent.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3), width: 1.2),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_rounded, size: 16, color: AppTheme.accent),
+            SizedBox(width: 4),
+            Text(
+              'Add an ingredient',
+              style: TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The ingredient row's material picker — a plain tappable field that opens
+/// a custom rounded popup instead of Flutter's default [DropdownButton]
+/// menu, so the selected row gets an accent tint and a check mark instead of
+/// a flat grey highlight.
+class _MaterialField extends StatelessWidget {
+  final List<RawMaterial> materials;
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _MaterialField({required this.materials, required this.value, required this.onChanged});
+
+  RawMaterial? get _selected {
+    for (final m in materials) {
+      if (m.id == value) return m;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _selected;
+    return Builder(
+      builder: (fieldContext) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () async {
+          final picked = await _showMaterialMenu(fieldContext, materials, value);
+          if (picked != null) onChanged(picked);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  selected?.name ?? 'Choose a material…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected != null ? AppTheme.heading : AppTheme.muted,
+                    fontSize: 13,
+                    fontWeight: selected != null ? FontWeight.w500 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              const Icon(Icons.expand_more_rounded, size: 18, color: AppTheme.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<int?> _showMaterialMenu(BuildContext context, List<RawMaterial> materials, int? current) async {
+  final box = context.findRenderObject() as RenderBox;
+  final overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+  final topLeft = box.localToGlobal(Offset(0, box.size.height + 6), ancestor: overlay);
+  final bottomRight = box.localToGlobal(Offset(box.size.width, box.size.height + 6), ancestor: overlay);
+  final position = RelativeRect.fromRect(Rect.fromPoints(topLeft, bottomRight), Offset.zero & overlay.size);
+
+  return showMenu<int>(
+    context: context,
+    position: position,
+    color: AppTheme.card,
+    surfaceTintColor: Colors.transparent,
+    elevation: 10,
+    shadowColor: const Color(0x33101828),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      side: const BorderSide(color: AppTheme.border),
+    ),
+    constraints: BoxConstraints(minWidth: box.size.width.clamp(160, 320), maxWidth: box.size.width.clamp(160, 320)),
+    items: [
+      for (final m in materials)
+        PopupMenuItem<int>(
+          value: m.id,
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4, vertical: 1),
+          child: _MaterialMenuRow(name: m.name, selected: m.id == current),
+        ),
+    ],
+  );
+}
+
+/// One row of the material popup — accent-tinted background and a check
+/// mark when it's the current selection, a plain row otherwise.
+class _MaterialMenuRow extends StatelessWidget {
+  final String name;
+  final bool selected;
+  const _MaterialMenuRow({required this.name, required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 9),
+      decoration: BoxDecoration(
+        color: selected ? AppTheme.accent.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                color: selected ? AppTheme.accent : AppTheme.heading,
+              ),
+            ),
+          ),
+          if (selected) const Icon(Icons.check_rounded, size: 16, color: AppTheme.accent),
+        ],
+      ),
+    );
   }
 }
 
