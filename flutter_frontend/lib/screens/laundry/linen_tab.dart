@@ -5,8 +5,10 @@ import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../bookings/receipt_download.dart';
 import '../theme.dart';
 import 'laundry_parts.dart';
+import 'linen_history_excel.dart';
 import 'linen_item_form_screen.dart';
 import 'linen_loss_screen.dart';
 import 'linen_receive_screen.dart';
@@ -667,6 +669,7 @@ class _LinenHistory extends StatefulWidget {
 class _LinenHistoryState extends State<_LinenHistory> {
   bool _open = false;
   String _filter = 'ALL';
+  bool _downloading = false;
 
   static const _filters = {
     'ALL': null,
@@ -675,6 +678,29 @@ class _LinenHistoryState extends State<_LinenHistory> {
     'ROOMS': ['CHANGED'],
     'LOSS': ['LOST', 'DAMAGED'],
   };
+
+  Future<void> _download(List<LinenMovement> rows) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _downloading = true);
+    try {
+      final path = await LinenHistoryExcel.download(rows);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Excel file saved.'),
+          backgroundColor: AppTheme.heading,
+          action: canOpenSavedFile
+              ? SnackBarAction(label: 'Open', textColor: Colors.white, onPressed: () => openSavedFile(path, 'linen-activity.xlsx'))
+              : null,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Could not save the file: $e'), backgroundColor: AppTheme.danger));
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -685,24 +711,54 @@ class _LinenHistoryState extends State<_LinenHistory> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: () => setState(() => _open = !_open),
-            child: Row(
-              children: [
-                Expanded(child: Text('History', style: Theme.of(context).textTheme.titleSmall)),
-                Icon(_open ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: AppTheme.muted),
-              ],
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _open = !_open),
+                  child: Text('History', style: Theme.of(context).textTheme.titleSmall),
+                ),
+              ),
+              if (_open)
+                TextButton.icon(
+                  onPressed: filtered.isEmpty || _downloading ? null : () => _download(filtered),
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), visualDensity: VisualDensity.compact),
+                  icon: _downloading
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.file_download_outlined, size: 16),
+                  label: const Text('Download Excel'),
+                ),
+              InkWell(
+                onTap: () => setState(() => _open = !_open),
+                child: Icon(_open ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: AppTheme.muted),
+              ),
+            ],
           ),
           if (_open) ...[
             const SizedBox(height: AppTheme.s8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final key in _filters.keys)
-                  _FilterChip(label: key == 'ALL' ? 'All' : key == 'SENT' ? 'Sent' : key == 'RECEIVED' ? 'Received' : key == 'ROOMS' ? 'Rooms' : 'Lost or damaged', selected: _filter == key, onTap: () => setState(() => _filter = key)),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final key in _filters.keys)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: _FilterChip(
+                        label: key == 'ALL'
+                            ? 'All'
+                            : key == 'SENT'
+                                ? 'Sent'
+                                : key == 'RECEIVED'
+                                    ? 'Received'
+                                    : key == 'ROOMS'
+                                        ? 'Rooms'
+                                        : 'Lost or damaged',
+                        selected: _filter == key,
+                        onTap: () => setState(() => _filter = key),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: AppTheme.s8),
             if (filtered.isEmpty)
@@ -711,7 +767,7 @@ class _LinenHistoryState extends State<_LinenHistory> {
                 style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
               )
             else
-              for (final m in filtered.take(50)) _MovementRow(movement: m),
+              _HistoryTable(movements: filtered),
           ],
         ],
       ),
@@ -742,34 +798,102 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _MovementRow extends StatelessWidget {
-  final LinenMovement movement;
-  const _MovementRow({required this.movement});
+/// The linen history as a classic spreadsheet — the same Date/Time/Action/
+/// Room/Item/Qty/Washed by/Charge/Entered by/Note columns as the web's
+/// LinenActivity table, scrolling sideways rather than cramming onto a
+/// phone-width screen.
+class _HistoryTable extends StatelessWidget {
+  final List<LinenMovement> movements;
+  const _HistoryTable({required this.movements});
+
+  static const _cols = <(String, double, bool)>[
+    ('Date', 76, false),
+    ('Time', 64, false),
+    ('Action', 128, true),
+    ('Room', 56, false),
+    ('Item', 110, true),
+    ('Qty', 44, false),
+    ('Washed by', 104, true),
+    ('Charge (₹)', 80, false),
+    ('Entered by', 104, true),
+    ('Note', 140, true),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${kLinenMoveLabel[movement.kind] ?? movement.kind} · ${movement.itemName}', style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                Text(
-                  [
-                    formatDateTime(movement.createdAt),
-                    if (movement.roomNumber != null) 'Room ${movement.roomNumber}',
-                    if (movement.washedBy != null) movement.washedBy!,
-                  ].join(' · '),
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+    final totalWidth = _cols.fold<double>(0, (sum, c) => sum + c.$2);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: totalWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
                 ),
-              ],
-            ),
+                child: Row(children: [for (final c in _cols) _HeaderCell(c.$1, width: c.$2, alignStart: c.$3)]),
+              ),
+              for (var i = 0; i < movements.length; i++)
+                _HistoryRow(movement: movements[i], shaded: i.isOdd),
+            ],
           ),
-          Text('${movement.quantity}', style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13)),
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryRow extends StatelessWidget {
+  final LinenMovement movement;
+  final bool shaded;
+  const _HistoryRow({required this.movement, required this.shaded});
+
+  static String _charge(num? n) {
+    if (n == null) return '';
+    return n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(String text, double width, {bool alignStart = false}) => SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+        child: Text(
+          text,
+          textAlign: alignStart ? TextAlign.left : TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppTheme.text, fontSize: 12),
+        ),
+      ),
+    );
+
+    final created = DateTime.tryParse(movement.createdAt)?.toLocal();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
+        border: const Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+      ),
+      child: Row(
+        children: [
+          cell(formatDate(created), 76),
+          cell(formatTimeOfDay(movement.createdAt), 64),
+          cell(kLinenMoveLabel[movement.kind] ?? movement.kind, 128, alignStart: true),
+          cell(movement.roomNumber ?? '', 56),
+          cell(movement.itemName, 110, alignStart: true),
+          cell('${movement.quantity}', 44),
+          cell(movement.washedBy ?? '', 104, alignStart: true),
+          cell(_charge(movement.washCharge), 80),
+          cell(movement.userName ?? '', 104, alignStart: true),
+          cell(movement.note ?? '', 140, alignStart: true),
         ],
       ),
     );
