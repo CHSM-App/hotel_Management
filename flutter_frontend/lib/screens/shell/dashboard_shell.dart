@@ -15,11 +15,14 @@ import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../food/food_billing_screen.dart';
 import '../food/menu_setup_screen.dart';
+import '../housekeeping/housekeeping_screen.dart';
 import '../income/income_screen.dart';
+import '../laundry/laundry_screen.dart';
 import '../placeholder_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reports/reports_screen.dart';
 import '../rooms/rooms_rates_screen.dart';
+import '../services/services_screen.dart';
 import '../staff/staff_roles_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
@@ -324,6 +327,12 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const EventBillingScreen();
       case 'rooms':
         return const RoomsRatesScreen();
+      case 'housekeeping':
+        return const HousekeepingScreen();
+      case 'laundry':
+        return const LaundryScreen();
+      case 'otherServices':
+        return const ServicesScreen();
       case 'menu':
         return const MenuSetupScreen();
       // The three keyed separately (not just a different initialTab on the

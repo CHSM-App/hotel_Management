@@ -103,6 +103,9 @@ class Lodge {
   final bool hasEvents;
   final bool hasAssets;
   final bool hasExpenses;
+  final bool hasOtherServices;
+  final bool hasHousekeeping;
+  final bool hasLaundry;
 
   const Lodge({
     required this.id,
@@ -130,6 +133,9 @@ class Lodge {
     this.hasEvents = false,
     this.hasAssets = false,
     this.hasExpenses = false,
+    this.hasOtherServices = false,
+    this.hasHousekeeping = false,
+    this.hasLaundry = false,
   });
 
   factory Lodge.fromJson(Map<String, dynamic> json) => Lodge(
@@ -158,6 +164,9 @@ class Lodge {
     hasEvents: asBool(json['hasEvents']),
     hasAssets: asBool(json['hasAssets']),
     hasExpenses: asBool(json['hasExpenses']),
+    hasOtherServices: asBool(json['hasOtherServices']),
+    hasHousekeeping: asBool(json['hasHousekeeping']),
+    hasLaundry: asBool(json['hasLaundry']),
   );
 }
 

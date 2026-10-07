@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../domain/models/invoice.dart';
+import '../../domain/models/lodge_service.dart' show ServiceUsage;
 import '../../domain/repository/billing_repo.dart';
 import '../api/api_service.dart';
 
@@ -103,4 +104,22 @@ class BillingImpl implements BillingRepository {
   @override
   Future<BillSeries> updateBillingSeries(String series, int nextNumber) =>
       api.updateBillingSeries(series, nextNumber);
+
+  @override
+  Future<List<ServiceUsage>> billableServiceUsages() =>
+      api.serviceUsages(status: 'tobill');
+
+  @override
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) =>
+      api.previewServiceBill(usageIds);
+
+  @override
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  ) => api.issueServiceInvoice(usageIds, body);
+
+  @override
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId) =>
+      api.addServicesToRoom(usageIds, bookingId);
 }

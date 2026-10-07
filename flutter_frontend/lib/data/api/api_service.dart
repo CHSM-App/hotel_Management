@@ -12,11 +12,14 @@ import '../../domain/models/event_booking.dart';
 import '../../domain/models/expense.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/housekeeping.dart';
 import '../../domain/models/income.dart';
 import '../../domain/models/inventory.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/json.dart';
 import '../../domain/models/late_checkout.dart';
+import '../../domain/models/laundry.dart';
+import '../../domain/models/lodge_service.dart';
 import '../../domain/models/me.dart';
 import '../../domain/models/menu.dart';
 import '../../domain/models/quote.dart';
@@ -494,6 +497,41 @@ class ApiService {
     final invoice = map['invoice'];
     return Invoice.fromJson(
       invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
+  /// What a standalone service bill will say, for the selected completed
+  /// usages — mirrors Billing.jsx's own `/billing/services/preview?ids=`.
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) async {
+    final res = await _dio.get(
+      '/billing/services/preview',
+      queryParameters: {'ids': usageIds.join(',')},
+    );
+    return ServiceBillPreview.fromJson(_map(res.data));
+  }
+
+  /// Bill the selected completed service usages on their own document.
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post(
+      '/billing/services/invoice',
+      data: {...body, 'usageIds': usageIds},
+    );
+    final map = _map(res.data);
+    final invoice = map['invoice'];
+    return Invoice.fromJson(
+      invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
+  /// Charges the selected, completed services to [bookingId]'s room bill
+  /// instead of billing them on their own.
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId) async {
+    await _dio.post(
+      '/billing/services/add-to-room',
+      data: {'usageIds': usageIds, 'bookingId': bookingId},
     );
   }
 
@@ -2167,6 +2205,154 @@ class ApiService {
 
   Future<void> deleteRole(String roleKey) async {
     await _dio.delete('/roles/$roleKey');
+  }
+
+  // ===== OTHER SERVICES (rooms.manage / bookings.manage / billing.manage) =====
+
+  Future<List<LodgeService>> lodgeServices({bool includeInactive = false}) async {
+    final res = await _dio.get('/lodge-services', queryParameters: {'includeInactive': includeInactive});
+    return (_map(res.data)['services'] as List? ?? [])
+        .map((e) => LodgeService.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<LodgeService> createLodgeService(Map<String, dynamic> body) async {
+    final res = await _dio.post('/lodge-services', data: body);
+    return LodgeService.fromJson(_map(res.data)['service'] as Map<String, dynamic>);
+  }
+
+  Future<LodgeService> updateLodgeService(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/lodge-services/$id', data: body);
+    return LodgeService.fromJson(_map(res.data)['service'] as Map<String, dynamic>);
+  }
+
+  Future<List<ServiceUsage>> serviceUsages({String status = 'all'}) async {
+    final res = await _dio.get('/lodge-services/usages', queryParameters: {'status': status});
+    return (_map(res.data)['usages'] as List? ?? [])
+        .map((e) => ServiceUsage.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ServiceUsage> startServiceUsage(Map<String, dynamic> body) async {
+    final res = await _dio.post('/lodge-services/usages', data: body);
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  Future<ServiceUsage> completeServiceUsage(int id) async {
+    final res = await _dio.post('/lodge-services/usages/$id/complete');
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  Future<ServiceUsage> cancelServiceUsage(int id) async {
+    final res = await _dio.post('/lodge-services/usages/$id/cancel');
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  // ===== HOUSEKEEPING (housekeeping.manage) =====
+
+  Future<List<HousekeepingRoom>> housekeepingRooms() async {
+    final res = await _dio.get('/housekeeping/rooms');
+    return (_map(res.data)['rooms'] as List? ?? [])
+        .map((e) => HousekeepingRoom.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> startCleaning(int roomId) async {
+    await _dio.post('/housekeeping/rooms/$roomId/start');
+  }
+
+  Future<void> releaseRoom(int roomId) async {
+    await _dio.post('/housekeeping/rooms/$roomId/release');
+  }
+
+  Future<void> finishCleaning(int roomId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/rooms/$roomId/done', data: body);
+  }
+
+  Future<void> markRoomDirty(int roomId) async {
+    await _dio.post('/housekeeping/rooms/$roomId/dirty');
+  }
+
+  Future<void> setRoomOutOfOrder(int roomId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/rooms/$roomId/out-of-order', data: body);
+  }
+
+  Future<List<HousekeepingIssue>> housekeepingIssues({String scope = 'all'}) async {
+    final res = await _dio.get('/housekeeping/issues', queryParameters: {'scope': scope});
+    return (_map(res.data)['issues'] as List? ?? [])
+        .map((e) => HousekeepingIssue.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<OpenIssueSummary> openIssueSummary() async {
+    final res = await _dio.get('/housekeeping/issues/count');
+    return OpenIssueSummary.fromJson(_map(res.data));
+  }
+
+  Future<void> closeHousekeepingIssue(int logId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/issues/$logId/close', data: body);
+  }
+
+  // ===== LAUNDRY (laundry.manage) =====
+
+  Future<LinenBoard> linenBoard() async {
+    final res = await _dio.get('/housekeeping/linen');
+    return LinenBoard.fromJson(_map(res.data));
+  }
+
+  Future<void> createLinenItem(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/items', data: body);
+  }
+
+  Future<void> updateLinenItem(int id, Map<String, dynamic> body) async {
+    await _dio.patch('/housekeeping/linen/items/$id', data: body);
+  }
+
+  Future<void> receiveLinenHandovers(List<int> movementIds) async {
+    await _dio.post('/housekeeping/linen/handovers/receive', data: {'movementIds': movementIds});
+  }
+
+  Future<void> sendToLaundry(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/send', data: body);
+  }
+
+  Future<void> receiveFromLaundry(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/receive', data: body);
+  }
+
+  Future<void> recordLinenLoss(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/loss', data: body);
+  }
+
+  Future<List<RecentGarment>> recentGarments() async {
+    final res = await _dio.get('/housekeeping/laundry/garments');
+    return (_map(res.data)['garments'] as List? ?? [])
+        .map((e) => RecentGarment.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<LaundryGuestStay>> laundryInHouseGuests() async {
+    final res = await _dio.get('/housekeeping/laundry/in-house');
+    return (_map(res.data)['guests'] as List? ?? [])
+        .map((e) => LaundryGuestStay.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<LaundryOrder>> laundryOrders({String scope = 'all'}) async {
+    final res = await _dio.get('/housekeeping/laundry/orders', queryParameters: {'scope': scope});
+    return (_map(res.data)['orders'] as List? ?? [])
+        .map((e) => LaundryOrder.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<LaundryOrder> createLaundryOrder(Map<String, dynamic> body) async {
+    final res = await _dio.post('/housekeeping/laundry/orders', data: body);
+    return LaundryOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
+  }
+
+  Future<LaundryOrder> setLaundryStatus(int id, Map<String, dynamic> body) async {
+    final res = await _dio.post('/housekeeping/laundry/orders/$id/status', data: body);
+    return LaundryOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

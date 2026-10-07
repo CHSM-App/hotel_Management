@@ -509,6 +509,97 @@ class FoodBillPreview {
   num get balanceDue => amounts?.totalAmount ?? 0;
 }
 
+/// A GST or non-GST reading of a standalone service bill — the fields
+/// priceServiceBill/buildBreakdown emit under their "service*" names, since a
+/// service-only document has no room or food side to share them with.
+class ServiceBillSide {
+  final String? documentType;
+  final num serviceSubtotal;
+  final num serviceCgstAmount;
+  final num serviceSgstAmount;
+  final num serviceCgstRatePercent;
+  final num serviceSgstRatePercent;
+  final num discountAmount;
+  final num discountPercent;
+  final num roundOff;
+  final num totalAmount;
+
+  const ServiceBillSide({
+    this.documentType,
+    this.serviceSubtotal = 0,
+    this.serviceCgstAmount = 0,
+    this.serviceSgstAmount = 0,
+    this.serviceCgstRatePercent = 0,
+    this.serviceSgstRatePercent = 0,
+    this.discountAmount = 0,
+    this.discountPercent = 0,
+    this.roundOff = 0,
+    this.totalAmount = 0,
+  });
+
+  factory ServiceBillSide.fromJson(Map<String, dynamic> json) =>
+      ServiceBillSide(
+        documentType: asStringOrNull(json['documentType']),
+        serviceSubtotal: asNum(json['serviceSubtotal']),
+        serviceCgstAmount: asNum(json['serviceCgstAmount']),
+        serviceSgstAmount: asNum(json['serviceSgstAmount']),
+        serviceCgstRatePercent: asNum(json['serviceCgstRatePercent']),
+        serviceSgstRatePercent: asNum(json['serviceSgstRatePercent']),
+        discountAmount: asNum(json['discountAmount']),
+        discountPercent: asNum(json['discountPercent']),
+        roundOff: asNum(json['roundOff']),
+        totalAmount: asNum(json['totalAmount']),
+      );
+}
+
+/// What a standalone service bill will say, before it is issued — GET
+/// /billing/services/preview?ids=. No room, no food, no advance: a service
+/// bill is whatever laundry/pool/gaming usages the desk selected (already
+/// held on screen as [ServiceUsage] rows), priced on their own document.
+class ServiceBillPreview {
+  final String? tableLabel;
+  final String? customerName;
+  final String? customerPhone;
+  final bool isGstRegistered;
+  final String? gstin;
+  final ServiceBillSide? gst;
+  final ServiceBillSide? nonGst;
+
+  const ServiceBillPreview({
+    this.tableLabel,
+    this.customerName,
+    this.customerPhone,
+    this.isGstRegistered = false,
+    this.gstin,
+    this.gst,
+    this.nonGst,
+  });
+
+  factory ServiceBillPreview.fromJson(Map<String, dynamic> json) =>
+      ServiceBillPreview(
+        tableLabel: asStringOrNull(json['tableLabel']),
+        customerName: asStringOrNull(json['customerName']),
+        customerPhone: asStringOrNull(json['customerPhone']),
+        isGstRegistered: asBool(json['isGstRegistered']),
+        gstin: asStringOrNull(json['gstin']),
+        gst: json['gst'] == null
+            ? null
+            : ServiceBillSide.fromJson(json['gst'] as Map<String, dynamic>),
+        nonGst: json['nonGst'] == null
+            ? null
+            : ServiceBillSide.fromJson(json['nonGst'] as Map<String, dynamic>),
+      );
+
+  /// Which side is actually issued — decided by the property, not the desk.
+  String get billingSide => isGstRegistered ? 'GST' : 'NON_GST';
+
+  ServiceBillSide? get amounts => isGstRegistered ? gst : nonGst;
+
+  /// No advance ever rides on a service bill, so what the guest hands over
+  /// is the total.
+  num get balanceDue => amounts?.totalAmount ?? 0;
+}
+
 /// One extra noted on the day of a function, not part of the original
 /// quote — "50 more chairs", possibly still waiting on a price before the
 /// function can be billed.

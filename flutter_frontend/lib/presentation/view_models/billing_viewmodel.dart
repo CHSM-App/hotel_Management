@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
+import '../../domain/models/lodge_service.dart' show ServiceUsage;
 import '../../domain/usecase/billing_usecase.dart';
 // A pure formatter over intl, no widgets — the message it builds is read by
 // both this class and the screen, so it is formatted once, here.
@@ -16,6 +17,7 @@ import 'booking_viewmodel.dart' show BookingViewModel;
 class BillingState {
   final AsyncValue<List<BillableStay>> queue;
   final AsyncValue<List<FoodTab>> foodQueue;
+  final AsyncValue<List<ServiceUsage>> serviceQueue;
   final AsyncValue<List<Invoice>> invoices;
 
   /// Every advance receipt on file for the lodge — merged alongside
@@ -44,6 +46,12 @@ class BillingState {
   /// three targets is ever non-null.
   final EventBooking? eventTarget;
   final EventBillPreview? eventPreview;
+
+  /// Set instead of the other targets when the desk is billing one or more
+  /// completed services (laundry, pool, gaming ...) on their own document —
+  /// the Services tab's "Bill selected".
+  final List<ServiceUsage>? serviceTarget;
+  final ServiceBillPreview? servicePreview;
   final bool previewing;
   final String? error;
 
@@ -75,6 +83,7 @@ class BillingState {
   const BillingState({
     this.queue = const AsyncValue.loading(),
     this.foodQueue = const AsyncValue.loading(),
+    this.serviceQueue = const AsyncValue.loading(),
     this.invoices = const AsyncValue.loading(),
     this.advanceReceipts = const AsyncValue.loading(),
     this.target,
@@ -84,6 +93,8 @@ class BillingState {
     this.billAnyway = false,
     this.eventTarget,
     this.eventPreview,
+    this.serviceTarget,
+    this.servicePreview,
     this.previewing = false,
     this.error,
     this.includeLateCheckout = true,
@@ -97,6 +108,7 @@ class BillingState {
   BillingState copyWith({
     AsyncValue<List<BillableStay>>? queue,
     AsyncValue<List<FoodTab>>? foodQueue,
+    AsyncValue<List<ServiceUsage>>? serviceQueue,
     AsyncValue<List<Invoice>>? invoices,
     AsyncValue<List<AdvanceReceipt>>? advanceReceipts,
     BillableStay? target,
@@ -112,6 +124,10 @@ class BillingState {
     bool clearEventTarget = false,
     EventBillPreview? eventPreview,
     bool clearEventPreview = false,
+    List<ServiceUsage>? serviceTarget,
+    bool clearServiceTarget = false,
+    ServiceBillPreview? servicePreview,
+    bool clearServicePreview = false,
     bool? previewing,
     String? error,
     bool clearError = false,
@@ -124,6 +140,7 @@ class BillingState {
   }) => BillingState(
     queue: queue ?? this.queue,
     foodQueue: foodQueue ?? this.foodQueue,
+    serviceQueue: serviceQueue ?? this.serviceQueue,
     invoices: invoices ?? this.invoices,
     advanceReceipts: advanceReceipts ?? this.advanceReceipts,
     target: clearTarget ? null : (target ?? this.target),
@@ -133,6 +150,8 @@ class BillingState {
     billAnyway: billAnyway ?? this.billAnyway,
     eventTarget: clearEventTarget ? null : (eventTarget ?? this.eventTarget),
     eventPreview: clearEventPreview ? null : (eventPreview ?? this.eventPreview),
+    serviceTarget: clearServiceTarget ? null : (serviceTarget ?? this.serviceTarget),
+    servicePreview: clearServicePreview ? null : (servicePreview ?? this.servicePreview),
     previewing: previewing ?? this.previewing,
     error: clearError ? null : (error ?? this.error),
     includeLateCheckout: includeLateCheckout ?? this.includeLateCheckout,
@@ -158,6 +177,8 @@ class BillingState {
       ? (foodPreview?.balanceDue ?? 0)
       : eventTarget != null
       ? (eventPreview?.balanceDue ?? 0)
+      : serviceTarget != null
+      ? (servicePreview?.balanceDue ?? 0)
       : (preview?.balanceDue ?? 0);
 
   /// A stay paid in full up front, or (for a table) nothing at all still
@@ -182,7 +203,10 @@ class BillingState {
   /// nothing typed into the payment rows moves it. A bill cannot be cut until
   /// the money recorded equals it.
   String? get settlementProblem {
-    if (preview == null && foodPreview == null && eventPreview == null) {
+    if (preview == null &&
+        foodPreview == null &&
+        eventPreview == null &&
+        servicePreview == null) {
       return null;
     }
     if (eventPreview?.hasUnpricedExtras == true) {
@@ -235,6 +259,7 @@ class BillingViewModel extends StateNotifier<BillingState> {
     } catch (e, st) {
       state = state.copyWith(foodQueue: AsyncValue.error(e, st));
     }
+    await loadServices();
     try {
       final rows = await usecase.invoices();
       state = state.copyWith(invoices: AsyncValue.data(rows));
@@ -610,6 +635,132 @@ class BillingViewModel extends StateNotifier<BillingState> {
         error: BookingViewModel.messageFor(e),
       );
       return null;
+    }
+  }
+
+  /// Completed, unbilled services (laundry, pool, gaming ...) — the
+  /// Services tab's own queue.
+  Future<void> loadServices() async {
+    try {
+      final rows = await usecase.billableServiceUsages();
+      state = state.copyWith(serviceQueue: AsyncValue.data(rows));
+    } catch (e, st) {
+      state = state.copyWith(serviceQueue: AsyncValue.error(e, st));
+    }
+  }
+
+  /// Open the selected completed services for billing on their own
+  /// document — the Services tab's "Bill selected".
+  Future<void> openServiceBill(List<ServiceUsage> usages) async {
+    state = state.copyWith(
+      serviceTarget: usages,
+      clearServicePreview: true,
+      clearError: true,
+      payment: [PaymentDraft()],
+      paymentTouched: false,
+    );
+    await refreshServicePreview();
+  }
+
+  void closeServiceBill() => state = state.copyWith(
+    clearServiceTarget: true,
+    clearServicePreview: true,
+    clearError: true,
+    payment: const [],
+    paymentTouched: false,
+  );
+
+  Future<void> refreshServicePreview() async {
+    final usages = state.serviceTarget;
+    if (usages == null) return;
+
+    state = state.copyWith(previewing: true, clearError: true);
+    try {
+      final preview = await usecase.previewServiceBill(
+        usages.map((u) => u.id).toList(),
+      );
+      final rows = state.payment.isEmpty
+          ? <PaymentDraft>[PaymentDraft()]
+          : state.payment;
+      if (rows.length == 1 && !state.paymentTouched) {
+        rows.first.amount = preview.balanceDue > 0
+            ? '${preview.balanceDue}'
+            : '';
+      }
+      state = state.copyWith(
+        previewing: false,
+        servicePreview: preview,
+        payment: List.of(rows),
+      );
+    } catch (e) {
+      state = state.copyWith(
+        previewing: false,
+        error: BookingViewModel.messageFor(e),
+      );
+    }
+  }
+
+  /// Bill the selected services on their own document.
+  ///
+  /// Returns the invoice on success, null on failure with the error set.
+  /// Guarded against a second tap: this burns a serial and there is no undo,
+  /// only a void.
+  Future<Invoice?> issueServiceBill() async {
+    final usages = state.serviceTarget;
+    final preview = state.servicePreview;
+    if (usages == null || preview == null || state.issuing) return null;
+
+    final problem = state.settlementProblem;
+    if (problem != null) {
+      state = state.copyWith(error: problem);
+      return null;
+    }
+
+    state = state.copyWith(issuing: true, clearError: true);
+    try {
+      final rows = state.payment.where((p) => p.value > 0).toList();
+      final invoice = await usecase.issueServiceInvoice(
+        usages.map((u) => u.id).toList(),
+        {
+          'billingSide': preview.billingSide,
+          'discountAmount': preview.amounts?.discountAmount ?? 0,
+          'collectedAmount': state.collected,
+          if (rows.isNotEmpty) ...{
+            'paymentMethod': rows.first.method,
+            if (needsPaymentReference(rows.first.method) &&
+                rows.first.reference.trim().isNotEmpty)
+              'paymentReference': rows.first.reference.trim(),
+            if (rows.length > 1)
+              'paymentLines': rows.map((r) => r.toJson()).toList(),
+          },
+        },
+      );
+      state = state.copyWith(issuing: false);
+      // Deliberately not reloading here — see issue() above for why.
+      return invoice;
+    } catch (e) {
+      state = state.copyWith(
+        issuing: false,
+        error: BookingViewModel.messageFor(e),
+      );
+      return null;
+    }
+  }
+
+  /// Charges the selected, completed services to [bookingId]'s room bill
+  /// instead of billing them on their own — the Services tab's "Add to
+  /// room bill".
+  Future<bool> addServicesToRoom(
+    List<int> usageIds,
+    int bookingId,
+  ) async {
+    try {
+      await usecase.addServicesToRoom(usageIds, bookingId);
+      await loadServices();
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: BookingViewModel.messageFor(e));
+      return false;
     }
   }
 

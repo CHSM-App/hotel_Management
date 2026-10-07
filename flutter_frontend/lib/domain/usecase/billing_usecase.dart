@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../models/invoice.dart';
+import '../models/lodge_service.dart' show ServiceUsage;
 import '../repository/billing_repo.dart';
 
 class BillingUsecase {
@@ -98,4 +99,23 @@ class BillingUsecase {
   /// Every advance receipt on file for the lodge, for the Bills list.
   Future<List<AdvanceReceipt>> allAdvanceReceipts() =>
       repository.allAdvanceReceipts();
+
+  /// Completed, unbilled services (laundry, pool, gaming ...) waiting on
+  /// their own document or on a guest's room bill.
+  Future<List<ServiceUsage>> billableServiceUsages() =>
+      repository.billableServiceUsages();
+
+  /// What a standalone service bill will say.
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) =>
+      repository.previewServiceBill(usageIds);
+
+  /// Bill the selected uses on their own document.
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  ) => repository.issueServiceInvoice(usageIds, body);
+
+  /// Charges the selected, completed services to a guest's room bill.
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId) =>
+      repository.addServicesToRoom(usageIds, bookingId);
 }
