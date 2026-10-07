@@ -13,6 +13,7 @@ const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
 const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
+const customersService = require('../customers/customers.service');
 const lateCheckout = require('./lateCheckout');
 const { apportionDiscount, mergeRoomNights, rollUpStatus } = require('./bookingRooms');
 
@@ -1995,6 +1996,26 @@ async function createBooking(lodgeId, userId, input) {
 
     const bookingId = insertResult.recordset[0].id;
 
+    // Same transaction as the booking row itself: a customer-record write
+    // failing here rolls the booking back too, consistent with everything
+    // else in this function — there's no "booking saved but customer record
+    // silently missing" state to reason about later.
+    const customerId = await customersService.upsertCustomerForRoomStay(() => new sql.Request(transaction), lodgeId, {
+      phone: input.guestPhone,
+      name: input.guestName,
+      idProofType: input.idProofType ?? null,
+      idProofNumber: input.idProofNumber ?? null,
+      idProofDocument: input.idProofDocument ?? null,
+      amount: totalPrice,
+      stayDate: first.checkInDate,
+    });
+    if (customerId) {
+      await new sql.Request(transaction)
+        .input('id', sql.BigInt, bookingId)
+        .input('customerId', sql.BigInt, customerId)
+        .query('UPDATE dbo.bookings SET customer_id = @customerId WHERE id = @id');
+    }
+
     for (const room of priced.rooms) {
       await insertBookingRoom(transaction, bookingId, room);
     }
@@ -2145,6 +2166,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT b.num_guests, b.id_proof_type, b.total_price, b.advance_amount,
+             b.guest_name, b.guest_phone,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.lodges l ON l.id = b.lodge_id
@@ -2312,6 +2334,20 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
       `);
     if (result.recordset.length === 0) {
       throw new ApiError('Booking not found or not ready for check-in.', 409);
+    }
+
+    // Only when an ID proof actually just arrived — the common pre-reservation
+    // case (migration 019): booked without one, mandatory from check-in on.
+    // No amount/stayDate passed, so the customer's stay count isn't bumped a
+    // second time for a booking createBooking() already counted.
+    if (input.idProofType) {
+      await customersService.upsertCustomerForRoomStay(() => new sql.Request(transaction), lodgeId, {
+        phone: bookingRow.guest_phone,
+        name: bookingRow.guest_name,
+        idProofType: input.idProofType,
+        idProofNumber: input.idProofNumber ?? null,
+        idProofDocument: input.idProofDocument ?? null,
+      });
     }
 
     for (const room of arriving) {
@@ -3083,6 +3119,14 @@ async function cancelBooking(
     throw new ApiError('Booking not found or cannot be cancelled.', 409);
   }
   const booking = await getBooking(lodgeId, bookingId);
+
+  // Undoes what createBooking() added to this guest's customer record — a
+  // cancelled booking was never a stay, so it shouldn't keep counting as one.
+  await customersService.reverseCustomerForCancelledStay(lodgeId, {
+    phone: booking.guestPhone,
+    amount: booking.totalPrice,
+  });
+
   // Awaited, unlike the booking confirmation: the desk asked to cancel and
   // wants to know whether the guest was told, so the result rides back on
   // the same response instead of only reaching the log. Still never throws —

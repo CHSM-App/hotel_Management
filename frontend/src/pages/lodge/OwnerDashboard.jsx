@@ -13,6 +13,7 @@ import { useOpenIssues } from './useOpenIssues';
 import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
+import Customers from './Customers';
 import ReportsPanel from './ReportsPanel';
 import { REPORT_SECTIONS, reportSectionOf } from '../../lib/reportSections';
 import StaffAndRoles from './StaffAndRoles';
@@ -424,6 +425,23 @@ export default function OwnerDashboard() {
         {/* The brand block sits over the rail rather than in the bar's flow:
             it is the sidebar's header, and lining it up with the rail below is
             what stops the bar reading as one undivided strip. */}
+        {/* Collapses the rail on narrow windows, where 240px of permanent nav
+            costs more than it gives. Above the breakpoint the rail never
+            hides, so the control has nothing to say and stays out of the bar
+            (display: none in OwnerDashboard.css) — this only renders visibly
+            on a phone, where it comes before the brand block (not after) so
+            the hamburger reads as "open the menu this logo belongs to" rather
+            than a stray control after the identity mark. */}
+        <button
+          type="button"
+          className="dash-topbar__menu"
+          aria-label={navOpen ? 'Hide sections' : 'Show sections'}
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((open) => !open)}
+        >
+          <Icon name="menu" size={20} />
+        </button>
+
         <div className="dash-brand">
           {me?.lodge.logoUrl ? (
             <span className="dash-brand__badge dash-brand__badge--logo" aria-hidden="true">
@@ -444,19 +462,6 @@ export default function OwnerDashboard() {
             </span>
           </span>
         </div>
-
-        {/* Collapses the rail on narrow windows, where 240px of permanent nav
-            costs more than it gives. Above the breakpoint the rail never
-            hides, so the control has nothing to say and stays out of the bar. */}
-        <button
-          type="button"
-          className="dash-topbar__menu"
-          aria-label={navOpen ? 'Hide sections' : 'Show sections'}
-          aria-expanded={navOpen}
-          onClick={() => setNavOpen((open) => !open)}
-        >
-          <Icon name="menu" size={20} />
-        </button>
 
         {/* No section uses the topbar box anymore (Rooms moved to its own
             inline search) but the gap stays, so the profile chip doesn't
@@ -761,6 +766,8 @@ export default function OwnerDashboard() {
                 <GuestRegister onOpenDraft={openDraftInChart} onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)} onOpenSection={showSection} />
               )}
 
+              {activeFeature && activeFeature.key === 'customers' && <Customers />}
+
               {activeFeature && activeFeature.key.startsWith('report-') && (
                 <ReportsPanel
                   key={activeFeature.key}
@@ -801,7 +808,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

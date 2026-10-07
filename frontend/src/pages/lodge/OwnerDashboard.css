@@ -808,11 +808,18 @@
      width to the search field. */
   .dash-brand {
     width: auto;
-    padding-left: 16px;
+    /* No left padding here any more — the hamburger is the bar's first child
+       on a phone now, and it carries the left inset (margin-left below) so
+       the two don't double up into a 24px gap between them. */
+    padding-left: 0;
     padding-right: 4px;
   }
 
   .dash-topbar__menu {
+    /* Same 16px .dash-brand used to carry itself, moved here now that this
+       is the bar's first child on a phone — without it the hamburger sits
+       flush against the bar's edge. */
+    margin-left: 16px;
     margin-right: 8px;
   }
 

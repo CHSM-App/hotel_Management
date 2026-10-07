@@ -17,6 +17,7 @@ const bookingsRoutes = require('./modules/bookings/bookings.routes');
 const billingRoutes = require('./modules/billing/billing.routes');
 const reportsRoutes = require('./modules/reports/reports.routes');
 const rolesRoutes = require('./modules/roles/roles.routes');
+const customersRoutes = require('./modules/customers/customers.routes');
 const staffRoutes = require('./modules/staff/staff.routes');
 const menuRoutes = require('./modules/menu/menu.routes');
 const tablesRoutes = require('./modules/tables/tables.routes');
@@ -266,6 +267,7 @@ const API_ROUTES = [
   ['/billing', billingRoutes],
   ['/reports', reportsRoutes],
   ['/roles', rolesRoutes],
+  ['/customers', customersRoutes],
   ['/staff', staffRoutes],
   ['/menu', menuRoutes],
   ['/tables', tablesRoutes],
