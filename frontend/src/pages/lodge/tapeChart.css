@@ -714,13 +714,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Not ready, by housekeeping's word: the name alone takes the colour. On the
-   pinned column so it shows whatever dates are scrolled to, and whether or not
-   tonight is already sold. */
-.tape-month__room--notready strong {
-  color: var(--tape-notready);
-}
-
 .tape-month__room span {
   font-size: 10px;
   font-weight: 400;
