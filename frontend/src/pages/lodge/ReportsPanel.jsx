@@ -1827,7 +1827,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
           {!laundryReportError && laundryReport && (
             <>
               <div className="reports-panel__table-bar">
-                <p className="reports-panel__section-label">Hotel linen in this period</p>
+                <p className="reports-panel__section-label">Hotel laundry in this period</p>
                 <button
                   type="button"
                   className="btn-secondary"
@@ -1863,7 +1863,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
               <p className="reports-panel__section-label">By linen item</p>
               <div className="dash-card">
                 {laundryReport.linen.byItem.length === 0 ? (
-                  <div className="dash-state">No linen items yet. Add them under Laundry → Hotel linen.</div>
+                  <div className="dash-state">No linen items yet. Add them under Laundry → Hotel Laundry.</div>
                 ) : (
                   <div className="dash-table-scroll">
                     <table className="dash-table">

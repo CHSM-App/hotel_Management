@@ -103,12 +103,14 @@ const createLodgeSchema = z
     message: 'Other services are sold from the rooms side — turn on rooms first.',
     path: ['hasOtherServices'],
   })
-  .refine((data) => !data.hasHousekeeping || data.hasRooms, {
-    message: 'Housekeeping looks after rooms — turn on rooms first.',
+  // Rooms or venues: a restaurant with a party hall has a hall to clean and
+  // table linen to wash, and no rooms at all.
+  .refine((data) => !data.hasHousekeeping || data.hasRooms || data.hasEvents, {
+    message: 'Housekeeping looks after rooms and event venues — turn on rooms or events first.',
     path: ['hasHousekeeping'],
   })
-  .refine((data) => !data.hasLaundry || data.hasRooms, {
-    message: 'Laundry looks after room linen — turn on rooms first.',
+  .refine((data) => !data.hasLaundry || data.hasRooms || data.hasEvents, {
+    message: 'Laundry looks after room and venue linen — turn on rooms or events first.',
     path: ['hasLaundry'],
   })
   .refine((data) => !data.foodRoomService || data.hasRooms, {

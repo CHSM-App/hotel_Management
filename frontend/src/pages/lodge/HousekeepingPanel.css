@@ -2034,6 +2034,7 @@ td.hk-matrix__low {
 /* The room board's "Show" menu, on the section's tab strip. */
 .hk-tools-host {
   display: inline-flex;
+  gap: 8px;
 }
 
 .hk-show {
@@ -2215,4 +2216,25 @@ th[aria-sort] .hk-sort__icon {
 
 .hk-receipt td {
   vertical-align: middle;
+}
+
+/* Event venues on the board. A venue has a name where a room has a number, so
+   its tile carries a small label and the name leads the line beside it. */
+.hk-card__room--venue {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* In Laundry's handover list a venue's name takes the room number's tile. */
+.hk-handover__room--venue {
+  min-width: 0;
+  max-width: 160px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
 }

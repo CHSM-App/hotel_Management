@@ -217,11 +217,11 @@ function assertProfileConsistent(row) {
   if (row.is_gst_registered && !row.gstin) {
     throw new ApiError('Enter the GSTIN, or turn off GST registration.', 400);
   }
-  if (row.has_housekeeping && !row.has_rooms) {
-    throw new ApiError('Housekeeping looks after rooms - turn on rooms first.', 400);
+  if (row.has_housekeeping && !row.has_rooms && !row.has_events) {
+    throw new ApiError('Housekeeping looks after rooms and event venues - turn on rooms or events first.', 400);
   }
-  if (row.has_laundry && !row.has_rooms) {
-    throw new ApiError('Laundry looks after room linen - turn on rooms first.', 400);
+  if (row.has_laundry && !row.has_rooms && !row.has_events) {
+    throw new ApiError('Laundry looks after room and venue linen - turn on rooms or events first.', 400);
   }
   if (row.has_other_services && !row.has_rooms) {
     throw new ApiError('Other services are sold from the rooms side - turn on rooms first.', 400);

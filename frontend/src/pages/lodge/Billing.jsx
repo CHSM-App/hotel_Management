@@ -558,7 +558,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       .catch((err) => setQueueError(err instanceof ApiError ? err.message : 'Could not load bookings ready to bill.'));
   };
 
-  // Confirmed functions that have not been billed yet.
+  // Functions that are over and have not been billed yet.
   const [eventQueue, setEventQueue] = useState(() => readCache('/billing/event-queue'));
   const [eventQueueError, setEventQueueError] = useState('');
   const loadEventQueue = () => {
@@ -1728,7 +1728,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           {eventQueueError && <div className="form-banner form-banner--error">{eventQueueError}</div>}
           {!eventQueueError && !eventQueue && <PageLoader inline label="Loading" />}
           {!eventQueueError && eventQueue && eventQueue.length === 0 && (
-            <div className="dash-state">Nothing waiting — every confirmed function has a bill.</div>
+            <div className="dash-state">Nothing waiting — functions appear here once they are completed.</div>
           )}
           {!eventQueueError && eventQueue && eventQueue.length > 0 && listView === 'sheet' && (
             <section className="history-sheet billing-sheet">

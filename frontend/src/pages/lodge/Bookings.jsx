@@ -631,6 +631,14 @@ function hasFormContent(form) {
 // `modalOnly` mounts just the modals — the guest register uses it to open a
 // stay's detail (`openBookingId`) without leaving its own page, and hears
 // `onModalClose` once every modal is dismissed.
+// The housekeeping statuses that mean "do not hand this room over yet", in the
+// desk's words. Ready and Occupied are left out: the chart says those already.
+const NOT_READY = {
+  DIRTY: 'Needs cleaning',
+  CLEANING: 'Being cleaned',
+  OUT_OF_ORDER: 'Under repair',
+};
+
 export default function Bookings({ onBillStay, onShowRegister, modalOnly = false, openBookingId = null, onModalClose }) {
   const session = getSession();
   const token = session?.token;
@@ -648,6 +656,34 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const [month, setMonth] = useState(() => windowStartFor(todayIso()));
   const [tapeData, setTapeData] = useState(null);
   const [tapeError, setTapeError] = useState('');
+  // Rooms housekeeping says are not ready right now, by room id. null until the
+  // board answers, and for good at a property without Housekeeping, where the
+  // request is refused and the chart simply shows nothing extra.
+  const [notReady, setNotReady] = useState(null);
+  useEffect(() => {
+    if (modalOnly) return undefined;
+    let ignore = false;
+    const load = () =>
+      apiGet('/housekeeping/rooms', { token })
+        .then((d) => {
+          if (ignore) return;
+          setNotReady(
+            new Map(
+              d.rooms
+                .filter((r) => NOT_READY[r.status])
+                .map((r) => [String(r.id), { label: NOT_READY[r.status], note: r.status === 'OUT_OF_ORDER' ? r.outOfOrderNote || '' : '' }])
+            )
+          );
+        })
+        .catch(() => {});
+    load();
+    // A room cleaned upstairs turns green here without a refresh.
+    const timer = setInterval(load, 30000);
+    return () => {
+      ignore = true;
+      clearInterval(timer);
+    };
+  }, [token, modalOnly]);
   // The tile that's under the pointer right now, with the screen position to
   // float its card at. Guest names live only in here — never on the tiles.
   const [hoverTile, setHoverTile] = useState(null);
@@ -3218,6 +3254,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     const cancelledByDate = cancelledOccupancy.get(String(room.id));
     const rowClasses = ['tape-month__row'];
     if (hoverTile?.room.id === room.id) rowClasses.push('tape-month__row--active');
+    // What housekeeping says about the room now. It is a fact about today, so
+    // it marks the room's name and today's night and no other date.
+    const hk = notReady?.get(String(room.id));
 
     // How many nights of the found stay are on screen in this row. The ping is
     // one ring round the whole stay rather than one per night, so the tile it
@@ -3238,7 +3277,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
     return (
       <div key={room.id} className={rowClasses.join(' ')}>
-        <div className="tape-month__room">
+        <div
+          className={`tape-month__room${hk ? ' tape-month__room--notready' : ''}`}
+          title={hk ? `${hk.label}${hk.note ? ` · ${hk.note}` : ''}` : undefined}
+        >
           <strong>{room.roomNumber}</strong>
           {room.floor != null && <span>Floor {room.floor}</span>}
         </div>
@@ -3389,6 +3431,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
             if (isWeekend(d)) classes.push('tape-tile--weekend');
             if (past) classes.push('tape-tile--past');
             if (d === today) classes.push('tape-tile--today');
+            if (d === today && hk) classes.push('tape-tile--notready');
             // if (cancelledStay) classes.push('tape-tile--cancelled-mark');
             return (
               <button
@@ -3403,7 +3446,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 aria-label={
                   cancelledStay
                     ? `${room.roomNumber} vacant on ${formatDateLong(d)} — a booking here was cancelled`
-                    : `${room.roomNumber} vacant on ${formatDateLong(d)}`
+                    : `${room.roomNumber} vacant on ${formatDateLong(d)}${d === today && hk ? ` — ${hk.label.toLowerCase()}` : ''}`
                 }
               />
             );
@@ -3549,6 +3592,12 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           <span className="tape-legend__item">
             <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
           </span>
+          {/* Only where Housekeeping is on, and so has something to say. */}
+          {notReady && (
+            <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
+              <i className="tape-legend__swatch tape-legend__swatch--notready" />Not ready
+            </span>
+          )}
           {LEGEND_LINKS.map((item) => (
             <button
               key={item.status}
@@ -3983,6 +4032,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   looking there: this is the one thing on a month that has
                   happened that still opens. */}
               {hoverTile.past && <span className="tape-tooltip__hint">Click to open this stay</span>}
+              {/* An arrival today into a room that is not ready is the case the
+                  desk most needs warning of. */}
+              {hoverTile.date === today && notReady?.get(String(hoverTile.room.id)) && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--notready">
+                  Room: {notReady.get(String(hoverTile.room.id)).label.toLowerCase()}
+                </span>
+              )}
               {/* A draft against a night that is already let — the desk needs
                   telling, because the person who parked it can't have it. */}
               {hoverTile.draft && (
@@ -4050,10 +4106,19 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
             </>
           ) : (
             <>
-              <span className="tape-tooltip__top">
-                <span className="tape-tooltip__dot tape-tooltip__dot--vacant" />
-                {hoverTile.past ? 'Nobody stayed' : 'Vacant'}
-              </span>
+              {(() => {
+                // Today's night says what housekeeping says, where that is not "ready".
+                const hk = hoverTile.date === today ? notReady?.get(String(hoverTile.room.id)) : null;
+                return (
+                  <>
+                    <span className="tape-tooltip__top">
+                      <span className={`tape-tooltip__dot tape-tooltip__dot--${hk ? 'notready' : 'vacant'}`} />
+                      {hk ? `Vacant · ${hk.label.toLowerCase()}` : hoverTile.past ? 'Nobody stayed' : 'Vacant'}
+                    </span>
+                    {hk?.note && <span className="tape-tooltip__meta">{hk.note}</span>}
+                  </>
+                );
+              })()}
               <strong>Room {hoverTile.room.roomNumber}</strong>
               <span className="tape-tooltip__meta">{hoverTile.room.categoryName}</span>
               {dormitoryTags(hoverTile.room)}

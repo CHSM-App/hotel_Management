@@ -23,7 +23,8 @@ export function useOpenIssues(token, enabled) {
           if (stopped) return;
           if (seen.current !== null && d.latestKey && d.latestKey !== seen.current.key && d.count > seen.current.count) {
             const what = d.latest.kind === 'FOUND' ? 'Item found' : 'Problem reported';
-            toast.show(`Room ${d.latest.roomNumber}: ${what} — ${d.latest.text}`, 'info');
+            const where = d.latest.space === 'VENUE' ? d.latest.roomNumber : `Room ${d.latest.roomNumber}`;
+            toast.show(`${where}: ${what} — ${d.latest.text}`, 'info');
           }
           seen.current = { key: d.latestKey, count: d.count };
           setCount(d.count);

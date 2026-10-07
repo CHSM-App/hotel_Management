@@ -17,14 +17,18 @@ import {
   EVENT_TYPE_LABEL,
   addDays,
   eventDayKeys,
+  eventPhase,
+  eventPhaseLabel,
   formatDateHead,
   formatEventDate,
+  formatEventTime,
   formatEventWhen,
   formatMonthBand,
   formatWindowLabel,
   isClosedStatus,
   isWeekend,
   monthRuns,
+  phaseTagClass,
   statusBadgeClass,
   toDateKey,
 } from './eventFormat';
@@ -61,6 +65,12 @@ const MAX_WINDOW_DAYS = 180;
 const GROW_WITHIN_PX = 90;
 // The order the legend reads in — the walk a booking takes.
 const DIARY_STATUSES = ['CONFIRMED', 'SETTLED', 'DRAFT', 'CANCELLED'];
+// The housekeeping statuses that mean a venue is not ready, as on the room chart.
+const NOT_READY = {
+  DIRTY: 'Needs cleaning',
+  CLEANING: 'Being cleaned',
+  OUT_OF_ORDER: 'Under repair',
+};
 
 function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, refreshKey }) {
   const token = getSession()?.token;
@@ -70,6 +80,35 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const [events, setEvents] = useState([]);
   const [error, setError] = useState('');
   const [hover, setHover] = useState(null);
+  // Venues housekeeping says are not ready right now, by venue id. null until
+  // the board answers, and for good where Housekeeping is off and the request
+  // is refused.
+  const [notReady, setNotReady] = useState(null);
+  // The time as of the last answer from the board, for "has this function ended".
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let ignore = false;
+    const load = () =>
+      apiGet('/housekeeping/venues', { token })
+        .then((d) => {
+          if (ignore) return;
+          setNow(Date.now());
+          setNotReady(
+            new Map(
+              d.venues
+                .filter((v) => NOT_READY[v.status])
+                .map((v) => [String(v.id), { label: NOT_READY[v.status], note: v.status === 'OUT_OF_ORDER' ? v.outOfOrderNote || '' : '' }])
+            )
+          );
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 30000);
+    return () => {
+      ignore = true;
+      clearInterval(timer);
+    };
+  }, [token, refreshKey]);
 
   const dates = useMemo(() => Array.from({ length: windowDays }, (_, i) => addDays(windowStart, i)), [windowStart, windowDays]);
   // Always the first page's span, even once the chart has grown from
@@ -105,6 +144,55 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
     }
     return map;
   }, [events, showClosed]);
+
+  // Today's functions, asked for on their own: the chart's window can be
+  // stepped months away, and "what is on now" still has to be answered. Asked
+  // again each minute, which is also what moves a function from Upcoming to In
+  // Progress on the chart without a refresh.
+  const [todays, setTodays] = useState([]);
+  useEffect(() => {
+    let ignore = false;
+    const load = () =>
+      apiGet(`/events?${new URLSearchParams({ fromDate: today, toDate: today })}`, { token })
+        .then((d) => {
+          if (ignore) return;
+          setTodays(d.events || []);
+          setNow(Date.now());
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 60000);
+    return () => {
+      ignore = true;
+      clearInterval(timer);
+    };
+  }, [token, today, refreshKey]);
+  const liveNow = todays.filter((e) => eventPhase(e, now) === 'IN_PROGRESS');
+  const nextUp = todays.find((e) => eventPhase(e, now) === 'UPCOMING');
+
+  // The function a not-ready venue is waiting to be cleaned after: the last one
+  // there to be over, by its booked end or by the desk marking it completed. Its
+  // tile keeps its status colour — that is the money — and carries a strip in
+  // the not-ready colour until housekeeping is done. Only one that ended today
+  // or yesterday: a hall closed for repair a week on says nothing about a
+  // function from last week.
+  const awaitingClean = useMemo(() => {
+    const ids = new Set();
+    if (!notReady || notReady.size === 0) return ids;
+    const since = addDays(today, -1);
+    const last = new Map(); // venue → { id, over }
+    for (const ev of events) {
+      if (!['CONFIRMED', 'SETTLED'].includes(ev.status) || !notReady.has(String(ev.venueId))) continue;
+      const end = new Date(ev.endAt).getTime();
+      const done = ev.completedAt ? new Date(ev.completedAt).getTime() : null;
+      const over = done != null && done < end ? done : end;
+      if (over > now || toDateKey(new Date(over)) < since) continue;
+      const seen = last.get(ev.venueId);
+      if (!seen || over > seen.over) last.set(ev.venueId, { id: ev.id, over });
+    }
+    last.forEach((v) => ids.add(v.id));
+    return ids;
+  }, [events, notReady, today, now]);
 
   // A retired venue keeps its row while something is still booked on it.
   const rows = venues.filter((v) => v.isActive || cells.has(v.id));
@@ -203,6 +291,8 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
       const classes = ['tape-tile', 'tape-tile--vacant'];
       if (isWeekend(d)) classes.push('tape-tile--weekend');
       if (d < today) classes.push('tape-tile--past');
+      // A fact about now, so it colours today and no other day.
+      if (d === today && notReady?.has(String(venue.id))) classes.push('tape-tile--notready');
       return (
         <button
           key={d}
@@ -224,6 +314,13 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           if (first) classes.push('events-tape__seg--start');
           if (last) classes.push('events-tape__seg--end');
           if (hover?.ev?.id === ev.id) classes.push('events-tape__seg--active');
+          if (awaitingClean.has(ev.id)) classes.push('events-tape__seg--notready');
+          // In time, as well as in money. The colour stays the status at full
+          // strength; a function that is over is ticked on its last day, and
+          // the one in the hall now carries a dot on today's.
+          const phase = eventPhase(ev, now);
+          if (phase === 'COMPLETED' && last) classes.push('events-tape__seg--over');
+          if (phase === 'IN_PROGRESS' && d === today) classes.push('events-tape__seg--live');
           return (
             <button
               key={ev.id}
@@ -272,11 +369,44 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
         </button>
       </div>
 
+      {/* What is on now and what is next today, in words, so nobody has to
+          read it off the chart. Nothing on a day with no functions left. */}
+      {(liveNow.length > 0 || nextUp) && (
+        <div className="events-today" role="status">
+          <span className="events-today__label">Today</span>
+          {liveNow.map((ev) => (
+            <button key={ev.id} type="button" className="events-today__item" onClick={() => onOpen(ev.id)}>
+              <span className="events-today__tag events-today__tag--live">In progress</span>
+              <strong>{ev.title}</strong>
+              <span className="events-today__meta">
+                {ev.venueName} · until {formatEventTime(ev.endAt)}
+              </span>
+            </button>
+          ))}
+          {nextUp && (
+            <button type="button" className="events-today__item" onClick={() => onOpen(nextUp.id)}>
+              <span className="events-today__tag">Up next</span>
+              <strong>{nextUp.title}</strong>
+              <span className="events-today__meta">
+                {nextUp.venueName} · {formatEventTime(nextUp.startAt)}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="tape-legend">
         <span className="tape-legend__item">
           <i className="tape-legend__swatch tape-legend__swatch--vacant" />
           Vacant
         </span>
+        {/* Only where Housekeeping is on, and so has something to say. */}
+        {notReady && (
+          <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
+            <i className="tape-legend__swatch tape-legend__swatch--notready" />
+            Not ready
+          </span>
+        )}
         {DIARY_STATUSES.map((s) => (
           <button
             key={s}
@@ -289,6 +419,15 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
             {EVENT_STATUS_LABEL[s]}
           </button>
         ))}
+        {/* The two marks a tile can carry, keyed like the colours are. */}
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch events-legend__mark events-legend__mark--live" />
+          In progress
+        </span>
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch events-legend__mark events-legend__mark--over" />
+          Completed
+        </span>
         <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start a new event</span>
       </div>
 
@@ -346,9 +485,14 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
                   <span key={col} className="tape-month__divider" style={{ '--tape-edge-col': col }} />
                 ))}
               </div>
-              {rows.map((venue) => (
+              {rows.map((venue) => {
+                const hk = notReady?.get(String(venue.id));
+                return (
                 <div key={venue.id} className={`tape-month__row${hover?.venue.id === venue.id ? ' tape-month__row--active' : ''}`}>
-                  <div className="tape-month__room">
+                  <div
+                    className={`tape-month__room${hk ? ' tape-month__room--notready' : ''}`}
+                    title={hk ? `${hk.label}${hk.note ? ` · ${hk.note}` : ''}` : undefined}
+                  >
                     <strong>{venue.name}</strong>
                     {venue.capacityPax ? <span>up to {venue.capacityPax}</span> : null}
                   </div>
@@ -357,7 +501,8 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
                     <span key={col} className="tape-month__divider" style={{ '--tape-edge-col': col }} />
                   ))}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
@@ -370,6 +515,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               <span className="tape-tooltip__top">
                 <span className="tape-tooltip__dot" style={{ background: EVENT_STATUS_COLOR[hover.ev.status] }} />
                 {EVENT_STATUS_LABEL[hover.ev.status]}
+                {awaitingClean.has(hover.ev.id) ? ' · venue not ready' : ''}
               </span>
               <strong>{hover.ev.title}</strong>
               <span className="tape-tooltip__meta">
@@ -382,13 +528,33 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               {isClosedStatus(hover.ev.status) && (
                 <span className="tape-tooltip__hint">Cancelled — kept for the record</span>
               )}
+              {eventPhase(hover.ev, now) && (
+                <span className="tape-tooltip__meta">
+                  {hover.ev.completedAt ? `Completed ${formatEventTime(hover.ev.completedAt)}` : eventPhaseLabel(hover.ev, now)}
+                </span>
+              )}
+              {/* The hall is not ready: said on the function it is waiting to be
+                  cleaned after, and on any function there today. */}
+              {(hover.date === today || awaitingClean.has(hover.ev.id)) && !isClosedStatus(hover.ev.status) && notReady?.get(String(hover.venue.id)) && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--notready">
+                  Venue: {notReady.get(String(hover.venue.id)).label.toLowerCase()}
+                </span>
+              )}
             </>
           ) : (
             <>
-              <span className="tape-tooltip__top">
-                <span className="tape-tooltip__dot tape-tooltip__dot--vacant" />
-                Vacant
-              </span>
+              {(() => {
+                const hk = hover.date === today ? notReady?.get(String(hover.venue.id)) : null;
+                return (
+                  <>
+                    <span className="tape-tooltip__top">
+                      <span className={`tape-tooltip__dot tape-tooltip__dot--${hk ? 'notready' : 'vacant'}`} />
+                      {hk ? `Vacant · ${hk.label.toLowerCase()}` : 'Vacant'}
+                    </span>
+                    {hk?.note && <span className="tape-tooltip__meta">{hk.note}</span>}
+                  </>
+                );
+              })()}
               <strong>{hover.venue.name}</strong>
               <span className="tape-tooltip__dates">{formatEventDate(`${hover.date}T00:00:00`)}</span>
               <span className="tape-tooltip__hint">{hover.past ? 'Past date — bookings are closed' : 'Click to start a new event'}</span>
@@ -808,6 +974,7 @@ function EventList({ venues, onOpen, refreshKey }) {
                     </td>
                     <td>
                       <span className={statusBadgeClass(ev.status)}>{EVENT_STATUS_LABEL[ev.status] || ev.status}</span>
+                      {eventPhase(ev) && <span className={phaseTagClass(eventPhase(ev))}>{eventPhaseLabel(ev)}</span>}
                     </td>
                   </tr>
                 ))}

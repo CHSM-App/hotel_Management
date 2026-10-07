@@ -168,7 +168,7 @@ export const FEATURES = [
   {
     key: 'housekeeping',
     title: 'Housekeeping',
-    description: 'The room cleaning board: which rooms to clean, which are ready.',
+    description: 'The cleaning board for rooms and event venues: what to clean, what is ready.',
     // Reception and the owner already hold the last two; the Housekeeping role
     // holds housekeeping.manage.
     permission: ['housekeeping.manage', 'bookings.manage', 'rooms.manage'],
@@ -176,19 +176,21 @@ export const FEATURES = [
     // forms and the server both enforce.)
     capability: 'hasHousekeeping',
     icon: 'bed',
-    group: 'Rooms',
+    // Its own group, not under Rooms: it looks after event venues too, and a
+    // restaurant with a party hall has no Rooms group to put it in.
+    group: 'Housekeeping',
   },
   {
     key: 'laundry',
     title: 'Laundry',
-    description: 'Hotel linen sent for washing and received back, and guests’ laundry.',
+    description: 'Hotel laundry (bedsheets and towels sent for washing and received back) and guests’ laundry.',
     // The Laundry role holds only laundry.manage and sees nothing else.
     permission: ['laundry.manage', 'bookings.manage', 'rooms.manage'],
     // Its own add-on, separate from Housekeeping: a property can have either
     // without the other. (Needs rooms too.)
     capability: 'hasLaundry',
     icon: 'wrench',
-    group: 'Rooms',
+    group: 'Housekeeping',
   },
   {
     key: 'otherServices',
@@ -288,7 +290,7 @@ export const FEATURES = [
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Finance & Management', 'Reports & Analytics', 'Setup'];
+export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Housekeeping', 'Finance & Management', 'Reports & Analytics', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

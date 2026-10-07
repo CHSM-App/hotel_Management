@@ -16,8 +16,9 @@ const ADDONS = [
   { key: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
   // Sold from the rooms side, so only offered while the property has rooms.
   { key: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
-  { key: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true },
-  { key: 'hasLaundry', feature: FEATURES.find((f) => f.key === 'laundry'), needsRooms: true },
+  // Rooms or event venues: either gives these two something to look after.
+  { key: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true, orEvents: true },
+  { key: 'hasLaundry', feature: FEATURES.find((f) => f.key === 'laundry'), needsRooms: true, orEvents: true },
 ];
 
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -167,8 +168,8 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
         foodTableService: form.servesFood ? form.foodTableService : false,
         isSpecifiedPremises: form.hasRooms && form.servesFood ? form.isSpecifiedPremises : false,
         hasOtherServices: form.hasRooms ? form.hasOtherServices : false,
-        hasHousekeeping: form.hasRooms ? form.hasHousekeeping : false,
-        hasLaundry: form.hasRooms ? form.hasLaundry : false,
+        hasHousekeeping: form.hasRooms || form.hasEvents ? form.hasHousekeeping : false,
+        hasLaundry: form.hasRooms || form.hasEvents ? form.hasLaundry : false,
         gstin: form.isGstRegistered ? form.gstin : '',
       };
       const detail = await apiPatch(`/internal/lodges/${lodge.id}`, payload, { token });
@@ -366,26 +367,29 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
           </div>
           <div className="reg-access-group">
             <div className="reg-access-list">
-              {ADDONS.map(({ key, feature, needsRooms }) => (
+              {ADDONS.map(({ key, feature, needsRooms, orEvents }) => {
+                const blocked = needsRooms && !form.hasRooms && !(orEvents && form.hasEvents);
+                return (
                 <label key={key} className="reg-access-row reg-access-row--toggle">
                   <div className="reg-access-row__text">
                     <span className="reg-access-row__title">{feature.title}</span>
                     <span className="reg-access-row__desc">
                       {feature.description}
-                      {needsRooms && !form.hasRooms && ' Needs rooms.'}
+                      {blocked && (orEvents ? ' Needs rooms or events.' : ' Needs rooms.')}
                     </span>
                   </div>
                   <span className="reg-switch">
                     <input
                       type="checkbox"
-                      checked={form[key] && (!needsRooms || form.hasRooms)}
-                      disabled={needsRooms && !form.hasRooms}
+                      checked={form[key] && !blocked}
+                      disabled={blocked}
                       onChange={update(key)}
                     />
                     <span className="reg-switch__track"><span className="reg-switch__thumb" /></span>
                   </span>
                 </label>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>

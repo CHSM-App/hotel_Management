@@ -519,6 +519,8 @@ function mapEvent(row) {
     roomsTo: toDateOnly(row.rooms_to),
     roomsNotes: row.rooms_notes ?? null,
     status: row.status,
+    // When the desk marked the function over. Not a status: see completeEventBooking.
+    completedAt: row.completed_at ? toIso(row.completed_at) : null,
     cancelReason: row.cancel_reason ?? null,
     refundAmount: row.refund_amount == null ? null : Number(row.refund_amount),
     refundPaymentMethod: row.refund_payment_method ?? null,
@@ -973,6 +975,33 @@ async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, re
   });
 }
 
+// "Mark as Completed": the function is over, so the venue goes to housekeeping
+// now instead of at the booked end time. It is a time on the booking and not a
+// status — the status walk is about the money, and a function can be over and
+// unbilled, or billed and still running. Asked twice, it answers the same.
+async function completeEventBooking(lodgeId, userId, id) {
+  const current = await getEventBooking(lodgeId, id);
+  if (!['CONFIRMED', 'SETTLED'].includes(current.status)) {
+    throw new ApiError('Only a confirmed function can be marked as completed.', 409);
+  }
+  if (current.completedAt) return current;
+  if (new Date(current.startAt) > new Date()) {
+    throw new ApiError('This function has not started yet.', 409);
+  }
+  const pool = await getPool();
+  await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, id)
+    .input('userId', sql.BigInt, userId)
+    .query(`
+      UPDATE dbo.event_bookings
+      SET completed_at = SYSDATETIMEOFFSET(), completed_by = @userId, updated_at = SYSDATETIMEOFFSET()
+      WHERE id = @id AND lodge_id = @lodgeId AND completed_at IS NULL
+    `);
+  return getEventBooking(lodgeId, id);
+}
+
 // Called by billing on its own transaction: the bill and the status land
 // together or not at all.
 async function markSettled(transaction, lodgeId, id) {
@@ -1052,6 +1081,7 @@ module.exports = {
   priceExtra,
   removeExtra,
   confirmEventBooking,
+  completeEventBooking,
   cancelEventBooking,
   markSettled,
   unsettle,

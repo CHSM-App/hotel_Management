@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const assetsService = require('../assets/assets.service');
 
 // ---------------------------------------------------------------------------
 // Room cleaning
@@ -99,6 +100,7 @@ async function listRooms(lodgeId) {
 
   const rooms = result.recordset.map((row) => ({
     id: row.id,
+    kind: 'ROOM',
     roomNumber: row.room_number,
     categoryName: row.category_name,
     floor: row.floor ?? null,
@@ -283,6 +285,266 @@ async function setOutOfOrder(lodgeId, roomId, { outOfOrder, note }) {
 }
 
 // ---------------------------------------------------------------------------
+// Event venues
+//
+// A hall or lawn sits on the same board as the rooms and moves through the
+// same states, read from the function diary the way a room's are read from
+// its stays:
+//   OCCUPIED  a confirmed function is running now ("In use" on the screen)
+//   DIRTY     a function ended after the venue was last cleaned, or someone
+//             marked it
+// The rest are the room's own. Drafts and cancelled functions never count:
+// neither put anyone in the hall. Every query here carries the lodge id — a
+// venue id alone proves nothing about whose venue it is.
+// ---------------------------------------------------------------------------
+
+async function lodgeHasEvents(pool, lodgeId) {
+  const result = await pool.request().input('lodgeId', sql.BigInt, lodgeId).query('SELECT has_events FROM dbo.lodges WHERE id = @lodgeId');
+  return !!result.recordset[0]?.has_events;
+}
+
+// As ensureRoomRows: a venue gets its row the first time the board is opened,
+// stamped "cleaned now", so last season's functions do not all show as dirty.
+async function ensureVenueRows(pool, lodgeId) {
+  try {
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query(`
+        INSERT INTO dbo.housekeeping_venues (venue_id, lodge_id)
+        SELECT v.id, v.lodge_id FROM dbo.event_venues v
+        WHERE v.lodge_id = @lodgeId
+          AND NOT EXISTS (SELECT 1 FROM dbo.housekeeping_venues h WHERE h.venue_id = v.id AND h.lodge_id = @lodgeId)
+      `);
+  } catch (err) {
+    if (!/PRIMARY KEY|duplicate key/i.test(String(err.message))) throw err;
+  }
+}
+
+// The same shape a room row has, so one list on the screen (and one day in the
+// mobile app) can hold both. `roomNumber` carries the venue's name.
+async function listVenues(lodgeId) {
+  const pool = await getPool();
+  if (!(await lodgeHasEvents(pool, lodgeId))) return [];
+  await ensureVenueRows(pool, lodgeId);
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT v.id, v.name, v.capacity_pax,
+             h.last_cleaned_at, h.needs_cleaning, h.cleaning_started_at, h.out_of_order, h.out_of_order_note,
+             cu.name AS cleaning_by_name,
+             CASE WHEN running.id IS NOT NULL THEN 1 ELSE 0 END AS occupied,
+             running.title AS running_title, running.end_at AS running_end_at,
+             -- A function is over at its booked end, or sooner where the desk
+             -- marked it completed: that is when the venue needs cleaning.
+             (SELECT MAX(CASE WHEN e.completed_at IS NOT NULL AND e.completed_at < e.end_at THEN e.completed_at ELSE e.end_at END) FROM dbo.event_bookings e
+              WHERE e.venue_id = v.id AND e.lodge_id = @lodgeId AND e.status IN ('CONFIRMED', 'SETTLED')
+                AND CASE WHEN e.completed_at IS NOT NULL AND e.completed_at < e.end_at THEN e.completed_at ELSE e.end_at END <= SYSDATETIMEOFFSET()) AS last_checkout_at,
+             upcoming.title AS next_title, upcoming.start_at AS next_start_at,
+             clean.done_at AS log_cleaned_at, clean.cleaner AS log_cleaned_by,
+             (SELECT COUNT(*) FROM dbo.housekeeping_log l
+              WHERE l.venue_id = v.id AND l.lodge_id = @lodgeId AND l.issues IS NOT NULL AND l.issue_resolved_at IS NULL) AS open_issues
+      FROM dbo.event_venues v
+      JOIN dbo.housekeeping_venues h ON h.venue_id = v.id AND h.lodge_id = @lodgeId
+      LEFT JOIN dbo.users cu ON cu.id = h.cleaning_by
+      OUTER APPLY (
+        SELECT TOP 1 e.id, e.title, e.end_at
+        FROM dbo.event_bookings e
+        WHERE e.venue_id = v.id AND e.lodge_id = @lodgeId AND e.status IN ('CONFIRMED', 'SETTLED')
+          AND e.start_at <= SYSDATETIMEOFFSET() AND e.end_at > SYSDATETIMEOFFSET() AND e.completed_at IS NULL
+        ORDER BY e.end_at ASC
+      ) running
+      OUTER APPLY (
+        SELECT TOP 1 e.title, e.start_at
+        FROM dbo.event_bookings e
+        WHERE e.venue_id = v.id AND e.lodge_id = @lodgeId AND e.status = 'CONFIRMED'
+          AND e.start_at > SYSDATETIMEOFFSET()
+          AND CAST(e.start_at AT TIME ZONE 'India Standard Time' AS DATE) = CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'India Standard Time' AS DATE)
+        ORDER BY e.start_at ASC
+      ) upcoming
+      OUTER APPLY (
+        SELECT TOP 1 l.done_at, u.name AS cleaner
+        FROM dbo.housekeeping_log l
+        LEFT JOIN dbo.users u ON u.id = l.cleaned_by
+        WHERE l.venue_id = v.id AND l.lodge_id = @lodgeId
+        ORDER BY l.done_at DESC, l.id DESC
+      ) clean
+      WHERE v.lodge_id = @lodgeId AND v.is_active = 1
+    `);
+
+  const venues = result.recordset.map((row) => ({
+    id: row.id,
+    kind: 'VENUE',
+    roomNumber: row.name,
+    categoryName: row.capacity_pax ? `Venue · up to ${row.capacity_pax} guests` : 'Venue',
+    floor: null,
+    // The function in the hall now, and the one still to come today.
+    eventTitle: row.running_title ?? null,
+    eventEndsAt: row.running_end_at ?? null,
+    nextEventTitle: row.next_title ?? null,
+    nextEventAt: row.next_start_at ?? null,
+    guestName: null,
+    guestCheckOut: null,
+    guestsIn: 0,
+    leavingToday: false,
+    cleanedAt: row.log_cleaned_at ?? null,
+    cleanedBy: row.log_cleaned_by ?? null,
+    openIssues: Number(row.open_issues ?? 0),
+    status: roomStatusOf(row),
+    // A function later today: the venue has to be ready for it.
+    arrivingToday: !!row.next_start_at,
+    cleaningBy: row.cleaning_by_name ?? null,
+    cleaningStartedAt: row.cleaning_started_at ?? null,
+    outOfOrderNote: row.out_of_order_note ?? null,
+    lastCleanedAt: row.last_cleaned_at,
+    dirtySince:
+      row.last_checkout_at && new Date(row.last_checkout_at) > new Date(row.last_cleaned_at) ? row.last_checkout_at : null,
+  }));
+  venues.sort(
+    (a, b) =>
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+      Number(b.arrivingToday) - Number(a.arrivingToday) ||
+      String(a.roomNumber).localeCompare(String(b.roomNumber), undefined, { numeric: true })
+  );
+  return venues;
+}
+
+async function requireVenue(pool, lodgeId, venueId) {
+  const found = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('venueId', sql.BigInt, venueId)
+    .query('SELECT id FROM dbo.event_venues WHERE id = @venueId AND lodge_id = @lodgeId');
+  if (found.recordset.length === 0) throw new ApiError('Venue not found.', 404);
+  await ensureVenueRows(pool, lodgeId);
+}
+
+async function startVenueCleaning(lodgeId, userId, venueId) {
+  const pool = await getPool();
+  await requireVenue(pool, lodgeId, venueId);
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('venueId', sql.BigInt, venueId)
+    .input('userId', sql.BigInt, userId ?? null)
+    .query(`
+      UPDATE dbo.housekeeping_venues
+      SET cleaning_started_at = SYSDATETIMEOFFSET(), cleaning_by = @userId
+      WHERE venue_id = @venueId AND lodge_id = @lodgeId AND cleaning_started_at IS NULL AND out_of_order = 0
+    `);
+  if (result.rowsAffected[0] === 0) {
+    throw new ApiError('This venue is already being cleaned or is under repair.', 409);
+  }
+}
+
+async function releaseVenue(lodgeId, venueId) {
+  const pool = await getPool();
+  await requireVenue(pool, lodgeId, venueId);
+  await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('venueId', sql.BigInt, venueId)
+    .query('UPDATE dbo.housekeeping_venues SET cleaning_started_at = NULL, cleaning_by = NULL WHERE venue_id = @venueId AND lodge_id = @lodgeId');
+}
+
+// The venue's finishCleaning: clean, its linen on the way to the laundry, and
+// anything reported logged. Works whether or not Start was pressed first.
+async function finishVenueCleaning(lodgeId, userId, venueId, input) {
+  const pool = await getPool();
+  await requireVenue(pool, lodgeId, venueId);
+  const linen = (await hasLaundry(pool, lodgeId)) ? input.linen : [];
+  const blockVenue = Boolean(input.blockRoom && input.issues);
+  await assertLinenItems(pool.request(), lodgeId, linen.map((l) => l.linenItemId));
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const row = await new sql.Request(transaction)
+      .input('venueId', sql.BigInt, venueId)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query(`
+        UPDATE dbo.housekeeping_venues
+        SET last_cleaned_at = SYSDATETIMEOFFSET(), needs_cleaning = 0, cleaning_started_at = NULL, cleaning_by = NULL
+        OUTPUT deleted.cleaning_started_at AS started_at, deleted.out_of_order AS out_of_order
+        WHERE venue_id = @venueId AND lodge_id = @lodgeId
+      `);
+    if (row.recordset[0]?.out_of_order) {
+      throw new ApiError('This venue is under repair. Put it back in service first.', 409);
+    }
+
+    const log = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('venueId', sql.BigInt, venueId)
+      .input('userId', sql.BigInt, userId ?? null)
+      .input('startedAt', sql.DateTimeOffset, row.recordset[0]?.started_at ?? new Date())
+      .input('issues', sql.NVarChar, input.issues || null)
+      .input('lostFound', sql.NVarChar, input.lostFound || null)
+      .input('blocked', sql.Bit, blockVenue ? 1 : 0)
+      .query(`
+        INSERT INTO dbo.housekeeping_log (lodge_id, venue_id, cleaned_by, started_at, issues, lost_found, blocked_room)
+        OUTPUT inserted.id
+        VALUES (@lodgeId, @venueId, @userId, @startedAt, @issues, @lostFound, @blocked)
+      `);
+
+    if (blockVenue) {
+      await new sql.Request(transaction)
+        .input('venueId', sql.BigInt, venueId)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('note', sql.NVarChar, input.issues.slice(0, 300))
+        .query('UPDATE dbo.housekeeping_venues SET out_of_order = 1, out_of_order_note = @note WHERE venue_id = @venueId AND lodge_id = @lodgeId');
+    }
+
+    for (const line of linen) {
+      await new sql.Request(transaction)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('itemId', sql.BigInt, line.linenItemId)
+        .input('qty', sql.Int, line.quantity)
+        .input('venueId', sql.BigInt, venueId)
+        .input('userId', sql.BigInt, userId ?? null)
+        .input('logId', sql.BigInt, log.recordset[0].id)
+        .query(`
+          INSERT INTO dbo.linen_movements (lodge_id, linen_item_id, kind, quantity, venue_id, created_by, log_id)
+          VALUES (@lodgeId, @itemId, 'CHANGED', @qty, @venueId, @userId, @logId)
+        `);
+    }
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+async function markVenueDirty(lodgeId, venueId) {
+  const pool = await getPool();
+  await requireVenue(pool, lodgeId, venueId);
+  await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('venueId', sql.BigInt, venueId)
+    .query('UPDATE dbo.housekeeping_venues SET needs_cleaning = 1 WHERE venue_id = @venueId AND lodge_id = @lodgeId');
+}
+
+// Back in service always lands DIRTY, as for a room.
+async function setVenueOutOfOrder(lodgeId, venueId, { outOfOrder, note }) {
+  const pool = await getPool();
+  await requireVenue(pool, lodgeId, venueId);
+  await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('venueId', sql.BigInt, venueId)
+    .input('flag', sql.Bit, outOfOrder ? 1 : 0)
+    .input('note', sql.NVarChar, outOfOrder ? note || null : null)
+    .query(`
+      UPDATE dbo.housekeeping_venues
+      SET out_of_order = @flag, out_of_order_note = @note,
+          cleaning_started_at = NULL, cleaning_by = NULL,
+          needs_cleaning = CASE WHEN @flag = 0 THEN 1 ELSE needs_cleaning END
+      WHERE venue_id = @venueId AND lodge_id = @lodgeId
+    `);
+}
+
+// ---------------------------------------------------------------------------
 // Issues — what a cleaner reported when finishing a room. One log row can carry
 // a problem and a found item; each is listed, and closed, on its own.
 // ---------------------------------------------------------------------------
@@ -299,14 +561,17 @@ async function listIssues(lodgeId, scope) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT TOP 300 l.id, l.room_id, r.room_number, l.issues, l.lost_found, l.done_at, l.blocked_room,
+      SELECT TOP 300 l.id, l.room_id, l.venue_id, r.room_number, v.name AS venue_name,
+             l.issues, l.lost_found, l.done_at, l.blocked_room,
              u.name AS reported_by,
              l.issue_resolved_at, iu.name AS issue_resolved_by, l.issue_resolution,
              l.found_closed_at, fu.name AS found_closed_by, l.found_resolution,
-             ISNULL(h.out_of_order, 0) AS out_of_order
+             COALESCE(h.out_of_order, hv.out_of_order, 0) AS out_of_order
       FROM dbo.housekeeping_log l
-      JOIN dbo.rooms r ON r.id = l.room_id
+      LEFT JOIN dbo.rooms r ON r.id = l.room_id
+      LEFT JOIN dbo.event_venues v ON v.id = l.venue_id
       LEFT JOIN dbo.housekeeping_rooms h ON h.room_id = l.room_id
+      LEFT JOIN dbo.housekeeping_venues hv ON hv.venue_id = l.venue_id AND hv.lodge_id = l.lodge_id
       LEFT JOIN dbo.users u ON u.id = l.cleaned_by
       LEFT JOIN dbo.users iu ON iu.id = l.issue_resolved_by
       LEFT JOIN dbo.users fu ON fu.id = l.found_closed_by
@@ -316,7 +581,15 @@ async function listIssues(lodgeId, scope) {
 
   const entries = [];
   for (const row of result.recordset) {
-    const base = { logId: row.id, roomId: row.room_id, roomNumber: row.room_number, reportedAt: row.done_at, reportedBy: row.reported_by ?? null };
+    const base = {
+      logId: row.id,
+      roomId: row.room_id,
+      // A venue has a name where a room has a number; `space` says which this is.
+      space: row.venue_id != null ? 'VENUE' : 'ROOM',
+      roomNumber: row.venue_id != null ? row.venue_name : row.room_number,
+      reportedAt: row.done_at,
+      reportedBy: row.reported_by ?? null,
+    };
     if (row.issues) {
       entries.push({
         ...base,
@@ -351,7 +624,7 @@ async function openIssueSummary(lodgeId) {
   return {
     count: open.length,
     latestKey: latest ? `${latest.logId}:${latest.kind}` : null,
-    latest: latest ? { kind: latest.kind, roomNumber: latest.roomNumber, text: latest.text } : null,
+    latest: latest ? { kind: latest.kind, space: latest.space, roomNumber: latest.roomNumber, text: latest.text } : null,
   };
 }
 
@@ -370,7 +643,7 @@ async function closeIssue(lodgeId, userId, logId, { kind, note }) {
       .query(`
         UPDATE dbo.housekeeping_log
         SET ${cols.closedAt} = SYSDATETIMEOFFSET(), ${cols.closedBy} = @userId, ${cols.resolution} = @note
-        OUTPUT inserted.room_id, inserted.blocked_room
+        OUTPUT inserted.room_id, inserted.venue_id, inserted.blocked_room
         WHERE id = @id AND lodge_id = @lodgeId AND ${cols.text} IS NOT NULL AND ${cols.closedAt} IS NULL
       `);
     if (closed.recordset.length === 0) throw new ApiError('This was already closed, or could not be found.', 409);
@@ -378,8 +651,22 @@ async function closeIssue(lodgeId, userId, logId, { kind, note }) {
     // A room this report took out of use comes back once nothing else is
     // holding it — to the cleaning list, like any room back from a repair.
     let roomReleased = false;
-    const { room_id: roomId, blocked_room: blocked } = closed.recordset[0];
-    if (kind === 'ISSUE' && blocked) {
+    const { room_id: roomId, venue_id: venueId, blocked_room: blocked } = closed.recordset[0];
+    if (kind === 'ISSUE' && blocked && venueId != null) {
+      // The same release, for a venue this report took out of use.
+      const released = await new sql.Request(transaction)
+        .input('venueId', sql.BigInt, venueId)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .query(`
+          UPDATE dbo.housekeeping_venues
+          SET out_of_order = 0, out_of_order_note = NULL, needs_cleaning = 1
+          WHERE venue_id = @venueId AND lodge_id = @lodgeId AND out_of_order = 1
+            AND NOT EXISTS (SELECT 1 FROM dbo.housekeeping_log o
+                            WHERE o.venue_id = @venueId AND o.lodge_id = @lodgeId AND o.blocked_room = 1
+                              AND o.issues IS NOT NULL AND o.issue_resolved_at IS NULL)
+        `);
+      roomReleased = released.rowsAffected[0] > 0;
+    } else if (kind === 'ISSUE' && blocked) {
       const released = await new sql.Request(transaction)
         .input('roomId', sql.BigInt, roomId)
         .query(`
@@ -425,8 +712,104 @@ function linenStockOf(row) {
   return { owned, withHousekeeping, dirty, inLaundry, clean: Math.max(0, clean), short: clean < 0, lostTotal: n(row.lost_all) };
 }
 
+// ---------------------------------------------------------------------------
+// Where the linen list comes from.
+//
+// At a property with Asset Inventory, linen is registered there, under the
+// linen category ("Bedsheets & Towels"), and Laundry only reads it: each linen asset gets a
+// linen_items row (made here the first time it is seen) that takes the asset's
+// name and quantity. The ledger keeps pointing at linen_items, so nothing in
+// the stock arithmetic changes. Without Asset Inventory, Laundry keeps its own
+// list as before.
+// ---------------------------------------------------------------------------
+
+async function linenManagedInAssets(lodgeId) {
+  const pool = await getPool();
+  const result = await pool.request().input('lodgeId', sql.BigInt, lodgeId).query('SELECT has_assets FROM dbo.lodges WHERE id = @lodgeId');
+  return !!result.recordset[0]?.has_assets;
+}
+
+async function syncLinenFromAssets(pool, lodgeId) {
+  if (!(await linenManagedInAssets(lodgeId))) return;
+
+  // Is there anything to link? Asked first and without a lock, because the
+  // answer is almost always no and this runs on every load of the screen.
+  const pending = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT
+        (SELECT COUNT(*) FROM dbo.linen_items WHERE lodge_id = @lodgeId AND asset_id IS NULL) AS unregistered,
+        (SELECT COUNT(*) FROM dbo.assets a JOIN dbo.asset_categories c ON c.id = a.category_id
+         WHERE a.lodge_id = @lodgeId AND c.is_linen = 1
+           AND NOT EXISTS (SELECT 1 FROM dbo.linen_items i WHERE i.asset_id = a.id)) AS unlinked
+    `);
+  const { unregistered, unlinked } = pending.recordset[0];
+
+  if (unregistered > 0 || unlinked > 0) {
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      // One screen at a time per property: two opening together would each
+      // register the same linen as an asset.
+      await new sql.Request(transaction)
+        .input('resource', sql.NVarChar, `linen-sync-${lodgeId}`)
+        .query("EXEC sp_getapplock @Resource = @resource, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000");
+
+      // Linen added in Laundry before Asset Inventory took it over.
+      const legacy = await new sql.Request(transaction)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .query('SELECT id, name, total_owned FROM dbo.linen_items WHERE lodge_id = @lodgeId AND asset_id IS NULL');
+      if (legacy.recordset.length > 0) {
+        const categoryId = await assetsService.ensureLinenCategory(transaction, lodgeId);
+        for (const item of legacy.recordset) {
+          const assetId = await assetsService.registerLinenAsset(transaction, lodgeId, categoryId, { name: item.name, quantity: item.total_owned });
+          await new sql.Request(transaction)
+            .input('id', sql.BigInt, item.id)
+            .input('assetId', sql.BigInt, assetId)
+            .input('lodgeId', sql.BigInt, lodgeId)
+            .query('UPDATE dbo.linen_items SET asset_id = @assetId WHERE id = @id AND lodge_id = @lodgeId');
+        }
+      }
+
+      // Linen registered in Asset Inventory that Laundry has not seen yet.
+      await new sql.Request(transaction)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .query(`
+          INSERT INTO dbo.linen_items (lodge_id, name, total_owned, asset_id)
+          SELECT a.lodge_id, LEFT(a.name, 80), ISNULL(a.quantity, 0), a.id
+          FROM dbo.assets a
+          JOIN dbo.asset_categories c ON c.id = a.category_id
+          WHERE a.lodge_id = @lodgeId AND c.is_linen = 1
+            AND NOT EXISTS (SELECT 1 FROM dbo.linen_items i WHERE i.asset_id = a.id)
+        `);
+      await transaction.commit();
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  }
+
+  // The asset is the record: its name and count are what Laundry shows, and an
+  // asset that is retired, deleted or moved out of the category drops out.
+  await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      UPDATE i
+      SET i.name = LEFT(a.name, 80),
+          i.total_owned = ISNULL(a.quantity, 0),
+          i.is_active = CASE WHEN a.is_active = 1 AND a.status <> 'RETIRED' AND c.is_linen = 1 THEN 1 ELSE 0 END
+      FROM dbo.linen_items i
+      JOIN dbo.assets a ON a.id = i.asset_id
+      JOIN dbo.asset_categories c ON c.id = a.category_id
+      WHERE i.lodge_id = @lodgeId
+    `);
+}
+
 async function listLinen(lodgeId) {
   const pool = await getPool();
+  await syncLinenFromAssets(pool, lodgeId);
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -461,10 +844,12 @@ async function listHandovers(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT m.id, m.log_id, m.quantity, m.created_at, m.created_by, i.name AS item_name, r.room_number, u.name AS user_name
+      SELECT m.id, m.log_id, m.quantity, m.created_at, m.created_by, i.name AS item_name, r.room_number, v.name AS venue_name,
+             u.name AS user_name
       FROM dbo.linen_movements m
       JOIN dbo.linen_items i ON i.id = m.linen_item_id
       LEFT JOIN dbo.rooms r ON r.id = m.room_id
+      LEFT JOIN dbo.event_venues v ON v.id = m.venue_id
       LEFT JOIN dbo.users u ON u.id = m.created_by
       WHERE m.lodge_id = @lodgeId AND m.kind = 'CHANGED' AND m.handover_at IS NULL
       ORDER BY m.created_at ASC, m.id ASC
@@ -475,6 +860,7 @@ async function listHandovers(lodgeId) {
     const entry = entries.get(key) ?? {
       key,
       roomNumber: row.room_number ?? null,
+      venueName: row.venue_name ?? null,
       changedBy: row.user_name ?? null,
       // The laundry receives from one person at a time, so entries group by this.
       changedById: row.created_by ?? null,
@@ -527,7 +913,16 @@ async function assertLinenNameFree(pool, lodgeId, name, exceptId = null) {
   }
 }
 
+// Refused where Asset Inventory holds the linen: a second list kept here
+// would drift from the one the owner maintains.
+async function assertLinenEditableHere(lodgeId) {
+  if (await linenManagedInAssets(lodgeId)) {
+    throw new ApiError('Linen is kept in Asset Inventory, under the Bedsheets & Towels category. Add or change it there.', 409);
+  }
+}
+
 async function createLinenItem(lodgeId, input) {
+  await assertLinenEditableHere(lodgeId);
   const pool = await getPool();
   await assertLinenNameFree(pool, lodgeId, input.name);
   await pool
@@ -539,6 +934,7 @@ async function createLinenItem(lodgeId, input) {
 }
 
 async function updateLinenItem(lodgeId, id, input) {
+  await assertLinenEditableHere(lodgeId);
   const pool = await getPool();
   if (input.name !== undefined) await assertLinenNameFree(pool, lodgeId, input.name, id);
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('id', sql.BigInt, id);
@@ -650,10 +1046,11 @@ async function listLinenMovements(lodgeId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT TOP 200 m.id, m.kind, m.source, m.quantity, m.note, m.washed_by, m.wash_charge, m.created_at, i.name AS item_name, r.room_number,
-             u.name AS user_name
+             v.name AS venue_name, u.name AS user_name
       FROM dbo.linen_movements m
       JOIN dbo.linen_items i ON i.id = m.linen_item_id
       LEFT JOIN dbo.rooms r ON r.id = m.room_id
+      LEFT JOIN dbo.event_venues v ON v.id = m.venue_id
       LEFT JOIN dbo.users u ON u.id = m.created_by
       WHERE m.lodge_id = @lodgeId
       ORDER BY m.created_at DESC, m.id DESC
@@ -669,6 +1066,7 @@ async function listLinenMovements(lodgeId) {
     createdAt: row.created_at,
     itemName: row.item_name,
     roomNumber: row.room_number ?? null,
+    venueName: row.venue_name ?? null,
     userName: row.user_name ?? null,
   }));
 }
@@ -995,10 +1393,17 @@ module.exports = {
   finishCleaning,
   markDirty,
   setOutOfOrder,
+  listVenues,
+  startVenueCleaning,
+  releaseVenue,
+  finishVenueCleaning,
+  markVenueDirty,
+  setVenueOutOfOrder,
   listIssues,
   openIssueSummary,
   closeIssue,
   listLinen,
+  linenManagedInAssets,
   createLinenItem,
   updateLinenItem,
   sendToLaundry,

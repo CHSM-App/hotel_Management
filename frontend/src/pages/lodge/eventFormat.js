@@ -24,7 +24,7 @@ export const EVENT_STATUS_LABEL = {
 // confirmed function here), slate is finished business.
 export const EVENT_STATUS_COLOR = {
   DRAFT: '#f2c31d',
-  CONFIRMED: '#c0392b',
+  CONFIRMED: '#e0453c',
   SETTLED: '#8695a3',
   CANCELLED: '#cfd6dd',
 };
@@ -174,6 +174,36 @@ export function formatWindowLabel(fromKey, toKey) {
     secondary: sameYear ? String(from.getUTCFullYear()) : `${from.getUTCFullYear()} – ${to.getUTCFullYear()}`,
   };
 }
+
+// Where a function is in time, which its status does not say: Confirmed and
+// Settled are about the money, and a function next week and one in the hall
+// now are both "Confirmed". Worked out from the booked times (and the desk's
+// "Mark as Completed"), so nobody has to set it. null for a draft or a
+// cancelled function, which does not hold the venue.
+export function eventPhase(ev, now = Date.now()) {
+  if (!ev || !['CONFIRMED', 'SETTLED'].includes(ev.status)) return null;
+  if (ev.completedAt || new Date(ev.endAt).getTime() <= now) return 'COMPLETED';
+  if (new Date(ev.startAt).getTime() > now) return 'UPCOMING';
+  return 'IN_PROGRESS';
+}
+
+// "In Progress · ends 11:00 pm", "Upcoming · in 3 days", "Completed".
+export function eventPhaseLabel(ev, now = Date.now()) {
+  const phase = eventPhase(ev, now);
+  if (!phase) return '';
+  if (phase === 'COMPLETED') return 'Completed';
+  const today = toDateKey(new Date(now));
+  if (phase === 'IN_PROGRESS') {
+    const sameDay = toDateKey(new Date(ev.endAt)) === today;
+    return `In Progress · ends ${sameDay ? '' : `${new Date(ev.endAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, `}${formatEventTime(ev.endAt)}`;
+  }
+  const days = Math.round((new Date(`${toDateKey(new Date(ev.startAt))}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
+  if (days <= 0) return `Upcoming · today ${formatEventTime(ev.startAt)}`;
+  if (days === 1) return `Upcoming · tomorrow ${formatEventTime(ev.startAt)}`;
+  return `Upcoming · in ${days} days`;
+}
+
+export const phaseTagClass = (phase) => `events-phase events-phase--${String(phase || '').toLowerCase().replace('_', '-')}`;
 
 export function statusBadgeClass(status) {
   return `badge events-badge events-badge--${String(status || '').toLowerCase()}`;

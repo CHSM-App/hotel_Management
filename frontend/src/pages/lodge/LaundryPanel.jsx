@@ -21,7 +21,7 @@ const errorText = (err, fallback) => (err instanceof ApiError ? err.message : fa
 // ---------------------------------------------------------------------------
 
 const MOVE_LABEL = {
-  CHANGED: 'Changed in a room',
+  CHANGED: 'Changed in a room or venue',
   SENT: 'Sent for washing',
   RECEIVED: 'Received washed',
   LOST: 'Marked lost',
@@ -55,7 +55,7 @@ const sheetDate = (value) =>
 const sheetTime = (value) =>
   value ? new Date(value).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '';
 
-const LINEN_COLS = ['Date', 'Time', 'Action', 'Room', 'Item', 'Qty', 'Washed by', 'Charge (₹)', 'Entered by', 'Note'];
+const LINEN_COLS = ['Date', 'Time', 'Action', 'Room / venue', 'Item', 'Qty', 'Washed by', 'Charge (₹)', 'Entered by', 'Note'];
 // What the lodge's own laundry is recorded as, so the report groups it under one name.
 const OWN_LAUNDRY = 'Own laundry';
 
@@ -177,7 +177,7 @@ function WasherFields({ value, onChange, priceLabel, hideLabel = false, withPhon
 }
 
 const linenRow = (m) => [
-  sheetDate(m.createdAt), sheetTime(m.createdAt), MOVE_LABEL[m.kind], m.roomNumber || '', m.itemName,
+  sheetDate(m.createdAt), sheetTime(m.createdAt), MOVE_LABEL[m.kind], m.roomNumber || m.venueName || '', m.itemName,
   m.quantity, m.washedBy || '', m.washCharge ?? '', m.userName || '', m.note || '',
 ];
 
@@ -308,6 +308,9 @@ function LinenTab({ token }) {
     }
   };
 
+  // Where Asset Inventory holds the linen, it is only read here: adding an
+  // item or changing its name or count happens there.
+  const managed = Boolean(data?.managedInAssets);
   const items = (data?.items ?? []).filter((i) => i.isActive);
   // Hidden types keep their history and can be brought back; they just stop
   // taking up a row.
@@ -507,18 +510,30 @@ function LinenTab({ token }) {
           <span className="hk-empty__icon">
             <StatusIcon tone="dirty" size={22} />
           </span>
-          <p className="hk-empty__title">Add the linen you count</p>
-          <p className="hk-empty__text">Add each item once, with how many you own. Then track it through the wash.</p>
-          <div className="hk-starters">
-            {STARTERS.map((name) => (
-              <button key={name} type="button" className="hk-tab" onClick={() => open({ kind: 'item', name, owned: '' })}>
-                + {name}
+          {managed ? (
+            <>
+              <p className="hk-empty__title">No linen registered yet</p>
+              <p className="hk-empty__text">
+                Add your linen in Asset Inventory: choose the category “Bedsheets & Towels”, give the item a name such as Bedsheet, and enter how many you own.
+                It appears here as soon as it is saved.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="hk-empty__title">Add the linen you count</p>
+              <p className="hk-empty__text">Add each item once, with how many you own. Then track it through the wash.</p>
+              <div className="hk-starters">
+                {STARTERS.map((name) => (
+                  <button key={name} type="button" className="hk-tab" onClick={() => open({ kind: 'item', name, owned: '' })}>
+                    + {name}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="btn-secondary" onClick={() => open({ kind: 'item', name: '', owned: '' })}>
+                Add another type
               </button>
-            ))}
-          </div>
-          <button type="button" className="btn-secondary" onClick={() => open({ kind: 'item', name: '', owned: '' })}>
-            Add another type
-          </button>
+            </>
+          )}
         </div>
       )}
 
@@ -566,7 +581,7 @@ function LinenTab({ token }) {
                       <span className="hk-handover__body">
                         <span className="hk-staff__name">{g.name}</span>
                         <span className="hk-sub">
-                          {g.handovers.length} {g.handovers.length === 1 ? 'room' : 'rooms'} · {g.pieces} {g.pieces === 1 ? 'piece' : 'pieces'} · {itemsOf(g)}
+                          {g.handovers.length} {g.handovers.length === 1 ? 'place' : 'places'} · {g.pieces} {g.pieces === 1 ? 'piece' : 'pieces'} · {itemsOf(g)}
                         </span>
                       </span>
                       <button type="button" className="hk-action" disabled={busy} onClick={() => receiveHandover(g.movementIds)}>
@@ -576,14 +591,17 @@ function LinenTab({ token }) {
                     <ul className="hk-handover__list hk-staff__rooms">
                       {g.handovers.map((h) => (
                         <li className="hk-handover__row" key={h.key}>
-                          <span className="hk-handover__room">{h.roomNumber ?? '—'}</span>
+                          {/* A room by its number; a venue by its name, which needs the wider tile. */}
+                          <span className={`hk-handover__room${h.venueName && !h.roomNumber ? ' hk-handover__room--venue' : ''}`}>
+                            {h.roomNumber ?? h.venueName ?? '—'}
+                          </span>
                           <span className="hk-handover__body">
                             <span className="hk-handover__items">{h.lines.map((l) => `${l.quantity} ${l.name}`).join(', ')}</span>
                             <span className="hk-sub">Changed {ago(h.changedAt, now)} ago</span>
                           </span>
                           {g.handovers.length > 1 && (
                             <button type="button" className="hk-link" disabled={busy} onClick={() => receiveHandover(h.movementIds)}>
-                              Receive this room only
+                              Receive this one only
                             </button>
                           )}
                         </li>
@@ -598,9 +616,13 @@ function LinenTab({ token }) {
           <section className="hk-panel" aria-label="Your linen">
             <div className="hk-panel__head">
               <h4>Your linen</h4>
-              <button type="button" className="hk-action hk-action--ghost" onClick={() => open({ kind: 'item', name: '', owned: '' })}>
-                + Add item
-              </button>
+              {managed ? (
+                <span className="hk-panel__sub">From Asset Inventory → Bedsheets & Towels. Add items or change a count there.</span>
+              ) : (
+                <button type="button" className="hk-action hk-action--ghost" onClick={() => open({ kind: 'item', name: '', owned: '' })}>
+                  + Add item
+                </button>
+              )}
             </div>
             <table className={`hk-matrix${items.length > 8 ? ' hk-matrix--dense' : ''}`}>
               <caption className="sr-only">Linen count by stage</caption>
@@ -660,16 +682,18 @@ function LinenTab({ token }) {
                           <>
                             <button type="button" className="hk-menu__backdrop" aria-label="Close menu" onClick={() => setMenuId(null)} />
                             <span className="hk-menu__list" role="menu">
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                  setMenuId(null);
-                                  open({ kind: 'item', id: i.id, name: i.name, owned: String(i.totalOwned) });
-                                }}
-                              >
-                                Edit name or count
-                              </button>
+                              {!managed && (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setMenuId(null);
+                                    open({ kind: 'item', id: i.id, name: i.name, owned: String(i.totalOwned) });
+                                  }}
+                                >
+                                  Edit name or count
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 role="menuitem"
@@ -680,16 +704,18 @@ function LinenTab({ token }) {
                               >
                                 Lost or damaged
                               </button>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                  setMenuId(null);
-                                  hideItem(i);
-                                }}
-                              >
-                                Hide from list
-                              </button>
+                              {!managed && (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setMenuId(null);
+                                    hideItem(i);
+                                  }}
+                                >
+                                  Hide from list
+                                </button>
+                              )}
                             </span>
                           </>
                         )}
@@ -711,7 +737,7 @@ function LinenTab({ token }) {
                 </tr>
               </tfoot>
             </table>
-            {hidden.length > 0 && <p className="hk-hint">{hidden.length} hidden. Bring back from Add item.</p>}
+            {!managed && hidden.length > 0 && <p className="hk-hint">{hidden.length} hidden. Bring back from Add item.</p>}
           </section>
 
           {/* Looked at when something does not add up, not every day. */}
@@ -1545,7 +1571,7 @@ function GuestLaundryTab({ token }) {
 export default function LaundryPanel({ lodge }) {
   const token = getSession()?.token;
   const guestLaundry = Boolean(lodge?.hasOtherServices);
-  const tabs = [{ key: 'linen', label: 'Hotel linen' }, ...(guestLaundry ? [{ key: 'laundry', label: 'Guest laundry' }] : [])];
+  const tabs = [{ key: 'linen', label: 'Hotel Laundry' }, ...(guestLaundry ? [{ key: 'laundry', label: 'Guest laundry' }] : [])];
   const [tab, setTab] = useState('linen');
 
   return (
