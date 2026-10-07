@@ -3,6 +3,8 @@ import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/invoice.dart';
+import '../../domain/models/lodge_service.dart';
+import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
@@ -12,9 +14,10 @@ import 'advance_receipt_screen.dart';
 import 'invoice_preview_screen.dart';
 import 'issue_bill_screen.dart';
 import 'issue_food_bill_screen.dart';
+import 'issue_service_bill_screen.dart';
 import 'numbering_screen.dart';
 
-enum _BillingTab { toBill, food, issued, numbering }
+enum _BillingTab { toBill, food, services, issued, numbering }
 
 /// Billing: what still has to be billed, and what already has been.
 ///
@@ -41,6 +44,12 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       : _BillingTab.toBill;
 
   final _search = TextEditingController();
+
+  // Which rows of the Services tab are ticked — mirrors `serviceSel` in
+  // Billing.jsx. Local to the screen, not the view model: it is a transient
+  // selection over whatever the queue currently holds, not billing state
+  // worth keeping once the screen is left.
+  final Set<int> _serviceSel = {};
 
   // 'table' is the landing view — mirrors the web's own `useState('sheet')`:
   // lists open as a spreadsheet, the cards one toggle away. 'cards' is the
@@ -80,18 +89,30 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(billingViewModelProvider);
+    // Other services is a per-property add-on, shown alongside room billing
+    // only — same gate Billing.jsx puts on its own "Services to bill" tab
+    // (`billsStays && lodge?.hasOtherServices`).
+    final showServices =
+        !widget.restaurantOnly &&
+        (ref.watch(authViewModelProvider).me?.lodge.hasOtherServices ??
+            false);
     // "Food to bill" now lives only on Restaurant billing — the same split
     // the web makes between its plain Billing (stream="room", no tables tab
     // at all) and its stream="restaurant" page, which is the only one that
     // ever renders one.
     final tab = widget.restaurantOnly
         ? (_tab == _BillingTab.issued ? _BillingTab.issued : _BillingTab.food)
-        : (_tab == _BillingTab.food ? _BillingTab.toBill : _tab);
+        : (_tab == _BillingTab.food
+              ? _BillingTab.toBill
+              : (_tab == _BillingTab.services && !showServices
+                    ? _BillingTab.toBill
+                    : _tab));
 
     final toggle = _Toggle(
       tab: tab,
       showRoom: !widget.restaurantOnly,
       showFood: widget.restaurantOnly,
+      showServices: showServices,
       // FoodBillingScreen already wraps restaurant billing with its own
       // external Numbering segment (see its _onNumbering) — showing a
       // second one here, nested inside the same screen, would be the same
@@ -99,6 +120,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       showNumbering: !widget.restaurantOnly,
       toBillCount: state.queue.valueOrNull?.length,
       foodCount: state.foodQueue.valueOrNull?.length,
+      serviceCount: state.serviceQueue.valueOrNull?.length,
       onChanged: (v) => setState(() => _tab = v),
     );
 
@@ -123,6 +145,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         ],
       );
     }
+
+    // Selected on the Services tab right now, if that's the tab open — used
+    // below for the sticky action bar, which needs the count and total
+    // regardless of how far down the (possibly long) list the desk has
+    // scrolled.
+    final selectedServices = tab == _BillingTab.services
+        ? _selectedServiceUsages(state)
+        : const <ServiceUsage>[];
 
     // The tab strip stays put above the list rather than scrolling away with
     // it — same fixed Column/Expanded split FoodBillingScreen uses for its
@@ -179,6 +209,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 ],
                 if (tab == _BillingTab.food)
                   ..._food(state)
+                else if (tab == _BillingTab.services)
+                  ..._services(state)
                 else if (tab == _BillingTab.issued)
                   ..._issued(state, restaurantOnly: widget.restaurantOnly)
                 else
@@ -187,6 +219,18 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
         ),
+        // Pinned below the list rather than scrolling with it — ticking rows
+        // on a long Services queue used to leave "Add to room bill"/"Bill
+        // selected" wherever the list happened to end, often off screen
+        // entirely. One row, always in reach, for as long as anything stays
+        // ticked.
+        if (selectedServices.isNotEmpty)
+          _ServiceSelectionBar(
+            count: selectedServices.length,
+            total: selectedServices.fold<num>(0, (sum, u) => sum + u.lineTotal),
+            onAddToRoom: () => _addServicesToRoom(selectedServices),
+            onBillSelected: () => _billSelectedServices(selectedServices),
+          ),
       ],
     );
   }
@@ -274,6 +318,99 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       ];
     },
   );
+
+  // ── Services to bill ────────────────────────────────────────────────────────
+
+  List<Widget> _services(BillingState state) => state.serviceQueue.when(
+    loading: () => const [
+      SizedBox(height: 120),
+      Center(child: CircularProgressIndicator()),
+    ],
+    error: (e, _) => [
+      NeuNotice(
+        icon: Icons.cloud_off_rounded,
+        message: 'Could not load services to bill.',
+        action: NeuButton(onPressed: _load, child: const Text('Try again')),
+      ),
+    ],
+    data: (usages) {
+      if (usages.isEmpty) {
+        return const [
+          SizedBox(height: 80),
+          NeuNotice(
+            icon: Icons.task_alt_rounded,
+            message: 'Nothing waiting — every completed service has been billed.',
+          ),
+        ];
+      }
+      // Drop ticks on rows that have since been billed elsewhere, same as
+      // the web screen's own filter after a reload.
+      _serviceSel.retainAll(usages.map((u) => u.id));
+      void toggle(int id) => setState(() {
+        if (!_serviceSel.add(id)) _serviceSel.remove(id);
+      });
+
+      if (_view == 'table') {
+        return [
+          _ServiceQueueTable(
+            usages: usages,
+            selected: _serviceSel,
+            onToggle: toggle,
+          ),
+        ];
+      }
+      return [
+        for (final u in usages)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+            child: _ServiceUsageRow(
+              usage: u,
+              selected: _serviceSel.contains(u.id),
+              onToggle: () => toggle(u.id),
+            ),
+          ),
+      ];
+    },
+  );
+
+  /// What is ticked on the Services tab right now — read off the queue
+  /// itself so a usage billed from elsewhere (another device, say) can't
+  /// stay selected past a reload.
+  List<ServiceUsage> _selectedServiceUsages(BillingState state) =>
+      (state.serviceQueue.valueOrNull ?? const <ServiceUsage>[])
+          .where((u) => _serviceSel.contains(u.id))
+          .toList();
+
+  /// "Add to room bill": a use already tied to a stay goes straight on it;
+  /// otherwise the desk picks one of the guests staying in-house — mirrors
+  /// `openServicePick`/`addServicesToRoom` in Billing.jsx.
+  Future<void> _addServicesToRoom(List<ServiceUsage> usages) async {
+    final usageIds = usages.map((u) => u.id).toList();
+    final bookingIds = usages.map((u) => u.bookingId).whereType<int>().toSet();
+    if (bookingIds.length == 1 && usages.every((u) => u.bookingId == bookingIds.first)) {
+      final ok = await ref
+          .read(billingViewModelProvider.notifier)
+          .addServicesToRoom(usageIds, bookingIds.first);
+      if (ok && mounted) setState(() => _serviceSel.clear());
+      return;
+    }
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (_) => _AddServicesToRoomDialog(usageIds: usageIds),
+    );
+    if (added == true && mounted) setState(() => _serviceSel.clear());
+  }
+
+  Future<void> _billSelectedServices(List<ServiceUsage> usages) async {
+    await ref.read(billingViewModelProvider.notifier).openServiceBill(usages);
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const IssueServiceBillScreen()));
+    if (!mounted) return;
+    setState(() => _serviceSel.clear());
+    await _load();
+  }
 
   // ── To bill ───────────────────────────────────────────────────────────────
 
@@ -605,7 +742,7 @@ class BillingRowCard extends StatelessWidget {
 
 // ── Which list ──────────────────────────────────────────────────────────────
 
-class _Toggle extends StatelessWidget {
+class _Toggle extends StatefulWidget {
   final _BillingTab tab;
 
   /// False on "Restaurant billing" — the room queue never shows there, the
@@ -613,56 +750,188 @@ class _Toggle extends StatelessWidget {
   final bool showRoom;
   final bool showFood;
 
+  /// Other services is a per-property add-on, shown with room billing only
+  /// — mirrors `billsServices` in Billing.jsx.
+  final bool showServices;
+
   /// Last, and deliberately not first — same order and reasoning as the
   /// web's own `tabs` array in Billing.jsx: numbering is set once at setup
   /// and then left alone, while the other tabs are used every day.
   final bool showNumbering;
   final int? toBillCount;
   final int? foodCount;
+  final int? serviceCount;
   final ValueChanged<_BillingTab> onChanged;
 
   const _Toggle({
     required this.tab,
     this.showRoom = true,
     required this.showFood,
+    this.showServices = false,
     this.showNumbering = false,
     required this.toBillCount,
     required this.foodCount,
+    this.serviceCount,
     required this.onChanged,
   });
 
+  @override
+  State<_Toggle> createState() => _ToggleState();
+}
+
+class _ToggleState extends State<_Toggle> {
   static const double _height = 40;
+
+  final _scroll = ScrollController();
+
+  // One key per tab, kept across rebuilds (not recreated per build) so
+  // [Scrollable.ensureVisible] below can still find a segment's context by
+  // the time a post-frame callback runs.
+  final Map<_BillingTab, GlobalKey> _segmentKeys = {};
+
+  GlobalKey _keyFor(_BillingTab tab) =>
+      _segmentKeys.putIfAbsent(tab, () => GlobalKey());
+
+  // Whether there is more strip hidden past each edge right now — the two
+  // fades below only show while true, so a row that already fits entirely
+  // on screen (most phones, most of the time) renders with no scroll
+  // affordance at all.
+  bool _moreLeft = false;
+  bool _moreRight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_updateEdges);
+    // The strip isn't laid out yet on the first frame, so whether it
+    // overflows — and whether the starting tab needs scrolling into view —
+    // is only checked once a frame has actually happened.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateEdges();
+      _scrollToSelected(animate: false);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _Toggle old) {
+    super.didUpdateWidget(old);
+    // A count landing (e.g. the queue finishes loading) can change a label's
+    // width enough to start or stop overflowing.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateEdges());
+    // Picking a tab that was sitting off-screen (past the fade) selects it
+    // straight away, but leaves the desk unable to see which one they're
+    // now on — so the strip scrolls it into view the moment the selection
+    // actually changes, rather than waiting for a manual swipe.
+    if (old.tab != widget.tab) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToSelected(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_updateEdges);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _updateEdges() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final moreLeft = pos.pixels > 2;
+    final moreRight = pos.pixels < pos.maxScrollExtent - 2;
+    if (moreLeft != _moreLeft || moreRight != _moreRight) {
+      setState(() {
+        _moreLeft = moreLeft;
+        _moreRight = moreRight;
+      });
+    }
+  }
+
+  void _scrollToSelected({bool animate = true}) {
+    final context = _segmentKeys[widget.tab]?.currentContext;
+    if (context == null) return;
+    Scrollable.ensureVisible(
+      context,
+      duration: animate ? const Duration(milliseconds: 220) : Duration.zero,
+      curve: Curves.easeOut,
+      // Centred rather than pinned to an edge: a tab picked near either end
+      // of the strip still leaves its neighbour on both sides in view —
+      // the one just scrolled past as well as the one still ahead — not
+      // just whichever direction the scroll happened to move.
+      alignment: 0.5,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final segments = [
-      if (showRoom)
+      if (widget.showRoom)
         (
           tab: _BillingTab.toBill,
-          label: toBillCount == null
+          label: widget.toBillCount == null
               ? 'Ready to bill'
-              : 'Ready to bill ($toBillCount)',
+              : 'Ready to bill (${widget.toBillCount})',
         ),
-      if (showFood)
+      if (widget.showServices)
+        (
+          tab: _BillingTab.services,
+          label: widget.serviceCount == null
+              ? 'Services to bill'
+              : 'Services to bill (${widget.serviceCount})',
+        ),
+      if (widget.showFood)
         (
           tab: _BillingTab.food,
-          label: foodCount == null
+          label: widget.foodCount == null
               ? 'Food to bill'
-              : 'Food to bill ($foodCount)',
+              : 'Food to bill (${widget.foodCount})',
         ),
       (tab: _BillingTab.issued, label: 'Bills'),
-      if (showNumbering) (tab: _BillingTab.numbering, label: 'Numbering'),
+      if (widget.showNumbering)
+        (tab: _BillingTab.numbering, label: 'Numbering'),
     ];
-    final index = segments.indexWhere((s) => s.tab == tab);
-    final slot = index < 0 ? 0 : index;
-
-    Widget segment(String label, bool selected, VoidCallback onTap) => Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: _height,
-          child: Center(
+    // Each segment carries its own pill rather than a single bar sliding
+    // across equal-width slots — with up to five of these (room, services,
+    // food, bills, numbering) an equal split truncated the longer labels
+    // ("Services t…") on a narrow phone. Sized to its own label instead, and
+    // the strip scrolls sideways when they don't all fit, the same way a
+    // chip row would rather than clipping text nobody can then read.
+    Widget segment(
+      _BillingTab segTab,
+      String label,
+      bool selected,
+      VoidCallback onTap,
+    ) => GestureDetector(
+          key: _keyFor(segTab),
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            height: _height - 8,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                    )
+                  : null,
+              borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppTheme.accent.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOut,
@@ -671,12 +940,10 @@ class _Toggle extends StatelessWidget {
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                 fontSize: 13,
               ),
-              child: Text(label, overflow: TextOverflow.ellipsis),
+              child: Text(label, maxLines: 1, softWrap: false),
             ),
           ),
-        ),
-      ),
-    );
+        );
 
     return Container(
       height: _height,
@@ -686,48 +953,571 @@ class _Toggle extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Stack(
-        children: [
-          // The sliding "pill" behind the active label — the one thing the
-          // old pressed-vs-card pair lacked: a state that reads as selected
-          // even when it sits on a page that's nearly the same shade.
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(
-              -1 + (2 * slot) / (segments.length - 1).clamp(1, 999),
-              0,
-            ),
-            child: FractionallySizedBox(
-              widthFactor: 1 / segments.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.accent.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+        child: Stack(
+          children: [
+            NotificationListener<ScrollMetricsNotification>(
+              onNotification: (_) {
+                // A resize (rotation, a count changing a label's width) can
+                // move the edges without the scroll offset itself changing,
+                // which the position listener alone would miss.
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _updateEdges(),
+                );
+                return false;
+              },
+              child: SingleChildScrollView(
+                controller: _scroll,
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final s in segments) ...[
+                      segment(
+                        s.tab,
+                        s.label,
+                        s.tab == widget.tab,
+                        () => widget.onChanged(s.tab),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                   ],
                 ),
               ),
             ),
-          ),
-          Row(
-            children: [
-              for (final s in segments)
-                segment(s.label, s.tab == tab, () => onChanged(s.tab)),
-            ],
-          ),
-        ],
+            // The scroll affordance itself — a fade into the strip's own
+            // background, only on whichever side still has more tabs past
+            // the edge. Without this the strip reads as "that's all of
+            // them", and a tab sitting just off screen (Numbering, most
+            // often) is never found.
+            if (_moreLeft) const _EdgeFade(alignment: Alignment.centerLeft),
+            if (_moreRight) const _EdgeFade(alignment: Alignment.centerRight),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+/// A faded strip at one edge of the tab row — the visual cue that there is
+/// more to scroll to past that edge. `IgnorePointer`ed so it never steals
+/// the tap meant for the segment under it.
+class _EdgeFade extends StatelessWidget {
+  final Alignment alignment;
+
+  const _EdgeFade({required this.alignment});
+
+  @override
+  Widget build(BuildContext context) {
+    final fromLeft = alignment == Alignment.centerLeft;
+    return Positioned(
+      left: fromLeft ? 0 : null,
+      right: fromLeft ? null : 0,
+      top: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        child: Container(
+          width: 18,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: fromLeft ? Alignment.centerLeft : Alignment.centerRight,
+              end: fromLeft ? Alignment.centerRight : Alignment.centerLeft,
+              colors: [AppTheme.bg, AppTheme.bg.withValues(alpha: 0)],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── A service waiting to be billed ─────────────────────────────────────────
+
+/// One completed, unbilled service — laundry, pool, gaming ... — with a
+/// checkbox rather than a "Bill" button: several of these are ticked
+/// together before either action below fires. Mirrors the `<label>` row in
+/// Billing.jsx's own Services to bill tab.
+class _ServiceUsageRow extends StatelessWidget {
+  final ServiceUsage usage;
+  final bool selected;
+  final VoidCallback onToggle;
+
+  const _ServiceUsageRow({
+    required this.usage,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = [
+      '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
+      if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
+      if (usage.guestName != null && usage.guestName!.isNotEmpty)
+        usage.guestName!,
+      if (usage.onRoomBill) 'its stay bill was already issued',
+    ].join(' · ');
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(
+          color: selected ? AppTheme.accent.withValues(alpha: 0.5) : AppTheme.border,
+        ),
+        boxShadow: AppTheme.extruded,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s8,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Checkbox(
+                  value: selected,
+                  onChanged: (_) => onToggle(),
+                ),
+                const SizedBox(width: AppTheme.s4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        usage.serviceName,
+                        style: Theme.of(context).textTheme.titleSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s8),
+                Text(
+                  formatPrice(usage.lineTotal),
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The selection summary and its two actions — "Add to room bill" and "Bill
+/// selected" — pinned to the bottom of the screen rather than sitting in the
+/// scrolling list: a long Services queue used to leave these wherever the
+/// list happened to end, often off screen by the time two or three rows were
+/// ticked. One row, fixed, for as long as anything stays selected.
+class _ServiceSelectionBar extends StatelessWidget {
+  final int count;
+  final num total;
+  final VoidCallback onAddToRoom;
+  final VoidCallback onBillSelected;
+
+  const _ServiceSelectionBar({
+    required this.count,
+    required this.total,
+    required this.onAddToRoom,
+    required this.onBillSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+          AppTheme.s12,
+          AppTheme.s8,
+          AppTheme.s12,
+          AppTheme.s8,
+        ),
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          border: const Border(top: BorderSide(color: AppTheme.border)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$count selected',
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    formatPrice(total),
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            NeuButton(
+              onPressed: onAddToRoom,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: AppTheme.s8,
+              ),
+              child: const Text('Add to room', style: TextStyle(fontSize: 12.5)),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            NeuButton(
+              primary: true,
+              onPressed: onBillSelected,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: AppTheme.s8,
+              ),
+              child: const Text('Bill selected', style: TextStyle(fontSize: 12.5)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The sheet-style view of the Services queue — mirrors [BillingQueueTable],
+/// with a checkbox column standing in for the "Bill" button: several rows
+/// are ticked together here before either action in [_ServiceSelectionBar]
+/// fires, rather than one row driving its own bill straight away.
+class _ServiceQueueTable extends StatelessWidget {
+  final List<ServiceUsage> usages;
+  final Set<int> selected;
+  final ValueChanged<int> onToggle;
+
+  const _ServiceQueueTable({
+    required this.usages,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  static const _checkboxWidth = 44.0;
+  static const _columns = [
+    _QueueTableColumn('service', 'Service', width: 160),
+    _QueueTableColumn('detail', 'Detail', width: 220),
+    _QueueTableColumn('amount', 'Amount', width: 100),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final width =
+        _checkboxWidth + _columns.fold<double>(0, (sum, c) => sum + c.width);
+
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: AppTheme.sidebarBrandWash,
+                    border: Border(
+                      bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: _checkboxWidth),
+                      for (final c in _columns)
+                        SizedBox(
+                          width: c.width,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s8,
+                              vertical: 10,
+                            ),
+                            child: Text(
+                              c.label.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.sidebarBrandInk,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                for (var i = 0; i < usages.length; i++)
+                  _ServiceTableRow(
+                    usage: usages[i],
+                    shaded: i.isOdd,
+                    selected: selected.contains(usages[i].id),
+                    onToggle: () => onToggle(usages[i].id),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ServiceTableRow extends StatelessWidget {
+  final ServiceUsage usage;
+  final bool shaded;
+  final bool selected;
+  final VoidCallback onToggle;
+
+  const _ServiceTableRow({
+    required this.usage,
+    required this.shaded,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = [
+      '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
+      if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
+      if (usage.guestName != null && usage.guestName!.isNotEmpty)
+        usage.guestName!,
+      if (usage.onRoomBill) 'stay bill already issued',
+    ].join(' · ');
+
+    return Material(
+      color: selected
+          ? AppTheme.accent.withValues(alpha: 0.08)
+          : (shaded ? AppTheme.bg : Colors.transparent),
+      child: InkWell(
+        onTap: onToggle,
+        child: Row(
+          children: [
+            SizedBox(
+              width: _ServiceQueueTable._checkboxWidth,
+              child: Checkbox(value: selected, onChanged: (_) => onToggle()),
+            ),
+            SizedBox(
+              width: _ServiceQueueTable._columns[0].width,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s8,
+                  vertical: 10,
+                ),
+                child: Text(
+                  usage.serviceName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.heading,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: _ServiceQueueTable._columns[1].width,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s8,
+                  vertical: 10,
+                ),
+                child: Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.muted),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: _ServiceQueueTable._columns[2].width,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s8,
+                  vertical: 10,
+                ),
+                child: Text(
+                  formatPrice(usage.lineTotal),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.heading,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The destination guest when the selected services don't already share one
+/// stay — mirrors `servicePick` in Billing.jsx and [_AddToRoomDialog] in
+/// orders_screen.dart.
+class _AddServicesToRoomDialog extends ConsumerStatefulWidget {
+  final List<int> usageIds;
+
+  const _AddServicesToRoomDialog({required this.usageIds});
+
+  @override
+  ConsumerState<_AddServicesToRoomDialog> createState() =>
+      _AddServicesToRoomDialogState();
+}
+
+class _AddServicesToRoomDialogState extends ConsumerState<_AddServicesToRoomDialog> {
+  List<InHouseGuest>? _guests;
+  int? _bookingId;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    ref
+        .read(billingUsecaseProvider)
+        .inHouseGuests()
+        .then((guests) {
+          if (!mounted) return;
+          setState(() => _guests = guests);
+        })
+        .catchError((_) {
+          if (!mounted) return;
+          setState(() {
+            _guests = const [];
+            _error = 'Could not load guests.';
+          });
+        });
+  }
+
+  Future<void> _confirm() async {
+    if (_bookingId == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final ok = await ref
+        .read(billingViewModelProvider.notifier)
+        .addServicesToRoom(widget.usageIds, _bookingId!);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _busy = false;
+        _error =
+            ref.read(billingViewModelProvider).error ??
+            'Could not add to the room bill.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.bg,
+      title: const Text(
+        'Add the selected services to a guest\'s room bill',
+        style: TextStyle(color: AppTheme.heading),
+      ),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_error != null) ...[
+              Text(_error!, style: const TextStyle(color: AppTheme.danger)),
+              const SizedBox(height: AppTheme.s8),
+            ],
+            if (_guests == null)
+              const Text(
+                'Loading guests…',
+                style: TextStyle(color: AppTheme.muted),
+              )
+            else if (_guests!.isEmpty)
+              const Text(
+                'Nobody is checked in right now.',
+                style: TextStyle(color: AppTheme.muted),
+              )
+            else
+              DropdownButtonFormField<int>(
+                value: _bookingId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Guest'),
+                items: [
+                  for (final g in _guests!)
+                    DropdownMenuItem(
+                      value: g.bookingId,
+                      child: Text(
+                        'Room ${g.roomNumber ?? ''} · ${g.guestName ?? ''}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: _busy ? null : (v) => setState(() => _bookingId = v),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy || _bookingId == null ? null : _confirm,
+          child: Text(_busy ? 'Adding…' : 'Add to room bill'),
+        ),
+      ],
     );
   }
 }

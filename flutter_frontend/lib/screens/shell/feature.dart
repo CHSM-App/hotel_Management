@@ -62,6 +62,9 @@ class Feature {
     'hasEvents' => me.lodge.hasEvents,
     'hasAssets' => me.lodge.hasAssets,
     'hasExpenses' => me.lodge.hasExpenses,
+    'hasLaundry' => me.lodge.hasLaundry,
+    'hasHousekeeping' => me.lodge.hasHousekeeping,
+    'hasOtherServices' => me.lodge.hasOtherServices,
     _ => true,
   };
 }
@@ -178,6 +181,50 @@ const kFeatures = <Feature>[
     icon: Icons.bed_rounded,
     permission: 'rooms.manage',
     capability: 'hasRooms',
+    group: 'Rooms',
+  ),
+  // Same web module (HousekeepingPanel.jsx): the room cleaning board — which
+  // rooms to clean, which are ready — plus the problems and found items
+  // cleaners report while finishing a room. An add-on, separate from
+  // Laundry (frontend/src/lib/propertyProfile.js). The Housekeeping role
+  // holds only housekeeping.manage; reception and the owner reach it
+  // through bookings.manage/rooms.manage, same as the web.
+  Feature(
+    key: 'housekeeping',
+    title: 'Housekeeping',
+    icon: Icons.cleaning_services_rounded,
+    permission: 'housekeeping.manage',
+    altPermissions: ['bookings.manage', 'rooms.manage'],
+    capability: 'hasHousekeeping',
+    group: 'Rooms',
+  ),
+  // Same web module (LaundryPanel.jsx): hotel linen sent for washing and
+  // received back, plus guests' own laundry taken in at the desk. Its own
+  // add-on, separate from Housekeeping — a property can have either without
+  // the other (frontend/src/lib/propertyProfile.js). The Laundry role holds
+  // only laundry.manage; reception and the owner reach it through
+  // bookings.manage/rooms.manage, same as the web.
+  Feature(
+    key: 'laundry',
+    title: 'Laundry',
+    icon: Icons.local_laundry_service_rounded,
+    permission: 'laundry.manage',
+    altPermissions: ['bookings.manage', 'rooms.manage'],
+    capability: 'hasLaundry',
+    group: 'Rooms',
+  ),
+  // Same web module (ServicesPanel.jsx): a private pool, a gaming area,
+  // anything a lodge sells per use and bills like food. An add-on, separate
+  // from Laundry/Housekeeping (frontend/src/lib/propertyProfile.js). The
+  // catalogue is priced by whoever prices the rooms; running a use is front
+  // desk work, so reception and the billing desk can do it too.
+  Feature(
+    key: 'otherServices',
+    title: 'Other services',
+    icon: Icons.spa_rounded,
+    permission: 'rooms.manage',
+    altPermissions: ['bookings.manage', 'billing.manage'],
+    capability: 'hasOtherServices',
     group: 'Rooms',
   ),
   // Same web sidebar group (propertyProfile.js's 'Restaurant'): Menu & QR

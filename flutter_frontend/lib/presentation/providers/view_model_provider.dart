@@ -7,8 +7,11 @@ import '../view_models/billing_viewmodel.dart';
 import '../view_models/events_viewmodel.dart';
 import '../view_models/expenses_viewmodel.dart';
 import '../view_models/food_settings_viewmodel.dart';
+import '../view_models/housekeeping_viewmodel.dart';
 import '../view_models/income_viewmodel.dart';
 import '../view_models/inventory_viewmodel.dart';
+import '../view_models/laundry_viewmodel.dart';
+import '../view_models/lodge_services_viewmodel.dart';
 import '../view_models/menu_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
 import '../view_models/reports_viewmodel.dart';
@@ -124,4 +127,27 @@ final incomeViewModelProvider =
 final staffViewModelProvider =
     StateNotifierProvider.autoDispose<StaffViewModel, StaffState>(
       (ref) => StaffViewModel(ref.watch(staffUsecaseProvider)),
+    );
+
+/// Laundry — hotel linen and guest laundry. Behind "More" like Assets/Events
+/// — autoDispose so a login that never opens it never keeps the board and
+/// orders warm for the life of the app.
+final laundryViewModelProvider =
+    StateNotifierProvider.autoDispose<LaundryViewModel, LaundryState>(
+      (ref) => LaundryViewModel(ref.watch(laundryUsecaseProvider)),
+    );
+
+/// Housekeeping — the room board and its issues log. Same treatment as
+/// Laundry: autoDispose so a login that never opens it never keeps the
+/// board warm for the life of the app.
+final housekeepingViewModelProvider =
+    StateNotifierProvider.autoDispose<HousekeepingViewModel, HousekeepingState>(
+      (ref) => HousekeepingViewModel(ref.watch(housekeepingUsecaseProvider)),
+    );
+
+/// Other services. Same treatment as Laundry/Housekeeping — autoDispose so a
+/// login that never opens it never keeps the catalogue and usage log warm.
+final lodgeServicesViewModelProvider =
+    StateNotifierProvider.autoDispose<LodgeServicesViewModel, LodgeServicesState>(
+      (ref) => LodgeServicesViewModel(ref.watch(lodgeServicesUsecaseProvider)),
     );

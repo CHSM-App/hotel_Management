@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../models/invoice.dart';
+import '../models/lodge_service.dart' show ServiceUsage;
 
 abstract class BillingRepository {
   Future<List<BillableStay>> queue();
@@ -67,4 +68,21 @@ abstract class BillingRepository {
 
   /// Sets where one series continues from.
   Future<BillSeries> updateBillingSeries(String series, int nextNumber);
+
+  /// Completed, unbilled services (laundry, pool, gaming ...) waiting on
+  /// their own document or on a guest's room bill.
+  Future<List<ServiceUsage>> billableServiceUsages();
+
+  /// What a standalone service bill will say.
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds);
+
+  /// Bill the selected uses on their own document.
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  );
+
+  /// Charges the selected, completed services to a guest's room bill instead
+  /// of billing them on their own.
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId);
 }
