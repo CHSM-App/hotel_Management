@@ -11,6 +11,7 @@ import '../billing/billing_screen.dart';
 import '../billing/event_billing_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
+import '../customers/customers_screen.dart';
 import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../food/food_billing_screen.dart';
@@ -27,6 +28,7 @@ import '../staff/staff_roles_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
 import 'sidebar.dart';
+import 'sign_out_dialog.dart';
 
 /// The signed-in app: a top bar, a section, and the sidebar that chooses it —
 /// the same rail the web dashboard uses, rather than a phone bottom bar.
@@ -200,27 +202,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   /// clearing the session is enough for AuthGate to show LoginScreen next
   /// build.
   Future<void> _confirmSignOut(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text('Sign out?', style: TextStyle(color: AppTheme.heading)),
-        content: const Text(
-          'You will need your phone or email and password to get back in.',
-          style: TextStyle(color: AppTheme.text),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay signed in'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out', style: TextStyle(color: AppTheme.danger)),
-          ),
-        ],
-      ),
-    );
+    final ok = await showSignOutDialog(context);
     if (ok == true) {
       await ref.read(authViewModelProvider.notifier).signOut();
     }
@@ -323,6 +305,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const FoodBillingScreen();
       case 'billing':
         return const BillingScreen();
+      case 'customers':
+        return const CustomersScreen();
       case 'eventBilling':
         return const EventBillingScreen();
       case 'rooms':

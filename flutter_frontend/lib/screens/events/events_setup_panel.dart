@@ -19,11 +19,12 @@ import '../theme.dart';
 /// web's own MAX_VENUE_IMAGES.
 const maxVenueImages = 6;
 
-/// Events & functions > Setup — mirrors the Setup tab's two CatalogueCards
-/// in Events.jsx: Venues and Add-ons, each a list with inline activate /
-/// deactivate and an add/edit dialog, plus a venue's own photo picker
-/// (same [AddPhotoTile]/[PhotoThumb] pieces and camera-or-gallery sheet the
-/// room form uses).
+/// Events & functions > Setup — mirrors Events.jsx's own Setup tab: Venues
+/// and Add-ons each get a sub-tab of their own (same subtabs switch the web
+/// uses) rather than one long page of both, each a list with inline
+/// activate/deactivate and an add/edit dialog, plus a venue's own photo
+/// picker (same [AddPhotoTile]/[PhotoThumb] pieces and camera-or-gallery
+/// sheet the room form uses).
 class EventsSetupPanel extends ConsumerStatefulWidget {
   const EventsSetupPanel({super.key});
 
@@ -32,6 +33,8 @@ class EventsSetupPanel extends ConsumerStatefulWidget {
 }
 
 class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
+  String _tab = 'venues';
+
   @override
   void initState() {
     super.initState();
@@ -42,62 +45,82 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
   Widget build(BuildContext context) {
     final state = ref.watch(eventsViewModelProvider);
 
-    return RefreshIndicator(
-      onRefresh: () => ref.read(eventsViewModelProvider.notifier).loadCatalogue(),
-      color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, AppTheme.s24),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          if (state.catalogueLoading && state.venues.isEmpty && state.addons.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
-          else ...[
-            _SectionCard(
-              title: 'Venues',
-              hint: 'Halls and lawns that can be booked for a function.',
-              icon: Icons.villa_rounded,
-              addLabel: 'Add a venue',
-              onAdd: () => _editVenue(context, ref),
-              children: [
-                if (state.venues.isEmpty) const _Empty('Nothing set up yet.'),
-                for (final v in state.venues)
-                  _VenueRow(
-                    venue: v,
-                    onEdit: () => _editVenue(context, ref, venue: v),
-                    onToggle: () => _confirmToggle(
-                      context,
-                      name: v.name,
-                      active: v.isActive,
-                      onConfirm: () => ref.read(eventsViewModelProvider.notifier).toggleVenue(v),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.s12),
-            _SectionCard(
-              title: 'Add-ons',
-              hint: 'Extras quoted on top of venue and plates — DJ, decor, mandap.',
-              icon: Icons.extension_rounded,
-              addLabel: 'Add an add-on',
-              onAdd: () => _editAddon(context, ref),
-              children: [
-                if (state.addons.isEmpty) const _Empty('Nothing set up yet.'),
-                for (final a in state.addons)
-                  _AddonRow(
-                    addon: a,
-                    onEdit: () => _editAddon(context, ref, addon: a),
-                    onToggle: () => _confirmToggle(
-                      context,
-                      name: a.name,
-                      active: a.isActive,
-                      onConfirm: () => ref.read(eventsViewModelProvider.notifier).toggleAddon(a),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 0),
+          child: _SubTabs(selected: _tab, onSelect: (t) => setState(() => _tab = t)),
+        ),
+        Expanded(
+          child: Stack(
+            children: [
+              RefreshIndicator(
+                onRefresh: () => ref.read(eventsViewModelProvider.notifier).loadCatalogue(),
+                color: AppTheme.accent,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s32 + 56),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    if (state.catalogueLoading && state.venues.isEmpty && state.addons.isEmpty)
+                      const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+                    else if (_tab == 'venues')
+                      _SectionCard(
+                        title: 'Venues',
+                        hint: 'Halls and lawns that can be booked for a function.',
+                        icon: Icons.villa_rounded,
+                        children: [
+                          if (state.venues.isEmpty) const _Empty('Nothing set up yet.'),
+                          for (final v in state.venues)
+                            _VenueRow(
+                              venue: v,
+                              onEdit: () => _editVenue(context, ref, venue: v),
+                              onToggle: () => _confirmToggle(
+                                context,
+                                name: v.name,
+                                active: v.isActive,
+                                onConfirm: () => ref.read(eventsViewModelProvider.notifier).toggleVenue(v),
+                              ),
+                            ),
+                        ],
+                      )
+                    else
+                      _SectionCard(
+                        title: 'Add-ons',
+                        hint: 'Extras quoted on top of venue and plates — DJ, decor, mandap.',
+                        icon: Icons.extension_rounded,
+                        children: [
+                          if (state.addons.isEmpty) const _Empty('Nothing set up yet.'),
+                          for (final a in state.addons)
+                            _AddonRow(
+                              addon: a,
+                              onEdit: () => _editAddon(context, ref, addon: a),
+                              onToggle: () => _confirmToggle(
+                                context,
+                                name: a.name,
+                                active: a.isActive,
+                                onConfirm: () => ref.read(eventsViewModelProvider.notifier).toggleAddon(a),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: AppTheme.s16,
+                bottom: AppTheme.s16,
+                child: FloatingActionButton(
+                  backgroundColor: AppTheme.accent,
+                  foregroundColor: Colors.white,
+                  tooltip: _tab == 'venues' ? 'Add a venue' : 'Add an add-on',
+                  onPressed: () => _tab == 'venues' ? _editVenue(context, ref) : _editAddon(context, ref),
+                  child: const Icon(Icons.add_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -171,20 +194,105 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
   }
 }
 
+/// Same sliding-pill segmented control Rooms & Rates / Income / Expenses use
+/// — one connected control with a moving highlight, mirroring the web
+/// Setup tab's own Venues/Add-ons subtabs switch.
+class _SubTabs extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const _SubTabs({required this.selected, required this.onSelect});
+
+  static const _tabs = {
+    'venues': 'Venues',
+    'addons': 'Add-ons',
+  };
+
+  static const double _height = 44;
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = _tabs.keys.toList();
+    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
+
+    Widget segment(String key, String label) {
+      final isSelected = key == selected;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onSelect(key),
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: _height,
+            child: Center(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : AppTheme.heading,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  fontSize: 13,
+                ),
+                child: Text(label, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: _height,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment(-1 + (2 / (keys.length - 1)) * selectedIndex, 0),
+            child: FractionallySizedBox(
+              widthFactor: 1 / keys.length,
+              child: Container(
+                height: _height - 8,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  ),
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+                  boxShadow: [
+                    BoxShadow(color: AppTheme.accent.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 3)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              for (final entry in _tabs.entries) segment(entry.key, entry.value),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionCard extends StatelessWidget {
   final String title;
   final String hint;
   final IconData icon;
-  final String addLabel;
-  final VoidCallback onAdd;
   final List<Widget> children;
 
   const _SectionCard({
     required this.title,
     required this.hint,
     required this.icon,
-    required this.addLabel,
-    required this.onAdd,
     required this.children,
   });
 
@@ -214,21 +322,6 @@ class _SectionCard extends StatelessWidget {
                     const SizedBox(height: 1),
                     Text(hint, style: Theme.of(context).textTheme.bodySmall),
                   ],
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              GestureDetector(
-                onTap: onAdd,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(colors: [AppTheme.accent, AppTheme.sidebarBrand]),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: Color(0x335A67D8), blurRadius: 8, offset: Offset(0, 2))],
-                  ),
-                  child: const Icon(Icons.add_rounded, size: 19, color: Colors.white),
                 ),
               ),
             ],
@@ -325,6 +418,13 @@ class _VenueRow extends StatelessWidget {
                     width: 44,
                     height: 44,
                     fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 44,
+                      height: 44,
+                      color: AppTheme.card,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.villa_rounded, size: 18, color: AppTheme.muted),
+                    ),
                   ),
                 ),
                 if (venue.images.length > 1)

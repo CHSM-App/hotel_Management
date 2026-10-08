@@ -10,6 +10,7 @@ import '../../core/constant.dart';
 import '../../domain/models/me.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../shell/sign_out_dialog.dart';
 import '../theme.dart';
 
 /// The account screen — who is signed in, what property they're on, and the
@@ -280,27 +281,7 @@ class ProfileScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
   ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text('Sign out?', style: TextStyle(color: AppTheme.heading)),
-        content: const Text(
-          'You will need your phone or email and password to get back in.',
-          style: TextStyle(color: AppTheme.text),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay signed in'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out', style: TextStyle(color: AppTheme.danger)),
-          ),
-        ],
-      ),
-    );
+    final ok = await showSignOutDialog(context);
     if (ok == true) {
       await ref.read(authViewModelProvider.notifier).signOut();
       // ProfileScreen is pushed on top of DashboardShell, which sits inside

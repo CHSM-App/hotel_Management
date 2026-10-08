@@ -229,6 +229,7 @@ class _Header extends StatelessWidget {
     'DRAFT' => AppTheme.draft,
     'CONFIRMED' => const Color(0xFFC0392B),
     'SETTLED' => AppTheme.muted,
+    'CANCELLED' => AppTheme.danger,
     _ => AppTheme.border,
   };
 

@@ -18,17 +18,14 @@ class ServicesCataloguePanel extends ConsumerStatefulWidget {
 }
 
 class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel> {
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() => ref.read(lodgeServicesViewModelProvider.notifier).loadServices());
-  }
+  // ServicesScreen triggers the initial load once and keeps the provider
+  // alive for the life of the screen — see service_usage_panel.dart.
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(lodgeServicesViewModelProvider);
 
-    if (state.isLoading && state.services.isEmpty) {
+    if (state.isLoadingServices && state.services.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 

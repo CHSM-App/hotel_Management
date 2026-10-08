@@ -10,7 +10,8 @@ import '../../domain/usecase/lodge_services_usecase.dart';
 /// Other services — the catalogue and its usage log in one notifier, the
 /// way ServicesPanel.jsx keeps both views' state in one component.
 class LodgeServicesState {
-  final bool isLoading;
+  final bool isLoadingServices;
+  final bool isLoadingUsages;
   final String? error;
   final List<LodgeService> services;
   final List<ServiceUsage> usages;
@@ -18,7 +19,8 @@ class LodgeServicesState {
   final bool submitting;
 
   const LodgeServicesState({
-    this.isLoading = false,
+    this.isLoadingServices = false,
+    this.isLoadingUsages = false,
     this.error,
     this.services = const [],
     this.usages = const [],
@@ -27,7 +29,8 @@ class LodgeServicesState {
   });
 
   LodgeServicesState copyWith({
-    bool? isLoading,
+    bool? isLoadingServices,
+    bool? isLoadingUsages,
     String? error,
     bool clearError = false,
     List<LodgeService>? services,
@@ -35,7 +38,8 @@ class LodgeServicesState {
     List<InHouseGuest>? inHouseGuests,
     bool? submitting,
   }) => LodgeServicesState(
-    isLoading: isLoading ?? this.isLoading,
+    isLoadingServices: isLoadingServices ?? this.isLoadingServices,
+    isLoadingUsages: isLoadingUsages ?? this.isLoadingUsages,
     error: clearError ? null : (error ?? this.error),
     services: services ?? this.services,
     usages: usages ?? this.usages,
@@ -52,22 +56,22 @@ class LodgeServicesViewModel extends StateNotifier<LodgeServicesState> {
   LodgeServicesViewModel(this.usecase) : super(const LodgeServicesState());
 
   Future<void> loadServices() async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    state = state.copyWith(isLoadingServices: true, clearError: true);
     try {
       final services = await usecase.services(includeInactive: true);
-      state = state.copyWith(isLoading: false, services: services);
+      state = state.copyWith(isLoadingServices: false, services: services);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoadingServices: false, error: apiErrorMessage(e));
     }
   }
 
   Future<void> loadUsages() async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    state = state.copyWith(isLoadingUsages: true, clearError: true);
     try {
       final usages = await usecase.usages(status: 'all');
-      state = state.copyWith(isLoading: false, usages: usages);
+      state = state.copyWith(isLoadingUsages: false, usages: usages);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: apiErrorMessage(e));
+      state = state.copyWith(isLoadingUsages: false, error: apiErrorMessage(e));
     }
   }
 

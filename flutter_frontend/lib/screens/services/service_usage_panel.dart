@@ -20,21 +20,16 @@ class ServiceUsagePanel extends ConsumerStatefulWidget {
 }
 
 class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() {
-      ref.read(lodgeServicesViewModelProvider.notifier).loadUsages();
-      ref.read(lodgeServicesViewModelProvider.notifier).loadServices();
-      ref.read(lodgeServicesViewModelProvider.notifier).loadInHouseGuests();
-    });
-  }
+  // ServicesScreen triggers the initial loadUsages/loadServices/
+  // loadInHouseGuests once, and keeps lodgeServicesViewModelProvider alive
+  // for as long as the screen is open — switching sub-tabs here no longer
+  // needs (or should repeat) its own load.
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(lodgeServicesViewModelProvider);
 
-    if (state.isLoading && state.usages.isEmpty) {
+    if (state.isLoadingUsages && state.usages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 

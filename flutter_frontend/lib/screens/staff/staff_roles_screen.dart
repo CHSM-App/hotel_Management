@@ -229,23 +229,43 @@ class _StaffRow extends ConsumerWidget {
       member.phone,
     ].join(' · ');
 
+    final statusColor = member.isActive ? AppTheme.vacant : AppTheme.muted;
+
     return NeuCard(
       radius: AppTheme.rMedium,
       shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s12),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
       onTap: () => showStaffFormScreen(context, member: member),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppTheme.sidebarBrandWash, shape: BoxShape.circle),
-            child: Text(
-              member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
-              style: const TextStyle(color: AppTheme.sidebarBrandInk, fontWeight: FontWeight.w700, fontSize: 15),
-            ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(color: AppTheme.sidebarBrandWash, shape: BoxShape.circle),
+                child: Text(
+                  member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
+                  style: const TextStyle(color: AppTheme.sidebarBrandInk, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+              ),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.card, width: 2),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: AppTheme.s12),
           Expanded(
@@ -253,35 +273,46 @@ class _StaffRow extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  member.name,
-                  style: Theme.of(context).textTheme.titleSmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        member.name,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontSize: 14.5, fontWeight: FontWeight.w700),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _RolePill(text: member.roleName),
+                  ],
                 ),
                 if (contact.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     contact,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                const SizedBox(height: AppTheme.s8),
-                Wrap(
-                  spacing: AppTheme.s8,
-                  runSpacing: AppTheme.s4,
-                  children: [
-                    _Badge(text: member.roleName, color: AppTheme.accent),
-                    _Badge(
-                      text: member.isActive ? 'Active' : 'Disabled',
-                      color: member.isActive ? AppTheme.vacant : AppTheme.muted,
-                    ),
-                    if (member.mustResetPassword)
-                      const _Badge(text: 'Temporary password', color: AppTheme.draft),
-                  ],
-                ),
+                if (member.mustResetPassword) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.schedule_rounded, size: 11, color: AppTheme.draft),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Temporary password',
+                        style: const TextStyle(color: AppTheme.draft, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -607,6 +638,31 @@ class _RoleCard extends ConsumerWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A compact role tag that sits inline next to the staff member's name —
+/// replaces the old full-width "Active" badge row with a single glance.
+class _RolePill extends StatelessWidget {
+  final String text;
+
+  const _RolePill({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: AppTheme.accent, fontSize: 10.5, fontWeight: FontWeight.w700),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
