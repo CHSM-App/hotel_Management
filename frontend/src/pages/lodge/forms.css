@@ -417,8 +417,13 @@
   transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
-.btn-outline:hover:not(:disabled) {
+/* The class is written twice on purpose. LodgesDashboard.css has a
+   .btn-outline of its own whose hover turns the label the brand colour, and
+   where both sheets are loaded that label landed on this rule's brand fill —
+   the same colour, so the label vanished. The doubled class out-ranks it. */
+.btn-outline.btn-outline:hover:not(:disabled) {
   background: var(--brand);
+  border-color: var(--brand);
   color: #ffffff;
   box-shadow: var(--shadow-raised-hover);
 }
