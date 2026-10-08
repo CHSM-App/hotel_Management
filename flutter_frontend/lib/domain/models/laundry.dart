@@ -74,6 +74,9 @@ class LinenHandoverLine {
 class LinenHandover {
   final String key;
   final String? roomNumber;
+  // A venue the linen changed in, where it wasn't a room — mirrors
+  // listHandovers' venue_name (housekeeping.service.js).
+  final String? venueName;
   final String? changedBy;
   final String? changedById;
   final String changedAt;
@@ -83,6 +86,7 @@ class LinenHandover {
   const LinenHandover({
     required this.key,
     this.roomNumber,
+    this.venueName,
     this.changedBy,
     this.changedById,
     this.changedAt = '',
@@ -93,6 +97,7 @@ class LinenHandover {
   factory LinenHandover.fromJson(Map<String, dynamic> json) => LinenHandover(
     key: asStringOrNull(json['key']) ?? '',
     roomNumber: asStringOrNull(json['roomNumber']),
+    venueName: asStringOrNull(json['venueName']),
     changedBy: asStringOrNull(json['changedBy']),
     changedById: asStringOrNull(json['changedById']),
     changedAt: json['changedAt']?.toString() ?? '',
@@ -101,6 +106,10 @@ class LinenHandover {
   );
 
   int get pieces => lines.fold(0, (n, l) => n + l.quantity);
+
+  /// A room by its number, or a venue by its own name — mirrors the web's
+  /// `h.roomNumber ?? h.venueName ?? '—'`.
+  String get placeLabel => roomNumber ?? venueName ?? '—';
 }
 
 /// Linen changed in rooms waiting with housekeeping, grouped by who has it —
@@ -171,6 +180,7 @@ class LinenMovement {
   final String createdAt;
   final String itemName;
   final String? roomNumber;
+  final String? venueName;
   final String? userName;
 
   const LinenMovement({
@@ -184,6 +194,7 @@ class LinenMovement {
     this.createdAt = '',
     this.itemName = '',
     this.roomNumber,
+    this.venueName,
     this.userName,
   });
 
@@ -198,12 +209,17 @@ class LinenMovement {
     createdAt: json['createdAt']?.toString() ?? '',
     itemName: asStringOrNull(json['itemName']) ?? '',
     roomNumber: asStringOrNull(json['roomNumber']),
+    venueName: asStringOrNull(json['venueName']),
     userName: asStringOrNull(json['userName']),
   );
+
+  /// A room by its number, or a venue by its own name — mirrors the web's
+  /// `m.roomNumber || m.venueName || ''`.
+  String get placeLabel => roomNumber ?? venueName ?? '';
 }
 
 const kLinenMoveLabel = {
-  'CHANGED': 'Changed in a room',
+  'CHANGED': 'Changed in a room or venue',
   'SENT': 'Sent for washing',
   'RECEIVED': 'Received washed',
   'LOST': 'Marked lost',
@@ -217,14 +233,26 @@ class LinenBoard {
   final List<LinenMovement> movements;
   final List<LinenHandover> handovers;
   final String lastWashedBy;
+  // True where the property keeps its linen in Asset Inventory, under the
+  // "Bedsheets & Towels" category — Laundry then only reads it; adding an
+  // item or changing its name/count happens there instead. Mirrors the
+  // `managedInAssets` flag housekeeping.controller.js's listLinen adds.
+  final bool managedInAssets;
 
-  const LinenBoard({this.items = const [], this.movements = const [], this.handovers = const [], this.lastWashedBy = ''});
+  const LinenBoard({
+    this.items = const [],
+    this.movements = const [],
+    this.handovers = const [],
+    this.lastWashedBy = '',
+    this.managedInAssets = false,
+  });
 
   factory LinenBoard.fromJson(Map<String, dynamic> json) => LinenBoard(
     items: (json['items'] as List? ?? []).map((e) => LinenItem.fromJson(e as Map<String, dynamic>)).toList(),
     movements: (json['movements'] as List? ?? []).map((e) => LinenMovement.fromJson(e as Map<String, dynamic>)).toList(),
     handovers: (json['handovers'] as List? ?? []).map((e) => LinenHandover.fromJson(e as Map<String, dynamic>)).toList(),
     lastWashedBy: asStringOrNull(json['lastWashedBy']) ?? '',
+    managedInAssets: asBool(json['managedInAssets']),
   );
 }
 

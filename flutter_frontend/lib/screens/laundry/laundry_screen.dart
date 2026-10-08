@@ -49,7 +49,7 @@ class _SubTabs extends StatelessWidget {
 
   static const double _height = 44;
   static const _tabs = ['linen', 'laundry'];
-  static const _labels = {'linen': 'Hotel linen', 'laundry': 'Guest laundry'};
+  static const _labels = {'linen': 'Hotel Laundry', 'laundry': 'Guest laundry'};
 
   @override
   Widget build(BuildContext context) {

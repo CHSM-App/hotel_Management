@@ -22,6 +22,7 @@ import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'advance_receipt_screen.dart';
 import 'booking_actions.dart';
+import 'check_in_room_status.dart';
 
 /// Lets the desk take an ID proof photo with the camera or pull one from the
 /// gallery — the same either-or the web form gets from its file input's own
@@ -238,6 +239,25 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     }
     return null;
   }
+
+  /// Whether the chosen check-in is today — housekeeping's status is only
+  /// worth showing for a room the desk is about to hand over right now, not
+  /// one reserved for a future date. Mirrors the web form's own
+  /// `bookingForm.checkInDate === today` gate.
+  bool _isCheckInToday(BookingState state) {
+    final checkIn = state.checkIn;
+    if (checkIn == null) return false;
+    final now = DateTime.now();
+    return checkIn.year == now.year && checkIn.month == now.month && checkIn.day == now.day;
+  }
+
+  /// Every room picked so far — room 1 plus every picked extra room — as
+  /// entries [CheckInRoomStatus] can look up on the housekeeping board.
+  List<CheckInRoomStatusEntry> _pickedRoomEntries(BookingState state) => [
+    if (state.room != null) CheckInRoomStatusEntry(roomId: state.room!.id, roomNumber: state.room!.roomNumber),
+    for (final r in MultiRoomLogic.pickedExtraRooms(state))
+      CheckInRoomStatusEntry(roomId: r.room!.id, roomNumber: r.room!.roomNumber),
+  ];
 
   // Mirrors the web form's own client-side checks on the advance rows,
   // measured against the quote's payable total — otherwise the desk only
@@ -833,6 +853,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         style: const TextStyle(color: AppTheme.danger, fontSize: 12),
                       ),
                     ],
+                    // Only for a stay starting today: what housekeeping says
+                    // now tells the desk nothing about a room reserved for
+                    // next week. Mirrors CheckInRoomStatus's placement in
+                    // Bookings.jsx's own take-booking form.
+                    if (_isCheckInToday(state)) CheckInRoomStatus(rooms: _pickedRoomEntries(state)),
                   ],
 
                   if (state.room != null) ...[

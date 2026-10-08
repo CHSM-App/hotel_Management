@@ -67,6 +67,8 @@ abstract class EventsRepository {
 
   Future<EventBooking> confirm(int id);
 
+  Future<EventBooking> complete(int id);
+
   Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod});
 
   Future<List<AdvanceReceipt>> advanceReceipts(int eventId);

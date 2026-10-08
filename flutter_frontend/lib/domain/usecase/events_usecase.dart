@@ -92,6 +92,8 @@ class EventsUsecase {
 
   Future<EventBooking> confirm(int id) => repository.confirm(id);
 
+  Future<EventBooking> complete(int id) => repository.complete(id);
+
   Future<EventBooking> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>
       repository.cancel(id, reason: reason, refundAmount: refundAmount, refundPaymentMethod: refundPaymentMethod);
 

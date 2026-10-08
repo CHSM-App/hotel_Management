@@ -22,6 +22,10 @@ class IssuesTab extends ConsumerStatefulWidget {
 class _IssuesTabState extends ConsumerState<IssuesTab> {
   String _filter = 'OPEN';
   String _view = 'table';
+  // ROOMS | VENUES | BOTH — only offered where there is a choice to make: a
+  // property with rooms and events both. Mirrors the `spaces` filter
+  // HousekeepingIssues.jsx adds next to Show.
+  String _spaces = 'BOTH';
   Timer? _timer;
 
   @override
@@ -43,7 +47,7 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg,
-        title: Text('Room ${issue.roomNumber} · ${(kIssueKindCloseLabel[issue.kind] ?? '').toLowerCase()}?', style: const TextStyle(color: AppTheme.heading)),
+        title: Text('${issue.spaceLabel} · ${(kIssueKindCloseLabel[issue.kind] ?? '').toLowerCase()}?', style: const TextStyle(color: AppTheme.heading)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,11 +57,11 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
             TextField(
               controller: note,
               autofocus: true,
-              decoration: InputDecoration(labelText: kIssueKindQuestion[issue.kind], hintText: kIssueKindHint[issue.kind], border: const OutlineInputBorder()),
+              decoration: InputDecoration(labelText: kIssueKindQuestion[issue.kind], hintText: issueCloseHint(issue), border: const OutlineInputBorder()),
             ),
             if (issue.roomBlocked) ...[
               const SizedBox(height: AppTheme.s8),
-              Text('Room ${issue.roomNumber} is held under repair for this. Marking it fixed sends the room to the cleaning list.', style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+              Text('${issue.spaceLabel} is held under repair for this. Marking it fixed sends it to the cleaning list.', style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
             ],
           ],
         ),
@@ -76,8 +80,16 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(housekeepingViewModelProvider);
-    final open = state.issues.where((i) => i.isOpen).toList();
-    final closed = state.issues.where((i) => !i.isOpen).toList();
+    final lodge = ref.watch(authViewModelProvider).me?.lodge;
+    // Only where there is a choice to make: a property with rooms and events
+    // both. Mirrors `bothKinds` in HousekeepingIssues.jsx.
+    final bothKinds = (lodge?.hasEvents ?? false) && (lodge?.hasRooms ?? false);
+
+    final inSpaces = state.issues
+        .where((i) => !bothKinds || _spaces == 'BOTH' || (_spaces == 'VENUES') == i.isVenue)
+        .toList();
+    final open = inSpaces.where((i) => i.isOpen).toList();
+    final closed = inSpaces.where((i) => !i.isOpen).toList();
     final shown = switch (_filter) {
       'OPEN' => open,
       'CLOSED' => closed,
@@ -89,6 +101,13 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
       FilterOption('CLOSED', 'Closed', closed.length),
       FilterOption('ALL', 'All', open.length + closed.length),
     ];
+    final spaceFilters = [
+      FilterOption('BOTH', 'Rooms and venues', state.issues.length),
+      FilterOption('ROOMS', 'Rooms only', state.issues.where((i) => !i.isVenue).length),
+      FilterOption('VENUES', 'Venues only', state.issues.where((i) => i.isVenue).length),
+    ];
+    // "a room", "a venue" or "a room or a venue" — mirrors `place` on the web.
+    final place = bothKinds ? 'a room or a venue' : (lodge?.hasEvents ?? false) ? 'a venue' : 'a room';
 
     if (state.issuesLoading && state.issues.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -112,6 +131,10 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
               HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
             ],
           ),
+          if (bothKinds) ...[
+            const SizedBox(height: AppTheme.s8),
+            FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces'),
+          ],
           const SizedBox(height: AppTheme.s12),
           if (shown.isEmpty)
             NeuNotice(
@@ -119,11 +142,11 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
               message: _filter == 'CLOSED'
                   ? 'Nothing closed yet. Problems you mark fixed and items you hand over move here.'
                   : _filter == 'OPEN'
-                      ? 'Nothing waiting. When a cleaner reports a problem or a found item while finishing a room, it appears here.'
+                      ? 'Nothing waiting. When a cleaner reports a problem or a found item while finishing $place, it appears here.'
                       : 'Nothing reported yet.',
             )
           else if (_view == 'table')
-            _IssuesTable(issues: shown, onClose: _close)
+            _IssuesTable(issues: shown, placeHead: bothKinds ? 'Room / Venue' : (lodge?.hasEvents ?? false) ? 'Venue' : 'Room', onClose: _close)
           else
             for (final i in shown) _IssueCard(issue: i, onClose: () => _close(i)),
         ],
@@ -163,13 +186,23 @@ class _IssueCard extends StatelessWidget {
               height: 38,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: tone.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
-              child: Text(issue.roomNumber, style: TextStyle(color: tone, fontWeight: FontWeight.w800, fontSize: 12.5)),
+              // A venue's name is too long for this tile, as on the cleaning
+              // board: the tile says what it is and the name sits over the
+              // report below, mirroring the web's hk-card__room--venue.
+              child: issue.isVenue
+                  ? Icon(Icons.celebration_rounded, color: tone, size: 16)
+                  : Text(issue.roomNumber, style: TextStyle(color: tone, fontWeight: FontWeight.w800, fontSize: 12.5)),
             ),
             const SizedBox(width: AppTheme.s8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (issue.isVenue)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(issue.roomNumber, style: const TextStyle(color: AppTheme.muted, fontWeight: FontWeight.w700, fontSize: 11)),
+                    ),
                   Text(issue.text, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13)),
                   const SizedBox(height: 5),
                   Row(
@@ -185,7 +218,7 @@ class _IssueCard extends StatelessWidget {
                   ],
                   if (issue.roomBlocked) ...[
                     const SizedBox(height: 4),
-                    const StatusPill(label: 'Room held under repair', color: AppTheme.danger),
+                    const StatusPill(label: 'Held under repair', color: AppTheme.danger),
                   ],
                 ],
               ),
@@ -206,9 +239,10 @@ class _IssueCard extends StatelessWidget {
 /// shown is closed) a note column.
 class _IssuesTable extends StatelessWidget {
   final List<HousekeepingIssue> issues;
+  final String placeHead;
   final ValueChanged<HousekeepingIssue> onClose;
 
-  const _IssuesTable({required this.issues, required this.onClose});
+  const _IssuesTable({required this.issues, required this.placeHead, required this.onClose});
 
   static const _actionsWidth = 140.0;
 
@@ -216,7 +250,7 @@ class _IssuesTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final anyClosed = issues.any((i) => !i.isOpen);
     final columns = [
-      (label: 'Room', width: 64.0),
+      (label: placeHead, width: 90.0),
       (label: 'Type', width: 110.0),
       (label: 'Reported by', width: 120.0),
       (label: 'When', width: 130.0),
@@ -285,7 +319,7 @@ class _IssueTableRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           cell(240, Text(issue.text, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w600))),
-          cell(64, Text(issue.roomNumber, style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700))),
+          cell(90, Text(issue.roomNumber, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700))),
           cell(110, Align(alignment: Alignment.centerLeft, child: StatusPill(label: kIssueKindLabel[issue.kind] ?? issue.kind, color: tone))),
           cell(120, text(issue.reportedBy)),
           cell(130, text(when)),

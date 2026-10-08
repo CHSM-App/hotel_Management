@@ -24,15 +24,26 @@ class RoomsTab extends ConsumerStatefulWidget {
 class _RoomsTabState extends ConsumerState<RoomsTab> {
   String _filter = 'TODO';
   String _view = 'table';
+  // ROOMS | VENUES | BOTH — only offered where there is a choice to make: a
+  // property with rooms and venues both. Mirrors HousekeepingPanel.jsx.
+  String _spaces = 'BOTH';
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(housekeepingViewModelProvider.notifier).loadRooms());
+    // Sequenced, not fired concurrently: two independent in-flight state
+    // writes landing close together is needless churn for one open screen.
+    Future.microtask(() async {
+      await ref.read(housekeepingViewModelProvider.notifier).loadRooms();
+      await ref.read(housekeepingViewModelProvider.notifier).loadVenues();
+    });
     // Kept fresh without a refresh button: a checkout at the desk shows up
     // here, same as RoomsTab in HousekeepingPanel.jsx.
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => ref.read(housekeepingViewModelProvider.notifier).loadRooms());
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      await ref.read(housekeepingViewModelProvider.notifier).loadRooms();
+      await ref.read(housekeepingViewModelProvider.notifier).loadVenues();
+    });
   }
 
   @override
@@ -47,27 +58,69 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
     _ => r.status == key,
   };
 
+  Future<void> _start(HousekeepingRoom r) => r.isVenue
+      ? ref.read(housekeepingViewModelProvider.notifier).startVenueCleaning(r.id)
+      : ref.read(housekeepingViewModelProvider.notifier).startCleaning(r.id);
+
+  Future<void> _release(HousekeepingRoom r) => r.isVenue
+      ? ref.read(housekeepingViewModelProvider.notifier).releaseVenue(r.id)
+      : ref.read(housekeepingViewModelProvider.notifier).releaseRoom(r.id);
+
+  Future<void> _markDirty(HousekeepingRoom r) => r.isVenue
+      ? ref.read(housekeepingViewModelProvider.notifier).markVenueDirty(r.id)
+      : ref.read(housekeepingViewModelProvider.notifier).markDirty(r.id);
+
+  Future<void> _backInService(HousekeepingRoom r) => r.isVenue
+      ? ref.read(housekeepingViewModelProvider.notifier).setVenueOutOfOrder(r.id, {'outOfOrder': false})
+      : ref.read(housekeepingViewModelProvider.notifier).setOutOfOrder(r.id, {'outOfOrder': false});
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(housekeepingViewModelProvider);
-    final rooms = state.rooms;
-    final shown = rooms.where((r) => _inFilter(r, _filter)).toList();
+    final hasVenues = state.venues.isNotEmpty;
+    final hasRooms = state.rooms.isNotEmpty;
+    final bothKinds = hasVenues && hasRooms;
+    // Rooms and venues as one list in working order, same pool
+    // HousekeepingPanel.jsx builds — what needs cleaning first, and within
+    // that whoever is arriving today.
+    final pool = [
+      if (_spaces != 'VENUES') ...state.rooms,
+      if (_spaces != 'ROOMS') ...state.venues,
+    ]..sort(
+        (a, b) =>
+            (kStatusOrder[a.status] ?? 9).compareTo(kStatusOrder[b.status] ?? 9) != 0
+                ? (kStatusOrder[a.status] ?? 9).compareTo(kStatusOrder[b.status] ?? 9)
+                : b.arrivingToday != a.arrivingToday
+                    ? (b.arrivingToday ? 1 : -1)
+                    : a.isVenue != b.isVenue
+                        ? (a.isVenue ? 1 : -1)
+                        : a.roomNumber.compareTo(b.roomNumber),
+      );
+    final shown = pool.where((r) => _inFilter(r, _filter)).toList();
     final now = DateTime.now();
 
     final filters = [
-      FilterOption('TODO', 'To clean', rooms.where((r) => _inFilter(r, 'TODO')).length),
-      FilterOption('READY', 'Ready', rooms.where((r) => r.status == 'READY').length),
-      FilterOption('OCCUPIED', 'Occupied', rooms.where((r) => r.status == 'OCCUPIED').length),
-      FilterOption('OUT_OF_ORDER', 'Under repair', rooms.where((r) => r.status == 'OUT_OF_ORDER').length),
-      FilterOption('ALL', 'All', rooms.length),
+      FilterOption('TODO', 'To clean', pool.where((r) => _inFilter(r, 'TODO')).length),
+      FilterOption('READY', 'Ready', pool.where((r) => r.status == 'READY').length),
+      FilterOption('OCCUPIED', hasVenues ? 'Occupied / in use' : 'Occupied', pool.where((r) => r.status == 'OCCUPIED').length),
+      FilterOption('OUT_OF_ORDER', 'Under repair', pool.where((r) => r.status == 'OUT_OF_ORDER').length),
+      FilterOption('ALL', 'All', pool.length),
+    ];
+    final spaceFilters = [
+      FilterOption('BOTH', 'Rooms and venues', state.rooms.length + state.venues.length),
+      FilterOption('ROOMS', 'Rooms only', state.rooms.length),
+      FilterOption('VENUES', 'Venues only', state.venues.length),
     ];
 
-    if (state.roomsLoading && rooms.isEmpty) {
+    if (state.roomsLoading && pool.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(housekeepingViewModelProvider.notifier).loadRooms(),
+      onRefresh: () => Future.wait([
+        ref.read(housekeepingViewModelProvider.notifier).loadRooms(),
+        ref.read(housekeepingViewModelProvider.notifier).loadVenues(),
+      ]),
       color: AppTheme.accent,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
@@ -84,25 +137,30 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
               HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
             ],
           ),
+          if (bothKinds) ...[
+            const SizedBox(height: AppTheme.s8),
+            FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces'),
+          ],
           const SizedBox(height: AppTheme.s12),
-          if (rooms.isNotEmpty && shown.isEmpty)
+          if (pool.isNotEmpty && shown.isEmpty)
             NeuNotice(
               icon: Icons.cleaning_services_outlined,
               message: _filter == 'TODO'
-                  ? 'Every room is clean. New check-outs appear here on their own.'
+                  ? (hasVenues ? 'Everything is clean. New check-outs and finished functions appear here on their own.' : 'Every room is clean. New check-outs appear here on their own.')
                   : _filter == 'ALL'
                       ? 'Add rooms under Rooms & rates to see them here.'
-                      : 'No rooms in this view. Choose another option above to see the rest.',
+                      : 'Nothing in this view. Choose another option above to see the rest.',
             )
           else if (_view == 'table')
             _RoomsTable(
               rooms: shown,
               now: now,
+              hasVenues: hasVenues,
               onFinish: (r) => showFinishCleaningScreen(context, r),
-              onStart: (r) => ref.read(housekeepingViewModelProvider.notifier).startCleaning(r.id),
-              onBackInService: (r) => ref.read(housekeepingViewModelProvider.notifier).setOutOfOrder(r.id, {'outOfOrder': false}),
-              onRelease: (r) => ref.read(housekeepingViewModelProvider.notifier).releaseRoom(r.id),
-              onMarkDirty: (r) => ref.read(housekeepingViewModelProvider.notifier).markDirty(r.id),
+              onStart: _start,
+              onBackInService: _backInService,
+              onRelease: _release,
+              onMarkDirty: _markDirty,
               onCloseForRepair: (r) => showOutOfOrderDialog(context, r),
             )
           else
@@ -111,11 +169,11 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
                 room: r,
                 now: now,
                 busy: state.submitting,
-                onStart: () => ref.read(housekeepingViewModelProvider.notifier).startCleaning(r.id),
+                onStart: () => _start(r),
                 onFinish: () => showFinishCleaningScreen(context, r),
-                onRelease: () => ref.read(housekeepingViewModelProvider.notifier).releaseRoom(r.id),
-                onBackInService: () => ref.read(housekeepingViewModelProvider.notifier).setOutOfOrder(r.id, {'outOfOrder': false}),
-                onMarkDirty: () => ref.read(housekeepingViewModelProvider.notifier).markDirty(r.id),
+                onRelease: () => _release(r),
+                onBackInService: () => _backInService(r),
+                onMarkDirty: () => _markDirty(r),
                 onCloseForRepair: () => showOutOfOrderDialog(context, r),
               ),
         ],
@@ -123,6 +181,10 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
     );
   }
 }
+
+/// Same STATUS_RANK order HousekeepingPanel.jsx sorts the pool by — work to
+/// do first.
+const kStatusOrder = {'DIRTY': 0, 'CLEANING': 1, 'READY': 2, 'OCCUPIED': 3, 'OUT_OF_ORDER': 4};
 
 /// "Waiting 2 h", "In progress · Asha" — the one quiet detail line a room's
 /// status carries, shared by the card and table views.
@@ -133,14 +195,33 @@ String _detailOf(HousekeepingRoom room, DateTime now) => switch (room.status) {
   _ => '',
 };
 
+// A venue with a function in it reads "In use", not "Occupied" — mirrors
+// HousekeepingPanel.jsx's `{ ...ROOM_STATUS.OCCUPIED, label: 'In use' }`.
+String _statusLabelOf(HousekeepingRoom room) =>
+    room.isVenue && room.status == 'OCCUPIED' ? 'In use' : (kRoomStatusLabel[room.status] ?? room.status);
+
+// Who is in it, and when it comes free — a guest for a room, the function
+// running in it for a venue.
+String _guestOf(HousekeepingRoom room) => room.isVenue ? (room.eventTitle ?? '') : room.guestLabel;
+
+String _leavesOf(HousekeepingRoom room) => room.isVenue
+    ? (room.eventTitle != null && room.eventTitle!.isNotEmpty && room.eventEndsAt != null ? 'Ends ${timeLabel(room.eventEndsAt)}' : '')
+    : (room.guestName != null && room.guestCheckOut != null ? (room.leavingToday ? 'Leaves today' : 'Leaves ${dayLabel(room.guestCheckOut!)}') : '');
+
+// What is coming today: a guest into a room, a function into a venue.
+String _arrivingLabelOf(HousekeepingRoom room) =>
+    room.isVenue ? 'Function today${room.nextEventAt != null ? ' ${timeLabel(room.nextEventAt)}' : ''}' : 'Guest arriving today';
+
 List<(String, VoidCallback)> _menuOf(
   HousekeepingRoom room, {
   required VoidCallback onRelease,
   required VoidCallback onMarkDirty,
+  required VoidCallback onStart,
   required VoidCallback onCloseForRepair,
 }) => [
   if (room.status == 'CLEANING') ('Stop without finishing', onRelease),
   if (room.status == 'READY') ('Needs cleaning', onMarkDirty),
+  if (room.status == 'OCCUPIED') (room.isVenue ? 'Service this venue' : 'Service this room', onStart),
   if (room.status == 'DIRTY' || room.status == 'READY') ('Close for repair', onCloseForRepair),
 ];
 
@@ -173,17 +254,15 @@ class _RoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tone = kRoomStatusTone[room.status] ?? AppTheme.muted;
-    final guest = room.guestLabel;
-    final leaves = room.guestName != null && room.guestCheckOut != null
-        ? (room.leavingToday ? 'Leaves today' : 'Leaves ${dayLabel(room.guestCheckOut!)}')
-        : '';
+    final guest = _guestOf(room);
+    final leaves = _leavesOf(room);
     final cleaned = room.cleanedAt != null ? '${ago(room.cleanedAt, now)} ago${room.cleanedBy != null ? ' · ${room.cleanedBy}' : ''}' : '';
     final issuesLabel = room.openIssues > 0 ? '${room.openIssues} open ${room.openIssues == 1 ? 'issue' : 'issues'}' : '';
     final detail = _detailOf(room, now);
     final extra = guest.isNotEmpty
         ? [guest, room.leavingToday ? '' : leaves].where((s) => s.isNotEmpty).join(' · ')
         : (room.status == 'READY' && cleaned.isNotEmpty ? 'Cleaned $cleaned' : '');
-    final menu = _menuOf(room, onRelease: onRelease, onMarkDirty: onMarkDirty, onCloseForRepair: onCloseForRepair);
+    final menu = _menuOf(room, onRelease: onRelease, onMarkDirty: onMarkDirty, onStart: onStart, onCloseForRepair: onCloseForRepair);
 
     final actionLabel = switch (room.status) {
       'DIRTY' => 'Start cleaning',
@@ -220,13 +299,23 @@ class _RoomCard extends StatelessWidget {
                   height: 36,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(color: tone.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
-                  child: Text(room.roomNumber, style: TextStyle(color: tone, fontWeight: FontWeight.w800, fontSize: 12.5)),
+                  // A venue's name is too long for this tile, as on the issue
+                  // card: the tile says what it is and the name sits over the
+                  // category line below.
+                  child: room.isVenue
+                      ? Icon(Icons.celebration_rounded, color: tone, size: 16)
+                      : Text(room.roomNumber, style: TextStyle(color: tone, fontWeight: FontWeight.w800, fontSize: 12.5)),
                 ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (room.isVenue)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(room.roomNumber, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        ),
                       Row(
                         children: [
                           Expanded(
@@ -237,7 +326,7 @@ class _RoomCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          StatusPill(label: kRoomStatusLabel[room.status] ?? room.status, color: tone),
+                          StatusPill(label: _statusLabelOf(room), color: tone),
                         ],
                       ),
                       if (room.arrivingToday && room.status != 'OCCUPIED' || (guest.isNotEmpty && room.leavingToday) || issuesLabel.isNotEmpty) ...[
@@ -246,7 +335,7 @@ class _RoomCard extends StatelessWidget {
                           spacing: 5,
                           runSpacing: 4,
                           children: [
-                            if (room.arrivingToday && room.status != 'OCCUPIED') const StatusPill(label: 'Guest arriving today', color: AppTheme.checkedIn),
+                            if (room.arrivingToday && room.status != 'OCCUPIED') StatusPill(label: _arrivingLabelOf(room), color: AppTheme.checkedIn),
                             if (guest.isNotEmpty && room.leavingToday) const StatusPill(label: 'Leaves today', color: AppTheme.checkout),
                             if (issuesLabel.isNotEmpty) StatusPill(label: issuesLabel, color: AppTheme.danger),
                           ],
@@ -313,6 +402,7 @@ class _RoomCard extends StatelessWidget {
 class _RoomsTable extends StatelessWidget {
   final List<HousekeepingRoom> rooms;
   final DateTime now;
+  final bool hasVenues;
   final ValueChanged<HousekeepingRoom> onStart;
   final ValueChanged<HousekeepingRoom> onFinish;
   final ValueChanged<HousekeepingRoom> onBackInService;
@@ -323,6 +413,7 @@ class _RoomsTable extends StatelessWidget {
   const _RoomsTable({
     required this.rooms,
     required this.now,
+    required this.hasVenues,
     required this.onStart,
     required this.onFinish,
     required this.onBackInService,
@@ -331,20 +422,19 @@ class _RoomsTable extends StatelessWidget {
     required this.onCloseForRepair,
   });
 
-  static const _columns = [
-    (label: 'Room', width: 70.0),
-    (label: 'Type', width: 120.0),
-    (label: 'Status', width: 140.0),
-    (label: 'Guest', width: 150.0),
-    (label: 'Last cleaned', width: 120.0),
-    (label: 'Notes', width: 160.0),
-  ];
-
   static const _actionsWidth = 200.0;
 
   @override
   Widget build(BuildContext context) {
-    final width = _columns.fold<double>(0, (sum, c) => sum + c.width) + _actionsWidth;
+    final columns = [
+      (label: hasVenues ? 'Room / venue' : 'Room', width: 70.0),
+      (label: 'Type', width: 120.0),
+      (label: 'Status', width: 140.0),
+      (label: hasVenues ? 'Guest / function' : 'Guest', width: 150.0),
+      (label: 'Last cleaned', width: 120.0),
+      (label: 'Notes', width: 160.0),
+    ];
+    final width = columns.fold<double>(0, (sum, c) => sum + c.width) + _actionsWidth;
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -366,7 +456,7 @@ class _RoomsTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      for (final c in _columns) SizedBox(width: c.width, child: HkTableHeaderCell(c.label)),
+                      for (final c in columns) SizedBox(width: c.width, child: HkTableHeaderCell(c.label)),
                       const SizedBox(width: _actionsWidth, child: HkTableHeaderCell('Action')),
                     ],
                   ),
@@ -379,7 +469,7 @@ class _RoomsTable extends StatelessWidget {
                     onStart: () => onStart(rooms[i]),
                     onFinish: () => onFinish(rooms[i]),
                     onBackInService: () => onBackInService(rooms[i]),
-                    menu: _menuOf(rooms[i], onRelease: () => onRelease(rooms[i]), onMarkDirty: () => onMarkDirty(rooms[i]), onCloseForRepair: () => onCloseForRepair(rooms[i])),
+                    menu: _menuOf(rooms[i], onRelease: () => onRelease(rooms[i]), onMarkDirty: () => onMarkDirty(rooms[i]), onStart: () => onStart(rooms[i]), onCloseForRepair: () => onCloseForRepair(rooms[i])),
                   ),
               ],
             ),
@@ -412,7 +502,7 @@ class _RoomTableRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tone = kRoomStatusTone[room.status] ?? AppTheme.muted;
-    final guest = room.guestLabel;
+    final guest = _guestOf(room);
     final cleaned = room.cleanedAt != null ? '${ago(room.cleanedAt, now)} ago' : '—';
     final detail = _detailOf(room, now);
     final notes = [detail, room.openIssues > 0 ? '${room.openIssues} open ${room.openIssues == 1 ? 'issue' : 'issues'}' : ''].where((s) => s.isNotEmpty).join(' · ');
@@ -431,7 +521,7 @@ class _RoomTableRow extends StatelessWidget {
         children: [
           cell(70, text(room.roomNumber, color: AppTheme.heading, weight: FontWeight.w700)),
           cell(120, text([room.categoryName, floorLabel(room.floor)].where((s) => s.isNotEmpty).join(', '))),
-          cell(140, Align(alignment: Alignment.centerLeft, child: StatusPill(label: kRoomStatusLabel[room.status] ?? room.status, color: tone))),
+          cell(140, Align(alignment: Alignment.centerLeft, child: StatusPill(label: _statusLabelOf(room), color: tone))),
           cell(150, text(guest)),
           cell(120, text(room.status == 'READY' ? cleaned : '—')),
           cell(160, text(notes)),

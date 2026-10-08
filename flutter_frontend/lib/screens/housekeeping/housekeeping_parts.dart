@@ -33,6 +33,17 @@ String dayLabel(String iso) {
   return '${d.day.toString().padLeft(2, '0')} ${months[d.month - 1]}';
 }
 
+/// "6:00 PM" — when a function starts or ends, mirrors timeLabel in
+/// HousekeepingPanel.jsx.
+String timeLabel(String? timestamp) {
+  if (timestamp == null || timestamp.isEmpty) return '';
+  final d = DateTime.tryParse(timestamp)?.toLocal();
+  if (d == null) return '';
+  final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final minute = d.minute.toString().padLeft(2, '0');
+  return '$hour12:$minute ${d.hour < 12 ? 'AM' : 'PM'}';
+}
+
 /// The room board's five tones — mirrors each status's `tone` in
 /// HousekeepingPanel.jsx's ROOM_STATUS.
 const kRoomStatusTone = {

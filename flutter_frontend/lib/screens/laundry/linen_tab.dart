@@ -25,7 +25,7 @@ class LinenTab extends ConsumerStatefulWidget {
 }
 
 class _LinenTabState extends ConsumerState<LinenTab> {
-  bool _spreadsheet = false;
+  bool _spreadsheet = true;
 
   @override
   void initState() {
@@ -83,10 +83,16 @@ class _LinenTabState extends ConsumerState<LinenTab> {
             const SizedBox(height: AppTheme.s12),
           ],
           if (items.isEmpty)
-            _EmptyLinenBoard(
-              onAddStarter: (name) => showLinenItemFormScreen(context, startingName: name),
-              onAdd: () => showLinenItemFormScreen(context),
-            )
+            state.board.managedInAssets
+                ? const NeuNotice(
+                    icon: Icons.local_laundry_service_outlined,
+                    message:
+                        'No linen registered yet.\nAdd your linen in Asset Inventory: choose the category "Bedsheets & Towels", give the item a name such as Bedsheet, and enter how many you own. It appears here as soon as it is saved.',
+                  )
+                : _EmptyLinenBoard(
+                    onAddStarter: (name) => showLinenItemFormScreen(context, startingName: name),
+                    onAdd: () => showLinenItemFormScreen(context),
+                  )
           else ...[
             Builder(
               builder: (context) {
@@ -182,7 +188,7 @@ class _LinenTabState extends ConsumerState<LinenTab> {
                             Text(g.name, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5)),
                             const SizedBox(height: 2),
                             Text(
-                              '${g.handovers.length} ${g.handovers.length == 1 ? 'room' : 'rooms'} · ${g.pieces} ${g.pieces == 1 ? 'piece' : 'pieces'}',
+                              '${g.handovers.length} ${g.handovers.length == 1 ? 'place' : 'places'} · ${g.pieces} ${g.pieces == 1 ? 'piece' : 'pieces'}',
                               style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
                             ),
                           ],
@@ -201,14 +207,21 @@ class _LinenTabState extends ConsumerState<LinenTab> {
               children: [
                 Expanded(child: Text('Your linen', style: Theme.of(context).textTheme.titleSmall)),
                 _ViewToggle(spreadsheet: _spreadsheet, onChange: (v) => setState(() => _spreadsheet = v)),
-                const SizedBox(width: AppTheme.s8),
-                TextButton(onPressed: () => showLinenItemFormScreen(context), child: const Text('+ Add item')),
+                if (!state.board.managedInAssets) ...[
+                  const SizedBox(width: AppTheme.s8),
+                  TextButton(onPressed: () => showLinenItemFormScreen(context), child: const Text('+ Add item')),
+                ],
               ],
             ),
+            if (state.board.managedInAssets) ...[
+              const SizedBox(height: 2),
+              const Text('From Asset Inventory → Bedsheets & Towels. Add items or change a count there.', style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+            ],
             const SizedBox(height: AppTheme.s8),
             if (_spreadsheet)
               _LinenSpreadsheet(
                 items: items,
+                managedInAssets: state.board.managedInAssets,
                 onEdit: (item) => showLinenItemFormScreen(context, item: item),
                 onLoss: (item) => showLinenLossScreen(context, item: item),
                 onHide: _hideItem,
@@ -216,11 +229,12 @@ class _LinenTabState extends ConsumerState<LinenTab> {
             else
               _LinenTable(
                 items: items,
+                managedInAssets: state.board.managedInAssets,
                 onEdit: (item) => showLinenItemFormScreen(context, item: item),
                 onLoss: (item) => showLinenLossScreen(context, item: item),
                 onHide: _hideItem,
               ),
-            if (hidden.isNotEmpty) ...[
+            if (!state.board.managedInAssets && hidden.isNotEmpty) ...[
               const SizedBox(height: AppTheme.s8),
               Text('${hidden.length} hidden. Bring back from Add item.', style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
             ],
@@ -313,11 +327,12 @@ class _ViewToggle extends StatelessWidget {
 /// than abbreviating on a phone-width screen.
 class _LinenSpreadsheet extends StatelessWidget {
   final List<LinenItem> items;
+  final bool managedInAssets;
   final ValueChanged<LinenItem> onEdit;
   final ValueChanged<LinenItem> onLoss;
   final ValueChanged<LinenItem> onHide;
 
-  const _LinenSpreadsheet({required this.items, required this.onEdit, required this.onLoss, required this.onHide});
+  const _LinenSpreadsheet({required this.items, required this.managedInAssets, required this.onEdit, required this.onLoss, required this.onHide});
 
   static const double _nameW = 170;
   static const double _ownedW = 80;
@@ -362,6 +377,7 @@ class _LinenSpreadsheet extends StatelessWidget {
                   _SpreadsheetRow(
                     item: items[i],
                     shaded: i.isOdd,
+                    managedInAssets: managedInAssets,
                     onEdit: () => onEdit(items[i]),
                     onLoss: () => onLoss(items[i]),
                     onHide: () => onHide(items[i]),
@@ -402,11 +418,19 @@ class _HeaderCell extends StatelessWidget {
 class _SpreadsheetRow extends StatelessWidget {
   final LinenItem item;
   final bool shaded;
+  final bool managedInAssets;
   final VoidCallback onEdit;
   final VoidCallback onLoss;
   final VoidCallback onHide;
 
-  const _SpreadsheetRow({required this.item, required this.shaded, required this.onEdit, required this.onLoss, required this.onHide});
+  const _SpreadsheetRow({
+    required this.item,
+    required this.shaded,
+    required this.managedInAssets,
+    required this.onEdit,
+    required this.onLoss,
+    required this.onHide,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -457,26 +481,29 @@ class _SpreadsheetRow extends StatelessWidget {
               shadowColor: AppTheme.heading.withValues(alpha: 0.25),
               offset: const Offset(0, 6),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'edit',
-                  height: 40,
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: LinenMenuRow(icon: Icons.edit_outlined, label: 'Edit name or count'),
-                ),
-                PopupMenuItem(
+              itemBuilder: (context) => [
+                if (!managedInAssets)
+                  const PopupMenuItem(
+                    value: 'edit',
+                    height: 40,
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: LinenMenuRow(icon: Icons.edit_outlined, label: 'Edit name or count'),
+                  ),
+                const PopupMenuItem(
                   value: 'loss',
                   height: 40,
                   padding: EdgeInsets.symmetric(horizontal: 6),
                   child: LinenMenuRow(icon: Icons.report_problem_outlined, label: 'Lost or damaged'),
                 ),
-                PopupMenuDivider(height: 8),
-                PopupMenuItem(
-                  value: 'hide',
-                  height: 40,
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: LinenMenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from list', danger: true),
-                ),
+                if (!managedInAssets) ...[
+                  const PopupMenuDivider(height: 8),
+                  const PopupMenuItem(
+                    value: 'hide',
+                    height: 40,
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: LinenMenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from list', danger: true),
+                  ),
+                ],
               ],
             ),
           ),
@@ -488,12 +515,14 @@ class _SpreadsheetRow extends StatelessWidget {
 
 class _LinenTable extends StatelessWidget {
   final List<LinenItem> items;
+  final bool managedInAssets;
   final ValueChanged<LinenItem> onEdit;
   final ValueChanged<LinenItem> onLoss;
   final ValueChanged<LinenItem> onHide;
 
   const _LinenTable({
     required this.items,
+    required this.managedInAssets,
     required this.onEdit,
     required this.onLoss,
     required this.onHide,
@@ -506,6 +535,7 @@ class _LinenTable extends StatelessWidget {
         for (var i = 0; i < items.length; i++)
           _LinenCard(
             item: items[i],
+            managedInAssets: managedInAssets,
             onEdit: () => onEdit(items[i]),
             onLoss: () => onLoss(items[i]),
             onHide: () => onHide(items[i]),
@@ -520,32 +550,40 @@ class _LinenTable extends StatelessWidget {
 /// header row, which clips on a phone-width screen.
 class _LinenCard extends StatelessWidget {
   final LinenItem item;
+  final bool managedInAssets;
   final VoidCallback onEdit;
   final VoidCallback onLoss;
   final VoidCallback onHide;
 
-  const _LinenCard({required this.item, required this.onEdit, required this.onLoss, required this.onHide});
+  const _LinenCard({required this.item, required this.managedInAssets, required this.onEdit, required this.onLoss, required this.onHide});
 
   @override
   Widget build(BuildContext context) {
     Widget stat(IconData icon, String label, int n, Color tone) => Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: n == 0 ? AppTheme.bg : tone.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
         ),
         child: Column(
           children: [
-            Icon(icon, size: 13, color: n == 0 ? AppTheme.muted : tone),
-            const SizedBox(height: 3),
-            Text('$n', style: TextStyle(color: n == 0 ? AppTheme.muted : AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 16)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, size: 11, color: n == 0 ? AppTheme.muted : tone),
+                const SizedBox(width: 3),
+                Text('$n', style: TextStyle(color: n == 0 ? AppTheme.muted : AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 14)),
+              ],
+            ),
             const SizedBox(height: 1),
             Text(
               label,
               textAlign: TextAlign.center,
-              maxLines: 2,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 9.5, fontWeight: FontWeight.w600, height: 1.15),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 8.5, fontWeight: FontWeight.w600, height: 1.1),
             ),
           ],
         ),
@@ -553,13 +591,13 @@ class _LinenCard extends StatelessWidget {
     );
 
     return Container(
-      margin: const EdgeInsets.only(bottom: AppTheme.s8),
-      padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s8, AppTheme.s12),
+      margin: const EdgeInsets.only(bottom: AppTheme.s8 - 2),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8 + 2, AppTheme.s8, AppTheme.s8 + 2),
       decoration: BoxDecoration(
         color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
         border: Border.all(color: item.short ? AppTheme.danger.withValues(alpha: 0.35) : AppTheme.border),
-        boxShadow: AppTheme.extruded,
+        boxShadow: AppTheme.subtle,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,30 +605,29 @@ class _LinenCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: 30,
+                height: 30,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppTheme.sidebarBrandWash, borderRadius: BorderRadius.circular(AppTheme.rMedium)),
-                child: const Icon(Icons.local_laundry_service_rounded, size: 18, color: AppTheme.sidebarBrandInk),
+                decoration: BoxDecoration(color: AppTheme.sidebarBrandWash, borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: const Icon(Icons.local_laundry_service_rounded, size: 15, color: AppTheme.sidebarBrandInk),
               ),
-              const SizedBox(width: AppTheme.s8),
+              const SizedBox(width: AppTheme.s8 - 2),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14.5)),
-                    const SizedBox(height: 1),
+                    Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5)),
                     Row(
                       children: [
                         if (item.short) ...[
-                          const Icon(Icons.error_rounded, size: 12, color: AppTheme.danger),
+                          const Icon(Icons.error_rounded, size: 11, color: AppTheme.danger),
                           const SizedBox(width: 3),
                         ],
                         Flexible(
                           child: Text(
                             item.short ? 'More is out than you own' : '${item.owned} owned',
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: item.short ? AppTheme.danger : AppTheme.muted, fontSize: 11, fontWeight: item.short ? FontWeight.w700 : FontWeight.w400),
+                            style: TextStyle(color: item.short ? AppTheme.danger : AppTheme.muted, fontSize: 10.5, fontWeight: item.short ? FontWeight.w700 : FontWeight.w400),
                           ),
                         ),
                       ],
@@ -599,11 +636,11 @@ class _LinenCard extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 child: PopupMenuButton<String>(
                   padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+                  icon: const Icon(Icons.more_vert_rounded, size: 17, color: AppTheme.muted),
                   onSelected: (v) => switch (v) {
                     'edit' => onEdit(),
                     'loss' => onLoss(),
@@ -615,40 +652,43 @@ class _LinenCard extends StatelessWidget {
                   shadowColor: AppTheme.heading.withValues(alpha: 0.25),
                   offset: const Offset(0, 6),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: 'edit',
-                      height: 40,
-                      padding: EdgeInsets.symmetric(horizontal: 6),
-                      child: LinenMenuRow(icon: Icons.edit_outlined, label: 'Edit name or count'),
-                    ),
-                    PopupMenuItem(
+                  itemBuilder: (context) => [
+                    if (!managedInAssets)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        height: 40,
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: LinenMenuRow(icon: Icons.edit_outlined, label: 'Edit name or count'),
+                      ),
+                    const PopupMenuItem(
                       value: 'loss',
                       height: 40,
                       padding: EdgeInsets.symmetric(horizontal: 6),
                       child: LinenMenuRow(icon: Icons.report_problem_outlined, label: 'Lost or damaged'),
                     ),
-                    PopupMenuDivider(height: 8),
-                    PopupMenuItem(
-                      value: 'hide',
-                      height: 40,
-                      padding: EdgeInsets.symmetric(horizontal: 6),
-                      child: LinenMenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from list', danger: true),
-                    ),
+                    if (!managedInAssets) ...[
+                      const PopupMenuDivider(height: 8),
+                      const PopupMenuItem(
+                        value: 'hide',
+                        height: 40,
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: LinenMenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from list', danger: true),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s8 - 2),
           Row(
             children: [
               stat(Icons.room_service_outlined, 'To receive', item.withHousekeeping, AppTheme.checkedIn),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               stat(Icons.local_laundry_service_outlined, 'Dirty', item.dirty, AppTheme.danger),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               stat(Icons.autorenew_rounded, 'In wash', item.inLaundry, AppTheme.edit),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               stat(Icons.task_alt_rounded, 'Clean', item.clean, AppTheme.vacant),
             ],
           ),
@@ -763,7 +803,7 @@ class _LinenHistoryState extends State<_LinenHistory> {
             const SizedBox(height: AppTheme.s8),
             if (filtered.isEmpty)
               Text(
-                widget.movements.isEmpty ? 'Nothing yet. When linen is changed in a room, sent out or received, it shows here.' : 'Nothing of this kind yet.',
+                widget.movements.isEmpty ? 'Nothing yet. When linen is changed in a room or venue, sent out or received, it shows here.' : 'Nothing of this kind yet.',
                 style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
               )
             else
@@ -810,7 +850,7 @@ class _HistoryTable extends StatelessWidget {
     ('Date', 76, false),
     ('Time', 64, false),
     ('Action', 128, true),
-    ('Room', 56, false),
+    ('Room / venue', 88, false),
     ('Item', 110, true),
     ('Qty', 44, false),
     ('Washed by', 104, true),
@@ -887,7 +927,7 @@ class _HistoryRow extends StatelessWidget {
           cell(formatDate(created), 76),
           cell(formatTimeOfDay(movement.createdAt), 64),
           cell(kLinenMoveLabel[movement.kind] ?? movement.kind, 128, alignStart: true),
-          cell(movement.roomNumber ?? '', 56),
+          cell(movement.placeLabel, 88),
           cell(movement.itemName, 110, alignStart: true),
           cell('${movement.quantity}', 44),
           cell(movement.washedBy ?? '', 104, alignStart: true),

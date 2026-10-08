@@ -26,6 +26,24 @@ class HousekeepingImpl implements HousekeepingRepository {
   Future<void> setOutOfOrder(int roomId, Map<String, dynamic> body) => api.setRoomOutOfOrder(roomId, body);
 
   @override
+  Future<List<HousekeepingRoom>> venues() => api.housekeepingVenues();
+
+  @override
+  Future<void> startVenueCleaning(int venueId) => api.startVenueCleaning(venueId);
+
+  @override
+  Future<void> releaseVenue(int venueId) => api.releaseVenue(venueId);
+
+  @override
+  Future<void> finishVenueCleaning(int venueId, Map<String, dynamic> body) => api.finishVenueCleaning(venueId, body);
+
+  @override
+  Future<void> markVenueDirty(int venueId) => api.markVenueDirty(venueId);
+
+  @override
+  Future<void> setVenueOutOfOrder(int venueId, Map<String, dynamic> body) => api.setVenueOutOfOrder(venueId, body);
+
+  @override
   Future<List<HousekeepingIssue>> issues({String scope = 'all'}) => api.housekeepingIssues(scope: scope);
 
   @override

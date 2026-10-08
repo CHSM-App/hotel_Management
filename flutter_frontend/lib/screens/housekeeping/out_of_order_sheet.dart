@@ -34,9 +34,11 @@ class _OutOfOrderDialogState extends ConsumerState<_OutOfOrderDialog> {
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(housekeepingViewModelProvider.select((s) => s.submitting));
+    final isVenue = widget.room.isVenue;
+    final place = isVenue ? widget.room.roomNumber : 'Room ${widget.room.roomNumber}';
     return AlertDialog(
       backgroundColor: AppTheme.bg,
-      title: Text('Room ${widget.room.roomNumber} — out of order', style: const TextStyle(color: AppTheme.heading)),
+      title: Text('$place — ${isVenue ? 'under repair' : 'out of order'}', style: const TextStyle(color: AppTheme.heading)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,10 +58,9 @@ class _OutOfOrderDialogState extends ConsumerState<_OutOfOrderDialog> {
           onPressed: busy
               ? null
               : () async {
-                  final ok = await ref.read(housekeepingViewModelProvider.notifier).setOutOfOrder(widget.room.id, {
-                    'outOfOrder': true,
-                    'note': _note.text.trim(),
-                  });
+                  final notifier = ref.read(housekeepingViewModelProvider.notifier);
+                  final body = {'outOfOrder': true, 'note': _note.text.trim()};
+                  final ok = isVenue ? await notifier.setVenueOutOfOrder(widget.room.id, body) : await notifier.setOutOfOrder(widget.room.id, body);
                   if (ok && context.mounted) Navigator.pop(context);
                 },
           child: const Text('Close for repair'),

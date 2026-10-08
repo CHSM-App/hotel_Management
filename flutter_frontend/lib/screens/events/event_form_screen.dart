@@ -10,6 +10,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/payment_row.dart';
+import '../bookings/check_in_room_status.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 
@@ -586,6 +587,16 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         ),
                         if (_submitAttempted && _fieldError == 'venue')
                           Padding(padding: const EdgeInsets.only(top: 4), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
+                        // What housekeeping says about the hall right now — mirrors
+                        // EventForm.jsx's own placement right under the venue
+                        // picker. Informs and never blocks: a venue under repair
+                        // today may be fine by the function's own date.
+                        if (_venueId != null)
+                          CheckInRoomStatus(
+                            key: ValueKey(_venueId),
+                            venues: true,
+                            rooms: [CheckInRoomStatusEntry(roomId: _venueId!)],
+                          ),
                         const SizedBox(height: AppTheme.s8),
                         const Text('Slot', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                         const SizedBox(height: 4),

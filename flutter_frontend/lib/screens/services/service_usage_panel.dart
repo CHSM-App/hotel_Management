@@ -5,6 +5,7 @@ import '../../domain/models/lodge_service.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../housekeeping/housekeeping_parts.dart';
 import '../theme.dart';
 import 'start_usage_screen.dart';
 
@@ -37,41 +38,48 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return RefreshIndicator(
-      onRefresh: () => ref.read(lodgeServicesViewModelProvider.notifier).loadUsages(),
-      color: AppTheme.accent,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          if (state.error != null) ...[
-            _ErrorBanner(state.error!),
-            const SizedBox(height: AppTheme.s12),
-          ],
-          Row(
+    return Stack(
+      children: [
+        RefreshIndicator(
+          onRefresh: () => ref.read(lodgeServicesViewModelProvider.notifier).loadUsages(),
+          color: AppTheme.accent,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32 + 56),
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              Expanded(
-                child: NeuButton(primary: true, onPressed: () => showStartUsageScreen(context), child: const Text('+ Start a service')),
+              if (state.error != null) ...[
+                _ErrorBanner(state.error!),
+                const SizedBox(height: AppTheme.s12),
+              ],
+              const Text(
+                'Start a service when the guest begins, mark it completed when done — it then appears in Billing > Services to bill, where it is billed or added to the guest’s room bill.',
+                style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
               ),
+              const SizedBox(height: AppTheme.s12),
+              if (state.usages.isEmpty)
+                const NeuNotice(icon: Icons.spa_outlined, message: 'Nothing yet.')
+              else
+                for (final u in state.usages)
+                  _UsageCard(
+                    usage: u,
+                    onComplete: () => ref.read(lodgeServicesViewModelProvider.notifier).completeUsage(u.id),
+                    onCancel: () => ref.read(lodgeServicesViewModelProvider.notifier).cancelUsage(u.id),
+                  ),
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
-          const Text(
-            'Start a service when the guest begins, mark it completed when done — it then appears in Billing > Services to bill, where it is billed or added to the guest’s room bill.',
-            style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
+        ),
+        Positioned(
+          right: AppTheme.s16,
+          bottom: AppTheme.s16,
+          child: FloatingActionButton(
+            backgroundColor: AppTheme.accent,
+            foregroundColor: Colors.white,
+            elevation: 2,
+            onPressed: () => showStartUsageScreen(context),
+            child: const Icon(Icons.add_rounded),
           ),
-          const SizedBox(height: AppTheme.s12),
-          if (state.usages.isEmpty)
-            const NeuNotice(icon: Icons.spa_outlined, message: 'Nothing yet.')
-          else
-            for (final u in state.usages)
-              _UsageCard(
-                usage: u,
-                onComplete: () => ref.read(lodgeServicesViewModelProvider.notifier).completeUsage(u.id),
-                onCancel: () => ref.read(lodgeServicesViewModelProvider.notifier).cancelUsage(u.id),
-              ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -85,39 +93,75 @@ class _UsageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    final tone = switch (usage.status) {
+      'IN_USE' => AppTheme.edit,
+      'CANCELLED' => AppTheme.danger,
+      _ => usage.billed ? AppTheme.muted : AppTheme.checkedIn,
+    };
+    // Room / guest / billing note, without the status — the status gets its
+    // own pill instead of sitting inline in the text.
+    final meta = [
+      if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
+      if (usage.guestName != null && usage.guestName!.isNotEmpty) usage.guestName!,
+      if (usage.status == 'COMPLETED') (usage.billed ? 'billed' : (usage.onRoomBill ? 'on room bill' : 'ready to bill')),
+    ].join(' · ');
+    final showActions = usage.status == 'IN_USE' || (!usage.billed && usage.status != 'CANCELLED');
+
+    return Container(
       margin: const EdgeInsets.only(bottom: AppTheme.s8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${usage.serviceName} × ${usage.quantity}', style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5)),
-                const SizedBox(height: 2),
-                Text(usage.detailLine(), style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(formatPrice(usage.lineTotal), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 14)),
-              const SizedBox(height: 6),
-              Row(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.extruded,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.s8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (usage.status == 'IN_USE')
-                    NeuButton(primary: true, onPressed: onComplete, padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8), child: const Text('Complete', style: TextStyle(fontSize: 12))),
-                  if (!usage.billed && usage.status != 'CANCELLED') ...[
-                    const SizedBox(width: AppTheme.s8),
-                    TextButton(onPressed: onCancel, child: const Text('Cancel', style: TextStyle(color: AppTheme.danger, fontSize: 12))),
-                  ],
+                  Text('${usage.serviceName} × ${usage.quantity}', style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      StatusPill(label: kServiceUsageStatusLabel[usage.status] ?? usage.status, color: tone),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(meta, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      ],
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(formatPrice(usage.lineTotal), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 14)),
+                if (showActions) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (usage.status == 'IN_USE')
+                        CompactActionButton(label: 'Complete', color: AppTheme.accent, primary: true, onTap: onComplete),
+                      if (!usage.billed && usage.status != 'CANCELLED') ...[
+                        const SizedBox(width: 6),
+                        CompactActionButton(label: 'Cancel', color: AppTheme.danger, onTap: onCancel),
+                      ],
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

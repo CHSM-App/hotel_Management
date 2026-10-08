@@ -41,6 +41,18 @@ class FakeHkRepo implements HousekeepingRepository {
   @override
   Future<void> setOutOfOrder(int roomId, Map<String, dynamic> body) async {}
   @override
+  Future<List<HousekeepingRoom>> venues() async => [];
+  @override
+  Future<void> startVenueCleaning(int venueId) async {}
+  @override
+  Future<void> releaseVenue(int venueId) async {}
+  @override
+  Future<void> finishVenueCleaning(int venueId, Map<String, dynamic> body) async {}
+  @override
+  Future<void> markVenueDirty(int venueId) async {}
+  @override
+  Future<void> setVenueOutOfOrder(int venueId, Map<String, dynamic> body) async {}
+  @override
   Future<List<HousekeepingIssue>> issues({String scope = 'all'}) async => [];
   @override
   Future<OpenIssueSummary> openIssueSummary() async => const OpenIssueSummary();
@@ -62,10 +74,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     final exception = tester.takeException();
-    if (exception != null) {
-      // ignore: avoid_print
-      print('EXCEPTION: $exception');
-    }
     expect(exception, isNull);
     expect(find.text('3'), findsOneWidget);
   });

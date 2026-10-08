@@ -30,53 +30,75 @@ class _ServicesScreenState extends State<ServicesScreen> {
   }
 }
 
+/// Same sliding-pill segmented control the Income / Expenses / Assets /
+/// Rooms & Rates / Housekeeping / Laundry screens use — one connected
+/// control with a moving highlight, rather than two separate pills.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {'usage': 'Service use', 'catalogue': 'Services & prices'};
+  static const double _height = 44;
+  static const _tabs = ['usage', 'catalogue'];
+  static const _labels = {'usage': 'Service use', 'catalogue': 'Services & prices'};
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (final entry in _tabs.entries) ...[
-          Expanded(child: _Pill(label: entry.value, selected: entry.key == selected, onTap: () => onSelect(entry.key))),
-          if (entry.key != _tabs.keys.last) const SizedBox(width: AppTheme.s8),
+    final selectedIndex = _tabs.indexOf(selected).clamp(0, _tabs.length - 1);
+
+    Widget segment(String key) {
+      final isSelected = key == selected;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onSelect(key),
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: _height,
+            child: Center(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : AppTheme.heading,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  fontSize: 13,
+                ),
+                child: Text(_labels[key]!),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: _height,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment(-1 + (2 / (_tabs.length - 1)) * selectedIndex, 0),
+            child: FractionallySizedBox(
+              widthFactor: 1 / _tabs.length,
+              child: Container(
+                height: _height - 8,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+                ),
+              ),
+            ),
+          ),
+          Row(children: [for (final key in _tabs) segment(key)]),
         ],
-      ],
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _Pill({required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent : AppTheme.bg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(color: selected ? Colors.white : AppTheme.text, fontWeight: selected ? FontWeight.w600 : FontWeight.w500, fontSize: 13),
-        ),
       ),
     );
   }

@@ -14,7 +14,11 @@ import 'event_form_screen.dart';
 /// a status and venue filter, and every function in the range, newest-first
 /// on the day it starts.
 class EventsListPanel extends ConsumerStatefulWidget {
-  const EventsListPanel({super.key});
+  /// Pre-selects the status cut — how a colour clicked on the diary's own
+  /// legend arrives here, mirroring `onShowList` in Events.jsx.
+  final String initialStatus;
+
+  const EventsListPanel({super.key, this.initialStatus = ''});
 
   @override
   ConsumerState<EventsListPanel> createState() => _EventsListPanelState();
@@ -22,7 +26,7 @@ class EventsListPanel extends ConsumerStatefulWidget {
 
 class _EventsListPanelState extends ConsumerState<EventsListPanel> {
   final _search = TextEditingController();
-  String _status = '';
+  late String _status = widget.initialStatus;
 
   static String _iso(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';

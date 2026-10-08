@@ -13,6 +13,9 @@ class HousekeepingState {
   final bool issuesLoading;
   final String? error;
   final List<HousekeepingRoom> rooms;
+  // Event venues on the same board — empty wherever Events is off, same as
+  // the web's `venues` state in HousekeepingPanel.jsx.
+  final List<HousekeepingRoom> venues;
   final List<HousekeepingIssue> issues;
   final OpenIssueSummary issueSummary;
   final bool submitting;
@@ -22,6 +25,7 @@ class HousekeepingState {
     this.issuesLoading = false,
     this.error,
     this.rooms = const [],
+    this.venues = const [],
     this.issues = const [],
     this.issueSummary = const OpenIssueSummary(),
     this.submitting = false,
@@ -33,6 +37,7 @@ class HousekeepingState {
     String? error,
     bool clearError = false,
     List<HousekeepingRoom>? rooms,
+    List<HousekeepingRoom>? venues,
     List<HousekeepingIssue>? issues,
     OpenIssueSummary? issueSummary,
     bool? submitting,
@@ -41,6 +46,7 @@ class HousekeepingState {
     issuesLoading: issuesLoading ?? this.issuesLoading,
     error: clearError ? null : (error ?? this.error),
     rooms: rooms ?? this.rooms,
+    venues: venues ?? this.venues,
     issues: issues ?? this.issues,
     issueSummary: issueSummary ?? this.issueSummary,
     submitting: submitting ?? this.submitting,
@@ -59,6 +65,15 @@ class HousekeepingViewModel extends StateNotifier<HousekeepingState> {
       state = state.copyWith(roomsLoading: false, rooms: rooms);
     } catch (e) {
       state = state.copyWith(roomsLoading: false, error: apiErrorMessage(e));
+    }
+  }
+
+  Future<void> loadVenues() async {
+    try {
+      state = state.copyWith(venues: await usecase.venues());
+    } catch (_) {
+      // A venue list that fails must not take the rooms board down with it —
+      // mirrors the web's own `.catch(() => ({ venues: [] }))`.
     }
   }
 
@@ -85,7 +100,7 @@ class HousekeepingViewModel extends StateNotifier<HousekeepingState> {
     try {
       await action();
       state = state.copyWith(submitting: false);
-      await Future.wait([loadRooms(), loadIssueSummary()]);
+      await Future.wait([loadRooms(), loadVenues(), loadIssueSummary()]);
       return true;
     } catch (e) {
       state = state.copyWith(submitting: false, error: apiErrorMessage(e));
@@ -102,6 +117,16 @@ class HousekeepingViewModel extends StateNotifier<HousekeepingState> {
   Future<bool> markDirty(int roomId) => _run(() => usecase.markDirty(roomId));
 
   Future<bool> setOutOfOrder(int roomId, Map<String, dynamic> body) => _run(() => usecase.setOutOfOrder(roomId, body));
+
+  Future<bool> startVenueCleaning(int venueId) => _run(() => usecase.startVenueCleaning(venueId));
+
+  Future<bool> releaseVenue(int venueId) => _run(() => usecase.releaseVenue(venueId));
+
+  Future<bool> finishVenueCleaning(int venueId, Map<String, dynamic> body) => _run(() => usecase.finishVenueCleaning(venueId, body));
+
+  Future<bool> markVenueDirty(int venueId) => _run(() => usecase.markVenueDirty(venueId));
+
+  Future<bool> setVenueOutOfOrder(int venueId, Map<String, dynamic> body) => _run(() => usecase.setVenueOutOfOrder(venueId, body));
 
   Future<bool> closeIssue(int logId, Map<String, dynamic> body) async {
     state = state.copyWith(submitting: true, clearError: true);

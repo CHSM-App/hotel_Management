@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/tape_chart.dart';
 import '../../main.dart';
+import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
@@ -13,6 +14,19 @@ import '../theme.dart';
 import 'booking_detail_screen.dart';
 import 'tape_quick_peek_sheet.dart';
 import 'take_booking_screen.dart';
+
+/// The housekeeping statuses that mean "do not hand this room over yet", in
+/// the desk's words — mirrors NOT_READY in Bookings.jsx. Ready and Occupied
+/// are left out: the chart already says those on its own.
+const _kNotReadyLabel = {
+  'DIRTY': 'Needs cleaning',
+  'CLEANING': 'Being cleaned',
+  'OUT_OF_ORDER': 'Under repair',
+};
+
+/// Mirrors `--tape-notready` in tapeChart.css — the one colour every not-
+/// ready state (dirty, cleaning, under repair) shares on the web chart.
+const _kTapeNotReadyColor = Color(0xFF8B5E3C);
 
 /// The tape chart: every room down the side, the chosen nights across the
 /// top, coloured tiles where a stay covers a night.
@@ -75,6 +89,30 @@ class _TapeChartState extends ConsumerState<TapeChart>
   int? _flashBookingId;
   int? _flashRoomId;
   Timer? _flashTimer;
+
+  /// Rooms housekeeping says are not ready right now, by room id — mirrors
+  /// Bookings.jsx's own `notReady` state. Empty until the board answers, and
+  /// for good at a property without Housekeeping, where the request fails
+  /// and the chart simply shows nothing extra.
+  Map<int, ({String label, String note})> _notReady = const {};
+  Timer? _hkTimer;
+
+  Future<void> _loadNotReady() async {
+    try {
+      final rooms = await ref.read(housekeepingUsecaseProvider).rooms();
+      if (!mounted) return;
+      setState(() {
+        _notReady = {
+          for (final r in rooms)
+            if (_kNotReadyLabel[r.status] != null)
+              r.id: (label: _kNotReadyLabel[r.status]!, note: r.status == 'OUT_OF_ORDER' ? (r.outOfOrderNote ?? '') : ''),
+        };
+      });
+    } catch (_) {
+      // Silent, same as the web: a property without Housekeeping simply
+      // shows nothing extra on the chart.
+    }
+  }
 
   /// The current-month start [initState] asked [resetChartToCurrentMonth]
   /// for. The provider is shared app-wide rather than recreated with this
@@ -184,6 +222,10 @@ class _TapeChartState extends ConsumerState<TapeChart>
     WidgetsBinding.instance.addObserver(this);
     _vScroll.addListener(_updateActiveCategoryFromScroll);
     _snapToToday();
+    _loadNotReady();
+    // A room cleaned upstairs turns green here without a refresh — mirrors
+    // the web chart's own 30s poll.
+    _hkTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadNotReady());
   }
 
   @override
@@ -310,6 +352,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     WidgetsBinding.instance.removeObserver(this);
     routeObserver.unsubscribe(this);
     _flashTimer?.cancel();
+    _hkTimer?.cancel();
     _vScroll.removeListener(_updateActiveCategoryFromScroll);
     _vScroll.dispose();
     _hSync.dispose();
@@ -496,6 +539,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
                           roomCol: roomCol,
                           rowHeight: rowHeight,
                           hSync: _hSync,
+                          notReady: _notReady,
                           onTapStay: (b, room) =>
                               _openBookingDetail(context, b),
                           onLongPressStay: (b, room) =>
@@ -1654,6 +1698,7 @@ class _CategoryBand extends StatelessWidget {
   final GlobalKey Function(int roomId) roomKeyFor;
   final int? flashBookingId;
   final int? flashRoomId;
+  final Map<int, ({String label, String note})> notReady;
 
   const _CategoryBand({
     required this.section,
@@ -1672,6 +1717,7 @@ class _CategoryBand extends StatelessWidget {
     required this.roomKeyFor,
     required this.flashBookingId,
     required this.flashRoomId,
+    required this.notReady,
   });
 
   @override
@@ -1743,6 +1789,7 @@ class _CategoryBand extends StatelessWidget {
               activeHitId: activeHitId,
               isFlashRoom: flashRoomId != null && room.room.id == flashRoomId,
               flashBookingId: flashBookingId,
+              notReady: notReady[room.room.id],
             ),
           ),
         // The web tape chart's own scroller is a plain `overflow-x: auto`
@@ -1817,6 +1864,12 @@ class _RoomRow extends StatelessWidget {
   final bool isFlashRoom;
   final int? flashBookingId;
 
+  /// What housekeeping says about this room right now — a fact about today,
+  /// so it marks the room's name only, not any particular night. Null where
+  /// the room is ready (or Housekeeping is off). Mirrors `hk` in
+  /// Bookings.jsx's own renderRoomRow.
+  final ({String label, String note})? notReady;
+
   const _RoomRow({
     required this.room,
     required this.dates,
@@ -1833,6 +1886,7 @@ class _RoomRow extends StatelessWidget {
     required this.activeHitId,
     required this.isFlashRoom,
     required this.flashBookingId,
+    required this.notReady,
   });
 
   @override
@@ -1843,40 +1897,47 @@ class _RoomRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: roomCol,
-            height: rowHeight,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: AppTheme.s12),
-            decoration: const BoxDecoration(
-              border: Border(right: BorderSide(color: AppTheme.border)),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  room.room.roomNumber,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    height: 1.1,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if ((room.room.floor ?? '').isNotEmpty)
+          Tooltip(
+            message: notReady != null ? '${notReady!.label}${notReady!.note.isNotEmpty ? ' · ${notReady!.note}' : ''}' : '',
+            waitDuration: const Duration(milliseconds: 400),
+            child: Container(
+              width: roomCol,
+              height: rowHeight,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: AppTheme.s12),
+              decoration: const BoxDecoration(
+                border: Border(right: BorderSide(color: AppTheme.border)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Not ready, by housekeeping's word: the name alone takes
+                  // the colour — mirrors .tape-month__room--notready strong
+                  // in tapeChart.css.
                   Text(
-                    formatFloor(room.room.floor),
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 9,
+                    room.room.roomNumber,
+                    style: TextStyle(
+                      color: notReady != null ? _kTapeNotReadyColor : AppTheme.heading,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                       height: 1.1,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
-              ],
+                  if ((room.room.floor ?? '').isNotEmpty)
+                    Text(
+                      formatFloor(room.room.floor),
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 9,
+                        height: 1.1,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -1900,6 +1961,8 @@ class _RoomRow extends StatelessWidget {
                           stay: room.stayOn(d),
                           dormitoryOccupancy: room.dormitoryOccupancyOn(d),
                           draft: room.draftOn(d),
+                          room: room.room,
+                          date: d,
                           // A run of nights on the same stay draws as one
                           // unbroken bar — rounded only where the bar itself
                           // starts or ends, square everywhere it butts
@@ -1932,6 +1995,7 @@ class _RoomRow extends StatelessWidget {
                                   ?.id !=
                               room.draftOn(d)?.id,
                           isToday: _isSameDay(d, today),
+                          notReady: _isSameDay(d, today) ? notReady : null,
                           isPast: d.isBefore(today),
                           isWeekend:
                               d.weekday == DateTime.saturday ||
@@ -1968,7 +2032,7 @@ class _RoomRow extends StatelessWidget {
 
 // ── One night's tile ─────────────────────────────────────────────────────────
 
-class _Tile extends StatelessWidget {
+class _Tile extends StatefulWidget {
   final TapeChartBooking? stay;
 
   /// Set only on a dormitory room's night, and only when at least one bed on
@@ -1976,11 +2040,21 @@ class _Tile extends StatelessWidget {
   /// "2/10" fraction below.
   final DormitoryOccupancy? dormitoryOccupancy;
   final TapeChartDraft? draft;
+  // The room and the exact night this tile stands for — only needed for the
+  // long-press info card a vacant or drafted night shows (a real stay's own
+  // long press opens the fuller quick-peek sheet instead, which already
+  // carries this from the chart's own data).
+  final TapeChartRoom room;
+  final DateTime date;
   final bool isRunStart;
   final bool isRunEnd;
   final bool isDraftRunStart;
   final bool isDraftRunEnd;
   final bool isToday;
+  // A vacant night today, on a room housekeeping says isn't ready — mirrors
+  // `.tape-tile--vacant.tape-tile--notready` in tapeChart.css. Only today's
+  // night carries it; it's a fact about now, not every future night.
+  final ({String label, String note})? notReady;
   final bool isPast;
   final bool isWeekend;
   final bool isHit;
@@ -2003,11 +2077,14 @@ class _Tile extends StatelessWidget {
     required this.stay,
     this.dormitoryOccupancy,
     required this.draft,
+    required this.room,
+    required this.date,
     required this.isRunStart,
     required this.isRunEnd,
     required this.isDraftRunStart,
     required this.isDraftRunEnd,
     required this.isToday,
+    required this.notReady,
     required this.isPast,
     required this.isWeekend,
     required this.isHit,
@@ -2021,19 +2098,167 @@ class _Tile extends StatelessWidget {
     required this.onTapDraft,
   });
 
+  @override
+  State<_Tile> createState() => _TileState();
+}
+
+/// A stay tile's long press has to survive sitting inside the row's own
+/// horizontal [SingleChildScrollView] — [GestureDetector]'s built-in
+/// long-press recognizer and the scroll view's drag recognizer are both in
+/// the same gesture arena, and the tiniest finger wobble during a real
+/// long-press routinely lets the drag recognizer win first, silently
+/// swallowing the press before the quick-peek dialog ever opens. [Listener]
+/// sits outside that arena entirely — it sees every raw pointer event
+/// regardless of who wins it — so the long press is timed by hand here
+/// instead of trusting [GestureDetector.onLongPress] to survive the
+/// scrollable around it.
+class _TileState extends State<_Tile> {
+  static const _longPressDuration = Duration(milliseconds: 500);
+  // A bit more forgiving than the default touch slop (18px): a long press
+  // held against a chart the desk may also be mid-scroll of needs more
+  // wobble room than a tap does before it's fairly called a drag instead.
+  static const _moveSlop = 20.0;
+
+  Offset? _downPosition;
+  Timer? _longPressTimer;
+  bool _longPressFired = false;
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    super.dispose();
+  }
+
+  // A partial dormitory night opens its own bed chooser on a plain tap
+  // already (several bookings share one tile there); every other tile —
+  // booked, drafted or vacant — has something worth a long-press peek at,
+  // the touch equivalent of the web chart's own hover tooltip.
+  bool get _longPressable => !(widget.dormitoryOccupancy?.isPartial ?? false);
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (!_longPressable) return;
+    _downPosition = event.position;
+    _longPressFired = false;
+    _longPressTimer?.cancel();
+    _longPressTimer = Timer(_longPressDuration, () {
+      _longPressTimer = null;
+      _longPressFired = true;
+      final s = widget.stay;
+      if (s != null) {
+        widget.onLongPressStay(s);
+      } else {
+        _showNightInfo();
+      }
+    });
+  }
+
+  /// The touch equivalent of the web chart's own hover tooltip for a night
+  /// with no booking on it — a vacant night (ready or not) or a drafted
+  /// one. A real stay's long press opens the fuller quick-peek sheet
+  /// instead (via [_TapeChartState._showStayQuickPeek]), which already
+  /// knows about sibling rooms and the guest's other upcoming stays; this
+  /// one just states what's on the night and what tapping it would do.
+  void _showNightInfo() {
+    if (!mounted) return;
+    final draft = widget.draft;
+    final notReady = widget.notReady;
+    final (String topLabel, Color topColor) = draft != null
+        ? ('Draft', AppTheme.draft)
+        : notReady != null
+        ? ('Vacant · ${notReady.label}', _kTapeNotReadyColor)
+        : widget.isPast
+        ? ('Nobody stayed', AppTheme.muted)
+        : ('Vacant', AppTheme.vacant);
+    final hint = draft != null
+        ? 'Tap to finish or delete this draft'
+        : widget.isPast
+        ? 'This night has passed — it can’t be booked'
+        : 'Tap to book this night';
+
+    // Same dialog shell as the booked-stay quick-peek sheet
+    // (showTapeQuickPeekSheet) — a light AppTheme.bg card, not a dark
+    // tooltip popover, so every long-press on the chart looks like one
+    // family regardless of what the tile holds.
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: AppTheme.bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(AppTheme.s16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(width: 8, height: 8, decoration: BoxDecoration(color: topColor, shape: BoxShape.circle)),
+                    const SizedBox(width: AppTheme.s8),
+                    Text(topLabel, style: TextStyle(color: topColor, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  draft != null && (draft.guestName ?? '').isNotEmpty ? draft.guestName! : 'Room ${widget.room.roomNumber}',
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  draft != null ? 'Room ${widget.room.roomNumber} · ${widget.room.categoryName}' : widget.room.categoryName,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                ),
+                if (notReady != null && notReady.note.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(notReady.note, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+                ],
+                const SizedBox(height: 6),
+                Text(formatDate(widget.date), style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: AppTheme.s16),
+                Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    final start = _downPosition;
+    if (start == null || _longPressTimer == null) return;
+    if ((event.position - start).distance > _moveSlop) {
+      _longPressTimer?.cancel();
+      _longPressTimer = null;
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+  }
+
   Color get _fill {
-    final s = stay;
+    final s = widget.stay;
     if (s == null) {
       // A night nobody has booked, but somebody has a draft on — yellow, the
       // same colour the web tape chart marks a parked booking with. It is
       // still sellable, which is why this only fires once there is no real
       // stay on the night at all.
-      if (draft != null) return AppTheme.draft;
-      if (isPast) return AppTheme.border;
+      if (widget.draft != null) return AppTheme.draft;
+      if (widget.notReady != null) return _kTapeNotReadyColor;
+      if (widget.isPast) return AppTheme.border;
       // A weekend night sells the same as any other, but the web tape chart
       // washes it a touch deeper so a run of Saturdays stands out at a
       // glance — the same cue this carries over.
-      return isWeekend
+      return widget.isWeekend
           ? AppTheme.vacant.withValues(alpha: 0.28)
           : AppTheme.vacant.withValues(alpha: 0.16);
     }
@@ -2049,9 +2274,9 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = stay;
-    final d = draft;
-    final occ = dormitoryOccupancy;
+    final s = widget.stay;
+    final d = widget.draft;
+    final occ = widget.dormitoryOccupancy;
     // A partial dormitory night — some beds held, some still free — is drawn
     // and tapped like a vacant night with a headcount on it, not like a
     // single stay's bar: several different bookings can share it, and a tap
@@ -2069,10 +2294,10 @@ class _Tile extends StatelessWidget {
     // share it, so there is no one run to draw as a continuous bar.
     final roundLeft =
         isPartial ||
-        (s != null ? isRunStart : (d != null ? isDraftRunStart : true));
+        (s != null ? widget.isRunStart : (d != null ? widget.isDraftRunStart : true));
     final roundRight =
         isPartial ||
-        (s != null ? isRunEnd : (d != null ? isDraftRunEnd : true));
+        (s != null ? widget.isRunEnd : (d != null ? widget.isDraftRunEnd : true));
     // A vacant night in the past still opens a booking, exactly as the web
     // tape chart's own click does — a stay taken on paper over the weekend
     // has to be enterable against the nights it actually happened on. Past
@@ -2082,105 +2307,119 @@ class _Tile extends StatelessWidget {
     // booking, the same as the web tape chart's own draft tile — the room is
     // still sellable, but whoever parked it should be finished or thrown
     // away before the night is sold from under them.
-    return GestureDetector(
-      onTap: isPartial
-          ? onTapVacant
-          : s != null
-          ? () => onTapStay(s)
-          : d != null
-          ? () => onTapDraft(d)
-          : onTapVacant,
-      // Only a real stay has a tooltip-style peek worth showing — a vacant
-      // night or a draft already says everything it has on the tile itself.
-      onLongPress: !isPartial && s != null ? () => onLongPressStay(s) : null,
-      child: Container(
-        width: size,
-        height: height,
-        padding: EdgeInsets.only(
-          top: 3,
-          bottom: 3,
-          left: roundLeft ? 3 : 0,
-          right: roundRight ? 3 : 0,
-        ),
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: GestureDetector(
+        onTap: () {
+          // A long press that just fired must not also register as the tap
+          // its own pointer-up otherwise completes — opening the stay's
+          // detail screen right behind the quick-peek dialog it just opened.
+          if (_longPressFired) {
+            _longPressFired = false;
+            return;
+          }
+          if (isPartial) {
+            widget.onTapVacant();
+          } else if (s != null) {
+            widget.onTapStay(s);
+          } else if (d != null) {
+            widget.onTapDraft(d);
+          } else {
+            widget.onTapVacant();
+          }
+        },
         child: Container(
-          decoration: BoxDecoration(
-            // A quick-peek pick lights the tile up a flat, unmistakable
-            // amber — distinct from every other colour the chart already
-            // uses for status, search or today — rather than only ringing
-            // it, so it still reads clearly against a tile already its own
-            // bright fill (checked-in green, reserved orange-brown, …).
-            color: isFlash ? _flashColor : (isPartial ? null : _fill),
-            boxShadow: isFlash
-                ? [
-                    BoxShadow(
-                      color: _flashColor.withValues(alpha: 0.65),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
-            gradient: isPartial && !isFlash
-                ? LinearGradient(
-                    colors: [
-                      AppTheme.reserved,
-                      AppTheme.reserved,
-                      AppTheme.vacant.withValues(alpha: 0.16),
-                      AppTheme.vacant.withValues(alpha: 0.16),
-                    ],
-                    stops: [
-                      0,
-                      occ!.occupied / occ.total,
-                      occ.occupied / occ.total,
-                      1,
-                    ],
-                  )
-                : null,
-            borderRadius: BorderRadius.horizontal(
-              left: roundLeft ? const Radius.circular(6) : Radius.zero,
-              right: roundRight ? const Radius.circular(6) : Radius.zero,
+          width: widget.size,
+          height: widget.height,
+          padding: EdgeInsets.only(
+            top: 3,
+            bottom: 3,
+            left: roundLeft ? 3 : 0,
+            right: roundRight ? 3 : 0,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              // A quick-peek pick lights the tile up a flat, unmistakable
+              // amber — distinct from every other colour the chart already
+              // uses for status, search or today — rather than only ringing
+              // it, so it still reads clearly against a tile already its own
+              // bright fill (checked-in green, reserved orange-brown, …).
+              color: widget.isFlash ? _Tile._flashColor : (isPartial ? null : _fill),
+              boxShadow: widget.isFlash
+                  ? [
+                      BoxShadow(
+                        color: _Tile._flashColor.withValues(alpha: 0.65),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+              gradient: isPartial && !widget.isFlash
+                  ? LinearGradient(
+                      colors: [
+                        AppTheme.reserved,
+                        AppTheme.reserved,
+                        AppTheme.vacant.withValues(alpha: 0.16),
+                        AppTheme.vacant.withValues(alpha: 0.16),
+                      ],
+                      stops: [
+                        0,
+                        occ!.occupied / occ.total,
+                        occ.occupied / occ.total,
+                        1,
+                      ],
+                    )
+                  : null,
+              borderRadius: BorderRadius.horizontal(
+                left: roundLeft ? const Radius.circular(6) : Radius.zero,
+                right: roundRight ? const Radius.circular(6) : Radius.zero,
+              ),
+              // A search hit rings violet — a colour nothing else on the chart
+              // uses, the same way the web tape chart marks it — brighter and
+              // thicker on the one hit the stepper is actually on. Today's own
+              // ring is skipped once a stay or a draft already fills the
+              // night: the fill colour already says the room is taken (or
+              // parked), and a ring drawn on just one night of a run would cut
+              // a notch into an otherwise unbroken bar.
+              border: widget.isFlash
+                  ? Border.all(color: const Color(0xFFB8540A), width: 2.5)
+                  : widget.isActiveHit
+                  ? Border.all(color: const Color(0xFF7C3AED), width: 2.2)
+                  : widget.isHit
+                  ? Border.all(
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
+                      width: 1.6,
+                    )
+                  : (widget.isToday && s == null && d == null && !isPartial)
+                  ? Border.all(color: AppTheme.accent, width: 1.4)
+                  : null,
             ),
-            // A search hit rings violet — a colour nothing else on the chart
-            // uses, the same way the web tape chart marks it — brighter and
-            // thicker on the one hit the stepper is actually on. Today's own
-            // ring is skipped once a stay or a draft already fills the
-            // night: the fill colour already says the room is taken (or
-            // parked), and a ring drawn on just one night of a run would cut
-            // a notch into an otherwise unbroken bar.
-            border: isFlash
-                ? Border.all(color: const Color(0xFFB8540A), width: 2.5)
-                : isActiveHit
-                ? Border.all(color: const Color(0xFF7C3AED), width: 2.2)
-                : isHit
-                ? Border.all(
-                    color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
-                    width: 1.6,
+            alignment: Alignment.center,
+            child: isPartial && widget.size >= 34
+                ? Text(
+                    '${occ!.occupied}/${occ.total}',
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
                   )
-                : (isToday && s == null && d == null && !isPartial)
-                ? Border.all(color: AppTheme.accent, width: 1.4)
+                : (!isPartial && s != null && widget.size >= 48)
+                ? Text(
+                    (s.guestName ?? '').isEmpty
+                        ? ''
+                        : s.guestName![0].toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
                 : null,
           ),
-          alignment: Alignment.center,
-          child: isPartial && size >= 34
-              ? Text(
-                  '${occ!.occupied}/${occ.total}',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                  ),
-                )
-              : (!isPartial && s != null && size >= 48)
-              ? Text(
-                  (s.guestName ?? '').isEmpty
-                      ? ''
-                      : s.guestName![0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                )
-              : null,
         ),
       ),
     );

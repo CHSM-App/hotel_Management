@@ -327,6 +327,7 @@ class _FactsCard extends ConsumerWidget {
         : [if (asset.floor.isNotEmpty) 'Floor ${asset.floor}', asset.department].where((s) => s.isNotEmpty).join(' · ');
 
     final facts = [
+      if (asset.quantity != null) _fact(Icons.inventory_2_outlined, 'Quantity owned', '${asset.quantity}'),
       _fact(Icons.location_on_outlined, 'Location', location.isEmpty ? 'Not set' : location),
       if (asset.brand.isNotEmpty || asset.model.isNotEmpty)
         _fact(Icons.precision_manufacturing_outlined, 'Brand / model', [asset.brand, asset.model].where((s) => s.isNotEmpty).join(' ')),

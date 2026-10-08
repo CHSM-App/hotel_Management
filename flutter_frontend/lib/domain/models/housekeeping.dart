@@ -19,6 +19,10 @@ const kRoomStatusLabel = {
 /// stored, so it is just read off the room, never computed here.
 class HousekeepingRoom {
   final int id;
+  // ROOM | VENUE — mirrors `kind` on the board row (housekeeping.service.js's
+  // listRooms/listVenues both return this shape). `roomNumber` doubles as the
+  // venue's name when this is 'VENUE', same as the web.
+  final String kind;
   final String roomNumber;
   final String categoryName;
   final String? floor;
@@ -36,9 +40,17 @@ class HousekeepingRoom {
   final String? outOfOrderNote;
   final String? lastCleanedAt;
   final String? dirtySince;
+  // Venue-only: the function running in it now, and the next one booked
+  // today — mirrors eventTitle/eventEndsAt/nextEventTitle/nextEventAt from
+  // listVenues. Null for a room.
+  final String? eventTitle;
+  final String? eventEndsAt;
+  final String? nextEventTitle;
+  final String? nextEventAt;
 
   const HousekeepingRoom({
     required this.id,
+    this.kind = 'ROOM',
     this.roomNumber = '',
     this.categoryName = '',
     this.floor,
@@ -56,10 +68,15 @@ class HousekeepingRoom {
     this.outOfOrderNote,
     this.lastCleanedAt,
     this.dirtySince,
+    this.eventTitle,
+    this.eventEndsAt,
+    this.nextEventTitle,
+    this.nextEventAt,
   });
 
   factory HousekeepingRoom.fromJson(Map<String, dynamic> json) => HousekeepingRoom(
     id: asInt(json['id']),
+    kind: asStringOrNull(json['kind']) ?? 'ROOM',
     roomNumber: asStringOrNull(json['roomNumber']) ?? '',
     categoryName: asStringOrNull(json['categoryName']) ?? '',
     floor: asStringOrNull(json['floor']),
@@ -77,7 +94,13 @@ class HousekeepingRoom {
     outOfOrderNote: asStringOrNull(json['outOfOrderNote']),
     lastCleanedAt: asStringOrNull(json['lastCleanedAt']),
     dirtySince: asStringOrNull(json['dirtySince']),
+    eventTitle: asStringOrNull(json['eventTitle']),
+    eventEndsAt: asStringOrNull(json['eventEndsAt']),
+    nextEventTitle: asStringOrNull(json['nextEventTitle']),
+    nextEventAt: asStringOrNull(json['nextEventAt']),
   );
+
+  bool get isVenue => kind == 'VENUE';
 
   /// "Room +2 more" — mirrors the `guest` line built in HousekeepingPanel.jsx.
   String get guestLabel => guestName == null || guestName!.isEmpty
@@ -95,10 +118,19 @@ const kIssueKindClosedLabel = {'ISSUE': 'Fixed', 'FOUND': 'Handed over'};
 const kIssueKindQuestion = {'ISSUE': 'What was done? (optional)', 'FOUND': 'What happened to it? (optional)'};
 const kIssueKindHint = {'ISSUE': 'e.g. plumber changed the tap', 'FOUND': 'e.g. returned to guest, kept at reception'};
 
+/// A found item goes back to a guest from a room, to the host from a venue —
+/// mirrors closeHint in HousekeepingIssues.jsx.
+String issueCloseHint(HousekeepingIssue issue) =>
+    issue.kind == 'FOUND' && issue.isVenue ? 'e.g. returned to the host, kept at reception' : kIssueKindHint[issue.kind] ?? '';
+
 class HousekeepingIssue {
   final int logId;
   final int roomId;
   final String roomNumber;
+  // ROOM | VENUE — mirrors the `space` the server derives from venue_id vs
+  // room_id (housekeeping.service.js's listIssues). `roomNumber` doubles as
+  // the venue's name when this is 'VENUE', same as the web.
+  final String space;
   final String kind; // ISSUE | FOUND
   final String text;
   final String reportedAt;
@@ -112,6 +144,7 @@ class HousekeepingIssue {
     required this.logId,
     this.roomId = 0,
     this.roomNumber = '',
+    this.space = 'ROOM',
     this.kind = 'ISSUE',
     this.text = '',
     this.reportedAt = '',
@@ -126,6 +159,7 @@ class HousekeepingIssue {
     logId: asInt(json['logId']),
     roomId: asInt(json['roomId']),
     roomNumber: asStringOrNull(json['roomNumber']) ?? '',
+    space: asStringOrNull(json['space']) ?? 'ROOM',
     kind: asStringOrNull(json['kind']) ?? 'ISSUE',
     text: asStringOrNull(json['text']) ?? '',
     reportedAt: json['reportedAt']?.toString() ?? '',
@@ -137,6 +171,10 @@ class HousekeepingIssue {
   );
 
   bool get isOpen => closedAt == null;
+  bool get isVenue => space == 'VENUE';
+  // "Room 12", or the venue by its own name — mirrors spaceName in
+  // HousekeepingIssues.jsx.
+  String get spaceLabel => isVenue ? roomNumber : 'Room $roomNumber';
 }
 
 /// GET /housekeeping/issues/count — the sidebar's badge. Mirrors

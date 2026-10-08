@@ -18,6 +18,18 @@ class HousekeepingUsecase {
 
   Future<void> setOutOfOrder(int roomId, Map<String, dynamic> body) => repository.setOutOfOrder(roomId, body);
 
+  Future<List<HousekeepingRoom>> venues() => repository.venues();
+
+  Future<void> startVenueCleaning(int venueId) => repository.startVenueCleaning(venueId);
+
+  Future<void> releaseVenue(int venueId) => repository.releaseVenue(venueId);
+
+  Future<void> finishVenueCleaning(int venueId, Map<String, dynamic> body) => repository.finishVenueCleaning(venueId, body);
+
+  Future<void> markVenueDirty(int venueId) => repository.markVenueDirty(venueId);
+
+  Future<void> setVenueOutOfOrder(int venueId, Map<String, dynamic> body) => repository.setVenueOutOfOrder(venueId, body);
+
   Future<List<HousekeepingIssue>> issues({String scope = 'all'}) => repository.issues(scope: scope);
 
   Future<OpenIssueSummary> openIssueSummary() => repository.openIssueSummary();

@@ -1580,6 +1580,11 @@ class ApiService {
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
   }
 
+  Future<EventBooking> completeEvent(int id) async {
+    final res = await _dio.patch('/events/$id/complete');
+    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
+  }
+
   Future<EventBooking> cancelEvent(
     int id, {
     required String reason,
@@ -2291,6 +2296,35 @@ class ApiService {
 
   Future<void> closeHousekeepingIssue(int logId, Map<String, dynamic> body) async {
     await _dio.post('/housekeeping/issues/$logId/close', data: body);
+  }
+
+  // Event venues — the same board, same shape, a hall or lawn instead of a
+  // room. Empty list wherever Events is off.
+  Future<List<HousekeepingRoom>> housekeepingVenues() async {
+    final res = await _dio.get('/housekeeping/venues');
+    return (_map(res.data)['venues'] as List? ?? [])
+        .map((e) => HousekeepingRoom.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> startVenueCleaning(int venueId) async {
+    await _dio.post('/housekeeping/venues/$venueId/start');
+  }
+
+  Future<void> releaseVenue(int venueId) async {
+    await _dio.post('/housekeeping/venues/$venueId/release');
+  }
+
+  Future<void> finishVenueCleaning(int venueId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/venues/$venueId/done', data: body);
+  }
+
+  Future<void> markVenueDirty(int venueId) async {
+    await _dio.post('/housekeeping/venues/$venueId/dirty');
+  }
+
+  Future<void> setVenueOutOfOrder(int venueId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/venues/$venueId/out-of-order', data: body);
   }
 
   // ===== LAUNDRY (laundry.manage) =====

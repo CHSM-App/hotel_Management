@@ -408,7 +408,7 @@ class _AssetTableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cells = {
       'tag': asset.assetTag ?? '—',
-      'name': asset.name,
+      'name': asset.quantity != null ? '${asset.name} × ${asset.quantity}' : asset.name,
       'category': asset.categoryName,
       'location': _location(asset).isEmpty ? '—' : _location(asset),
       'warranty': asset.warrantyExpiry != null ? formatIsoDate(asset.warrantyExpiry!) : '—',
@@ -647,7 +647,7 @@ class _AssetCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            asset.name,
+                            asset.quantity != null ? '${asset.name} × ${asset.quantity}' : asset.name,
                             style: Theme.of(context).textTheme.titleSmall,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

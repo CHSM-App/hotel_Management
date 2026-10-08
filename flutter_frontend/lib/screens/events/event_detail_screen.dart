@@ -100,6 +100,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       _Timeline(status: ev.status),
                     ],
                     if (ev.status == 'CANCELLED') _ClosedBanner(text: 'Cancelled${ev.cancelReason != null ? ': ${ev.cancelReason}' : ''}${(ev.refundAmount ?? 0) > 0 ? ' · Refunded ${formatPrice(ev.refundAmount)}${ev.refundPaymentMethod != null ? ' via ${kPaymentMethods[ev.refundPaymentMethod] ?? ev.refundPaymentMethod}' : ''}' : ''}'),
+                    if (ev.completedAt != null && !ev.isClosed) _ClosedBanner(text: 'Completed · ${formatDateTime(ev.completedAt)}', color: AppTheme.checkedIn),
                     if (_actionError != null) ...[
                       const SizedBox(height: AppTheme.s8),
                       Text(_actionError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
@@ -165,6 +166,23 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       _Actions(
                         event: ev,
                         onConfirm: () => _run(() => ref.read(eventsViewModelProvider.notifier).confirm(ev.id)),
+                        onComplete: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              backgroundColor: AppTheme.bg,
+                              title: const Text('Mark as completed?', style: TextStyle(color: AppTheme.heading)),
+                              content: const Text('The venue will be sent to housekeeping for cleaning.', style: TextStyle(color: AppTheme.text, fontSize: 12.5)),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not yet')),
+                                TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Mark as Completed')),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            await _run(() => ref.read(eventsViewModelProvider.notifier).complete(ev.id));
+                          }
+                        },
                         onEdit: () async {
                           final updated = await Navigator.of(context).push<EventBooking>(
                             MaterialPageRoute(builder: (_) => EventFormScreen(event: ev)),
@@ -237,6 +255,28 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          Builder(builder: (context) {
+            // Where the function is in time — not the status, which is about
+            // the money. Mirrors eventPhase/phaseTagClass in eventFormat.js.
+            final phase = eventPhase(event);
+            if (phase == null) return const SizedBox.shrink();
+            final color = switch (phase) {
+              'IN_PROGRESS' => AppTheme.checkedIn,
+              'COMPLETED' => AppTheme.muted,
+              _ => AppTheme.edit,
+            };
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                  child: Text(kEventPhaseLabel[phase] ?? phase, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            );
+          }),
           Text(kEventTypeLabel[event.eventType] ?? event.eventType, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
           const SizedBox(height: 6),
           Text('${formatDateTime(event.startAt)} · ${event.venueName}${event.venueCapacity != null ? ' (up to ${event.venueCapacity})' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 13)),
@@ -882,6 +922,7 @@ class _CancelCard extends StatelessWidget {
 class _Actions extends StatelessWidget {
   final EventBooking event;
   final VoidCallback onConfirm;
+  final VoidCallback onComplete;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
   final VoidCallback onSettle;
@@ -890,6 +931,7 @@ class _Actions extends StatelessWidget {
   const _Actions({
     required this.event,
     required this.onConfirm,
+    required this.onComplete,
     required this.onEdit,
     required this.onCancel,
     required this.onSettle,
@@ -909,6 +951,7 @@ class _Actions extends StatelessWidget {
         if (status == 'DRAFT') NeuButton(primary: true, onPressed: onConfirm, child: const Text('Confirm')),
         if (status == 'CONFIRMED') NeuButton(primary: true, onPressed: onSettle, child: const Text('Settle & bill')),
         if (status == 'SETTLED') NeuButton(primary: true, onPressed: onViewBill, child: const Text('View bill')),
+        if (event.canComplete) NeuButton(color: AppTheme.checkedIn, primary: true, onPressed: onComplete, child: const Text('Mark as Completed')),
         if (canEdit) NeuButton(onPressed: onEdit, child: const Text('Edit')),
         if (!closed && status != 'SETTLED') NeuButton(color: AppTheme.danger, primary: true, onPressed: onCancel, child: const Text('Cancel event')),
       ],

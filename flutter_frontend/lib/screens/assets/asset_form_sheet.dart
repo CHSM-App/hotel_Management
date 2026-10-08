@@ -108,6 +108,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   late final _floor = TextEditingController(text: widget.asset?.floor ?? '');
   late final _department = TextEditingController(text: widget.asset?.department ?? '');
   late final _warrantyExpiry = TextEditingController(text: widget.asset?.warrantyExpiry ?? '');
+  late final _quantity = TextEditingController(text: widget.asset?.quantity?.toString() ?? '');
 
   final List<_BulkUnit> _units = [_BulkUnit()];
 
@@ -121,6 +122,16 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   String? get _nameError =>
       (_submitAttempted && !(_bulk && !_isEdit) && _name.text.trim().isEmpty) ? 'Enter a name for the asset.' : null;
 
+  // Linen is a stock, not one unit, so it carries a quantity instead —
+  // mirrors isLinenCategory in AssetsPanel.jsx. Bulk register has no
+  // quantity field (the backend's bulk schema doesn't carry one either).
+  bool get _isLinen => !_bulk && isLinenCategoryName(_categoryName.text, ref.read(assetsViewModelProvider).categories);
+  String? get _quantityError {
+    if (!_submitAttempted || !_isLinen) return null;
+    final n = int.tryParse(_quantity.text.trim());
+    return (n == null || n < 0) ? 'Enter how many you own.' : null;
+  }
+
   bool _unitInvalid(_BulkUnit u) => u.name.text.trim().isEmpty && u.department.text.trim().isEmpty && u.roomId == null;
   static const _kUnitErrorText = 'Needs a room, a location, or a name to tell it apart from the others.';
 
@@ -128,6 +139,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
   // empty — this form runs across several cards, long enough that an error
   // left where it was typed can sit off-screen unseen.
   final _categoryFieldKey = GlobalKey();
+  final _quantityFieldKey = GlobalKey();
   final _nameFieldKey = GlobalKey();
   final _nameFocus = FocusNode();
 
@@ -136,6 +148,8 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     FocusNode? focus;
     if (_categoryError != null) {
       key = _categoryFieldKey;
+    } else if (_quantityError != null) {
+      key = _quantityFieldKey;
     } else if (_bulk && !_isEdit && _units.any(_unitInvalid)) {
       key = _units.firstWhere(_unitInvalid).rowKey;
     } else if (_nameError != null) {
@@ -187,6 +201,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     _floor.dispose();
     _department.dispose();
     _warrantyExpiry.dispose();
+    _quantity.dispose();
     for (final u in _units) {
       u.dispose();
     }
@@ -426,6 +441,27 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   if (_bulk && !_isEdit) ...[
                     const SizedBox(height: 2),
                     const Text('Every unit in this batch shares one category.', style: _kFieldHintStyle),
+                  ],
+                  // Linen is a stock, not one unit — this count is what
+                  // Laundry works from. Mirrors the quantity field in
+                  // AssetsPanel.jsx.
+                  if (_isLinen) ...[
+                    const SizedBox(height: AppTheme.s12),
+                    NeuField(
+                      key: _quantityFieldKey,
+                      controller: _quantity,
+                      label: 'Quantity owned',
+                      hint: 'e.g. 50',
+                      required: true,
+                      keyboardType: TextInputType.number,
+                      errorText: _quantityError,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    if (_quantityError == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text('Count every piece: in rooms, in the store and out for washing. Laundry tracks its stock from this number.', style: _kFieldHintStyle),
+                      ),
                   ],
                 ],
               ),
@@ -819,7 +855,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
       return;
     }
 
-    if (_nameError != null) {
+    if (_nameError != null || _quantityError != null) {
       _scrollToFirstError();
       return;
     }
@@ -840,6 +876,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
       'department': _department.text.trim(),
       'vendorId': _vendorId?.toString() ?? '',
       if (!_isEdit) 'warrantyExpiry': _warrantyExpiry.text.trim(),
+      'quantity': _isLinen ? _quantity.text.trim() : '',
     };
     if (_billPhoto != null) {
       formMap['bill'] = dio.MultipartFile.fromFileSync(_billPhoto!.path, filename: _billPhoto!.name);

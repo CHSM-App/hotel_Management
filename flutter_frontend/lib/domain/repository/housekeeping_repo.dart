@@ -15,6 +15,18 @@ abstract class HousekeepingRepository {
 
   Future<void> setOutOfOrder(int roomId, Map<String, dynamic> body);
 
+  Future<List<HousekeepingRoom>> venues();
+
+  Future<void> startVenueCleaning(int venueId);
+
+  Future<void> releaseVenue(int venueId);
+
+  Future<void> finishVenueCleaning(int venueId, Map<String, dynamic> body);
+
+  Future<void> markVenueDirty(int venueId);
+
+  Future<void> setVenueOutOfOrder(int venueId, Map<String, dynamic> body);
+
   Future<List<HousekeepingIssue>> issues({String scope = 'all'});
 
   Future<OpenIssueSummary> openIssueSummary();

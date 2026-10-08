@@ -196,7 +196,10 @@ const kFeatures = <Feature>[
     permission: 'housekeeping.manage',
     altPermissions: ['bookings.manage', 'rooms.manage'],
     capability: 'hasHousekeeping',
-    group: 'Rooms',
+    // Its own group, not under Rooms (frontend/src/lib/propertyProfile.js):
+    // it looks after event venues too, and a restaurant with a party hall
+    // has no Rooms group to put it in.
+    group: 'Housekeeping',
   ),
   // Same web module (LaundryPanel.jsx): hotel linen sent for washing and
   // received back, plus guests' own laundry taken in at the desk. Its own
@@ -211,7 +214,9 @@ const kFeatures = <Feature>[
     permission: 'laundry.manage',
     altPermissions: ['bookings.manage', 'rooms.manage'],
     capability: 'hasLaundry',
-    group: 'Rooms',
+    // Its own add-on, separate from Housekeeping: a property can have either
+    // without the other (frontend/src/lib/propertyProfile.js).
+    group: 'Housekeeping',
   ),
   // Same web module (ServicesPanel.jsx): a private pool, a gaming area,
   // anything a lodge sells per use and bills like food. An add-on, separate

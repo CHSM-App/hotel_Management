@@ -28,12 +28,15 @@ class _HousekeepingScreenState extends ConsumerState<HousekeepingScreen> {
   @override
   Widget build(BuildContext context) {
     final count = ref.watch(housekeepingViewModelProvider.select((s) => s.issueSummary.count));
+    final lodge = ref.watch(authViewModelProvider).me?.lodge;
+    // "Rooms", "Venues" or "Rooms & Venues" — mirrors the web tab's own label.
+    final roomsLabel = lodge?.hasEvents ?? false ? (lodge?.hasRooms == false ? 'Venues' : 'Rooms & Venues') : 'Rooms';
 
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s8),
-          child: _SubTabs(selected: _tab, issueCount: count, onSelect: (t) => setState(() => _tab = t)),
+          child: _SubTabs(selected: _tab, issueCount: count, roomsLabel: roomsLabel, onSelect: (t) => setState(() => _tab = t)),
         ),
         Expanded(child: _tab == 'issues' ? const IssuesTab() : const RoomsTab()),
       ],
@@ -47,9 +50,10 @@ class _HousekeepingScreenState extends ConsumerState<HousekeepingScreen> {
 class _SubTabs extends StatelessWidget {
   final String selected;
   final int issueCount;
+  final String roomsLabel;
   final ValueChanged<String> onSelect;
 
-  const _SubTabs({required this.selected, required this.issueCount, required this.onSelect});
+  const _SubTabs({required this.selected, required this.issueCount, required this.roomsLabel, required this.onSelect});
 
   static const double _height = 44;
   static const _tabs = ['rooms', 'issues'];
@@ -130,7 +134,7 @@ class _SubTabs extends StatelessWidget {
           ),
           Row(
             children: [
-              segment('rooms', 'Rooms'),
+              segment('rooms', roomsLabel),
               segment('issues', 'Issues', badge: issueCount),
             ],
           ),

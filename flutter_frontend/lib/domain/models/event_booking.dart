@@ -260,6 +260,10 @@ class EventBooking {
   final num? cancellationCharge;
   final List<EventAddonLine> addons;
   final EventInvoiceRef? invoice;
+  // When the desk marked the function over — not a status: the status walk
+  // is about the money, and a function can be over and unbilled, or billed
+  // and still running. Mirrors completedAt in events.service.js.
+  final String? completedAt;
 
   const EventBooking({
     required this.id,
@@ -301,6 +305,7 @@ class EventBooking {
     this.cancellationCharge,
     this.addons = const [],
     this.invoice,
+    this.completedAt,
   });
 
   factory EventBooking.fromJson(Map<String, dynamic> json) => EventBooking(
@@ -349,6 +354,7 @@ class EventBooking {
     invoice: json['invoice'] is Map
         ? EventInvoiceRef.fromJson((json['invoice'] as Map).cast<String, dynamic>())
         : null,
+    completedAt: asStringOrNull(json['completedAt']),
   );
 
   /// A saved rate above zero is what "catering" means; there is no flag —
@@ -356,7 +362,34 @@ class EventBooking {
   bool get hasCatering => perPlateRate > 0;
 
   bool get isClosed => status == 'CANCELLED';
+
+  /// Whether, and when, "Mark as Completed" can be used — mirrors
+  /// EventDetail.jsx's `canComplete`.
+  bool get canComplete =>
+      (status == 'CONFIRMED' || status == 'SETTLED') && completedAt == null && (DateTime.tryParse(startAt)?.isBefore(DateTime.now()) ?? false);
 }
+
+/// Where a function is in time, which its status does not say: Confirmed
+/// and Settled are about the money, and a function next week and one in the
+/// hall now are both "Confirmed". Worked out from the booked times (and the
+/// desk's "Mark as Completed"), so nobody has to set it. Null for a draft or
+/// cancelled function, which does not hold the venue. Mirrors eventPhase in
+/// eventFormat.js.
+String? eventPhase(EventBooking ev, [DateTime? now]) {
+  if (ev.status != 'CONFIRMED' && ev.status != 'SETTLED') return null;
+  final n = now ?? DateTime.now();
+  final end = DateTime.tryParse(ev.endAt);
+  if (ev.completedAt != null || (end != null && !end.isAfter(n))) return 'COMPLETED';
+  final start = DateTime.tryParse(ev.startAt);
+  if (start != null && start.isAfter(n)) return 'UPCOMING';
+  return 'IN_PROGRESS';
+}
+
+const kEventPhaseLabel = <String, String>{
+  'UPCOMING': 'Upcoming',
+  'IN_PROGRESS': 'In Progress',
+  'COMPLETED': 'Completed',
+};
 
 /// GET /events/availability — whether a venue is free over a window, and
 /// what it clashes with if not.
