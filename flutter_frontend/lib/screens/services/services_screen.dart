@@ -1,23 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../presentation/providers/view_model_provider.dart';
 import '../theme.dart';
 import 'service_usage_panel.dart';
 import 'services_catalogue_panel.dart';
 
 /// Other services — mirrors ServicesPanel.jsx's shell: Service use and
 /// Services & prices, the same two views the web switches between.
-class ServicesScreen extends StatefulWidget {
+class ServicesScreen extends ConsumerStatefulWidget {
   const ServicesScreen({super.key});
 
   @override
-  State<ServicesScreen> createState() => _ServicesScreenState();
+  ConsumerState<ServicesScreen> createState() => _ServicesScreenState();
 }
 
-class _ServicesScreenState extends State<ServicesScreen> {
+class _ServicesScreenState extends ConsumerState<ServicesScreen> {
   String _view = 'usage';
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      ref.read(lodgeServicesViewModelProvider.notifier).loadUsages();
+      ref.read(lodgeServicesViewModelProvider.notifier).loadServices();
+      ref.read(lodgeServicesViewModelProvider.notifier).loadInHouseGuests();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Kept alive here, not just in the sub-tab panels: the two panels are
+    // separate widgets that unmount each other on every tab switch, and
+    // lodgeServicesViewModelProvider is autoDispose, so without a listener
+    // that outlives both of them a switch mid-load tore down the in-flight
+    // request (and any already-loaded data) instead of letting it land.
+    ref.watch(lodgeServicesViewModelProvider);
+
     return Column(
       children: [
         Padding(

@@ -7,6 +7,7 @@ import '../../domain/models/asset.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
+import '../../domain/models/customer.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/event_booking.dart';
 import '../../domain/models/expense.dart';
@@ -2210,6 +2211,41 @@ class ApiService {
 
   Future<void> deleteRole(String roleKey) async {
     await _dio.delete('/roles/$roleKey');
+  }
+
+  // ===== CUSTOMERS (customers.manage) =====
+
+  Future<CustomersResult> customers() async {
+    final res = await _dio.get('/customers');
+    final map = _map(res.data);
+    return CustomersResult(
+      customers: (map['customers'] as List? ?? [])
+          .map((e) => Customer.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      stats: CustomersStats.fromJson(
+        (map['stats'] as Map<String, dynamic>?) ?? const {},
+      ),
+    );
+  }
+
+  Future<CustomerDetail> customer(int id) async {
+    final res = await _dio.get('/customers/$id');
+    return CustomerDetail.fromJson(
+      _map(res.data)['customer'] as Map<String, dynamic>,
+    );
+  }
+
+  /// Answers with the new customer's id — the caller reloads the list itself
+  /// rather than trusting a partial echo back.
+  Future<int> createCustomer(Map<String, dynamic> body) async {
+    final res = await _dio.post('/customers', data: body);
+    return asInt(_map(res.data)['id']);
+  }
+
+  Future<Customer?> updateCustomer(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/customers/$id', data: body);
+    final customer = _map(res.data)['customer'];
+    return customer is Map<String, dynamic> ? Customer.fromJson(customer) : null;
   }
 
   // ===== OTHER SERVICES (rooms.manage / bookings.manage / billing.manage) =====

@@ -4,6 +4,7 @@ import '../view_models/assets_viewmodel.dart';
 import '../view_models/auth_viewmodel.dart';
 import '../view_models/booking_viewmodel.dart';
 import '../view_models/billing_viewmodel.dart';
+import '../view_models/customers_viewmodel.dart';
 import '../view_models/events_viewmodel.dart';
 import '../view_models/expenses_viewmodel.dart';
 import '../view_models/food_settings_viewmodel.dart';
@@ -127,6 +128,14 @@ final incomeViewModelProvider =
 final staffViewModelProvider =
     StateNotifierProvider.autoDispose<StaffViewModel, StaffState>(
       (ref) => StaffViewModel(ref.watch(staffUsecaseProvider)),
+    );
+
+/// Customers list + profile. Behind its own section — autoDispose so a login
+/// that never opens it never keeps the customer list warm for the life of
+/// the app.
+final customersViewModelProvider =
+    StateNotifierProvider.autoDispose<CustomersViewModel, CustomersState>(
+      (ref) => CustomersViewModel(ref.watch(customersUsecaseProvider)),
     );
 
 /// Laundry — hotel linen and guest laundry. Behind "More" like Assets/Events
