@@ -32,7 +32,7 @@ async function listVendors(lodgeId, kind, { includeInactive = false } = {}) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('kind', sql.NVarChar, kind)
     .query(`
-      SELECT id, name, contact_person, phone, email, specialty, notes, is_active
+      SELECT id, name, contact_person, phone, alt_phone, email, specialty, notes, is_active
       FROM dbo.vendors
       WHERE lodge_id = @lodgeId AND kind = @kind ${includeInactive ? '' : 'AND is_active = 1'}
       ORDER BY name ASC
@@ -48,21 +48,48 @@ async function createVendor(lodgeId, kind, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('kind', sql.NVarChar, kind)
     .input('name', sql.NVarChar, input.name)
-    .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND kind = @kind AND name = @name');
-  if (existing.recordset.length > 0) {
+    .query('SELECT id, is_active FROM dbo.vendors WHERE lodge_id = @lodgeId AND kind = @kind AND name = @name');
+  const removed = existing.recordset.find((row) => !row.is_active);
+  if (existing.recordset.length > 0 && !removed) {
     throw new ApiError('A vendor with that name already exists.', 409, 'name');
   }
 
   const phone = toNullable(input.phone);
   if (phone) {
+    // Removed vendors don't hold their number: the desk can't see them, so
+    // "already exists" would point at nothing they could go and fix.
     const phoneConflict = await pool
       .request()
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('phone', sql.NVarChar, phone)
-      .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND phone = @phone');
+      .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND phone = @phone AND is_active = 1');
     if (phoneConflict.recordset.length > 0) {
       throw new ApiError('A vendor with that phone number already exists.', 409, 'phone');
     }
+  }
+
+  // A vendor deleted while bills still pointed at it was only hidden (see
+  // deleteVendor), and its name is still taken by the unique constraint.
+  // Adding that name again brings the same row back with the new details,
+  // rather than refusing over a vendor nobody can see.
+  if (removed) {
+    await pool
+      .request()
+      .input('vendorId', sql.BigInt, removed.id)
+      .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
+      .input('phone', sql.NVarChar, phone)
+      .input('altPhone', sql.NVarChar, toNullable(input.altPhone))
+      .input('email', sql.NVarChar, toNullable(input.email))
+      .input('specialty', sql.NVarChar, toNullable(input.specialty))
+      .input('notes', sql.NVarChar, toNullable(input.notes))
+      .query(`
+        UPDATE dbo.vendors
+        SET contact_person = @contactPerson, phone = @phone, alt_phone = @altPhone,
+            email = @email, specialty = @specialty, notes = @notes, is_active = 1
+        WHERE id = @vendorId
+      `);
+    const revived = await listVendors(lodgeId, kind, { includeInactive: true });
+    return revived.find((v) => v.id === removed.id);
   }
 
   const result = await pool
@@ -108,7 +135,7 @@ async function updateVendor(lodgeId, kind, vendorId, input) {
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('phone', sql.NVarChar, phone)
       .input('vendorId', sql.BigInt, vendorId)
-      .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND phone = @phone AND id <> @vendorId');
+      .query('SELECT id FROM dbo.vendors WHERE lodge_id = @lodgeId AND phone = @phone AND id <> @vendorId AND is_active = 1');
     if (phoneConflict.recordset.length > 0) {
       throw new ApiError('A vendor with that phone number already exists.', 409, 'phone');
     }
@@ -141,9 +168,41 @@ async function updateVendor(lodgeId, kind, vendorId, input) {
   return vendors.find((v) => v.id === vendorId);
 }
 
+// SQL Server's "conflicted with the REFERENCE constraint".
+const FK_VIOLATION = 547;
+
+// Deleting a vendor nothing points at removes the row. One that bills, recurring
+// schedules or assets still reference can't go — those records would lose who
+// they were paid to — so it is switched off instead: gone from the directory
+// and the pickers, still named on everything already logged against it.
+// Attempting the delete and reading the refusal covers every table that
+// references dbo.vendors, including ones added after this was written.
+async function deleteVendor(lodgeId, kind, vendorId) {
+  const pool = await getPool();
+  const request = () =>
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('kind', sql.NVarChar, kind)
+      .input('vendorId', sql.BigInt, vendorId);
+  const where = 'WHERE id = @vendorId AND lodge_id = @lodgeId AND kind = @kind';
+
+  let result;
+  try {
+    result = await request().query(`DELETE FROM dbo.vendors OUTPUT deleted.id ${where}`);
+  } catch (err) {
+    if (err.number !== FK_VIOLATION) throw err;
+    result = await request().query(`UPDATE dbo.vendors SET is_active = 0 OUTPUT inserted.id ${where}`);
+  }
+  if (result.recordset.length === 0) {
+    throw new ApiError('Vendor not found.', 404);
+  }
+}
+
 module.exports = {
   mapVendor,
   listVendors,
   createVendor,
   updateVendor,
+  deleteVendor,
 };

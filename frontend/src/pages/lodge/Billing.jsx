@@ -536,6 +536,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const activeTab = forceTab && tabs.some((t) => t.key === forceTab) ? forceTab : tabs.some((t) => t.key === tab) ? tab : defaultTab;
   // Lists open as a spreadsheet; the cards are one click away.
   const [listView, setListView] = useState('sheet');
+  const [billSort, setBillSort] = useState({ key: null, dir: 1 });
+  const toggleBillSort = (key) => setBillSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: 1 }));
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   // A column only earns its place when some stay has something in it.
   const hasLate = Boolean(queue?.some((b) => b.lateCheckoutCharge > 0));
@@ -782,6 +784,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     documents &&
     documents.filter((i) => (!activeFilter || activeFilter.match(i)) && matchesDate(i) && matchesSearch(i));
   const billsFiltered = Boolean(billQuery) || Boolean(billFrom) || Boolean(billTo) || activeFilter != null;
+  // The spreadsheet view in the order of the heading clicked; until one is, the
+  // list's own order. Bills that tie keep that order too.
+  const billSortColumn = REPORT_COLUMNS.find((c) => c.key === billSort.key);
+  const sheetInvoices =
+    visibleInvoices && billSortColumn
+      ? [...visibleInvoices].sort((a, b) => {
+          const x = billSortColumn.value(a);
+          const y = billSortColumn.value(b);
+          const order = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+          return order * billSort.dir;
+        })
+      : visibleInvoices;
 
   const clearBillFilters = () => {
     setBillFilter('ALL');
@@ -2041,18 +2055,29 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     <table className="history-table">
                       <thead>
                         <tr>
-                          <th>Bill no.</th>
-                          <th>Date</th>
-                          <th>Billed for</th>
-                          <th>Guest / Table</th>
-                          <th>Room</th>
-                          <th>Document</th>
-                          <th>Status</th>
-                          <th className="history-table__num">Amount</th>
+                          {REPORT_COLUMNS.map((column) => (
+                            <th
+                              key={column.key}
+                              className={column.className}
+                              aria-sort={billSort.key === column.key ? (billSort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                            >
+                              <button
+                                type="button"
+                                className="billing-sheet__sort"
+                                onClick={() => toggleBillSort(column.key)}
+                                title={`Sort by ${column.label}`}
+                              >
+                                {column.label}
+                                <span className="billing-sheet__sort-icon" aria-hidden="true">
+                                  {billSort.key === column.key ? (billSort.dir === 1 ? '▲' : '▼') : '⇅'}
+                                </span>
+                              </button>
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleInvoices.map((inv) => {
+                        {sheetInvoices.map((inv) => {
                           const source = billSource(inv);
                           return (
                             <tr

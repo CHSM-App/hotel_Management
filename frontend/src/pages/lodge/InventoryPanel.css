@@ -25,8 +25,137 @@
 
 .inv-bar__actions {
   display: flex;
+  align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+/* The vendor directory as cards (ExpensesPanel.jsx): one vendor per card with
+   everything needed to ring them, since that is what the list is opened for. */
+.vendor-cards {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.vendor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.vendor-card:hover {
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
+  transform: translateY(-1px);
+}
+
+.vendor-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Initials on the brand tint: gives every card a fixed anchor to scan down,
+   whatever length the name beside it runs to. */
+.vendor-card__avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(91, 63, 217, 0.1);
+  color: var(--brand-ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.vendor-card__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.vendor-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.vendor-card__specialty {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.vendor-card__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.vendor-card__facts {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.vendor-card__facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vendor-card__icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.vendor-card__facts a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.vendor-card__facts a:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.vendor-card__missing {
+  color: var(--text-muted);
+}
+
+.vendor-card__notes {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--paper);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* Work Orders' status strip + "New work order": one row, button pinned to
@@ -1202,9 +1331,14 @@
   width: 100%;
 }
 
-.inv-recipe__row select {
+/* The searchable material picker (MaterialField in RecipesPanel.jsx). */
+.inv-recipe__material {
   flex: 1;
   min-width: 0;
+}
+
+.inv-recipe__material input {
+  width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--field-border);
   border-radius: 10px;
@@ -1212,6 +1346,28 @@
   font: inherit;
   color: var(--ink);
   box-shadow: var(--shadow-well);
+}
+
+/* The chosen material waits in the placeholder while the box is searched, so
+   it is drawn as text rather than as a hint. */
+.inv-recipe__material input::placeholder {
+  color: var(--text-muted);
+}
+
+/* A category heading in the list — not a choice, so it takes no hover. */
+.inv-recipe__group {
+  padding: 8px 10px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.inv-recipe__no-match {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .inv-recipe__qty {
@@ -1375,7 +1531,7 @@
     flex-wrap: wrap;
   }
 
-  .inv-recipe__row select {
+  .inv-recipe__material {
     flex-basis: 100%;
   }
 

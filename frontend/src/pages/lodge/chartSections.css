@@ -269,22 +269,47 @@
 
 .sim-fields {
   display: grid;
-  grid-template-columns: minmax(160px, 1.4fr) 1fr 1fr auto;
+  grid-template-columns: minmax(160px, 1.4fr) 1fr 1fr;
   gap: 14px;
-  align-items: end;
+  /* Tops, not bottoms: an error under one box used to push that box up out of
+     line with the others. */
+  align-items: start;
+}
+
+.sim-result--stale {
+  opacity: 0.5;
+  transition: opacity 120ms ease;
+}
+
+.sim-empty {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .sim-fields .field {
   margin-bottom: 0;
 }
 
-.sim-fields__action button {
+/* Under everything the price depends on, on the right where the form's other
+   submit buttons sit. */
+.sim-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.sim-actions button {
   min-height: 44px;
   white-space: nowrap;
 }
 
 .sim-nights-hint {
-  margin-top: 10px;
+  margin: 8px 0 18px;
   font-size: 13px;
   color: var(--text-muted);
 }
@@ -294,9 +319,12 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .sim-fields .field:first-child,
-  .sim-fields__action {
+  .sim-fields .field:first-child {
     grid-column: 1 / -1;
+  }
+
+  .sim-actions button {
+    width: 100%;
   }
 }
 

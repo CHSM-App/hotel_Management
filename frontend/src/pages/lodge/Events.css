@@ -1156,6 +1156,22 @@
   color: var(--text);
 }
 
+/* The quantity's own wrapper rather than .ev-addon__field, whose input rules
+   below would resize the stepper's count box. */
+.ev-addon__qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.ev-addon__qty .qty-stepper {
+  margin-left: 0;
+}
+
 .events-addons .ev-addon .ev-addon__field--amount {
   margin-left: auto;
 }

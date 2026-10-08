@@ -3,6 +3,7 @@ import { apiGet, ApiError } from '../../lib/api';
 import { formatPrice } from './priceFormat';
 import { selectionOf, toggleSelection, withQuantity } from './chargeSelections';
 import PageLoader from '../../components/PageLoader';
+import QtyStepper from '../../components/QtyStepper';
 
 const addDays = (iso, days) => {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -276,7 +277,7 @@ export default function ExtraRoomCard({
       {selected && !selected.isDormitory && selected.switchableCharges.length > 0 && (
         <div className="field">
           <label>Extras</label>
-          <div className="checkbox-grid">
+          <div className="checkbox-grid checkbox-grid--fit">
             {selected.switchableCharges.map((charge) => {
               const selection = selectionOf(room.switchableCharges, charge.id);
               return (
@@ -288,16 +289,11 @@ export default function ExtraRoomCard({
                   />
                   {charge.name} ({formatPrice(charge.chargePerNight)}/night)
                   {selection && charge.isCounter && (
-                    <input
-                      className="checkbox-chip__qty"
-                      type="number"
-                      min="1"
-                      step="1"
-                      inputMode="numeric"
-                      aria-label={`How many ${charge.name}`}
+                    <QtyStepper
+                      label={charge.name}
                       value={selection.quantity}
-                      onChange={(e) =>
-                        onChange({ switchableCharges: withQuantity(room.switchableCharges, charge.id, e.target.value) })
+                      onChange={(quantity) =>
+                        onChange({ switchableCharges: withQuantity(room.switchableCharges, charge.id, quantity) })
                       }
                     />
                   )}

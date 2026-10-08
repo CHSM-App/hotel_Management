@@ -21,6 +21,7 @@ const {
   listVendorsHandler,
   createVendorHandler,
   updateVendorHandler,
+  deleteVendorHandler,
   listWorkOrdersHandler,
   createWorkOrderHandler,
   createWorkOrdersBulkHandler,
@@ -40,6 +41,7 @@ router.patch('/categories/:id/depreciation', authenticate, canAccess, updateCate
 router.get('/vendors', authenticate, canAccess, listVendorsHandler);
 router.post('/vendors', authenticate, canAccess, createVendorHandler);
 router.patch('/vendors/:id', authenticate, canAccess, updateVendorHandler);
+router.delete('/vendors/:id', authenticate, canAccess, deleteVendorHandler);
 
 // The Assets report reads these two lists, so a role that can open Reports (an
 // Accountant) may read them without being able to manage assets.

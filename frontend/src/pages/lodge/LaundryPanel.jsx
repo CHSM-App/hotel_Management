@@ -191,21 +191,67 @@ const guestRow = (o) => [
   `${sheetDate(o.deliveredAt)} ${sheetTime(o.deliveredAt)}`.trim(), Number(o.total), o.washedBy || '', o.vendorPhone || '', o.washCharge ?? '', o.note || '',
 ];
 
-// A spreadsheet-style grid, shared by the linen and guest laundry views.
-function SheetTable({ columns, rows, numericCols = [], actions }) {
+// A date cell shows "08 Oct 2026", which does not sort as a date; these are
+// what the date and time columns sort on instead.
+const timeOfDay = (value) => {
+  if (!value) return -1;
+  const d = new Date(value);
+  return d.getHours() * 60 + d.getMinutes();
+};
+const linenSortRow = (m) => {
+  const row = linenRow(m);
+  row[0] = String(m.createdAt ?? '');
+  row[1] = timeOfDay(m.createdAt);
+  return row;
+};
+const guestSortRow = (o) => {
+  const row = guestRow(o);
+  row[6] = String(o.receivedAt ?? '');
+  row[7] = String(o.deliveredAt ?? '');
+  return row;
+};
+
+// A spreadsheet-style grid, shared by the linen and guest laundry views. A
+// heading sorts by its column; clicking it again turns it round. sortRows gives
+// what each cell sorts on where that is not what it shows.
+function SheetTable({ columns, rows, sortRows = rows, numericCols = [], actions }) {
+  const [sort, setSort] = useState({ col: null, dir: 1 });
+  const toggleSort = (col) => setSort((cur) => (cur.col === col ? { col, dir: -cur.dir } : { col, dir: 1 }));
+  // Sorted by index, so actions(i) still gets the row's place in `rows`.
+  const order = rows.map((_, i) => i);
+  if (sort.col != null) {
+    order.sort((a, b) => {
+      const x = sortRows[a][sort.col];
+      const y = sortRows[b][sort.col];
+      const cmp =
+        typeof x === 'number' && typeof y === 'number'
+          ? x - y
+          : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+      return cmp * sort.dir;
+    });
+  }
   return (
     <div className="hk-sheet-wrap">
       <table className="hk-sheet">
         <thead>
           <tr>
-            {columns.map((h) => <th key={h}>{h}</th>)}
+            {columns.map((h, c) => (
+              <th key={h} aria-sort={sort.col === c ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}>
+                <button type="button" className="hk-sort" onClick={() => toggleSort(c)} title={`Sort by ${h}`}>
+                  {h}
+                  <span className="hk-sort__icon" aria-hidden="true">
+                    {sort.col === c ? (sort.dir === 1 ? '▲' : '▼') : '⇅'}
+                  </span>
+                </button>
+              </th>
+            ))}
             {actions && <th>Actions</th>}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
+          {order.map((i) => (
             <tr key={i}>
-              {r.map((v, c) => (
+              {rows[i].map((v, c) => (
                 <td key={c} className={numericCols.includes(c) ? 'hk-sheet__num' : undefined}>{v}</td>
               ))}
               {actions && <td className="hk-sheet__actions">{actions(i)}</td>}
@@ -252,7 +298,7 @@ function LinenActivity({ movements }) {
       </div>
 
       {filtered.length > 0 ? (
-        <SheetTable columns={LINEN_COLS} rows={filtered.map(linenRow)} numericCols={[5, 7]} />
+        <SheetTable columns={LINEN_COLS} rows={filtered.map(linenRow)} sortRows={filtered.map(linenSortRow)} numericCols={[5, 7]} />
       ) : (
         <p className="hk-hint">
           {(movements ?? []).length === 0
@@ -1185,6 +1231,7 @@ function GuestLaundryTab({ token }) {
         <SheetTable
           columns={GUEST_COLS}
           rows={shown.map(guestRow)}
+          sortRows={shown.map(guestSortRow)}
           numericCols={[0, 4, 8, 11]}
           actions={(i) => {
             const o = shown[i];

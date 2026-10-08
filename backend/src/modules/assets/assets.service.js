@@ -940,7 +940,7 @@ async function deleteCoveragePeriod(lodgeId, assetId, periodId) {
 // re-export it so every existing caller of assetsService.listVendors etc.
 // keeps working unchanged.
 
-const { listVendors, createVendor, updateVendor } = vendorsService;
+const { listVendors, createVendor, updateVendor, deleteVendor } = vendorsService;
 
 // ---------------------------------------------------------------------------
 // Work orders
@@ -1214,6 +1214,7 @@ module.exports = {
   listVendors,
   createVendor,
   updateVendor,
+  deleteVendor,
   listWorkOrders,
   getWorkOrder,
   createWorkOrder,

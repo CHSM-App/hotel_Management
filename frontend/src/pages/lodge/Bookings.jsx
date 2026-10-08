@@ -21,6 +21,7 @@ import PaymentLines from './PaymentLines';
 import IconButton from '../../components/IconButton';
 import Req from '../../components/RequiredMark';
 import StepNum from '../../components/StepNum';
+import QtyStepper from '../../components/QtyStepper';
 import { useToast } from '../../components/Toast';
 // Aliased: this file already has a local TrashIcon, drawn at 15px for the
 // inline row-remove buttons. The shared glyph is 18px, sized for the 34px
@@ -4702,7 +4703,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   selectedRoom.switchableCharges.length > 0 && (
                     <div className="field">
                       <label>Extras</label>
-                      <div className="checkbox-grid">
+                      <div className="checkbox-grid checkbox-grid--fit">
                         {selectedRoom.switchableCharges.map((charge) => {
                           const selection = selectionOf(bookingForm.switchableCharges, charge.id);
                           return (
@@ -4717,15 +4718,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                                   extra is on the booking — an unticked row has
                                   nothing to count, and AC is on or it isn't. */}
                               {selection && charge.isCounter && (
-                                <input
-                                  className="checkbox-chip__qty"
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  inputMode="numeric"
-                                  aria-label={`How many ${charge.name}`}
+                                <QtyStepper
+                                  label={charge.name}
                                   value={selection.quantity}
-                                  onChange={(e) => setChargeQuantity(charge.id, e.target.value)}
+                                  onChange={(quantity) => setChargeQuantity(charge.id, quantity)}
                                 />
                               )}
                             </label>

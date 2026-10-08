@@ -9,6 +9,7 @@ const {
   listVendorsHandler,
   createVendorHandler,
   updateVendorHandler,
+  deleteVendorHandler,
   listExpensesHandler,
   getExpenseHandler,
   createExpenseHandler,
@@ -39,6 +40,7 @@ router.get('/categories/:id/tag-impact', authenticate, canAccess, previewCategor
 router.get('/vendors', authenticate, canAccess, listVendorsHandler);
 router.post('/vendors', authenticate, canAccess, createVendorHandler);
 router.patch('/vendors/:id', authenticate, canAccess, updateVendorHandler);
+router.delete('/vendors/:id', authenticate, canAccess, deleteVendorHandler);
 
 router.get('/summary', authenticate, canAccess, getSummaryHandler);
 
