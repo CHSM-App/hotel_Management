@@ -795,7 +795,12 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
 // itself OR if a buyout (bed_id IS NULL) already covers the room for any
 // overlapping night — the same rule hasOverlap enforces at write time, read
 // back here so the picker never offers what the write would then reject.
-async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
+//
+// excludeBookingId is the booking currently being edited, if any — its own
+// occupancy is left out of the taken check (same reasoning as
+// listAvailableRoomsForBooking) so re-opening a bed booking doesn't show its
+// own bed as taken and block saving it back unchanged.
+async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate, excludeBookingId = null) {
   const pool = await getPool();
 
   const roomResult = await pool
@@ -822,6 +827,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
+    .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT db.id, db.bed_label,
              CASE WHEN EXISTS (
@@ -829,6 +835,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
                JOIN dbo.bookings b ON b.id = br.booking_id
                WHERE br.room_id = @roomId AND br.status IN ('BOOKED', 'CHECKED_IN')
                  AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                 AND (@excludeBookingId IS NULL OR b.id <> @excludeBookingId)
                  AND (
                    b.bed_id = db.id OR b.bed_id IS NULL
                    OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
@@ -846,10 +853,12 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
+    .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT TOP 1 id FROM dbo.booking_rooms
       WHERE room_id = @roomId AND status IN ('BOOKED', 'CHECKED_IN')
         AND check_in_date < @checkOutDate AND check_out_date > @checkInDate
+        AND (@excludeBookingId IS NULL OR booking_id <> @excludeBookingId)
     `);
 
   // One rate for every bed in the room — the room's own price if it has

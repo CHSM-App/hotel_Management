@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { authenticate, requirePermission, requireCapability } = require('../../middleware/authenticate');
+const { serviceImageUpload } = require('../../middleware/serviceImageUpload');
 const {
   listServicesHandler,
   createServiceHandler,
@@ -20,7 +21,7 @@ const setup = requirePermission('rooms.manage');
 const desk = requirePermission('bookings.manage', 'billing.manage', 'rooms.manage');
 
 router.get('/', authenticate, enabled, desk, listServicesHandler);
-router.post('/', authenticate, enabled, setup, createServiceHandler);
+router.post('/', authenticate, enabled, setup, serviceImageUpload, createServiceHandler);
 
 // Declared before /:id so "usages" isn't read as a service id.
 router.get('/usages', authenticate, enabled, desk, listUsagesHandler);
@@ -28,6 +29,6 @@ router.post('/usages', authenticate, enabled, desk, startUsageHandler);
 router.post('/usages/:id/complete', authenticate, enabled, desk, completeUsageHandler);
 router.post('/usages/:id/cancel', authenticate, enabled, desk, cancelUsageHandler);
 
-router.patch('/:id', authenticate, enabled, setup, updateServiceHandler);
+router.patch('/:id', authenticate, enabled, setup, serviceImageUpload, updateServiceHandler);
 
 module.exports = router;

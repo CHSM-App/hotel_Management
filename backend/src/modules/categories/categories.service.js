@@ -43,6 +43,17 @@ async function createCategory(lodgeId, input) {
     throw new ApiError('A category with that name already exists.', 409, 'categoryName');
   }
 
+  if (input.tapeOrder != null) {
+    const orderConflict = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('tapeOrder', sql.Int, input.tapeOrder)
+      .query('SELECT id FROM dbo.room_categories WHERE lodge_id = @lodgeId AND tape_order = @tapeOrder');
+    if (orderConflict.recordset.length > 0) {
+      throw new ApiError('Another category already holds that position.', 409, 'categoryTapeOrder');
+    }
+  }
+
   // tapeOrder is optional — when the owner doesn't set one, the category is
   // appended after whatever is already ordered (MAX + 1), so it behaves as
   // "add to the end" rather than tying for first place at NULL.
@@ -84,6 +95,20 @@ async function updateCategory(lodgeId, categoryId, input) {
     .query('SELECT id FROM dbo.room_categories WHERE lodge_id = @lodgeId AND name = @name AND id <> @categoryId');
   if (nameConflict.recordset.length > 0) {
     throw new ApiError('A category with that name already exists.', 409, 'categoryName');
+  }
+
+  if (input.tapeOrder != null) {
+    const orderConflict = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('categoryId', sql.BigInt, categoryId)
+      .input('tapeOrder', sql.Int, input.tapeOrder)
+      .query(
+        'SELECT id FROM dbo.room_categories WHERE lodge_id = @lodgeId AND tape_order = @tapeOrder AND id <> @categoryId'
+      );
+    if (orderConflict.recordset.length > 0) {
+      throw new ApiError('Another category already holds that position.', 409, 'categoryTapeOrder');
+    }
   }
 
   await pool

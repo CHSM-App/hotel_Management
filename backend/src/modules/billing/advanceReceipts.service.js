@@ -191,7 +191,14 @@ function mapReceipt(row) {
     // for. Printed as its own line so the receipt and the invoice agree on
     // the page, rather than differing by paise with nothing to explain it.
     roundOff,
-    balanceDue: round2(stayTotal - amountReceived),
+    // Nothing is left for this receipt to still be owed once either the
+    // subject is cancelled (the refund or the kept charge below closes the
+    // question) or the stay/function has been billed for real — the final
+    // tax invoice is what actually collects whatever the advance didn't
+    // cover, so a receipt sitting beside an ISSUED invoice is not a debt,
+    // it is a payment the bill already accounted for.
+    balanceDue:
+      row.subject_status === 'CANCELLED' || row.subject_invoiced ? 0 : round2(stayTotal - amountReceived),
     paymentMethod: row.payment_method,
     paymentReference: row.payment_reference ?? null,
     // Every way this advance was handed over. A receipt taken before split
@@ -207,6 +214,20 @@ function mapReceipt(row) {
     voidReason: row.void_reason ?? null,
     voidedAt: row.voided_at ?? null,
     createdAt: row.created_at ?? null,
+
+    // Whether the stay or function this receipt is against was later called
+    // off, and how that was settled — the refund paid back or the charge
+    // the house kept. Independent of `status` above: the receipt stays
+    // ISSUED, because the money really was taken. Read-only, same as
+    // everything else here — cancelling never writes anything onto this row.
+    cancelled: row.subject_status === 'CANCELLED',
+    cancelReason: row.subject_cancel_reason ?? null,
+    refundAmount: row.subject_refund_amount != null ? Number(row.subject_refund_amount) : null,
+    refundPaymentMethod: row.subject_refund_payment_method ?? null,
+    cancellationCharge:
+      row.subject_cancellation_charge != null ? Number(row.subject_cancellation_charge) : null,
+    cancellationChargePaymentMethod: row.subject_cancellation_charge_payment_method ?? null,
+    cancelledAt: row.subject_cancelled_at ?? null,
 
     // The stay this is against, for the register strip on the document.
     guestName: row.guest_name,
@@ -268,6 +289,34 @@ const RECEIPT_SELECT = `
           ) all_db) AS bed_labels,
          eb.title AS event_title, eb.event_type, ev.name AS venue_name,
          eb.start_at AS event_start_at, eb.end_at AS event_end_at,
+         -- Whatever happened to the stay/function this receipt was taken
+         -- against, read fresh each time rather than ever written back onto
+         -- the receipt itself — the receipt stays exactly what was issued.
+         -- subject_-prefixed so these can never collide with ar.status or
+         -- with the raw booking/event row buildReceiptPreview spreads in
+         -- below (that path has its own status/cancel_reason columns, not
+         -- these aliases, so it reads them all as NULL and is unaffected).
+         COALESCE(b.status, eb.status) AS subject_status,
+         COALESCE(b.cancel_reason, eb.cancel_reason) AS subject_cancel_reason,
+         COALESCE(b.refund_amount, eb.refund_amount) AS subject_refund_amount,
+         COALESCE(b.refund_payment_method, eb.refund_payment_method) AS subject_refund_payment_method,
+         COALESCE(b.cancellation_charge, eb.cancellation_charge) AS subject_cancellation_charge,
+         -- event_bookings has no column of its own for this — a charge kept
+         -- from an advance has no tender of its own either way, and only
+         -- bookings ever collects one on the spot.
+         b.cancellation_charge_payment_method AS subject_cancellation_charge_payment_method,
+         COALESCE(b.cancelled_at, eb.cancelled_at) AS subject_cancelled_at,
+         -- Whether the stay/function this receipt was taken against has
+         -- since been billed — the final tax invoice is what actually
+         -- collects whatever the advance didn't cover, so once one is
+         -- ISSUED there is nothing left for this receipt to still be owed.
+         -- Only one side of the OR can ever match: a receipt's booking_id
+         -- and event_booking_id are never both set, so whichever one is
+         -- NULL here makes that half of the join produce nothing to match.
+         CASE WHEN EXISTS (
+           SELECT 1 FROM dbo.invoices i
+           WHERE i.status = 'ISSUED' AND (i.booking_id = b.id OR i.event_booking_id = eb.id)
+         ) THEN 1 ELSE 0 END AS subject_invoiced,
          ${LODGE_COLUMNS}
   FROM dbo.advance_receipts ar
   -- LEFT on both parents: a receipt is against a stay or against a function.

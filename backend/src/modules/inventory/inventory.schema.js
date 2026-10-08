@@ -38,17 +38,23 @@ const createMaterialSchema = z.object({
     .default(0),
 });
 
-// unit is absent on purpose. Changing it would restate every recipe quantity
-// and every past movement written against this material — 500 of something is
-// a different fact in grams than in kilos, and there is nothing on the row that
-// says which one the old numbers meant. Retire the material and add a new one.
+// Every field the create form takes, so editing a material isn't missing
+// anything adding one had. unit and quantity both carry real risk — changing
+// the unit restates every recipe quantity and past movement written against
+// this material ("500" means something different in grams than in kilos, and
+// nothing on the row says which the old numbers meant), and changing the
+// quantity directly is a correction, not a purchase. The service writes an
+// ADJUSTMENT movement when quantity moves, so the ledger still explains it;
+// the frontend confirms with whoever's typing before an actual unit change
+// goes through, since that one the service has no way to undo.
 //
-// category is editable, and safely so: nothing computes with it. Moving rice
-// from one heading to another changes where it appears on a screen and nothing
-// else, which is exactly why it is not held to the same rule as the unit.
+// category is the safe one: nothing computes with it. Moving rice from one
+// heading to another changes where it appears on a screen and nothing else.
 const updateMaterialSchema = z.object({
   name: z.string().trim().min(1, 'Material name is required.').max(120),
+  unit: z.enum(MATERIAL_UNITS, { error: 'Choose a unit.' }),
   category: z.enum(MATERIAL_CATEGORIES, { error: 'Choose a group.' }).optional().default('OTHER'),
+  quantity: quantity.refine((n) => n >= 0, { error: 'Stock on hand can’t be negative.' }),
   lowStockThreshold: quantity
     .refine((n) => n >= 0, { error: 'The low-stock level can’t be negative.' })
     .optional()
