@@ -110,6 +110,21 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
+    key: 'customers',
+    title: 'Customer list',
+    description: 'One record per guest — contact details, stay and function history, and spend.',
+    permission: 'customers.manage',
+    // Rooms or events, either is enough — a repeat guest and a wedding
+    // organiser are both customers, and a property with only one of the two
+    // still has a customer list worth keeping. Its own group ('Customers',
+    // not 'Rooms') for the same reason: an events-only property has no Rooms
+    // group to borrow, and every other item in Rooms is gated on hasRooms
+    // alone.
+    capability: ['hasRooms', 'hasEvents'],
+    icon: 'users',
+    group: 'Customers',
+  },
+  {
     key: 'food',
     title: 'Food orders & Billing',
     description: 'The live kitchen queue, taking orders, and table and takeaway bills.',
@@ -290,7 +305,7 @@ export const FEATURES = [
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Housekeeping', 'Finance & Management', 'Reports & Analytics', 'Setup'];
+export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Housekeeping', 'Finance & Management', 'Customers', 'Reports & Analytics', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

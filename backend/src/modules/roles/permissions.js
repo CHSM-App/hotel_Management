@@ -22,6 +22,12 @@ const PERMISSIONS = [
     description: 'Browse past and present guests, and open their ID proofs.',
   },
   {
+    key: 'customers.manage',
+    label: 'Customer list',
+    description: 'View the customer list, open a profile, and add or edit customers by hand.',
+    capability: ['hasRooms', 'hasEvents'],
+  },
+  {
     key: 'rooms.manage',
     label: 'Rooms & rates',
     description: 'Add rooms, categories, seasonal pricing and booking extras.',
@@ -138,16 +144,26 @@ function isValidPermission(key) {
   return PERMISSION_KEYS.includes(key);
 }
 
+// A capability gate passes if the property has any one of the keys named —
+// 'customers.manage' is offered to a rooms-only lodge, an events-only lodge,
+// or both, the same "any one is enough" shape FEATURES uses on the frontend
+// (propertyProfile.js's hasCapability). Most permissions still name just one.
+function hasAnyCapability(capability, capabilities) {
+  if (!capability) return true;
+  const keys = Array.isArray(capability) ? capability : [capability];
+  return keys.some((key) => Boolean(capabilities?.[key]));
+}
+
 // The permissions worth offering a property of this shape. Filtering here
 // rather than in the UI means a rooms-only lodge can't be handed 'orders.manage'
 // by a crafted request either.
 function permissionsFor(capabilities) {
-  return PERMISSIONS.filter((p) => !p.capability || Boolean(capabilities?.[p.capability]));
+  return PERMISSIONS.filter((p) => hasAnyCapability(p.capability, capabilities));
 }
 
 function permissionAvailableFor(key, capabilities) {
   const permission = PERMISSIONS.find((p) => p.key === key);
-  return Boolean(permission) && (!permission.capability || Boolean(capabilities?.[permission.capability]));
+  return Boolean(permission) && hasAnyCapability(permission.capability, capabilities);
 }
 
 function roleAvailableFor(roleKey, capabilities) {

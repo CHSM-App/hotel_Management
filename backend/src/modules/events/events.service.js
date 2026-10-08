@@ -2,6 +2,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { priceEvent, billablePax, round2 } = require('./eventPricing');
 const notifications = require('../notifications/bookingConfirmation');
+const customersService = require('../customers/customers.service');
 
 // The statuses that keep a venue busy. A draft does not — two families can
 // ask about the same Saturday and the first to confirm gets it — and neither
@@ -933,12 +934,24 @@ async function transition(lodgeId, id, { from, to, set = '', bind = () => {}, ta
   return updated;
 }
 
-function confirmEventBooking(lodgeId, id) {
-  return transition(lodgeId, id, {
+// Only confirmation counts as a real customer interaction, not a draft/quote
+// — same idea as a room-side draft not counting as a stay. Runs after
+// transition()'s own transaction has already committed, as a best-effort
+// follow-up (see upsertCustomerForEventSafely): a function being confirmed
+// must never fail because the customer-record write did.
+async function confirmEventBooking(lodgeId, id) {
+  const updated = await transition(lodgeId, id, {
     from: ['DRAFT'],
     to: 'CONFIRMED',
     takesVenue: true,
   });
+  await customersService.upsertCustomerForEventSafely(lodgeId, id, {
+    phone: updated.organiserPhone,
+    name: updated.organiserName,
+    amount: updated.totalAmount,
+    eventDate: updated.startAt ? new Date(updated.startAt) : null,
+  });
+  return updated;
 }
 
 // Money already taken is not touched here: the refund, if any, is recorded
@@ -950,8 +963,8 @@ function confirmEventBooking(lodgeId, id) {
 // cancel with no refund figure leaves both NULL: "not settled", not "kept
 // nothing".
 async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, refundPaymentMethod = null }) {
+  const current = await getEventBooking(lodgeId, id);
   if (refundAmount != null) {
-    const current = await getEventBooking(lodgeId, id);
     if (round2(Number(refundAmount)) > round2(current.advanceAmount || 0)) {
       throw new ApiError('The refund can’t be more than the advance held on this function.', 400);
     }
@@ -961,7 +974,7 @@ async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, re
   if (Number(refundAmount) > 0 && !refundPaymentMethod) {
     throw new ApiError('Choose how the refund was given.', 400);
   }
-  return transition(lodgeId, id, {
+  const updated = await transition(lodgeId, id, {
     from: ['DRAFT', 'CONFIRMED'],
     to: 'CANCELLED',
     set: `, cancel_reason = @reason, refund_amount = @refund,
@@ -973,6 +986,15 @@ async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, re
         .input('refund', sql.Decimal(10, 2), refundAmount ?? null)
         .input('refundMethod', sql.NVarChar(20), Number(refundAmount) > 0 ? (refundPaymentMethod ?? null) : null),
   });
+  // Only a CONFIRMED function was ever counted on the customer record — a
+  // DRAFT being cancelled never bumped anything in the first place.
+  if (current.status === 'CONFIRMED') {
+    await customersService.reverseCustomerForCancelledEvent(lodgeId, {
+      phone: current.organiserPhone,
+      amount: current.totalAmount,
+    });
+  }
+  return updated;
 }
 
 // "Mark as Completed": the function is over, so the venue goes to housekeeping

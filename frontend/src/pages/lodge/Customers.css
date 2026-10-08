@@ -1,0 +1,295 @@
+/* Customer profile modal — a single vertical column, top to bottom, that
+   scrolls as one block (same as every other modal in the app — see
+   .modal-form__body in forms.css, which already pins the head/foot and
+   scrolls the body between them). No side-by-side columns: that's what
+   fought the panel's own width on a laptop-sized window and produced a
+   horizontal scrollbar. History is a list of self-contained cards rather
+   than a table, so nothing here has a fixed column width to overflow. */
+.inv-panel__modal--customer {
+  max-width: 760px;
+}
+
+/* No border-bottom of its own — .modal-form__head (forms.css) already draws
+   the divider between the header and the body for every modal in the app;
+   duplicating it here would double the line. */
+.cust-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cust-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Initials rather than a generic person icon — a name is the one thing every
+   customer has, and two letters read faster than an identical silhouette. */
+.cust-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.cust-identity h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.cust-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 4px;
+}
+
+.cust-phone-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.cust-phone-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* The numbers a desk wants before reading anything else. auto-fit instead
+   of a fixed repeat(4, ...) so a narrow window reflows to 2-per-row or
+   1-per-row on its own rather than forcing four columns to stay put and
+   overflow sideways. */
+.cust-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.cust-stat {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.cust-stat__label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cust-stat__value {
+  display: block;
+  margin-top: 3px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.cust-stat__sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Contact facts as one plain column — every field gets its own full-width
+   line, label directly above value, nothing sharing a row with anything
+   else. A two-column sheet reads faster on paper, but in a modal it kept
+   inviting a layout bug where a neighbouring block looked like it was
+   sitting beside this one instead of below it; one column removes the
+   ambiguity entirely. */
+.cust-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+
+.cust-facts dt {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.cust-facts dd {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.cust-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cust-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cust-notes {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cust-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin: 4px 0 10px;
+}
+
+.cust-section-label .inv-tag {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* The history feed — a vertical list of self-contained cards, each one a
+   real table — Date / Details / Status / Amount as actual columns, each
+   entry a row. table-layout: fixed with Date/Status/Amount pinned to a
+   width (via colgroup) is what keeps this from ever needing a horizontal
+   scroll: Details is the only unset column, so it alone absorbs whatever
+   width is left and wraps a long title onto a second line instead of
+   pushing the table wider than the modal. The modal is 760px now (wider
+   than the 640px attempt that first forced this into cards), which is what
+   makes four real columns fit without the cramping that caused that
+   rewrite — Details still gets roughly 300px to itself. */
+.cust-history-wrap {
+  overflow-x: auto;
+}
+
+.cust-history-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.cust-history-table__col-date {
+  width: 86px;
+}
+
+.cust-history-table__col-status {
+  width: 112px;
+}
+
+.cust-history-table__col-amount {
+  width: 96px;
+}
+
+.cust-history-table th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  padding: 0 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cust-history-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  font-size: 13px;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+
+.cust-history-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cust-history-table tbody tr:hover td {
+  background: var(--paper);
+}
+
+.cust-history-table__date {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.cust-history-table__title {
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.cust-history-table__amount {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dedicated to the two history kinds, in the same blue/amber the row's own
+   left edge uses — see the HISTORY_TAG_CLASS comment in Customers.jsx for
+   why this isn't just the generic .inv-tag palette. Built the same way
+   .inv-tag is (pale tint + colour text), just with hues that actually match
+   the accent they sit beside. */
+.cust-type-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cust-type-chip--stay {
+  background: #e9f1fe;
+  border-color: #4f8ff0;
+  color: #3569c7;
+}
+
+.cust-type-chip--event {
+  background: #fbf1de;
+  border-color: #e0a63f;
+  color: #a16a12;
+}

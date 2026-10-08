@@ -2947,6 +2947,15 @@ BEGIN
     WHERE permissions LIKE '%"housekeeping.manage"%' AND permissions NOT LIKE '%"laundry.manage"%';
 END
 
+-- Migration 129: Laundry is a deliberate add per property now, not handed to
+-- Housekeeping by default. Only the shared default (lodge_id IS NULL) is
+-- touched — a lodge with its own saved Housekeeping permissions is untouched.
+UPDATE dbo.roles
+SET permissions = REPLACE(permissions, '"housekeeping.manage","laundry.manage"', '"housekeeping.manage"')
+WHERE lodge_id IS NULL
+  AND role_key = 'HOUSEKEEPING'
+  AND permissions LIKE '%"housekeeping.manage","laundry.manage"%';
+
 IF COL_LENGTH('dbo.linen_movements', 'washed_by') IS NULL
     EXEC('ALTER TABLE dbo.linen_movements ADD washed_by NVARCHAR(100) NULL');
 
@@ -3046,3 +3055,71 @@ END
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'LAUNDRY')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'LAUNDRY', 'Laundry', 'Sends hotel linen for washing, receives it back and takes guest laundry.', 1, '["laundry.manage"]');
+
+-- One record per real person (migration 130), not per stay or per booking.
+-- Matched by phone within a lodge. Room-side and event-side activity are kept
+-- as separate column pairs, same shape as invoices/advance_receipts already
+-- keeping booking_id and event_booking_id side by side.
+IF OBJECT_ID('dbo.customers', 'U') IS NULL
+CREATE TABLE dbo.customers (
+    id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id           BIGINT NOT NULL REFERENCES dbo.lodges(id),
+
+    phone              NVARCHAR(20) NOT NULL,
+    name               NVARCHAR(200) NOT NULL,
+    email              NVARCHAR(255) NULL,
+
+    id_proof_type      NVARCHAR(30) NULL,
+    id_proof_number    NVARCHAR(50) NULL,
+    id_proof_document  NVARCHAR(255) NULL,
+
+    notes              NVARCHAR(1000) NULL,
+
+    loyalty_points     INT NOT NULL CONSTRAINT df_customers_loyalty_points DEFAULT 0,
+    marketing_opt_in   BIT NOT NULL CONSTRAINT df_customers_marketing_opt_in DEFAULT 0,
+    tags               NVARCHAR(500) NULL,
+
+    total_stays        INT NOT NULL CONSTRAINT df_customers_total_stays DEFAULT 0,
+    total_room_spend   DECIMAL(12,2) NOT NULL CONSTRAINT df_customers_total_room_spend DEFAULT 0,
+    last_stay_date     DATE NULL,
+
+    total_events       INT NOT NULL CONSTRAINT df_customers_total_events DEFAULT 0,
+    total_event_spend  DECIMAL(12,2) NOT NULL CONSTRAINT df_customers_total_event_spend DEFAULT 0,
+    last_event_date    DATE NULL,
+
+    created_at         DATETIMEOFFSET NOT NULL CONSTRAINT df_customers_created_at DEFAULT SYSDATETIMEOFFSET(),
+    updated_at         DATETIMEOFFSET NOT NULL CONSTRAINT df_customers_updated_at DEFAULT SYSDATETIMEOFFSET(),
+
+    CONSTRAINT uq_customers_lodge_phone UNIQUE (lodge_id, phone)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_customers_lodge_name' AND object_id = OBJECT_ID('dbo.customers'))
+    CREATE INDEX ix_customers_lodge_name ON dbo.customers(lodge_id, name);
+
+-- Links bookings and event bookings back to the customer they belong to
+-- (migration 131). Independent, nullable columns, not mutually exclusive on
+-- the customer side: one customer can have rows in both.
+IF COL_LENGTH('dbo.bookings', 'customer_id') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD customer_id BIGINT NULL REFERENCES dbo.customers(id)');
+
+IF COL_LENGTH('dbo.booking_guests', 'customer_id') IS NULL
+    EXEC('ALTER TABLE dbo.booking_guests ADD customer_id BIGINT NULL REFERENCES dbo.customers(id)');
+
+IF COL_LENGTH('dbo.event_bookings', 'customer_id') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD customer_id BIGINT NULL REFERENCES dbo.customers(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bookings_customer' AND object_id = OBJECT_ID('dbo.bookings'))
+    CREATE INDEX ix_bookings_customer ON dbo.bookings(customer_id) WHERE customer_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_guests_customer' AND object_id = OBJECT_ID('dbo.booking_guests'))
+    CREATE INDEX ix_booking_guests_customer ON dbo.booking_guests(customer_id) WHERE customer_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_customer' AND object_id = OBJECT_ID('dbo.event_bookings'))
+    CREATE INDEX ix_event_bookings_customer ON dbo.event_bookings(customer_id) WHERE customer_id IS NOT NULL;
+
+-- customers.manage granted to whichever role already holds guests.view
+-- (migration 132) — adding a permission to the catalog doesn't retroactively
+-- put it on any role's stored permissions array.
+UPDATE dbo.roles
+SET permissions = REPLACE(permissions, '"guests.view"', '"guests.view","customers.manage"')
+WHERE permissions LIKE '%"guests.view"%' AND permissions NOT LIKE '%"customers.manage"%';
