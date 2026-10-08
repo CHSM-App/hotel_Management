@@ -11,6 +11,7 @@ import '../billing/billing_screen.dart';
 import '../billing/event_billing_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
+import '../customers/customers_screen.dart';
 import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../food/food_billing_screen.dart';
@@ -323,6 +324,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const FoodBillingScreen();
       case 'billing':
         return const BillingScreen();
+      case 'customers':
+        return const CustomersScreen();
       case 'eventBilling':
         return const EventBillingScreen();
       case 'rooms':

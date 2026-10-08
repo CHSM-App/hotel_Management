@@ -5,6 +5,7 @@ import '../../data/repositories/assets_impl.dart';
 import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
 import '../../data/repositories/billing_impl.dart';
+import '../../data/repositories/customers_impl.dart';
 import '../../data/repositories/events_impl.dart';
 import '../../data/repositories/expenses_impl.dart';
 import '../../data/repositories/food_setup_impl.dart';
@@ -20,6 +21,7 @@ import '../../domain/repository/assets_repo.dart';
 import '../../domain/repository/auth_repo.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../../domain/repository/billing_repo.dart';
+import '../../domain/repository/customers_repo.dart';
 import '../../domain/repository/events_repo.dart';
 import '../../domain/repository/expenses_repo.dart';
 import '../../domain/repository/food_setup_repo.dart';
@@ -86,6 +88,10 @@ final incomeRepositoryProvider = Provider<IncomeRepository>(
 
 final staffRepositoryProvider = Provider<StaffRepository>(
   (ref) => StaffImpl(ref.watch(apiServiceProvider)),
+);
+
+final customersRepositoryProvider = Provider<CustomersRepository>(
+  (ref) => CustomersImpl(ref.watch(apiServiceProvider)),
 );
 
 final laundryRepositoryProvider = Provider<LaundryRepository>(

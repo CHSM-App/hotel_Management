@@ -96,6 +96,20 @@ const kFeatures = <Feature>[
     permission: 'billing.manage',
     group: 'Rooms',
   ),
+  // Same web module (Customers.jsx): the guest list a property builds up
+  // across room stays and event bookings — search, opt-in filter and a
+  // profile with stay history. Own group, same as the web sidebar
+  // (propertyProfile.js's 'Customers') — a restaurant with no rooms or
+  // events has no customer list to keep, so it's gated the same way the
+  // web gates it: either capability earns the row.
+  Feature(
+    key: 'customers',
+    title: 'Customers',
+    icon: Icons.people_alt_rounded,
+    permission: 'customers.manage',
+    anyCapabilities: ['hasRooms', 'hasEvents'],
+    group: 'Customers',
+  ),
   // The web's own Guest register ('guests') — every stay's booking details
   // in one searchable, filterable list, with the same summary tiles that
   // page opens on.
