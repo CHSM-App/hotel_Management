@@ -571,6 +571,9 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                         ])
                                           _LegendChip(
                                             color: _statusColor(status),
+                                            textColor: status == 'CANCELLED'
+                                                ? AppTheme.muted
+                                                : null,
                                             label:
                                                 kEventStatusLabel[status] ??
                                                 status,
@@ -1216,12 +1219,18 @@ class _LegendChip extends StatelessWidget {
   final String label;
   final bool outlined;
   final VoidCallback? onTap;
+  /// Overrides [color] for the label text — needed for statuses like
+  /// CANCELLED whose swatch colour is too pale on white to read as text,
+  /// the same split the web legend makes (swatch keeps the status hue,
+  /// label text stays the page's normal ink).
+  final Color? textColor;
 
   const _LegendChip({
     required this.color,
     required this.label,
     this.outlined = false,
     this.onTap,
+    this.textColor,
   });
 
   @override
@@ -1251,7 +1260,7 @@ class _LegendChip extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: color,
+              color: textColor ?? color,
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
             ),
