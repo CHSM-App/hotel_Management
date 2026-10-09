@@ -53,20 +53,10 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
             ),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${sections.length} sections · '
-                      '${sections.fold<int>(0, (n, s) => n + s.items.length)} dishes',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  _ViewToggle(
-                    isTableView: _isTableView,
-                    onChanged: (v) => setState(() => _isTableView = v),
-                  ),
-                ],
+              Text(
+                '${sections.length} sections · '
+                '${sections.fold<int>(0, (n, s) => n + s.items.length)} dishes',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 4),
               Wrap(
@@ -74,29 +64,18 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
                 spacing: AppTheme.s8,
                 runSpacing: 4,
                 children: [
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.s8,
-                        vertical: 4,
-                      ),
-                    ),
-                    onPressed: () => showMenuImportDialog(context),
-                    icon: const Icon(Icons.file_upload_outlined, size: 16),
-                    label: const Text('Import'),
+                  _ChipButton(
+                    icon: Icons.file_upload_outlined,
+                    label: 'Import',
+                    color: AppTheme.muted,
+                    onTap: () => showMenuImportDialog(context),
                   ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.s8,
-                        vertical: 4,
-                      ),
-                    ),
-                    onPressed: () => _showSectionForm(context, ref),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Section'),
+                  _ChipButton(
+                    icon: Icons.add_rounded,
+                    label: 'Section',
+                    color: AppTheme.accent,
+                    filled: true,
+                    onTap: () => _showSectionForm(context, ref),
                   ),
                 ],
               ),
@@ -197,6 +176,7 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
                     section: active,
                     allSections: sections,
                     isTableView: _isTableView,
+                    onViewChanged: (v) => setState(() => _isTableView = v),
                   ),
               ],
             ],
@@ -227,10 +207,12 @@ class _SectionBody extends ConsumerWidget {
   final MenuSection section;
   final List<MenuSection> allSections;
   final bool isTableView;
+  final ValueChanged<bool> onViewChanged;
   const _SectionBody({
     required this.section,
     required this.allSections,
     required this.isTableView,
+    required this.onViewChanged,
   });
 
   @override
@@ -284,13 +266,12 @@ class _SectionBody extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
         // A second row for the actions rather than crowding them beside the
-        // title: "Mark all out" plus "Add item" beside a long section name
-        // wrapped or clipped on a phone-width screen when they all rode the
-        // same row as the title.
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: AppTheme.s8,
-          runSpacing: 4,
+        // title: "Mark all out" on the left, the table/card view toggle
+        // pushed to the right edge. A Row, not a Wrap — Wrap shrinks to fit
+        // its children instead of filling the line, so it can't push the
+        // toggle all the way to the far side on its own. Adding a dish is
+        // the page's own FAB now, not a chip repeated on every section.
+        Row(
           children: [
             if (section.items.isNotEmpty)
               _ChipButton(
@@ -299,17 +280,8 @@ class _SectionBody extends ConsumerWidget {
                 color: allOut ? AppTheme.vacant : AppTheme.danger,
                 onTap: () => vm.setSectionAvailability(section.id, allOut),
               ),
-            _ChipButton(
-              icon: Icons.add_rounded,
-              label: 'Add item',
-              color: AppTheme.accent,
-              filled: true,
-              onTap: () => showMenuItemFormPage(
-                context,
-                sections: allSections,
-                defaultCategoryId: section.id,
-              ),
-            ),
+            const Spacer(),
+            _ViewToggle(isTableView: isTableView, onChanged: onViewChanged),
           ],
         ),
         const SizedBox(height: AppTheme.s8),
@@ -1393,6 +1365,32 @@ class _SectionFormDialogState extends ConsumerState<_SectionFormDialog> {
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppTheme.accent, Color(0xFF434FC1)],
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x335A67D8),
+                          offset: Offset(0, 3),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      isEdit ? Icons.edit_rounded : Icons.view_agenda_rounded,
+                      color: Colors.white,
+                      size: 17,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s12),
                   Expanded(
                     child: Text(
                       isEdit ? 'Edit section' : 'New section',

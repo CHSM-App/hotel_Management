@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/asset.dart';
 import '../../presentation/providers/view_model_provider.dart';
-import '../rooms/room_form_pieces.dart' show OptionDropdown;
+import '../rooms/room_form_pieces.dart' show OptionDropdown, SectionLabel;
 import '../../widgets/neu.dart';
 import '../theme.dart';
 
@@ -167,71 +167,122 @@ class _DepreciationFormScreenState extends ConsumerState<DepreciationFormScreen>
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('Depreciation rate', style: TextStyle(fontWeight: FontWeight.w700)),
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.trending_down_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            const Expanded(
+              child: Text('Depreciation rate', overflow: TextOverflow.ellipsis, maxLines: 1),
+            ),
+          ],
+        ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(22),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s8),
-            child: Text(widget.category.name, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+          preferredSize: const Size.fromHeight(22 + 3),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                child: Text(widget.category.name, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+              ),
+              Container(
+                height: 3,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+                ),
+              ),
+            ],
           ),
         ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
-          children: [
-            if (_error != null) ...[
-              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-              const SizedBox(height: AppTheme.s12),
-            ],
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('IT Act block', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
-                  const SizedBox(height: AppTheme.s4),
-                  OptionDropdown(
-                    values: ['', ...kItActBlocks.keys],
-                    labels: {
-                      '': 'Custom / not set',
-                      for (final e in kItActBlocks.entries) e.key: '${e.key} (${e.value}%)',
-                    },
-                    selected: _block,
-                    onSelect: (v) => setState(() {
-                      _block = v;
-                      final preset = kItActBlocks[v];
-                      if (preset != null) _rate.text = preset.toString();
-                    }),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  const Text('Method', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
-                  const SizedBox(height: AppTheme.s4),
-                  OptionDropdown(
-                    values: kDepreciationMethods,
-                    labels: kDepreciationMethodLabel,
-                    selected: _method,
-                    onSelect: (v) => setState(() => _method = v),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  NeuField(
-                    controller: _rate,
-                    label: _method == 'SLM' ? 'Straight-line rate (% of cost per year)' : 'WDV rate (%)',
-                    hint: 'e.g. 15',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                if (_error != null) ...[
+                  Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                  const SizedBox(height: AppTheme.s8),
                 ],
-              ),
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SectionLabel('Rate', number: 1, icon: Icons.percent_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      const Text('IT Act block', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+                      const SizedBox(height: AppTheme.s4),
+                      OptionDropdown(
+                        values: ['', ...kItActBlocks.keys],
+                        labels: {
+                          '': 'Custom / not set',
+                          for (final e in kItActBlocks.entries) e.key: '${e.key} (${e.value}%)',
+                        },
+                        selected: _block,
+                        onSelect: (v) => setState(() {
+                          _block = v;
+                          final preset = kItActBlocks[v];
+                          if (preset != null) _rate.text = preset.toString();
+                        }),
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      const Text('Method', style: TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+                      const SizedBox(height: AppTheme.s4),
+                      OptionDropdown(
+                        values: kDepreciationMethods,
+                        labels: kDepreciationMethodLabel,
+                        selected: _method,
+                        onSelect: (v) => setState(() => _method = v),
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _rate,
+                        label: _method == 'SLM' ? 'Straight-line rate (% of cost per year)' : 'WDV rate (%)',
+                        hint: 'e.g. 15',
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuButton(
+                  primary: true,
+                  expand: true,
+                  onPressed: submitting ? null : _save,
+                  child: submitting
+                      ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save'),
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: submitting ? null : _save,
-              child: submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save'),
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -592,9 +592,20 @@ class _DialogShell extends StatelessWidget {
                       width: 36,
                       height: 36,
                       alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: [AppTheme.accent, AppTheme.sidebarBrand]),
-                        shape: BoxShape.circle,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [AppTheme.accent, Color(0xFF434FC1)],
+                        ),
+                        borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x335A67D8),
+                            offset: Offset(0, 3),
+                            blurRadius: 8,
+                          ),
+                        ],
                       ),
                       child: Icon(icon, size: 17, color: Colors.white),
                     ),
@@ -611,6 +622,15 @@ class _DialogShell extends StatelessWidget {
                       splashRadius: 18,
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              Container(
+                height: 3,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.accent, Color(0x005A67D8)],
+                  ),
                 ),
               ),
               Flexible(
@@ -778,13 +798,16 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          NeuField(controller: _name, label: 'Name', hint: 'Lotus Lawn', required: true, forceCapitalizeWords: true),
+          NeuField(controller: _name, label: 'Name', hint: 'Lotus Lawn', required: true, forceCapitalizeWords: true, dense: true),
           const SizedBox(height: AppTheme.s8),
-          NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number),
+          NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number, dense: true),
           const SizedBox(height: AppTheme.s8),
-          NeuField(controller: _charge, label: 'Hire charge', hint: '25000', keyboardType: TextInputType.number),
-          const SizedBox(height: AppTheme.s12),
-          Text('Photos (up to $maxVenueImages)', style: Theme.of(context).textTheme.bodySmall),
+          NeuField(controller: _charge, label: 'Hire charge', hint: '25000', keyboardType: TextInputType.number, dense: true),
+          const SectionDivider(),
+          Text(
+            'PHOTOS (UP TO $maxVenueImages)',
+            style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4),
+          ),
           const SizedBox(height: AppTheme.s8),
           Wrap(
             spacing: AppTheme.s8,
@@ -862,9 +885,9 @@ class _AddonDialogState extends ConsumerState<_AddonDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true, forceCapitalizeWords: true),
+          NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true, forceCapitalizeWords: true, dense: true),
           const SizedBox(height: AppTheme.s8),
-          NeuField(controller: _amount, label: 'Price', hint: '5000', keyboardType: TextInputType.number),
+          NeuField(controller: _amount, label: 'Price', hint: '5000', keyboardType: TextInputType.number, dense: true),
           const SizedBox(height: AppTheme.s4),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,

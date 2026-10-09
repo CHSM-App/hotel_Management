@@ -406,14 +406,68 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     final categoryOptions = <String>{...state.categories.map((c) => c.name), ..._kSuggestedCategories}.toList()..sort();
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit asset' : 'Register an asset')),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.inventory_2_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _isEdit ? 'Edit asset' : 'Register an asset',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
           children: [
             if (_error != null) ...[
               _ErrorBanner(_error!),
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
             ],
             if (!_isEdit) ...[
               Align(
@@ -424,13 +478,16 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   onSelect: (v) => setState(() => _bulk = v == 'bulk'),
                 ),
               ),
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
             ],
             NeuCard(
+              radius: AppTheme.rLarge,
+              shadow: AppTheme.elevated,
+              padding: const EdgeInsets.all(AppTheme.s12 + 2),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SectionLabel('Category', number: 1),
+                  const SectionLabel('Category', number: 1, icon: Icons.category_rounded),
                   const SizedBox(height: AppTheme.s12),
                   const RequiredLabel('Category'),
                   const SizedBox(height: 4),
@@ -447,7 +504,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   // AssetsPanel.jsx.
                   if (_isLinen) ...[
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _quantityFieldKey,
                       controller: _quantity,
                       label: 'Quantity owned',
@@ -466,13 +523,16 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: AppTheme.s16),
+            const SizedBox(height: AppTheme.s12),
 
             NeuCard(
+              radius: AppTheme.rLarge,
+              shadow: AppTheme.elevated,
+              padding: const EdgeInsets.all(AppTheme.s12 + 2),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SectionLabel('Purchase details', number: 2),
+                  const SectionLabel('Purchase details', number: 2, icon: Icons.receipt_long_rounded),
                   const SizedBox(height: AppTheme.s12),
 
                   Row(
@@ -481,17 +541,17 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                       Expanded(
                         child: Column(
                           children: [
-                            NeuField(controller: _brand, label: 'Brand / model', hint: 'Brand', forceCapitalizeWords: true),
+                            NeuField(dense: true, controller: _brand, label: 'Brand / model', hint: 'Brand', forceCapitalizeWords: true),
                             const SizedBox(height: AppTheme.s8),
-                            NeuField(controller: _model, label: '', hint: 'Model', forceCapitalizeWords: true),
+                            NeuField(dense: true, controller: _model, label: '', hint: 'Model', forceCapitalizeWords: true),
                           ],
                         ),
                       ),
                       const SizedBox(width: AppTheme.s8),
                       Expanded(
                         child: (!_bulk || _isEdit)
-                            ? NeuField(controller: _serialNumber, label: 'Serial number', hint: 'Optional')
-                            : NeuField(
+                            ? NeuField(dense: true, controller: _serialNumber, label: 'Serial number', hint: 'Optional')
+                            : NeuField(dense: true, 
                                 controller: _purchaseDate,
                                 label: 'Purchase date',
                                 hint: 'Tap to pick',
@@ -507,7 +567,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: NeuField(
+                          child: NeuField(dense: true, 
                             controller: _purchaseDate,
                             label: 'Purchase date',
                             hint: 'Tap to pick',
@@ -516,11 +576,11 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                           ),
                         ),
                         const SizedBox(width: AppTheme.s8),
-                        Expanded(child: NeuField(controller: _purchaseCost, label: 'Purchase cost', keyboardType: TextInputType.number)),
+                        Expanded(child: NeuField(dense: true, controller: _purchaseCost, label: 'Purchase cost', keyboardType: TextInputType.number)),
                       ],
                     )
                   else
-                    NeuField(controller: _purchaseCost, label: 'Cost per unit', keyboardType: TextInputType.number),
+                    NeuField(dense: true, controller: _purchaseCost, label: 'Cost per unit', keyboardType: TextInputType.number),
                   const SizedBox(height: AppTheme.s12),
 
                   // Forwarded onto the expense this purchase auto-generates —
@@ -547,12 +607,12 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                     ),
                     if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                      NeuField(dense: true, controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
                     ],
                   ],
                   if (_paymentStatus == 'PARTIAL') ...[
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
+                    NeuField(dense: true, controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
                   ],
                   const SizedBox(height: AppTheme.s12),
 
@@ -560,23 +620,31 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   const SizedBox(height: 4),
                   NeuPressed(
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int?>(
-                        isExpanded: true,
-                        value: _vendorId,
-                        dropdownColor: AppTheme.card,
-                        hint: const Text('No vendor', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('No vendor', style: TextStyle(fontSize: 13.5))),
-                          for (final v in state.activeVendors)
-                            DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(fontSize: 13.5))),
-                        ],
-                        onChanged: (v) => setState(() => _vendorId = v),
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        focusColor: AppTheme.accent.withValues(alpha: 0.1),
+                        hoverColor: AppTheme.accent.withValues(alpha: 0.06),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int?>(
+                          isExpanded: true,
+                          value: _vendorId,
+                          dropdownColor: AppTheme.card,
+                          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                          elevation: 3,
+                          itemHeight: null,
+                          hint: const Text('No vendor', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+                          items: [
+                            _vendorMenuItem(null, 'No vendor'),
+                            for (final v in state.activeVendors) _vendorMenuItem(v.id, v.name),
+                          ],
+                          onChanged: (v) => setState(() => _vendorId = v),
+                        ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: AppTheme.s16),
+                  const SizedBox(height: AppTheme.s12),
                   Text('Purchase bill (optional)', style: _kFieldLabelStyle),
                   const SizedBox(height: AppTheme.s8),
                   Row(
@@ -600,7 +668,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
 
                   if (!_isEdit) ...[
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       controller: _warrantyExpiry,
                       label: 'Company warranty until (optional)',
                       hint: 'Tap to pick',
@@ -618,12 +686,15 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
             ),
 
             if (!_bulk || _isEdit) ...[
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
               NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
+                padding: const EdgeInsets.all(AppTheme.s12 + 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SectionLabel('Installation details', number: 3),
+                    const SectionLabel('Installation details', number: 3, icon: Icons.room_rounded),
                     const SizedBox(height: AppTheme.s12),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -640,17 +711,17 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                           ),
                         ),
                         const SizedBox(width: AppTheme.s8),
-                        Expanded(child: NeuField(controller: _floor, label: 'Floor', hint: '2')),
+                        Expanded(child: NeuField(dense: true, controller: _floor, label: 'Floor', hint: '2')),
                       ],
                     ),
                     const SizedBox(height: 4),
                     const Text('Leave unset for lobby, kitchen or common-area equipment.', style: _kFieldHintStyle),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _department, label: 'Location description', hint: 'Kitchen, Lobby, Reception, Poolside…'),
+                    NeuField(dense: true, controller: _department, label: 'Location description', hint: 'Kitchen, Lobby, Reception, Poolside…'),
                     const SizedBox(height: 4),
                     const Text("A short label, not a sentence — it's also used to build the asset's name below.", style: _kFieldHintStyle),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _nameFieldKey,
                       controller: _name,
                       label: 'Name',
@@ -675,8 +746,11 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
               ),
             ],
             if (_bulk && !_isEdit) ...[
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
               NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
+                padding: const EdgeInsets.all(AppTheme.s12 + 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -754,15 +828,15 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                                 onChanged: (v) => setState(() => _units[i].roomId = v),
                               ),
                               const SizedBox(height: AppTheme.s8),
-                              NeuField(controller: _units[i].floor, label: 'Floor'),
+                              NeuField(dense: true, controller: _units[i].floor, label: 'Floor'),
                               const SizedBox(height: AppTheme.s8),
-                              NeuField(
+                              NeuField(dense: true, 
                                 controller: _units[i].department,
                                 label: 'Location description',
                                 onChanged: (_) => setState(() {}),
                               ),
                               const SizedBox(height: AppTheme.s8),
-                              NeuField(
+                              NeuField(dense: true, 
                                 controller: _units[i].name,
                                 label: 'Name (auto-filled)',
                                 hint: 'Split AC 1.5T · Room 101',
@@ -770,7 +844,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                                 forceCapitalizeWords: true,
                               ),
                               const SizedBox(height: AppTheme.s8),
-                              NeuField(controller: _units[i].serialNumber, label: 'Serial number (optional)'),
+                              NeuField(dense: true, controller: _units[i].serialNumber, label: 'Serial number (optional)'),
                               if (_submitAttempted && _unitInvalid(_units[i])) ...[
                                 const SizedBox(height: AppTheme.s4),
                                 const Text(_kUnitErrorText, style: TextStyle(color: AppTheme.danger, fontSize: 12)),
@@ -789,7 +863,7 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: AppTheme.s24),
+            const SizedBox(height: AppTheme.s16),
             NeuButton(
               primary: true,
               expand: true,
@@ -799,6 +873,8 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
                   : Text(_isEdit ? 'Save changes' : (_bulk ? 'Register units' : 'Register asset')),
             ),
           ],
+        ),
+          ),
         ),
       ),
     );
@@ -890,6 +966,29 @@ class _AssetFormScreenState extends ConsumerState<AssetFormScreen> {
     }
   }
 
+  DropdownMenuItem<int?> _vendorMenuItem(int? id, String label) {
+    final selected = id == _vendorId;
+    return DropdownMenuItem<int?>(
+      value: id,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                color: selected ? AppTheme.accent : AppTheme.text,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (selected) const Icon(Icons.check_rounded, color: AppTheme.accent, size: 16),
+        ],
+      ),
+    );
+  }
+
   String _unitsJson() => jsonEncode(_units
       .map((u) => {
             'name': u.name.text.trim(),
@@ -908,21 +1007,53 @@ class _RoomDropdown extends StatelessWidget {
 
   const _RoomDropdown({required this.value, required this.rooms, required this.onChanged});
 
+  DropdownMenuItem<int?> _item(int? id, String label) {
+    final selected = id == value;
+    return DropdownMenuItem<int?>(
+      value: id,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                color: selected ? AppTheme.accent : AppTheme.text,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (selected) const Icon(Icons.check_rounded, color: AppTheme.accent, size: 16),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return NeuPressed(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<int?>(
-          isExpanded: true,
-          value: value,
-          dropdownColor: AppTheme.card,
-          hint: const Text('Not room-bound', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
-          items: [
-            const DropdownMenuItem(value: null, child: Text('Not room-bound', style: TextStyle(fontSize: 13.5))),
-            for (final r in rooms) DropdownMenuItem(value: r.id, child: Text('Room ${r.roomNumber}', style: const TextStyle(fontSize: 13.5))),
-          ],
-          onChanged: onChanged,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          focusColor: AppTheme.accent.withValues(alpha: 0.1),
+          hoverColor: AppTheme.accent.withValues(alpha: 0.06),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<int?>(
+            isExpanded: true,
+            value: value,
+            dropdownColor: AppTheme.card,
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            elevation: 3,
+            itemHeight: null,
+            hint: const Text('Not room-bound', style: TextStyle(color: AppTheme.muted, fontSize: 13.5)),
+            items: [
+              _item(null, 'Not room-bound'),
+              for (final r in rooms) _item(r.id, 'Room ${r.roomNumber}'),
+            ],
+            onChanged: onChanged,
+          ),
         ),
       ),
     );

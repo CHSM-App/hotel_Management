@@ -2825,48 +2825,27 @@ class _ExtraRoomExtras extends ConsumerWidget {
     final vm = ref.read(bookingViewModelProvider.notifier);
     final charges = room.switchableCharges;
 
-    return NeuCard(
-      child: Column(
-        children: [
-          for (final charge in charges) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        charge.name,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        '${formatPrice(charge.chargePerNight)}/night',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                if (charge.isCounter && draft.extras.containsKey(charge.id))
-                  _Stepper(
-                    value: draft.extras[charge.id]!.quantity,
+    return Column(
+      children: [
+        for (var i = 0; i < charges.length; i++) ...[
+          if (i > 0) const SizedBox(height: AppTheme.s8),
+          _ExtraRow(
+            name: charges[i].name,
+            pricePerNight: charges[i].chargePerNight,
+            selected: draft.extras.containsKey(charges[i].id),
+            onToggle: (on) =>
+                vm.toggleExtraRoomExtra(index, charges[i].id, on),
+            counter: charges[i].isCounter &&
+                    draft.extras.containsKey(charges[i].id)
+                ? _Stepper(
+                    value: draft.extras[charges[i].id]!.quantity,
                     onChanged: (v) =>
-                        vm.setExtraRoomExtraQuantity(index, charge.id, v),
-                  ),
-                Checkbox(
-                  value: draft.extras.containsKey(charge.id),
-                  activeColor: AppTheme.accent,
-                  onChanged: (on) =>
-                      vm.toggleExtraRoomExtra(index, charge.id, on ?? false),
-                ),
-              ],
-            ),
-            if (charge != charges.last) const Divider(height: AppTheme.s24),
-          ],
+                        vm.setExtraRoomExtraQuantity(index, charges[i].id, v),
+                  )
+                : null,
+          ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -3120,45 +3099,113 @@ class _ExtrasCard extends ConsumerWidget {
     final vm = ref.read(bookingViewModelProvider.notifier);
     final charges = state.room!.switchableCharges;
 
-    return NeuCard(
-      child: Column(
-        children: [
-          for (final charge in charges) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        charge.name,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        '${formatPrice(charge.chargePerNight)}/night',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                if (charge.isCounter && state.extras.containsKey(charge.id))
-                  _Stepper(
-                    value: state.extras[charge.id]!.quantity,
-                    onChanged: (v) => vm.setExtraQuantity(charge.id, v),
-                  ),
-                Checkbox(
-                  value: state.extras.containsKey(charge.id),
-                  activeColor: AppTheme.accent,
-                  onChanged: (on) => vm.toggleExtra(charge.id, on ?? false),
-                ),
-              ],
-            ),
-            if (charge != charges.last) const Divider(height: AppTheme.s24),
-          ],
+    return Column(
+      children: [
+        for (var i = 0; i < charges.length; i++) ...[
+          if (i > 0) const SizedBox(height: AppTheme.s8),
+          _ExtraRow(
+            name: charges[i].name,
+            pricePerNight: charges[i].chargePerNight,
+            selected: state.extras.containsKey(charges[i].id),
+            onToggle: (on) => vm.toggleExtra(charges[i].id, on),
+            counter: charges[i].isCounter &&
+                    state.extras.containsKey(charges[i].id)
+                ? _Stepper(
+                    value: state.extras[charges[i].id]!.quantity,
+                    onChanged: (v) => vm.setExtraQuantity(charges[i].id, v),
+                  )
+                : null,
+          ),
         ],
+      ],
+    );
+  }
+}
+
+class _ExtraRow extends StatelessWidget {
+  final String name;
+  final num pricePerNight;
+  final bool selected;
+  final ValueChanged<bool> onToggle;
+  final Widget? counter;
+
+  const _ExtraRow({
+    required this.name,
+    required this.pricePerNight,
+    required this.selected,
+    required this.onToggle,
+    this.counter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        onTap: () => onToggle(!selected),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.s12,
+            vertical: AppTheme.s12,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.accent.withValues(alpha: 0.06)
+                : AppTheme.card,
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            border: Border.all(
+              color: selected
+                  ? AppTheme.accent.withValues(alpha: 0.35)
+                  : AppTheme.shadowDark,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${formatPrice(pricePerNight)}/night',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              if (counter != null) ...[
+                counter!,
+                const SizedBox(width: AppTheme.s4),
+              ],
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: selected ? AppTheme.accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: selected ? AppTheme.accent : AppTheme.shadowDark,
+                    width: 1.5,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(Icons.check, size: 15, color: Colors.white)
+                    : null,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

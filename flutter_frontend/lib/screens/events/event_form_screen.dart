@@ -515,7 +515,57 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final submitting = state.submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit "${widget.event!.title}"' : 'New function')),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _isEdit ? Icons.edit_calendar_rounded : Icons.celebration_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _isEdit ? 'Edit "${widget.event!.title}"' : 'New function',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
+        ),
+      ),
       body: !_catalogueReady
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -540,11 +590,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
                   // ── Function ───────────────────────────────────────────
                   NeuCard(
-                    padding: const EdgeInsets.all(AppTheme.s8),
+                    radius: AppTheme.rLarge,
+                    shadow: AppTheme.elevated,
+                    padding: const EdgeInsets.all(AppTheme.s16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SectionLabel('Function', number: 1),
+                        const SectionLabel('Function', number: 1, icon: Icons.event_rounded),
                         const SizedBox(height: AppTheme.s8),
                         RequiredLabel('Type'),
                         const SizedBox(height: 4),
@@ -635,11 +687,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
                   // ── Organiser ──────────────────────────────────────────
                   NeuCard(
-                    padding: const EdgeInsets.all(AppTheme.s8),
+                    radius: AppTheme.rLarge,
+                    shadow: AppTheme.elevated,
+                    padding: const EdgeInsets.all(AppTheme.s16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SectionLabel('Organiser', number: 2),
+                        const SectionLabel('Organiser', number: 2, icon: Icons.person_rounded),
                         const SizedBox(height: AppTheme.s8),
                         NeuField(key: _fieldKeys['organiserName'], controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null, forceCapitalizeWords: true),
                         const SizedBox(height: AppTheme.s8),
@@ -661,11 +715,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
                   // ── Guests & pricing ───────────────────────────────────
                   NeuCard(
-                    padding: const EdgeInsets.all(AppTheme.s8),
+                    radius: AppTheme.rLarge,
+                    shadow: AppTheme.elevated,
+                    padding: const EdgeInsets.all(AppTheme.s16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SectionLabel('Guests & pricing', number: 3),
+                        const SectionLabel('Guests & pricing', number: 3, icon: Icons.groups_rounded),
                         const SizedBox(height: AppTheme.s8),
                         Row(
                           children: [
@@ -793,11 +849,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                   if (!_isEdit) ...[
                     NeuCard(
                       key: _fieldKeys['advance'],
-                      padding: const EdgeInsets.all(AppTheme.s8),
+                      radius: AppTheme.rLarge,
+                    shadow: AppTheme.elevated,
+                    padding: const EdgeInsets.all(AppTheme.s16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const SectionLabel('Advance payment', number: 4),
+                          const SectionLabel('Advance payment', number: 4, icon: Icons.payments_rounded),
                           const SizedBox(height: 4),
                           const Text(
                             'Optional. Money taken now confirms the venue is theirs from this moment, whichever way you save below.',
@@ -826,11 +884,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
                   // ── Function sheet ─────────────────────────────────────
                   NeuCard(
-                    padding: const EdgeInsets.all(AppTheme.s8),
+                    radius: AppTheme.rLarge,
+                    shadow: AppTheme.elevated,
+                    padding: const EdgeInsets.all(AppTheme.s16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SectionLabel('Function sheet', number: _isEdit ? 4 : 5),
+                        SectionLabel('Function sheet', number: _isEdit ? 4 : 5, icon: Icons.description_rounded),
                         const SizedBox(height: AppTheme.s8),
                         if (catering) ...[
                           NeuField(controller: _menuNotes, label: 'Menu', hint: 'Veg thali, live chaat counter, …'),

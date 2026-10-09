@@ -231,10 +231,21 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
               Container(
                 width: 34,
                 height: 34,
-                margin: const EdgeInsets.only(right: AppTheme.s8),
-                decoration: const BoxDecoration(
-                  color: AppTheme.accent,
-                  shape: BoxShape.circle,
+                margin: const EdgeInsets.only(right: AppTheme.s12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  ),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x335A67D8),
+                      offset: Offset(0, 3),
+                      blurRadius: 8,
+                    ),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: const Icon(
@@ -283,6 +294,15 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
               ),
             ),
           ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(3),
+            child: Container(
+              height: 3,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+              ),
+            ),
+          ),
         ),
         body: SafeArea(
           child: (!loaded && _loadError == null)
@@ -662,90 +682,167 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
   }
 
   Widget _takeForm() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        AppTheme.s16,
-        0,
-        AppTheme.s16,
-        AppTheme.s16,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Advance received now',
-            style: Theme.of(context).textTheme.titleMedium,
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.s12,
+            0,
+            AppTheme.s12,
+            AppTheme.s16,
           ),
-          const SizedBox(height: AppTheme.s4),
-          Text(
-            'Up to ${formatPrice(_remaining)} still to pay.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppTheme.s12),
-          for (var i = 0; i < _lines.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
-              child: PaymentRow(
-                key: ValueKey(_lines[i]),
-                line: _lines[i],
-                onRemove: _lines.length == 1
-                    ? null
-                    : () => setState(() => _lines.removeAt(i)),
-                onChanged: () => setState(() {}),
-              ),
-            ),
-          if (_lines.length < 5)
-            NeuButton(
-              expand: true,
-              onPressed: () => setState(() => _lines.add(PaymentDraft())),
-              child: const Text('+ Add another payment'),
-            ),
-          const SizedBox(height: AppTheme.s16),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  'Amount',
-                  style: Theme.of(context).textTheme.bodyMedium,
+              NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
+                padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 26,
+                          height: 26,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [AppTheme.accent, Color(0xFF434FC1)],
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x2A5A67D8),
+                                offset: Offset(0, 2),
+                                blurRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.payments_rounded, color: Colors.white, size: 14),
+                        ),
+                        const SizedBox(width: AppTheme.s12),
+                        Text(
+                          'ADVANCE RECEIVED NOW',
+                          style: const TextStyle(
+                            color: AppTheme.heading,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.s4),
+                    Text(
+                      'Up to ${formatPrice(_remaining)} still to pay.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppTheme.s12),
+                    for (var i = 0; i < _lines.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                        child: PaymentRow(
+                          key: ValueKey(_lines[i]),
+                          line: _lines[i],
+                          onRemove: _lines.length == 1
+                              ? null
+                              : () => setState(() => _lines.removeAt(i)),
+                          onChanged: () => setState(() {}),
+                        ),
+                      ),
+                    if (_lines.length < 5)
+                      GestureDetector(
+                        onTap: () => setState(() => _lines.add(PaymentDraft())),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accent.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_rounded, color: AppTheme.accent, size: 16),
+                              SizedBox(width: 4),
+                              Text(
+                                'Add another payment',
+                                style: TextStyle(color: AppTheme.accent, fontSize: 12.5, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: AppTheme.s12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Text(
+                            'Amount',
+                            style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w500),
+                          ),
+                          const Spacer(),
+                          Text(
+                            formatPrice(_amount),
+                            style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w800, fontSize: 17),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_takeError != null) ...[
+                      const SizedBox(height: AppTheme.s8),
+                      Text(
+                        _takeError!,
+                        style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              Text(
-                formatPrice(_amount),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
-          ),
-          if (_takeError != null) ...[
-            const SizedBox(height: AppTheme.s8),
-            Text(
-              _takeError!,
-              style: const TextStyle(color: AppTheme.danger, fontSize: 12),
-            ),
-          ],
-          const SizedBox(height: AppTheme.s16),
-          Row(
-            children: [
-              Expanded(
-                child: NeuButton(
-                  onPressed: _taking
-                      ? null
-                      : () => setState(() => _showTakeForm = false),
-                  child: const Text('Back'),
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Expanded(
-                child: NeuButton(
-                  primary: true,
-                  onPressed: (_taking || _amount <= 0) ? null : _take,
-                  child: Text(
-                    _taking ? 'Recording…' : 'Record & print receipt',
+              const SizedBox(height: AppTheme.s12),
+              Row(
+                children: [
+                  Expanded(
+                    child: NeuButton(
+                      onPressed: _taking
+                          ? null
+                          : () => setState(() => _showTakeForm = false),
+                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                      child: const Text('Back'),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    flex: 2,
+                    child: NeuButton(
+                      primary: true,
+                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                      onPressed: (_taking || _amount <= 0) ? null : _take,
+                      child: Text(
+                        _taking ? 'Recording…' : 'Record & print receipt',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }

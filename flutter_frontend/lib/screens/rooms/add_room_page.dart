@@ -312,7 +312,11 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SectionLabel(_bulkMode ? 'Room range' : 'Room number', number: 1),
+                        SectionLabel(
+                          _bulkMode ? 'Room range' : 'Room number',
+                          number: 1,
+                          icon: Icons.tag_rounded,
+                        ),
                         const SizedBox(height: AppTheme.s12),
                         if (!_bulkMode)
                           NeuField(
@@ -371,7 +375,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ),
                           ),
                         const SectionDivider(),
-                        const SectionLabel('Pricing', number: 2),
+                        const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
                         const SizedBox(height: AppTheme.s12),
                         const RequiredLabel('Category'),
                         const SizedBox(height: AppTheme.s8),
@@ -406,53 +410,39 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           ),
                         ],
                         const SectionDivider(),
-                        const SectionLabel('Room details', number: 3),
+                        const SectionLabel('Room details', number: 3, icon: Icons.king_bed_rounded),
                         const SizedBox(height: AppTheme.s12),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: NeuField(
-                                key: _floorKey,
-                                controller: _floor,
-                                label: 'Floor',
-                                hint: '1',
-                                required: true,
-                                errorText: _floorError,
-                                keyboardType: TextInputType.number,
-                                onChanged: (_) => setState(() {}),
-                                dense: true,
-                              ),
-                            ),
-                            const SizedBox(width: AppTheme.s12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const RequiredLabel('Bathroom'),
-                                  const SizedBox(height: AppTheme.s8),
-                                  KeyedSubtree(
-                                    key: _bathroomKey,
-                                    child: OptionDropdown(
-                                      values: bathroomTypes,
-                                      labels: bathroomLabel,
-                                      selected: _bathroomType,
-                                      hasError: _bathroomError != null,
-                                      onSelect: (v) => setState(() => _bathroomType = v),
-                                    ),
-                                  ),
-                                  if (_bathroomError != null) ...[
-                                    const SizedBox(height: AppTheme.s4),
-                                    Text(
-                                      _bathroomError!,
-                                      style: const TextStyle(color: AppTheme.danger, fontSize: 12),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
+                        NeuField(
+                          key: _floorKey,
+                          controller: _floor,
+                          label: 'Floor',
+                          hint: '1',
+                          required: true,
+                          errorText: _floorError,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
+                          dense: true,
                         ),
+                        const SizedBox(height: AppTheme.s12),
+                        const RequiredLabel('Bathroom'),
+                        const SizedBox(height: AppTheme.s8),
+                        KeyedSubtree(
+                          key: _bathroomKey,
+                          child: OptionDropdown(
+                            values: bathroomTypes,
+                            labels: bathroomLabel,
+                            selected: _bathroomType,
+                            hasError: _bathroomError != null,
+                            onSelect: (v) => setState(() => _bathroomType = v),
+                          ),
+                        ),
+                        if (_bathroomError != null) ...[
+                          const SizedBox(height: AppTheme.s4),
+                          Text(
+                            _bathroomError!,
+                            style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                          ),
+                        ],
                         const SizedBox(height: AppTheme.s12),
 
                         KeyedSubtree(
@@ -730,6 +720,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           SectionLabel(
                             'Photos',
                             number: 4,
+                            icon: Icons.photo_camera_rounded,
                             trailing: _newPhotos.isEmpty ? null : '${_newPhotos.length}',
                           ),
                           const SizedBox(height: AppTheme.s12),

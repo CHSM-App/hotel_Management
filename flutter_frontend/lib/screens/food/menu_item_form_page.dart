@@ -112,190 +112,240 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
     final submitting = ref.watch(menuViewModelProvider).submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_editing ? 'Edit dish' : 'Add a dish')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s12),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
           children: [
-            if (_error != null) ...[
-              Container(
-                padding: const EdgeInsets.all(AppTheme.s8),
-                decoration: BoxDecoration(
-                  color: AppTheme.danger.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
-                    const SizedBox(width: AppTheme.s8),
-                    Expanded(
-                      child: Text(_error!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger)),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _editing ? Icons.edit_rounded : Icons.restaurant_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _editing ? 'Edit dish' : 'Add a dish',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                if (_error != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(AppTheme.s12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.danger.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppTheme.s8),
-            ],
-
-            NeuCard(
-              padding: const EdgeInsets.all(AppTheme.s8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionLabel('Section & name', number: 1),
-                  const SizedBox(height: AppTheme.s8),
-                  const RequiredLabel('Section'),
-                  const SizedBox(height: 4),
-                  OptionDropdown(
-                    values: [for (final s in widget.sections) '${s.id}'],
-                    labels: {for (final s in widget.sections) '${s.id}': s.name},
-                    selected: widget.sections.any((s) => s.id == _categoryId) ? '$_categoryId' : null,
-                    hint: 'Choose a section',
-                    hasError: _categoryError != null,
-                    onSelect: (v) => setState(() => _categoryId = int.parse(v)),
-                  ),
-                  if (_categoryError != null) ...[
-                    const SizedBox(height: AppTheme.s4),
-                    Text(_categoryError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-                  ],
-                  const SizedBox(height: AppTheme.s8),
-                  NeuField(
-                    controller: _name,
-                    label: 'Dish name',
-                    hint: 'Paneer butter masala',
-                    required: true,
-                    errorText: _nameError,
-                    onChanged: (_) => setState(() {}),
-                    forceCapitalizeWords: true,
-                  ),
-                  const SizedBox(height: AppTheme.s8),
-                  Text('Type', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      for (final (key, label) in _kFoodTypes)
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
+                        const SizedBox(width: AppTheme.s8),
                         Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: AppTheme.s8),
-                            child: _FoodTypeChoice(
-                              label: label,
-                              isVeg: key == 'VEG',
-                              selected: _foodType == key,
-                              onTap: () => setState(() => _foodType = key),
-                            ),
-                          ),
+                          child: Text(_error!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger)),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: AppTheme.s12),
                 ],
-              ),
-            ),
-            const SizedBox(height: AppTheme.s8),
 
-            NeuCard(
-              padding: const EdgeInsets.all(AppTheme.s8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionLabel('Description & photo', number: 2),
-                  const SizedBox(height: AppTheme.s8),
-                  NeuField(
-                    controller: _description,
-                    label: 'Description (optional)',
-                    hint: 'Paneer cooked in rich tomato, butter and cream gravy.',
-                    maxLength: 300,
-                  ),
-                  const SizedBox(height: AppTheme.s8),
-                  Text('Photo', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  _photoPicker(),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppTheme.s8),
-
-            NeuCard(
-              padding: const EdgeInsets.all(AppTheme.s8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Expanded(child: SectionLabel('Pricing', number: 3)),
-                      TextButton.icon(
-                        onPressed: () => setState(() => _portions.add(_PortionRow())),
-                        icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('Add a size'),
+                      const SectionLabel('Section & name', number: 1, icon: Icons.category_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      const RequiredLabel('Section'),
+                      const SizedBox(height: AppTheme.s8),
+                      OptionDropdown(
+                        values: [for (final s in widget.sections) '${s.id}'],
+                        labels: {for (final s in widget.sections) '${s.id}': s.name},
+                        selected: widget.sections.any((s) => s.id == _categoryId) ? '$_categoryId' : null,
+                        hint: 'Choose a section',
+                        hasError: _categoryError != null,
+                        onSelect: (v) => setState(() => _categoryId = int.parse(v)),
                       ),
-                    ],
-                  ),
-                  for (var i = 0; i < _portions.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                      child: Row(
+                      if (_categoryError != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(_categoryError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      ],
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        controller: _name,
+                        label: 'Dish name',
+                        hint: 'Paneer butter masala',
+                        required: true,
+                        errorText: _nameError,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                        dense: true,
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      Text('Type', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: AppTheme.s8),
+                      Row(
                         children: [
-                          Expanded(
-                            flex: 3,
-                            child: NeuField(
-                              controller: _portions[i]._label,
-                              label: '',
-                              hint: i == 0 ? 'Half plate' : 'Full plate',
+                          for (final (key, label) in _kFoodTypes)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: AppTheme.s8),
+                                child: _FoodTypeChoice(
+                                  label: label,
+                                  isVeg: key == 'VEG',
+                                  selected: _foodType == key,
+                                  onTap: () => setState(() => _foodType = key),
+                                ),
+                              ),
                             ),
+                        ],
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Description & photo', number: 2, icon: Icons.photo_camera_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        controller: _description,
+                        label: 'Description (optional)',
+                        hint: 'Paneer cooked in rich tomato, butter and cream gravy.',
+                        maxLength: 300,
+                        dense: true,
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      Text('Photo', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: AppTheme.s8),
+                      _photoPicker(),
+
+                      const SectionDivider(),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: SectionLabel('Pricing', number: 3, icon: Icons.payments_rounded),
                           ),
-                          const SizedBox(width: AppTheme.s8),
-                          Expanded(
-                            flex: 2,
-                            child: NeuField(
-                              controller: _portions[i]._price,
-                              label: '',
-                              hint: '0',
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.muted),
-                            onPressed: () => setState(() {
-                              _portions[i].dispose();
-                              _portions.removeAt(i);
-                            }),
+                          TextButton.icon(
+                            onPressed: () => setState(() => _portions.add(_PortionRow())),
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Add a size'),
                           ),
                         ],
                       ),
-                    ),
-                  if (!_hasSizes)
-                    NeuField(
-                      controller: _price,
-                      label: 'Price',
-                      hint: '220',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      required: true,
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppTheme.s4),
-                      child: Text(
-                        'The dish is ordered by size — the price above is not charged.',
-                        style: Theme.of(context).textTheme.bodySmall,
+                      const SizedBox(height: AppTheme.s4),
+                      for (var i = 0; i < _portions.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: NeuField(
+                                  controller: _portions[i]._label,
+                                  label: '',
+                                  hint: i == 0 ? 'Half plate' : 'Full plate',
+                                  dense: true,
+                                ),
+                              ),
+                              const SizedBox(width: AppTheme.s8),
+                              Expanded(
+                                flex: 2,
+                                child: NeuField(
+                                  controller: _portions[i]._price,
+                                  label: '',
+                                  hint: '0',
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  dense: true,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.muted),
+                                onPressed: () => setState(() {
+                                  _portions[i].dispose();
+                                  _portions.removeAt(i);
+                                }),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (!_hasSizes)
+                        NeuField(
+                          controller: _price,
+                          label: 'Price',
+                          hint: '220',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          required: true,
+                          dense: true,
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppTheme.s4),
+                          child: Text(
+                            'The dish is ordered by size — the price above is not charged.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        controller: _sortOrder,
+                        label: 'Order in section (optional)',
+                        hint: '0',
+                        keyboardType: TextInputType.number,
+                        dense: true,
                       ),
-                    ),
-                  const SizedBox(height: AppTheme.s8),
-                  NeuField(
-                    controller: _sortOrder,
-                    label: 'Order in section (optional)',
-                    hint: '0',
-                    keyboardType: TextInputType.number,
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                _Footer(
+                  submitting: submitting,
+                  onCancel: () => Navigator.of(context).pop(),
+                  onSubmit: _submit,
+                  editing: _editing,
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.s8),
-            _Footer(
-              submitting: submitting,
-              onCancel: () => Navigator.of(context).pop(),
-              onSubmit: _submit,
-              editing: _editing,
-            ),
-          ],
+          ),
         ),
       ),
     );

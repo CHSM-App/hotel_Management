@@ -190,97 +190,146 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: Text(
-          vendor == null ? 'Add vendor' : 'Edit vendor',
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Icon(
+                vendor == null ? Icons.store_rounded : Icons.edit_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                vendor == null ? 'Add vendor' : 'Edit vendor',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
         ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
-          children: [
-            if (vendor != null) ...[
-              NeuCard(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s12),
-                child: Row(
-                  children: [
-                    VendorInitialBadge(name: vendor.name, active: vendor.isActive, size: 40),
-                    const SizedBox(width: AppTheme.s12),
-                    Expanded(
-                      child: Text(
-                        vendor.name,
-                        style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.2),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                if (vendor != null) ...[
+                  NeuCard(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s12),
+                    child: Row(
+                      children: [
+                        VendorInitialBadge(name: vendor.name, active: vendor.isActive, size: 40),
+                        const SizedBox(width: AppTheme.s12),
+                        Expanded(
+                          child: Text(
+                            vendor.name,
+                            style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.2),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (!vendor.isActive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(999)),
+                            child: const Text('Inactive', style: TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
+                          ),
+                      ],
                     ),
-                    if (!vendor.isActive)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(999)),
-                        child: const Text('Inactive', style: TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppTheme.s12),
-            ],
-            if (_error != null) ...[
-              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-              const SizedBox(height: AppTheme.s12),
-            ],
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionLabel('Contact details', number: 1),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _name,
-                    label: 'Name',
-                    required: true,
-                    errorText: _nameError,
-                    focusNode: _nameFocus,
-                    onChanged: (_) => setState(() {}),
-                    forceCapitalizeWords: true,
                   ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
-                  const SizedBox(height: AppTheme.s12),
-                  Row(
+                  const SizedBox(height: AppTheme.s8),
+                ],
+                if (_error != null) ...[
+                  Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                  const SizedBox(height: AppTheme.s8),
+                ],
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: NeuField(controller: _phone, label: 'Phone', keyboardType: TextInputType.phone)),
-                      const SizedBox(width: AppTheme.s8),
-                      Expanded(flex: 2, child: NeuField(controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress)),
+                      const SectionLabel('Contact details', number: 1, icon: Icons.person_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _name,
+                        label: 'Name',
+                        required: true,
+                        errorText: _nameError,
+                        focusNode: _nameFocus,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
+                      const SizedBox(height: AppTheme.s8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: NeuField(dense: true, controller: _phone, label: 'Phone', keyboardType: TextInputType.phone)),
+                          const SizedBox(width: AppTheme.s8),
+                          Expanded(flex: 2, child: NeuField(dense: true, controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress)),
+                        ],
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Notes', number: 2, icon: Icons.notes_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(dense: true, controller: _specialty, label: 'Specialty', hint: 'AC service, Electrical, Lift AMC…'),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _notes, label: 'Notes'),
                     ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuButton(
+                  primary: true,
+                  expand: true,
+                  onPressed: submitting ? null : _save,
+                  child: submitting
+                      ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save'),
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.s16),
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionLabel('Notes', number: 2),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _specialty, label: 'Specialty', hint: 'AC service, Electrical, Lift AMC…'),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _notes, label: 'Notes'),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: submitting ? null : _save,
-              child: submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save'),
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -313,23 +313,65 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
+        titleSpacing: AppTheme.s4,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: AppTheme.border),
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+            ),
+          ),
         ),
-        title: !_viewMode
-            ? Text(_isEdit ? 'Edit expense' : (_isLogging ? 'Log this month' : 'Log an expense'))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.expense!.title, overflow: TextOverflow.ellipsis),
-                  Text(
-                    [widget.expense!.categoryName, widget.expense!.vendorName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: Theme.of(context).textTheme.bodySmall,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.receipt_long_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: !_viewMode
+                  ? Text(
+                      _isEdit ? 'Edit expense' : (_isLogging ? 'Log this month' : 'Log an expense'),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(widget.expense!.title, overflow: TextOverflow.ellipsis),
+                        Text(
+                          [widget.expense!.categoryName, widget.expense!.vendorName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
       body: SafeArea(
         child: Center(
@@ -384,14 +426,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 const SizedBox(height: AppTheme.s12),
               ],
               NeuCard(
-                radius: AppTheme.rMedium,
-                shadow: AppTheme.subtle,
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SectionLabel('What was this for', number: 1),
+                    const SectionLabel('What was this for', number: 1, icon: Icons.receipt_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _titleFieldKey,
                       controller: _title,
                       label: 'Title',
@@ -421,12 +463,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               ),
               const SizedBox(height: AppTheme.s12),
               NeuCard(
-                radius: AppTheme.rMedium,
-                shadow: AppTheme.subtle,
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SectionLabel('Amount & payment', number: 2),
+                    const SectionLabel('Amount & payment', number: 2, icon: Icons.payments_rounded),
                     const SizedBox(height: AppTheme.s12),
                     _AmountField(
                       fieldKey: _amountFieldKey,
@@ -463,16 +505,16 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                         ),
                         if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
                           const SizedBox(height: AppTheme.s12),
-                          NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                          NeuField(dense: true, controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
                         ],
                       ],
                       if (_paymentStatus == 'PARTIAL') ...[
                         const SizedBox(height: AppTheme.s12),
-                        NeuField(controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
+                        NeuField(dense: true, controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
                       ],
                     ],
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _dateFieldKey,
                       controller: _expenseDate,
                       label: 'Date',
@@ -486,15 +528,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               ),
               const SizedBox(height: AppTheme.s12),
               NeuCard(
-                radius: AppTheme.rMedium,
-                shadow: AppTheme.subtle,
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SectionLabel('Notes & receipt', number: 3),
+                    const SectionLabel('Notes & receipt', number: 3, icon: Icons.attachment_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _description, label: 'Notes', maxLength: 400),
-                    const SizedBox(height: AppTheme.s16),
+                    NeuField(dense: true, controller: _description, label: 'Notes', maxLength: 400),
+                    const SizedBox(height: AppTheme.s12),
                     _ReceiptPicker(
                       billPhoto: _billPhoto,
                       hasExistingBill: _isEdit && widget.expense!.hasBillDocument,
@@ -505,7 +547,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               ),
             ],
             if (_isEdit) ...[
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
               _PaymentsSection(
                 amount: num.tryParse(_amount.text.trim()) ?? 0,
                 amountPaid: _currentAmountPaid,
@@ -524,7 +566,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 onAddPayment: _addPayment,
               ),
             ],
-            const SizedBox(height: AppTheme.s24),
+            const SizedBox(height: AppTheme.s16),
             if (_viewMode)
               Row(
                 children: [
@@ -650,7 +692,7 @@ class _AmountField extends StatelessWidget {
         ),
         const SizedBox(width: AppTheme.s8),
         Expanded(
-          child: NeuField(
+          child: NeuField(dense: true, 
             key: fieldKey,
             controller: controller,
             label: 'Amount',
@@ -948,7 +990,7 @@ class _PaymentsSection extends StatelessWidget {
                 children: [
                   Text("Add a payment against what's left", style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
+                  NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
                   const SizedBox(height: AppTheme.s12),
                   OptionDropdown(
                     values: kPaymentMethods,
@@ -957,10 +999,10 @@ class _PaymentsSection extends StatelessWidget {
                     onSelect: onMethodChanged,
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
+                  NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
                   if (kPaymentReferenceLabel[newMethod] != null) ...[
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
+                    NeuField(dense: true, controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
                   ],
                   const SizedBox(height: AppTheme.s12),
                   NeuButton(

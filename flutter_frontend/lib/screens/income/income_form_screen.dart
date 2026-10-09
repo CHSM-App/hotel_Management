@@ -403,23 +403,73 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
     final state = ref.watch(incomeViewModelProvider);
     return Scaffold(
       appBar: AppBar(
-        title: !_viewMode
-            ? Text(_isEdit ? 'Edit income' : (_isLogging ? 'Log this month' : 'New income'))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.income!.title, overflow: TextOverflow.ellipsis),
-                  Text(
-                    [widget.income!.categoryName, widget.income!.payerName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: Theme.of(context).textTheme.bodySmall,
+        titleSpacing: AppTheme.s4,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+            ),
+          ),
+        ),
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.savings_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: !_viewMode
+                  ? Text(
+                      _isEdit ? 'Edit income' : (_isLogging ? 'Log this month' : 'New income'),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(widget.income!.title, overflow: TextOverflow.ellipsis),
+                        Text(
+                          [widget.income!.categoryName, widget.income!.payerName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
           children: [
             if (_viewMode) ...[
               // Read-only summary — a row tap lands here first, not in the
@@ -461,16 +511,19 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
               ),
             ] else
               NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
+                padding: const EdgeInsets.all(AppTheme.s12 + 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (_error != null) ...[
                       _ErrorBanner(_error!),
-                      const SizedBox(height: AppTheme.s16),
+                      const SizedBox(height: AppTheme.s12),
                     ],
-                    const SectionLabel('What was this for', number: 1),
+                    const SectionLabel('What was this for', number: 1, icon: Icons.receipt_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _titleFieldKey,
                       controller: _title,
                       label: 'Title',
@@ -497,19 +550,19 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                     PayerComboField(controller: _payer, payers: state.payers, label: 'Payer', onPick: _onPayerPicked),
                     if (_payer.text.trim().isNotEmpty) ...[
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(controller: _payerContactPerson, label: 'Payer contact person', forceCapitalizeWords: true),
+                      NeuField(dense: true, controller: _payerContactPerson, label: 'Payer contact person', forceCapitalizeWords: true),
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(controller: _payerPhone, label: 'Payer phone', keyboardType: TextInputType.phone),
+                      NeuField(dense: true, controller: _payerPhone, label: 'Payer phone', keyboardType: TextInputType.phone),
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(controller: _payerEmail, label: 'Payer email', keyboardType: TextInputType.emailAddress),
+                      NeuField(dense: true, controller: _payerEmail, label: 'Payer email', keyboardType: TextInputType.emailAddress),
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(controller: _payerSpecialty, label: 'Payer specialty', hint: 'Shop tenant, event partner…'),
+                      NeuField(dense: true, controller: _payerSpecialty, label: 'Payer specialty', hint: 'Shop tenant, event partner…'),
                     ],
 
                     const SectionDivider(),
-                    const SectionLabel('Amount & payment', number: 2),
+                    const SectionLabel('Amount & payment', number: 2, icon: Icons.payments_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _amountFieldKey,
                       controller: _amount,
                       label: 'Amount',
@@ -545,16 +598,16 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                         ),
                         if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
                           const SizedBox(height: AppTheme.s12),
-                          NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                          NeuField(dense: true, controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
                         ],
                       ],
                       if (_paymentStatus == 'PARTIAL') ...[
                         const SizedBox(height: AppTheme.s12),
-                        NeuField(controller: _amountReceived, label: 'Amount received so far', keyboardType: TextInputType.number),
+                        NeuField(dense: true, controller: _amountReceived, label: 'Amount received so far', keyboardType: TextInputType.number),
                       ],
                     ],
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _dateFieldKey,
                       controller: _incomeDate,
                       label: 'Date',
@@ -565,10 +618,10 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                     ),
 
                     const SectionDivider(),
-                    const SectionLabel('Notes & receipt', number: 3),
+                    const SectionLabel('Notes & receipt', number: 3, icon: Icons.attachment_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _description, label: 'Notes', maxLength: 400),
-                    const SizedBox(height: AppTheme.s16),
+                    NeuField(dense: true, controller: _description, label: 'Notes', maxLength: 400),
+                    const SizedBox(height: AppTheme.s12),
                     Text('Receipt / proof (image or PDF)', style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: AppTheme.s8),
                     Row(
@@ -593,7 +646,7 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                 ),
               ),
             if (_isEdit) ...[
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
               _ReceiptsSection(
                 amount: num.tryParse(_amount.text.trim()) ?? 0,
                 amountReceived: _currentAmountReceived,
@@ -612,7 +665,7 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                 onAddReceipt: _addReceipt,
               ),
             ],
-            const SizedBox(height: AppTheme.s24),
+            const SizedBox(height: AppTheme.s16),
             if (_viewMode)
               Row(
                 children: [
@@ -644,6 +697,8 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                     : Text(_isEdit ? 'Save changes' : (_isLogging ? 'Log this occurrence' : 'Log income')),
               ),
           ],
+        ),
+          ),
         ),
       ),
     );
@@ -921,7 +976,7 @@ class _ReceiptsSection extends StatelessWidget {
                 children: [
                   Text("Add a receipt against what's left", style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
+                  NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
                   const SizedBox(height: AppTheme.s12),
                   OptionDropdown(
                     values: kPaymentMethods,
@@ -930,10 +985,10 @@ class _ReceiptsSection extends StatelessWidget {
                     onSelect: onMethodChanged,
                   ),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
+                  NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
                   if (kPaymentReferenceLabel[newMethod] != null) ...[
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
+                    NeuField(dense: true, controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
                   ],
                   const SizedBox(height: AppTheme.s12),
                   NeuButton(

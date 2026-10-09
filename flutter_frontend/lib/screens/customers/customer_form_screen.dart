@@ -129,108 +129,168 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     final submitting = ref.watch(customersViewModelProvider).submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit customer' : 'Add customer')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
           children: [
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null) ...[
-                    _ErrorBanner(_error!),
-                    const SizedBox(height: AppTheme.s16),
-                  ],
-
-                  const SectionLabel('Identity', number: 1),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _name,
-                    label: 'Name',
-                    required: true,
-                    errorText: _nameError,
-                    focusNode: _nameFocus,
-                    onChanged: (_) => setState(() {}),
-                    forceCapitalizeWords: true,
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _phone,
-                    label: 'Phone',
-                    required: true,
-                    readOnly: _isEdit,
-                    keyboardType: TextInputType.phone,
-                    maxLength: 10,
-                    errorText: _phoneError,
-                    focusNode: _phoneFocus,
-                    hint: '9876543210',
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  if (_isEdit) ...[
-                    const SizedBox(height: AppTheme.s4),
-                    const Text(
-                      "Phone can't be changed here.",
-                      style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                    ),
-                  ],
-
-                  const SectionDivider(),
-                  const SectionLabel('Contact', number: 2),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _email,
-                    label: 'Email (optional)',
-                    keyboardType: TextInputType.emailAddress,
-                    errorText: _emailError,
-                    focusNode: _emailFocus,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _tags, label: 'Tags (optional)', hint: 'e.g. VIP, Repeat guest'),
-
-                  if (_isEdit) ...[
-                    const SectionDivider(),
-                    const SectionLabel('ID proof', number: 3),
-                    const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _idProofType, label: 'ID proof type (optional)', hint: 'e.g. Aadhaar'),
-                    const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _idProofNumber, label: 'ID proof number (optional)'),
-                  ],
-
-                  const SectionDivider(),
-                  SectionLabel('Notes', number: _isEdit ? 4 : 3),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _notes, label: 'Notes (optional)', maxLength: 1000),
-                  const SizedBox(height: AppTheme.s12),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _marketingOptIn,
-                        onChanged: (v) => setState(() => _marketingOptIn = v ?? false),
-                      ),
-                      const Expanded(
-                        child: Text('Okay to send offers', style: TextStyle(color: AppTheme.text, fontSize: 13)),
-                      ),
-                    ],
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.person_add_alt_1_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: submitting ? null : _save,
-              child: submitting
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Save'),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _isEdit ? 'Edit customer' : 'Add customer',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_error != null) ...[
+                        _ErrorBanner(_error!),
+                        const SizedBox(height: AppTheme.s12),
+                      ],
+
+                      const SectionLabel('Identity', number: 1, icon: Icons.badge_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _name,
+                        label: 'Name',
+                        required: true,
+                        errorText: _nameError,
+                        focusNode: _nameFocus,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(
+                        dense: true,
+                        controller: _phone,
+                        label: 'Phone',
+                        required: true,
+                        readOnly: _isEdit,
+                        keyboardType: TextInputType.phone,
+                        maxLength: 10,
+                        errorText: _phoneError,
+                        focusNode: _phoneFocus,
+                        hint: '9876543210',
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      if (_isEdit) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        const Text(
+                          "Phone can't be changed here.",
+                          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        ),
+                      ],
+
+                      const SectionDivider(),
+                      const SectionLabel('Contact', number: 2, icon: Icons.call_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _email,
+                        label: 'Email (optional)',
+                        keyboardType: TextInputType.emailAddress,
+                        errorText: _emailError,
+                        focusNode: _emailFocus,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _tags, label: 'Tags (optional)', hint: 'e.g. VIP, Repeat guest'),
+
+                      if (_isEdit) ...[
+                        const SectionDivider(),
+                        const SectionLabel('ID proof', number: 3, icon: Icons.badge_outlined),
+                        const SizedBox(height: AppTheme.s12),
+                        NeuField(dense: true, controller: _idProofType, label: 'ID proof type (optional)', hint: 'e.g. Aadhaar'),
+                        const SizedBox(height: AppTheme.s8),
+                        NeuField(dense: true, controller: _idProofNumber, label: 'ID proof number (optional)'),
+                      ],
+
+                      const SectionDivider(),
+                      SectionLabel('Notes', number: _isEdit ? 4 : 3, icon: Icons.notes_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(dense: true, controller: _notes, label: 'Notes (optional)', maxLength: 1000),
+                      const SizedBox(height: AppTheme.s8),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _marketingOptIn,
+                            onChanged: (v) => setState(() => _marketingOptIn = v ?? false),
+                          ),
+                          const Expanded(
+                            child: Text('Okay to send offers', style: TextStyle(color: AppTheme.text, fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuButton(
+                  primary: true,
+                  expand: true,
+                  onPressed: submitting ? null : _save,
+                  child: submitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

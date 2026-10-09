@@ -43,6 +43,15 @@ class _PaymentRowState extends State<PaymentRow> {
     super.dispose();
   }
 
+  /// A distinct mark per method so the closed field and the open menu read
+  /// at a glance rather than by the label text alone.
+  static IconData _iconFor(String method) => switch (method) {
+        'CASH' => Icons.payments_outlined,
+        'UPI' => Icons.qr_code_scanner_rounded,
+        'CARD' => Icons.credit_card_rounded,
+        _ => Icons.account_balance_wallet_outlined,
+      };
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -58,23 +67,69 @@ class _PaymentRowState extends State<PaymentRow> {
                     value: widget.line.method,
                     isExpanded: true,
                     isDense: true,
-                    dropdownColor: AppTheme.bg,
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppTheme.muted,
+                      size: 20,
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                    elevation: 6,
+                    dropdownColor: AppTheme.card,
                     hint: const Text(
                       'Choose one',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: AppTheme.muted, fontSize: 13),
                     ),
+                    // A compact icon + label once closed — the fuller row
+                    // below is only worth the width while the menu is open.
+                    selectedItemBuilder: (context) => [
+                      for (final e in kPaymentMethods.entries)
+                        Row(
+                          children: [
+                            Icon(_iconFor(e.key), size: 16, color: AppTheme.accent),
+                            const SizedBox(width: AppTheme.s8),
+                            Expanded(
+                              child: Text(
+                                e.value,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.heading,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
                     items: [
                       for (final e in kPaymentMethods.entries)
                         DropdownMenuItem(
                           value: e.key,
-                          child: Text(
-                            e.value,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: false,
-                            style: const TextStyle(fontSize: 13),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 26,
+                                height: 26,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accent.withValues(alpha: 0.10),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(_iconFor(e.key), size: 14, color: AppTheme.accent),
+                              ),
+                              const SizedBox(width: AppTheme.s12),
+                              Text(
+                                e.value,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+                              ),
+                            ],
                           ),
                         ),
                     ],

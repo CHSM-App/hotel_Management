@@ -524,7 +524,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SectionLabel("Where's it going", number: 1),
+                    const SectionLabel("Where's it going", number: 1, icon: Icons.near_me_rounded),
                     const SizedBox(height: AppTheme.s8),
                     _TargetField(
                       tables: _tables,
@@ -723,7 +723,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                         ),
                         const SizedBox(height: AppTheme.s8),
                       ],
-                      SectionLabel('Menu', number: menuNumber),
+                      SectionLabel('Menu', number: menuNumber, icon: Icons.restaurant_menu_rounded),
                       const SizedBox(height: AppTheme.s8),
                       NeuField(
                         controller: _search,
@@ -808,6 +808,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                         SectionLabel(
                           'Order (${_lines.length})',
                           number: menuNumber + 1,
+                          icon: Icons.shopping_cart_rounded,
                         ),
                         const SizedBox(height: AppTheme.s8),
                         for (final line in _lines)
