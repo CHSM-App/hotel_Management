@@ -1,0 +1,149 @@
+/* Standalone page the post-checkout WhatsApp link opens — deliberately not
+   the dashboard shell: one card, no sidebar, no nav, same shape as
+   AssetQrPage.css since both are "a stranger's phone opened this link". */
+
+.feedback-page {
+  min-height: 100svh;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px 48px;
+  background: var(--paper);
+}
+
+.feedback-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 24px 20px;
+  height: fit-content;
+}
+
+.feedback-card--center {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 48px 20px;
+}
+
+.feedback-error {
+  color: var(--danger);
+  font-size: 13.5px;
+  margin: 4px 0 0;
+}
+
+.feedback-header h1 {
+  font-family: var(--sans);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+
+.feedback-header p {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.feedback-stars {
+  display: flex;
+  gap: 6px;
+}
+
+.feedback-star {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--border);
+  cursor: pointer;
+  transition: color 120ms ease, transform 120ms ease;
+}
+
+.feedback-star:hover {
+  transform: scale(1.08);
+}
+
+.feedback-star--on {
+  color: #F5A623;
+}
+
+.feedback-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.feedback-field textarea {
+  resize: vertical;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+}
+
+.feedback-field textarea:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.feedback-submit {
+  min-height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+}
+
+.feedback-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.feedback-thanks {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.feedback-thanks__icon {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.feedback-thanks h1 {
+  font-family: var(--sans);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+
+.feedback-thanks p {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+@media (min-width: 480px) {
+  .feedback-page {
+    padding-top: 48px;
+  }
+}

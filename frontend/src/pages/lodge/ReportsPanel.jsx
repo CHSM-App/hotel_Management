@@ -58,6 +58,10 @@ const ALL_TABS = [
   { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
   // Counts, not sales: linen through the wash, and guest laundry orders.
   { key: 'laundry', label: 'Laundry', capability: 'hasLaundry' },
+  // Submitted responses to the post-checkout "how was your stay" WhatsApp
+  // link — no capability gate, since it rides on room bookings every
+  // property with rooms already has.
+  { key: 'feedback', label: 'Guest Feedback', capability: 'hasRooms' },
   { key: 'bills', label: 'Bills' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
@@ -274,6 +278,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const [servicesReportError, setServicesReportError] = useState('');
   const [laundryReport, setLaundryReport] = useState(null);
   const [laundryReportError, setLaundryReportError] = useState('');
+  const [feedbackReport, setFeedbackReport] = useState(null);
+  const [feedbackReportError, setFeedbackReportError] = useState('');
   const [profitLoss, setProfitLoss] = useState(null);
   const [profitLossError, setProfitLossError] = useState('');
   // The Screener-style multi-year table — full history, not the date-range
@@ -579,6 +585,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     apiGet(`/reports/laundry?fromDate=${fromDate}&toDate=${toDate}`, { token })
       .then((data) => setLaundryReport(data))
       .catch((err) => setLaundryReportError(err instanceof ApiError ? err.message : 'Could not load the laundry report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab]);
+
+  useEffect(() => {
+    if (!validRange || activeTab !== 'feedback') return;
+    setFeedbackReport(null);
+    setFeedbackReportError('');
+    apiGet(`/reports/feedback?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setFeedbackReport(data))
+      .catch((err) => setFeedbackReportError(err instanceof ApiError ? err.message : 'Could not load the feedback report.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, activeTab]);
 
@@ -1966,9 +1982,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                         <span className="reports-panel__muted">what vendors charged the lodge</span>
                       </div>
                     )}
+                    <div className={`reports-panel__stat ${laundryReport.guest.totals.profit >= 0 ? 'reports-panel__stat--positive' : 'reports-panel__stat--warning'}`}>
+                      <span className="reports-panel__stat-label">Profit</span>
+                      <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.profit)}</span>
+                      <span className="reports-panel__muted">handed over, minus vendor price</span>
+                    </div>
                   </div>
                   <p className="reports-panel__muted">
-                    These amounts are already counted in Other services and on the bills. They are shown here for information only.
+                    Handed over, Still open and Vendor prices are already counted in Other services and on the bills — shown
+                    here for information only. The vendor price itself is also logged under the Laundry expense category, so
+                    it reduces the lodge&rsquo;s Profit &amp; Loss there, same as any other expense.
                   </p>
 
                   {laundryReport.guest.orders.length > 0 && (
@@ -1984,6 +2007,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                               <th>Taken in</th>
                               <th>Handed over</th>
                               <th>Amount</th>
+                              <th>Profit</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2004,6 +2028,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                                 <td>{formatTimestamp(o.receivedAt)}</td>
                                 <td>{o.deliveredAt ? formatTimestamp(o.deliveredAt) : '—'}</td>
                                 <td>{formatPrice(o.total)}</td>
+                                <td>{o.profit == null ? '—' : formatPrice(o.profit)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2012,6 +2037,69 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     </div>
                   )}
                 </>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {activeTab === 'feedback' && (
+        <>
+          {feedbackReportError && (
+            <div className="dash-card">
+              <div className="dash-state">{feedbackReportError}</div>
+            </div>
+          )}
+          {!feedbackReportError && validRange && !feedbackReport && (
+            <div className="dash-card">
+              <PageLoader inline label="Loading" />
+            </div>
+          )}
+          {!feedbackReportError && feedbackReport && (
+            <>
+              <p className="reports-panel__section-label">Submitted feedback in this period</p>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Responses</span>
+                  <span className="reports-panel__stat-value">{feedbackReport.totals.count}</span>
+                </div>
+                <div className={`reports-panel__stat ${feedbackReport.totals.averageRating == null || feedbackReport.totals.averageRating >= 4 ? 'reports-panel__stat--positive' : 'reports-panel__stat--warning'}`}>
+                  <span className="reports-panel__stat-label">Average rating</span>
+                  <span className="reports-panel__stat-value">
+                    {feedbackReport.totals.averageRating == null ? '—' : `${feedbackReport.totals.averageRating} / 5`}
+                  </span>
+                </div>
+              </div>
+
+              {feedbackReport.responses.length === 0 ? (
+                <p className="reports-panel__muted">No feedback has been submitted in this period yet.</p>
+              ) : (
+                <div className="dash-card">
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Guest</th>
+                          <th>Checked out</th>
+                          <th>Rating</th>
+                          <th>Comment</th>
+                          <th>Submitted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {feedbackReport.responses.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.guestName || '—'}</td>
+                            <td>{formatDateOnly(String(r.checkOutDate).slice(0, 10))}</td>
+                            <td>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</td>
+                            <td>{r.comment || <span className="reports-panel__muted">No comment</span>}</td>
+                            <td>{formatTimestamp(r.submittedAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </>
           )}

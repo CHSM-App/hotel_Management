@@ -647,6 +647,87 @@ async function logAssetExpense(
   await recalcExpensePaymentStatus(pool, expenseId);
 }
 
+// Same shape as resolveAssetExpenseCategoryId above, for what an outside
+// laundry is paid — guest orders and the hotel's own linen both land here,
+// since both are the same kind of cost (money paid to a washer) just
+// recorded on different tables (laundry_orders / linen_movements).
+async function resolveLaundryExpenseCategoryId(pool, lodgeId) {
+  const name = 'Laundry';
+  const existing = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, name)
+    .query('SELECT id FROM dbo.expense_categories WHERE lodge_id = @lodgeId AND name = @name');
+  if (existing.recordset.length > 0) return existing.recordset[0].id;
+
+  const created = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('name', sql.NVarChar, name)
+    .query(`
+      INSERT INTO dbo.expense_categories (lodge_id, name)
+      OUTPUT inserted.id
+      VALUES (@lodgeId, @name)
+    `);
+  return created.recordset[0].id;
+}
+
+// Mirrors logAssetExpense: called best-effort, after the laundry/linen
+// transaction that set wash_charge has already committed (see
+// setLaundryStatus and addMovements in housekeeping.service.js), so a
+// logging hiccup here never blocks the real save. Exactly one of
+// laundryOrderId/linenMovementId is passed, matching whichever table the
+// vendor charge was entered on; it doubles as an idempotency key so the
+// same order/movement is never logged twice.
+async function logLaundryExpense(lodgeId, { laundryOrderId, linenMovementId, title, amount, expenseDate }) {
+  if (!amount || Number(amount) <= 0) return;
+  const pool = await getPool();
+
+  const existing = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('laundryOrderId', sql.BigInt, laundryOrderId ?? null)
+    .input('linenMovementId', sql.BigInt, linenMovementId ?? null)
+    .query(`
+      SELECT TOP 1 id FROM dbo.expenses
+      WHERE lodge_id = @lodgeId
+        AND ((@laundryOrderId IS NOT NULL AND laundry_order_id = @laundryOrderId)
+          OR (@linenMovementId IS NOT NULL AND linen_movement_id = @linenMovementId))
+    `);
+  if (existing.recordset.length > 0) return;
+
+  const categoryId = await resolveLaundryExpenseCategoryId(pool, lodgeId);
+
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('categoryId', sql.BigInt, categoryId)
+    .input('laundryOrderId', sql.BigInt, laundryOrderId ?? null)
+    .input('linenMovementId', sql.BigInt, linenMovementId ?? null)
+    .input('title', sql.NVarChar, title)
+    .input('amount', sql.Decimal(12, 2), amount)
+    .input('expenseDate', sql.Date, expenseDate)
+    .query(`
+      INSERT INTO dbo.expenses
+        (lodge_id, category_id, laundry_order_id, linen_movement_id, title, amount, payment_method, expense_date)
+      OUTPUT inserted.id
+      VALUES
+        (@lodgeId, @categoryId, @laundryOrderId, @linenMovementId, @title, @amount, 'CASH', @expenseDate)
+    `);
+
+  const expenseId = result.recordset[0].id;
+  await pool
+    .request()
+    .input('expenseId', sql.BigInt, expenseId)
+    .input('amount', sql.Decimal(12, 2), amount)
+    .input('paidDate', sql.Date, expenseDate)
+    .query(`
+      INSERT INTO dbo.expense_payments (expense_id, amount, payment_method, paid_date)
+      VALUES (@expenseId, @amount, 'CASH', @paidDate)
+    `);
+  await recalcExpensePaymentStatus(pool, expenseId);
+}
+
 // ---------------------------------------------------------------------------
 // Recurring templates
 // ---------------------------------------------------------------------------
@@ -819,4 +900,5 @@ module.exports = {
   updateTemplate,
   logRecurringOccurrence,
   logAssetExpense,
+  logLaundryExpense,
 };

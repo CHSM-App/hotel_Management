@@ -26,6 +26,7 @@ import {
 import './forms.css';
 import './InventoryPanel.css';
 import './AnalyticsCharts.css';
+import './FinanceTabs.css';
 
 const FREQUENCY_LABEL = { MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', YEARLY: 'Yearly' };
 
@@ -989,8 +990,10 @@ export default function ExpensesPanel({ onViewReport }) {
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <SectionTabs ariaLabel="Expenses sections" activeId={tab} onChange={setTab} tabs={tabs} />
+      <div className="finance-tabs-row">
+        <div className="finance-tabs">
+          <SectionTabs ariaLabel="Expenses sections" activeId={tab} onChange={setTab} tabs={tabs} />
+        </div>
         <button type="button" className="btn-secondary" onClick={onViewReport}>
           View Report
         </button>
@@ -1156,7 +1159,7 @@ export default function ExpensesPanel({ onViewReport }) {
             </p>
           ) : expenseView === 'table' ? (
             <div className="asset-table-wrap">
-              <table className="asset-table">
+              <table className="asset-table finance-table">
                 <thead>
                   <tr>
                     {[

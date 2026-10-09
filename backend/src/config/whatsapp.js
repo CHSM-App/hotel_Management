@@ -39,7 +39,7 @@ const BILL_TEMPLATE_ID = process.env.WHATSAPP_BILL_TEMPLATE_ID || '';
 // this one, same as the other two.
 //
 // Its seven variables, in order, are built by cancellationNotice.js:
-//   {{1}} name  {{2}} hotel_name  {{3}} b_id  {{4}} check_in
+//   {{1}} name  {{2}} hotel_name  {{3}} room_no  {{4}} check_in
 //   {{5}} checkout  {{6}} reason  {{7}} refund_mode_amount
 const CANCELLATION_TEMPLATE_ID = process.env.WHATSAPP_CANCELLATION_TEMPLATE_ID || '';
 // The approved "here is your receipt" template, sent from the advance-receipt
@@ -52,6 +52,45 @@ const CANCELLATION_TEMPLATE_ID = process.env.WHATSAPP_CANCELLATION_TEMPLATE_ID |
 //   {{1}} name  {{2}} hotel_name  {{3}} receipt_number
 //   {{4}} amt  {{5}} payment_method  {{6}} link
 const RECEIPT_TEMPLATE_ID = process.env.WHATSAPP_RECEIPT_TEMPLATE_ID || '';
+// The approved "welcome" template, sent once a guest is checked in. Its own
+// approval, separate from the booking-confirmation one — a confirmation goes
+// out before the stay even starts, this one lands the moment the guest is
+// actually standing in the room — so a property can have either, both, or
+// neither approved yet.
+//
+// Its five variables, in order, are built by checkinWelcome.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} room_no
+//   {{4}} checkout  {{5}} phone
+const CHECKIN_TEMPLATE_ID = process.env.WHATSAPP_CHECKIN_TEMPLATE_ID || '';
+// The approved "your stay is coming up" reminder template. Sent once per
+// booking by the daily sweep (stayReminders.service.js) — three days before
+// a stay booked with enough lead time to say that truthfully, or the day
+// before a stay booked too close to its own check-in for a three-day notice
+// to have ever been true. Its own approval, separate from every other
+// template here, same reasoning as the rest.
+//
+// Its six variables, in order, are built by stayReminder.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} days_away
+//   {{4}} check_in  {{5}} check_out  {{6}} phone
+const REMINDER_TEMPLATE_ID = process.env.WHATSAPP_REMINDER_TEMPLATE_ID || '';
+// The approved "please share your feedback" template. Sent a few hours after
+// checkout by its own sweep (feedbackRequests.service.js) — the link in it
+// opens a page this app hosts itself (dbo.feedback_requests), not something
+// the owner has to configure. Its own approval, separate from every other
+// template here, same reasoning as the rest.
+//
+// Its three variables, in order, are built by feedbackRequest.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} feedback_link
+const FEEDBACK_TEMPLATE_ID = process.env.WHATSAPP_FEEDBACK_TEMPLATE_ID || '';
+// The approved birthday-wishes template. Sent once per birthday by its own
+// daily sweep (birthdayWishes.service.js) — keyed on dbo.customers'
+// date_of_birth, which is entered by hand on a customer's profile and
+// nowhere derived automatically. Its own approval, separate from every
+// other template here, same reasoning as the rest.
+//
+// Its two variables, in order, are built by birthdayWishes.js:
+//   {{1}} name  {{2}} hotel_name
+const BIRTHDAY_TEMPLATE_ID = process.env.WHATSAPP_BIRTHDAY_TEMPLATE_ID || '';
 
 // Indian numbers, in the shapes people actually type them: ten digits, ten with
 // a leading zero, or already carrying the 91 country code. Anything else is
@@ -156,6 +195,34 @@ function isReceiptTemplateConfigured() {
   return isConfigured() && !isPlaceholder(RECEIPT_TEMPLATE_ID);
 }
 
+// The same question for the check-in welcome template. Asked by the
+// notifier before it reads anything, same shape as the cancellation check
+// above.
+function isCheckinTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(CHECKIN_TEMPLATE_ID);
+}
+
+// The same question for the stay-reminder template. Asked by the daily sweep
+// before it even queries for bookings due a reminder, so an unconfigured
+// install doesn't pay for a query whose answer it can't send anyway.
+function isReminderTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(REMINDER_TEMPLATE_ID);
+}
+
+// The same question for the feedback-request template. Asked by the daily
+// sweep before it even queries for checked-out bookings, so an unconfigured
+// install doesn't pay for a query whose answer it can't send anyway.
+function isFeedbackTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(FEEDBACK_TEMPLATE_ID);
+}
+
+// The same question for the birthday-wishes template. Asked by the daily
+// sweep before it even queries for birthdays, so an unconfigured install
+// doesn't pay for a query whose answer it can't send anyway.
+function isBirthdayTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(BIRTHDAY_TEMPLATE_ID);
+}
+
 async function sendOtp(phone, otpCode) {
   if (!isConfigured()) {
     throw new Error('WhatsApp API token is not configured.');
@@ -228,8 +295,16 @@ module.exports = {
   isBillTemplateConfigured,
   isCancellationTemplateConfigured,
   isReceiptTemplateConfigured,
+  isCheckinTemplateConfigured,
+  isReminderTemplateConfigured,
+  isFeedbackTemplateConfigured,
+  isBirthdayTemplateConfigured,
   BOOKING_TEMPLATE_ID,
   BILL_TEMPLATE_ID,
   CANCELLATION_TEMPLATE_ID,
   RECEIPT_TEMPLATE_ID,
+  CHECKIN_TEMPLATE_ID,
+  REMINDER_TEMPLATE_ID,
+  FEEDBACK_TEMPLATE_ID,
+  BIRTHDAY_TEMPLATE_ID,
 };

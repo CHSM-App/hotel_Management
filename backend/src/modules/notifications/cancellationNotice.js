@@ -8,14 +8,19 @@ const whatsapp = require('../../config/whatsapp');
 //
 //   {{1}} name           {{5}} checkout
 //   {{2}} hotel_name      {{6}} reason
-//   {{3}} b_id (booking)  {{7}} refund_mode_amount
+//   {{3}} room_no          {{7}} refund_mode_amount
 //   {{4}} check_in
 //
 // "Dear {{1}}, {{2}}, Your booking has been cancelled as per your request.
-//  Booking Details: Booking ID: #{{3}} / Check-in: {{4}} / Check-out: {{5}}
+//  Booking Details: Room No: {{3}} / Check-in: {{4}} / Check-out: {{5}}
 //  / {{6}} / {{7}} / Your refund will be processed within a few business
 //  days. If you did not request this cancellation, please contact us
 //  immediately. We hope to welcome you another time."
+//
+// room_no, not a booking ID — nowhere else in the system shows a guest their
+// booking ID, so a WhatsApp message naming one would be the only place it
+// ever surfaces, with no screen to look it up against. The room number is
+// what the guest actually recognises from their stay.
 //
 // Best-effort, by design — same reasoning as bookingConfirmation.js. The
 // cancellation is already committed when this runs, and a provider outage
@@ -34,17 +39,14 @@ function clean(value) {
   return text || '-';
 }
 
-// Same comma-safety as clean(), but leaves a genuinely empty value empty
-// instead of falling back to '-'. Used only for the cancellation reason: a
-// guest who cancels without giving one should see that slot blank in the
-// WhatsApp message, not a placeholder dash standing in for a reason nobody
-// gave.
-function cleanOptional(value) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s*,\s*/g, ' - ')
-    .trim();
-}
+// This used to leave a missing cancellation reason as a genuine empty
+// string rather than falling back to '-' like every other variable. But
+// WhatsApp's template API rejects a body parameter that's empty — and
+// SMSala's /SendMessage responds with success at submission regardless,
+// so the failure never came back as anything this code could see: the
+// desk got "WhatsApp notice sent", and the guest got nothing. clean()'s
+// own '-' fallback is what every other slot already relies on; the reason
+// slot needs the same guarantee of never being empty.
 
 function dateParts(value) {
   if (typeof value === 'string') {
@@ -81,14 +83,19 @@ function refundModeAmount(booking) {
 // The seven template values, in template order. Pure, so it can be checked
 // without a database; booking is getBooking()'s mapped shape (camelCase) —
 // see notifyBookingCancelled — lodge the raw dbo.lodges row.
+//
+// roomNumbers, not roomNumber: a booking can hold more than one room, and
+// mapBooking() already joins them into one display string ("204, 205") for
+// exactly this kind of guest-facing slot — roomNumber alone would silently
+// drop every room past the first on a multi-room booking.
 function buildCancellationSample(booking, lodge) {
   return [
     clean(booking.guestName),
     clean(lodge.name),
-    clean(`#${booking.id}`),
+    clean(booking.roomNumbers),
     clean(formatDate(booking.checkInDate)),
     clean(formatDate(booking.checkOutDate)),
-    cleanOptional(booking.cancelReason),
+    clean(booking.cancelReason),
     clean(refundModeAmount(booking)),
   ];
 }
@@ -131,5 +138,4 @@ module.exports = {
   buildCancellationSample,
   refundModeAmount,
   clean,
-  cleanOptional,
 };
