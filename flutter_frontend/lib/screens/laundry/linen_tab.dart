@@ -838,11 +838,41 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
+/// What a movement sorts on for each column, index for index with [_cols] —
+/// mirrors linenSortRow on the web: a date cell shows "08 Oct 2026", which
+/// does not sort as a date, so the timestamp itself is compared instead.
+int _compareMovements(LinenMovement a, LinenMovement b, int col) {
+  switch (col) {
+    case 0:
+    case 1:
+      return (DateTime.tryParse(a.createdAt) ?? DateTime(0)).compareTo(DateTime.tryParse(b.createdAt) ?? DateTime(0));
+    case 2:
+      return (kLinenMoveLabel[a.kind] ?? a.kind).compareTo(kLinenMoveLabel[b.kind] ?? b.kind);
+    case 3:
+      return a.placeLabel.compareTo(b.placeLabel);
+    case 4:
+      return a.itemName.compareTo(b.itemName);
+    case 5:
+      return a.quantity.compareTo(b.quantity);
+    case 6:
+      return (a.washedBy ?? '').compareTo(b.washedBy ?? '');
+    case 7:
+      return (a.washCharge ?? 0).compareTo(b.washCharge ?? 0);
+    case 8:
+      return (a.userName ?? '').compareTo(b.userName ?? '');
+    case 9:
+      return (a.note ?? '').compareTo(b.note ?? '');
+    default:
+      return 0;
+  }
+}
+
 /// The linen history as a classic spreadsheet — the same Date/Time/Action/
 /// Room/Item/Qty/Washed by/Charge/Entered by/Note columns as the web's
 /// LinenActivity table, scrolling sideways rather than cramming onto a
-/// phone-width screen.
-class _HistoryTable extends StatelessWidget {
+/// phone-width screen. A heading sorts by its column; tapping it again turns
+/// it round — mirrors SheetTable on the web.
+class _HistoryTable extends StatefulWidget {
   final List<LinenMovement> movements;
   const _HistoryTable({required this.movements});
 
@@ -860,8 +890,32 @@ class _HistoryTable extends StatelessWidget {
   ];
 
   @override
+  State<_HistoryTable> createState() => _HistoryTableState();
+}
+
+class _HistoryTableState extends State<_HistoryTable> {
+  int? _sortCol;
+  int _sortDir = 1;
+
+  void _toggleSort(int col) => setState(() {
+    if (_sortCol == col) {
+      _sortDir = -_sortDir;
+    } else {
+      _sortCol = col;
+      _sortDir = 1;
+    }
+  });
+
+  @override
   Widget build(BuildContext context) {
-    final totalWidth = _cols.fold<double>(0, (sum, c) => sum + c.$2);
+    final cols = _HistoryTable._cols;
+    final totalWidth = cols.fold<double>(0, (sum, c) => sum + c.$2);
+
+    final movements = [...widget.movements];
+    final sortCol = _sortCol;
+    if (sortCol != null) {
+      movements.sort((a, b) => _compareMovements(a, b, sortCol) * _sortDir);
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.rMedium),
@@ -877,10 +931,67 @@ class _HistoryTable extends StatelessWidget {
                   color: AppTheme.sidebarBrandWash,
                   border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
                 ),
-                child: Row(children: [for (final c in _cols) _HeaderCell(c.$1, width: c.$2, alignStart: c.$3)]),
+                child: Row(
+                  children: [
+                    for (var c = 0; c < cols.length; c++)
+                      _SortableHeaderCell(
+                        cols[c].$1,
+                        width: cols[c].$2,
+                        alignStart: cols[c].$3,
+                        sortDir: sortCol == c ? _sortDir : null,
+                        onTap: () => _toggleSort(c),
+                      ),
+                  ],
+                ),
               ),
               for (var i = 0; i < movements.length; i++)
                 _HistoryRow(movement: movements[i], shaded: i.isOdd),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A [_HeaderCell] that sorts its column on tap, with the same ▲/▼/⇅ cue the
+/// web's hk-sort button uses.
+class _SortableHeaderCell extends StatelessWidget {
+  final String label;
+  final double width;
+  final bool alignStart;
+  final int? sortDir;
+  final VoidCallback onTap;
+
+  const _SortableHeaderCell(this.label, {required this.width, this.alignStart = false, required this.sortDir, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = sortDir == null ? Icons.unfold_more_rounded : (sortDir == 1 ? Icons.arrow_drop_up_rounded : Icons.arrow_drop_down_rounded);
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4, vertical: 6),
+          child: Row(
+            mainAxisAlignment: alignStart ? MainAxisAlignment.start : MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  label.toUpperCase(),
+                  textAlign: alignStart ? TextAlign.left : TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: sortDir != null ? AppTheme.accent : AppTheme.sidebarBrandInk,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+              Icon(icon, size: 14, color: sortDir != null ? AppTheme.accent : AppTheme.sidebarBrandInk),
             ],
           ),
         ),

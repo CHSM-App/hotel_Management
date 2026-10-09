@@ -270,11 +270,35 @@ class _OrderCard extends StatelessWidget {
   }
 }
 
+/// What an order sorts on for each sortable column — mirrors guestSortRow on
+/// the web, which sorts Received/Delivered on the timestamp rather than the
+/// formatted date+time text the cell actually shows. Null marks a column
+/// that isn't sortable (Items is free text, Action is buttons).
+int? _compareOrders(LaundryOrder a, LaundryOrder b, int col) {
+  switch (col) {
+    case 0:
+      return a.tagNumber.compareTo(b.tagNumber);
+    case 1:
+      return (a.guestName.isEmpty ? 'Walk-in' : a.guestName).compareTo(b.guestName.isEmpty ? 'Walk-in' : b.guestName);
+    case 3:
+      return a.pieces.compareTo(b.pieces);
+    case 4:
+      return a.total.compareTo(b.total);
+    case 5:
+      return (DateTime.tryParse(a.receivedAt) ?? DateTime(0)).compareTo(DateTime.tryParse(b.receivedAt) ?? DateTime(0));
+    case 6:
+      return a.status.compareTo(b.status);
+    default:
+      return null;
+  }
+}
+
 /// Every order as a classic spreadsheet — one fixed-width column per field,
 /// scrolling sideways rather than cramming onto a phone-width screen. Same
 /// construction as the linen history table (linen_tab.dart's _HistoryTable)
-/// and the expense register's own table view.
-class _OrderTable extends StatelessWidget {
+/// and the expense register's own table view. A heading sorts by its
+/// column; tapping it again turns it round — mirrors SheetTable on the web.
+class _OrderTable extends StatefulWidget {
   final List<LaundryOrder> orders;
   final bool busy;
   final ValueChanged<LaundryOrder> onReceive;
@@ -293,8 +317,39 @@ class _OrderTable extends StatelessWidget {
   static const _actionsW = 160.0;
 
   @override
+  State<_OrderTable> createState() => _OrderTableState();
+}
+
+class _OrderTableState extends State<_OrderTable> {
+  int? _sortCol;
+  int _sortDir = 1;
+
+  void _toggleSort(int col) => setState(() {
+    if (_sortCol == col) {
+      _sortDir = -_sortDir;
+    } else {
+      _sortCol = col;
+      _sortDir = 1;
+    }
+  });
+
+  @override
   Widget build(BuildContext context) {
-    final width = _tagW + _guestW + _itemsW + _piecesW + _totalW + _whenW + _statusW + _actionsW;
+    final width =
+        _OrderTable._tagW +
+        _OrderTable._guestW +
+        _OrderTable._itemsW +
+        _OrderTable._piecesW +
+        _OrderTable._totalW +
+        _OrderTable._whenW +
+        _OrderTable._statusW +
+        _OrderTable._actionsW;
+
+    final orders = [...widget.orders];
+    final sortCol = _sortCol;
+    if (sortCol != null) {
+      orders.sort((a, b) => (_compareOrders(a, b, sortCol) ?? 0) * _sortDir);
+    }
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -314,16 +369,16 @@ class _OrderTable extends StatelessWidget {
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      _OrderHeaderCell('Tag', width: _tagW),
-                      _OrderHeaderCell('Guest / Room', width: _guestW, alignStart: true),
-                      _OrderHeaderCell('Items', width: _itemsW, alignStart: true),
-                      _OrderHeaderCell('Pieces', width: _piecesW),
-                      _OrderHeaderCell('Total', width: _totalW),
-                      _OrderHeaderCell('Received', width: _whenW),
-                      _OrderHeaderCell('Status', width: _statusW),
-                      _OrderHeaderCell('Action', width: _actionsW),
+                      _orderHeader(0, 'Tag', _OrderTable._tagW),
+                      _orderHeader(1, 'Guest / Room', _OrderTable._guestW, alignStart: true),
+                      _orderHeader(2, 'Items', _OrderTable._itemsW, alignStart: true, sortable: false),
+                      _orderHeader(3, 'Pieces', _OrderTable._piecesW),
+                      _orderHeader(4, 'Total', _OrderTable._totalW),
+                      _orderHeader(5, 'Received', _OrderTable._whenW),
+                      _orderHeader(6, 'Status', _OrderTable._statusW),
+                      _orderHeader(7, 'Action', _OrderTable._actionsW, sortable: false),
                     ],
                   ),
                 ),
@@ -331,16 +386,27 @@ class _OrderTable extends StatelessWidget {
                   _OrderTableRow(
                     order: orders[i],
                     shaded: i.isOdd,
-                    busy: busy,
-                    onReceive: () => onReceive(orders[i]),
-                    onDeliver: () => onDeliver(orders[i]),
-                    onCancel: () => onCancel(orders[i]),
+                    busy: widget.busy,
+                    onReceive: () => widget.onReceive(orders[i]),
+                    onDeliver: () => widget.onDeliver(orders[i]),
+                    onCancel: () => widget.onCancel(orders[i]),
                   ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _orderHeader(int col, String label, double width, {bool alignStart = false, bool sortable = true}) {
+    if (!sortable) return _OrderHeaderCell(label, width: width, alignStart: alignStart);
+    return _SortableOrderHeaderCell(
+      label,
+      width: width,
+      alignStart: alignStart,
+      sortDir: _sortCol == col ? _sortDir : null,
+      onTap: () => _toggleSort(col),
     );
   }
 }
@@ -363,6 +429,52 @@ class _OrderHeaderCell extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: AppTheme.sidebarBrandInk, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.3),
+        ),
+      ),
+    );
+  }
+}
+
+/// An [_OrderHeaderCell] that sorts its column on tap, with the same
+/// ▲/▼/⇅ cue the web's hk-sort button uses.
+class _SortableOrderHeaderCell extends StatelessWidget {
+  final String label;
+  final double width;
+  final bool alignStart;
+  final int? sortDir;
+  final VoidCallback onTap;
+
+  const _SortableOrderHeaderCell(this.label, {required this.width, this.alignStart = false, required this.sortDir, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = sortDir == null ? Icons.unfold_more_rounded : (sortDir == 1 ? Icons.arrow_drop_up_rounded : Icons.arrow_drop_down_rounded);
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4, vertical: 6),
+          child: Row(
+            mainAxisAlignment: alignStart ? MainAxisAlignment.start : MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  label.toUpperCase(),
+                  textAlign: alignStart ? TextAlign.left : TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: sortDir != null ? AppTheme.accent : AppTheme.sidebarBrandInk,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+              Icon(icon, size: 14, color: sortDir != null ? AppTheme.accent : AppTheme.sidebarBrandInk),
+            ],
+          ),
         ),
       ),
     );

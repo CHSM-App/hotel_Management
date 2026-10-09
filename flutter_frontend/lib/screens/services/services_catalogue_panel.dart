@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constant.dart';
 import '../../domain/models/lodge_service.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
@@ -96,6 +97,19 @@ class _ServiceCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (service.image != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                child: Image.network(
+                  '$baseUrl/service-images/${service.image}',
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(width: 48, height: 48),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

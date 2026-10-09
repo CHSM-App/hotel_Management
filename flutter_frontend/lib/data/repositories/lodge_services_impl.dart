@@ -12,10 +12,10 @@ class LodgeServicesImpl implements LodgeServicesRepository {
   Future<List<LodgeService>> services({bool includeInactive = false}) => api.lodgeServices(includeInactive: includeInactive);
 
   @override
-  Future<LodgeService> createService(Map<String, dynamic> body) => api.createLodgeService(body);
+  Future<LodgeService> createService(dynamic body) => api.createLodgeService(body);
 
   @override
-  Future<LodgeService> updateService(int id, Map<String, dynamic> body) => api.updateLodgeService(id, body);
+  Future<LodgeService> updateService(int id, dynamic body) => api.updateLodgeService(id, body);
 
   @override
   Future<List<ServiceUsage>> usages({String status = 'all'}) => api.serviceUsages(status: status);

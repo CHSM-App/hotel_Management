@@ -5,9 +5,9 @@ import '../models/lodge_service.dart';
 abstract class LodgeServicesRepository {
   Future<List<LodgeService>> services({bool includeInactive = false});
 
-  Future<LodgeService> createService(Map<String, dynamic> body);
+  Future<LodgeService> createService(dynamic body);
 
-  Future<LodgeService> updateService(int id, Map<String, dynamic> body);
+  Future<LodgeService> updateService(int id, dynamic body);
 
   Future<List<ServiceUsage>> usages({String status = 'all'});
 

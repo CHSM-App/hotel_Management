@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
+import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/switchable_charge_listing.dart';
@@ -94,6 +95,19 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       state = state.copyWith(isLoading: false, error: messageFor(e), errorField: apiErrorField(e));
     }
   }
+
+  // ── Price simulator ──────────────────────────────────────────────────────
+  //
+  // Not reflected on [state]: PriceSimulatorPanel owns its own room/date/
+  // extras selection and loading flag, the same way PriceSimulatorPanel.jsx
+  // keeps that as local state rather than lifting it into the shared store.
+
+  Future<PriceSimulation> simulatePrice({
+    required int roomId,
+    required String date,
+    required String toDate,
+    String? chargeIds,
+  }) => usecase.simulatePrice(roomId: roomId, date: date, toDate: toDate, chargeIds: chargeIds);
 
   // ── Rooms ─────────────────────────────────────────────────────────────────
 

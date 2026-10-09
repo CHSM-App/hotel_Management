@@ -190,6 +190,26 @@ class ApiService {
     return MultiRoomQuote.fromJson(_map(res.data));
   }
 
+  /// The price simulator's own fetch: a line-by-line breakdown for a room
+  /// and a stay with no booking attached — see pricing.routes.js's /simulate.
+  Future<PriceSimulation> simulatePrice({
+    required int roomId,
+    required String date,
+    required String toDate,
+    String? chargeIds,
+  }) async {
+    final res = await _dio.get(
+      '/pricing/simulate',
+      queryParameters: {
+        'roomId': roomId,
+        'date': date,
+        'toDate': toDate,
+        if (chargeIds != null && chargeIds.isNotEmpty) 'chargeIds': chargeIds,
+      },
+    );
+    return PriceSimulation.fromJson(_map(res.data));
+  }
+
   /// The bed picker's own fetch, for a dormitory room and a chosen stay —
   /// which beds are free, and whether the whole room can still be bought out.
   Future<AvailableBeds> availableBeds({
@@ -2257,12 +2277,14 @@ class ApiService {
         .toList();
   }
 
-  Future<LodgeService> createLodgeService(Map<String, dynamic> body) async {
+  /// Plain JSON for a status-only change (toggleActive); multipart FormData
+  /// when the form carries a photo — see serviceImageUpload on the server.
+  Future<LodgeService> createLodgeService(dynamic body) async {
     final res = await _dio.post('/lodge-services', data: body);
     return LodgeService.fromJson(_map(res.data)['service'] as Map<String, dynamic>);
   }
 
-  Future<LodgeService> updateLodgeService(int id, Map<String, dynamic> body) async {
+  Future<LodgeService> updateLodgeService(int id, dynamic body) async {
     final res = await _dio.patch('/lodge-services/$id', data: body);
     return LodgeService.fromJson(_map(res.data)['service'] as Map<String, dynamic>);
   }

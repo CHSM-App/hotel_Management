@@ -1,9 +1,15 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../core/constant.dart';
 import '../../domain/models/lodge_service.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/photo_source_sheet.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 
@@ -45,6 +51,8 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
   late String? _unit = widget.service == null
       ? 'use'
       : (kServiceUnitSuggestions.contains(widget.service!.unitLabel) ? widget.service!.unitLabel : null);
+  XFile? _newPhoto;
+  bool _removeImage = false;
   String? _error;
 
   /// Whether Save has been pressed at least once — a field that hasn't been
@@ -114,13 +122,32 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
 
     final price = num.parse(_price.text.trim());
     final unitLabel = (_unit ?? _unitOther.text.trim()).trim();
-    final ok = await ref.read(lodgeServicesViewModelProvider.notifier).saveService(
-      {
+    final gst = num.tryParse(_gst.text.trim()) ?? 18;
+
+    dynamic body;
+    if (_newPhoto != null || _removeImage) {
+      final fields = <String, dynamic>{
+        'name': _name.text.trim(),
+        'unitLabel': unitLabel.isEmpty ? 'use' : unitLabel,
+        'price': '$price',
+        'gstRatePercent': '$gst',
+      };
+      if (_newPhoto != null) {
+        fields['image'] = dio.MultipartFile.fromFileSync(_newPhoto!.path, filename: _newPhoto!.name);
+      } else {
+        fields['removeImage'] = 'true';
+      }
+      body = dio.FormData.fromMap(fields);
+    } else {
+      body = {
         'name': _name.text.trim(),
         'unitLabel': unitLabel.isEmpty ? 'use' : unitLabel,
         'price': price,
-        'gstRatePercent': num.tryParse(_gst.text.trim()) ?? 18,
-      },
+        'gstRatePercent': gst,
+      };
+    }
+    final ok = await ref.read(lodgeServicesViewModelProvider.notifier).saveService(
+      body,
       id: widget.service?.id,
     );
     if (!mounted) return;
@@ -128,6 +155,52 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
       Navigator.pop(context);
     } else {
       setState(() => _error = ref.read(lodgeServicesViewModelProvider).error ?? 'Could not save the service.');
+    }
+  }
+
+  Widget _photoPicker() {
+    final existing = widget.service?.image;
+    ImageProvider? preview;
+    if (_newPhoto != null) {
+      preview = FileImage(File(_newPhoto!.path));
+    } else if (!_removeImage && existing != null) {
+      preview = NetworkImage('$baseUrl/service-images/$existing');
+    }
+
+    return Wrap(
+      spacing: AppTheme.s8,
+      runSpacing: AppTheme.s8,
+      children: [
+        if (preview != null)
+          PhotoThumb(
+            imageProvider: preview,
+            onRemove: () => setState(() {
+              if (_newPhoto != null) {
+                _newPhoto = null;
+              } else {
+                _removeImage = true;
+              }
+            }),
+          )
+        else
+          AddPhotoTile(onTap: _pickPhoto),
+      ],
+    );
+  }
+
+  Future<void> _pickPhoto() async {
+    final source = await showPhotoSourceSheet(
+      context,
+      title: 'Service photo',
+      subtitle: 'Take a photo or pick one from your gallery',
+    );
+    if (source == null) return;
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+    if (picked != null) {
+      setState(() {
+        _newPhoto = picked;
+        _removeImage = false;
+      });
     }
   }
 
@@ -226,6 +299,10 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
                         onChanged: (_) => setState(() {}),
                         dense: true,
                       ),
+                      const SizedBox(height: AppTheme.s12),
+                      Text('Photo (optional)', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: AppTheme.s8),
+                      _photoPicker(),
 
                       const SectionDivider(),
                       const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
