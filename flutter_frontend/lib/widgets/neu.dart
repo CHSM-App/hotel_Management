@@ -50,6 +50,17 @@ class NeuCard extends StatelessWidget {
   final List<BoxShadow> shadow;
   final VoidCallback? onTap;
 
+  /// The card's own fill — white by default. A card nested inside another
+  /// white card (an extra room's box inside the "Stay & room" card, say)
+  /// needs a different fill to read as its own surface at all, since
+  /// [AppTheme.border] is too light on white to separate two white cards by
+  /// itself — the same reason the web form's own equivalent box uses its
+  /// `--paper` shade rather than the page's white.
+  final Color color;
+
+  /// The border drawn around the card — [AppTheme.border] by default.
+  final Color borderColor;
+
   const NeuCard({
     super.key,
     required this.child,
@@ -58,6 +69,8 @@ class NeuCard extends StatelessWidget {
     this.radius = AppTheme.rMedium,
     this.shadow = AppTheme.extruded,
     this.onTap,
+    this.color = AppTheme.card,
+    this.borderColor = AppTheme.border,
   });
 
   @override
@@ -66,9 +79,9 @@ class NeuCard extends StatelessWidget {
       padding: padding,
       margin: margin,
       decoration: BoxDecoration(
-        color: AppTheme.card,
+        color: color,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(color: borderColor),
         boxShadow: shadow,
       ),
       child: child,
@@ -486,7 +499,7 @@ class _NeuFieldState extends State<NeuField> {
                     counterText: '',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
-                      vertical: widget.dense ? 8 : 14,
+                      vertical: widget.dense ? 8 : 10,
                     ),
                   ),
                 ),

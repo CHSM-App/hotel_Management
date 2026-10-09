@@ -83,7 +83,7 @@ class LodgeServicesViewModel extends StateNotifier<LodgeServicesState> {
     }
   }
 
-  Future<bool> saveService(Map<String, dynamic> body, {int? id}) async {
+  Future<bool> saveService(dynamic body, {int? id}) async {
     state = state.copyWith(submitting: true, clearError: true);
     try {
       if (id != null) {

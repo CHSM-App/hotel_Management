@@ -15,6 +15,14 @@ class AppTheme {
   static const Color card = Color(0xFFFFFFFF);
   static const Color border = Color(0xFFF0F1F3);
 
+  /// A noticeably darker hairline than [border] — too-light to read as an
+  /// edge against a plain white card. Used where a box must visibly
+  /// separate from a white surface it sits inside (an extra room's card
+  /// inside the "Stay & room" card, say), mirroring the web form's own
+  /// `--border` (#E3E8F0), which is this same step darker than its page
+  /// background for the same reason.
+  static const Color border2 = Color(0xFFE3E8F0);
+
   /// Aliases for the old neumorphic tokens — still referenced by shadow
   /// lists and a handful of screens' `Border.all(color: ...)` calls.
   static const Color shadowDark = Color(0xFFE4E6EA);

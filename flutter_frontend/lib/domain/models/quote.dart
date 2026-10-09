@@ -170,3 +170,39 @@ class RoomQuote {
     totalPrice: asNum(json['totalPrice']),
   );
 }
+
+/// GET /pricing/simulate — a line-by-line breakdown for one room and a
+/// stay, with no booking attached. Mirrors PriceSimulatorPanel.jsx; [lines]
+/// and [nights] reuse [QuoteLine]/[QuoteNight] since the server shapes them
+/// the same way price-quote does.
+class PriceSimulation {
+  final String roomNumber;
+  final int nightCount;
+  final List<QuoteLine> lines;
+  final List<QuoteNight> nights;
+  final num total;
+
+  const PriceSimulation({
+    this.roomNumber = '',
+    this.nightCount = 0,
+    this.lines = const [],
+    this.nights = const [],
+    this.total = 0,
+  });
+
+  factory PriceSimulation.fromJson(Map<String, dynamic> json) => PriceSimulation(
+    roomNumber: json['roomNumber']?.toString() ?? '',
+    nightCount: asInt(json['nightCount']),
+    lines:
+        (json['lines'] as List?)
+            ?.map((e) => QuoteLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    nights:
+        (json['nights'] as List?)
+            ?.map((e) => QuoteNight.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    total: asNum(json['total']),
+  );
+}

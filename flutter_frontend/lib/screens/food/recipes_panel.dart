@@ -934,7 +934,7 @@ class _MaterialField extends StatelessWidget {
       builder: (fieldContext) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () async {
-          final picked = await _showMaterialMenu(fieldContext, materials, value);
+          final picked = await _showMaterialPicker(fieldContext, materials, value);
           if (picked != null) onChanged(picked);
         },
         child: Padding(
@@ -962,35 +962,109 @@ class _MaterialField extends StatelessWidget {
   }
 }
 
-Future<int?> _showMaterialMenu(BuildContext context, List<RawMaterial> materials, int? current) async {
-  final box = context.findRenderObject() as RenderBox;
-  final overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-  final topLeft = box.localToGlobal(Offset(0, box.size.height + 6), ancestor: overlay);
-  final bottomRight = box.localToGlobal(Offset(box.size.width, box.size.height + 6), ancestor: overlay);
-  final position = RelativeRect.fromRect(Rect.fromPoints(topLeft, bottomRight), Offset.zero & overlay.size);
-
-  return showMenu<int>(
+/// The store cupboard, filtered down as you type — a plain popup stops being
+/// usable somewhere past a screenful of materials, and a kitchen's list runs
+/// well past that. Mirrors MaterialField on the web: a search box over the
+/// list, matching the name or the category.
+Future<int?> _showMaterialPicker(BuildContext context, List<RawMaterial> materials, int? current) {
+  return showModalBottomSheet<int>(
     context: context,
-    position: position,
-    color: AppTheme.card,
-    surfaceTintColor: Colors.transparent,
-    elevation: 10,
-    shadowColor: const Color(0x33101828),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(AppTheme.rMedium),
-      side: const BorderSide(color: AppTheme.border),
+    isScrollControlled: true,
+    backgroundColor: AppTheme.bg,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
     ),
-    constraints: BoxConstraints(minWidth: box.size.width.clamp(160, 320), maxWidth: box.size.width.clamp(160, 320)),
-    items: [
-      for (final m in materials)
-        PopupMenuItem<int>(
-          value: m.id,
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4, vertical: 1),
-          child: _MaterialMenuRow(name: m.name, selected: m.id == current),
-        ),
-    ],
+    builder: (sheetContext) => _MaterialPickerSheet(materials: materials, current: current),
   );
+}
+
+class _MaterialPickerSheet extends StatefulWidget {
+  final List<RawMaterial> materials;
+  final int? current;
+  const _MaterialPickerSheet({required this.materials, required this.current});
+
+  @override
+  State<_MaterialPickerSheet> createState() => _MaterialPickerSheetState();
+}
+
+class _MaterialPickerSheetState extends State<_MaterialPickerSheet> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final needle = _search.text.trim().toLowerCase();
+    final matches = needle.isEmpty
+        ? widget.materials
+        : widget.materials.where((m) => m.name.toLowerCase().contains(needle) || m.category.toLowerCase().contains(needle)).toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: AppTheme.s12),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+              decoration: BoxDecoration(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: TextField(
+                      controller: _search,
+                      autofocus: true,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        hintText: 'Search a material…',
+                        hintStyle: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                      ),
+                      style: const TextStyle(fontSize: 13.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppTheme.s8),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+              child: matches.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppTheme.s24),
+                      child: Text('No materials match that.', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(AppTheme.s12, 0, AppTheme.s12, AppTheme.s16),
+                      shrinkWrap: true,
+                      children: [
+                        for (final m in matches)
+                          InkWell(
+                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                            onTap: () => Navigator.pop(context, m.id),
+                            child: _MaterialMenuRow(name: m.name, selected: m.id == widget.current),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// One row of the material popup — accent-tinted background and a check
