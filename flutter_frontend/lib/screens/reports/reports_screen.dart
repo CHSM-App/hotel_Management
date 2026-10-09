@@ -128,7 +128,13 @@ class ReportsScreen extends ConsumerStatefulWidget {
   /// four sidebar rows existed.
   final String? only;
 
-  const ReportsScreen({super.key, this.onBack, this.only});
+  /// When set, the PDF/Excel download icons are pushed up into the shell's
+  /// own top bar (next to the section title) instead of this screen opening
+  /// a second header row underneath for them. Set by DashboardShell; left
+  /// null for any other host, which gets the local row as before.
+  final ValueNotifier<Widget?>? headerActions;
+
+  const ReportsScreen({super.key, this.onBack, this.only, this.headerActions});
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -250,6 +256,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   @override
+  void dispose() {
+    // Scheduled for after this build, not before — if the frame never runs
+    // (disposed mid-build) there's nothing to cancel, and clearing here
+    // just stops a stale icon pair lingering in the shell's bar once this
+    // section isn't showing anymore.
+    widget.headerActions?.value = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final me = ref.watch(authViewModelProvider).me;
     final state = ref.watch(reportsViewModelProvider);
@@ -272,16 +288,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final showRange = _kDateRangedTabs.contains(_tab);
     final showLocalRange = _kLocalRangedTabs.contains(_tab);
     final showDownload = _kDownloadableTabs.contains(_tab);
+    final canDownload = _canDownload(state);
+
+    if (widget.headerActions != null) {
+      final actions = showDownload
+          ? _DownloadActions(
+              canDownload: canDownload,
+              downloading: _downloading,
+              onDownload: (format) => _download(state, format),
+            )
+          : null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.headerActions!.value = actions;
+      });
+    }
 
     return Column(
       children: [
-        _ReportsTitleBar(
-          onBack: widget.onBack,
-          showDownload: showDownload,
-          canDownload: _canDownload(state),
-          downloading: _downloading,
-          onDownload: (format) => _download(state, format),
-        ),
+        if (widget.headerActions == null)
+          _ReportsTitleBar(
+            onBack: widget.onBack,
+            showDownload: showDownload,
+            canDownload: canDownload,
+            downloading: _downloading,
+            onDownload: (format) => _download(state, format),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s16,
@@ -385,43 +416,82 @@ class _ReportsTitleBar extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
-              if (showDownload) ...[
-                IconButton(
-                  tooltip: 'Download PDF',
-                  onPressed: !canDownload || downloading != null
-                      ? null
-                      : () => onDownload(_ReportFormat.pdf),
-                  icon: downloading == _ReportFormat.pdf
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.picture_as_pdf_rounded),
-                  color: Colors.white,
-                  style: IconButton.styleFrom(backgroundColor: AppTheme.accent),
+              if (showDownload)
+                _DownloadActions(
+                  canDownload: canDownload,
+                  downloading: downloading,
+                  onDownload: onDownload,
                 ),
-                const SizedBox(width: AppTheme.s8),
-                IconButton(
-                  tooltip: 'Download Excel',
-                  onPressed: !canDownload || downloading != null
-                      ? null
-                      : () => onDownload(_ReportFormat.excel),
-                  icon: downloading == _ReportFormat.excel
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.table_chart_rounded),
-                  color: Colors.white,
-                  style: IconButton.styleFrom(backgroundColor: AppTheme.edit),
-                ),
-              ],
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The PDF/Excel icon pair — shared between [_ReportsTitleBar]'s own row
+/// (used when nothing lifts it elsewhere) and the shell top bar, which
+/// [_ReportsScreenState] feeds this same widget through `headerActions`.
+class _DownloadActions extends StatelessWidget {
+  final bool canDownload;
+  final _ReportFormat? downloading;
+  final ValueChanged<_ReportFormat> onDownload;
+
+  const _DownloadActions({
+    required this.canDownload,
+    required this.downloading,
+    required this.onDownload,
+  });
+
+  static const _size = 36.0;
+  static const _iconSize = 19.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Download PDF',
+          onPressed: !canDownload || downloading != null
+              ? null
+              : () => onDownload(_ReportFormat.pdf),
+          icon: downloading == _ReportFormat.pdf
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.picture_as_pdf_rounded),
+          iconSize: _iconSize,
+          color: Colors.white,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: _size, minHeight: _size),
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(backgroundColor: AppTheme.accent),
+        ),
+        const SizedBox(width: AppTheme.s4),
+        IconButton(
+          tooltip: 'Download Excel',
+          onPressed: !canDownload || downloading != null
+              ? null
+              : () => onDownload(_ReportFormat.excel),
+          icon: downloading == _ReportFormat.excel
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.table_chart_rounded),
+          iconSize: _iconSize,
+          color: Colors.white,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: _size, minHeight: _size),
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(backgroundColor: AppTheme.edit),
+        ),
+      ],
     );
   }
 }
